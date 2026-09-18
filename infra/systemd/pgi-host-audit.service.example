@@ -1,0 +1,25 @@
+[Unit]
+Description=PGI Telecom host audit
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/srv/pgi-backend/current/scripts/host-audit.sh /srv/pgi-backend /srv/pgi-dashboard /etc/pgi-telecom/production.env
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/srv/pgi-backend /srv/pgi-dashboard /etc/pgi-telecom
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
