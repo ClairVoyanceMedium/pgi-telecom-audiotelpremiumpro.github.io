@@ -997,3 +997,81 @@ dialog::backdrop{background:rgba(1,3,7,.78);backdrop-filter:blur(10px)}
   .command-copy p:last-child{font-size:8px}
   .command-metrics{grid-template-columns:1fr 1fr}
 }
+
+
+/* PGI • Telecom 1.9 — Wholesale Control Center */
+.wholesale-hero{
+  position:relative;overflow:hidden;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(250px,.65fr);
+  gap:18px;align-items:center;margin-bottom:12px;padding:20px;
+  border:1px solid rgba(170,149,255,.2);border-radius:20px;
+  background:
+    radial-gradient(circle at 6% 15%,rgba(170,149,255,.13),transparent 32%),
+    radial-gradient(circle at 82% 10%,rgba(53,216,255,.08),transparent 28%),
+    linear-gradient(145deg,rgba(17,20,39,.96),rgba(7,12,21,.985));
+  box-shadow:0 20px 58px rgba(0,0,0,.27),inset 0 1px rgba(255,255,255,.03)
+}
+.wholesale-hero::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(118deg,transparent 0 70%,rgba(255,255,255,.018) 70% 71%,transparent 71%)
+}
+.wholesale-hero h2{margin:3px 0 6px;color:#f5f1ff;font-size:21px;letter-spacing:-.045em}
+.wholesale-hero p:not(.panel-kicker){margin:0;max-width:680px;color:#7589a0;font-size:10px;line-height:1.55}
+.wholesale-hero-state{
+  position:relative;z-index:1;padding:14px 15px;border:1px solid rgba(170,149,255,.17);border-radius:15px;
+  background:rgba(170,149,255,.045)
+}
+.wholesale-hero-state span{display:block;color:#776f9b;font-size:7px;font-weight:900;letter-spacing:.11em;text-transform:uppercase}
+.wholesale-hero-state strong{display:block;margin-top:7px;color:#e5dcff;font-size:13px}
+.wholesale-hero-state small{display:block;margin-top:5px;color:#687b91;font-size:8px;line-height:1.45}
+
+.wholesale-kpis .kpi:nth-child(1)::after{background:rgba(53,216,255,.07)}
+.wholesale-kpis .kpi:nth-child(2)::after{background:rgba(170,149,255,.09)}
+.wholesale-kpis .kpi:nth-child(3)::after{background:rgba(54,219,172,.08)}
+.wholesale-kpis .kpi:nth-child(4)::after{background:rgba(119,169,255,.08)}
+
+.wholesale-control-grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px
+}
+.wholesale-control-card{padding:17px}
+.wholesale-checks{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.wholesale-checks>div{
+  padding:11px 12px;border:1px solid rgba(128,158,192,.1);border-radius:12px;background:rgba(255,255,255,.016)
+}
+.wholesale-checks span{
+  display:block;color:#62768d;font-size:7px;font-weight:850;letter-spacing:.07em;text-transform:uppercase
+}
+.wholesale-checks strong{display:block;margin-top:6px;color:#c9d8e7;font-size:9px}
+.ok-text{color:#7de8c6!important}
+
+.wholesale-flow{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px
+}
+.wholesale-flow span{
+  padding:10px 12px;border:1px solid rgba(53,216,255,.13);border-radius:11px;
+  background:rgba(53,216,255,.04);color:#b9d9e6;font-size:8px;font-weight:800
+}
+.wholesale-flow i{color:#526b83;font-style:normal;font-size:12px}
+
+.platform-status{
+  display:inline-flex;align-items:center;min-height:22px;padding:0 8px;border-radius:999px;
+  border:1px solid rgba(128,158,192,.13);font-size:7px;font-weight:900;letter-spacing:.055em;white-space:nowrap
+}
+.platform-status.ok{border-color:rgba(54,219,172,.2);background:rgba(54,219,172,.065);color:#81e9ca}
+.platform-status.warn{border-color:rgba(239,190,82,.18);background:rgba(239,190,82,.055);color:#e9c66f}
+.platform-status.bad{border-color:rgba(241,102,113,.2);background:rgba(241,102,113,.06);color:#f19aa2}
+.platform-status.neutral{color:#8fa3b8}
+
+#view-wholesale>.panel{margin-bottom:12px}
+#view-wholesale .table-wrap td:first-child{color:#d9e8f5}
+
+@media (max-width:1050px){
+  .wholesale-hero{grid-template-columns:1fr}
+  .wholesale-control-grid{grid-template-columns:1fr}
+}
+@media (max-width:700px){
+  .wholesale-hero{padding:15px;border-radius:16px}
+  .wholesale-hero h2{font-size:18px}
+  .wholesale-checks{grid-template-columns:1fr}
+  .wholesale-flow{gap:6px}
+  .wholesale-flow span{padding:9px 10px}
+}
