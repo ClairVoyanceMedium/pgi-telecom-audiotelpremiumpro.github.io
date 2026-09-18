@@ -11,6 +11,14 @@ VALUES ('33890000000','0890 00 00 00','D080',0.800000,'active','Test SVA Host');
 INSERT INTO experts(code,display_name,status,compensation_type,compensation_rate)
 VALUES ('TEST01','Expert Test','available','per_minute',0.180000);
 
+INSERT INTO carrier_contracts(
+  carrier_id,sva_number_id,valid_from,valid_to,payout_rate_ht_per_min,
+  mobile_deduction_ht_per_min,minimum_payable_seconds,billing_increment_seconds
+)
+SELECT c.id,s.id,current_date-30,current_date+30,0.460000,0.060000,0,60
+FROM carriers c,sva_numbers s
+WHERE c.name='Test SVA Host' AND s.e164='33890000000';
+
 INSERT INTO callers(caller_hash,caller_masked,first_seen_at,last_seen_at,call_count,total_conversation_seconds)
 VALUES (repeat('a',64),'06 •• •• 00 01',now(),now(),1,600);
 
@@ -55,6 +63,17 @@ SELECT id,'expected',4.600000,'EUR','smoke-expected' FROM calls WHERE external_c
 INSERT INTO financial_ledger(call_id,event_type,amount_ht,currency,source_reference)
 SELECT id,'confirmed',4.600000,'EUR','smoke-confirmed' FROM calls WHERE external_call_id='test-call-001';
 
+INSERT INTO api_idempotency_keys(idempotency_key,operation,request_sha256,response_status,response_body,expires_at)
+VALUES ('00000000-0000-4000-8000-000000000001','baseline.create',repeat('c',64),201,'{"ok":true}'::jsonb,now()+interval '24 hours')
+ON CONFLICT (idempotency_key) DO NOTHING;
+
+INSERT INTO api_idempotency_keys(idempotency_key,operation,request_sha256,response_status,response_body,expires_at)
+VALUES ('00000000-0000-4000-8000-000000000001','baseline.create',repeat('c',64),201,'{"ok":true}'::jsonb,now()+interval '24 hours')
+ON CONFLICT (idempotency_key) DO NOTHING;
+
+INSERT INTO outbox_events(event_type,aggregate_type,aggregate_id,payload)
+VALUES ('call.reconciled','call','test-call-001','{"status":"matched"}'::jsonb);
+
 DO $$
 DECLARE
   c bigint;
@@ -65,6 +84,26 @@ BEGIN
 
   SELECT expected_payout_ht INTO d FROM v_daily_metrics ORDER BY day DESC LIMIT 1;
   IF d IS NULL OR d < 4.6 THEN RAISE EXCEPTION 'daily metrics view failed: %', d; END IF;
+
+  SELECT count(*) INTO c FROM api_idempotency_keys
+  WHERE idempotency_key='00000000-0000-4000-8000-000000000001';
+  IF c <> 1 THEN RAISE EXCEPTION 'API idempotency failed: %', c; END IF;
+
+  SELECT count(*) INTO c FROM outbox_events WHERE aggregate_id='test-call-001';
+  IF c <> 1 THEN RAISE EXCEPTION 'outbox insert failed: %', c; END IF;
+
+  BEGIN
+    INSERT INTO carrier_contracts(
+      carrier_id,sva_number_id,valid_from,valid_to,payout_rate_ht_per_min
+    )
+    SELECT c.id,s.id,current_date,current_date+60,0.500000
+    FROM carriers c,sva_numbers s
+    WHERE c.name='Test SVA Host' AND s.e164='33890000000';
+    RAISE EXCEPTION 'overlapping carrier contract unexpectedly allowed';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM = 'overlapping carrier contract unexpectedly allowed' THEN RAISE; END IF;
+  END;
 
   BEGIN
     UPDATE financial_ledger SET amount_ht=9 WHERE source_reference='smoke-expected';
