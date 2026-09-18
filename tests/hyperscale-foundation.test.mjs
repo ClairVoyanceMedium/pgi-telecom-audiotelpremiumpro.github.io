@@ -5,6 +5,7 @@ import fs from "node:fs";
 const migration=fs.readFileSync("database/migrations/005_hyperscale_foundation.sql","utf8");
 const identityEntitlements=fs.readFileSync("database/migrations/006_hyperscale_identity_entitlements.sql","utf8");
 const externalIdentity=fs.readFileSync("database/migrations/007_external_customer_identity.sql","utf8");
+const tenantDirectoryMigration=fs.readFileSync("database/migrations/008_scalable_tenant_directory.sql","utf8");
 const schema=fs.readFileSync("database/schema.sql","utf8");
 const store=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
 const server=fs.readFileSync("backend/server.mjs","utf8");
@@ -79,4 +80,14 @@ test("les plans et quotas sont configurables sans code métier",()=>{
   assert.ok(identityEntitlements.includes("CREATE TABLE tenant_quota_policies"));
   assert.ok(identityEntitlements.includes("CREATE TABLE tenant_usage_counters"));
   assert.ok(identityEntitlements.includes("PARTITION BY HASH (tenant_bucket)"));
+});
+
+
+test("l'annuaire client reste indexé et paginé à grande échelle",()=>{
+  assert.ok(tenantDirectoryMigration.includes("tenants_slug_prefix_idx"));
+  assert.ok(tenantDirectoryMigration.includes("tenants_display_name_prefix_idx"));
+  assert.ok(tenantDirectoryMigration.includes("tenants_directory_cursor_idx"));
+  assert.ok(store.includes("async listTenants(params={})"));
+  assert.ok(store.includes("decodeNumericCursor"));
+  assert.ok(server.includes("/api/v1/platform/tenants"));
 });
