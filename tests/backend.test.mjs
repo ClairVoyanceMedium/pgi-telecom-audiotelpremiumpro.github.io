@@ -291,6 +291,22 @@ test("CDR ingest is idempotent",async()=>{
   });
 });
 
+test("CDR envelope rejects oversized source identifiers",async()=>{
+  await withServer(async({base})=>{
+    const r=await fetch(base+"/api/v1/ingest/cdr",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        source:"x".repeat(65),
+        source_event_id:"evt-1",
+        payload:{external_call_id:"call-1",started_at:"2026-09-18T12:00:00Z",ended_at:"2026-09-18T12:00:01Z"}
+      })
+    });
+    assert.equal(r.status,400);
+    assert.equal((await r.json()).error.code,"CDR_ENVELOPE_FIELD_INVALID");
+  });
+});
+
 test("baseline mutations replay safely with same idempotency key",async()=>{
   await withServer(async({base})=>{
     const headers={"Content-Type":"application/json","Idempotency-Key":"11111111-1111-4111-8111-111111111111"};
