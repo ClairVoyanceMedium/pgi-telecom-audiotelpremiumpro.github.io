@@ -165,7 +165,7 @@ Voir `docs/WHOLESALE-SVA.md` pour la trajectoire complète.
 
 ## Architecture hyperscale
 
-Le socle 1.13 sépare désormais le control plane client du data plane volumineux.
+Le socle 1.14 sépare désormais le control plane client du data plane volumineux.
 
 - identités publiques UUID ;
 - 4 096 buckets stables de placement tenant ;
@@ -181,3 +181,20 @@ Le socle 1.13 sépare désormais le control plane client du data plane volumineu
 Le déploiement compact reste possible sur un seul serveur. À mesure que la charge augmente, les mêmes contrats peuvent être répartis sur plusieurs instances et clusters.
 
 Voir `docs/HYPERSCALE.md`.
+
+
+### Résilience 1.14
+
+Le control plane hyperscale est complété par :
+
+- vues SQL tenant à barrière de sécurité ;
+- contexte tenant local à la transaction ;
+- queue durable avec lease, retry et dead-letter ;
+- régions et politiques de résidence des données ;
+- objectifs RPO/RTO structurés et exercices DR ;
+- corrélation distribuée `traceparent` ;
+- métriques SLO et burn-rate Prometheus.
+
+Les comptes internes PGI conservent l'accès control-plane. Une future API client doit utiliser un rôle SQL distinct limité aux vues tenant-scoped.
+
+Voir `docs/RESILIENCE.md`.
