@@ -430,8 +430,16 @@ function toCoreRow(x){
 }
 
 function validateEnvelope(x){
-  if(!x||typeof x!=="object")throw problem(400,"INVALID_CDR_ENVELOPE");
-  if(!x.source||!x.source_event_id||!x.payload)throw problem(400,"CDR_ENVELOPE_FIELDS_MISSING");
+  if(!x||typeof x!=="object"||Array.isArray(x))throw problem(400,"INVALID_CDR_ENVELOPE");
+  const source=String(x.source||"").trim();
+  const eventId=String(x.source_event_id||"").trim();
+  if(!source||!eventId||!x.payload)throw problem(400,"CDR_ENVELOPE_FIELDS_MISSING");
+  if(source.length>64||eventId.length>160)throw problem(400,"CDR_ENVELOPE_FIELD_INVALID");
+  if(typeof x.payload!=="object"||Array.isArray(x.payload))throw problem(400,"INVALID_CDR_PAYLOAD");
+  if(x.event_time!=null&&!Number.isFinite(Date.parse(String(x.event_time))))throw problem(400,"INVALID_CDR_EVENT_TIME");
+  x.source=source;
+  x.source_event_id=eventId;
+  if(x.event_time!=null)x.event_time=new Date(String(x.event_time)).toISOString();
 }
 function clampInt(v,fallback,min,max){
   const n=v==null||v===""?fallback:Number(v);
