@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.13.0 — 2026-09-18
+
+Fondation hyperscale pour plusieurs millions de clients :
+
+- 4 096 buckets stables de placement tenant et registre multi-clusters ;
+- identifiants publics UUID et tiers de capacité par client ;
+- plan analytique `call_facts` réparti sur 64 partitions physiques ;
+- agrégats quotidiens et compteurs d'usage partitionnés ;
+- API et workers séparables par `PGI_PROCESS_ROLE` ;
+- leases distribués et file de travaux durable ;
+- support d'une réplique PostgreSQL de lecture et pools séparés ;
+- dual-write transactionnel vers le plan analytique des appels ;
+- réconciliation et règlements synchronisés avec les faits analytiques ;
+- identité externe des clients séparée des comptes staff PGI ;
+- identité fédérée, adhésions tenant, sessions révocables et clients API ;
+- plans de service, abonnements, entitlements et quotas ;
+- manifests Kubernetes d'exemple avec HPA jusqu'à 100 instances API ;
+- indicateurs de capacité hyperscale visibles dans le cockpit ;
+- cache PWA porté à v16 ;
+- versions front/backend/Docker alignées sur 1.13.0.
+
 ## 1.12.0 — 2026-09-18
 
 Fondation internationale multi-marchés :
