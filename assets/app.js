@@ -806,10 +806,54 @@
     var profiles=data&&Array.isArray(data.payment_profiles)?data.payment_profiles:[];
 
     var real=RUNTIME.mode==="production"&&!!data;
-    setText("overview-wh-state",real?(summary.tenants_total>0?"Plateforme active":"Backend prêt • aucun client"):"Fondation prête");
-    setText("overview-wh-tenants",nfmt(summary.tenants_total||0));
+    var carrierReady=!!(real&&state.route&&state.route.active_carrier);
+    var numberReady=!!(real&&Number(summary.inventory_total||0)>0);
+    var connectionState=String(state.route&&state.route.active_connection_state||"").toLowerCase();
+    var sipReady=!!(carrierReady&&["active","ready"].includes(connectionState));
+    var tenantCount=Number(summary.tenants_total||0);
+    var kycPending=Number(summary.kyc_pending||0);
+    var paymentReady=!!summary.payment_compliance_active;
+    var complianceReady=tenantCount===0?true:(paymentReady&&kycPending===0);
+    var readyCount=[carrierReady,numberReady,sipReady,complianceReady].filter(Boolean).length;
+
+    setText("activation-steps",readyCount+"/4");
+    var progress=$("activation-progress-bar");
+    if(progress)progress.style.width=(readyCount*25)+"%";
+    setText("activation-title",readyCount===4?"Chaîne SVA prête à exploiter":(real?"Activation SVA en cours":"Préparation du lancement 089"));
+    setText("activation-detail",real
+      ?(readyCount===4?"Les prérequis techniques visibles dans PGI sont validés.":"PGI indique automatiquement le prochain blocage à lever avant exploitation.")
+      :"Mode démo : la structure est prête, mais aucun contrat, numéro ou trunk réel n’est simulé.");
+
+    function gate(id,label,ok){
+      setText(id,label);
+      var stateId=id+"-state";
+      var el=$(stateId);
+      if(el){el.textContent=ok?"PRÊT":"À FAIRE";el.className=ok?"ready":"pending";}
+    }
+    gate("gate-carrier",carrierReady?(state.route.active_carrier||"Route active"):"À contractualiser",carrierReady);
+    gate("gate-number",numberReady?(nfmt(summary.inventory_total||0)+" numéro(s) configuré(s)"):"Aucun numéro réel",numberReady);
+    gate("gate-sip",sipReady?"Route SIP active":(carrierReady?"Connexion "+(connectionState||"à configurer"):"Non connecté"),sipReady);
+    gate("gate-compliance",tenantCount===0?"Fondation prête":(complianceReady?"KYC & paiements conformes":(kycPending>0?nfmt(kycPending)+" KYC en attente":"Paiements à activer")),complianceReady);
+
+    var priority={title:"Plateforme prête",detail:"Aucune action bloquante détectée dans le cockpit.",go:"wholesale"};
+    if(!carrierReady)priority={title:"Finaliser l’opérateur SVA amont",detail:"Obtenir le contrat 089, le reversement et la livraison SIP avant toute activation réelle.",go:"carriers"};
+    else if(!numberReady)priority={title:"Configurer le premier numéro 089",detail:"Ajouter le numéro réellement affecté par l’opérateur puis son tarif et son statut.",go:"wholesale"};
+    else if(!sipReady)priority={title:"Activer le trunk SIP et la route",detail:"Valider la connexion opérateur vers FreeSWITCH/SBC avant le premier appel.",go:"system"};
+    else if(tenantCount>0&&kycPending>0)priority={title:"Traiter les KYC en attente",detail:"Aucun numéro client ne doit être activé tant que le dossier éditeur n’est pas vérifié.",go:"wholesale"};
+    else if(tenantCount>0&&!paymentReady)priority={title:"Activer le cadre de paiement multi-clients",detail:"Le reversement de fonds tiers reste bloqué tant qu’aucun profil PSP/DSP2 actif n’est configuré.",go:"wholesale"};
+    setText("priority-action-title",priority.title);
+    setText("priority-action-detail",priority.detail);
+    var priorityButton=$("priority-action-btn");
+    if(priorityButton)priorityButton.setAttribute("data-go",priority.go);
+
+    setText("overview-wh-state",real?(tenantCount>0?"Plateforme active":"Backend prêt"):"Fondation prête");
+    setText("overview-wh-tenants",nfmt(tenantCount));
     setText("overview-wh-numbers",nfmt(summary.assignments_total||0));
-    setText("overview-wh-kyc",nfmt(summary.kyc_pending||0));
+    setText("overview-wh-stock",nfmt(summary.inventory_unassigned||0)+" libres");
+    setText("overview-wh-kyc",nfmt(kycPending));
+    setText("overview-wh-kyc-state",kycPending>0?"À traiter":"Aucun dossier");
+    setText("overview-wh-net",money(summary.net_payout_ht||0));
+    setText("overview-wh-payment-state",paymentReady?"Paiements actifs":(tenantCount>0?"PSP/DSP2 à activer":"Paiements non requis"));
     setText("wh-tenants-total",nfmt(summary.tenants_total||0));
     setText("wh-tenants-active",nfmt(summary.tenants_active||0)+" actifs");
     setText("wh-numbers-total",nfmt(summary.assignments_total||0));
