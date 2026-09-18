@@ -3,7 +3,7 @@
 
   var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
   var CONFIG={serviceRate:0.80,payoutRate:0.46,expertCostPerMin:0.18,fixedCostPerCall:0.03};
-  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,pendingSyncMode:"dashboard",hiddenAt:null,lastSyncAt:null,activeView:"overview",commandIndex:0,system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
+  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,pendingSyncMode:"dashboard",hiddenAt:null,lastSyncAt:null,activeView:"overview",system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
   var titles={overview:"Cockpit",calls:"Appels",finance:"Finance",experts:"Experts",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Supervision",settings:"Paramètres"};
   var experts=["Frederick","Sofia","Emma","Lina","Clara","Nora"];
   var carriers=["Orange","SFR","Bouygues","Free"];
@@ -1451,80 +1451,23 @@
     refreshData();
   }
 
-  function commandNormalize(value){
-    return String(value||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
-  }
-
-  function commandCatalog(){
-    return [
-      {id:"view-overview",group:"Navigation",label:"Ouvrir le Cockpit",hint:"Accueil et pilotage",keywords:"dashboard accueil cockpit",run:function(){switchView("overview");}},
-      {id:"view-calls",group:"Navigation",label:"Ouvrir les Appels",hint:"CDR et détail",keywords:"cdr telephone appels",run:function(){switchView("calls");}},
-      {id:"view-finance",group:"Navigation",label:"Ouvrir Finance",hint:"CA, reversements, rapprochement",keywords:"argent marge paiement reversement",run:function(){switchView("finance");}},
-      {id:"view-experts",group:"Navigation",label:"Ouvrir Experts",hint:"Disponibilité et performance",keywords:"equipe consultants experts",run:function(){switchView("experts");}},
-      {id:"view-carriers",group:"Navigation",label:"Ouvrir Opérateurs",hint:"SIP, routes, portabilité",keywords:"operateur carrier sip route",run:function(){switchView("carriers");}},
-      {id:"view-wholesale",group:"Navigation",label:"Ouvrir Plateforme SVA",hint:"Clients, numéros, KYC",keywords:"sva wholesale clients numeros kyc",run:function(){switchView("wholesale");}},
-      {id:"view-system",group:"Navigation",label:"Ouvrir Supervision",hint:"NOC, API, CDR, résilience",keywords:"systeme noc api supervision erreurs",run:function(){switchView("system");}},
-      {id:"view-settings",group:"Navigation",label:"Ouvrir Paramètres",hint:"Configuration et audit",keywords:"reglages parametres config",run:function(){switchView("settings");}},
-      {id:"period-today",group:"Période",label:"Afficher aujourd’hui",hint:"Période : aujourd’hui",keywords:"jour today",run:function(){setPeriod("today");}},
-      {id:"period-7d",group:"Période",label:"Afficher 7 jours",hint:"Période glissante",keywords:"semaine sept jours",run:function(){setPeriod("7d");}},
-      {id:"period-week",group:"Période",label:"Afficher cette semaine",hint:"Lundi à aujourd’hui",keywords:"semaine",run:function(){setPeriod("week");}},
-      {id:"period-month",group:"Période",label:"Afficher ce mois",hint:"Depuis le 1er",keywords:"mois month",run:function(){setPeriod("month");}},
-      {id:"period-year",group:"Période",label:"Afficher cette année",hint:"Depuis janvier",keywords:"annee year annuel",run:function(){setPeriod("year");}},
-      {id:"refresh",group:"Action",label:"Actualiser maintenant",hint:"Synchroniser les données",keywords:"refresh synchro actualiser mise a jour",run:function(){refreshData();}},
-      {id:"priority",group:"Action",label:"Ouvrir l’action prioritaire",hint:"Prochaine étape recommandée",keywords:"priorite prochaine action",run:function(){switchView("overview");setTimeout(function(){var b=$("priority-action-btn");if(b)b.focus();},250);}},
-      {id:"analysis",group:"Action",label:state.mobileOverviewExpanded?"Revenir à la vue essentielle":"Afficher l’analyse complète",hint:"Cockpit mobile",keywords:"mobile graphiques analyse essentiel",run:function(){switchView("overview");toggleMobileOverview();}},
-      {id:"export",group:"Action",label:"Exporter les appels en CSV",hint:"Période et filtres actuels",keywords:"csv export appels fichier",run:function(){switchView("calls");setTimeout(exportCallsCsv,80);}},
-      {id:"print-calls",group:"Action",label:"Imprimer les appels / PDF",hint:"Vue appels",keywords:"pdf impression appels",run:function(){switchView("calls");setTimeout(function(){window.print();},120);}},
-      {id:"print-finance",group:"Action",label:"Imprimer Finance / PDF",hint:"Vue finance",keywords:"pdf impression finance",run:function(){switchView("finance");setTimeout(function(){window.print();},120);}}
-    ];
-  }
-
-  function filteredCommands(query){
-    var needle=commandNormalize(query);
-    return commandCatalog().filter(function(cmd){
-      return !needle||commandNormalize(cmd.label+" "+cmd.hint+" "+cmd.group+" "+(cmd.keywords||"")).includes(needle);
-    }).slice(0,18);
-  }
-
-  function renderCommandPalette(){
-    var input=$("command-search"),results=$("command-results");
-    if(!results)return;
-    var list=filteredCommands(input?input.value:"");
-    if(state.commandIndex>=list.length)state.commandIndex=Math.max(0,list.length-1);
-    results.innerHTML=list.length?list.map(function(cmd,index){
-      return '<button type="button" class="command-result'+(index===state.commandIndex?' selected':'')+'" data-command-id="'+esc(cmd.id)+'" role="option" aria-selected="'+(index===state.commandIndex?'true':'false')+'"><span><small>'+esc(cmd.group)+'</small><strong>'+esc(cmd.label)+'</strong><em>'+esc(cmd.hint||"")+'</em></span><i>↵</i></button>';
-    }).join(""):'<div class="command-empty">Aucune action correspondante.</div>';
-    var selected=results.querySelector(".command-result.selected");
-    if(selected)selected.scrollIntoView({block:"nearest"});
-  }
-
-  function openCommandPalette(initialQuery){
-    var dialog=$("command-palette-dialog"),input=$("command-search");
-    if(!dialog||typeof dialog.showModal!=="function")return;
-    state.commandIndex=0;
-    if(input)input.value=initialQuery||"";
-    renderCommandPalette();
-    if(!dialog.open)dialog.showModal();
-    setTimeout(function(){if(input){input.focus();input.select();}},20);
-  }
-
-  function closeCommandPalette(){
-    var dialog=$("command-palette-dialog");
-    if(dialog&&dialog.open)dialog.close();
-  }
-
-  function runCommand(id){
-    var cmd=commandCatalog().find(function(x){return x.id===id;});
-    if(!cmd)return;
-    closeCommandPalette();
-    cmd.run();
-  }
-
-  function moveCommandSelection(delta){
-    var list=filteredCommands($("command-search")?$("command-search").value:"");
-    if(!list.length)return;
-    state.commandIndex=(state.commandIndex+delta+list.length)%list.length;
-    renderCommandPalette();
+  function executeCommand(id){
+    if(id&&id.indexOf("view-")===0){switchView(id.slice(5));return;}
+    if(id==="period-today"){setPeriod("today");return;}
+    if(id==="period-7d"){setPeriod("7d");return;}
+    if(id==="period-week"){setPeriod("week");return;}
+    if(id==="period-month"){setPeriod("month");return;}
+    if(id==="period-year"){setPeriod("year");return;}
+    if(id==="refresh"){refreshData({forceMeta:true});return;}
+    if(id==="priority"){
+      switchView("overview");
+      setTimeout(function(){var b=$("priority-action-btn");if(b)b.focus();},250);
+      return;
+    }
+    if(id==="analysis"){switchView("overview");toggleMobileOverview();return;}
+    if(id==="export"){switchView("calls");setTimeout(exportCallsCsv,80);return;}
+    if(id==="print-calls"){switchView("calls");setTimeout(function(){window.print();},120);return;}
+    if(id==="print-finance"){switchView("finance");setTimeout(function(){window.print();},120);}
   }
 
   function bind(){
@@ -1539,36 +1482,8 @@
       state.period="custom";state.custom={from:fd,to:td};qsa(".period").forEach(function(x){x.classList.remove("active");});saveUiPreferences();refreshData();
     });
     $("refresh-btn").addEventListener("click",function(){refreshData({forceMeta:true});});
-    var paletteButton=$("command-palette-btn");
-    var paletteFab=$("quick-actions-fab");
-    var paletteClose=$("command-palette-close");
-    var paletteSearch=$("command-search");
-    var paletteResults=$("command-results");
-    if(paletteButton)paletteButton.addEventListener("click",function(){openCommandPalette();});
-    if(paletteFab)paletteFab.addEventListener("click",function(){openCommandPalette();});
-    if(paletteClose)paletteClose.addEventListener("click",closeCommandPalette);
-    if(paletteSearch){
-      paletteSearch.addEventListener("input",function(){state.commandIndex=0;renderCommandPalette();});
-      paletteSearch.addEventListener("keydown",function(e){
-        if(e.key==="ArrowDown"){e.preventDefault();moveCommandSelection(1);}
-        else if(e.key==="ArrowUp"){e.preventDefault();moveCommandSelection(-1);}
-        else if(e.key==="Enter"){
-          e.preventDefault();
-          var list=filteredCommands(paletteSearch.value);
-          if(list[state.commandIndex])runCommand(list[state.commandIndex].id);
-        }else if(e.key==="Escape"){e.preventDefault();closeCommandPalette();}
-      });
-    }
-    if(paletteResults)paletteResults.addEventListener("click",function(e){
-      var button=e.target.closest("[data-command-id]");
-      if(button)runCommand(button.getAttribute("data-command-id"));
-    });
-    document.addEventListener("keydown",function(e){
-      if((e.ctrlKey||e.metaKey)&&String(e.key).toLowerCase()==="k"){
-        e.preventDefault();
-        openCommandPalette();
-      }
-    });
+    if(window.PGICommandPalette)window.PGICommandPalette.init();
+    window.addEventListener("pgi:command",function(e){executeCommand(e&&e.detail?e.detail.id:null);});
 
     var mobileOverviewToggle=$("mobile-overview-toggle");
     if(mobileOverviewToggle)mobileOverviewToggle.addEventListener("click",toggleMobileOverview);
