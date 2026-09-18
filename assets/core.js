@@ -96,10 +96,26 @@
     return Object.freeze(out);
   }
 
+  function reconcileAmounts(expected,confirmed,tolerance){
+    var e=nonNegative(expected||0,"expected");
+    var c=nonNegative(confirmed||0,"confirmed");
+    var t=nonNegative(tolerance||0,"tolerance");
+    var variance=roundCurrency(e-c);
+    var absoluteVariance=roundCurrency(Math.abs(variance));
+    return Object.freeze({
+      expectedHt:roundCurrency(e),
+      confirmedHt:roundCurrency(c),
+      varianceHt:variance,
+      absoluteVarianceHt:absoluteVariance,
+      status:absoluteVariance<=t?"matched":"variance"
+    });
+  }
+
   return Object.freeze({
     billedSeconds:billedSeconds,
     computeCallFinancials:computeCallFinancials,
     aggregateCalls:aggregateCalls,
+    reconcileAmounts:reconcileAmounts,
     roundCurrency:roundCurrency
   });
 });
