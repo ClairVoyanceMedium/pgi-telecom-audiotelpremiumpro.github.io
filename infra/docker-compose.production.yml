@@ -2,6 +2,7 @@ name: pgi-telecom-production
 
 services:
   api:
+    image: pgi-telecom-api:${PGI_VERSION:-1.4.0}
     build:
       context: ..
       dockerfile: backend/Dockerfile
@@ -29,8 +30,8 @@ services:
       PGI_EXPERT_COST_HT_PER_MIN: ${PGI_EXPERT_COST_HT_PER_MIN:-0.18}
       PGI_RECONCILIATION_TOLERANCE_HT: ${PGI_RECONCILIATION_TOLERANCE_HT:-0.01}
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:8080:8080"
     security_opt:
@@ -41,6 +42,26 @@ services:
     networks:
       - core
     stop_grace_period: 20s
+
+
+  migrate:
+    image: pgi-telecom-api:${PGI_VERSION:-1.4.0}
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    restart: "no"
+    command: ["node","backend/migrate.mjs"]
+    environment:
+      PGI_DATABASE_URL: postgresql://${POSTGRES_USER:-pgi_telecom}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pgi_telecom}
+      PGI_DATABASE_SSL: disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - core
 
   postgres:
     image: postgres:16-alpine
