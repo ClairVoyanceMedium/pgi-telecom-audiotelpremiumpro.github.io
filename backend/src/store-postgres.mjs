@@ -368,34 +368,42 @@ export class PostgresStore{
       if(duplicate.length)throw problem(409,"SETTLEMENT_PERIOD_EXISTS");
 
       const periodCalls=await tx.unsafe(
-        "SELECT id,external_call_id,expected_payout_ht::float8,expert_cost_ht::float8,technical_cost_ht::float8"+
-        " FROM calls WHERE host_carrier_id=$1 AND started_at::date BETWEEN $2::date AND $3::date",
-        [carrier.id,settlement.period_start,settlement.period_end]
+        "SELECT id,external_call_id,market_id,currency,expected_payout_ht::float8,expert_cost_ht::float8,technical_cost_ht::float8"+
+        " FROM calls WHERE host_carrier_id=$1 AND started_at::date BETWEEN $2::date AND $3::date"+
+        " AND currency=$4",
+        [carrier.id,settlement.period_start,settlement.period_end,settlement.currency]
       );
       const byExternal=new Map(periodCalls.map(row=>[String(row.external_call_id),row]));
       const matched=settlement.matches.map(item=>{
         const call=byExternal.get(item.external_call_id);
-        if(!call)throw problem(409,"SETTLEMENT_CALL_NOT_FOUND","Settlement call not found in carrier period: "+item.external_call_id);
+        if(!call)throw problem(409,"SETTLEMENT_CALL_NOT_FOUND","Settlement call not found in carrier period/currency: "+item.external_call_id);
+        if(settlement.market_id!=null&&Number(call.market_id)!==Number(settlement.market_id))throw problem(409,"SETTLEMENT_MARKET_MISMATCH");
         return {
           call_id:Number(call.id),
           external_call_id:item.external_call_id,
+          market_id:call.market_id==null?null:Number(call.market_id),
+          currency:String(call.currency||settlement.currency),
           amount:Number(item.carrier_amount_ht),
           expected:Number(call.expected_payout_ht||0)
         };
       });
 
+      const marketIds=[...new Set(matched.map(row=>row.market_id).filter(x=>x!=null))];
+      if(marketIds.length>1)throw problem(409,"SETTLEMENT_MULTIPLE_MARKETS");
+      const marketId=settlement.market_id??marketIds[0]??null;
       const expectedAmount=roundFinanceNumber(matched.reduce((sum,row)=>sum+row.expected,0));
       const confirmedAmount=roundFinanceNumber(matched.reduce((sum,row)=>sum+row.amount,0));
       const paidAmount=settlement.status==="paid"?confirmedAmount:0;
 
       const inserted=await tx.unsafe(
-        "INSERT INTO carrier_settlements(carrier_id,period_start,period_end,statement_reference,invoice_reference,"+
+        "INSERT INTO carrier_settlements(carrier_id,market_id,currency,period_start,period_end,statement_reference,invoice_reference,"+
         " expected_amount_ht,confirmed_amount_ht,paid_amount_ht,payment_due_date,paid_at,status,source_file_hash)"+
-        " VALUES($1,$2::date,$3::date,$4,$5,$6,$7,$8,$9::date,$10::timestamptz,$11,$12)"+
-        " RETURNING id,carrier_id,period_start,period_end,expected_amount_ht::float8,confirmed_amount_ht::float8,"+
+        " VALUES($1,$2,$3,$4::date,$5::date,$6,$7,$8,$9,$10,$11::date,$12::timestamptz,$13,$14)"+
+        " RETURNING id,carrier_id,market_id,currency,period_start,period_end,expected_amount_ht::float8,confirmed_amount_ht::float8,"+
         " paid_amount_ht::float8,status,statement_reference,invoice_reference,payment_due_date,paid_at,source_file_hash,created_at",
         [
-          carrier.id,settlement.period_start,settlement.period_end,settlement.statement_reference,settlement.invoice_reference,
+          carrier.id,marketId,settlement.currency,settlement.period_start,settlement.period_end,
+          settlement.statement_reference,settlement.invoice_reference,
           expectedAmount,confirmedAmount,paidAmount,settlement.payment_due_date,settlement.paid_at,
           settlement.status,settlement.source_file_hash
         ]
@@ -420,9 +428,10 @@ export class PostgresStore{
       );
 
       await tx.unsafe(
-        "INSERT INTO financial_ledger(call_id,settlement_id,event_type,amount_ht,source_reference,source_hash,reason,created_by,metadata)"+
-        " SELECT x.call_id,$1,'confirmed',x.amount,$2,$3,'carrier settlement import',$4,$5::jsonb"+
-        " FROM jsonb_to_recordset($6::jsonb) AS x(call_id bigint,amount numeric) WHERE x.amount<>0",
+        "INSERT INTO financial_ledger(market_id,call_id,settlement_id,event_type,amount_ht,currency,source_reference,source_hash,reason,created_by,metadata)"+
+        " SELECT c.market_id,x.call_id,$1,'confirmed',x.amount,c.currency,$2,$3,'carrier settlement import',$4,$5::jsonb"+
+        " FROM jsonb_to_recordset($6::jsonb) AS x(call_id bigint,amount numeric)"+
+        " JOIN calls c ON c.id=x.call_id WHERE x.amount<>0",
         [
           row.id,settlement.statement_reference,settlement.source_file_hash,numericActor(actor),
           JSON.stringify({carrier:carrier.name,period_start:settlement.period_start,period_end:settlement.period_end}),matchJson
@@ -431,9 +440,10 @@ export class PostgresStore{
 
       if(settlement.status==="paid"){
         await tx.unsafe(
-          "INSERT INTO financial_ledger(call_id,settlement_id,event_type,amount_ht,source_reference,source_hash,reason,created_by,metadata)"+
-          " SELECT x.call_id,$1,'paid',x.amount,$2,$3,'carrier settlement paid',$4,$5::jsonb"+
-          " FROM jsonb_to_recordset($6::jsonb) AS x(call_id bigint,amount numeric) WHERE x.amount<>0",
+          "INSERT INTO financial_ledger(market_id,call_id,settlement_id,event_type,amount_ht,currency,source_reference,source_hash,reason,created_by,metadata)"+
+          " SELECT c.market_id,x.call_id,$1,'paid',x.amount,c.currency,$2,$3,'carrier settlement paid',$4,$5::jsonb"+
+          " FROM jsonb_to_recordset($6::jsonb) AS x(call_id bigint,amount numeric)"+
+          " JOIN calls c ON c.id=x.call_id WHERE x.amount<>0",
           [
             row.id,settlement.statement_reference,settlement.source_file_hash,numericActor(actor),
             JSON.stringify({carrier:carrier.name}),matchJson
@@ -468,7 +478,7 @@ export class PostgresStore{
 
     const result=await this.sql.begin(async tx=>{
       const rows=await tx.unsafe(
-        "SELECT id,carrier_id,status,confirmed_amount_ht::float8,paid_amount_ht::float8 FROM carrier_settlements WHERE id=$1 FOR UPDATE",
+        "SELECT id,carrier_id,market_id,currency,status,confirmed_amount_ht::float8,paid_amount_ht::float8 FROM carrier_settlements WHERE id=$1 FOR UPDATE",
         [settlementId]
       );
       const settlement=rows[0];
@@ -494,9 +504,10 @@ export class PostgresStore{
         [matchJson]
       );
       await tx.unsafe(
-        "INSERT INTO financial_ledger(call_id,settlement_id,event_type,amount_ht,reason,created_by,metadata)"+
-        " SELECT x.call_id,$1,'paid',x.amount,'carrier settlement marked paid',$2,$3::jsonb"+
+        "INSERT INTO financial_ledger(market_id,call_id,settlement_id,event_type,amount_ht,currency,reason,created_by,metadata)"+
+        " SELECT c.market_id,x.call_id,$1,'paid',x.amount,c.currency,'carrier settlement marked paid',$2,$3::jsonb"+
         " FROM jsonb_to_recordset($4::jsonb) AS x(call_id bigint,amount numeric)"+
+        " JOIN calls c ON c.id=x.call_id"+
         " WHERE x.amount<>0 AND NOT EXISTS ("+
         " SELECT 1 FROM financial_ledger f WHERE f.settlement_id=$1 AND f.call_id=x.call_id AND f.event_type='paid')",
         [settlementId,numericActor(actor),JSON.stringify({paid_at:paidAt.toISOString()}),matchJson]
