@@ -120,7 +120,7 @@ export class PostgresStore{
   }
 
   async listExperts(){
-    return this.sql.unsafe(
+    return this.readSql.unsafe(
       "SELECT id,code,display_name,destination_uri,status,active_calls,last_assigned_at,enabled,compensation_type,compensation_rate::float8"+
       " FROM experts ORDER BY display_name"
     );
@@ -786,7 +786,7 @@ export class PostgresStore{
 
   async wholesaleOverview(){
     const [summaryRows,tenants,numbers,settlements,payments,markets,currencyTotals]=await Promise.all([
-      this.sql.unsafe(
+      this.readSql.unsafe(
         "SELECT"+
         " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal') AS tenants_total,"+
         " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal' AND status='active') AS tenants_active,"+
@@ -801,7 +801,7 @@ export class PostgresStore{
         " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.status='active') AS assignments_active,"+
         " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.regulatory_assignor_carrier_id IS NOT NULL) AS assignments_with_assignor"
       ),
-      this.sql.unsafe(
+      this.readSql.unsafe(
         "SELECT t.id,t.slug,t.display_name,t.tenant_type,t.status,t.country_code,t.preferred_locale,t.default_currency,t.timezone,"+
         " COALESCE(k.status,'not_started') AS kyc_status,"+
         " count(DISTINCT a.id)::int AS number_assignments,"+
@@ -814,7 +814,7 @@ export class PostgresStore{
         " WHERE t.tenant_type<>'internal'"+
         " GROUP BY t.id,k.status ORDER BY t.created_at DESC LIMIT 50"
       ),
-      this.sql.unsafe(
+      this.readSql.unsafe(
         "SELECT a.id,t.display_name AS tenant,sn.display_number,sn.e164,sn.currency,sn.number_type,"+
         " m.country_code AS market,a.tariff_code,a.assignment_type,a.status,a.kyc_status,"+
         " c.name AS regulatory_assignor,a.upstream_assignment_reference,a.valid_from,a.valid_to"+
@@ -824,14 +824,14 @@ export class PostgresStore{
         " LEFT JOIN carriers c ON c.id=a.regulatory_assignor_carrier_id"+
         " WHERE t.tenant_type<>'internal' ORDER BY a.created_at DESC LIMIT 50"
       ),
-      this.sql.unsafe(
+      this.readSql.unsafe(
         "SELECT s.id,t.display_name AS tenant,m.country_code AS market,s.currency,s.period_start,s.period_end,s.upstream_payout_ht::float8,"+
         " s.platform_fee_ht::float8,s.net_payout_ht::float8,s.status,s.payment_due_date,s.paid_at"+
         " FROM tenant_settlements s JOIN tenants t ON t.id=s.tenant_id"+
         " LEFT JOIN operating_markets m ON m.id=s.market_id"+
         " WHERE t.tenant_type<>'internal' ORDER BY s.period_end DESC,s.id DESC LIMIT 50"
       ),
-      this.sql.unsafe(
+      this.readSql.unsafe(
         "SELECT p.id,p.profile_name,p.regulatory_role,p.provider_name,p.funds_flow_mode,p.status,p.valid_from,p.valid_to,"+
         " COALESCE(json_agg(json_build_object('market',m.country_code,'status',pm.status)) FILTER (WHERE m.id IS NOT NULL),'[]'::json) AS markets"+
         " FROM payment_compliance_profiles p"+
@@ -839,7 +839,7 @@ export class PostgresStore{
         " LEFT JOIN operating_markets m ON m.id=pm.market_id"+
         " GROUP BY p.id ORDER BY p.created_at DESC LIMIT 20"
       ),
-      this.sql.unsafe(
+      this.readSql.unsafe(
         "SELECT m.id,m.country_code,m.display_name,m.status,m.default_currency,m.default_locale,m.timezone,m.regulator_name,m.numbering_authority,m.data_region,"+
         " count(DISTINCT tmp.tenant_id)::int AS tenants,"+
         " count(DISTINCT sn.id)::int AS numbers"+
@@ -848,7 +848,7 @@ export class PostgresStore{
         " LEFT JOIN sva_numbers sn ON sn.market_id=m.id"+
         " GROUP BY m.id ORDER BY CASE WHEN m.status='active' THEN 0 ELSE 1 END,m.country_code"
       ),
-      this.sql.unsafe(
+      this.readSql.unsafe(
         "SELECT s.currency,"+
         " COALESCE(sum(s.upstream_payout_ht),0)::float8 AS upstream_payout,"+
         " COALESCE(sum(s.platform_fee_ht),0)::float8 AS platform_fee,"+
