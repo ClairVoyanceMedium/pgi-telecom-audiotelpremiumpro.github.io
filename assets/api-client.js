@@ -97,6 +97,11 @@
       if(market)q.set("market",market);
       return request("/dashboard/summary?"+q.toString());
     },
+    analytics:function(from,to,market){
+      var q=new URLSearchParams({from:from,to:to});
+      if(market)q.set("market",market);
+      return request("/dashboard/analytics?"+q.toString());
+    },
     calls:function(params){
       var q=new URLSearchParams(params||{}).toString();
       return request("/calls"+(q?"?"+q:""));
