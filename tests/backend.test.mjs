@@ -314,6 +314,16 @@ test("wholesale overview is read-only and empty in simulator",async()=>{
   });
 });
 
+test("tenant directory is cursor-paginated and empty in simulator",async()=>{
+  await withServer(async({base})=>{
+    const r=await fetch(base+"/api/v1/platform/tenants?limit=25&q=test");
+    assert.equal(r.status,200);
+    const body=await r.json();
+    assert.deepEqual(body.data,[]);
+    assert.equal(body.next_cursor,null);
+  });
+});
+
 test("CDR ingest is idempotent",async()=>{
   await withServer(async({base})=>{
     const envelope={
