@@ -37,6 +37,12 @@ Le script `scripts/backup-postgres.sh` écrit d’abord un fichier temporaire, v
 - rollback vers la version précédente en cas d'échec ;
 - migration base de données versionnée et réversible lorsque possible.
 
+## Migrations de base de données
+
+Avant chaque déploiement backend, le service `migrate` doit terminer avec succès. Une erreur de migration ou un checksum différent interdit le démarrage de l’API.
+
+Ne jamais corriger rétroactivement un fichier déjà présent dans `schema_migrations`. Ajouter une nouvelle migration corrective.
+
 ## Alertes production à prévoir
 
 - trunk SIP indisponible ;
