@@ -1673,7 +1673,7 @@ dialog{max-height:100dvh}
 }
 
 
-/* PGI 1.13 — Hyperscale Capacity Layer */
+/* PGI 1.14 — Hyperscale Capacity Layer */
 .hyperscale-readiness{
   display:grid;
   grid-template-columns:repeat(4,minmax(0,1fr));
