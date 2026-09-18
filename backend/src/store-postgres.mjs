@@ -113,7 +113,7 @@ export class PostgresStore{
 
   async setExpertStatus(id,status){
     if(!["available","busy","away","offline"].includes(status))throw problem(400,"INVALID_STATUS");
-    return this.sql.begin(async tx=>{
+    const result=await this.sql.begin(async tx=>{
       const rows=await tx.unsafe(
         "UPDATE experts SET status=$1 WHERE id=$2 RETURNING id,code,display_name,destination_uri,status,active_calls,last_assigned_at,enabled",
         [status,Number(id)]
@@ -324,7 +324,7 @@ export class PostgresStore{
 
   async importSettlement(payload,actor){
     const settlement=normalizeSettlementPayload(payload);
-    return this.sql.begin(async tx=>{
+    const result=await this.sql.begin(async tx=>{
       const carrierRows=await tx.unsafe(
         "SELECT id,name FROM carriers WHERE id=$1 AND enabled LIMIT 1",
         [settlement.carrier_id]
@@ -425,9 +425,10 @@ export class PostgresStore{
         [String(row.id),JSON.stringify({carrier_id:carrier.id,status:settlement.status})]
       );
 
-      this.eventBus.publish("settlement.imported",{id:row.id,carrier_id:carrier.id,status:settlement.status});
       return {...row,carrier_name:carrier.name,matches:matched.length};
     });
+    this.eventBus.publish("settlement.imported",{id:result.id,carrier_id:result.carrier_id,status:result.status});
+    return result;
   }
 
   async markSettlementPaid(id,payload,actor){
@@ -443,7 +444,7 @@ export class PostgresStore{
       );
       const settlement=rows[0];
       if(!settlement)throw problem(404,"SETTLEMENT_NOT_FOUND");
-      if(settlement.status==="paid")return settlement;
+      if(settlement.status==="paid")return {...settlement,changed:false};
 
       const matches=await tx.unsafe(
         "SELECT call_id,carrier_amount_ht::float8 AS amount FROM settlement_call_matches WHERE settlement_id=$1",
@@ -480,9 +481,10 @@ export class PostgresStore{
         [String(settlementId),JSON.stringify({paid_at:paidAt.toISOString()})]
       );
 
-      this.eventBus.publish("settlement.paid",{id:settlementId,paid_at:paidAt.toISOString()});
-      return updated[0];
+      return {...updated[0],changed:true};
     });
+    if(result.changed)this.eventBus.publish("settlement.paid",{id:settlementId,paid_at:result.paid_at});
+    return result;
   }
 
   async reconciliation(from,to){
