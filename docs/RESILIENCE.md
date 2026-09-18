@@ -54,10 +54,11 @@ Cycle d'un job :
 1. insertion durable dans `work_queue` ;
 2. réservation avec `FOR UPDATE SKIP LOCKED` ;
 3. lease limité dans le temps ;
-4. exécution par un handler explicitement enregistré ;
-5. succès : `completed_at` ;
-6. erreur : retry exponentiel ;
-7. dépassement de `max_attempts` : dead-letter immuable.
+4. heartbeat automatique pendant les traitements longs, avec possibilité de heartbeat manuel ;
+5. exécution par un handler explicitement enregistré ;
+6. succès : `completed_at` ;
+7. erreur : retry exponentiel ;
+8. dépassement de `max_attempts` : dead-letter immuable.
 
 Un handler absent n'est jamais remplacé par un traitement générique : le worker ne réclame que les queues qui possèdent un handler enregistré.
 
