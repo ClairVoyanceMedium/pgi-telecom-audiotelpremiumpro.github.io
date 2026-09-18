@@ -1,5 +1,6 @@
 
 import {createHash} from "node:crypto";
+import {sanitizeCdrPayload,deriveCallerHash} from "./cdr-privacy.mjs";
 import {createRequire} from "node:module";
 
 const require=createRequire(import.meta.url);
@@ -160,7 +161,7 @@ export class PostgresStore{
 
   async ingestCdr(envelope){
     validateEnvelope(envelope);
-    const p=envelope.payload||{};
+    const p=sanitizeCdrPayload(envelope.payload||{});
     const payloadHash=createHash("sha256").update(JSON.stringify(p)).digest("hex");
     const result=await this.sql.begin(async tx=>{
       const inserted=await tx.unsafe(
@@ -211,7 +212,7 @@ export class PostgresStore{
       const sva=svaRows[0];
       if(!sva)throw problem(409,"SVA_NUMBER_NOT_CONFIGURED");
 
-      const callerHash=String(p.caller_hash||createHash("sha256").update(String(p.caller_masked||"unknown")).digest("hex"));
+      const callerHash=deriveCallerHash(p,{key:this.config.callerHashKey,source:envelope.source,sourceEventId:envelope.source_event_id});
       const callerRows=await tx.unsafe(
         "INSERT INTO callers(caller_hash,caller_masked,first_seen_at,last_seen_at,call_count,total_conversation_seconds)"+
         " VALUES($1,$2,$3::timestamptz,$3::timestamptz,1,$4)"+
