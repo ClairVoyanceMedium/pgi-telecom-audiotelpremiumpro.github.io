@@ -225,6 +225,19 @@ test("readiness requires production database and fresh critical workers",()=>{
   assert.equal(staleWorker.checks.outbox_worker,false);
 });
 
+test("readiness for an API-only node does not require local workers",()=>{
+  const now=Date.parse("2026-09-18T12:00:10Z");
+  const cfg={mode:"production",processRole:"api",outboxWorkerStaleSeconds:15,alertsWorkerStaleSeconds:120};
+  const result=evaluateReadiness(
+    {store:"postgres"},
+    {stats:{lastOutboxSuccessAt:null,lastAlertsSuccessAt:null}},
+    cfg,now
+  );
+  assert.equal(result.ready,true);
+  assert.deepEqual(result.checks,{database:true});
+  assert.equal(result.process_role,"api");
+});
+
 test("expert router chooses available least-loaded expert",()=>{
   const x=selectExpert([
     {id:1,status:"available",enabled:true,active_calls:2,last_assigned_at:"2026-01-01T00:00:00Z"},
@@ -288,13 +301,16 @@ test("wholesale overview is read-only and empty in simulator",async()=>{
     const r=await fetch(base+"/api/v1/platform/overview");
     assert.equal(r.status,200);
     const body=await r.json();
-    assert.equal(body.foundation_version,"1.9");
+    assert.equal(body.foundation_version,"1.13");
     assert.equal(body.summary.tenants_total,0);
     assert.equal(body.summary.assignments_total,0);
     assert.equal(body.summary.payment_compliance_active,false);
     assert.deepEqual(body.tenants,[]);
     assert.deepEqual(body.numbers,[]);
     assert.deepEqual(body.settlements,[]);
+    assert.equal(body.scale.bucket_capacity,4096);
+    assert.equal(body.scale.call_fact_partitions,64);
+    assert.equal(body.scale.clusters_ready,1);
   });
 });
 
