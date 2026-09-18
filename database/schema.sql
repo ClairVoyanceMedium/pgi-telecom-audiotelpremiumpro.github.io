@@ -227,6 +227,8 @@ CREATE TABLE experts (
   status text NOT NULL DEFAULT 'offline' CHECK (status IN ('available','busy','away','offline')),
   compensation_type text NOT NULL DEFAULT 'per_minute' CHECK (compensation_type IN ('per_minute','percentage','fixed','none')),
   compensation_rate numeric(12,6) NOT NULL DEFAULT 0,
+  active_calls integer NOT NULL DEFAULT 0 CHECK (active_calls >= 0),
+  last_assigned_at timestamptz,
   enabled boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now()
 );
