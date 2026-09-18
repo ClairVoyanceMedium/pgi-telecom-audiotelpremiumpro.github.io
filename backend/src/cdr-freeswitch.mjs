@@ -58,7 +58,7 @@ function qualityFrom(v,stats){
     stats?.audio?.inbound?.packet_loss_percent
   );
   const jitter=firstNumber(v.rtp_audio_in_jitter_max_variance,stats?.audio?.inbound?.jitter_ms);
-  const latency=firstNumber(v.rtp_audio_in_mos,stats?.audio?.inbound?.latency_ms);
+  const latency=firstNumber(stats?.audio?.inbound?.latency_ms);
   const mos=firstNumber(v.rtp_audio_in_mos,stats?.audio?.inbound?.mos);
   if(packetLoss==null&&jitter==null&&latency==null&&mos==null)return null;
   return {packet_loss_percent:packetLoss,jitter_ms:jitter,latency_ms:latency,mos};
