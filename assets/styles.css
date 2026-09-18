@@ -491,3 +491,28 @@ dialog::backdrop{background:rgba(0,0,0,.7);backdrop-filter:blur(5px)}
   .network-mix{grid-template-columns:1fr}
   .donut{margin:auto}
 }
+
+
+.mobile-sheet-dialog{padding:0;border:0;background:transparent;color:var(--text)}
+.mobile-sheet-dialog::backdrop{background:rgba(0,0,0,.68);backdrop-filter:blur(7px)}
+.mobile-sheet{
+  width:min(520px,100vw);margin:auto 0 0;padding:12px 14px calc(18px + env(safe-area-inset-bottom));
+  border:1px solid var(--border-strong);border-bottom:0;border-radius:24px 24px 0 0;
+  background:linear-gradient(180deg,#0d1423,#080d17);box-shadow:0 -24px 70px rgba(0,0,0,.5)
+}
+.mobile-sheet-handle{width:44px;height:4px;margin:0 auto 16px;border-radius:99px;background:#293750}
+.mobile-sheet-grid{display:grid;grid-template-columns:1fr;gap:8px}
+.mobile-sheet-grid button{
+  display:grid;grid-template-columns:38px 1fr;grid-template-rows:auto auto;column-gap:10px;
+  min-height:68px;padding:11px 12px;text-align:left;border:1px solid var(--border);border-radius:14px;
+  background:rgba(255,255,255,.018);color:var(--text);cursor:pointer
+}
+.mobile-sheet-grid button>span{
+  grid-row:1/3;width:36px;height:36px;border-radius:11px;display:grid;place-items:center;align-self:center;
+  background:rgba(0,212,255,.07);color:var(--cyan);font-size:16px
+}
+.mobile-sheet-grid strong{font-size:11px;align-self:end}
+.mobile-sheet-grid small{font-size:8px;color:var(--muted);align-self:start;margin-top:3px}
+@media (min-width:821px){
+  .mobile-sheet-dialog{display:none}
+}
