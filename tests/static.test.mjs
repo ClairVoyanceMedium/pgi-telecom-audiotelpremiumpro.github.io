@@ -147,3 +147,27 @@ test("le nom produit est visible dans l’en-tête mobile", () => {
   assert.match(index, /class="product-name">PGI • Telecom - Audiotel Premium Pro/);
   assert.match(css, /Product identity in responsive header/);
 });
+
+
+test("l’optimisation mobile Android et iOS est verrouillée", () => {
+  assert.match(index, /viewport-fit=cover/);
+  assert.match(index, /mobile-web-app-capable/);
+  assert.match(index, /apple-mobile-web-app-capable/);
+  assert.match(index, /apple-mobile-web-app-title/);
+  assert.match(css, /PGI 1\.11 — Mobile Perfection Layer/);
+  assert.match(css, /100dvh/);
+  assert.match(css, /safe-area-inset-top/);
+  assert.match(css, /safe-area-inset-bottom/);
+  assert.match(css, /min-height:44px/);
+  assert.match(css, /font-size:16px/);
+  assert.match(css, /-webkit-overflow-scrolling:touch/);
+  assert.match(css, /orientation:landscape/);
+  assert.match(css, /pointer:coarse/);
+});
+
+test("la vue mobile essentielle reste disponible", () => {
+  assert.ok(index.includes('id="mobile-overview-toggle"'));
+  assert.match(app, /readMobileOverviewPreference/);
+  assert.match(app, /applyMobileOverviewMode/);
+  assert.match(app, /pgi_mobile_overview_expanded/);
+});
