@@ -44,21 +44,50 @@ export class PostgresStore{
 
   async summary(from,to,market=null){
     const rows=await this.readSql.unsafe(
-      "SELECT COALESCE(sum(retail_service_amount_ttc),0)::float8 AS generated_revenue_ttc,"+
+      "WITH bounds AS ("+
+      " SELECT $1::timestamptz AS from_ts,$2::timestamptz AS to_ts,"+
+      " CASE WHEN $1::timestamptz=date_trunc('hour',$1::timestamptz)"+
+      " THEN $1::timestamptz ELSE date_trunc('hour',$1::timestamptz)+interval '1 hour' END AS full_from,"+
+      " date_trunc('hour',$2::timestamptz) AS full_to,"+
+      " (SELECT id FROM operating_markets WHERE country_code=$3) AS market_id"+
+      "), rollup_rows AS ("+
+      " SELECT r.calls_total,r.calls_connected,r.calls_abandoned,r.calls_failed,r.conversation_seconds,"+
+      " r.billable_seconds,r.payout_eligible_seconds,r.generated_revenue_ttc,r.expected_payout_ht,"+
+      " r.confirmed_payout_ht,r.paid_payout_ht,r.expert_cost_ht,r.technical_cost_ht,"+
+      " r.estimated_margin_ht,r.reconciliation_variance_ht"+
+      " FROM platform_rollups_hourly_sharded r CROSS JOIN bounds b"+
+      " WHERE b.full_to>b.full_from AND r.bucket_start>=b.full_from AND r.bucket_start<b.full_to"+
+      " AND ($3::text IS NULL OR r.market_id=b.market_id)"+
+      "), edge_rows AS ("+
+      " SELECT 1::bigint AS calls_total,"+
+      " (f.call_status='connected')::int::bigint AS calls_connected,"+
+      " (f.call_status='abandoned')::int::bigint AS calls_abandoned,"+
+      " (f.call_status NOT IN ('connected','abandoned'))::int::bigint AS calls_failed,"+
+      " f.conversation_seconds::bigint,f.billable_seconds::bigint,f.payout_eligible_seconds::bigint,"+
+      " f.retail_service_amount_ttc AS generated_revenue_ttc,f.expected_payout_ht,f.confirmed_payout_ht,"+
+      " f.paid_payout_ht,f.expert_cost_ht,f.technical_cost_ht,f.estimated_margin_ht,f.reconciliation_variance_ht"+
+      " FROM call_facts f CROSS JOIN bounds b"+
+      " WHERE f.started_at>=b.from_ts AND f.started_at<=b.to_ts"+
+      " AND NOT (b.full_to>b.full_from AND f.started_at>=b.full_from AND f.started_at<b.full_to)"+
+      " AND ($3::text IS NULL OR f.market_id=b.market_id)"+
+      "), combined AS ("+
+      " SELECT * FROM rollup_rows UNION ALL SELECT * FROM edge_rows"+
+      ") SELECT"+
+      " COALESCE(sum(generated_revenue_ttc),0)::float8 AS generated_revenue_ttc,"+
       " COALESCE(sum(expected_payout_ht),0)::float8 AS expected_payout_ht,"+
       " COALESCE(sum(confirmed_payout_ht),0)::float8 AS confirmed_payout_ht,"+
       " COALESCE(sum(paid_payout_ht),0)::float8 AS paid_payout_ht,"+
       " COALESCE(sum(estimated_margin_ht),0)::float8 AS estimated_margin_ht,"+
       " COALESCE(sum(reconciliation_variance_ht),0)::float8 AS reconciliation_variance_ht,"+
-      " count(*)::int AS calls_total,"+
-      " count(*) FILTER (WHERE call_status='connected')::int AS calls_connected,"+
-      " count(*) FILTER (WHERE call_status='abandoned')::int AS calls_abandoned,"+
-      " count(*) FILTER (WHERE call_status NOT IN ('connected','abandoned'))::int AS calls_failed,"+
+      " COALESCE(sum(calls_total),0)::bigint AS calls_total,"+
+      " COALESCE(sum(calls_connected),0)::bigint AS calls_connected,"+
+      " COALESCE(sum(calls_abandoned),0)::bigint AS calls_abandoned,"+
+      " COALESCE(sum(calls_failed),0)::bigint AS calls_failed,"+
       " COALESCE(sum(billable_seconds),0)::float8/60.0 AS billable_minutes,"+
       " COALESCE(sum(payout_eligible_seconds),0)::float8/60.0 AS payout_eligible_minutes,"+
-      " COALESCE(avg(conversation_seconds) FILTER (WHERE call_status='connected'),0)::float8 AS acd_seconds"+
-      " FROM call_facts WHERE started_at >= $1::timestamptz AND started_at <= $2::timestamptz"+
-      " AND ($3::text IS NULL OR market_id=(SELECT id FROM operating_markets WHERE country_code=$3))",
+      " CASE WHEN COALESCE(sum(calls_connected),0)>0"+
+      " THEN COALESCE(sum(conversation_seconds),0)::float8/sum(calls_connected) ELSE 0 END AS acd_seconds"+
+      " FROM combined",
       [from,to,market||null]
     );
     const presence=await this.readSql.unsafe(
@@ -68,7 +97,7 @@ export class PostgresStore{
     const r=rows[0],p=presence[0];
     return {
       ...r,
-      asr_percent:r.calls_total?Number(r.calls_connected)/Number(r.calls_total)*100:0,
+      asr_percent:Number(r.calls_total)?Number(r.calls_connected)/Number(r.calls_total)*100:0,
       active_experts:p.active_experts,
       live_calls:p.live_calls,
       queue_depth:0
@@ -334,7 +363,7 @@ export class PostgresStore{
         " VALUES($1,$2,$3,$4,$5,$6,$7,$8::timestamptz,$9::timestamptz,$10::timestamptz,$11::timestamptz,$12::timestamptz,"+
         " $13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36)"+
         " ON CONFLICT(host_carrier_id,external_call_id) WHERE host_carrier_id IS NOT NULL AND external_call_id IS NOT NULL"+
-        " DO NOTHING RETURNING id",
+        " DO NOTHING RETURNING id,tenant_bucket",
         callValues
       );
       const call=callRows[0];
@@ -356,6 +385,8 @@ export class PostgresStore{
         " ON CONFLICT (tenant_bucket,call_id) DO NOTHING",
         [call.id]
       );
+
+      await writeHourlyRollup(tx,call.id);
 
       if(p.quality){
         await tx.unsafe(
