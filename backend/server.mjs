@@ -481,14 +481,15 @@ function openEventStream(req,res,eventBus,requestId,config,clients){
 function closeHttpServer(server,graceMs){
   return new Promise(resolve=>{
     let settled=false;
+    let timer=null;
     const finish=()=>{
       if(settled)return;
       settled=true;
-      clearTimeout(timer);
+      if(timer)clearTimeout(timer);
       resolve();
     };
     server.close(finish);
-    const timer=setTimeout(()=>{
+    timer=setTimeout(()=>{
       server.closeAllConnections?.();
       finish();
     },Math.max(1000,graceMs));
