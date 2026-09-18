@@ -64,6 +64,7 @@
           expertCost:billable*CONFIG.expertCostPerMin,cost:CONFIG.fixedCostPerCall,
           expertCostHt:billable*CONFIG.expertCostPerMin,technicalCostHt:CONFIG.fixedCostPerCall,
           serviceAmount:financial.serviceAmountTtc,serviceAmountTtc:financial.serviceAmountTtc,
+          serviceRate:CONFIG.serviceRate,carrierRate:CONFIG.payoutRate,
           variance:Math.max(0,expected-confirmed),
           sipFinalCode:status==="connected"?200:(status==="abandoned"?487:503),
           hangupCause:status==="connected"?"NORMAL_CLEARING":(status==="abandoned"?"ORIGINATOR_CANCEL":"NORMAL_TEMPORARY_FAILURE"),
@@ -102,6 +103,7 @@
       paidPayoutHt:Number(c.paid_payout_ht||0),expertCost:Number(c.expert_cost_ht||0),cost:Number(c.technical_cost_ht||0),
       expertCostHt:Number(c.expert_cost_ht||0),technicalCostHt:Number(c.technical_cost_ht||0),
       serviceAmount:Number(c.retail_service_amount_ttc||0),serviceAmountTtc:Number(c.retail_service_amount_ttc||0),
+      serviceRate:Number(c.service_rate_ttc_per_min||0),carrierRate:Number(c.carrier_rate_ht_per_min||0),
       variance:Number(c.reconciliation_variance_ht||0),sipFinalCode:Number(c.sip_final_code||0),
       hangupCause:c.hangup_cause||"—",codec:c.codec||"—",
       packetLoss:Number(q.packet_loss_percent||0),jitter:Number(q.jitter_ms||0),latency:Number(q.latency_ms||0),mos:Number(q.mos||0)
@@ -318,6 +320,30 @@
 
   function setText(id,val){var e=$(id);if(e)e.textContent=val;}
 
+  function effectiveRate(rows,amountKey,secondsKey){
+    var amount=0,seconds=0;
+    rows.forEach(function(x){
+      amount+=Number(x[amountKey]||0);
+      seconds+=Number(x[secondsKey]||0);
+    });
+    return seconds>0?amount/(seconds/60):0;
+  }
+
+  function renderFinancialSettings(rows){
+    var service=effectiveRate(rows,"serviceAmountTtc","billableSeconds");
+    var payout=effectiveRate(rows,"expectedPayoutHt","payoutEligibleSeconds");
+    var expert=effectiveRate(rows,"expertCostHt","billableSeconds");
+    setText("settings-finance-kicker",RUNTIME.mode==="production"?"CONFIGURATION RÉELLE":"CONFIGURATION DÉMO");
+    setText("settings-finance-title",RUNTIME.mode==="production"?"Taux observés sur la période":"Hypothèses financières");
+    setText("settings-service-rate",money(service)+"/min");
+    setText("settings-payout-rate",money(payout)+"/min");
+    setText("settings-expert-rate",money(expert)+"/min");
+    setText("settings-finance-note",RUNTIME.mode==="production"
+      ?"Taux effectifs dérivés des CDR et écritures financières de la période sélectionnée."
+      :"Valeurs utilisées uniquement pour générer les données de démonstration.");
+  }
+
+
   function revenueTrendPercent(currentRows){
     if(state.baseline)return null;
     var range=getRange(),now=new Date();
@@ -347,7 +373,7 @@
     setText("kpi-abandon",nfmt(a.abandoned)+" abandons");
     setText("kpi-experts",String(Math.min(experts.length,Math.max(0,new Set(rows.filter(function(x){return x.status==="connected";}).map(function(x){return x.expert;})).size))));
     setText("kpi-live","Historique sélectionné");
-    setText("kpi-rate","Taux moyen : "+money(CONFIG.payoutRate)+"/min");
+    setText("kpi-rate","Taux moyen : "+money(effectiveRate(rows,"expectedPayoutHt","payoutEligibleSeconds"))+"/min");
     setText("fin-ca",money(a.ca));
     setText("fin-expected",money(a.expected));
     setText("fin-confirmed",money(a.confirmed));
@@ -626,7 +652,7 @@
     rows.slice().reverse().forEach(function(c){
       var k=bucketKey(c.ts,r);
       if(!map[k])map[k]={label:k,ca:0,payout:0};
-      if(c.status==="connected"){map[k].ca+=c.billable*CONFIG.serviceRate;map[k].payout+=c.expected;}
+      if(c.status==="connected"){map[k].ca+=Number(c.serviceAmountTtc||0);map[k].payout+=Number(c.expectedPayoutHt||0);}
     });
     var vals=Object.keys(map).map(function(k){return map[k];});
     if(vals.length>14){
@@ -776,6 +802,7 @@
     renderHostCarrier();
     renderCarriers(rows);
     renderRecon(rows);
+    renderFinancialSettings(rows);
     renderResetLog();
     var now=new Date();
     state.diagnostics.lastRenderMs=Math.max(0,performance.now()-started);
