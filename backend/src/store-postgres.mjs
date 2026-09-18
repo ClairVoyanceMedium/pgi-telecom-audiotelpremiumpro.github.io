@@ -83,7 +83,7 @@ export class PostgresStore{
       params.origin_carrier||null,params.status||null,params.market||null,
       cursor?.started_at||null,cursor?.id||null,limit+1
     ];
-    const rows=await this.readSql.unsafe(
+    const rows=await this.sql.unsafe(
       "SELECT c.id,c.external_call_id,c.started_at,c.ivr_started_at,c.queued_at,c.bridged_at,c.ended_at,"+
       " ca.caller_masked,oc.name AS origin_carrier,hc.name AS host_carrier,sn.display_number AS sva_number,"+
       " c.currency,m.country_code AS market,e.id AS expert_id,e.display_name AS expert_name,c.wait_seconds,c.conversation_seconds,c.total_seconds,"+
@@ -580,7 +580,7 @@ export class PostgresStore{
   }
 
   async reconciliation(from,to,market=null){
-    return this.readSql.unsafe(
+    return this.sql.unsafe(
       "SELECT COALESCE(hc.name,'Unknown') AS carrier,count(*)::int AS calls,"+
       " COALESCE(sum(f.expected_payout_ht),0)::float8 AS expected_payout_ht,"+
       " COALESCE(sum(f.confirmed_payout_ht),0)::float8 AS confirmed_payout_ht,"+
