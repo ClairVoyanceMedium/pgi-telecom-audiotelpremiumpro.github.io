@@ -244,8 +244,8 @@ export class MemoryStore{
       confirmed_payout_ht:confirmed,
       paid_payout_ht:paid,
       expert_cost_ht:(financial.billableSeconds/60)*this.config.expertCostHtPerMin,
-      technical_cost_ht:Number(p.technical_cost_ht||0),
-      estimated_margin_ht:Math.max(0,(confirmed||0)-(financial.billableSeconds/60)*this.config.expertCostHtPerMin-Number(p.technical_cost_ht||0)),
+      technical_cost_ht:Number(this.config.technicalCostHtPerCall||0),
+      estimated_margin_ht:Math.max(0,(confirmed||0)-(financial.billableSeconds/60)*this.config.expertCostHtPerMin-Number(this.config.technicalCostHtPerCall||0)),
       reconciliation_variance_ht:reconciliation?reconciliation.varianceHt:0,
       reconciliation_status:reconciliation?reconciliation.status:"pending",
       quality:p.quality||null
