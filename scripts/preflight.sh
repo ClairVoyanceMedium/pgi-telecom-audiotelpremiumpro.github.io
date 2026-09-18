@@ -3,6 +3,18 @@ set -euo pipefail
 
 fail=0
 
+if [ -n "${PGI_ENV_FILE:-}" ]; then
+  if [ ! -r "$PGI_ENV_FILE" ]; then
+    echo "FAIL environment file is not readable: $PGI_ENV_FILE"
+    exit 1
+  fi
+  set -a
+  # Trusted administrator-owned production environment file.
+  # shellcheck disable=SC1090
+  source "$PGI_ENV_FILE"
+  set +a
+fi
+
 need_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "FAIL missing command: $1"
