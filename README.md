@@ -4,7 +4,7 @@ Cockpit Audiotel, financier et télécom de PGI Telecom.
 
 ## État actuel
 
-Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.14.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
+Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.15.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
 
 Fonctions déjà présentes :
 
@@ -194,7 +194,7 @@ Les numéros utilisent E.164 comme identité canonique avec alias opérateur exp
 Voir `docs/INTERNATIONAL.md` pour la procédure d'ouverture d'un nouveau marché.
 
 
-## Hyperscale 1.14
+## Hyperscale 1.15
 
 Le socle est préparé pour une croissance jusqu'à plusieurs millions de tenants sans dupliquer l'application :
 
@@ -230,3 +230,30 @@ La plateforme ajoute une couche d'exploitation destinée aux très grandes volum
 La présence de ces structures ne simule jamais une capacité réellement provisionnée : le cockpit reste à une région tant qu'une seconde région n'a pas été déployée et validée.
 
 Voir `docs/RESILIENCE.md`.
+
+
+## Cockpit Intelligence 1.15
+
+La page principale est désormais le **Cockpit** et la vue technique est nommée **Supervision**.
+
+Le Cockpit ajoute une couche analytique dense pilotée par le backend :
+
+- CA et reversement ;
+- appels et minutes ;
+- ASR et abandons ;
+- heatmap jour × heure ;
+- répartition horaire ;
+- répartition hebdomadaire ;
+- statuts d'appels ;
+- distribution des durées ;
+- contribution experts ;
+- contribution opérateurs ;
+- économie unitaire par appel et par minute ;
+- qualité voix MOS, perte de paquets, jitter et latence ;
+- entonnoir d'appels ;
+- comparaison à la période précédente ;
+- activité temps réel, alertes, NOC et résilience.
+
+En production, les graphiques principaux lisent des agrégats PostgreSQL bornés plutôt que de télécharger l'historique CDR complet dans le navigateur. Le détail des appels reste volontairement limité et paginé.
+
+Voir `docs/COCKPIT.md`.
