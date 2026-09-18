@@ -10,6 +10,9 @@ export function loadConfig(env=process.env){
   const sessionSecret=env.PGI_SESSION_SECRET||"";
   const adminPasswordHash=env.PGI_ADMIN_PASSWORD_HASH||"";
   const ingestToken=env.PGI_INGEST_TOKEN||"";
+  const telephonyUser=env.PGI_TELEPHONY_USER||"";
+  const telephonyPassword=env.PGI_TELEPHONY_PASSWORD||"";
+  const callerHashKey=env.PGI_CALLER_HASH_KEY||"";
   const databaseUrl=env.PGI_DATABASE_URL||buildDatabaseUrl(env);
   const databaseSsl=(env.PGI_DATABASE_SSL||"disable").toLowerCase();
   if(!["disable","require"].includes(databaseSsl))throw new Error("PGI_DATABASE_SSL must be disable or require");
@@ -19,12 +22,14 @@ export function loadConfig(env=process.env){
     if(sessionSecret.length<32)throw new Error("production requires PGI_SESSION_SECRET >= 32 characters");
     if(!adminPasswordHash)throw new Error("production requires PGI_ADMIN_PASSWORD_HASH");
     if(ingestToken.length<24)throw new Error("production requires PGI_INGEST_TOKEN >= 24 characters");
+    if(telephonyUser.length<3||telephonyPassword.length<24)throw new Error("production requires PGI_TELEPHONY_USER and PGI_TELEPHONY_PASSWORD >= 24 characters");
+    if(callerHashKey.length<32)throw new Error("production requires PGI_CALLER_HASH_KEY >= 32 characters");
     if(!databaseUrl)throw new Error("production requires PGI_DATABASE_URL or POSTGRES_* variables");
   }
 
   return Object.freeze({
     mode,authMode,host,port,
-    sessionSecret,adminPasswordHash,ingestToken,databaseUrl,databaseSsl,
+    sessionSecret,adminPasswordHash,ingestToken,telephonyUser,telephonyPassword,callerHashKey,databaseUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),
     bodyLimitBytes:integer(env.PGI_BODY_LIMIT_BYTES,262144,4096,10485760,"PGI_BODY_LIMIT_BYTES"),
