@@ -84,18 +84,58 @@
             <div><span>Release</span><strong id="command-release">—</strong></div>
           </div>
         </section>
-        <section class="wholesale-pulse" aria-label="Synthèse plateforme SVA">
-          <div>
-            <p class="panel-kicker">WHOLESALE SVA</p>
-            <strong id="overview-wh-state">Fondation prête</strong>
-            <small>Supervision multi-éditeurs sans inventer de trafic ni de clients.</small>
+        <section class="activation-center" aria-label="Centre de lancement SVA">
+          <div class="activation-top">
+            <div>
+              <p class="panel-kicker">CENTRE DE LANCEMENT SVA</p>
+              <h2 id="activation-title">Préparation du lancement 089</h2>
+              <p id="activation-detail">PGI vérifie automatiquement les prérequis opérateur, numérotation, SIP et conformité.</p>
+            </div>
+            <div class="activation-score">
+              <strong id="activation-steps">0/4</strong>
+              <span>étapes prêtes</span>
+            </div>
           </div>
-          <div class="wholesale-pulse-metrics">
-            <span><small>Clients</small><strong id="overview-wh-tenants">0</strong></span>
-            <span><small>089</small><strong id="overview-wh-numbers">0</strong></span>
-            <span><small>KYC attente</small><strong id="overview-wh-kyc">0</strong></span>
+          <div class="activation-progress" aria-hidden="true"><i id="activation-progress-bar"></i></div>
+
+          <div class="activation-gates">
+            <button type="button" data-go="carriers">
+              <span class="gate-icon">1</span>
+              <span><small>Opérateur amont</small><strong id="gate-carrier">À contractualiser</strong></span>
+              <i id="gate-carrier-state">À FAIRE</i>
+            </button>
+            <button type="button" data-go="wholesale">
+              <span class="gate-icon">2</span>
+              <span><small>Numérotation 089</small><strong id="gate-number">Aucun numéro réel</strong></span>
+              <i id="gate-number-state">À FAIRE</i>
+            </button>
+            <button type="button" data-go="system">
+              <span class="gate-icon">3</span>
+              <span><small>SIP & routage</small><strong id="gate-sip">Non connecté</strong></span>
+              <i id="gate-sip-state">À FAIRE</i>
+            </button>
+            <button type="button" data-go="wholesale">
+              <span class="gate-icon">4</span>
+              <span><small>Multi-clients</small><strong id="gate-compliance">Fondation prête</strong></span>
+              <i id="gate-compliance-state">PRÊT</i>
+            </button>
           </div>
-          <button class="secondary-btn" data-go="wholesale" type="button">Ouvrir la plateforme SVA</button>
+
+          <div class="priority-action">
+            <div class="priority-copy">
+              <p class="panel-kicker">ACTION PRIORITAIRE</p>
+              <strong id="priority-action-title">Finaliser l’opérateur SVA amont</strong>
+              <small id="priority-action-detail">Le dashboard basculera automatiquement sur l’étape suivante dès que la route opérateur sera configurée.</small>
+            </div>
+            <button class="priority-btn" id="priority-action-btn" data-go="carriers" type="button">Ouvrir</button>
+          </div>
+
+          <div class="business-snapshot">
+            <div><small>Clients</small><strong id="overview-wh-tenants">0</strong><span id="overview-wh-state">Fondation prête</span></div>
+            <div><small>089 affectés</small><strong id="overview-wh-numbers">0</strong><span id="overview-wh-stock">0 libres</span></div>
+            <div><small>KYC attente</small><strong id="overview-wh-kyc">0</strong><span id="overview-wh-kyc-state">Aucun dossier</span></div>
+            <div><small>Net clients</small><strong id="overview-wh-net">0,00 €</strong><span id="overview-wh-payment-state">Paiements non activés</span></div>
+          </div>
         </section>
         <section class="kpi-grid">
           <article class="kpi emphasis"><div class="kpi-head"><span>CA généré</span><span class="trend up" id="ca-trend">+0%</span></div><strong id="kpi-ca">0,00 €</strong><small>Service D080 TTC théorique</small></article>
@@ -403,8 +443,8 @@
   <nav class="mobile-nav" aria-label="Navigation mobile">
     <button class="active" data-view="overview"><span>⌂</span><small>Accueil</small></button>
     <button data-view="calls"><span>◫</span><small>Appels</small></button>
+    <button class="mobile-sva" data-view="wholesale"><span>◇</span><small>SVA</small></button>
     <button data-view="finance"><span>€</span><small>Finance</small></button>
-    <button data-view="experts"><span>◎</span><small>Experts</small></button>
     <button id="mobile-more" type="button"><span>•••</span><small>Plus</small></button>
   </nav>
 
@@ -416,6 +456,7 @@
         <button class="icon-btn" value="cancel" aria-label="Fermer">×</button>
       </div>
       <div class="mobile-sheet-grid">
+        <button value="cancel" data-view="experts"><span>◎</span><strong>Experts</strong><small>Disponibilité, performance, contribution</small></button>
         <button value="cancel" data-view="carriers"><span>⇄</span><strong>Opérateurs</strong><small>SVA, routes, portabilité</small></button>
         <button value="cancel" data-view="wholesale"><span>◇</span><strong>Plateforme SVA</strong><small>Clients, KYC, numéros, reversements</small></button>
         <button value="cancel" data-view="system"><span>⌁</span><strong>Système</strong><small>NOC, API, CDR, SIP</small></button>
