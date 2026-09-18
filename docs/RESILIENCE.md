@@ -131,3 +131,18 @@ Les seuils doivent être recalibrés après mesures réelles et revus par route 
 La présence d'une structure multi-région dans le code ne signifie pas que plusieurs régions sont réellement actives.
 
 Le cockpit doit refléter l'état réel : une seule région reste affichée tant qu'aucune seconde région n'a été réellement provisionnée, testée et déclarée prête.
+
+
+## Durabilité de facturation
+
+Les événements d'usage servant aux abonnements ou quotas sont append-only et idempotents.
+
+Une fermeture de tenant ne supprime pas automatiquement les références de facturation historiques. La suppression ou anonymisation doit suivre les politiques de conservation applicables.
+
+## Données volumineuses et documents
+
+Les gros documents sont référencés dans `object_assets` et stockés hors PostgreSQL.
+
+Chaque objet peut porter une classification, une région de stockage, un checksum SHA-256, une portée de chiffrement, une date de rétention et un legal hold.
+
+Cette séparation limite la croissance de PostgreSQL et permet des politiques de cycle de vie propres au stockage objet.
