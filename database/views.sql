@@ -11,6 +11,7 @@ SELECT
   coalesce(sum(retail_service_amount_ttc),0) AS generated_revenue_ttc,
   coalesce(sum(expected_payout_ht),0) AS expected_payout_ht,
   coalesce(sum(confirmed_payout_ht),0) AS confirmed_payout_ht,
+  coalesce(sum(paid_payout_ht),0) AS paid_payout_ht,
   coalesce(sum(expert_cost_ht),0) AS expert_cost_ht,
   coalesce(sum(technical_cost_ht),0) AS technical_cost_ht,
   coalesce(sum(estimated_margin_ht),0) AS estimated_margin_ht,
@@ -28,6 +29,8 @@ SELECT
   coalesce(sum(conversation_seconds),0) AS conversation_seconds,
   coalesce(sum(billable_seconds),0) AS billable_seconds,
   coalesce(sum(expected_payout_ht),0) AS expected_payout_ht,
+  coalesce(sum(confirmed_payout_ht),0) AS confirmed_payout_ht,
+  coalesce(sum(paid_payout_ht),0) AS paid_payout_ht,
   coalesce(sum(expert_cost_ht),0) AS expert_cost_ht,
   coalesce(sum(estimated_margin_ht),0) AS estimated_margin_ht,
   avg(conversation_seconds) FILTER (WHERE call_status='connected') AS acd_seconds
@@ -41,6 +44,7 @@ SELECT
   count(*) AS calls_total,
   coalesce(sum(expected_payout_ht),0) AS expected_payout_ht,
   coalesce(sum(confirmed_payout_ht),0) AS confirmed_payout_ht,
+  coalesce(sum(paid_payout_ht),0) AS paid_payout_ht,
   coalesce(sum(reconciliation_variance_ht),0) AS variance_ht,
   count(*) FILTER (WHERE reconciliation_status='variance') AS variance_calls
 FROM calls
