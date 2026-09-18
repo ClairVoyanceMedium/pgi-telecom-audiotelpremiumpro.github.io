@@ -515,10 +515,18 @@ async function metricsResponse(res,metrics,store,workers){
     "pgi_worker_outbox_errors_total "+Number(workers?.stats?.outboxErrors||0),
     "# TYPE pgi_worker_alert_errors_total counter",
     "pgi_worker_alert_errors_total "+Number(workers?.stats?.alertsErrors||0),
+    "# TYPE pgi_worker_queue_errors_total counter",
+    "pgi_worker_queue_errors_total "+Number(workers?.stats?.queueErrors||0),
+    "# TYPE pgi_worker_queue_processed_total counter",
+    "pgi_worker_queue_processed_total "+Number(workers?.stats?.queueProcessed||0),
+    "# TYPE pgi_worker_queue_dead_letters_total counter",
+    "pgi_worker_queue_dead_letters_total "+Number(workers?.stats?.queueDeadLetters||0),
     "# TYPE pgi_worker_outbox_last_success_unixtime gauge",
     "pgi_worker_outbox_last_success_unixtime "+timestampMetric(workers?.stats?.lastOutboxSuccessAt),
     "# TYPE pgi_worker_alerts_last_success_unixtime gauge",
     "pgi_worker_alerts_last_success_unixtime "+timestampMetric(workers?.stats?.lastAlertsSuccessAt),
+    "# TYPE pgi_worker_queue_last_success_unixtime gauge",
+    "pgi_worker_queue_last_success_unixtime "+timestampMetric(workers?.stats?.lastQueueSuccessAt),
     "# TYPE pgi_work_queue_pending gauge",
     "pgi_work_queue_pending "+Number(queue.pending||0),
     "# TYPE pgi_work_queue_leased gauge",
@@ -530,6 +538,15 @@ async function metricsResponse(res,metrics,store,workers){
     "# TYPE pgi_process_uptime_seconds gauge",
     "pgi_process_uptime_seconds "+((Date.now()-metrics.startedAt)/1000).toFixed(3)
   ];
+  lines.push("# TYPE pgi_http_responses_total counter");
+  for(const [status,count] of metrics.byStatus){
+    lines.push('pgi_http_responses_total{status="'+promLabel(status)+'"} '+count);
+  }
+  lines.push("# TYPE pgi_http_route_requests_total counter");
+  for(const [route,count] of metrics.byRoute){
+    lines.push('pgi_http_route_requests_total{route="'+promLabel(route)+'"} '+count);
+  }
+  lines.push("# TYPE pgi_http_request_duration_ms histogram");
   for(const [route,h] of metrics.latencyByRoute){
     const label=promLabel(route);
     let cumulative=0;
