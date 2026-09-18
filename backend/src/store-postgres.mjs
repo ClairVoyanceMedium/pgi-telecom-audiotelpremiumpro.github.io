@@ -174,17 +174,6 @@ export class PostgresStore{
 
       const status=p.call_status||"connected";
       const conversation=Math.max(0,Number(p.conversation_seconds||0));
-      const financial=status==="connected"?core.computeCallFinancials(
-        {conversationSeconds:conversation,originType:p.origin_type||"unknown"},
-        {
-          serviceRateTtcPerMin:this.config.serviceRateTtcPerMin,
-          payoutRateHtPerMin:this.config.payoutRateHtPerMin,
-          mobileDeductionHtPerMin:Number(p.mobile_deduction_ht_per_min||0),
-          billingIncrementSeconds:Number(p.billing_increment_seconds||60),
-          minimumPayableSeconds:Number(p.minimum_payable_seconds||0),
-          rounding:p.payout_rounding||"ceil"
-        }
-      ):{billableSeconds:0,payoutEligibleSeconds:0,serviceAmountTtc:0,expectedPayoutHt:0};
 
       let hostRows;
       if(p.host_carrier){
@@ -206,11 +195,42 @@ export class PostgresStore{
       const origin=originRows[0];
 
       const svaRows=await tx.unsafe(
-        "SELECT id,e164,display_number FROM sva_numbers WHERE e164=$1 OR display_number=$1 LIMIT 1",
+        "SELECT id,e164,display_number,service_rate_ttc_per_min::float8 FROM sva_numbers WHERE e164=$1 OR display_number=$1 LIMIT 1",
         [String(p.sva_number||"")]
       );
       const sva=svaRows[0];
       if(!sva)throw problem(409,"SVA_NUMBER_NOT_CONFIGURED");
+
+      const contractRows=await tx.unsafe(
+        "SELECT id,payout_rate_ht_per_min::float8,mobile_deduction_ht_per_min::float8,"+
+        " minimum_payable_seconds,billing_increment_seconds,payout_rounding,settlement_delay_days"+
+        " FROM carrier_contracts WHERE carrier_id=$1"+
+        " AND (sva_number_id IS NULL OR sva_number_id=$2)"+
+        " AND valid_from <= $3::timestamptz::date"+
+        " AND (valid_to IS NULL OR valid_to >= $3::timestamptz::date)"+
+        " ORDER BY (sva_number_id IS NOT NULL) DESC,valid_from DESC,id DESC LIMIT 1",
+        [host.id,sva.id,p.started_at]
+      );
+      const contract=contractRows[0]||null;
+      if(this.config.requireCarrierContract&&!contract)throw problem(409,"CARRIER_CONTRACT_NOT_CONFIGURED");
+
+      const serviceRate=Number(sva.service_rate_ttc_per_min??this.config.serviceRateTtcPerMin);
+      const payoutRate=Number(contract?.payout_rate_ht_per_min??this.config.payoutRateHtPerMin);
+      const mobileDeduction=Number(contract?.mobile_deduction_ht_per_min??0);
+      const billingIncrement=Number(contract?.billing_increment_seconds??60);
+      const minimumPayable=Number(contract?.minimum_payable_seconds??0);
+      const payoutRounding=contract?.payout_rounding==="floor"?"floor":contract?.payout_rounding==="nearest"?"nearest":"ceil";
+      const financial=status==="connected"?core.computeCallFinancials(
+        {conversationSeconds:conversation,originType:p.origin_type||"unknown"},
+        {
+          serviceRateTtcPerMin:serviceRate,
+          payoutRateHtPerMin:payoutRate,
+          mobileDeductionHtPerMin:mobileDeduction,
+          billingIncrementSeconds:billingIncrement,
+          minimumPayableSeconds:minimumPayable,
+          rounding:payoutRounding
+        }
+      ):{billableSeconds:0,payoutEligibleSeconds:0,serviceAmountTtc:0,expectedPayoutHt:0};
 
       const callerHash=deriveCallerHash(p,{key:this.config.callerHashKey,source:envelope.source,sourceEventId:envelope.source_event_id});
       const callerRows=await tx.unsafe(
@@ -236,7 +256,7 @@ export class PostgresStore{
         p.started_at,p.ivr_started_at||null,p.queued_at||null,p.bridged_at||null,p.ended_at,
         Math.max(0,Number(p.wait_seconds||0)),conversation,totalSeconds,financial.billableSeconds,financial.payoutEligibleSeconds,
         status,p.sip_final_code==null?null:Number(p.sip_final_code),String(p.hangup_cause||""),String(p.codec||""),
-        this.config.serviceRateTtcPerMin,this.config.payoutRateHtPerMin,Number(p.mobile_deduction_ht_per_min||0),
+        serviceRate,payoutRate,mobileDeduction,
         financial.serviceAmountTtc,financial.expectedPayoutHt,confirmed,paid,expertCost,technicalCost,
         Math.max(0,(confirmed||0)-expertCost-technicalCost),recon?recon.status:"pending",recon?recon.varianceHt:0
       ];
