@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pgi-telecom.invalid/schemas/carrier-adapter-v1.json",
+  "title": "PGI Telecom Carrier Adapter v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "adapterKey", "carrier", "capabilities", "sip", "cdr", "settlement"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "adapterKey": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{1,63}$" },
+    "carrier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "displayName"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z0-9_-]{2,32}$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["directSip", "cdr", "settlements", "portability"],
+      "properties": {
+        "directSip": { "type": "boolean" },
+        "cdr": { "type": "boolean" },
+        "settlements": { "type": "boolean" },
+        "portability": { "type": "boolean" },
+        "secondarySbc": { "type": "boolean", "default": false },
+        "tls": { "type": "boolean", "default": false },
+        "srtp": { "type": "boolean", "default": false }
+      }
+    },
+    "sip": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transport", "authMode", "dnIsFormat", "cliFormat", "dtmf"],
+      "properties": {
+        "transport": { "enum": ["udp", "tcp", "tls"] },
+        "authMode": { "enum": ["ip_acl", "digest", "mtls", "other"] },
+        "dnIsFormat": { "enum": ["e164", "national", "custom"] },
+        "cliFormat": { "enum": ["e164", "national", "anonymous_allowed", "custom"] },
+        "dtmf": { "enum": ["rfc2833", "sip_info", "inband", "other"] },
+        "codecs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "secretRef": {
+          "type": ["string", "null"],
+          "description": "Reference only. Never a secret value."
+        }
+      }
+    },
+    "cdr": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["delivery", "timezone", "fields"],
+      "properties": {
+        "delivery": { "enum": ["api", "sftp", "webhook", "file", "none"] },
+        "timezone": { "type": "string", "minLength": 1 },
+        "fields": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Carrier field -> canonical PGI field mapping"
+        }
+      }
+    },
+    "settlement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["delivery", "currency", "fields"],
+      "properties": {
+        "delivery": { "enum": ["api", "sftp", "email_file", "manual_file", "none"] },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "fields": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    }
+  }
+}
