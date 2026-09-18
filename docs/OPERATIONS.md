@@ -52,6 +52,14 @@ Deux sondes ont des rôles distincts :
 
 Le healthcheck Docker utilise `/ready`. Par défaut, le worker outbox doit avoir réussi dans les 15 dernières secondes et le worker alertes dans les 120 dernières secondes. Ces seuils peuvent être ajustés par environnement sans modifier le code.
 
+## Arrêt gracieux et traçabilité
+
+Lors d’un arrêt, les workers sont stoppés, les connexions SSE sont drainées et le serveur HTTP dispose de 10 secondes par défaut pour terminer les connexions restantes avant fermeture forcée.
+
+Chaque requête production écrit un log JSON minimal avec `request_id`, route logique, méthode, statut et durée. L’URL brute, les paramètres, le numéro appelant et le corps des requêtes ne sont pas journalisés.
+
+Le front et l’API exposent la version ainsi que le SHA Git exact. Après chaque déploiement, ces deux valeurs doivent correspondre au commit attendu.
+
 ## Alertes production à prévoir
 
 - trunk SIP indisponible ;
