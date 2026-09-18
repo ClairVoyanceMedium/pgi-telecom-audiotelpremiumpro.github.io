@@ -2,7 +2,7 @@
 
 ## Objectif
 
-Le socle 1.13 est conçu pour évoluer d'un déploiement mono-cluster vers une plateforme accueillant des millions de tenants sans changer l'identité des clients, les contrats API ou le modèle télécom.
+Le socle 1.14 est conçu pour évoluer d'un déploiement mono-cluster vers une plateforme accueillant des millions de tenants sans changer l'identité des clients, les contrats API ou le modèle télécom.
 
 L'objectif n'est pas de payer aujourd'hui une infrastructure dimensionnée pour des millions d'utilisateurs. L'objectif est que la montée en charge soit un changement de capacité et de placement, pas une réécriture.
 
@@ -300,3 +300,44 @@ Le bus mémoire actuel reste adapté au mode compact. Il ne constitue pas un bus
 Avant de mettre plusieurs instances API derrière un load balancer avec SSE temps réel actif, le transport d'événements doit être branché sur une implémentation partagée à partir de l'outbox durable. Le contrat producteur reste inchangé : transaction métier → outbox → transport.
 
 Cette séparation est volontaire afin de ne pas introduire aujourd'hui une dépendance Redis/Kafka coûteuse alors que le volume réel ne la justifie pas.
+
+
+## Résilience multi-région 1.14
+
+La croissance horizontale ne suffit pas si une région devient un point de panne unique.
+
+Le socle 1.14 ajoute :
+
+- `platform_regions` ;
+- `tenant_residency_policies` ;
+- `disaster_recovery_targets` ;
+- `disaster_recovery_drills` ;
+- `region_failover_events`.
+
+Chaque tenant garde une identité publique et un bucket stables, même si son placement physique change.
+
+Les objectifs RPO/RTO enregistrés sont des objectifs de conception. Ils doivent être validés par des exercices avant d'être considérés atteints.
+
+## Isolation SQL tenant 1.14
+
+Les futures API clients utilisent un contexte tenant fixé localement dans la transaction PostgreSQL et des vues `tenant_scoped_*` avec `security_barrier=true`.
+
+Cette couche complète les contrôles applicatifs ; elle ne remplace pas l'authentification ni les memberships.
+
+## Queue distribuée 1.14
+
+La `work_queue` est désormais exécutable avec :
+
+- réservation atomique ;
+- lease expirant ;
+- reprise par un autre worker ;
+- retries exponentiels ;
+- nombre maximal d'essais ;
+- dead-letter auditable ;
+- handlers explicitement enregistrés.
+
+## Observabilité SLO 1.14
+
+Les requêtes exposent une corrélation W3C `traceparent`, des histogrammes de latence par route et des compteurs HTTP.
+
+Les règles Prometheus d'exemple surveillent notamment le burn-rate du budget d'erreur, le p95, le retard CDR, l'âge des jobs et les dead letters.
