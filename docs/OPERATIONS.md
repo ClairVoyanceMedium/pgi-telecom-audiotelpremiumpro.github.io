@@ -27,7 +27,7 @@ Cibles minimales à mettre en production :
 - relevés opérateur : stockage privé immuable ;
 - secrets : gestionnaire dédié, jamais dans Git.
 
-Tester périodiquement une restauration. Une sauvegarde non restaurée n'est pas considérée comme validée.
+Le script `scripts/backup-postgres.sh` écrit d’abord un fichier temporaire, vérifie que son catalogue est lisible par `pg_restore`, puis calcule et revalide son SHA-256 avant de publier le dump. Une restauration complète dans une base isolée doit néanmoins être testée périodiquement. Une sauvegarde jamais restaurée ne constitue pas une preuve de reprise.
 
 ## Déploiement
 
