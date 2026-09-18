@@ -26,3 +26,22 @@ test("la remise à zéro est non destructive conceptuellement", () => {
 test("le thème PGI contient les couleurs fonctionnelles", () => {
   for (const token of ["--cyan","--green","--amber","--red","--purple"]) assert.ok(css.includes(token));
 });
+
+
+test("le cockpit premium avancé est présent", () => {
+  for (const id of [
+    "ops-score","traffic-heatmap","call-funnel","quality-mos",
+    "overview-expert-ranking","network-donut","finance-waterfall",
+    "expert-best","noc-voice-grade","mobile-menu-dialog"
+  ]) assert.ok(index.includes('id="'+id+'"'), "missing #"+id);
+});
+
+test("les états pré-connexion ne prétendent pas que SIP est actif", () => {
+  assert.match(index, /SIP non connecté/i);
+  assert.match(index, /NON CONNECTÉ/);
+});
+
+test("la navigation mobile donne accès aux opérateurs et au système", () => {
+  assert.match(index, /data-view="carriers"/);
+  assert.match(index, /data-view="system"/);
+});
