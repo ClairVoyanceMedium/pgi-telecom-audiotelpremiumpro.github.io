@@ -131,19 +131,40 @@ export class PostgresStore{
     return result;
   }
 
-  async selectExpert(){
+  async selectExpert(context={}){
+    const svaNumber=String(context.svaNumber||"").trim();
     return this.sql.begin(async tx=>{
-      const rows=await tx.unsafe(
-        "SELECT id,code,display_name,destination_uri,status,active_calls,last_assigned_at,enabled FROM experts"+
-        " WHERE enabled AND status='available' AND destination_uri IS NOT NULL ORDER BY active_calls ASC,last_assigned_at NULLS FIRST,id ASC"+
-        " LIMIT 1 FOR UPDATE SKIP LOCKED"
-      );
+      let tenantId=null;
+      if(svaNumber){
+        const svaRows=await tx.unsafe(
+          "SELECT id,tenant_id FROM sva_numbers WHERE (e164=$1 OR display_number=$1) AND status IN ('active','porting') LIMIT 1",
+          [svaNumber]
+        );
+        const sva=svaRows[0];
+        if(!sva)throw problem(404,"SVA_NUMBER_NOT_ROUTABLE");
+        if(sva.tenant_id==null)throw problem(409,"SVA_TENANT_NOT_CONFIGURED");
+        tenantId=Number(sva.tenant_id);
+      }
+
+      const rows=tenantId==null
+        ?await tx.unsafe(
+          "SELECT id,tenant_id,code,display_name,destination_uri,status,active_calls,last_assigned_at,enabled FROM experts"+
+          " WHERE enabled AND status='available' AND destination_uri IS NOT NULL ORDER BY active_calls ASC,last_assigned_at NULLS FIRST,id ASC"+
+          " LIMIT 1 FOR UPDATE SKIP LOCKED"
+        )
+        :await tx.unsafe(
+          "SELECT id,tenant_id,code,display_name,destination_uri,status,active_calls,last_assigned_at,enabled FROM experts"+
+          " WHERE tenant_id=$1 AND enabled AND status='available' AND destination_uri IS NOT NULL"+
+          " ORDER BY active_calls ASC,last_assigned_at NULLS FIRST,id ASC LIMIT 1 FOR UPDATE SKIP LOCKED",
+          [tenantId]
+        );
       const expert=rows[0];
       if(!expert)return null;
       const updated=await tx.unsafe(
         "UPDATE experts SET last_assigned_at=now(),active_calls=active_calls+1,status='busy' WHERE id=$1"+
-        " RETURNING id,code,display_name,destination_uri,status,active_calls,last_assigned_at,enabled",
-        [expert.id]
+        (tenantId==null?"":" AND tenant_id=$2")+
+        " RETURNING id,tenant_id,code,display_name,destination_uri,status,active_calls,last_assigned_at,enabled",
+        tenantId==null?[expert.id]:[expert.id,tenantId]
       );
       return updated[0];
     });
