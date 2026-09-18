@@ -132,7 +132,7 @@ Offre officielle SVA :
 Source :
 https://wholesale.orange.com/france/fr/nos-solutions/interconnexion/fixe/service-a-valeur-ajoutee/
 
-Statut PGI : cible stratégique pour la phase opérateur. Le contact commercial passe par le formulaire Orange Wholesale.
+Statut PGI : cible stratégique pour la phase opérateur. Le contact commercial passe par le formulaire officiel Orange Wholesale ; aucune adresse e-mail SVA wholesale publique fiable n'a été identifiée.
 
 ### Remmedia
 
@@ -184,6 +184,56 @@ https://guide.axialys.com/guide/guide-technique-trunk-sip/
 
 Statut PGI : demande wholesale/SIP envoyée le 18/09/2026 à axialys@axialys.com.
 
+
+
+### BJT Partners
+
+Positionnement : opérateur téléphonique disposant de sa propre infrastructure et de ses propres numéros.
+
+Éléments vérifiés :
+- infrastructure opérateur propre ;
+- interconnexions directes annoncées avec Orange, SFR et plusieurs opérateurs internationaux ;
+- ressources de numérotation propres ;
+- présence historique de services SVA 089.
+
+Sources :
+https://www.bjtpartners.com/
+https://a.surmafacture.fr/sva?date=2026-03-03&numero=0890358667
+
+Statut PGI : demande wholesale/SIP/multi-clients envoyée le 18/09/2026 à support@bjtmail.com, avec demande de transfert au service commercial/opérateurs.
+
+### Sewan
+
+Positionnement : opérateur télécom et plateforme de distribution en marque blanche.
+
+Éléments vérifiés :
+- modèle partenaire en marque blanche ;
+- plus de 1 000 partenaires télécoms ;
+- autonomie commerciale et gestion de marge laissées aux partenaires ;
+- plateforme de gestion automatisée Sophia.
+
+Sources :
+https://www.sewan.fr/fr-fr/devenez-partenaire/
+https://www.sewan.fr/fr-fr/specialiste-telecoms/
+
+Statut PGI : demande wholesale/SVA envoyée le 18/09/2026 à contact@sewan.fr.
+
+### SFR Business
+
+Positionnement : opérateur national avec offre Numéros Spéciaux/SVA.
+
+Éléments vérifiés :
+- numéros spéciaux à tarification majorée ;
+- MGIT géré dans l'offre ;
+- fichiers eBills mensuels détaillés avec numéro SVA, réseau appelant, durée, montant facturé et référence unique d'appel ;
+- compte de reversement présent dans les données de facturation.
+
+Sources :
+https://assistance.utilisateur-relationclient.sfrbusiness.fr/numeros-speciaux/
+https://assistance.utilisateur-relationclient.sfrbusiness.fr/ns/dmc-e-bills-ou-fichiers-de-facturation-2-2/
+
+Statut PGI : demande de relation wholesale/interconnexion envoyée le 18/09/2026 à relationclientsentreprise@sfr.com avec demande de transfert au service Numéros Spéciaux/opérateurs.
+
 ### Keyyo / Bouygues Telecom Pro
 
 Positionnement : opérateur entreprise avec réseau de revendeurs.
@@ -197,7 +247,7 @@ Sources :
 https://www.keyyo.com/fr/numeros-speciaux/tarifications-reversements
 https://partner.keyyo.com/fr/devenir-partenaire
 
-Statut PGI : à qualifier via le programme partenaire / formulaire officiel.
+Statut PGI : programme partenaire/marque blanche confirmé publiquement ; le contact commercial passe par le formulaire partenaire officiel, aucun e-mail commercial direct fiable n'a été identifié.
 
 ## Données à obtenir de chaque fournisseur
 
