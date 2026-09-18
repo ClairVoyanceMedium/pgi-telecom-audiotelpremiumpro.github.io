@@ -516,3 +516,17 @@ dialog::backdrop{background:rgba(0,0,0,.7);backdrop-filter:blur(5px)}
 @media (min-width:821px){
   .mobile-sheet-dialog{display:none}
 }
+
+
+/* Authenticated production cockpit 1.4 */
+.auth-dialog::backdrop{background:rgba(2,5,12,.86);backdrop-filter:blur(10px)}
+.auth-card{width:min(430px,calc(100vw - 28px));text-align:left}
+.auth-card h2{font-size:21px;margin-bottom:8px}
+.auth-mark{width:42px;height:42px;margin-bottom:18px;border:1px solid rgba(0,212,255,.24);border-radius:13px;display:flex;align-items:end;justify-content:center;gap:4px;padding:9px;background:linear-gradient(180deg,rgba(0,212,255,.12),rgba(0,212,255,.025))}
+.auth-mark span{width:4px;border-radius:4px;background:var(--cyan);box-shadow:0 0 12px rgba(0,212,255,.35)}
+.auth-mark span:nth-child(1){height:9px;opacity:.7}.auth-mark span:nth-child(2){height:19px}.auth-mark span:nth-child(3){height:13px;opacity:.85}
+.auth-field{display:block;margin-top:13px;color:#8fa4ba;font-size:10px;font-weight:800;letter-spacing:.035em}
+.auth-field input{display:block;width:100%;margin-top:7px;min-height:44px;padding:10px 12px;border:1px solid var(--border-strong);border-radius:11px;background:#080d18;color:#e5f3ff;font-size:16px}
+.auth-field input:focus{border-color:rgba(0,212,255,.45)}
+.auth-submit{width:100%;min-height:44px;margin-top:16px;border-color:rgba(0,212,255,.2);background:rgba(0,212,255,.075);color:#dff9ff;font-weight:900}
+.auth-note{display:block;margin-top:12px;color:#60758d;font-size:8px;line-height:1.5;text-align:center}
