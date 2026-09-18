@@ -13,6 +13,7 @@ const restoreDrill=fs.readFileSync("scripts/restore-drill.sh","utf8");
 const migrationRunner=fs.readFileSync("backend/migrate.mjs","utf8");
 const apiClient=fs.readFileSync("assets/api-client.js","utf8");
 const security=fs.readFileSync("backend/src/security.mjs","utf8");
+const staticRelease=fs.readFileSync("scripts/static-release.sh","utf8");
 
 const requiredCompose=[
   "POSTGRES_PASSWORD",
@@ -49,6 +50,11 @@ if(!/migrate:\s*\n\s*condition: service_completed_successfully/.test(compose))fa
 if(!/schema_migrations/.test(migrationRunner)||!/checksum/.test(migrationRunner))failures.push("migration runner must keep a checksum ledger");
 if(!/__Host-pgi_csrf/.test(apiClient))failures.push("frontend must use Host-only CSRF cookie");
 if(!/__Host-pgi_session/.test(security)||!/__Host-pgi_csrf/.test(security))failures.push("backend must issue Host-only session cookies");
+if(!/root \* \/srv\/pgi-dashboard\/current/.test(caddy))failures.push("production front must be served from the atomic current symlink");
+if(!/static-release\.sh promote/.test(deploy)||!/static-release\.sh rollback/.test(deploy))failures.push("production deploy must support atomic promotion and rollback");
+if(!/Smoke test public production/.test(deploy)||!/api\/v1\/health/.test(deploy))failures.push("production deploy must smoke-test the public front and API");
+if(!/atomic_link/.test(staticRelease)||!/mv -Tf/.test(staticRelease))failures.push("static release switch must use atomic symlink replacement");
+if(!/prune/.test(staticRelease)||!/previous/.test(staticRelease))failures.push("static release tooling must retain rollback state and prune old releases");
 
 
 try{
