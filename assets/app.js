@@ -11,7 +11,7 @@
 
   function $(id){return document.getElementById(id);}
   function qsa(sel){return Array.prototype.slice.call(document.querySelectorAll(sel));}
-  function money(v){return new Intl.NumberFormat("fr-FR",{style:"currency",currency:"EUR"}).format(Number(v)||0);}
+  function money(v){return moneyIn(v,state.marketCurrency||"EUR","fr-FR");}
   function moneyIn(v,currency,locale){
     var code=String(currency||"EUR").trim().toUpperCase();
     try{return new Intl.NumberFormat(locale||"fr-FR",{style:"currency",currency:code}).format(Number(v)||0);}
