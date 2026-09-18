@@ -10,6 +10,9 @@ export function normalizeSettlementPayload(input){
   const status=String(input.status||"reconciled");
   if(!STATUSES.has(status))throw problem("INVALID_SETTLEMENT_STATUS");
 
+  const currency=currencyCode(input.currency||"EUR");
+  const marketId=input.market_id==null||input.market_id===""?null:positiveInt(input.market_id,"market_id");
+
   if(!Array.isArray(input.matches)||input.matches.length<1||input.matches.length>5000){
     throw problem("INVALID_SETTLEMENT_MATCHES");
   }
@@ -40,10 +43,17 @@ export function normalizeSettlementPayload(input){
     payment_due_date:input.payment_due_date?dateOnly(input.payment_due_date,"payment_due_date"):null,
     paid_at:paidAt,
     source_file_hash:sourceFileHash,
+    currency,
+    market_id:marketId,
     matches:Object.freeze(matches)
   });
 }
 
+function currencyCode(value){
+  const code=String(value||"").trim().toUpperCase();
+  if(!/^[A-Z]{3}$/.test(code))throw problem("INVALID_CURRENCY");
+  return code;
+}
 function positiveInt(value,name){
   const n=Number(value);
   if(!Number.isInteger(n)||n<=0)throw problem("INVALID_"+name.toUpperCase());
