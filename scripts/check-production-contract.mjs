@@ -65,6 +65,7 @@ if(!/npm run verify/.test(backendDeploy))failures.push("backend deployment must 
 if(!/backup-postgres\.sh/.test(backendRelease)||!/restore-drill\.sh/.test(backendRelease))failures.push("backend deployment must back up and restore-test PostgreSQL before migration");
 if(!/api\/v1\/ready/.test(backendRelease)||!/wait_ready/.test(backendRelease))failures.push("backend deployment must gate promotion on strict readiness");
 if(!/rollback_previous/.test(backendRelease))failures.push("backend deployment must support automatic application rollback");
+if(!/PGI_RELEASE_ID="\$old_release"/.test(backendRelease)||!/wait_ready "\$old_version" "\$old_release"/.test(backendRelease))failures.push("backend rollback must restore the previous Git release identity");
 if(!/PGI_PRODUCTION_URL/.test(backendDeploy)||!/api\/v1\/health/.test(backendDeploy))failures.push("backend deployment must verify the public API path after deployment");
 if(!/PGI_RELEASE_ID/.test(buildStatic)||!/40-character Git SHA/.test(buildStatic))failures.push("front production build must require exact Git SHA");
 if(!/PGI_RELEASE_ID/.test(deploy)||!/releaseId/.test(deploy))failures.push("front deployment must inject and verify the Git SHA");
