@@ -57,6 +57,9 @@
 
     if(!response.ok){
       var code=payload&&payload.error&&payload.error.code?payload.error.code:"API_HTTP_"+response.status;
+      if(response.status===401&&path!=="/auth/login"){
+        try{root.dispatchEvent(new CustomEvent("pgi:auth-required",{detail:{code:code}}));}catch(_e){}
+      }
       var error=new Error(code);
       error.status=response.status;
       error.code=code;
