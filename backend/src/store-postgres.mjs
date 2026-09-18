@@ -861,6 +861,18 @@ export class PostgresStore{
     });
   }
 
+  async extendWorkLease(id,workerId,leaseSeconds=60){
+    const ttl=clampInt(leaseSeconds,60,15,900);
+    const rows=await this.sql.unsafe(
+      "UPDATE work_queue SET lease_expires_at=now()+make_interval(secs=>$3)"+
+      " WHERE id=$1 AND locked_by=$2 AND completed_at IS NULL AND failed_at IS NULL AND dead_lettered_at IS NULL"+
+      " RETURNING id,lease_expires_at",
+      [Number(id),String(workerId||""),ttl]
+    );
+    if(!rows.length)throw problem(409,"WORK_LEASE_LOST");
+    return rows[0];
+  }
+
   async completeWork(id,workerId){
     const rows=await this.sql.unsafe(
       "UPDATE work_queue SET completed_at=now(),locked_at=NULL,locked_by=NULL,lease_expires_at=NULL,last_error=NULL"+
