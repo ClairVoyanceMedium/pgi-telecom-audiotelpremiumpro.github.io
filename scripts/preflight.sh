@@ -79,6 +79,12 @@ else
 fi
 
 if [ "${PGI_REQUIRE_OPERATOR:-false}" = "true" ]; then
+  if [ "${PGI_REQUIRE_CARRIER_CONTRACT:-false}" != "true" ]; then
+    echo "FAIL PGI_REQUIRE_CARRIER_CONTRACT must be true for operator go-live"
+    fail=1
+  else
+    echo "OK   carrier contract enforcement enabled"
+  fi
   need_env SVA_NUMBER
   need_env SVA_TARIFF_CODE
   need_env SVA_HOST_CARRIER
