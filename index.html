@@ -110,8 +110,38 @@
 
       <div id="view-calls" class="view">
         <section class="panel">
-          <div class="panel-head"><div><p class="panel-kicker">CDR</p><h2>Détail des appels</h2></div><span class="pill" id="calls-total-label">0 appels</span></div>
-          <div class="table-wrap wide"><table><thead><tr><th>Date</th><th>Heure</th><th>Appelant</th><th>Réseau</th><th>089</th><th>Expert</th><th>Attente</th><th>Conversation</th><th>Facturable</th><th>Reversement</th><th>Statut</th></tr></thead><tbody id="calls-table"></tbody></table></div>
+          <div class="panel-head">
+            <div><p class="panel-kicker">CDR</p><h2>Détail des appels</h2></div>
+            <div class="panel-actions">
+              <span class="pill" id="calls-total-label">0 appels</span>
+              <button id="export-csv" class="secondary-btn" type="button">Exporter CSV</button>
+              <button id="print-calls" class="secondary-btn" type="button">Imprimer / PDF</button>
+            </div>
+          </div>
+          <div class="call-filters" aria-label="Filtres appels">
+            <label>Recherche <input id="call-search" type="search" placeholder="Appelant, expert, réseau…"></label>
+            <label>Expert
+              <select id="call-expert">
+                <option value="">Tous</option>
+                <option>Frederick</option><option>Sofia</option><option>Emma</option><option>Lina</option><option>Clara</option><option>Nora</option>
+              </select>
+            </label>
+            <label>Réseau
+              <select id="call-carrier">
+                <option value="">Tous</option>
+                <option>Orange</option><option>SFR</option><option>Bouygues</option><option>Free</option>
+              </select>
+            </label>
+            <label>Statut
+              <select id="call-status">
+                <option value="">Tous</option>
+                <option value="connected">Abouti</option>
+                <option value="abandoned">Abandon</option>
+                <option value="failed">Échec</option>
+              </select>
+            </label>
+          </div>
+          <div class="table-wrap wide"><table><thead><tr><th>Date</th><th>Heure</th><th>Appelant</th><th>Réseau</th><th>089</th><th>Expert</th><th>Attente</th><th>Conversation</th><th>Facturable</th><th>Reversement</th><th>Statut</th><th>Détail</th></tr></thead><tbody id="calls-table"></tbody></table></div>
         </section>
       </div>
 
@@ -122,7 +152,7 @@
           <article class="kpi"><span>Confirmé</span><strong id="fin-confirmed">0,00 €</strong><small>Règlements opérateur</small></article>
           <article class="kpi"><span>Écart à rapprocher</span><strong id="fin-gap">0,00 €</strong><small>Contrôle automatique</small></article>
         </section>
-        <section class="panel"><div class="panel-head"><div><p class="panel-kicker">RÉCONCILIATION</p><h2>Attendu vs opérateur</h2></div></div><div class="recon-grid" id="recon-grid"></div></section>
+        <section class="panel"><div class="panel-head"><div><p class="panel-kicker">RÉCONCILIATION</p><h2>Attendu vs opérateur</h2></div><button id="print-finance" class="secondary-btn" type="button">Imprimer / PDF</button></div><div class="recon-grid" id="recon-grid"></div></section>
       </div>
 
       <div id="view-experts" class="view">
@@ -171,6 +201,17 @@
     <button data-view="system"><span>⌁</span><small>Système</small></button>
     <button data-view="settings"><span>⚙</span><small>Réglages</small></button>
   </nav>
+
+  <dialog id="call-dialog">
+    <form method="dialog" class="dialog-card call-detail-card">
+      <div class="dialog-head">
+        <div><p class="panel-kicker">FICHE CDR</p><h2 id="call-detail-title">Détail de l’appel</h2></div>
+        <button class="icon-btn" value="cancel" aria-label="Fermer">×</button>
+      </div>
+      <div id="call-detail-grid" class="call-detail-grid"></div>
+      <div class="dialog-actions"><button value="cancel" class="secondary-btn">Fermer</button></div>
+    </form>
+  </dialog>
 
   <dialog id="reset-dialog">
     <form method="dialog" class="dialog-card">
