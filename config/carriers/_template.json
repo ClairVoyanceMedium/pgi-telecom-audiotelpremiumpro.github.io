@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "adapterKey": "replace_me",
+  "carrier": {
+    "code": "REPLACE",
+    "displayName": "Replace with carrier name"
+  },
+  "capabilities": {
+    "directSip": true,
+    "cdr": true,
+    "settlements": true,
+    "portability": true,
+    "secondarySbc": false,
+    "tls": false,
+    "srtp": false
+  },
+  "sip": {
+    "transport": "udp",
+    "authMode": "ip_acl",
+    "dnIsFormat": "e164",
+    "cliFormat": "e164",
+    "dtmf": "rfc2833",
+    "codecs": ["PCMA"],
+    "secretRef": null
+  },
+  "cdr": {
+    "delivery": "api",
+    "timezone": "Europe/Paris",
+    "fields": {
+      "carrier_call_id": "external_call_id",
+      "started_at": "started_at",
+      "ended_at": "ended_at",
+      "connected_seconds": "conversation_seconds",
+      "billable_seconds": "payout_eligible_seconds",
+      "amount_ht": "confirmed_payout_ht"
+    }
+  },
+  "settlement": {
+    "delivery": "manual_file",
+    "currency": "EUR",
+    "fields": {
+      "reference": "statement_reference",
+      "period_start": "period_start",
+      "period_end": "period_end",
+      "confirmed_ht": "confirmed_amount_ht",
+      "paid_ht": "paid_amount_ht"
+    }
+  }
+}
