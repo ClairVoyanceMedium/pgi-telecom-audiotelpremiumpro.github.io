@@ -330,7 +330,9 @@
       var expertRows=Array.isArray(dashboard.experts&&dashboard.experts.data)?dashboard.experts.data:[];
       experts=expertRows.map(function(x){return x.display_name;}).filter(Boolean);
       var networkNames=Array.from(new Set(allCalls.map(function(x){return x.carrier;}).filter(Boolean)));
-      carriers=networkNames;
+      var analyticalCarriers=dashboard.analytics&&Array.isArray(dashboard.analytics.carriers)
+        ?dashboard.analytics.carriers.map(function(x){return x.dimension_label;}).filter(Boolean):[];
+      carriers=Array.from(new Set(analyticalCarriers.concat(networkNames)));
       state.system=dashboard.system||null;
       state.route=dashboard.route||null;
       setProductionLive(state.serverSummary||{});
@@ -509,8 +511,13 @@
     setText("kpi-acd","ACD "+fmtDuration(a.acd));
     setText("kpi-asr",nfmt(a.asr,1)+"%");
     setText("kpi-abandon",nfmt(a.abandoned)+" abandons");
-    setText("kpi-experts",String(Math.min(experts.length,Math.max(0,new Set(rows.filter(function(x){return x.status==="connected";}).map(function(x){return x.expert;})).size))));
-    setText("kpi-live","Historique sélectionné");
+    var activeExperts=RUNTIME.mode==="production"&&state.serverSummary
+      ?Number(state.serverSummary.active_experts||0)
+      :Math.min(experts.length,Math.max(0,new Set(rows.filter(function(x){return x.status==="connected";}).map(function(x){return x.expert;})).size));
+    setText("kpi-experts",String(activeExperts));
+    setText("kpi-live",RUNTIME.mode==="production"&&state.serverSummary
+      ?nfmt(state.serverSummary.live_calls||0)+" appel(s) en cours"
+      :"Historique sélectionné");
     var payoutRate=RUNTIME.mode==="production"&&state.serverSummary&&Number(state.serverSummary.payout_eligible_minutes||0)>0&&!mixed
       ?Number(state.serverSummary.expected_payout_ht||0)/Number(state.serverSummary.payout_eligible_minutes)
       :effectiveRate(rows,"expectedPayoutHt","payoutEligibleSeconds");
@@ -1040,20 +1047,58 @@
   }
 
   function renderAlerts(rows){
-    var a=aggregate(rows),items=[];
-    if(a.gap>0.01)items.push({type:"warn",title:"Écart de reversement détecté",text:money(a.gap)+" à rapprocher entre CDR internes et données opérateur démo."});
-    items.push({type:"info",title:"Données de démonstration",text:"Aucune donnée client réelle n’est stockée sur GitHub Pages. L’historique simulé est limité à 92 jours."});
-    if(a.asr<80&&a.calls)items.push({type:"warn",title:"ASR sous le seuil cible",text:"Taux de décroché actuel : "+nfmt(a.asr,1)+"%."});
-    $("alert-count").textContent=String(items.length);
-    $("alerts-list").innerHTML=items.map(function(x){return '<div class="alert-item"><div class="alert-icon '+x.type+'">!</div><div><strong>'+esc(x.title)+'</strong><small>'+esc(x.text)+'</small></div></div>';}).join("");
+    var a=currentAggregate(rows),q=currentQuality(rows),items=[];
+    if(!a.mixedCurrency&&Number(a.gap||0)>0.01){
+      items.push({type:"warn",title:"Écart de reversement détecté",text:money(a.gap)+" à rapprocher entre les données internes et opérateur."});
+    }
+    if(a.asr<80&&a.calls){
+      items.push({type:"warn",title:"ASR sous le seuil cible",text:"Taux de décroché actuel : "+nfmt(a.asr,1)+"%."});
+    }
+    if(q.count&&q.score<78){
+      items.push({type:"warn",title:"Qualité voix à contrôler",text:"Grade "+q.grade+" • MOS "+nfmt(q.mos,2)+" • perte "+nfmt(q.loss,2)+"%."});
+    }
+    if(RUNTIME.mode==="production"){
+      var system=state.system||{},queue=system.work_queue||{};
+      var lag=Number(system.cdr_lag_seconds||0);
+      if(state.diagnostics.apiStatus==="error"){
+        items.push({type:"warn",title:"API indisponible",text:"La synchronisation de production ne répond pas correctement."});
+      }
+      if(lag>300){
+        items.push({type:"warn",title:"Retard CDR important",text:"Dernières données CDR reçues il y a "+fmtDuration(lag)+"."});
+      }
+      if(Number(queue.dead_lettered||0)>0){
+        items.push({type:"warn",title:"Jobs en dead-letter",text:nfmt(queue.dead_lettered)+" traitement(s) nécessitent une vérification."});
+      }
+      if(Number(queue.oldest_pending_seconds||0)>120){
+        items.push({type:"warn",title:"File de traitements ralentie",text:"Le plus vieux job attend depuis "+fmtDuration(queue.oldest_pending_seconds)+"."});
+      }
+      if(!items.length){
+        items.push({type:"info",title:"Aucune anomalie prioritaire",text:"Les contrôles principaux du Cockpit sont dans les seuils attendus."});
+      }
+    }else{
+      items.push({type:"info",title:"Données de démonstration",text:"Aucune donnée client réelle n’est stockée sur GitHub Pages. L’historique simulé est limité à 92 jours."});
+    }
+    $("alert-count").textContent=String(items.filter(function(x){return x.type==="warn";}).length);
+    $("alerts-list").innerHTML=items.map(function(x){return '<div class="alert-item"><div class="alert-icon '+x.type+'">'+(x.type==="warn"?"!":"i")+'</div><div><strong>'+esc(x.title)+'</strong><small>'+esc(x.text)+'</small></div></div>';}).join("");
   }
 
   function renderExperts(rows){
-    var html=experts.map(function(name){
-      var r=rows.filter(function(x){return x.expert===name;}),a=aggregate(r),share=aggregate(rows).expected?Math.min(100,a.expected/aggregate(rows).expected*100):0;
-      return '<article class="entity-card"><h3>'+esc(name)+'</h3><div class="amount">'+money(a.expected)+'</div><small>Reversement généré</small><div class="progress"><span style="width:'+share.toFixed(1)+'%"></span></div><div class="entity-meta"><div><span>Appels</span><strong>'+a.connected+'</strong></div><div><span>Minutes</span><strong>'+a.mins+'</strong></div><div><span>ACD</span><strong>'+fmtDuration(a.acd)+'</strong></div><div><span>ASR</span><strong>'+nfmt(a.asr,1)+'%</strong></div></div></article>';
+    var analytics=cockpitAnalytics(rows),exact=RUNTIME.mode==="production"&&Array.isArray(analytics.experts)?analytics.experts:[];
+    var names=Array.from(new Set(experts.concat(exact.map(function(x){return x.dimension_label;}).filter(Boolean))));
+    var totalExpected=exact.reduce(function(a,x){return a+Number(x.expected_payout||0);},0);
+    var html=names.map(function(name){
+      var item=exact.find(function(x){return x.dimension_label===name;});
+      if(item){
+        var calls=Number(item.calls_total||0),connected=Number(item.calls_connected||0),mins=Number(item.billable_seconds||0)/60;
+        var acd=connected?Number(item.conversation_seconds||0)/connected:0;
+        var asr=calls?connected/calls*100:0,expected=Number(item.expected_payout||0);
+        var share=totalExpected?Math.min(100,expected/totalExpected*100):0;
+        return '<article class="entity-card"><h3>'+esc(name)+'</h3><div class="amount">'+money(expected)+'</div><small>Reversement généré</small><div class="progress"><span style="width:'+share.toFixed(1)+'%"></span></div><div class="entity-meta"><div><span>Appels</span><strong>'+connected+'</strong></div><div><span>Minutes</span><strong>'+nfmt(mins)+'</strong></div><div><span>ACD</span><strong>'+fmtDuration(acd)+'</strong></div><div><span>ASR</span><strong>'+nfmt(asr,1)+'%</strong></div></div></article>';
+      }
+      var r=rows.filter(function(x){return x.expert===name;}),a=aggregate(r),all=aggregate(rows),share=all.expected?Math.min(100,a.expected/all.expected*100):0;
+      return '<article class="entity-card"><h3>'+esc(name)+'</h3><div class="amount">'+money(a.expected)+'</div><small>Reversement généré</small><div class="progress"><span style="width:'+share.toFixed(1)+'%"></span></div><div class="entity-meta"><div><span>Appels</span><strong>'+a.connected+'</strong></div><div><span>Minutes</span><strong>'+nfmt(a.mins)+'</strong></div><div><span>ACD</span><strong>'+fmtDuration(a.acd)+'</strong></div><div><span>ASR</span><strong>'+nfmt(a.asr,1)+'%</strong></div></div></article>';
     }).join("");
-    $("experts-grid").innerHTML=html;
+    $("experts-grid").innerHTML=html||'<p class="muted">Aucun expert configuré.</p>';
   }
 
   function renderHostCarrier(){
@@ -1076,14 +1121,31 @@
   }
 
   function renderCarriers(rows){
-    var total=aggregate(rows);
-    $("carrier-grid").innerHTML=carriers.map(function(name){
-      var r=rows.filter(function(x){return x.carrier===name;}),a=aggregate(r),pct=total.calls?a.calls/total.calls*100:0;
-      return '<article class="entity-card"><h3>'+esc(name)+'</h3><div class="amount">'+nfmt(pct,1)+'%</div><small>Part des appels</small><div class="progress"><span style="width:'+pct.toFixed(1)+'%"></span></div><div class="entity-meta"><div><span>Appels</span><strong>'+a.calls+'</strong></div><div><span>Minutes</span><strong>'+a.mins+'</strong></div><div><span>Attendu</span><strong>'+money(a.expected)+'</strong></div><div><span>ASR</span><strong>'+nfmt(a.asr,1)+'%</strong></div></div></article>';
-    }).join("");
+    var analytics=cockpitAnalytics(rows),exact=RUNTIME.mode==="production"&&Array.isArray(analytics.carriers)?analytics.carriers:[];
+    var totalCalls=exact.reduce(function(a,x){return a+Number(x.calls_total||0);},0);
+    var names=Array.from(new Set(carriers.concat(exact.map(function(x){return x.dimension_label;}).filter(Boolean))));
+    $("carrier-grid").innerHTML=names.map(function(name){
+      var item=exact.find(function(x){return x.dimension_label===name;});
+      if(item){
+        var calls=Number(item.calls_total||0),connected=Number(item.calls_connected||0),mins=Number(item.billable_seconds||0)/60;
+        var asr=calls?connected/calls*100:0,pct=totalCalls?calls/totalCalls*100:0;
+        return '<article class="entity-card"><h3>'+esc(name)+'</h3><div class="amount">'+nfmt(pct,1)+'%</div><small>Part des appels</small><div class="progress"><span style="width:'+pct.toFixed(1)+'%"></span></div><div class="entity-meta"><div><span>Appels</span><strong>'+calls+'</strong></div><div><span>Minutes</span><strong>'+nfmt(mins)+'</strong></div><div><span>Attendu</span><strong>'+money(item.expected_payout||0)+'</strong></div><div><span>ASR</span><strong>'+nfmt(asr,1)+'%</strong></div></div></article>';
+      }
+      var total=aggregate(rows),r=rows.filter(function(x){return x.carrier===name;}),a=aggregate(r),pct=total.calls?a.calls/total.calls*100:0;
+      return '<article class="entity-card"><h3>'+esc(name)+'</h3><div class="amount">'+nfmt(pct,1)+'%</div><small>Part des appels</small><div class="progress"><span style="width:'+pct.toFixed(1)+'%"></span></div><div class="entity-meta"><div><span>Appels</span><strong>'+a.calls+'</strong></div><div><span>Minutes</span><strong>'+nfmt(a.mins)+'</strong></div><div><span>Attendu</span><strong>'+money(a.expected)+'</strong></div><div><span>ASR</span><strong>'+nfmt(a.asr,1)+'%</strong></div></div></article>';
+    }).join("")||'<p class="muted">Aucun opérateur observé sur la période.</p>';
   }
 
   function renderRecon(rows){
+    if(RUNTIME.mode==="production"&&state.serverReconciliation&&Array.isArray(state.serverReconciliation.data)){
+      var data=state.serverReconciliation.data;
+      $("recon-grid").innerHTML=data.map(function(x){
+        var expected=Number(x.expected_payout_ht||0),confirmed=Number(x.confirmed_payout_ht||0),paid=Number(x.paid_payout_ht||0);
+        var ratio=expected?confirmed/expected*100:100;
+        return '<article class="recon-card"><h3>'+esc(x.carrier||"Inconnu")+'</h3><div class="amount">'+money(confirmed)+'</div><small>Confirmé / '+money(expected)+' attendu</small><div class="progress"><span style="width:'+Math.max(0,Math.min(100,ratio)).toFixed(1)+'%"></span></div><small>'+nfmt(x.calls||0)+' appels • '+nfmt(x.variance_calls||0)+' écart(s) • payé '+money(paid)+'</small></article>';
+      }).join("")||'<p class="muted">Aucune donnée de réconciliation sur la période.</p>';
+      return;
+    }
     var buckets={};
     rows.forEach(function(c){if(!buckets[c.carrier])buckets[c.carrier]=[];buckets[c.carrier].push(c);});
     $("recon-grid").innerHTML=carriers.map(function(name){
