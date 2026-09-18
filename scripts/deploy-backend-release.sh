@@ -22,6 +22,8 @@ set -a
 # shellcheck disable=SC1090
 source "$env_file"
 set +a
+export PGI_RELEASE_ID="$release"
+export PGI_VERSION="$version"
 
 release_dir="$base/releases/$release"
 compose_file="$release_dir/infra/docker-compose.production.yml"
@@ -50,8 +52,9 @@ wait_ready(){
   for attempt in $(seq 1 45); do
     if curl --fail --silent --show-error --max-time 4 "http://127.0.0.1:8080/api/v1/ready" >/dev/null 2>&1; then
       health="$(curl --fail --silent --show-error --max-time 4 "http://127.0.0.1:8080/api/v1/health" 2>/dev/null || true)"
-      if printf '%s' "$health" | grep -F "\"version\":\"$expected\"" >/dev/null; then
-        echo "READY version $expected"
+      if printf '%s' "$health" | grep -F "\"version\":\"$expected\"" >/dev/null \
+        && printf '%s' "$health" | grep -F "\"release\":\"$release\"" >/dev/null; then
+        echo "READY version $expected release $release"
         return 0
       fi
     fi
