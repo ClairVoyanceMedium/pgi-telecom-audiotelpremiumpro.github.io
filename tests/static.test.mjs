@@ -125,3 +125,19 @@ test("le nouveau nom officiel est cohérent dans le cockpit", () => {
   assert.match(index, /PGI • Telecom Audiotel Premium Pro/);
   assert.doesNotMatch(index, /PGI Telecom • Audiotel Premium Pro/);
 });
+
+
+test("le centre de lancement SVA mobile est verrouillé", () => {
+  for (const id of [
+    "activation-title","activation-steps","activation-progress-bar",
+    "gate-carrier","gate-number","gate-sip","gate-compliance",
+    "priority-action-title","priority-action-detail","priority-action-btn",
+    "overview-wh-stock","overview-wh-net","overview-wh-payment-state"
+  ]) assert.ok(index.includes('id="'+id+'"'), "missing #"+id);
+  assert.match(index, /class="mobile-sva" data-view="wholesale"/);
+  assert.match(index, /CENTRE DE LANCEMENT SVA/);
+  assert.match(app, /Finaliser l’opérateur SVA amont/);
+  assert.match(app, /Configurer le premier numéro 089/);
+  assert.match(app, /Activer le trunk SIP et la route/);
+  assert.match(css, /PGI 1\.10 — SVA Launch Center/);
+});
