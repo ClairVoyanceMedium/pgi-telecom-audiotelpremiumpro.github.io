@@ -379,6 +379,22 @@ export class MemoryStore{
     return {processed:pending.length,published,pending:this.outbox.filter(x=>!x.published_at).length};
   }
 
+  async wholesaleOverview(){
+    return {
+      foundation_version:"1.9",
+      summary:{
+        tenants_total:0,tenants_active:0,kyc_verified:0,kyc_pending:0,
+        assignments_total:0,assignments_active:0,assignments_with_assignor:0,
+        upstream_payout_ht:0,platform_fee_ht:0,net_payout_ht:0,
+        payment_compliance_active:false
+      },
+      tenants:[],
+      numbers:[],
+      settlements:[],
+      payment_profiles:[]
+    };
+  }
+
   async systemSnapshot(){
     const last=this.calls[0];
     return {
