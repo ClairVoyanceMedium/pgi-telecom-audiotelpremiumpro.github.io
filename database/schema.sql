@@ -363,6 +363,36 @@ CREATE TABLE metric_rollups_hourly (
 CREATE INDEX metric_rollups_hourly_dimension_idx
   ON metric_rollups_hourly(dimension_type, dimension_id, bucket_start DESC);
 
+CREATE TABLE api_idempotency_keys (
+  idempotency_key uuid PRIMARY KEY,
+  operation text NOT NULL,
+  request_sha256 char(64) NOT NULL,
+  response_status integer,
+  response_body jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  CHECK (expires_at > created_at)
+);
+
+CREATE INDEX api_idempotency_expiry_idx ON api_idempotency_keys(expires_at);
+
+CREATE TABLE outbox_events (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  event_type text NOT NULL,
+  aggregate_type text NOT NULL,
+  aggregate_id text NOT NULL,
+  payload jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  available_at timestamptz NOT NULL DEFAULT now(),
+  published_at timestamptz,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  last_error text
+);
+
+CREATE INDEX outbox_events_pending_idx
+  ON outbox_events(available_at, id)
+  WHERE published_at IS NULL;
+
 CREATE TABLE system_metrics (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   measured_at timestamptz NOT NULL,
