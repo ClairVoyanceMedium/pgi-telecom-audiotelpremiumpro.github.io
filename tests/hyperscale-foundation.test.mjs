@@ -111,9 +111,11 @@ test("la work queue possède lease retry exponentiel et dead-letter",()=>{
   assert.ok(resilientQueueMigration.includes("work_queue_dead_letters"));
   assert.ok(store.includes("async claimWork("));
   assert.ok(store.includes("async completeWork("));
+  assert.ok(store.includes("async extendWorkLease("));
   assert.ok(store.includes("async failWork("));
   assert.ok(workers.includes("queueHandlers"));
   assert.ok(workers.includes("queueDeadLetters"));
+  assert.ok(workers.includes("heartbeatTimer"));
 });
 
 test("le plan multi-région formalise résidence RPO RTO et exercices",()=>{
