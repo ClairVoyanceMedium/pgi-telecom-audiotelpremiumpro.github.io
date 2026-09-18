@@ -14,6 +14,7 @@ export function loadConfig(env=process.env){
   const telephonyPassword=env.PGI_TELEPHONY_PASSWORD||"";
   const callerHashKey=env.PGI_CALLER_HASH_KEY||"";
   const databaseUrl=env.PGI_DATABASE_URL||buildDatabaseUrl(env);
+  const databaseReadUrl=env.PGI_DATABASE_READ_URL||"";
   const databaseSsl=(env.PGI_DATABASE_SSL||"disable").toLowerCase();
   const releaseId=env.PGI_RELEASE_ID||"";
   if(!["disable","require"].includes(databaseSsl))throw new Error("PGI_DATABASE_SSL must be disable or require");
@@ -31,7 +32,7 @@ export function loadConfig(env=process.env){
 
   return Object.freeze({
     mode,authMode,host,port,releaseId,
-    sessionSecret,adminPasswordHash,ingestToken,telephonyUser,telephonyPassword,callerHashKey,databaseUrl,databaseSsl,
+    sessionSecret,adminPasswordHash,ingestToken,telephonyUser,telephonyPassword,callerHashKey,databaseUrl,databaseReadUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),
     bodyLimitBytes:integer(env.PGI_BODY_LIMIT_BYTES,262144,4096,10485760,"PGI_BODY_LIMIT_BYTES"),
@@ -42,14 +43,17 @@ export function loadConfig(env=process.env){
     alertsWorkerStaleSeconds:integer(env.PGI_ALERTS_WORKER_STALE_SECONDS,120,30,3600,"PGI_ALERTS_WORKER_STALE_SECONDS"),
     shutdownGraceMs:integer(env.PGI_SHUTDOWN_GRACE_MS,10000,1000,60000,"PGI_SHUTDOWN_GRACE_MS"),
     maxEventSubscribers:integer(env.PGI_MAX_EVENT_SUBSCRIBERS,32,1,1000,"PGI_MAX_EVENT_SUBSCRIBERS"),
-    databasePoolMax:integer(env.PGI_DATABASE_POOL_MAX,10,1,100,"PGI_DATABASE_POOL_MAX"),
+    databasePoolMax:integer(env.PGI_DATABASE_POOL_MAX,10,1,500,"PGI_DATABASE_POOL_MAX"),
+    databaseReadPoolMax:integer(env.PGI_DATABASE_READ_POOL_MAX,20,1,1000,"PGI_DATABASE_READ_POOL_MAX"),
+    processRole:enumValue(env.PGI_PROCESS_ROLE||"all",["all","api","worker"],"PGI_PROCESS_ROLE"),
+    workerLeaseSeconds:integer(env.PGI_WORKER_LEASE_SECONDS,45,10,300,"PGI_WORKER_LEASE_SECONDS"),
     requireCarrierContract:booleanValue(env.PGI_REQUIRE_CARRIER_CONTRACT,false,"PGI_REQUIRE_CARRIER_CONTRACT"),
     serviceRateTtcPerMin:number(env.PGI_SERVICE_RATE_TTC_PER_MIN,0.80,0,100,"PGI_SERVICE_RATE_TTC_PER_MIN"),
     payoutRateHtPerMin:number(env.PGI_PAYOUT_RATE_HT_PER_MIN,0.46,0,100,"PGI_PAYOUT_RATE_HT_PER_MIN"),
     expertCostHtPerMin:number(env.PGI_EXPERT_COST_HT_PER_MIN,0.18,0,100,"PGI_EXPERT_COST_HT_PER_MIN"),
     technicalCostHtPerCall:number(env.PGI_TECHNICAL_COST_HT_PER_CALL,0,0,100,"PGI_TECHNICAL_COST_HT_PER_CALL"),
     reconciliationToleranceHt:number(env.PGI_RECONCILIATION_TOLERANCE_HT,0.01,0,100,"PGI_RECONCILIATION_TOLERANCE_HT"),
-    version:env.PGI_VERSION||"1.12.0"
+    version:env.PGI_VERSION||"1.13.0"
   });
 }
 
@@ -57,6 +61,11 @@ function integer(value,fallback,min,max,name){
   const n=value==null||value===""?fallback:Number(value);
   if(!Number.isInteger(n)||n<min||n>max)throw new Error(name+" invalid");
   return n;
+}
+function enumValue(value,allowed,name){
+  const normalized=String(value||"").trim().toLowerCase();
+  if(!allowed.includes(normalized))throw new Error(name+" invalid");
+  return normalized;
 }
 function booleanValue(value,fallback,name){
   if(value==null||value==="")return fallback;
