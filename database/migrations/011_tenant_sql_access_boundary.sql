@@ -1,7 +1,7 @@
 -- PGI Telecom — tenant SQL access boundary.
 -- Customer-facing data access must go through tenant-scoped security-barrier views.
 
-CREATE OR REPLACE FUNCTION pgi_current_tenant_id()
+CREATE FUNCTION pgi_current_tenant_id()
 RETURNS bigint
 LANGUAGE sql
 STABLE
@@ -9,7 +9,7 @@ AS $$
   SELECT NULLIF(current_setting('pgi.tenant_id', true),'')::bigint
 $$;
 
-CREATE OR REPLACE FUNCTION pgi_require_tenant_context()
+CREATE FUNCTION pgi_require_tenant_context()
 RETURNS bigint
 LANGUAGE plpgsql
 STABLE
