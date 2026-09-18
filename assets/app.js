@@ -825,20 +825,24 @@
     renderSystemState();
   }
 
-  function renderCalls(rows){
+  function renderRecentCalls(rows){
+    var body=$("recent-calls");
+    if(!body)return;
     var recent=rows.slice(0,7);
     var rhtml=recent.map(function(c){
       return "<tr><td>"+fmtTime(c.ts)+"</td><td>"+esc(c.caller)+"</td><td><strong>"+esc(c.expert)+"</strong></td><td>"+fmtDuration(c.conversation)+"</td><td>"+chip(c.status)+"</td><td>"+money(c.confirmed)+"</td></tr>";
     }).join("");
-    if(!rhtml)rhtml='<tr><td colspan="6">Aucune donnée sur cette période.</td></tr>';
-    $("recent-calls").innerHTML=rhtml;
+    body.innerHTML=rhtml||'<tr><td colspan="6">Aucune donnée sur cette période.</td></tr>';
+  }
 
+  function renderCalls(rows){
+    renderRecentCalls(rows);
     var tableRows=applyCallFilters(rows);
     var full=tableRows.slice(0,250).map(function(c){
       return "<tr><td>"+fmtDate(c.ts)+"</td><td>"+fmtTime(c.ts)+"</td><td>"+esc(c.caller)+"</td><td>"+esc(c.carrier)+"</td><td>"+esc(c.number)+"</td><td><strong>"+esc(c.expert)+"</strong></td><td>"+fmtDuration(c.wait)+"</td><td>"+fmtDuration(c.conversation)+"</td><td>"+c.billable+" min</td><td>"+money(c.expected)+"</td><td>"+chip(c.status)+'</td><td><button class="detail-btn" type="button" data-call-id="'+c.id+'">Voir</button></td></tr>';
     }).join("");
     if(!full)full='<tr><td colspan="12">Aucune donnée sur cette période.</td></tr>';
-    $("calls-table").innerHTML=full;
+    var table=$("calls-table");if(table)table.innerHTML=full;
     setText("calls-total-label",nfmt(tableRows.length)+" appels");
   }
 
@@ -1420,33 +1424,61 @@
     log.innerHTML=state.resets.slice().reverse().map(function(x){var d=new Date(x.at);return '<div class="reset-entry"><strong>Nouvelle baseline globale</strong><small>'+new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeStyle:"short"}).format(d)+'</small></div>';}).join("");
   }
 
+  function renderActiveView(rows){
+    switch(state.activeView){
+      case "calls":
+        renderCalls(rows);
+        break;
+      case "finance":
+        renderKPIs(rows);
+        renderFinanceAnalytics(rows);
+        renderRecon(rows);
+        break;
+      case "experts":
+        renderExpertSummary(rows);
+        renderExperts(rows);
+        break;
+      case "carriers":
+        renderHostCarrier();
+        renderCarriers(rows);
+        break;
+      case "wholesale":
+        renderWholesale();
+        break;
+      case "system":
+        renderNoc(rows);
+        break;
+      case "settings":
+        renderFinancialSettings(rows);
+        renderResetLog();
+        break;
+      case "overview":
+      default:
+        renderKPIs(rows);
+        renderExecutive(rows);
+        renderRecentCalls(rows);
+        renderChart(rows);
+        renderHeatmap(rows);
+        renderFunnel(rows);
+        renderQuality(rows);
+        renderCockpitIntelligence(rows);
+        renderOverviewExpertRanking(rows);
+        renderNetworkMix(rows);
+        renderAlerts(rows);
+        renderWholesale();
+        renderSystemState();
+        break;
+    }
+  }
+
   function render(){
     var started=performance.now();
     var rows=filteredCalls();
-    renderKPIs(rows);
-    renderExecutive(rows);
-    renderCalls(rows);
-    renderChart(rows);
-    renderHeatmap(rows);
-    renderFunnel(rows);
-    renderQuality(rows);
-    renderCockpitIntelligence(rows);
-    renderOverviewExpertRanking(rows);
-    renderNetworkMix(rows);
-    renderFinanceAnalytics(rows);
-    renderExpertSummary(rows);
-    renderNoc(rows);
-    renderAlerts(rows);
-    renderExperts(rows);
-    renderHostCarrier();
-    renderCarriers(rows);
-    renderRecon(rows);
-    renderFinancialSettings(rows);
-    renderWholesale();
-    renderResetLog();
+    renderActiveView(rows);
     var now=new Date();
     state.diagnostics.lastRenderMs=Math.max(0,performance.now()-started);
-    var syncLabel=new Intl.DateTimeFormat("fr-FR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(now);
+    var syncDate=RUNTIME.mode==="production"&&state.lastSyncAt?new Date(state.lastSyncAt):now;
+    var syncLabel=new Intl.DateTimeFormat("fr-FR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(syncDate);
     setText("last-sync",syncLabel);
     setText("command-sync",syncLabel);
     setText("command-release",RUNTIME.releaseId?String(RUNTIME.releaseId).slice(0,12):(RUNTIME.mode==="production"?"inconnue":"demo"));
@@ -1476,6 +1508,7 @@
     qsa("[data-view]").forEach(function(b){b.classList.toggle("active",b.getAttribute("data-view")===name);});
     setText("view-title",titles[name]||"PGI • Telecom");
     saveUiPreferences();
+    if(!(options&&options.noRender))render();
     if(!(options&&options.noScroll))window.scrollTo({top:0,behavior:"smooth"});
   }
 
@@ -1763,7 +1796,7 @@
   state.mobileOverviewExpanded=readMobileOverviewPreference();
   applyMobileOverviewMode();
   bind();
-  switchView(state.activeView,{noScroll:true});
+  switchView(state.activeView,{noScroll:true,noRender:true});
   applyRuntimeMode();
   updateConnectivity();
   startHealthLoop();
