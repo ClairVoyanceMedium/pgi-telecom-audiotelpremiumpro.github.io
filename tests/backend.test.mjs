@@ -65,10 +65,17 @@ test("admin login has a dedicated per-client brute-force limit",async()=>{
 });
 
 test("session cookies use the Host-only prefix",()=>{
-  assert.match(sessionCookie("token",60),/^__Host-pgi_session=/);
-  assert.match(sessionCookie("token",60),/; HttpOnly; Secure; SameSite=Strict; Path=\//);
-  assert.match(csrfCookie("token",60),/^__Host-pgi_csrf=/);
-  assert.match(csrfCookie("token",60),/; Secure; SameSite=Strict; Path=\//);
+  const session=sessionCookie("token",60);
+  const csrf=csrfCookie("token",60);
+  assert.match(session,/^__Host-pgi_session=/);
+  assert.match(session,/; Path=\//);
+  assert.match(session,/; HttpOnly/);
+  assert.match(session,/; Secure/);
+  assert.match(session,/; SameSite=Strict/);
+  assert.match(csrf,/^__Host-pgi_csrf=/);
+  assert.match(csrf,/; Path=\//);
+  assert.match(csrf,/; Secure/);
+  assert.match(csrf,/; SameSite=Strict/);
 });
 
 test("expert router chooses available least-loaded expert",()=>{
