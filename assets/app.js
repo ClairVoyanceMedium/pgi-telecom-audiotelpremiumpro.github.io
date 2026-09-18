@@ -378,6 +378,27 @@
     return {calls:0,connected:0,abandoned:0,failed:0,mins:0,expected:0,confirmed:0,paid:0,ca:0,margin:0,acd:0,asr:0,gap:0};
   }
 
+  function summaryAggregate(summary){
+    var s=summary||{},mixed=!!s.mixed_currency;
+    return {
+      calls:Number(s.calls_total||0),connected:Number(s.calls_connected||0),
+      abandoned:Number(s.calls_abandoned||0),failed:Number(s.calls_failed||0),
+      mins:Number(s.billable_minutes||0),expected:mixed?NaN:Number(s.expected_payout_ht||0),
+      confirmed:mixed?NaN:Number(s.confirmed_payout_ht||0),paid:mixed?NaN:Number(s.paid_payout_ht||0),
+      ca:mixed?NaN:Number(s.generated_revenue_ttc||0),margin:mixed?NaN:Number(s.estimated_margin_ht||0),
+      acd:Number(s.acd_seconds||0),asr:Number(s.asr_percent||0),
+      gap:mixed?NaN:Number(s.reconciliation_variance_ht||0),mixedCurrency:mixed
+    };
+  }
+
+  function currentAggregate(rows){
+    return RUNTIME.mode==="production"&&state.serverSummary?summaryAggregate(state.serverSummary):aggregate(rows);
+  }
+
+  function monetaryLabel(value,mixed){
+    return mixed?"Multi-devises":money(value);
+  }
+
   function setText(id,val){var e=$(id);if(e)e.textContent=val;}
 
   function effectiveRate(rows,amountKey,secondsKey){
@@ -390,9 +411,17 @@
   }
 
   function renderFinancialSettings(rows){
-    var service=effectiveRate(rows,"serviceAmountTtc","billableSeconds");
-    var payout=effectiveRate(rows,"expectedPayoutHt","payoutEligibleSeconds");
-    var expert=effectiveRate(rows,"expertCostHt","billableSeconds");
+    var summary=RUNTIME.mode==="production"?state.serverSummary:null;
+    var mixed=!!(summary&&summary.mixed_currency);
+    var service=summary&&!mixed&&Number(summary.billable_minutes||0)>0
+      ?Number(summary.generated_revenue_ttc||0)/Number(summary.billable_minutes)
+      :effectiveRate(rows,"serviceAmountTtc","billableSeconds");
+    var payout=summary&&!mixed&&Number(summary.payout_eligible_minutes||0)>0
+      ?Number(summary.expected_payout_ht||0)/Number(summary.payout_eligible_minutes)
+      :effectiveRate(rows,"expectedPayoutHt","payoutEligibleSeconds");
+    var expert=summary&&!mixed&&Number(summary.billable_minutes||0)>0
+      ?Number(summary.expert_cost_ht||0)/Number(summary.billable_minutes)
+      :effectiveRate(rows,"expertCostHt","billableSeconds");
     setText("settings-finance-kicker",RUNTIME.mode==="production"?"CONFIGURATION RÉELLE":"CONFIGURATION DÉMO");
     setText("settings-finance-title",RUNTIME.mode==="production"?"Taux observés sur la période":"Hypothèses financières");
     setText("settings-service-rate",money(service)+"/min");
@@ -406,6 +435,12 @@
 
   function revenueTrendPercent(currentRows){
     if(state.baseline)return null;
+    if(RUNTIME.mode==="production"&&state.serverSummary&&state.previousSummary){
+      var currentSummary=summaryAggregate(state.serverSummary);
+      var previousSummary=summaryAggregate(state.previousSummary);
+      if(currentSummary.mixedCurrency||previousSummary.mixedCurrency||previousSummary.ca<=0)return null;
+      return (currentSummary.ca-previousSummary.ca)/previousSummary.ca*100;
+    }
     var range=getRange(),now=new Date();
     var effectiveTo=range.to<now?range.to:now;
     var duration=Math.max(1,effectiveTo-range.from);
@@ -419,12 +454,12 @@
   }
 
   function renderKPIs(rows){
-    var a=aggregate(rows);
-    setText("kpi-ca",money(a.ca));
-    setText("kpi-expected",money(a.expected));
-    setText("kpi-paid",money(a.paid));
-    setText("kpi-gap","Écart : "+money(a.gap));
-    setText("kpi-margin",money(a.margin));
+    var a=currentAggregate(rows),mixed=!!a.mixedCurrency;
+    setText("kpi-ca",monetaryLabel(a.ca,mixed));
+    setText("kpi-expected",monetaryLabel(a.expected,mixed));
+    setText("kpi-paid",monetaryLabel(a.paid,mixed));
+    setText("kpi-gap",mixed?"Écart : multi-devises":"Écart : "+money(a.gap));
+    setText("kpi-margin",monetaryLabel(a.margin,mixed));
     setText("kpi-calls",nfmt(a.calls));
     setText("kpi-connected",nfmt(a.connected)+" aboutis");
     setText("kpi-minutes",nfmt(a.mins));
@@ -433,12 +468,15 @@
     setText("kpi-abandon",nfmt(a.abandoned)+" abandons");
     setText("kpi-experts",String(Math.min(experts.length,Math.max(0,new Set(rows.filter(function(x){return x.status==="connected";}).map(function(x){return x.expert;})).size))));
     setText("kpi-live","Historique sélectionné");
-    setText("kpi-rate","Taux moyen : "+money(effectiveRate(rows,"expectedPayoutHt","payoutEligibleSeconds"))+"/min");
-    setText("fin-ca",money(a.ca));
-    setText("fin-expected",money(a.expected));
-    setText("fin-confirmed",money(a.confirmed));
-    setText("fin-paid",money(a.paid));
-    setText("fin-gap",money(a.gap));
+    var payoutRate=RUNTIME.mode==="production"&&state.serverSummary&&Number(state.serverSummary.payout_eligible_minutes||0)>0&&!mixed
+      ?Number(state.serverSummary.expected_payout_ht||0)/Number(state.serverSummary.payout_eligible_minutes)
+      :effectiveRate(rows,"expectedPayoutHt","payoutEligibleSeconds");
+    setText("kpi-rate",mixed?"Taux moyen : multi-devises":"Taux moyen : "+money(payoutRate)+"/min");
+    setText("fin-ca",monetaryLabel(a.ca,mixed));
+    setText("fin-expected",monetaryLabel(a.expected,mixed));
+    setText("fin-confirmed",monetaryLabel(a.confirmed,mixed));
+    setText("fin-paid",monetaryLabel(a.paid,mixed));
+    setText("fin-gap",monetaryLabel(a.gap,mixed));
     setText("live-calls",String(state.live.calls||0));
     setText("live-available",String(state.live.available||0));
     setText("live-queue",String(state.live.queue||0));
