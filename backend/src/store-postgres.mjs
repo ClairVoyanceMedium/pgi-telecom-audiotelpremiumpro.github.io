@@ -224,6 +224,7 @@ export class PostgresStore{
       );
       const sva=svaRows[0];
       if(!sva)throw problem(409,"SVA_NUMBER_NOT_CONFIGURED");
+      if(sva.tenant_id==null)throw problem(409,"SVA_TENANT_NOT_CONFIGURED");
 
       const contractRows=await tx.unsafe(
         "SELECT id,payout_rate_ht_per_min::float8,mobile_deduction_ht_per_min::float8,"+
@@ -264,7 +265,8 @@ export class PostgresStore{
         );
         expert=expertRows[0]||null;
         if(!expert)throw problem(409,"EXPERT_NOT_CONFIGURED");
-        if(sva.tenant_id!=null&&expert.tenant_id!=null&&Number(sva.tenant_id)!==Number(expert.tenant_id))throw problem(409,"EXPERT_TENANT_MISMATCH");
+        if(expert.tenant_id==null)throw problem(409,"EXPERT_TENANT_NOT_CONFIGURED");
+        if(Number(sva.tenant_id)!==Number(expert.tenant_id))throw problem(409,"EXPERT_TENANT_MISMATCH");
       }
 
       const callerHash=deriveCallerHash(p,{key:this.config.callerHashKey,source:envelope.source,sourceEventId:envelope.source_event_id});
