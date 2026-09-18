@@ -1,4 +1,4 @@
-const CACHE_NAME = "pgi-telecom-shell-v1";
+const CACHE_NAME = "pgi-telecom-shell-v2";
 const SHELL = [
   "./",
   "./index.html",
@@ -16,10 +16,25 @@ self.addEventListener("install", event => {
 
 self.addEventListener("activate", event => {
   event.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))))
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key)))
+    )
   );
   self.clients.claim();
 });
+
+async function networkFirst(request, fallbackKey) {
+  try {
+    const response = await fetch(request);
+    if (response && response.ok) {
+      const cache = await caches.open(CACHE_NAME);
+      await cache.put(request, response.clone());
+    }
+    return response;
+  } catch (error) {
+    return (await caches.match(request)) || (fallbackKey ? await caches.match(fallbackKey) : Response.error());
+  }
+}
 
 self.addEventListener("fetch", event => {
   const request = event.request;
@@ -30,25 +45,26 @@ self.addEventListener("fetch", event => {
   if (url.pathname.includes("/api/")) return;
 
   if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request)
-        .then(response => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put("./index.html", copy));
-          return response;
-        })
-        .catch(() => caches.match("./index.html"))
-    );
+    event.respondWith(networkFirst(request, "./index.html"));
+    return;
+  }
+
+  if (["script","style","manifest"].includes(request.destination)) {
+    event.respondWith(networkFirst(request));
     return;
   }
 
   event.respondWith(
-    caches.match(request).then(cached => cached || fetch(request).then(response => {
-      if (response && response.ok) {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
-      }
-      return response;
-    }))
+    caches.match(request).then(cached => {
+      const network = fetch(request).then(async response => {
+        if (response && response.ok) {
+          const cache = await caches.open(CACHE_NAME);
+          await cache.put(request, response.clone());
+        }
+        return response;
+      }).catch(() => cached);
+
+      return cached || network;
+    })
   );
 });
