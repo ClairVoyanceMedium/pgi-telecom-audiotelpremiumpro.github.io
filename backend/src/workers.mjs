@@ -3,9 +3,15 @@ import {evaluateAlerts} from "./alerts.mjs";
 export function startWorkers({store,eventBus,config}){
   let stopped=false;
   const timers=[];
+  const stats={
+    outboxRuns:0,outboxErrors:0,alertsRuns:0,alertsErrors:0,
+    lastOutboxSuccessAt:null,lastAlertsSuccessAt:null,
+    lastOutboxErrorAt:null,lastAlertsErrorAt:null
+  };
 
   const runOutbox=async()=>{
     if(stopped)return;
+    stats.outboxRuns++;
     try{
       await store.drainOutbox(async event=>{
         eventBus.publish("outbox.event",{
@@ -14,11 +20,16 @@ export function startWorkers({store,eventBus,config}){
           aggregate_id:event.aggregate_id
         });
       },100);
-    }catch{}
+      stats.lastOutboxSuccessAt=new Date().toISOString();
+    }catch{
+      stats.outboxErrors++;
+      stats.lastOutboxErrorAt=new Date().toISOString();
+    }
   };
 
   const runAlerts=async()=>{
     if(stopped)return;
+    stats.alertsRuns++;
     try{
       const now=new Date();
       const from=new Date(now.getTime()-24*3600000);
@@ -34,7 +45,11 @@ export function startWorkers({store,eventBus,config}){
         varianceWarnHt:Math.max(config.reconciliationToleranceHt,1)
       });
       for(const a of alerts)eventBus.publish("alert",a);
-    }catch{}
+      stats.lastAlertsSuccessAt=new Date().toISOString();
+    }catch{
+      stats.alertsErrors++;
+      stats.lastAlertsErrorAt=new Date().toISOString();
+    }
   };
 
   timers.push(setInterval(runOutbox,1000));
@@ -45,6 +60,7 @@ export function startWorkers({store,eventBus,config}){
   runAlerts();
 
   return {
+    stats,
     stop(){
       stopped=true;
       for(const t of timers)clearInterval(t);
