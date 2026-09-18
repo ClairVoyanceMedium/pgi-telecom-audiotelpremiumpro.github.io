@@ -180,3 +180,15 @@ test("les écrans mobiles étroits sont verrouillés", () => {
   assert.match(css, /@media \(max-width:360px\)/);
   assert.match(css, /\.call-filters\{grid-template-columns:1fr\}/);
 });
+
+
+test("le cockpit hyperscale 1.13 est verrouillé", () => {
+  for (const id of [
+    "wh-scale-clusters","wh-scale-clusters-state","wh-scale-buckets",
+    "wh-scale-partitions","wh-scale-read","wh-scale-role"
+  ]) assert.ok(index.includes('id="'+id+'"'), "missing #"+id);
+  assert.match(css, /PGI 1\.13 — Hyperscale Capacity Layer/);
+  assert.match(app, /bucket_capacity/);
+  assert.match(app, /call_fact_partitions/);
+  assert.match(app, /read_replica_enabled/);
+});
