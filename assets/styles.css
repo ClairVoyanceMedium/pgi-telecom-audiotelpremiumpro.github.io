@@ -1575,3 +1575,57 @@ dialog{max-height:100dvh}
   .custom-range #apply-custom{grid-column:auto}
   .call-filters{grid-template-columns:1fr}
 }
+
+
+/* PGI 1.12 — International Market Layer */
+.international-readiness{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:7px;
+  margin:0 0 12px;
+}
+.international-readiness>div{
+  min-width:0;
+  padding:11px 12px;
+  border:1px solid rgba(128,158,192,.10);
+  border-radius:12px;
+  background:linear-gradient(145deg,rgba(11,18,29,.84),rgba(7,12,20,.9));
+}
+.international-readiness span{
+  display:block;
+  color:#60758c;
+  font-size:6.5px;
+  font-weight:850;
+  letter-spacing:.07em;
+  text-transform:uppercase;
+}
+.international-readiness strong{
+  display:block;
+  margin-top:5px;
+  color:#e4f1fa;
+  font-size:14px;
+  letter-spacing:-.025em;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.international-readiness small{
+  display:block;
+  margin-top:3px;
+  color:#6b8197;
+  font-size:7px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+#view-wholesale .table-wrap table{min-width:1080px}
+
+@media (max-width:820px){
+  .international-readiness{grid-template-columns:1fr 1fr;gap:6px}
+  .international-readiness>div{padding:10px}
+  .international-readiness strong{font-size:12px}
+  #view-wholesale .table-wrap table{min-width:1120px}
+}
+@media (max-width:360px){
+  .international-readiness{grid-template-columns:1fr}
+}
