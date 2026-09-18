@@ -19,7 +19,7 @@ Fonctions déjà présentes :
 - remise à zéro non destructive des métriques avec historique local ;
 - architecture prête à recevoir une API privée.
 
-## Cockpit production 1.6
+## Cockpit production 1.7
 
 Le front exploite directement l’API privée lorsque `PGI_CONFIG.mode` vaut `production` et que `apiBaseUrl` pointe vers `/api/v1` : authentification par session, cookies `__Host-`, protection CSRF, anti-bruteforce, CDR paginés, experts, KPI live, routage opérateur et rafraîchissement SSE. En production, aucune donnée CDR ni aucun taux financier de démonstration n’est injecté.
 
@@ -89,9 +89,9 @@ Le projet possède désormais des garde-fous de préproduction :
 
 La version GitHub Pages reste une démonstration. Les statuts SIP/API affichent explicitement qu'ils ne sont pas connectés tant que l'infrastructure réelle n'existe pas.
 
-## Validation release 1.6.0
+## Validation release 1.7.0
 
-La release 1.6.0 ajoute le déploiement front atomique avec rollback, le pipeline backend gardé avec sauvegarde et restore drill, les migrations expand-only bornées, la readiness PostgreSQL/workers, l’arrêt gracieux SSE, les logs JSON respectueux des données et la vérification de l’identité exacte du commit Git côté front et API.
+La release 1.7.0 conserve tous les garde-fous 1.6.0 et ajoute un design exécutif Premium : cockpit plus lisible, command deck opérationnel, hiérarchie KPI renforcée, navigation haut de gamme, tableaux raffinés et ergonomie mobile optimisée sans dépasser les budgets de performance.
 
 
 
