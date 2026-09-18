@@ -12,6 +12,10 @@ Résilience hyperscale et isolation renforcée :
 - propagation W3C `traceparent` et trace ID ;
 - histogrammes Prometheus de latence par route et compteurs HTTP par statut ;
 - métriques queue, dead letters et fraîcheur des workers ;
+- ledger d’usage append-only partitionné pour metered billing et quotas ;
+- cycles de facturation auditable par tenant ;
+- références de stockage objet avec checksum, chiffrement, rétention et legal hold ;
+- politiques de conservation et demandes de confidentialité par tenant/marché ;
 - règles d'alerte burn-rate, p95, CDR, outbox et jobs ;
 - visibilité régions/DR dans le cockpit Wholesale et dans le NOC ;
 - variables de queue configurables en production ;
