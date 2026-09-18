@@ -3,7 +3,7 @@
 
   var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
   var CONFIG={serviceRate:0.80,payoutRate:0.46,expertCostPerMin:0.18,fixedCostPerCall:0.03};
-  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"}};
+  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false};
   var titles={overview:"Vue d’ensemble",calls:"Appels",finance:"Finance",experts:"Experts",carriers:"Opérateurs",system:"Système",settings:"Paramètres"};
   var experts=["Frederick","Sofia","Emma","Lina","Clara","Nora"];
   var carriers=["Orange","SFR","Bouygues","Free"];
@@ -78,7 +78,157 @@
     return rows.sort(function(a,b){return b.ts-a.ts;});
   }
 
-  var allCalls=buildDemoCalls();
+  var allCalls=RUNTIME.mode==="production"?[]:buildDemoCalls();
+
+  function apiCallToUi(c){
+    var q=c.quality||{};
+    var ts=new Date(c.started_at);
+    var ivr=c.ivr_started_at?new Date(c.ivr_started_at):new Date(ts.getTime()+2000);
+    var queued=c.queued_at?new Date(c.queued_at):ivr;
+    var bridged=c.bridged_at?new Date(c.bridged_at):null;
+    var ended=c.ended_at?new Date(c.ended_at):new Date(ts.getTime()+Number(c.total_seconds||0)*1000);
+    var billableSeconds=Number(c.billable_seconds||0);
+    var payoutEligibleSeconds=Number(c.payout_eligible_seconds||0);
+    return {
+      id:c.id,ts:ts,ivrStarted:ivr,queued:queued,bridged:bridged,ended:ended,
+      caller:c.caller_masked||"—",carrier:c.origin_carrier||"Inconnu",number:c.sva_number||"—",
+      expert:c.expert_name||"Non attribué",expertId:c.expert_id||null,
+      wait:Number(c.wait_seconds||0),conversation:Number(c.conversation_seconds||0),total:Number(c.total_seconds||0),
+      billable:billableSeconds/60,originType:c.origin_type||"unknown",payoutEligible:payoutEligibleSeconds/60,
+      expected:Number(c.expected_payout_ht||0),confirmed:c.confirmed_payout_ht==null?0:Number(c.confirmed_payout_ht||0),
+      paid:Number(c.paid_payout_ht||0),status:c.call_status||"failed",
+      billableSeconds:billableSeconds,payoutEligibleSeconds:payoutEligibleSeconds,
+      expectedPayoutHt:Number(c.expected_payout_ht||0),confirmedPayoutHt:c.confirmed_payout_ht==null?0:Number(c.confirmed_payout_ht||0),
+      paidPayoutHt:Number(c.paid_payout_ht||0),expertCost:Number(c.expert_cost_ht||0),cost:Number(c.technical_cost_ht||0),
+      expertCostHt:Number(c.expert_cost_ht||0),technicalCostHt:Number(c.technical_cost_ht||0),
+      serviceAmount:Number(c.retail_service_amount_ttc||0),serviceAmountTtc:Number(c.retail_service_amount_ttc||0),
+      variance:Number(c.reconciliation_variance_ht||0),sipFinalCode:Number(c.sip_final_code||0),
+      hangupCause:c.hangup_cause||"—",codec:c.codec||"—",
+      packetLoss:Number(q.packet_loss_percent||0),jitter:Number(q.jitter_ms||0),latency:Number(q.latency_ms||0),mos:Number(q.mos||0)
+    };
+  }
+
+  function productionDataRange(){
+    var r=getRange();
+    if(state.baseline)return r;
+    var now=new Date(),effectiveTo=r.to<now?r.to:now;
+    var duration=Math.max(1,effectiveTo-r.from);
+    return {from:new Date(r.from.getTime()-duration-1),to:r.to};
+  }
+
+  async function loadAllApiCalls(from,to){
+    var data=[],cursor=null,pages=0;
+    do{
+      var params={from:from.toISOString(),to:to.toISOString(),limit:"250"};
+      if(cursor)params.cursor=cursor;
+      var page=await window.PGIApi.calls(params);
+      data=data.concat(Array.isArray(page.data)?page.data:[]);
+      cursor=page.next_cursor||null;
+      pages++;
+      if(pages>400)throw new Error("API_CALL_PAGINATION_LIMIT");
+    }while(cursor);
+    return data;
+  }
+
+  function setProductionLive(summary){
+    state.live.calls=Number(summary&&summary.live_calls||0);
+    state.live.available=Number(summary&&summary.active_experts||0);
+    state.live.queue=Number(summary&&summary.queue_depth||0);
+  }
+
+  function showLogin(message){
+    var dialog=$("auth-dialog");
+    var msg=$("auth-message");
+    if(msg)msg.textContent=message||"Identifiez-vous pour accéder aux données de production.";
+    if(dialog&&typeof dialog.showModal==="function"&&!dialog.open)dialog.showModal();
+  }
+
+  function closeLogin(){
+    var dialog=$("auth-dialog");
+    if(dialog&&dialog.open)dialog.close();
+  }
+
+  function scheduleProductionSync(){
+    if(RUNTIME.mode!=="production")return;
+    clearTimeout(state.syncTimer);
+    state.syncTimer=setTimeout(function(){syncProductionData();},700);
+  }
+
+  function startProductionEvents(){
+    if(RUNTIME.mode!=="production"||state.eventSource||!window.PGIApi)return;
+    try{
+      var es=window.PGIApi.events();
+      state.eventSource=es;
+      ["call.ingested","expert.status","expert.busy","expert.released","baseline.created","carrier.switched","carrier.rollback","alert"].forEach(function(name){
+        es.addEventListener(name,scheduleProductionSync);
+      });
+      es.onerror=function(){
+        if(es.readyState===EventSource.CLOSED){state.eventSource=null;}
+      };
+    }catch(e){recordRuntimeError();}
+  }
+
+  async function syncProductionData(){
+    if(RUNTIME.mode!=="production"||!window.PGIApi||state.syncInFlight)return;
+    state.syncInFlight=true;
+    var refresh=$("refresh-btn");
+    if(refresh)refresh.disabled=true;
+    try{
+      var me=await window.PGIApi.me();
+      state.authUser=me&&me.user?me.user:null;
+      closeLogin();
+      var range=getRange();
+      var windowRange=productionDataRange();
+      var results=await Promise.all([
+        loadAllApiCalls(windowRange.from,windowRange.to),
+        window.PGIApi.summary(range.from.toISOString(),range.to.toISOString()),
+        window.PGIApi.experts()
+      ]);
+      allCalls=results[0].map(apiCallToUi).filter(function(x){return Number.isFinite(x.ts.getTime());}).sort(function(a,b){return b.ts-a.ts;});
+      var expertRows=Array.isArray(results[2]&&results[2].data)?results[2].data:[];
+      experts=expertRows.map(function(x){return x.display_name;}).filter(Boolean);
+      var networkNames=Array.from(new Set(allCalls.map(function(x){return x.carrier;}).filter(Boolean)));
+      if(networkNames.length)carriers=networkNames;
+      setProductionLive(results[1]||{});
+      state.diagnostics.apiStatus="ok";
+      render();
+      startProductionEvents();
+    }catch(e){
+      if(e&&e.status===401){
+        state.authUser=null;
+        showLogin("Session requise. Saisissez vos identifiants administrateur.");
+      }else{
+        state.diagnostics.apiStatus="error";
+        recordRuntimeError();
+      }
+    }finally{
+      state.syncInFlight=false;
+      if(refresh)refresh.disabled=false;
+    }
+  }
+
+  function refreshData(){
+    if(RUNTIME.mode==="production")syncProductionData();
+    else render();
+  }
+
+  async function submitLogin(){
+    var username=$("auth-username"),password=$("auth-password"),button=$("auth-submit"),msg=$("auth-message");
+    if(!username||!password||!window.PGIApi)return;
+    if(button)button.disabled=true;
+    if(msg)msg.textContent="Connexion…";
+    try{
+      await window.PGIApi.login(username.value,password.value);
+      password.value="";
+      closeLogin();
+      await syncProductionData();
+    }catch(e){
+      if(msg)msg.textContent=e&&e.status===429?"Trop de tentatives. Réessayez dans un instant.":"Identifiants invalides ou API indisponible.";
+      password.focus();
+    }finally{
+      if(button)button.disabled=false;
+    }
+  }
 
   function loadState(){
     try{
@@ -162,9 +312,9 @@
     setText("fin-confirmed",money(a.confirmed));
     setText("fin-paid",money(a.paid));
     setText("fin-gap",money(a.gap));
-    setText("live-calls","0");
-    setText("live-available","0");
-    setText("live-queue","0");
+    setText("live-calls",String(state.live.calls||0));
+    setText("live-available",String(state.live.available||0));
+    setText("live-queue",String(state.live.queue||0));
     var trend=$("ca-trend");
     if(trend){
       var pct=revenueTrendPercent(rows);
@@ -578,14 +728,14 @@
     qsa("[data-go]").forEach(function(b){b.addEventListener("click",function(){switchView(b.getAttribute("data-go"));});});
     qsa(".period").forEach(function(b){b.addEventListener("click",function(){
       state.period=b.getAttribute("data-period");state.custom=null;
-      qsa(".period").forEach(function(x){x.classList.toggle("active",x===b);});render();
+      qsa(".period").forEach(function(x){x.classList.toggle("active",x===b);});refreshData();
     });});
     $("apply-custom").addEventListener("click",function(){
       var f=$("date-from").value,t=$("date-to").value;if(!f||!t)return;
       var fd=new Date(f+"T00:00:00"),td=new Date(t+"T00:00:00");if(td<fd){var tmp=fd;fd=td;td=tmp;}
-      state.period="custom";state.custom={from:fd,to:td};qsa(".period").forEach(function(x){x.classList.remove("active");});render();
+      state.period="custom";state.custom={from:fd,to:td};qsa(".period").forEach(function(x){x.classList.remove("active");});refreshData();
     });
-    $("refresh-btn").addEventListener("click",render);
+    $("refresh-btn").addEventListener("click",refreshData);
     var more=$("mobile-more");
     if(more)more.addEventListener("click",function(){
       var d=$("mobile-menu-dialog");
@@ -608,9 +758,17 @@
     $("print-calls").addEventListener("click",function(){window.print();});
     $("print-finance").addEventListener("click",function(){window.print();});
     $("reset-metrics").addEventListener("click",function(){var d=$("reset-dialog");if(typeof d.showModal==="function")d.showModal();});
-    $("confirm-reset").addEventListener("click",function(){
-      state.baseline=new Date();state.resets.push({at:state.baseline.toISOString(),scope:"global"});saveState();render();
+    $("confirm-reset").addEventListener("click",async function(){
+      var at=new Date();
+      try{
+        if(RUNTIME.mode==="production"&&window.PGIApi){
+          await window.PGIApi.createBaseline({scope:"global",reason:"Remise à zéro depuis le cockpit"},window.PGIApi.newIdempotencyKey());
+        }
+        state.baseline=at;state.resets.push({at:at.toISOString(),scope:"global"});saveState();refreshData();
+      }catch(e){recordRuntimeError();}
     });
+    var authForm=$("auth-form");
+    if(authForm)authForm.addEventListener("submit",function(e){e.preventDefault();submitLogin();});
   }
 
   function recordRuntimeError(){
@@ -704,7 +862,7 @@
   window.addEventListener("online",updateConnectivity);
   window.addEventListener("offline",updateConnectivity);
   registerServiceWorker();
-  render();
+  if(RUNTIME.mode==="production")syncProductionData();else render();
   clock();
   setInterval(clock,1000);
 })();
