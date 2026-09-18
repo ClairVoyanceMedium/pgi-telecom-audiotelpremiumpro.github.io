@@ -389,6 +389,11 @@ export class MemoryStore{
     return {processed:pending.length,published,pending:this.outbox.filter(x=>!x.published_at).length};
   }
 
+  async listTenants(params={}){
+    void params;
+    return {data:[],next_cursor:null};
+  }
+
   async wholesaleOverview(){
     return {
       foundation_version:"1.13",
