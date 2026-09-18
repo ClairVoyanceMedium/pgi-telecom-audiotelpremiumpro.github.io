@@ -194,7 +194,7 @@ Les numéros utilisent E.164 comme identité canonique avec alias opérateur exp
 Voir `docs/INTERNATIONAL.md` pour la procédure d'ouverture d'un nouveau marché.
 
 
-## Hyperscale 1.13
+## Hyperscale 1.14
 
 Le socle est préparé pour une croissance jusqu'à plusieurs millions de tenants sans dupliquer l'application :
 
