@@ -9,6 +9,8 @@ const tenantDirectoryMigration=fs.readFileSync("database/migrations/008_scalable
 const tenantBoundaryMigration=fs.readFileSync("database/migrations/011_tenant_sql_access_boundary.sql","utf8");
 const resilientQueueMigration=fs.readFileSync("database/migrations/012_resilient_work_queue.sql","utf8");
 const multiRegionMigration=fs.readFileSync("database/migrations/013_multi_region_dr_foundation.sql","utf8");
+const usageLedgerMigration=fs.readFileSync("database/migrations/014_metered_usage_ledger.sql","utf8");
+const objectLifecycleMigration=fs.readFileSync("database/migrations/015_object_storage_data_lifecycle.sql","utf8");
 const resilienceDocs=fs.readFileSync("docs/RESILIENCE.md","utf8");
 const alertRules=fs.readFileSync("infra/observability/prometheus-alerts.example.yml","utf8");
 const schema=fs.readFileSync("database/schema.sql","utf8");
@@ -135,4 +137,22 @@ test("les SLO sont mesurables et alertables",()=>{
   assert.ok(alertRules.includes("PGIApiFastErrorBudgetBurn"));
   assert.ok(alertRules.includes("PGIApiLatencyP95High"));
   assert.ok(alertRules.includes("PGIWorkQueueDeadLetter"));
+});
+
+
+test("le metered billing conserve un ledger append-only et idempotent",()=>{
+  assert.ok(usageLedgerMigration.includes("CREATE TABLE tenant_usage_events"));
+  assert.ok(usageLedgerMigration.includes("PARTITION BY HASH (tenant_bucket)"));
+  assert.ok(usageLedgerMigration.includes("UNIQUE (tenant_bucket,source,source_event_id)"));
+  assert.ok(usageLedgerMigration.includes("prevent_usage_event_mutation"));
+  assert.ok(usageLedgerMigration.includes("CREATE TABLE tenant_billing_cycles"));
+  assert.ok(usageLedgerMigration.includes("subscription_scope"));
+});
+
+test("les gros documents restent hors PostgreSQL avec politique de rétention",()=>{
+  assert.ok(objectLifecycleMigration.includes("CREATE TABLE object_assets"));
+  assert.ok(objectLifecycleMigration.includes("content_sha256"));
+  assert.ok(objectLifecycleMigration.includes("legal_hold"));
+  assert.ok(objectLifecycleMigration.includes("CREATE TABLE data_retention_policies"));
+  assert.ok(objectLifecycleMigration.includes("CREATE TABLE data_subject_requests"));
 });
