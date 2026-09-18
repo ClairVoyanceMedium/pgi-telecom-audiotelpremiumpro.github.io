@@ -230,7 +230,7 @@
         window.PGIApi.experts(),
         window.PGIApi.systemHealth(),
         window.PGIApi.carrierRouting(),
-        window.PGIApi.wholesaleOverview()
+        window.PGIApi.wholesaleOverview().catch(function(){return null;})
       ]);
       allCalls=results[0].map(apiCallToUi).filter(function(x){return Number.isFinite(x.ts.getTime());}).sort(function(a,b){return b.ts-a.ts;});
       var expertRows=Array.isArray(results[2]&&results[2].data)?results[2].data:[];
