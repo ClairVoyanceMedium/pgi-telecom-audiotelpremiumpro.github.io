@@ -50,3 +50,8 @@ jobs:
           docker run --rm --network host -e PGPASSWORD="$PGPASSWORD" -v "$PWD/database:/sql:ro" postgres:16-alpine             psql -h 127.0.0.1 -U pgi_test -d pgi_test -v ON_ERROR_STOP=1 -f /sql/schema.sql
           docker run --rm --network host -e PGPASSWORD="$PGPASSWORD" -v "$PWD/database:/sql:ro" postgres:16-alpine             psql -h 127.0.0.1 -U pgi_test -d pgi_test -v ON_ERROR_STOP=1 -f /sql/views.sql
           docker run --rm --network host -e PGPASSWORD="$PGPASSWORD" -v "$PWD/database:/sql:ro" postgres:16-alpine             psql -h 127.0.0.1 -U pgi_test -d pgi_test -v ON_ERROR_STOP=1 -f /sql/smoke.sql
+
+      - name: PostgreSQL store integration
+        env:
+          PGI_TEST_DATABASE_URL: postgresql://pgi_test:pgi_test@127.0.0.1:5432/pgi_test
+        run: node --test tests/postgres.integration.test.mjs
