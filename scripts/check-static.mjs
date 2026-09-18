@@ -8,6 +8,10 @@ const required = [
   "assets/config.js",
   "assets/core.js",
   "assets/api-client.js",
+  "assets/workspace.js",
+  "assets/command-palette.js",
+  "assets/data-client.js",
+  "assets/demo-data.js",
   "assets/app.js",
   "assets/favicon.svg",
   "manifest.webmanifest",
@@ -26,12 +30,17 @@ if (missing.length) {
 
 const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "assets/app.js"), "utf8");
+const frontRuntime = [
+  "index.html","assets/config.js","assets/core.js","assets/api-client.js",
+  "assets/data-client.js","assets/demo-data.js","assets/command-palette.js",
+  "assets/workspace.js","assets/app.js","service-worker.js"
+].map(file=>fs.readFileSync(path.join(root,file),"utf8")).join("\n");
 
 const failures = [];
 if (!index.includes("PGI • Telecom - Audiotel Premium Pro")) failures.push("Nom officiel absent de index.html");
 if (!index.includes('name="viewport"')) failures.push("Viewport mobile absent");
-if (/http:\/\//i.test(index + app)) failures.push("Référence HTTP non chiffrée détectée");
-if (/localhost|127\.0\.0\.1/i.test(index + app)) failures.push("Endpoint local détecté dans le front");
+if (/http:\/\//i.test(frontRuntime)) failures.push("Référence HTTP non chiffrée détectée");
+if (/localhost|127\.0\.0\.1/i.test(frontRuntime)) failures.push("Endpoint local détecté dans le front");
 if (!app.includes("baseline")) failures.push("Logique de baseline absente");
 if (!app.includes("expected") || !app.includes("confirmed")) failures.push("Réconciliation financière absente");
 
