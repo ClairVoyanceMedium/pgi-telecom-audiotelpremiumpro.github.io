@@ -36,7 +36,7 @@
       options.headers||{}
     );
     if(!["GET","HEAD","OPTIONS"].includes(method)){
-      var csrf=cookie("pgi_csrf");
+      var csrf=cookie("__Host-pgi_csrf");
       if(csrf)headers["X-CSRF-Token"]=csrf;
     }
 
