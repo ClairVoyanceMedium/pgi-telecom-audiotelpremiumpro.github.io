@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pgi-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: pgi-api
+  template:
+    metadata:
+      labels:
+        app: pgi-api
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: api
+          image: pgi-telecom-api:1.13.0
+          env:
+            - name: PGI_BACKEND_MODE
+              value: production
+            - name: PGI_PROCESS_ROLE
+              value: api
+            - name: PGI_BACKEND_HOST
+              value: 0.0.0.0
+          envFrom:
+            - secretRef:
+                name: pgi-secrets
+            - configMapRef:
+                name: pgi-runtime
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /api/v1/ready
+              port: 8080
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8080
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgi-api
+spec:
+  selector:
+    app: pgi-api
+  ports:
+    - port: 80
+      targetPort: 8080
