@@ -823,6 +823,112 @@ export class PostgresStore{
     return {processed:claimed.length,published,pending:rows[0].count};
   }
 
+  async claimWork(queueName,workerId,limit=25,leaseSeconds=60){
+    const queue=String(queueName||"").trim();
+    const owner=String(workerId||"").trim();
+    if(!queue||queue.length>80)throw problem(400,"INVALID_QUEUE_NAME");
+    if(!owner||owner.length>160)throw problem(400,"INVALID_WORKER_ID");
+    const take=clampInt(limit,25,1,100);
+    const ttl=clampInt(leaseSeconds,60,15,900);
+    return this.sql.begin(async tx=>{
+      const candidates=await tx.unsafe(
+        "SELECT id FROM work_queue"+
+        " WHERE queue_name=$1 AND completed_at IS NULL AND failed_at IS NULL AND dead_lettered_at IS NULL"+
+        " AND available_at<=now()"+
+        " AND (locked_at IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now())"+
+        " ORDER BY priority ASC,available_at ASC,id ASC LIMIT $2 FOR UPDATE SKIP LOCKED",
+        [queue,take]
+      );
+      if(!candidates.length)return [];
+      return tx.unsafe(
+        "UPDATE work_queue SET locked_at=now(),locked_by=$2,"+
+        " lease_expires_at=now()+make_interval(secs=>$3),attempts=attempts+1"+
+        " WHERE id=ANY($1::bigint[])"+
+        " RETURNING id,queue_name,tenant_id,tenant_bucket,dedupe_key,priority,payload,available_at,"+
+        " locked_at,locked_by,lease_expires_at,attempts,max_attempts,correlation_id,trace_id,created_at",
+        [candidates.map(x=>Number(x.id)),owner,ttl]
+      );
+    });
+  }
+
+  async completeWork(id,workerId){
+    const rows=await this.sql.unsafe(
+      "UPDATE work_queue SET completed_at=now(),locked_at=NULL,locked_by=NULL,lease_expires_at=NULL,last_error=NULL"+
+      " WHERE id=$1 AND locked_by=$2 AND completed_at IS NULL AND failed_at IS NULL AND dead_lettered_at IS NULL"+
+      " RETURNING id,queue_name,completed_at",
+      [Number(id),String(workerId||"")]
+    );
+    if(!rows.length)throw problem(409,"WORK_LEASE_LOST");
+    return rows[0];
+  }
+
+  async failWork(id,workerId,errorMessage,retryDelaySeconds=30){
+    const owner=String(workerId||"");
+    const message=String(errorMessage||"worker failed").slice(0,1000);
+    const delay=clampInt(retryDelaySeconds,30,1,3600);
+    return this.sql.begin(async tx=>{
+      const rows=await tx.unsafe(
+        "SELECT id,queue_name,tenant_id,correlation_id,trace_id,payload,attempts,max_attempts"+
+        " FROM work_queue WHERE id=$1 AND locked_by=$2 AND completed_at IS NULL"+
+        " AND failed_at IS NULL AND dead_lettered_at IS NULL FOR UPDATE",
+        [Number(id),owner]
+      );
+      const work=rows[0];
+      if(!work)throw problem(409,"WORK_LEASE_LOST");
+      if(Number(work.attempts)>=Number(work.max_attempts)){
+        await tx.unsafe(
+          "UPDATE work_queue SET failed_at=now(),dead_lettered_at=now(),last_error=$2,"+
+          " locked_at=NULL,locked_by=NULL,lease_expires_at=NULL WHERE id=$1",
+          [Number(id),message]
+        );
+        await tx.unsafe(
+          "INSERT INTO work_queue_dead_letters(work_id,queue_name,tenant_id,correlation_id,trace_id,payload,attempts,last_error)"+
+          " VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8) ON CONFLICT(work_id) DO NOTHING",
+          [Number(id),work.queue_name,work.tenant_id,work.correlation_id,work.trace_id,JSON.stringify(work.payload||{}),Number(work.attempts),message]
+        );
+        return {id:Number(id),state:"dead_lettered",attempts:Number(work.attempts)};
+      }
+      const exponential=Math.min(3600,delay*Math.pow(2,Math.max(0,Number(work.attempts)-1)));
+      await tx.unsafe(
+        "UPDATE work_queue SET available_at=now()+make_interval(secs=>$3),last_error=$4,"+
+        " locked_at=NULL,locked_by=NULL,lease_expires_at=NULL WHERE id=$1 AND locked_by=$2",
+        [Number(id),owner,Math.round(exponential),message]
+      );
+      return {id:Number(id),state:"retry",attempts:Number(work.attempts),retry_in_seconds:Math.round(exponential)};
+    });
+  }
+
+  async enqueueWork(queueName,payload={},options={}){
+    const queue=String(queueName||"").trim();
+    if(!queue||queue.length>80)throw problem(400,"INVALID_QUEUE_NAME");
+    const tenantId=options.tenant_id==null?null:Number(options.tenant_id);
+    const priority=clampInt(options.priority,100,1,1000);
+    const maxAttempts=clampInt(options.max_attempts,10,1,50);
+    const availableAt=options.available_at||new Date().toISOString();
+    const dedupe=options.dedupe_key?String(options.dedupe_key).slice(0,200):null;
+    const rows=await this.sql.unsafe(
+      "INSERT INTO work_queue(queue_name,tenant_id,dedupe_key,priority,payload,available_at,max_attempts,trace_id)"+
+      " VALUES($1,$2,$3,$4,$5::jsonb,$6::timestamptz,$7,$8)"+
+      " ON CONFLICT(queue_name,dedupe_key) WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL"+
+      " DO UPDATE SET available_at=LEAST(work_queue.available_at,EXCLUDED.available_at)"+
+      " RETURNING id,queue_name,tenant_id,dedupe_key,priority,available_at,max_attempts,correlation_id,trace_id,created_at",
+      [queue,tenantId,dedupe,priority,JSON.stringify(payload||{}),availableAt,maxAttempts,options.trace_id?String(options.trace_id).slice(0,64):null]
+    );
+    return rows[0];
+  }
+
+  async workQueueHealth(){
+    const rows=await this.sql.unsafe(
+      "SELECT"+
+      " count(*) FILTER(WHERE completed_at IS NULL AND failed_at IS NULL AND dead_lettered_at IS NULL)::int AS pending,"+
+      " count(*) FILTER(WHERE locked_at IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL AND dead_lettered_at IS NULL)::int AS leased,"+
+      " count(*) FILTER(WHERE dead_lettered_at IS NOT NULL)::int AS dead_lettered,"+
+      " COALESCE(EXTRACT(EPOCH FROM (now()-min(created_at) FILTER(WHERE completed_at IS NULL AND failed_at IS NULL AND dead_lettered_at IS NULL))),0)::float8 AS oldest_pending_seconds"+
+      " FROM work_queue"
+    );
+    return rows[0];
+  }
+
   async listTenants(params={}){
     const limit=clampInt(params.limit,50,1,250);
     const cursor=decodeNumericCursor(params.cursor);
