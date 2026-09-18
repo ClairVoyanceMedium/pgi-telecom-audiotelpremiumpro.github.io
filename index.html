@@ -162,7 +162,34 @@
       </div>
 
       <div id="view-carriers" class="view">
-        <section class="panel"><div class="panel-head"><div><p class="panel-kicker">ORIGINE RÉSEAU</p><h2>Opérateurs appelants</h2></div></div><div id="carrier-grid" class="entity-grid"></div></section>
+        <section class="carrier-host-grid">
+          <article class="panel carrier-host-card">
+            <p class="panel-kicker">OPÉRATEUR SVA HÔTE</p>
+            <h2>Route logique sva-primary</h2>
+            <div class="carrier-route-state">
+              <div><span>Numéro public</span><strong id="host-sva-number">089 à attribuer</strong></div>
+              <div><span>Actif</span><strong id="host-active-carrier">Non configuré</strong></div>
+              <div><span>Standby</span><strong id="host-standby-carrier">Aucun</strong></div>
+              <div><span>Génération</span><strong id="host-route-generation">1</strong></div>
+              <div><span>Portabilité</span><strong id="host-portability">À contractualiser</strong></div>
+              <div><span>État bascule</span><strong id="host-switch-state">Prêt architecturalement</strong></div>
+            </div>
+            <p class="muted">Le dashboard, les experts et les CDR restent indépendants du fournisseur. Seul l’adaptateur opérateur et la route logique changent.</p>
+          </article>
+          <article class="panel">
+            <p class="panel-kicker">PROCÉDURE</p>
+            <h2>Changement d’opérateur</h2>
+            <ol class="switch-steps">
+              <li>Configurer le nouvel adaptateur</li>
+              <li>Tester SIP, CDR et règlement en parallèle</li>
+              <li>Passer la connexion en READY</li>
+              <li>Porter le même 089</li>
+              <li>Activer atomiquement la nouvelle route</li>
+              <li>Conserver l’ancien opérateur en standby pour rollback</li>
+            </ol>
+          </article>
+        </section>
+        <section class="panel"><div class="panel-head"><div><p class="panel-kicker">ORIGINE RÉSEAU</p><h2>Réseaux appelants</h2></div></div><div id="carrier-grid" class="entity-grid"></div></section>
       </div>
 
       <div id="view-system" class="view">
