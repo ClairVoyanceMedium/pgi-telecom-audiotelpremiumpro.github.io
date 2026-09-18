@@ -552,8 +552,24 @@
     return {count:valid.length,mos:mos,loss:loss,jitter:jitter,latency:latency,score:score,grade:grade};
   }
 
+  function currentQuality(rows){
+    var analytics=cockpitAnalytics(rows),q=analytics&&analytics.quality;
+    if(q&&Number(q.samples||0)>0){
+      var mos=Number(q.mos||0),loss=Number(q.packet_loss_percent||0),jitter=Number(q.jitter_ms||0),latency=Number(q.latency_ms||0);
+      var score=clamp(
+        (clamp((mos-1)/3.5*100,0,100)*.45)+
+        (clamp(100-loss*22,0,100)*.20)+
+        (clamp(100-jitter*2.5,0,100)*.15)+
+        (clamp(100-latency*.55,0,100)*.20),0,100
+      );
+      var grade=score>=92?"A+":score>=86?"A":score>=78?"B":score>=68?"C":"D";
+      return {count:Number(q.samples||0),mos:mos,loss:loss,jitter:jitter,latency:latency,score:score,grade:grade,dtmfErrors:Number(q.dtmf_errors||0)};
+    }
+    return qualityStats(rows);
+  }
+
   function renderExecutive(rows){
-    var cur=currentAggregate(rows),prev=RUNTIME.mode==="production"&&state.previousSummary?summaryAggregate(state.previousSummary):aggregate(previousPeriodRows()),q=qualityStats(rows);
+    var cur=currentAggregate(rows),prev=RUNTIME.mode==="production"&&state.previousSummary?summaryAggregate(state.previousSummary):aggregate(previousPeriodRows()),q=currentQuality(rows);
     var recScore=cur.expected>0?clamp(100-(cur.gap/cur.expected*100*5),0,100):100;
     var asrScore=cur.calls?clamp(cur.asr/90*100,0,100):0;
     var ops=cur.calls?Math.round(asrScore*.45+recScore*.30+q.score*.25):0;
@@ -619,7 +635,7 @@
   }
 
   function renderQuality(rows){
-    var q=qualityStats(rows);
+    var q=currentQuality(rows);
     setText("quality-grade",q.grade);
     setText("quality-mos",q.count?nfmt(q.mos,2):"—");
     setText("quality-loss",q.count?nfmt(q.loss,3)+"%":"—");
@@ -753,7 +769,7 @@
   }
 
   function renderNoc(rows){
-    var m=currentAggregate(rows),q=qualityStats(rows);
+    var m=currentAggregate(rows),q=currentQuality(rows);
     var backendState=RUNTIME.mode==="production"?(state.diagnostics.apiStatus==="ok"?"API OK":state.diagnostics.apiStatus==="error"?"API indisponible":"En attente"):(navigator.onLine?"Démo en ligne":"Démo hors ligne");
     setText("noc-availability",backendState);
     setText("noc-cdr-total",nfmt(RUNTIME.mode==="production"&&state.system?Number(state.system.calls_total||0):rows.length));
