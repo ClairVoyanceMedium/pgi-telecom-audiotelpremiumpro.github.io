@@ -77,3 +77,11 @@ test("la session de production peut être fermée proprement", () => {
   assert.match(app, /pgi:auth-required/);
   assert.match(app, /stopProductionEvents/);
 });
+
+
+test("la production ne réutilise pas les taux de démonstration", () => {
+  const productionSection=app.slice(app.indexOf("var allCalls="));
+  assert.doesNotMatch(productionSection,/CONFIG\.serviceRate/);
+  assert.doesNotMatch(productionSection,/CONFIG\.payoutRate/);
+  assert.match(app,/PGIApi\.baselines/);
+});
