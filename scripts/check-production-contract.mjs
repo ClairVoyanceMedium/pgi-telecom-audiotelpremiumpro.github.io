@@ -8,6 +8,7 @@ const envExample=fs.readFileSync("infra/production.env.example.txt","utf8");
 const caddy=fs.readFileSync("infra/Caddyfile.production.example","utf8");
 const preflight=fs.readFileSync("scripts/preflight.sh","utf8");
 const deploy=fs.readFileSync(".github/workflows/deploy-production.yml","utf8");
+const backupScript=fs.readFileSync("scripts/backup-postgres.sh","utf8");
 
 const requiredCompose=[
   "POSTGRES_PASSWORD",
@@ -35,6 +36,9 @@ for(const name of requiredCompose){
 }
 if(!/npm ci --ignore-scripts --no-audit --no-fund/.test(deploy))failures.push("production deploy must install locked dependencies");
 if(!/npm run verify/.test(deploy))failures.push("production deploy must verify before publishing");
+if(/^\s{2}valkey:/m.test(compose))failures.push("default production stack must not start unused Valkey");
+if(!/pg_restore --list/.test(backupScript))failures.push("backup must validate dump readability with pg_restore");
+if(!/sha256sum --check/.test(backupScript))failures.push("backup must verify its checksum before success");
 
 
 try{
