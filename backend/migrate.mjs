@@ -51,6 +51,9 @@ try{
     }
 
     await sql.begin(async tx=>{
+      await tx.unsafe("SET LOCAL lock_timeout = '5s'");
+      await tx.unsafe("SET LOCAL statement_timeout = '60s'");
+      await tx.unsafe("SET LOCAL idle_in_transaction_session_timeout = '60s'");
       await tx.unsafe(content);
       await tx.unsafe(
         "INSERT INTO schema_migrations(version,checksum) VALUES($1,$2)",
