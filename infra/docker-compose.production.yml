@@ -1,0 +1,84 @@
+name: pgi-telecom-production
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      PGI_BACKEND_MODE: production
+      PGI_AUTH_MODE: session
+      PGI_BACKEND_HOST: 0.0.0.0
+      PGI_BACKEND_PORT: 8080
+      PGI_VERSION: ${PGI_VERSION:-1.3.0}
+      PGI_DATABASE_URL: postgresql://${POSTGRES_USER:-pgi_telecom}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pgi_telecom}
+      PGI_DATABASE_SSL: disable
+      PGI_DATABASE_POOL_MAX: ${PGI_DATABASE_POOL_MAX:-10}
+      PGI_SESSION_SECRET: ${PGI_SESSION_SECRET}
+      PGI_ADMIN_USERNAME: ${PGI_ADMIN_USERNAME:-admin}
+      PGI_ADMIN_PASSWORD_HASH: ${PGI_ADMIN_PASSWORD_HASH}
+      PGI_INGEST_TOKEN: ${PGI_INGEST_TOKEN}
+      PGI_SERVICE_RATE_TTC_PER_MIN: ${PGI_SERVICE_RATE_TTC_PER_MIN:-0.80}
+      PGI_PAYOUT_RATE_HT_PER_MIN: ${PGI_PAYOUT_RATE_HT_PER_MIN:-0.46}
+      PGI_EXPERT_COST_HT_PER_MIN: ${PGI_EXPERT_COST_HT_PER_MIN:-0.18}
+      PGI_RECONCILIATION_TOLERANCE_HT: ${PGI_RECONCILIATION_TOLERANCE_HT:-0.01}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    networks:
+      - core
+    stop_grace_period: 20s
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pgi_telecom}
+      POSTGRES_USER: ${POSTGRES_USER:-pgi_telecom}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgi_postgres_data:/var/lib/postgresql/data
+      - ../database/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+      - ../database/views.sql:/docker-entrypoint-initdb.d/002-views.sql:ro
+    networks:
+      - core
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U ${POSTGRES_USER:-pgi_telecom} -d ${POSTGRES_DB:-pgi_telecom}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    stop_grace_period: 30s
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    restart: unless-stopped
+    command: ["valkey-server","--appendonly","yes","--protected-mode","yes"]
+    volumes:
+      - pgi_valkey_data:/data
+    networks:
+      - core
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD","valkey-cli","ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgi_postgres_data:
+  pgi_valkey_data:
+
+networks:
+  core:
+    driver: bridge
