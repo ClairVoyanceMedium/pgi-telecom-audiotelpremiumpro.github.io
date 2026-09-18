@@ -830,6 +830,31 @@
   }
 
   function renderExpertSummary(rows){
+    var analytics=cockpitAnalytics(rows);
+    if(RUNTIME.mode==="production"&&Array.isArray(analytics.experts)){
+      var data=analytics.experts.filter(function(x){return Number(x.calls_total||0)>0;}).map(function(x){
+        var calls=Number(x.calls_total||0),connected=Number(x.calls_connected||0);
+        return {
+          name:x.dimension_label||"—",
+          expected:Number(x.expected_payout||0),
+          minutes:Number(x.billable_seconds||0)/60,
+          acd:connected?Number(x.conversation_seconds||0)/connected:0,
+          asr:calls?connected/calls*100:0
+        };
+      });
+      if(!data.length){
+        ["expert-best","expert-best-acd","expert-best-asr"].forEach(function(id){setText(id,"—");});
+        setText("expert-team-minutes","0");return;
+      }
+      var byContribution=data.slice().sort(function(a,b){return b.expected-a.expected;})[0];
+      var byAcd=data.slice().sort(function(a,b){return b.acd-a.acd;})[0];
+      var byAsr=data.slice().sort(function(a,b){return b.asr-a.asr;})[0];
+      setText("expert-best",byContribution.name+" • "+money(byContribution.expected));
+      setText("expert-best-acd",byAcd.name+" • "+fmtDuration(byAcd.acd));
+      setText("expert-best-asr",byAsr.name+" • "+nfmt(byAsr.asr,1)+"%");
+      setText("expert-team-minutes",nfmt(data.reduce(function(a,x){return a+x.minutes;},0)));
+      return;
+    }
     var data=expertMetrics(rows).filter(function(x){return x.m.calls>0;});
     if(!data.length){
       ["expert-best","expert-best-acd","expert-best-asr"].forEach(function(id){setText(id,"—");});
