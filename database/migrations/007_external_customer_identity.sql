@@ -141,7 +141,10 @@ BEGIN
   SET authorization_version=authorization_version+1,
       updated_at=now()
   WHERE id=v_tenant_id;
-  RETURN COALESCE(NEW,OLD);
+  IF TG_OP='DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
 END;
 $$;
 
