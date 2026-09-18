@@ -27,6 +27,12 @@ const hyperscaleMigration=fs.readFileSync("database/migrations/005_hyperscale_fo
 const identityEntitlementsMigration=fs.readFileSync("database/migrations/006_hyperscale_identity_entitlements.sql","utf8");
 const externalIdentityMigration=fs.readFileSync("database/migrations/007_external_customer_identity.sql","utf8");
 const tenantDirectoryMigration=fs.readFileSync("database/migrations/008_scalable_tenant_directory.sql","utf8");
+const tenantBoundaryMigration=fs.readFileSync("database/migrations/011_tenant_sql_access_boundary.sql","utf8");
+const resilientQueueMigration=fs.readFileSync("database/migrations/012_resilient_work_queue.sql","utf8");
+const multiRegionMigration=fs.readFileSync("database/migrations/013_multi_region_dr_foundation.sql","utf8");
+const workersSource=fs.readFileSync("backend/src/workers.mjs","utf8");
+const resilienceDoc=fs.readFileSync("docs/RESILIENCE.md","utf8");
+const prometheusAlerts=fs.readFileSync("infra/observability/prometheus-alerts.example.yml","utf8");
 const hyperscaleDoc=fs.readFileSync("docs/HYPERSCALE.md","utf8");
 const scaleHpa=fs.readFileSync("infra/scale/api-hpa.example.yaml","utf8");
 const postgresStore=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
@@ -109,6 +115,18 @@ if(!/CREATE TABLE service_plans/.test(identityEntitlementsMigration)||!/CREATE T
 if(!/CREATE TABLE customer_principals/.test(externalIdentityMigration)||!/CREATE TABLE customer_tenant_memberships/.test(externalIdentityMigration))failures.push("external customer identities must remain isolated from PGI staff users");
 if(!/tenants_slug_prefix_idx/.test(tenantDirectoryMigration)||!/tenants_display_name_prefix_idx/.test(tenantDirectoryMigration)||!/tenants_directory_cursor_idx/.test(tenantDirectoryMigration))failures.push("tenant directory must stay prefix-indexed and cursor-ready");
 if(!/\/api\/v1\/platform\/tenants/.test(backendServer)||!/listTenants/.test(postgresStore))failures.push("backend must expose a scalable tenant directory");
+if(!/security_barrier=true/.test(tenantBoundaryMigration)||!/tenant_scoped_call_facts/.test(tenantBoundaryMigration)||!/pgi_require_tenant_context/.test(tenantBoundaryMigration))failures.push("tenant SQL boundary must remain security-barrier scoped");
+if(!/set_config\('pgi\.tenant_id'/.test(postgresStore)||!/withTenantContext/.test(postgresStore))failures.push("backend must set tenant SQL context transactionally");
+if(!/work_queue_dead_letters/.test(resilientQueueMigration)||!/lease_expires_at/.test(resilientQueueMigration))failures.push("work queue must retain lease recovery and dead-letter storage");
+if(!/claimWork/.test(postgresStore)||!/failWork/.test(postgresStore)||!/queueHandlers/.test(workersSource))failures.push("distributed queue runtime must retain explicit handlers, retries and claims");
+if(!/platform_regions/.test(multiRegionMigration)||!/tenant_residency_policies/.test(multiRegionMigration)||!/disaster_recovery_targets/.test(multiRegionMigration)||!/region_failover_events/.test(multiRegionMigration))failures.push("multi-region DR foundation must retain region, residency and failover controls");
+if(!/traceparent/.test(backendServer)||!/pgi_http_request_duration_ms_bucket/.test(backendServer)||!/pgi_work_queue_dead_lettered/.test(backendServer))failures.push("backend must retain trace correlation, latency histograms and queue metrics");
+if(!/PGIApiFastErrorBudgetBurn/.test(prometheusAlerts)||!/PGIWorkQueueDeadLetter/.test(prometheusAlerts))failures.push("Prometheus SLO rules must retain burn-rate and dead-letter alerts");
+if(!/RPO/.test(resilienceDoc)||!/RTO/.test(resilienceDoc)||!/tenant_scoped_/.test(resilienceDoc))failures.push("resilience runbook must document DR targets and tenant SQL isolation");
+for(const name of ["PGI_WORK_QUEUE_BATCH_SIZE","PGI_WORK_QUEUE_LEASE_SECONDS","PGI_WORK_QUEUE_RETRY_BASE_SECONDS","PGI_WORK_QUEUE_POLL_MS"]){
+  if(!compose.includes(name+":"))failures.push("docker compose missing "+name);
+  if(!envExample.includes(name+"="))failures.push("production env example missing "+name);
+}
 if(!/4096 tenant buckets/.test(hyperscaleDoc)||!/Control plane et data plane/.test(hyperscaleDoc))failures.push("hyperscale runbook must document bucket routing and plane separation");
 if(!/autoscaling\/v2/.test(scaleHpa)||!/maxReplicas: 100/.test(scaleHpa))failures.push("hyperscale API example must retain horizontal autoscaling");
 
