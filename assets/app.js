@@ -1196,7 +1196,7 @@
   window.addEventListener("error",recordRuntimeError);
   window.addEventListener("unhandledrejection",recordRuntimeError);
   loadState();
-  state.market=readMarketPreference();
+  state.market=RUNTIME.mode==="production"?readMarketPreference():"FR";
   state.mobileOverviewExpanded=readMobileOverviewPreference();
   applyMobileOverviewMode();
   bind();
