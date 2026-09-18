@@ -62,6 +62,20 @@ Au moment du branchement opérateur, définir `PGI_REQUIRE_OPERATOR=true` puis r
 
 Le préflight devient alors bloquant sur ces paramètres.
 
+## Migrations PostgreSQL
+
+Le conteneur `migrate` s’exécute après le healthcheck PostgreSQL et avant l’API. Il applique les fichiers de `database/migrations/` dans l’ordre lexical et conserve, dans `schema_migrations`, le nom et le SHA-256 de chaque migration appliquée.
+
+Règles :
+
+- ne jamais modifier un fichier de migration déjà appliqué ;
+- créer un nouveau fichier numéroté pour chaque évolution ;
+- une divergence de checksum bloque le démarrage de l’API ;
+- les migrations sont transactionnelles ;
+- le CI exécute le runner deux fois pour vérifier l’idempotence.
+
+Les scripts `database/schema.sql` et `database/views.sql` restent la référence pour la création d’une base neuve.
+
 ## DNS et TLS
 
 Le domaine de production pointe directement vers le serveur par enregistrement A/AAAA. Caddy gère le certificat TLS. Aucune clé privée TLS ne doit être stockée dans Git.
