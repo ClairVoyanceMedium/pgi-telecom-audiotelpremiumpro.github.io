@@ -161,3 +161,23 @@ La circulation des fonds SVA est indépendante du routage télécom.
 Aucun reversement tiers ne doit passer en mode production sans un `payment_compliance_profile` actif correspondant au montage validé : paiement direct amont→éditeur, agent PSP ou autre rôle réglementaire approprié.
 
 Voir `docs/WHOLESALE-SVA.md` pour la trajectoire complète.
+
+
+## Architecture hyperscale
+
+Le socle 1.13 sépare désormais le control plane client du data plane volumineux.
+
+- identités publiques UUID ;
+- 4 096 buckets stables de placement tenant ;
+- clusters de données ajoutables sans changer l'identité client ;
+- `call_facts` réparti sur 64 partitions ;
+- agrégats quotidiens partitionnés ;
+- API et workers séparables ;
+- leases et file de travaux durables ;
+- writer PostgreSQL et réplique de lecture séparables ;
+- identité externe des clients isolée des comptes internes PGI ;
+- plans, entitlements, abonnements et quotas configurables.
+
+Le déploiement compact reste possible sur un seul serveur. À mesure que la charge augmente, les mêmes contrats peuvent être répartis sur plusieurs instances et clusters.
+
+Voir `docs/HYPERSCALE.md`.
