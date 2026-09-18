@@ -15,6 +15,7 @@ const restoreDrill=fs.readFileSync("scripts/restore-drill.sh","utf8");
 const migrationRunner=fs.readFileSync("backend/migrate.mjs","utf8");
 const migrationSafety=fs.readFileSync("scripts/check-migrations.mjs","utf8");
 const apiClient=fs.readFileSync("assets/api-client.js","utf8");
+const buildStatic=fs.readFileSync("scripts/build-static.mjs","utf8");
 const security=fs.readFileSync("backend/src/security.mjs","utf8");
 const staticRelease=fs.readFileSync("scripts/static-release.sh","utf8");
 
@@ -65,12 +66,18 @@ if(!/backup-postgres\.sh/.test(backendRelease)||!/restore-drill\.sh/.test(backen
 if(!/api\/v1\/ready/.test(backendRelease)||!/wait_ready/.test(backendRelease))failures.push("backend deployment must gate promotion on strict readiness");
 if(!/rollback_previous/.test(backendRelease))failures.push("backend deployment must support automatic application rollback");
 if(!/PGI_PRODUCTION_URL/.test(backendDeploy)||!/api\/v1\/health/.test(backendDeploy))failures.push("backend deployment must verify the public API path after deployment");
+if(!/PGI_RELEASE_ID/.test(buildStatic)||!/40-character Git SHA/.test(buildStatic))failures.push("front production build must require exact Git SHA");
+if(!/PGI_RELEASE_ID/.test(deploy)||!/releaseId/.test(deploy))failures.push("front deployment must inject and verify the Git SHA");
+if(!/PGI_RELEASE_ID/.test(backendRelease)||!/"release"/.test(backendRelease))failures.push("backend deployment must inject and verify the Git SHA");
+if(!/lock_timeout/.test(migrationRunner)||!/statement_timeout/.test(migrationRunner))failures.push("migration runner must bound lock and statement time");
+if(!/CREATE OR REPLACE behavioral object/.test(migrationSafety))failures.push("migration safety must preserve rollback-compatible behavioral objects");
 
 
 try{
   const secret="x".repeat(48);
   loadConfig({
     PGI_BACKEND_MODE:"production",
+    PGI_RELEASE_ID:"0".repeat(40),
     PGI_AUTH_MODE:"session",
     PGI_SESSION_SECRET:secret,
     PGI_ADMIN_PASSWORD_HASH:"scrypt$16384$8$1$placeholder$placeholder",
