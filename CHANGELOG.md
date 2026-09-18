@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.3.0 — 2026-09-18
+
+Cockpit dashboard Ultra Premium :
+
+- indice opérationnel PGI calculé ;
+- comparaison automatique période N / N-1 ;
+- heatmap trafic jour × heure ;
+- entonnoir de conversion appels ;
+- qualité média MOS / packet loss / jitter / latence ;
+- ranking experts sur la période ;
+- donut de mix réseaux appelants ;
+- waterfall financier CA → attendu → confirmé → encaissé → marge ;
+- ratios financiers avancés ;
+- résumé performance équipe ;
+- bandeau NOC ;
+- navigation mobile complète via bottom sheet ;
+- états API/CDR/SIP rendus dynamiques et non trompeurs ;
+- suppression des faux compteurs live en mode démo ;
+- responsive renforcé desktop/tablette/mobile.
+
 ## 1.2.0 — 2026-09-18
 
 Abstraction complète de l'opérateur SVA :
