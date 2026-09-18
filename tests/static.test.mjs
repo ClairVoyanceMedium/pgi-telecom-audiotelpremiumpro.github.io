@@ -182,12 +182,14 @@ test("les écrans mobiles étroits sont verrouillés", () => {
 });
 
 
-test("le cockpit hyperscale 1.13 est verrouillé", () => {
+test("le cockpit hyperscale 1.14 est verrouillé", () => {
   for (const id of [
     "wh-scale-clusters","wh-scale-clusters-state","wh-scale-buckets",
-    "wh-scale-partitions","wh-scale-read","wh-scale-role"
+    "wh-scale-partitions","wh-scale-read","wh-scale-role",
+    "wh-scale-regions","wh-scale-dr","wh-scale-dr-drills",
+    "noc-regions-ready","noc-work-pending","noc-work-dead","noc-dr-targets"
   ]) assert.ok(index.includes('id="'+id+'"'), "missing #"+id);
-  assert.match(css, /PGI 1\.13 — Hyperscale Capacity Layer/);
+  assert.match(css, /PGI 1\.14 — Hyperscale Capacity Layer/);
   assert.match(app, /bucket_capacity/);
   assert.match(app, /call_fact_partitions/);
   assert.match(app, /read_replica_enabled/);
