@@ -78,6 +78,16 @@ if [ "${PGI_AUTH_MODE:-}" != "session" ]; then
   fail=1
 fi
 
+case "${PGI_PROCESS_ROLE:-all}" in
+  all|api|worker)
+    echo "OK   process role: ${PGI_PROCESS_ROLE:-all}"
+    ;;
+  *)
+    echo "FAIL PGI_PROCESS_ROLE must be all, api or worker"
+    fail=1
+    ;;
+esac
+
 if [[ ! "${PGI_RELEASE_ID:-}" =~ ^[0-9a-f]{40}$ ]]; then
   echo "FAIL PGI_RELEASE_ID must be a 40-character Git SHA"
   fail=1
