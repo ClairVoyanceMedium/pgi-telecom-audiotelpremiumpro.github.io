@@ -708,6 +708,20 @@
     if(cdrState){cdrState.textContent=pipeline.label;cdrState.className="big-status "+pipeline.className;}
     var overviewCdr=$("overview-cdr-state");
     if(overviewCdr){overviewCdr.textContent=pipeline.overview;overviewCdr.className="health "+pipeline.className;}
+    var system=state.system||{};
+    var resilience=system.resilience||{};
+    var queue=system.work_queue||{};
+    setText("noc-regions-ready",nfmt(resilience.regions_ready||0)+" / "+nfmt(resilience.regions_total||0));
+    setText("noc-work-pending",nfmt(queue.pending||0));
+    setText("noc-work-oldest",nfmt(queue.oldest_pending_seconds||0,0)+" s");
+    setText("noc-work-dead",nfmt(queue.dead_lettered||0));
+    setText("noc-dr-targets",nfmt(resilience.dr_targets_total||0));
+    var resilienceState=$("noc-resilience-state");
+    if(resilienceState){
+      var degraded=Number(queue.dead_lettered||0)>0||Number(queue.oldest_pending_seconds||0)>120||Number(resilience.regions_ready||0)<1;
+      resilienceState.textContent=degraded?"ATTENTION":(Number(resilience.regions_ready||0)>1?"MULTI-RÉGION PRÊT":"MODE COMPACT SAIN");
+      resilienceState.className="big-status "+(degraded?"warn":"ok");
+    }
   }
 
   function renderNoc(rows){
