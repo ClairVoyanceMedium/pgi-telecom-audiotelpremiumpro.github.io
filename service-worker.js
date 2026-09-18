@@ -1,4 +1,4 @@
-const CACHE_NAME = "pgi-telecom-shell-v10";
+const CACHE_NAME = "pgi-telecom-shell-v11";
 const SHELL = [
   "./",
   "./index.html",
