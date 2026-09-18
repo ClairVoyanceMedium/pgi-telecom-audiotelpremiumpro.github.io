@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.10.0 — 2026-09-18
+
+Pilotage SVA orienté lancement et mobile :
+
+- remplacement du simple bandeau Wholesale de l'accueil par un centre de lancement SVA ;
+- séquence opérateur amont → numéro 089 → SIP/routage → multi-clients ;
+- calcul automatique du nombre d'étapes prêtes ;
+- barre de progression de préparation ;
+- détection automatique de la prochaine action bloquante ;
+- raccourci contextuel vers la vue concernée ;
+- synthèse immédiate clients, 089 affectés, stock libre, KYC et net clients ;
+- accès direct Plateforme SVA dans la barre mobile ;
+- déplacement des Experts dans le menu Plus sur mobile ;
+- cockpit exécutif compacté sur petit écran pour faire remonter les informations réellement actionnables ;
+- aucun faux contrat, numéro, client, KYC, trunk ou paiement en mode démo ;
+- cache PWA porté à v10 et versions front/backend/Docker alignées sur 1.10.0.
+
+
 ## 1.9.0 — 2026-09-18
 
 Wholesale SVA Control Center et nouveau nom officiel :
