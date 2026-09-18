@@ -32,6 +32,7 @@ const resilientQueueMigration=fs.readFileSync("database/migrations/012_resilient
 const multiRegionMigration=fs.readFileSync("database/migrations/013_multi_region_dr_foundation.sql","utf8");
 const usageLedgerMigration=fs.readFileSync("database/migrations/014_metered_usage_ledger.sql","utf8");
 const objectLifecycleMigration=fs.readFileSync("database/migrations/015_object_storage_data_lifecycle.sql","utf8");
+const dashboardDimensionMigration=fs.readFileSync("database/migrations/016_dashboard_dimension_rollups.sql","utf8");
 const workersSource=fs.readFileSync("backend/src/workers.mjs","utf8");
 const resilienceDoc=fs.readFileSync("docs/RESILIENCE.md","utf8");
 const prometheusAlerts=fs.readFileSync("infra/observability/prometheus-alerts.example.yml","utf8");
@@ -127,6 +128,9 @@ if(!/PGIApiFastErrorBudgetBurn/.test(prometheusAlerts)||!/PGIWorkQueueDeadLetter
 if(!/RPO/.test(resilienceDoc)||!/RTO/.test(resilienceDoc)||!/tenant_scoped_/.test(resilienceDoc))failures.push("resilience runbook must document DR targets and tenant SQL isolation");
 if(!/tenant_usage_events/.test(usageLedgerMigration)||!/prevent_usage_event_mutation/.test(usageLedgerMigration)||!/tenant_billing_cycles/.test(usageLedgerMigration))failures.push("metered billing must retain immutable usage and billing-cycle foundations");
 if(!/object_assets/.test(objectLifecycleMigration)||!/data_retention_policies/.test(objectLifecycleMigration)||!/data_subject_requests/.test(objectLifecycleMigration)||!/legal_hold/.test(objectLifecycleMigration))failures.push("object storage lifecycle must retain retention, privacy and legal-hold controls");
+if(!/dashboard_dimension_rollups_daily/.test(dashboardDimensionMigration)||!/dimension_type/.test(dashboardDimensionMigration)||!/duration/.test(dashboardDimensionMigration))failures.push("dashboard analytics must retain bounded dimension rollups");
+if(!/\/api\/v1\/dashboard\/analytics/.test(backendServer)||!/dashboardAnalytics/.test(postgresStore))failures.push("backend must expose scalable dashboard analytics");
+if(!/analytics:function/.test(apiClient))failures.push("frontend API client must expose dashboard analytics");
 for(const name of ["PGI_WORK_QUEUE_BATCH_SIZE","PGI_WORK_QUEUE_LEASE_SECONDS","PGI_WORK_QUEUE_RETRY_BASE_SECONDS","PGI_WORK_QUEUE_POLL_MS"]){
   if(!compose.includes(name+":"))failures.push("docker compose missing "+name);
   if(!envExample.includes(name+"="))failures.push("production env example missing "+name);
