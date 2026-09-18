@@ -19,7 +19,7 @@ Fonctions déjà présentes :
 - remise à zéro non destructive des métriques avec historique local ;
 - architecture prête à recevoir une API privée.
 
-## Cockpit production 1.5
+## Cockpit production 1.6
 
 Le front exploite directement l’API privée lorsque `PGI_CONFIG.mode` vaut `production` et que `apiBaseUrl` pointe vers `/api/v1` : authentification par session, cookies `__Host-`, protection CSRF, anti-bruteforce, CDR paginés, experts, KPI live, routage opérateur et rafraîchissement SSE. En production, aucune donnée CDR ni aucun taux financier de démonstration n’est injecté.
 
