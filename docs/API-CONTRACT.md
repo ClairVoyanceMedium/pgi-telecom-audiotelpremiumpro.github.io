@@ -116,6 +116,7 @@ Expose sans données KYC sensibles :
 
 - nombre d'éditeurs clients et actifs ;
 - KYC vérifiés / en attente ;
+- parc SVA total et stock libre ;
 - affectations SVA totales / actives ;
 - affectations disposant d'un opérateur attributaire identifié ;
 - reversement amont cumulé ;
