@@ -73,6 +73,10 @@ CREATE TABLE carriers (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE number_portability_events
+  ADD CONSTRAINT number_portability_events_from_carrier_fk FOREIGN KEY (from_carrier_id) REFERENCES carriers(id),
+  ADD CONSTRAINT number_portability_events_to_carrier_fk FOREIGN KEY (to_carrier_id) REFERENCES carriers(id);
+
 CREATE TABLE carrier_adapters (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   carrier_id bigint NOT NULL REFERENCES carriers(id),
