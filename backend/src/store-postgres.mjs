@@ -220,8 +220,8 @@ export class PostgresStore{
       weekdays,
       heatmap,
       quality:quality[0]||{samples:0,mos:null,packet_loss_percent:null,jitter_ms:null,latency_ms:null,dtmf_errors:0},
-      experts:byType.expert.slice(0,12),
-      carriers:byType.carrier.slice(0,12),
+      experts:byType.expert.slice(0,50),
+      carriers:byType.carrier.slice(0,50),
       durations:byType.duration
     };
   }
