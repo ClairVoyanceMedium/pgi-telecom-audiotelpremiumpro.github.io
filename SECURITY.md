@@ -55,6 +55,12 @@ L’API production ne démarre qu’après réussite des migrations transactionn
 
 Les sauvegardes PostgreSQL doivent être lisibles par `pg_restore`, vérifiées par SHA-256 et faire l’objet de tests périodiques de restauration réelle.
 
+## Journalisation et identité de release
+
+Les logs HTTP de production utilisent une route logique et un `request_id`. Ils ne doivent pas inclure l’URL brute, les paramètres de requête, les numéros d’appelants ni les corps JSON.
+
+Chaque build production doit recevoir un `PGI_RELEASE_ID` correspondant exactement au SHA Git de 40 caractères. Le front et l’API exposent cette identité uniquement à des fins de traçabilité de déploiement.
+
 ## Remise à zéro
 
 La remise à zéro des métriques ne supprime jamais les CDR sources. Elle crée une baseline auditée en base.
