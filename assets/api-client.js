@@ -102,6 +102,10 @@
     systemHealth:function(){return request("/system/health");},
     carrierRouting:function(){return request("/carrier-routing");},
     events:events,
+    baselines:function(params){
+      var q=new URLSearchParams(params||{}).toString();
+      return request("/metrics/baselines"+(q?"?"+q:""));
+    },
     newIdempotencyKey:newIdempotencyKey,
     createBaseline:function(payload,idempotencyKey){
       if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");
