@@ -3,7 +3,7 @@
 
   var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
   var CONFIG={serviceRate:0.80,payoutRate:0.46,expertCostPerMin:0.18,fixedCostPerCall:0.03};
-  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,pendingSyncMode:"dashboard",appBootstrapCache:null,appBootstrapAt:0,lastSyncAt:null,activeView:"overview",commandIndex:0,system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
+  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,pendingSyncMode:"dashboard",hiddenAt:null,appBootstrapCache:null,appBootstrapAt:0,lastSyncAt:null,activeView:"overview",commandIndex:0,system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
   var titles={overview:"Cockpit",calls:"Appels",finance:"Finance",experts:"Experts",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Supervision",settings:"Paramètres"};
   var experts=["Frederick","Sofia","Emma","Lina","Clara","Nora"];
   var carriers=["Orange","SFR","Bouygues","Free"];
@@ -429,7 +429,7 @@
       await window.PGIApi.login(username.value,password.value);
       password.value="";
       closeLogin();
-      await syncProductionData();
+      await syncProductionData({mode:"full",forceMeta:true});
     }catch(e){
       if(msg)msg.textContent=e&&e.status===429?"Trop de tentatives. Réessayez dans un instant.":"Identifiants invalides ou API indisponible.";
       password.focus();
@@ -1822,13 +1822,19 @@
     if(RUNTIME.mode!=="production")return;
     if(document.hidden){
       clearTimeout(state.syncTimer);
+      state.hiddenAt=Date.now();
       state.pendingSync=true;
+      state.pendingSyncMode=mergeSyncMode(state.pendingSyncMode,"incremental");
       stopProductionEvents();
       return;
     }
+    var hiddenFor=state.hiddenAt?Date.now()-state.hiddenAt:0;
     var shouldSync=state.pendingSync||!state.lastSyncAt||(Date.now()-state.lastSyncAt)>30000;
+    var resumeMode=hiddenFor>30000?"full":(state.pendingSyncMode||"incremental");
+    state.hiddenAt=null;
     state.pendingSync=false;
-    if(shouldSync)syncProductionData();
+    state.pendingSyncMode="dashboard";
+    if(shouldSync)syncProductionData({mode:resumeMode});
     else startProductionEvents();
   }
 
