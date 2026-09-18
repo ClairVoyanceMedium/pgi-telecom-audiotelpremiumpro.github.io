@@ -34,7 +34,7 @@
       </nav>
       <div class="sidebar-foot">
         <div class="status-line"><i class="dot ok"></i><span>Système disponible</span></div>
-        <small>V1 • GitHub Pages</small>
+        <small id="sidebar-version">Version —</small>
       </div>
     </aside>
 
@@ -103,15 +103,15 @@
           </article>
 
           <article class="panel realtime">
-            <div class="panel-head"><div><p class="panel-kicker">TEMPS RÉEL</p><h2>Activité</h2></div><span class="live-badge"><i class="dot ok pulse"></i>LIVE</span></div>
+            <div class="panel-head"><div><p class="panel-kicker">TEMPS RÉEL</p><h2>Activité</h2></div><span class="live-badge" id="live-mode-badge"><i class="dot offline"></i>DÉMO</span></div>
             <div class="live-stats">
               <div><span>Appels en cours</span><strong id="live-calls">0</strong></div>
               <div><span>Experts disponibles</span><strong id="live-available">0</strong></div>
               <div><span>File d’attente</span><strong id="live-queue">0</strong></div>
             </div>
             <div class="health-row"><span>SIP trunk</span><span class="health warn">NON CONNECTÉ</span></div>
-            <div class="health-row"><span>API</span><span class="health ok">PRÊTE</span></div>
-            <div class="health-row"><span>CDR</span><span class="health ok">SYNCHRONISÉ</span></div>
+            <div class="health-row"><span>API</span><span class="health warn" id="overview-api-state">NON CONNECTÉE</span></div>
+            <div class="health-row"><span>CDR</span><span class="health warn" id="overview-cdr-state">DÉMO LOCALE</span></div>
             <div class="health-row"><span>Rapprochement</span><span class="health warn">MODE DÉMO</span></div>
           </article>
         </section>
@@ -317,9 +317,24 @@
     <button class="active" data-view="overview"><span>⌂</span><small>Accueil</small></button>
     <button data-view="calls"><span>◫</span><small>Appels</small></button>
     <button data-view="finance"><span>€</span><small>Finance</small></button>
-    <button data-view="system"><span>⌁</span><small>Système</small></button>
-    <button data-view="settings"><span>⚙</span><small>Réglages</small></button>
+    <button data-view="experts"><span>◎</span><small>Experts</small></button>
+    <button id="mobile-more" type="button"><span>•••</span><small>Plus</small></button>
   </nav>
+
+  <dialog id="mobile-menu-dialog" class="mobile-sheet-dialog">
+    <form method="dialog" class="mobile-sheet">
+      <div class="mobile-sheet-handle"></div>
+      <div class="dialog-head">
+        <div><p class="panel-kicker">NAVIGATION</p><h2>PGI Telecom</h2></div>
+        <button class="icon-btn" value="cancel" aria-label="Fermer">×</button>
+      </div>
+      <div class="mobile-sheet-grid">
+        <button value="cancel" data-view="carriers"><span>⇄</span><strong>Opérateurs</strong><small>SVA, routes, portabilité</small></button>
+        <button value="cancel" data-view="system"><span>⌁</span><strong>Système</strong><small>NOC, API, CDR, SIP</small></button>
+        <button value="cancel" data-view="settings"><span>⚙</span><strong>Paramètres</strong><small>Baseline, audit, configuration</small></button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="call-dialog">
     <form method="dialog" class="dialog-card call-detail-card">
