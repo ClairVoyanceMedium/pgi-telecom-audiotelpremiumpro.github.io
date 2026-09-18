@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.4.0 — 2026-09-18
+
+Branchement du cockpit sur le backend privé :
+
+- authentification production intégrée au front ;
+- client API session + cookies sécurisés ;
+- transmission automatique du jeton CSRF pour les écritures ;
+- récupération paginée des CDR réels ;
+- alimentation du cockpit avec experts et KPI live du backend ;
+- aucune génération de faux CDR lorsque le mode production est actif ;
+- rafraîchissement temps réel par Server-Sent Events ;
+- baseline globale créée dans le backend avant remise à zéro visuelle ;
+- erreurs 401 / 429 traitées proprement dans l’interface ;
+- tests statiques anti-régression sur le chemin production.
+
+
 ## 1.3.0 — 2026-09-18
 
 Cockpit dashboard Ultra Premium :
