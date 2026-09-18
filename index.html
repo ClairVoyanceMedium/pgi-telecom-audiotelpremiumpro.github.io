@@ -27,13 +27,13 @@
         <div><strong>PGI • Telecom</strong><small>Audiotel Premium Pro</small></div>
       </div>
       <nav class="nav-list">
-        <button class="nav-item active" data-view="overview"><span>⌂</span>Vue d’ensemble</button>
+        <button class="nav-item active" data-view="overview"><span>⌂</span>Cockpit</button>
         <button class="nav-item" data-view="calls"><span>◫</span>Appels</button>
         <button class="nav-item" data-view="finance"><span>€</span>Finance</button>
         <button class="nav-item" data-view="experts"><span>◎</span>Experts</button>
         <button class="nav-item" data-view="carriers"><span>⇄</span>Opérateurs</button>
         <button class="nav-item" data-view="wholesale"><span>◇</span>Plateforme SVA</button>
-        <button class="nav-item" data-view="system"><span>⌁</span>Système</button>
+        <button class="nav-item" data-view="system"><span>⌁</span>Supervision</button>
         <button class="nav-item" data-view="settings"><span>⚙</span>Paramètres</button>
       </nav>
       <div class="sidebar-foot">
@@ -47,7 +47,7 @@
         <div class="topbar-title">
           <p class="product-name">PGI • Telecom - Audiotel Premium Pro</p>
           <p class="eyebrow">COCKPIT OPÉRATEUR</p>
-          <h1 id="view-title">Vue d’ensemble</h1>
+          <h1 id="view-title">Cockpit</h1>
         </div>
         <div class="top-actions">
           <span class="pill demo" id="runtime-mode">MODE DÉMO</span>
@@ -85,7 +85,7 @@
           <div class="command-copy">
             <div class="command-orb" aria-hidden="true"><i></i><i></i><i></i></div>
             <div>
-              <p class="command-kicker">PGI EXECUTIVE CONTROL</p>
+              <p class="command-kicker">CENTRE DE PILOTAGE PGI</p>
               <h2>Pilotage Audiotel en temps réel</h2>
               <p>Performance, finance, qualité télécom et exploitation réunies dans un seul cockpit.</p>
             </div>
@@ -236,6 +236,67 @@
               <div><span>Latence</span><strong id="quality-latency">—</strong><i class="quality-meter"><b id="quality-latency-bar"></b></i></div>
             </div>
           </article>
+        </section>
+
+        <section class="cockpit-intelligence mobile-advanced" aria-label="Analyse avancée du cockpit">
+          <div class="cockpit-section-head">
+            <div><p class="panel-kicker">ANALYSE AVANCÉE</p><h2>Tour de contrôle complète</h2><p>Indicateurs exacts calculés côté serveur en production.</p></div>
+            <span class="metric-badge" id="cockpit-analytics-mode">ANALYTIQUE</span>
+          </div>
+
+          <div class="analytics-mini-strip">
+            <div><span>Heure de pointe</span><strong id="cockpit-peak-hour">—</strong><small id="cockpit-peak-hour-detail">0 appel</small></div>
+            <div><span>Jour le plus actif</span><strong id="cockpit-peak-day">—</strong><small id="cockpit-peak-day-detail">0 appel</small></div>
+            <div><span>Valeur / appel</span><strong id="cockpit-value-call">—</strong><small>CA moyen</small></div>
+            <div><span>CA / minute</span><strong id="cockpit-value-minute">—</strong><small>Rendement brut</small></div>
+            <div><span>Marge / appel</span><strong id="cockpit-margin-call">—</strong><small>Marge estimée</small></div>
+            <div><span>Durée moyenne</span><strong id="cockpit-average-duration">—</strong><small>Appels aboutis</small></div>
+          </div>
+
+          <div class="cockpit-chart-grid">
+            <article class="panel cockpit-chart-panel wide-chart">
+              <div class="panel-head"><div><p class="panel-kicker">VOLUME</p><h2>Appels & minutes</h2></div><span class="metric-badge" id="cockpit-volume-total">0 appels</span></div>
+              <div class="chart-wrap"><svg id="cockpit-volume-chart" class="cockpit-svg-chart" viewBox="0 0 760 220" role="img" aria-label="Évolution des appels et minutes"></svg></div>
+            </article>
+
+            <article class="panel cockpit-chart-panel wide-chart">
+              <div class="panel-head"><div><p class="panel-kicker">CONVERSION</p><h2>ASR & abandons</h2></div><span class="metric-badge" id="cockpit-asr-average">ASR —</span></div>
+              <div class="chart-wrap"><svg id="cockpit-conversion-chart" class="cockpit-svg-chart" viewBox="0 0 760 220" role="img" aria-label="Évolution du taux de décroché et des abandons"></svg></div>
+            </article>
+
+            <article class="panel cockpit-chart-panel">
+              <div class="panel-head"><div><p class="panel-kicker">HEURES</p><h2>Répartition horaire</h2></div></div>
+              <div id="cockpit-hour-bars" class="metric-bars"></div>
+            </article>
+
+            <article class="panel cockpit-chart-panel">
+              <div class="panel-head"><div><p class="panel-kicker">JOURS</p><h2>Répartition hebdomadaire</h2></div></div>
+              <div id="cockpit-weekday-bars" class="metric-bars"></div>
+            </article>
+
+            <article class="panel cockpit-chart-panel">
+              <div class="panel-head"><div><p class="panel-kicker">STATUTS</p><h2>Issue des appels</h2></div></div>
+              <div class="status-analytics">
+                <div id="cockpit-status-donut" class="status-donut"><div><strong id="cockpit-status-total">0</strong><small>appels</small></div></div>
+                <div id="cockpit-status-legend" class="status-legend"></div>
+              </div>
+            </article>
+
+            <article class="panel cockpit-chart-panel">
+              <div class="panel-head"><div><p class="panel-kicker">DURÉES</p><h2>Distribution conversations</h2></div></div>
+              <div id="cockpit-duration-bars" class="metric-bars compact-bars"></div>
+            </article>
+
+            <article class="panel cockpit-chart-panel">
+              <div class="panel-head"><div><p class="panel-kicker">EXPERTS</p><h2>Contribution exacte</h2></div><button class="text-btn" data-go="experts" type="button">Ouvrir →</button></div>
+              <div id="cockpit-expert-bars" class="metric-bars ranked-bars"></div>
+            </article>
+
+            <article class="panel cockpit-chart-panel">
+              <div class="panel-head"><div><p class="panel-kicker">OPÉRATEURS</p><h2>Contribution réseau</h2></div><button class="text-btn" data-go="carriers" type="button">Ouvrir →</button></div>
+              <div id="cockpit-carrier-bars" class="metric-bars ranked-bars"></div>
+            </article>
+          </div>
         </section>
 
         <section class="insight-grid mobile-advanced">
@@ -482,7 +543,7 @@
   </div>
 
   <nav class="mobile-nav" aria-label="Navigation mobile">
-    <button class="active" data-view="overview"><span>⌂</span><small>Accueil</small></button>
+    <button class="active" data-view="overview"><span>⌂</span><small>Cockpit</small></button>
     <button data-view="calls"><span>◫</span><small>Appels</small></button>
     <button class="mobile-sva" data-view="wholesale"><span>◇</span><small>SVA</small></button>
     <button data-view="finance"><span>€</span><small>Finance</small></button>
@@ -500,7 +561,7 @@
         <button value="cancel" data-view="experts"><span>◎</span><strong>Experts</strong><small>Disponibilité, performance, contribution</small></button>
         <button value="cancel" data-view="carriers"><span>⇄</span><strong>Opérateurs</strong><small>SVA, routes, portabilité</small></button>
         <button value="cancel" data-view="wholesale"><span>◇</span><strong>Plateforme SVA</strong><small>Clients, KYC, numéros, reversements</small></button>
-        <button value="cancel" data-view="system"><span>⌁</span><strong>Système</strong><small>NOC, API, CDR, SIP</small></button>
+        <button value="cancel" data-view="system"><span>⌁</span><strong>Supervision</strong><small>NOC, API, CDR, SIP, résilience</small></button>
         <button value="cancel" data-view="settings"><span>⚙</span><strong>Paramètres</strong><small>Baseline, audit, configuration</small></button>
       </div>
     </form>
