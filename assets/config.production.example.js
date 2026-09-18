@@ -1,6 +1,6 @@
 window.PGI_CONFIG = Object.freeze({
   appName: "PGI • Telecom - Audiotel Premium Pro",
-  version: "1.10.1",
+  version: "1.10.2",
   releaseId: "0000000000000000000000000000000000000000",
   schemaVersion: 1,
   mode: "production",
