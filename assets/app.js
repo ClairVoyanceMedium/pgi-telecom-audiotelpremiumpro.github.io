@@ -126,6 +126,21 @@
   }
 
   function setText(id,val){var e=$(id);if(e)e.textContent=val;}
+
+  function revenueTrendPercent(currentRows){
+    if(state.baseline)return null;
+    var range=getRange(),now=new Date();
+    var effectiveTo=range.to<now?range.to:now;
+    var duration=Math.max(1,effectiveTo-range.from);
+    var previousTo=new Date(range.from.getTime()-1);
+    var previousFrom=new Date(previousTo.getTime()-duration);
+    var previousRows=allCalls.filter(function(c){return c.ts>=previousFrom&&c.ts<=previousTo;});
+    var current=aggregate(currentRows).ca;
+    var previous=aggregate(previousRows).ca;
+    if(previous<=0)return null;
+    return (current-previous)/previous*100;
+  }
+
   function renderKPIs(rows){
     var a=aggregate(rows);
     setText("kpi-ca",money(a.ca));
@@ -140,7 +155,7 @@
     setText("kpi-asr",nfmt(a.asr,1)+"%");
     setText("kpi-abandon",nfmt(a.abandoned)+" abandons");
     setText("kpi-experts",String(Math.min(experts.length,Math.max(0,new Set(rows.filter(function(x){return x.status==="connected";}).map(function(x){return x.expert;})).size))));
-    setText("kpi-live",rows.length?"2 appels en cours":"0 appel en cours");
+    setText("kpi-live","Historique sélectionné");
     setText("kpi-rate","Taux moyen : "+money(CONFIG.payoutRate)+"/min");
     setText("fin-ca",money(a.ca));
     setText("fin-expected",money(a.expected));
@@ -150,7 +165,17 @@
     setText("live-calls",rows.length?"2":"0");
     setText("live-available",rows.length?"3":"0");
     setText("live-queue",rows.length?"1":"0");
-    var trend=$("ca-trend");if(trend){trend.textContent=rows.length?"+8,4%":"+0%";trend.className="trend up";}
+    var trend=$("ca-trend");
+    if(trend){
+      var pct=revenueTrendPercent(rows);
+      if(pct==null||!Number.isFinite(pct)){
+        trend.textContent="—";
+        trend.className="trend";
+      }else{
+        trend.textContent=(pct>=0?"+":"")+nfmt(pct,1)+"%";
+        trend.className="trend "+(pct>=0?"up":"down");
+      }
+    }
   }
 
   function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c];});}
@@ -231,7 +256,7 @@
   function renderAlerts(rows){
     var a=aggregate(rows),items=[];
     if(a.gap>0.01)items.push({type:"warn",title:"Écart de reversement détecté",text:money(a.gap)+" à rapprocher entre CDR internes et données opérateur démo."});
-    items.push({type:"info",title:"Données de démonstration",text:"Aucune donnée client réelle n’est stockée sur GitHub Pages."});
+    items.push({type:"info",title:"Données de démonstration",text:"Aucune donnée client réelle n’est stockée sur GitHub Pages. L’historique simulé est limité à 92 jours."});
     if(a.asr<80&&a.calls)items.push({type:"warn",title:"ASR sous le seuil cible",text:"Taux de décroché actuel : "+nfmt(a.asr,1)+"%."});
     $("alert-count").textContent=String(items.length);
     $("alerts-list").innerHTML=items.map(function(x){return '<div class="alert-item"><div class="alert-icon '+x.type+'">!</div><div><strong>'+esc(x.title)+'</strong><small>'+esc(x.text)+'</small></div></div>';}).join("");
