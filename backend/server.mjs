@@ -197,6 +197,12 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.overview",200,await store.wholesaleOverview());
       }
 
+      if(method==="GET"&&pathname==="/api/v1/platform/tenants"){
+        requireRole(actor,["admin","finance","readonly"]);
+        const params=Object.fromEntries(url.searchParams.entries());
+        return done(res,metrics,started,"platform.tenants",200,await store.listTenants(params));
+      }
+
       if(method==="POST"&&pathname==="/api/v1/carrier-switches"){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
         const body=await readJson(req,config.bodyLimitBytes);
