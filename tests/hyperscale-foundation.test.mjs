@@ -11,6 +11,8 @@ const resilientQueueMigration=fs.readFileSync("database/migrations/012_resilient
 const multiRegionMigration=fs.readFileSync("database/migrations/013_multi_region_dr_foundation.sql","utf8");
 const usageLedgerMigration=fs.readFileSync("database/migrations/014_metered_usage_ledger.sql","utf8");
 const objectLifecycleMigration=fs.readFileSync("database/migrations/015_object_storage_data_lifecycle.sql","utf8");
+const dashboardDimensionMigration=fs.readFileSync("database/migrations/016_dashboard_dimension_rollups.sql","utf8");
+const qualityRollupMigration=fs.readFileSync("database/migrations/017_quality_rollups.sql","utf8");
 const resilienceDocs=fs.readFileSync("docs/RESILIENCE.md","utf8");
 const alertRules=fs.readFileSync("infra/observability/prometheus-alerts.example.yml","utf8");
 const schema=fs.readFileSync("database/schema.sql","utf8");
@@ -62,7 +64,7 @@ test("une réplique de lecture peut être ajoutée sans changer le métier",()=>
   assert.ok(store.includes("read_replica_enabled"));
 });
 
-test("le schéma neuf et le cockpit exposent la fondation 1.14",()=>{
+test("le schéma neuf et le cockpit exposent la fondation 1.15",()=>{
   assert.ok(schema.includes("005_hyperscale_foundation"));
   assert.ok(schema.includes("8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69"));
   assert.ok(index.includes('id="wh-scale-buckets"'));
@@ -155,4 +157,15 @@ test("les gros documents restent hors PostgreSQL avec politique de rétention",(
   assert.ok(objectLifecycleMigration.includes("legal_hold"));
   assert.ok(objectLifecycleMigration.includes("CREATE TABLE data_retention_policies"));
   assert.ok(objectLifecycleMigration.includes("CREATE TABLE data_subject_requests"));
+});
+
+
+test("le cockpit analytique reste borné côté serveur",()=>{
+  assert.ok(dashboardDimensionMigration.includes("dashboard_dimension_rollups_daily"));
+  assert.ok(dashboardDimensionMigration.includes("dimension_type"));
+  assert.ok(qualityRollupMigration.includes("quality_rollups_hourly_sharded"));
+  assert.ok(store.includes("async dashboardAnalytics("));
+  assert.ok(store.includes("writeDashboardDimensionRollups"));
+  assert.ok(store.includes("writeQualityRollup"));
+  assert.ok(server.includes("/api/v1/dashboard/analytics"));
 });
