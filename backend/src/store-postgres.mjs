@@ -298,6 +298,17 @@ export class PostgresStore{
     );
   }
 
+  async listBaselines(params={}){
+    const scope=params.scope||"global";
+    if(!["global","expert","sva_number"].includes(scope))throw problem(400,"INVALID_SCOPE");
+    const limit=clampInt(params.limit,20,1,100);
+    return this.sql.unsafe(
+      "SELECT id,scope,scope_id,reason,created_at,effective_from,created_by"+
+      " FROM metric_baselines WHERE scope=$1 ORDER BY effective_from DESC,id DESC LIMIT $2",
+      [scope,limit]
+    );
+  }
+
   async createBaseline(payload,actor){
     if(!["global","expert","sva_number"].includes(payload.scope))throw problem(400,"INVALID_SCOPE");
     const rows=await this.sql.unsafe(
