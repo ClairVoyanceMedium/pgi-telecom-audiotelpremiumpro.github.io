@@ -125,9 +125,10 @@ export class PostgresStore{
         "INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('expert.status','expert',$1,$2::jsonb)",
         [String(expert.id),JSON.stringify({status})]
       );
-      this.eventBus.publish("expert.status",{id:expert.id,status});
       return expert;
     });
+    this.eventBus.publish("expert.status",{id:result.id,status:result.status});
+    return result;
   }
 
   async selectExpert(){
@@ -437,7 +438,7 @@ export class PostgresStore{
     const paidAt=payload?.paid_at?new Date(payload.paid_at):new Date();
     if(!Number.isFinite(paidAt.getTime()))throw problem(400,"INVALID_PAID_AT");
 
-    return this.sql.begin(async tx=>{
+    const result=await this.sql.begin(async tx=>{
       const rows=await tx.unsafe(
         "SELECT id,carrier_id,status,confirmed_amount_ht::float8,paid_amount_ht::float8 FROM carrier_settlements WHERE id=$1 FOR UPDATE",
         [settlementId]
