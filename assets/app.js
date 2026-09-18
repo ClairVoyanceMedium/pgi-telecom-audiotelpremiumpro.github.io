@@ -246,54 +246,86 @@
     }catch(e){recordRuntimeError();}
   }
 
+  async function loadAppBootstrap(){
+    if(window.PGIApi&&typeof window.PGIApi.appBootstrap==="function"){
+      try{return await window.PGIApi.appBootstrap();}catch(e){
+        if(e&&e.status!==404&&e.status!==405)throw e;
+      }
+    }
+    var me=await window.PGIApi.me();
+    var baselineResult=await window.PGIApi.baselines({scope:"global",limit:"20"});
+    var wholesale=await window.PGIApi.wholesaleOverview().catch(function(){return null;});
+    return {user:me&&me.user?me.user:null,baselines:baselineResult,wholesale:wholesale};
+  }
+
+  async function loadDashboardBootstrap(range,prevRange,market){
+    if(window.PGIApi&&typeof window.PGIApi.dashboardBootstrap==="function"){
+      try{
+        return await window.PGIApi.dashboardBootstrap(
+          range.from.toISOString(),range.to.toISOString(),market,
+          prevRange?prevRange.from.toISOString():null,
+          prevRange?prevRange.to.toISOString():null
+        );
+      }catch(e){
+        if(e&&e.status!==404&&e.status!==405)throw e;
+      }
+    }
+    var parts=await Promise.all([
+      window.PGIApi.summary(range.from.toISOString(),range.to.toISOString(),market),
+      prevRange
+        ?window.PGIApi.summary(prevRange.from.toISOString(),prevRange.to.toISOString(),market)
+        :Promise.resolve(null),
+      window.PGIApi.analytics(range.from.toISOString(),range.to.toISOString(),market).catch(function(){return null;}),
+      window.PGIApi.experts(),
+      window.PGIApi.systemHealth(),
+      window.PGIApi.carrierRouting()
+    ]);
+    return {
+      summary:parts[0],previous_summary:parts[1],analytics:parts[2],
+      experts:parts[3],system:parts[4],route:parts[5]
+    };
+  }
+
   async function syncProductionData(){
     if(RUNTIME.mode!=="production"||!window.PGIApi||state.syncInFlight)return;
     state.syncInFlight=true;
     var refresh=$("refresh-btn");
     if(refresh)refresh.disabled=true;
     try{
-      var me=await window.PGIApi.me();
-      state.authUser=me&&me.user?me.user:null;
+      var appBootstrap=await loadAppBootstrap();
+      state.authUser=appBootstrap&&appBootstrap.user?appBootstrap.user:null;
       closeLogin();
       var logout=$("logout-btn");if(logout)logout.hidden=false;
-      var baselineResult=await window.PGIApi.baselines({scope:"global",limit:"20"});
-      var baselineRows=Array.isArray(baselineResult&&baselineResult.data)?baselineResult.data:[];
+      var baselineRows=Array.isArray(appBootstrap&&appBootstrap.baselines&&appBootstrap.baselines.data)
+        ?appBootstrap.baselines.data:[];
       state.resets=baselineRows.map(function(x){return {at:x.effective_from||x.created_at,scope:x.scope,reason:x.reason||""};});
       state.baseline=baselineRows.length?new Date(baselineRows[0].effective_from||baselineRows[0].created_at):null;
-      var wholesale=await window.PGIApi.wholesaleOverview().catch(function(){return null;});
-      state.wholesale=wholesale;
-      syncMarketSelector(wholesale);
-      var range=getRange();
-      var windowRange=productionDataRange();
-      var prevRange=comparisonRange(range);
-      var results=await Promise.all([
+      state.wholesale=appBootstrap&&appBootstrap.wholesale?appBootstrap.wholesale:null;
+      syncMarketSelector(state.wholesale);
+
+      var range=getRange(),windowRange=productionDataRange(),prevRange=comparisonRange(range);
+      var payloads=await Promise.all([
         loadAllApiCalls(windowRange.from,windowRange.to,state.market),
-        window.PGIApi.summary(range.from.toISOString(),range.to.toISOString(),state.market),
-        prevRange
-          ?window.PGIApi.summary(prevRange.from.toISOString(),prevRange.to.toISOString(),state.market)
-          :Promise.resolve(null),
-        window.PGIApi.analytics(range.from.toISOString(),range.to.toISOString(),state.market).catch(function(){return null;}),
-        window.PGIApi.experts(),
-        window.PGIApi.systemHealth(),
-        window.PGIApi.carrierRouting()
+        loadDashboardBootstrap(range,prevRange,state.market)
       ]);
-      var sample=results[0]||{data:[],truncated:false};
+      var sample=payloads[0]||{data:[],truncated:false};
+      var dashboard=payloads[1]||{};
       allCalls=(Array.isArray(sample.data)?sample.data:[]).map(apiCallToUi)
         .filter(function(x){return Number.isFinite(x.ts.getTime());})
         .sort(function(a,b){return b.ts-a.ts;});
       state.cdrSampleTruncated=!!sample.truncated;
-      state.serverSummary=results[1]||null;
-      state.previousSummary=results[2]||null;
-      state.serverAnalytics=results[3]||null;
+      state.serverSummary=dashboard.summary||null;
+      state.previousSummary=dashboard.previous_summary||null;
+      state.serverAnalytics=dashboard.analytics||null;
       if(state.serverSummary&&Number(state.serverSummary.currency_count||0)===1&&state.serverSummary.currency){
         state.marketCurrency=String(state.serverSummary.currency);
       }
-      var expertRows=Array.isArray(results[4]&&results[4].data)?results[4].data:[];
+      var expertRows=Array.isArray(dashboard.experts&&dashboard.experts.data)?dashboard.experts.data:[];
       experts=expertRows.map(function(x){return x.display_name;}).filter(Boolean);
       var networkNames=Array.from(new Set(allCalls.map(function(x){return x.carrier;}).filter(Boolean)));
       carriers=networkNames;
-      state.system=results[5]||null;
-      state.route=results[6]||null;
+      state.system=dashboard.system||null;
+      state.route=dashboard.route||null;
       setProductionLive(state.serverSummary||{});
       state.diagnostics.apiStatus="ok";
       render();
