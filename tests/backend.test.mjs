@@ -283,6 +283,21 @@ test("backend health summary calls and metrics are operational",async()=>{
   });
 });
 
+test("wholesale overview is read-only and empty in simulator",async()=>{
+  await withServer(async({base})=>{
+    const r=await fetch(base+"/api/v1/platform/overview");
+    assert.equal(r.status,200);
+    const body=await r.json();
+    assert.equal(body.foundation_version,"1.9");
+    assert.equal(body.summary.tenants_total,0);
+    assert.equal(body.summary.assignments_total,0);
+    assert.equal(body.summary.payment_compliance_active,false);
+    assert.deepEqual(body.tenants,[]);
+    assert.deepEqual(body.numbers,[]);
+    assert.deepEqual(body.settlements,[]);
+  });
+});
+
 test("CDR ingest is idempotent",async()=>{
   await withServer(async({base})=>{
     const envelope={
