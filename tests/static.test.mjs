@@ -194,3 +194,20 @@ test("le cockpit hyperscale 1.14 est verrouillé", () => {
   assert.match(app, /call_fact_partitions/);
   assert.match(app, /read_replica_enabled/);
 });
+
+
+test("le cockpit analytique dense 1.15 est verrouillé", () => {
+  assert.match(index, /data-view="overview"><span>⌂<\/span>Cockpit/);
+  assert.match(index, /data-view="system"><span>⌁<\/span>Supervision/);
+  for (const id of [
+    "cockpit-volume-chart","cockpit-conversion-chart","cockpit-hour-bars",
+    "cockpit-weekday-bars","cockpit-status-donut","cockpit-duration-bars",
+    "cockpit-expert-bars","cockpit-carrier-bars","cockpit-peak-hour",
+    "cockpit-peak-day","cockpit-value-call","cockpit-value-minute",
+    "cockpit-margin-call","cockpit-average-duration"
+  ]) assert.ok(index.includes('id="'+id+'"'), "missing #"+id);
+  assert.match(css, /PGI 1\.15 — Cockpit Intelligence Layer/);
+  assert.match(app, /renderCockpitIntelligence/);
+  assert.match(app, /serverAnalytics/);
+  assert.match(app, /AGRÉGATS SERVEUR/);
+});
