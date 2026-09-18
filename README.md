@@ -4,7 +4,7 @@ Cockpit Audiotel, financier et télécom de PGI Telecom.
 
 ## État actuel
 
-Cette première version est un **front-end de démonstration** publié sur GitHub Pages. Elle n'utilise aucune donnée client réelle et ne contient aucun secret.
+Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.6.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
 
 Fonctions déjà présentes :
 
@@ -89,9 +89,9 @@ Le projet possède désormais des garde-fous de préproduction :
 
 La version GitHub Pages reste une démonstration. Les statuts SIP/API affichent explicitement qu'ils ne sont pas connectés tant que l'infrastructure réelle n'existe pas.
 
-## Validation release 1.5.0
+## Validation release 1.6.0
 
-La release 1.5.0 ajoute les garde-fous préproduction : sessions sécurisées, finance production sans hypothèses démo, baselines autoritaires, migrations transactionnelles, sauvegarde/restauration vérifiées, observabilité workers et séparation stricte des endpoints publics et téléphonie interne.
+La release 1.6.0 ajoute le déploiement front atomique avec rollback, le pipeline backend gardé avec sauvegarde et restore drill, les migrations expand-only bornées, la readiness PostgreSQL/workers, l’arrêt gracieux SSE, les logs JSON respectueux des données et la vérification de l’identité exacte du commit Git côté front et API.
 
 
 
