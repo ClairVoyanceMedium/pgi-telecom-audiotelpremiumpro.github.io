@@ -85,6 +85,14 @@ else
   echo "OK   release: ${PGI_RELEASE_ID:0:12}"
 fi
 
+backup_keep="${PGI_BACKUP_KEEP_COUNT:-30}"
+if [[ ! "$backup_keep" =~ ^[0-9]+$ ]] || [ "$backup_keep" -lt 2 ] || [ "$backup_keep" -gt 365 ]; then
+  echo "FAIL PGI_BACKUP_KEEP_COUNT must be between 2 and 365"
+  fail=1
+else
+  echo "OK   backup retention count: $backup_keep"
+fi
+
 need_min_length PGI_SESSION_SECRET 32
 need_min_length PGI_INGEST_TOKEN 24
 need_min_length PGI_TELEPHONY_USER 3
