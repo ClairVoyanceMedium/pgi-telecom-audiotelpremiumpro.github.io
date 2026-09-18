@@ -391,7 +391,7 @@ export class MemoryStore{
 
   async wholesaleOverview(){
     return {
-      foundation_version:"1.12",
+      foundation_version:"1.13",
       summary:{
         tenants_total:0,tenants_active:0,kyc_verified:0,kyc_pending:0,
         markets_total:1,markets_active:1,tenant_markets_active:0,
@@ -406,7 +406,12 @@ export class MemoryStore{
       settlements:[],
       payment_profiles:[],
       markets:[{country_code:"FR",display_name:"France",status:"active",default_currency:"EUR",default_locale:"fr-FR",timezone:"Europe/Paris",tenants:0,numbers:0}],
-      settlement_totals_by_currency:[]
+      settlement_totals_by_currency:[],
+      scale:{
+        clusters_total:1,clusters_ready:1,routing_buckets_active:4096,
+        placements_active:1,call_fact_partitions:64,bucket_capacity:4096,
+        read_replica_enabled:false,process_role:this.config.processRole||"all"
+      }
     };
   }
 
