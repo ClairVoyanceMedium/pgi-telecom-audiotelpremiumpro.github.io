@@ -128,7 +128,10 @@ test("backend health summary calls and metrics are operational",async()=>{
 
     r=await fetch(base+"/metrics");
     assert.equal(r.status,200);
-    assert.match(await r.text(),/pgi_http_requests_total/);
+    const metricsText=await r.text();
+    assert.match(metricsText,/pgi_http_requests_total/);
+    assert.match(metricsText,/pgi_worker_outbox_errors_total/);
+    assert.match(metricsText,/pgi_worker_alert_errors_total/);
   });
 });
 
