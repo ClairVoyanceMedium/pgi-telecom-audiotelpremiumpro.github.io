@@ -191,7 +191,17 @@ export class MemoryStore{
     const durationKey=x=>x.call_status!=="connected"?"not_connected":x.conversation_seconds<60?"lt_1m":x.conversation_seconds<300?"1_5m":x.conversation_seconds<600?"5_10m":x.conversation_seconds<1200?"10_20m":x.conversation_seconds<1800?"20_30m":"gte_30m";
     const durationLabels={not_connected:"Non aboutis",lt_1m:"< 1 min","1_5m":"1–5 min","5_10m":"5–10 min","10_20m":"10–20 min","20_30m":"20–30 min",gte_30m:"30 min +"};
     const durations=dim("duration",durationKey,x=>durationLabels[durationKey(x)]||durationKey(x));
-    return {granularity,series,hours,weekdays,heatmap,experts:expertsRows,carriers:carriersRows,durations};
+    const qualityRows=rows.filter(x=>x.quality&&Number.isFinite(Number(x.quality.mos))&&Number.isFinite(Number(x.quality.packet_loss_percent))&&Number.isFinite(Number(x.quality.jitter_ms))&&Number.isFinite(Number(x.quality.latency_ms)));
+    const qavg=key=>qualityRows.length?qualityRows.reduce((a,x)=>a+Number(x.quality[key]||0),0)/qualityRows.length:null;
+    const quality={
+      samples:qualityRows.length,
+      mos:qavg("mos"),
+      packet_loss_percent:qavg("packet_loss_percent"),
+      jitter_ms:qavg("jitter_ms"),
+      latency_ms:qavg("latency_ms"),
+      dtmf_errors:qualityRows.reduce((a,x)=>a+Number(x.quality.dtmf_errors||0),0)
+    };
+    return {granularity,series,hours,weekdays,heatmap,quality,experts:expertsRows,carriers:carriersRows,durations};
   }
 
   async listCalls(params={}){
