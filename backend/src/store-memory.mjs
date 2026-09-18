@@ -194,9 +194,10 @@ export class MemoryStore{
       }
     ):{billableSeconds:0,payoutEligibleSeconds:0,serviceAmountTtc:0,expectedPayoutHt:0};
 
-    const confirmed=p.confirmed_payout_ht==null?0:Number(p.confirmed_payout_ht);
+    const hasConfirmed=p.confirmed_payout_ht!=null;
+    const confirmed=hasConfirmed?Number(p.confirmed_payout_ht):null;
     const paid=p.paid_payout_ht==null?0:Number(p.paid_payout_ht);
-    const reconciliation=core.reconcileAmounts(financial.expectedPayoutHt,confirmed,this.config.reconciliationToleranceHt);
+    const reconciliation=hasConfirmed?core.reconcileAmounts(financial.expectedPayoutHt,confirmed,this.config.reconciliationToleranceHt):null;
     const call={
       id:this.nextCallId++,
       external_call_id:String(p.external_call_id),
@@ -231,9 +232,9 @@ export class MemoryStore{
       paid_payout_ht:paid,
       expert_cost_ht:(financial.billableSeconds/60)*this.config.expertCostHtPerMin,
       technical_cost_ht:Number(p.technical_cost_ht||0),
-      estimated_margin_ht:Math.max(0,confirmed-(financial.billableSeconds/60)*this.config.expertCostHtPerMin-Number(p.technical_cost_ht||0)),
-      reconciliation_variance_ht:reconciliation.varianceHt,
-      reconciliation_status:reconciliation.status,
+      estimated_margin_ht:Math.max(0,(confirmed||0)-(financial.billableSeconds/60)*this.config.expertCostHtPerMin-Number(p.technical_cost_ht||0)),
+      reconciliation_variance_ht:reconciliation?reconciliation.varianceHt:0,
+      reconciliation_status:reconciliation?reconciliation.status:"pending",
       quality:p.quality||null
     };
     this.calls.unshift(call);
