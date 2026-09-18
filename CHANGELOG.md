@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.7.0 — 2026-09-18
+
+Refonte Executive Premium du cockpit :
+
+- nouveau design system sombre haut de gamme, plus profond et plus lisible ;
+- command deck exécutif avec état système, synchronisation, période et SHA de release ;
+- hiérarchie visuelle renforcée des KPI financiers et opérationnels ;
+- navigation latérale raffinée avec états actifs plus nets ;
+- topbar sticky translucide et actions plus cohérentes ;
+- cartes, panneaux, tableaux et filtres harmonisés dans un langage visuel unique ;
+- amélioration des graphiques, jauges, badges et états live ;
+- ergonomie mobile revue avec navigation flottante type application native ;
+- conservation stricte des données réelles et des états honnêtes de production ;
+- budget de performance conservé très largement sous les limites du projet ;
+- cache PWA et couleurs système alignés sur la palette Premium 1.7.
+
+
 ## 1.6.0 — 2026-09-18
 
 Déploiement et exploitation Premium 24/7 :
