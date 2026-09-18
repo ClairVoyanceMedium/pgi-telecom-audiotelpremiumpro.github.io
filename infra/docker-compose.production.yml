@@ -62,25 +62,9 @@ services:
       retries: 10
     stop_grace_period: 30s
 
-  valkey:
-    image: valkey/valkey:8-alpine
-    restart: unless-stopped
-    command: ["valkey-server","--appendonly","yes","--protected-mode","yes"]
-    volumes:
-      - pgi_valkey_data:/data
-    networks:
-      - core
-    security_opt:
-      - no-new-privileges:true
-    healthcheck:
-      test: ["CMD","valkey-cli","ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
 volumes:
   pgi_postgres_data:
-  pgi_valkey_data:
 
 networks:
   core:
