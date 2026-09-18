@@ -1,6 +1,6 @@
 window.PGI_CONFIG = Object.freeze({
-  appName: "PGI Telecom • Audiotel Premium Pro",
-  version: "1.8.0",
+  appName: "PGI • Telecom Audiotel Premium Pro",
+  version: "1.9.0",
   releaseId: "0000000000000000000000000000000000000000",
   schemaVersion: 1,
   mode: "production",
@@ -10,6 +10,7 @@ window.PGI_CONFIG = Object.freeze({
   features: Object.freeze({
     realtime: true,
     settlements: true,
-    fullCallerNumber: false
+    fullCallerNumber: false,
+    wholesale: true
   })
 });
