@@ -38,6 +38,7 @@ export function loadConfig(env=process.env){
     authFailureWindowSeconds:integer(env.PGI_AUTH_FAILURE_WINDOW_SECONDS,900,60,86400,"PGI_AUTH_FAILURE_WINDOW_SECONDS"),
     outboxWorkerStaleSeconds:integer(env.PGI_OUTBOX_WORKER_STALE_SECONDS,15,5,3600,"PGI_OUTBOX_WORKER_STALE_SECONDS"),
     alertsWorkerStaleSeconds:integer(env.PGI_ALERTS_WORKER_STALE_SECONDS,120,30,3600,"PGI_ALERTS_WORKER_STALE_SECONDS"),
+    shutdownGraceMs:integer(env.PGI_SHUTDOWN_GRACE_MS,10000,1000,60000,"PGI_SHUTDOWN_GRACE_MS"),
     maxEventSubscribers:integer(env.PGI_MAX_EVENT_SUBSCRIBERS,32,1,1000,"PGI_MAX_EVENT_SUBSCRIBERS"),
     databasePoolMax:integer(env.PGI_DATABASE_POOL_MAX,10,1,100,"PGI_DATABASE_POOL_MAX"),
     requireCarrierContract:booleanValue(env.PGI_REQUIRE_CARRIER_CONTRACT,false,"PGI_REQUIRE_CARRIER_CONTRACT"),
