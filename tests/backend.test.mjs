@@ -148,6 +148,23 @@ test("generic CDR privacy removes full caller identifiers",()=>{
   const b=deriveCallerHash({...p,external_call_id:"c2"},{key:"k".repeat(32),source:"carrier",sourceEventId:"evt-2"});
   assert.match(a,/^[a-f0-9]{64}$/);
   assert.notEqual(a,b);
+
+  assert.throws(
+    ()=>sanitizeCdrPayload({external_call_id:"x".repeat(161)}),
+    error=>error.status===400&&error.code==="INVALID_CDR_FIELD"
+  );
+  assert.throws(
+    ()=>sanitizeCdrPayload({call_status:"invented"}),
+    error=>error.status===400&&error.code==="INVALID_CDR_FIELD"
+  );
+  assert.throws(
+    ()=>sanitizeCdrPayload({origin_type:"satellite"}),
+    error=>error.status===400&&error.code==="INVALID_CDR_FIELD"
+  );
+  assert.throws(
+    ()=>sanitizeCdrPayload({quality:{mos:9}}),
+    error=>error.status===400&&error.code==="INVALID_CDR_FIELD"
+  );
 });
 
 test("expert compensation engine supports all declared modes",()=>{
