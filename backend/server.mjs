@@ -426,7 +426,7 @@ async function metricsResponse(res,metrics,store,workers){
 }
 function openEventStream(req,res,eventBus,requestId,config){
   if(eventBus.size>=Number(config.maxEventSubscribers||32)){
-    const e=new Error("Realtime capacity reached");e.status=503;e.code="SSE_CAPACITY_REACHED";throw e;
+    const e=new Error("Realtime capacity reached");e.status=503;e.code="SSE_CAPACITY_REACHED";e.expose=true;throw e;
   }
   res.writeHead(200,{
     "Content-Type":"text/event-stream; charset=utf-8",
