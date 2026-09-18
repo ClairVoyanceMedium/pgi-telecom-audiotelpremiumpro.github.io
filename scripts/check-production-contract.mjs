@@ -91,6 +91,9 @@ if(!/CREATE TABLE tenants/.test(wholesaleMigration)||!/tenant_number_assignments
 if(!/tenant_kyc_profiles/.test(wholesaleComplianceMigration)||!/payment_compliance_profiles/.test(wholesaleComplianceMigration)||!/regulatory_assignor_carrier_id/.test(wholesaleComplianceMigration))failures.push("wholesale compliance migration must preserve KYC, payment and regulatory assignor controls");
 if(!/SVA_NUMBER_NOT_ROUTABLE/.test(postgresStore)||!/EXPERT_TENANT_MISMATCH/.test(postgresStore)||!/tenant_id/.test(postgresStore))failures.push("PostgreSQL routing must remain tenant-bound");
 if(!/SVA_ROUTING_CONTEXT_REQUIRED/.test(backendServer)||!/resolveTelephonyRoutingContext/.test(backendServer))failures.push("production telephony must require an SVA routing context");
+if(!/\/api\/v1\/platform\/overview/.test(backendServer)||!/platform\.overview/.test(backendServer))failures.push("backend must expose the read-only wholesale overview");
+if(!/wholesaleOverview/.test(apiClient))failures.push("frontend API client must expose the wholesale overview");
+if(!/upstream_payout_ht/.test(postgresStore)||!/platform_fee_ht/.test(postgresStore)||!/net_payout_ht/.test(postgresStore))failures.push("wholesale overview must expose authoritative settlement totals");
 if(!/DSP2/.test(wholesaleDoc)||!/opérateur attributaire/i.test(wholesaleDoc)||!/multi-éditeurs/i.test(wholesaleDoc))failures.push("wholesale roadmap must retain regulatory and payment-compliance boundaries");
 
 
