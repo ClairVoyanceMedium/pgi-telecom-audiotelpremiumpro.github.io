@@ -64,7 +64,28 @@ test("admin login has a dedicated per-client brute-force limit",async()=>{
   }
 });
 
-test("invalid encoded route parameters fail as a client error",()=>{\n  assert.throws(()=>routeMatch("/api/v1/experts/%25ZZ/status","/api/v1/experts/:id/status"),error=>error.status===400&&error.code==="INVALID_PATH_ENCODING");\n});\n\ntest("session cookies use the Host-only prefix",()=>{
+test("invalid encoded route parameters fail as a client error",()=>{\n  assert.throws(()=>routeMatch("/api/v1/experts/%25ZZ/status","/api/v1/experts/:id/status"),error=>error.status===400&&error.code==="INVALID_PATH_ENCODING");\n});\n\ntest("different-origin browser login is rejected",async()=>{
+  const password="correct-test-password-123";
+  const app=createBackend({config:config({
+    authMode:"session",sessionSecret:"x".repeat(40),
+    adminPasswordHash:hashPassword(password)
+  })});
+  const address=await app.listen();
+  const base=`http://127.0.0.1:${address.port}`;
+  try{
+    const r=await fetch(base+"/api/v1/auth/login",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","Origin":"https://other.example","Sec-Fetch-Site":"cross-site"},
+      body:JSON.stringify({username:"admin",password})
+    });
+    assert.equal(r.status,403);
+    assert.equal((await r.json()).error.code,"CROSS_SITE_REQUEST");
+  }finally{
+    await app.close();
+  }
+});
+
+test("session cookies use the Host-only prefix",()=>{
   const session=sessionCookie("token",60);
   const csrf=csrfCookie("token",60);
   assert.match(session,/^__Host-pgi_session=/);
