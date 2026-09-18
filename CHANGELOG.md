@@ -19,6 +19,8 @@ Déploiement et exploitation Premium 24/7 :
 - identité exacte de release par SHA Git injectée dans le front et le backend ;
 - vérification publique de la version et du SHA après déploiement ;
 - CI renforcée sur les scripts de déploiement, rollback, migrations et contrats production.
+- audit hôte toutes les cinq minutes : readiness, releases, CDR, outbox, disque et sauvegardes ;
+- rétention bornée des sauvegardes PostgreSQL et validation renforcée des CDR avant stockage.
 
 
 ## 1.5.0 — 2026-09-18
