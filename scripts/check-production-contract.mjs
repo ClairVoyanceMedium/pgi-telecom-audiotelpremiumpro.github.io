@@ -10,6 +10,8 @@ const preflight=fs.readFileSync("scripts/preflight.sh","utf8");
 const deploy=fs.readFileSync(".github/workflows/deploy-production.yml","utf8");
 const backupScript=fs.readFileSync("scripts/backup-postgres.sh","utf8");
 const migrationRunner=fs.readFileSync("backend/migrate.mjs","utf8");
+const apiClient=fs.readFileSync("assets/api-client.js","utf8");
+const security=fs.readFileSync("backend/src/security.mjs","utf8");
 
 const requiredCompose=[
   "POSTGRES_PASSWORD",
@@ -28,7 +30,7 @@ for(const name of requiredCompose){
 
 if(!/mode:\s*"production"/.test(runtime))failures.push("production runtime example must use production mode");
 if(!/apiBaseUrl:\s*"\/api\/v1"/.test(runtime))failures.push("production runtime example must use same-origin /api/v1");
-if(!/@internalMachine path \/api\/v1\/internal\/\* \/api\/v1\/ingest\/freeswitch/.test(caddy))failures.push("public proxy must block internal machine endpoints");
+if(!/@internalMachine path \/api\/v1\/internal\/\* \/api\/v1\/ingest\/freeswitch \/api\/v1\/ready \/api\/v1\/ingest\/cdr/.test(caddy))failures.push("public proxy must block internal machine and ingest endpoints by default");
 if(!/handle @internalMachine\s*\{\s*respond 404/.test(caddy))failures.push("internal machine endpoints must not be publicly proxied");
 if(!/PGI_REQUIRE_OPERATOR/.test(preflight))failures.push("preflight must separate operator go-live checks");
 if(!/PGI_BACKEND_MODE/.test(preflight)||!/PGI_AUTH_MODE/.test(preflight))failures.push("preflight must validate backend production mode");
@@ -43,6 +45,8 @@ if(!/sha256sum --check/.test(backupScript))failures.push("backup must verify its
 if(!/migrate:\s*[\s\S]*command: \["node","backend\/migrate\.mjs"\]/.test(compose))failures.push("production stack must run the migration service");
 if(!/migrate:\s*\n\s*condition: service_completed_successfully/.test(compose))failures.push("production API must wait for successful migrations");
 if(!/schema_migrations/.test(migrationRunner)||!/checksum/.test(migrationRunner))failures.push("migration runner must keep a checksum ledger");
+if(!/__Host-pgi_csrf/.test(apiClient))failures.push("frontend must use Host-only CSRF cookie");
+if(!/__Host-pgi_session/.test(security)||!/__Host-pgi_csrf/.test(security))failures.push("backend must issue Host-only session cookies");
 
 
 try{
