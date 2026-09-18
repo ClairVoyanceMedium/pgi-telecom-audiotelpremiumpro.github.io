@@ -43,6 +43,15 @@ export function createBackend(options={}){
     const requestId=randomUUID();
     const started=performance.now();
     securityHeaders(res,requestId);
+    res.once("finish",()=>{
+      logHttpRequest(config,{
+        requestId,
+        route:res.pgiRoute||"unclassified",
+        method:String(req.method||"GET").toUpperCase(),
+        status:res.statusCode,
+        durationMs:Math.max(0,performance.now()-started)
+      });
+    });
 
     try{
       metrics.requests++;
@@ -66,6 +75,7 @@ export function createBackend(options={}){
         });
       }
       if(method==="GET"&&pathname==="/metrics"){
+        res.pgiRoute="metrics";
         return metricsResponse(res,metrics,store,workers);
       }
 
@@ -231,6 +241,7 @@ export function createBackend(options={}){
 
       if(method==="GET"&&pathname==="/api/v1/events"){
         requireRole(actor,["admin","finance","expert","readonly"]);
+        res.pgiRoute="events";
         return openEventStream(req,res,eventBus,requestId,config,sseClients);
       }
 
@@ -238,6 +249,7 @@ export function createBackend(options={}){
     }catch(error){
       metrics.errors++;
       const status=Number(error?.status)||500;
+      res.pgiRoute=res.pgiRoute||"error";
       bump(metrics.byStatus,status);
       problemJson(res,error,requestId);
     }
@@ -416,6 +428,7 @@ function rateLimit(req,config,buckets,metrics){
   }
 }
 function done(res,metrics,started,route,status,payload,headers={}){
+  res.pgiRoute=route;
   bump(metrics.byStatus,status);bump(metrics.byRoute,route);
   headers["Server-Timing"]="app;dur="+Math.max(0,performance.now()-started).toFixed(1);
   json(res,status,payload,headers);
@@ -477,6 +490,19 @@ function openEventStream(req,res,eventBus,requestId,config,clients){
   const heartbeat=setInterval(()=>{if(!res.destroyed)res.write(": ping\n\n");},15000);
   heartbeat.unref?.();
   req.on("close",()=>{clearInterval(heartbeat);unsubscribe();clients?.delete(res);});
+}
+function logHttpRequest(config,{requestId,route,method,status,durationMs}){
+  if(config?.mode!=="production")return;
+  const level=status>=500?"error":status>=400?"warn":"info";
+  process.stdout.write(JSON.stringify({
+    level,
+    event:"http_request",
+    request_id:requestId,
+    route:String(route||"unclassified"),
+    method:String(method||"GET"),
+    status:Number(status)||0,
+    duration_ms:Number(durationMs.toFixed(1))
+  })+"\n");
 }
 function closeHttpServer(server,graceMs){
   return new Promise(resolve=>{
