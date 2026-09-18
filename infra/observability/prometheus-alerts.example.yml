@@ -6,7 +6,7 @@ groups:
           (
             sum(rate(pgi_http_responses_total{status=~"5.."}[5m]))
             /
-            clamp_min(rate(pgi_http_requests_total[5m]), 0.001)
+            clamp_min(sum(rate(pgi_http_requests_total[5m])), 0.001)
           ) > 0.0144
         for: 5m
         labels:
@@ -20,7 +20,7 @@ groups:
           (
             sum(rate(pgi_http_responses_total{status=~"5.."}[1h]))
             /
-            clamp_min(rate(pgi_http_requests_total[1h]), 0.001)
+            clamp_min(sum(rate(pgi_http_requests_total[1h])), 0.001)
           ) > 0.006
         for: 30m
         labels:
