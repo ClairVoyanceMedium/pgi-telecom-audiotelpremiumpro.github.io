@@ -83,3 +83,26 @@ Une baseline possède :
 - reason.
 
 Les agrégats visibles filtrent les données antérieures à la baseline. Les données sources restent immuables.
+
+
+## Abstraction opérateur
+
+Le cœur PGI utilise une route logique `sva-primary` et ne dépend d'aucun nom de fournisseur.
+
+```
+Même 089
+  │
+  ▼
+sva-primary
+  ├── opérateur actif
+  └── opérateur standby
+        │
+        ▼
+adaptateur normalisé
+        │
+        ├── SIP
+        ├── CDR
+        └── règlement
+```
+
+Un changement d'opérateur ne modifie ni le numéro, ni les experts, ni le modèle d'appel, ni le dashboard. L'ancien opérateur reste identifiable sur les appels historiques via `host_carrier_id`.
