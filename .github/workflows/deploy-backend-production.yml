@@ -1,0 +1,133 @@
+name: Deploy Production Backend
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "production-backend"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ vars.PGI_VPS_BACKEND_DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    env:
+      VPS_HOST: ${{ vars.PGI_VPS_HOST }}
+      VPS_USER: ${{ vars.PGI_VPS_USER }}
+      APP_PATH: ${{ vars.PGI_VPS_APP_PATH }}
+      ENV_FILE: ${{ vars.PGI_VPS_ENV_FILE }}
+      PUBLIC_URL: ${{ vars.PGI_PRODUCTION_URL }}
+      RELEASE_ID: ${{ github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Verify repository
+        run: npm run verify
+
+      - name: Resolve release metadata
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][A-Za-z0-9.]+)?$ ]]
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+      - name: Validate deployment variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$VPS_HOST" =~ ^[A-Za-z0-9._:-]+$ ]]
+          [[ "$VPS_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]
+          [[ "$APP_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]]
+          [[ "$ENV_FILE" =~ ^/[A-Za-z0-9._/-]+$ ]]
+          [[ "$PUBLIC_URL" =~ ^https://[A-Za-z0-9._:-]+/?$ ]]
+          [[ "$RELEASE_ID" =~ ^[0-9a-f]{40}$ ]]
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PGI_VPS_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.PGI_VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_PRIVATE_KEY"
+          test -n "$SSH_KNOWN_HOSTS"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Verify protected environment file
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh "$VPS_USER@$VPS_HOST" "test -r '$ENV_FILE' && test ! -w '$ENV_FILE' || exit 1"
+
+      - name: Upload immutable backend release
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_release="$APP_PATH/releases/$RELEASE_ID"
+          ssh "$VPS_USER@$VPS_HOST" "mkdir -p '$remote_release'"
+          rsync -az --relative \
+            package.json package-lock.json \
+            backend database \
+            infra/docker-compose.production.yml \
+            assets/core.js \
+            scripts/preflight.sh \
+            scripts/backup-postgres.sh \
+            scripts/restore-drill.sh \
+            scripts/deploy-backend-release.sh \
+            "$VPS_USER@$VPS_HOST:$remote_release/"
+          ssh "$VPS_USER@$VPS_HOST" \
+            "chmod 700 '$remote_release/scripts/preflight.sh' '$remote_release/scripts/backup-postgres.sh' '$remote_release/scripts/restore-drill.sh' '$remote_release/scripts/deploy-backend-release.sh'"
+
+      - name: Deploy with backup migration readiness and rollback
+        id: deploy
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_release="$APP_PATH/releases/$RELEASE_ID"
+          ssh "$VPS_USER@$VPS_HOST" \
+            "$remote_release/scripts/deploy-backend-release.sh deploy '$APP_PATH' '$ENV_FILE' '$RELEASE_ID' '$RELEASE_VERSION' 3"
+
+      - name: Verify backend locally on VPS
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_release="$APP_PATH/releases/$RELEASE_ID"
+          ssh "$VPS_USER@$VPS_HOST" \
+            "$remote_release/scripts/deploy-backend-release.sh verify '$APP_PATH' '$ENV_FILE' '$RELEASE_ID' '$RELEASE_VERSION' 3"
+
+      - name: Verify public API path
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${PUBLIC_URL%/}"
+          health="$(curl --fail --silent --show-error --retry 5 --retry-delay 2 --max-time 12 "$base/api/v1/health")"
+          printf '%s' "$health" | grep -F '"status":"ok"'
+          printf '%s' "$health" | grep -F "\"version\":\"$RELEASE_VERSION\""
