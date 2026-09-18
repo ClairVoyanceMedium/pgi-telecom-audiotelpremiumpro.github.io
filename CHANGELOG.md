@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.5.0 — 2026-09-18
+
+Durcissement Premium préproduction avant choix opérateur :
+
+- correction définitive des cookies `__Host-` et protection CSRF en temps constant ;
+- protection anti-bruteforce dédiée au login administrateur ;
+- rejet des connexions navigateur cross-site sur l’authentification ;
+- déconnexion explicite, expiration de session globale et purge des données affichées ;
+- capacité SSE bornée et timeouts HTTP explicites ;
+- validation JSON stricte, limite de corps anticipée et erreurs de chemin encodé en 400 ;
+- baselines PostgreSQL autoritaires et synchronisées entre appareils ;
+- suppression des taux de démonstration dans tous les calculs et graphiques production ;
+- taux financiers réels dérivés des CDR dans les paramètres ;
+- métriques Prometheus de santé des workers et dernières exécutions réussies ;
+- endpoints téléphonie, readiness et ingestion CDR privés par défaut derrière Caddy ;
+- prise en compte sûre de l’IP client uniquement depuis le proxy loopback ;
+- migrations PostgreSQL transactionnelles, versionnées et protégées par checksum ;
+- démarrage API bloqué tant que les migrations n’ont pas réussi ;
+- sauvegardes PostgreSQL vérifiées par `pg_restore` et SHA-256 ;
+- exercice de restauration dans une base isolée ;
+- suppression de Valkey du socle 24/7 tant qu’il n’apporte aucune fonction utilisée ;
+- séparation préflight infrastructure / go-live opérateur ;
+- CI renforcée sur production, SQL, migrations, shell, sécurité et non-régression.
+
+
 ## 1.4.0 — 2026-09-18
 
 Branchement du cockpit sur le backend privé :
