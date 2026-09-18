@@ -137,28 +137,32 @@ test("expert compensation engine supports all declared modes",()=>{
   assert.throws(()=>computeExpertCost({type:"percentage",rate:120,billableSeconds:600,expectedPayoutHt:5}),/percentage/);
 });
 
-test("readiness requires production database and critical workers",()=>{
+test("readiness requires production database and fresh critical workers",()=>{
+  const now=Date.parse("2026-09-18T12:00:10Z");
+  const cfg={mode:"production",outboxWorkerStaleSeconds:15,alertsWorkerStaleSeconds:120};
   const ok=evaluateReadiness(
     {store:"postgres"},
-    {stats:{lastOutboxSuccessAt:"2026-09-18T12:00:00Z",lastAlertsSuccessAt:"2026-09-18T12:00:00Z"}},
-    {mode:"production"}
+    {stats:{lastOutboxSuccessAt:"2026-09-18T12:00:05Z",lastAlertsSuccessAt:"2026-09-18T11:59:30Z"}},
+    cfg,now
   );
   assert.equal(ok.ready,true);
   assert.deepEqual(ok.checks,{database:true,outbox_worker:true,alerts_worker:true});
+  assert.deepEqual(ok.ages_seconds,{outbox_worker:5,alerts_worker:40});
 
   const badStore=evaluateReadiness(
     {store:"memory"},
-    {stats:{lastOutboxSuccessAt:"2026-09-18T12:00:00Z",lastAlertsSuccessAt:"2026-09-18T12:00:00Z"}},
-    {mode:"production"}
+    {stats:{lastOutboxSuccessAt:"2026-09-18T12:00:05Z",lastAlertsSuccessAt:"2026-09-18T11:59:30Z"}},
+    cfg,now
   );
   assert.equal(badStore.ready,false);
 
-  const badWorker=evaluateReadiness(
+  const staleWorker=evaluateReadiness(
     {store:"postgres"},
-    {stats:{lastOutboxSuccessAt:null,lastAlertsSuccessAt:"2026-09-18T12:00:00Z"}},
-    {mode:"production"}
+    {stats:{lastOutboxSuccessAt:"2026-09-18T11:59:00Z",lastAlertsSuccessAt:"2026-09-18T11:59:30Z"}},
+    cfg,now
   );
-  assert.equal(badWorker.ready,false);
+  assert.equal(staleWorker.ready,false);
+  assert.equal(staleWorker.checks.outbox_worker,false);
 });
 
 test("expert router chooses available least-loaded expert",()=>{
