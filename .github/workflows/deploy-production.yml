@@ -1,0 +1,69 @@
+name: Deploy Production Front
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "production-front"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: ${{ vars.PGI_VPS_DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify
+        run: npm run verify
+
+      - name: Build production front
+        env:
+          PGI_RUNTIME_MODE: production
+          PGI_API_BASE_URL: /api/v1
+        run: npm run build:static
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PGI_VPS_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.PGI_VPS_KNOWN_HOSTS }}
+        run: |
+          test -n "$SSH_PRIVATE_KEY"
+          test -n "$SSH_KNOWN_HOSTS"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy static artifact
+        env:
+          VPS_HOST: ${{ vars.PGI_VPS_HOST }}
+          VPS_USER: ${{ vars.PGI_VPS_USER }}
+          VPS_PATH: ${{ vars.PGI_VPS_FRONT_PATH }}
+        run: |
+          test -n "$VPS_HOST"
+          test -n "$VPS_USER"
+          test -n "$VPS_PATH"
+          rsync -az --delete --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r             dist/ "$VPS_USER@$VPS_HOST:$VPS_PATH/"
+
+      - name: Verify deployed files
+        env:
+          VPS_HOST: ${{ vars.PGI_VPS_HOST }}
+          VPS_USER: ${{ vars.PGI_VPS_USER }}
+          VPS_PATH: ${{ vars.PGI_VPS_FRONT_PATH }}
+        run: |
+          ssh "$VPS_USER@$VPS_HOST" "test -s '$VPS_PATH/index.html' && test -s '$VPS_PATH/assets/app.js'"
