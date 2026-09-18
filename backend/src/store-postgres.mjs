@@ -209,9 +209,10 @@ export class PostgresStore{
       );
       const caller=callerRows[0];
 
-      const confirmed=p.confirmed_payout_ht==null?0:Number(p.confirmed_payout_ht);
+      const hasConfirmed=p.confirmed_payout_ht!=null;
+      const confirmed=hasConfirmed?Number(p.confirmed_payout_ht):null;
       const paid=p.paid_payout_ht==null?0:Number(p.paid_payout_ht);
-      const recon=core.reconcileAmounts(financial.expectedPayoutHt,confirmed,this.config.reconciliationToleranceHt);
+      const recon=hasConfirmed?core.reconcileAmounts(financial.expectedPayoutHt,confirmed,this.config.reconciliationToleranceHt):null;
       const expertCost=(financial.billableSeconds/60)*this.config.expertCostHtPerMin;
       const technicalCost=Number(p.technical_cost_ht||0);
       const totalSeconds=Math.max(0,Number(p.total_seconds||Math.round((Date.parse(p.ended_at)-Date.parse(p.started_at))/1000)));
@@ -223,7 +224,7 @@ export class PostgresStore{
         status,p.sip_final_code==null?null:Number(p.sip_final_code),String(p.hangup_cause||""),String(p.codec||""),
         this.config.serviceRateTtcPerMin,this.config.payoutRateHtPerMin,Number(p.mobile_deduction_ht_per_min||0),
         financial.serviceAmountTtc,financial.expectedPayoutHt,confirmed,paid,expertCost,technicalCost,
-        Math.max(0,confirmed-expertCost-technicalCost),recon.status,recon.varianceHt
+        Math.max(0,(confirmed||0)-expertCost-technicalCost),recon?recon.status:"pending",recon?recon.varianceHt:0
       ];
       const callRows=await tx.unsafe(
         "INSERT INTO calls(external_call_id,cdr_source,caller_id,sva_number_id,expert_id,origin_carrier_id,host_carrier_id,"+
@@ -250,7 +251,7 @@ export class PostgresStore{
         );
       }
       if(financial.expectedPayoutHt!==0)await ledger(tx,call.id,"expected",financial.expectedPayoutHt,envelope);
-      if(confirmed!==0)await ledger(tx,call.id,"confirmed",confirmed,envelope);
+      if(confirmed!=null&&confirmed!==0)await ledger(tx,call.id,"confirmed",confirmed,envelope);
       if(paid!==0)await ledger(tx,call.id,"paid",paid,envelope);
 
       await tx.unsafe(
