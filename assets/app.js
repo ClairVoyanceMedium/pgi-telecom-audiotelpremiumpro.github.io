@@ -816,6 +816,7 @@
     setText("render-time",nfmt(state.diagnostics.lastRenderMs,1)+" ms");
     setText("runtime-errors",String(state.diagnostics.errors));
     setText("runtime-version",RUNTIME.version||"dev");
+    setText("runtime-release",RUNTIME.releaseId?String(RUNTIME.releaseId).slice(0,12):(RUNTIME.mode==="production"?"inconnue":"demo"));
     setText("data-mode",RUNTIME.mode==="production"?"Production":"Démo");
     if(RUNTIME.mode==="production"){
       var lag=state.system&&Number.isFinite(Number(state.system.cdr_lag_seconds))?Number(state.system.cdr_lag_seconds):null;
@@ -912,6 +913,7 @@
       el.classList.toggle("production",!demo);
     }
     setText("runtime-version",RUNTIME.version||"dev");
+    setText("runtime-release",RUNTIME.releaseId?String(RUNTIME.releaseId).slice(0,12):(RUNTIME.mode==="production"?"inconnue":"demo"));
     setText("sidebar-version","v"+(RUNTIME.version||"dev")+" • "+(demo?"Démo":"Production"));
     setText("data-mode",demo?"Démo":"Production");
     var live=$("live-mode-badge");
