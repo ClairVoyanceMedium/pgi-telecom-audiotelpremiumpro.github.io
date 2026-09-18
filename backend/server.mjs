@@ -145,6 +145,12 @@ export function createBackend(options={}){
         return done(res,metrics,started,"routing.internal",expert?200:404,expert||{error:{code:"NO_EXPERT_AVAILABLE"}});
       }
 
+      match=routeMatch(pathname,"/api/v1/internal/experts/:id/release");
+      if(method==="POST"&&match){
+        authorizeTelephony(req,config);
+        return done(res,metrics,started,"routing.release",200,await store.releaseExpert(match.id));
+      }
+
       if(method==="GET"&&pathname==="/api/v1/finance/reconciliation"){
         requireRole(actor,["admin","finance","readonly"]);
         const range=rangeParams(url);
