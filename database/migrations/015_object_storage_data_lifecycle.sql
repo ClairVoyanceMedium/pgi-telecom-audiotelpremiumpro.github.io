@@ -2,7 +2,7 @@
 
 CREATE TABLE object_assets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id bigint REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_id bigint REFERENCES tenants(id),
   market_id bigint REFERENCES operating_markets(id),
   asset_type text NOT NULL
     CHECK (asset_type IN ('kyc_document','carrier_statement','tenant_statement','invoice','cdr_export','audit_export','backup_manifest','other')),
@@ -38,7 +38,7 @@ CREATE INDEX object_assets_retention_idx
 
 CREATE TABLE data_retention_policies (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  tenant_id bigint REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_id bigint REFERENCES tenants(id),
   market_id bigint REFERENCES operating_markets(id),
   data_class text NOT NULL,
   retention_days integer NOT NULL CHECK (retention_days >= 0),
@@ -57,7 +57,7 @@ CREATE INDEX data_retention_policies_resolution_idx
 
 CREATE TABLE data_subject_requests (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id bigint REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_id bigint REFERENCES tenants(id),
   market_id bigint REFERENCES operating_markets(id),
   request_type text NOT NULL
     CHECK (request_type IN ('access','rectification','erasure','restriction','portability','objection','other')),
