@@ -975,6 +975,9 @@
     setText("wh-scale-buckets",nfmt(scale.routing_buckets_active||0)+" / "+nfmt(scale.bucket_capacity||4096));
     setText("wh-scale-partitions",nfmt(scale.call_fact_partitions||0));
     setText("wh-scale-read",scale.read_replica_enabled?"RÉPLIQUE":"PRIMARY");
+    setText("wh-scale-regions",nfmt(scale.regions_ready||0)+" / "+nfmt(scale.regions_total||0));
+    setText("wh-scale-dr",nfmt(scale.dr_targets_total||0)+" cible(s)");
+    setText("wh-scale-dr-drills",nfmt(scale.dr_drills_passed||0)+" exercice(s) validé(s)");
     var roleLabels={all:"API + workers",api:"API stateless",worker:"Workers"};
     setText("wh-scale-role",roleLabels[scale.process_role]||String(scale.process_role||"all"));
     setText("wh-tenant-count",nfmt(tenants.length));
@@ -985,7 +988,7 @@
     setText("wh-foundation-detail",real
       ?nfmt(summary.tenants_total||0)+" client(s) • "+nfmt(summary.markets_total||markets.length||0)+" marché(s) • PostgreSQL"
       :"Aucun client réel chargé en mode démo.");
-    setText("wh-compliance-badge",real?(summary.payment_compliance_active?"PSP ACTIF":"CONFORMITÉ À VALIDER"):"HYPERSCALE 1.13");
+    setText("wh-compliance-badge",real?(summary.payment_compliance_active?"PSP ACTIF":"CONFORMITÉ À VALIDER"):"HYPERSCALE 1.14");
     setText("wh-check-kyc",real
       ?((summary.kyc_pending||0)>0?nfmt(summary.kyc_pending)+" dossier(s) en attente":((summary.tenants_total||0)>0?"Aucun KYC en attente":"Aucun éditeur réel"))
       :"Aucun éditeur réel");
