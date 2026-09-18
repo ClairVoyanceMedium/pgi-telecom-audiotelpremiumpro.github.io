@@ -2,6 +2,7 @@
 import {createHash} from "node:crypto";
 import {sanitizeCdrPayload,deriveCallerHash} from "./cdr-privacy.mjs";
 import {computeExpertCost} from "./expert-finance.mjs";
+import {normalizeSettlementPayload} from "./settlement-finance.mjs";
 import {createRequire} from "node:module";
 
 const require=createRequire(import.meta.url);
@@ -321,6 +322,169 @@ export class PostgresStore{
     return result;
   }
 
+  async importSettlement(payload,actor){
+    const settlement=normalizeSettlementPayload(payload);
+    return this.sql.begin(async tx=>{
+      const carrierRows=await tx.unsafe(
+        "SELECT id,name FROM carriers WHERE id=$1 AND enabled LIMIT 1",
+        [settlement.carrier_id]
+      );
+      const carrier=carrierRows[0];
+      if(!carrier)throw problem(404,"CARRIER_NOT_FOUND");
+
+      const duplicate=await tx.unsafe(
+        "SELECT id FROM carrier_settlements WHERE carrier_id=$1 AND period_start=$2::date AND period_end=$3::date LIMIT 1",
+        [carrier.id,settlement.period_start,settlement.period_end]
+      );
+      if(duplicate.length)throw problem(409,"SETTLEMENT_PERIOD_EXISTS");
+
+      const periodCalls=await tx.unsafe(
+        "SELECT id,external_call_id,expected_payout_ht::float8,expert_cost_ht::float8,technical_cost_ht::float8"+
+        " FROM calls WHERE host_carrier_id=$1 AND started_at::date BETWEEN $2::date AND $3::date",
+        [carrier.id,settlement.period_start,settlement.period_end]
+      );
+      const byExternal=new Map(periodCalls.map(row=>[String(row.external_call_id),row]));
+      const matched=settlement.matches.map(item=>{
+        const call=byExternal.get(item.external_call_id);
+        if(!call)throw problem(409,"SETTLEMENT_CALL_NOT_FOUND","Settlement call not found in carrier period: "+item.external_call_id);
+        return {
+          call_id:Number(call.id),
+          external_call_id:item.external_call_id,
+          amount:Number(item.carrier_amount_ht),
+          expected:Number(call.expected_payout_ht||0)
+        };
+      });
+
+      const expectedAmount=roundFinanceNumber(matched.reduce((sum,row)=>sum+row.expected,0));
+      const confirmedAmount=roundFinanceNumber(matched.reduce((sum,row)=>sum+row.amount,0));
+      const paidAmount=settlement.status==="paid"?confirmedAmount:0;
+
+      const inserted=await tx.unsafe(
+        "INSERT INTO carrier_settlements(carrier_id,period_start,period_end,statement_reference,invoice_reference,"+
+        " expected_amount_ht,confirmed_amount_ht,paid_amount_ht,payment_due_date,paid_at,status,source_file_hash)"+
+        " VALUES($1,$2::date,$3::date,$4,$5,$6,$7,$8,$9::date,$10::timestamptz,$11,$12)"+
+        " RETURNING id,carrier_id,period_start,period_end,expected_amount_ht::float8,confirmed_amount_ht::float8,"+
+        " paid_amount_ht::float8,status,statement_reference,invoice_reference,payment_due_date,paid_at,source_file_hash,created_at",
+        [
+          carrier.id,settlement.period_start,settlement.period_end,settlement.statement_reference,settlement.invoice_reference,
+          expectedAmount,confirmedAmount,paidAmount,settlement.payment_due_date,settlement.paid_at,
+          settlement.status,settlement.source_file_hash
+        ]
+      );
+      const row=inserted[0];
+      const matchJson=JSON.stringify(matched.map(x=>({call_id:x.call_id,amount:x.amount})));
+
+      await tx.unsafe(
+        "INSERT INTO settlement_call_matches(settlement_id,call_id,carrier_amount_ht)"+
+        " SELECT $1,x.call_id,x.amount FROM jsonb_to_recordset($2::jsonb) AS x(call_id bigint,amount numeric)",
+        [row.id,matchJson]
+      );
+
+      await tx.unsafe(
+        "UPDATE calls c SET confirmed_payout_ht=x.amount,"+
+        " paid_payout_ht=CASE WHEN $2::boolean THEN x.amount ELSE c.paid_payout_ht END,"+
+        " reconciliation_variance_ht=c.expected_payout_ht-x.amount,"+
+        " reconciliation_status=CASE WHEN abs(c.expected_payout_ht-x.amount) <= $3 THEN 'matched' ELSE 'variance' END,"+
+        " estimated_margin_ht=GREATEST(x.amount-c.expert_cost_ht-c.technical_cost_ht,0)"+
+        " FROM jsonb_to_recordset($1::jsonb) AS x(call_id bigint,amount numeric) WHERE c.id=x.call_id",
+        [matchJson,settlement.status==="paid",this.config.reconciliationToleranceHt]
+      );
+
+      await tx.unsafe(
+        "INSERT INTO financial_ledger(call_id,settlement_id,event_type,amount_ht,source_reference,source_hash,reason,created_by,metadata)"+
+        " SELECT x.call_id,$1,'confirmed',x.amount,$2,$3,'carrier settlement import',$4,$5::jsonb"+
+        " FROM jsonb_to_recordset($6::jsonb) AS x(call_id bigint,amount numeric) WHERE x.amount<>0",
+        [
+          row.id,settlement.statement_reference,settlement.source_file_hash,numericActor(actor),
+          JSON.stringify({carrier:carrier.name,period_start:settlement.period_start,period_end:settlement.period_end}),matchJson
+        ]
+      );
+
+      if(settlement.status==="paid"){
+        await tx.unsafe(
+          "INSERT INTO financial_ledger(call_id,settlement_id,event_type,amount_ht,source_reference,source_hash,reason,created_by,metadata)"+
+          " SELECT x.call_id,$1,'paid',x.amount,$2,$3,'carrier settlement paid',$4,$5::jsonb"+
+          " FROM jsonb_to_recordset($6::jsonb) AS x(call_id bigint,amount numeric) WHERE x.amount<>0",
+          [
+            row.id,settlement.statement_reference,settlement.source_file_hash,numericActor(actor),
+            JSON.stringify({carrier:carrier.name}),matchJson
+          ]
+        );
+      }
+
+      await tx.unsafe(
+        "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'settlement.import','carrier_settlement',$2,$3::jsonb)",
+        [numericActor(actor),String(row.id),JSON.stringify({
+          carrier_id:carrier.id,matches:matched.length,expected_amount_ht:expectedAmount,
+          confirmed_amount_ht:confirmedAmount,status:settlement.status
+        })]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(event_type,aggregate_type,aggregate_id,payload)"+
+        " VALUES('settlement.imported','carrier_settlement',$1,$2::jsonb)",
+        [String(row.id),JSON.stringify({carrier_id:carrier.id,status:settlement.status})]
+      );
+
+      this.eventBus.publish("settlement.imported",{id:row.id,carrier_id:carrier.id,status:settlement.status});
+      return {...row,carrier_name:carrier.name,matches:matched.length};
+    });
+  }
+
+  async markSettlementPaid(id,payload,actor){
+    const settlementId=Number(id);
+    if(!Number.isInteger(settlementId)||settlementId<=0)throw problem(400,"INVALID_SETTLEMENT_ID");
+    const paidAt=payload?.paid_at?new Date(payload.paid_at):new Date();
+    if(!Number.isFinite(paidAt.getTime()))throw problem(400,"INVALID_PAID_AT");
+
+    return this.sql.begin(async tx=>{
+      const rows=await tx.unsafe(
+        "SELECT id,carrier_id,status,confirmed_amount_ht::float8,paid_amount_ht::float8 FROM carrier_settlements WHERE id=$1 FOR UPDATE",
+        [settlementId]
+      );
+      const settlement=rows[0];
+      if(!settlement)throw problem(404,"SETTLEMENT_NOT_FOUND");
+      if(settlement.status==="paid")return settlement;
+
+      const matches=await tx.unsafe(
+        "SELECT call_id,carrier_amount_ht::float8 AS amount FROM settlement_call_matches WHERE settlement_id=$1",
+        [settlementId]
+      );
+      if(!matches.length)throw problem(409,"SETTLEMENT_HAS_NO_MATCHES");
+      const matchJson=JSON.stringify(matches);
+
+      const updated=await tx.unsafe(
+        "UPDATE carrier_settlements SET paid_amount_ht=confirmed_amount_ht,paid_at=$2,status='paid' WHERE id=$1"+
+        " RETURNING id,carrier_id,status,expected_amount_ht::float8,confirmed_amount_ht::float8,paid_amount_ht::float8,paid_at",
+        [settlementId,paidAt.toISOString()]
+      );
+
+      await tx.unsafe(
+        "UPDATE calls c SET paid_payout_ht=x.amount FROM jsonb_to_recordset($1::jsonb) AS x(call_id bigint,amount numeric)"+
+        " WHERE c.id=x.call_id",
+        [matchJson]
+      );
+      await tx.unsafe(
+        "INSERT INTO financial_ledger(call_id,settlement_id,event_type,amount_ht,reason,created_by,metadata)"+
+        " SELECT x.call_id,$1,'paid',x.amount,'carrier settlement marked paid',$2,$3::jsonb"+
+        " FROM jsonb_to_recordset($4::jsonb) AS x(call_id bigint,amount numeric)"+
+        " WHERE x.amount<>0 AND NOT EXISTS ("+
+        " SELECT 1 FROM financial_ledger f WHERE f.settlement_id=$1 AND f.call_id=x.call_id AND f.event_type='paid')",
+        [settlementId,numericActor(actor),JSON.stringify({paid_at:paidAt.toISOString()}),matchJson]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'settlement.paid','carrier_settlement',$2,$3::jsonb)",
+        [numericActor(actor),String(settlementId),JSON.stringify({paid_at:paidAt.toISOString()})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(event_type,aggregate_type,aggregate_id,payload) VALUES('settlement.paid','carrier_settlement',$1,$2::jsonb)",
+        [String(settlementId),JSON.stringify({paid_at:paidAt.toISOString()})]
+      );
+
+      this.eventBus.publish("settlement.paid",{id:settlementId,paid_at:paidAt.toISOString()});
+      return updated[0];
+    });
+  }
+
   async reconciliation(from,to){
     return this.sql.unsafe(
       "SELECT COALESCE(hc.name,'Unknown') AS carrier,count(*)::int AS calls,"+
@@ -545,6 +709,9 @@ async function routeWith(sql,key){
     [key]
   );
   return rows[0];
+}
+function roundFinanceNumber(value){
+  return Math.round((Number(value)+Number.EPSILON)*1e6)/1e6;
 }
 function numericActor(actor){
   const n=Number(actor?.sub);
