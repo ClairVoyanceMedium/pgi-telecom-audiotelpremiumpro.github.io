@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "policy": "strict-minimum-external-dependencies",
+  "coreOwnedByPGI": [
+    "dashboard",
+    "api",
+    "database",
+    "cache",
+    "sip_proxy",
+    "media_server",
+    "ivr",
+    "expert_routing",
+    "queues",
+    "presence",
+    "internal_cdr",
+    "financial_engine",
+    "reconciliation",
+    "reporting",
+    "monitoring",
+    "alerts",
+    "audit",
+    "backups",
+    "deployment"
+  ],
+  "externalRequired": [
+    {
+      "role": "sva_host_operator",
+      "replaceable": true,
+      "allowedResponsibilities": [
+        "numbering_resource",
+        "sva_interconnection",
+        "public_reachability",
+        "network_portability",
+        "network_collection",
+        "contractual_payout"
+      ]
+    }
+  ],
+  "externalOptional": [
+    "payment_service_provider_if_contractually_required",
+    "email_delivery",
+    "external_monitoring"
+  ],
+  "forbiddenHardDependencies": [
+    "carrier_specific_dashboard",
+    "carrier_specific_ivr",
+    "carrier_specific_crm",
+    "carrier_specific_business_routing",
+    "carrier_specific_data_model"
+  ]
+}
