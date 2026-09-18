@@ -10,6 +10,7 @@ function config(overrides={}){
     mode:"simulator",authMode:"disabled",host:"127.0.0.1",port:0,
     sessionSecret:"",adminPasswordHash:"",ingestToken:"",
     adminUsername:"admin",sessionTtlSeconds:3600,bodyLimitBytes:262144,rateLimitPerMinute:10000,
+    authMaxFailures:8,authFailureWindowSeconds:900,
     serviceRateTtcPerMin:.8,payoutRateHtPerMin:.46,expertCostHtPerMin:.18,reconciliationToleranceHt:.01,
     version:"test",...overrides
   };
@@ -29,6 +30,38 @@ test("password hashing and signed sessions reject tampering",()=>{
   const issued=issueSession({secret:"x".repeat(40),user:{id:"1",role:"admin",name:"A"},ttlSeconds:60});
   assert.equal(verifySession(issued.token,"x".repeat(40)).role,"admin");
   assert.equal(verifySession(issued.token+"x","x".repeat(40)),null);
+});
+
+test("admin login has a dedicated per-client brute-force limit",async()=>{
+  const password="correct-test-password-123";
+  const app=createBackend({config:config({
+    authMode:"session",sessionSecret:"x".repeat(40),
+    adminPasswordHash:hashPassword(password),authMaxFailures:3,authFailureWindowSeconds:900
+  })});
+  const address=await app.listen();
+  const base=`http://127.0.0.1:${address.port}`;
+  const attempt=(candidate,ip)=>fetch(base+"/api/v1/auth/login",{
+    method:"POST",
+    headers:{"Content-Type":"application/json","X-Forwarded-For":ip},
+    body:JSON.stringify({username:"admin",password:candidate})
+  });
+  try{
+    for(let i=0;i<3;i++){
+      const r=await attempt("wrong-password","203.0.113.7");
+      assert.equal(r.status,401);
+    }
+    let r=await attempt("wrong-password","203.0.113.7");
+    assert.equal(r.status,429);
+    assert.equal((await r.json()).error.code,"AUTH_RATE_LIMITED");
+
+    r=await attempt(password,"203.0.113.8");
+    assert.equal(r.status,200);
+
+    r=await fetch(base+"/metrics");
+    assert.match(await r.text(),/pgi_auth_rate_limited_total 1/);
+  }finally{
+    await app.close();
+  }
 });
 
 test("expert router chooses available least-loaded expert",()=>{
