@@ -384,6 +384,7 @@ export class MemoryStore{
       foundation_version:"1.9",
       summary:{
         tenants_total:0,tenants_active:0,kyc_verified:0,kyc_pending:0,
+        inventory_total:0,inventory_unassigned:0,
         assignments_total:0,assignments_active:0,assignments_with_assignor:0,
         upstream_payout_ht:0,platform_fee_ht:0,net_payout_ht:0,
         payment_compliance_active:false
