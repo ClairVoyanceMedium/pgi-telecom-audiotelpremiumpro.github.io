@@ -1279,14 +1279,7 @@
   }
 
   function restoreUiPreferences(){
-    var pref=window.PGIWorkspace?window.PGIWorkspace.restore(titles):{view:"overview",period:"today",custom:null};
-    state.activeView=pref.view;state.period=pref.period;state.custom=pref.custom;
-    if(state.custom){
-      var df=$("date-from"),dt=$("date-to");
-      if(df)df.value=state.custom.from.toISOString().slice(0,10);
-      if(dt)dt.value=state.custom.to.toISOString().slice(0,10);
-    }
-    qsa(".period").forEach(function(x){x.classList.toggle("active",x.getAttribute("data-period")===state.period);});
+    if(window.PGIWorkspace)window.PGIWorkspace.restoreInto(state,titles);
   }
 
   function applyMobileOverviewMode(){
