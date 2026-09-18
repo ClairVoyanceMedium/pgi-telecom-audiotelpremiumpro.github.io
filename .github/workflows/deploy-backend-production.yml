@@ -131,3 +131,4 @@ jobs:
           health="$(curl --fail --silent --show-error --retry 5 --retry-delay 2 --max-time 12 "$base/api/v1/health")"
           printf '%s' "$health" | grep -F '"status":"ok"'
           printf '%s' "$health" | grep -F "\"version\":\"$RELEASE_VERSION\""
+          printf '%s' "$health" | grep -F "\"release\":\"$RELEASE_ID\""
