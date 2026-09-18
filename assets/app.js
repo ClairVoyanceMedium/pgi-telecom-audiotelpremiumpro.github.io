@@ -1,6 +1,7 @@
 (function(){
   "use strict";
 
+  var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
   var CONFIG={serviceRate:0.80,payoutRate:0.46,expertCostPerMin:0.18,fixedCostPerCall:0.03};
   var state={period:"today",custom:null,baseline:null,resets:[]};
   var titles={overview:"Vue d’ensemble",calls:"Appels",finance:"Finance",experts:"Experts",carriers:"Opérateurs",system:"Système",settings:"Paramètres"};
@@ -261,9 +262,45 @@
     });
   }
 
+  function updateConnectivity(){
+    var online=navigator.onLine;
+    var stateEl=$("network-state");
+    var banner=$("offline-banner");
+    if(stateEl){
+      stateEl.classList.toggle("offline",!online);
+      stateEl.innerHTML='<i class="dot '+(online?"ok":"offline")+'"></i><span>'+(online?"En ligne":"Hors ligne")+'</span>';
+    }
+    if(banner)banner.hidden=online;
+  }
+
+  function applyRuntimeMode(){
+    var el=$("runtime-mode");
+    if(!el)return;
+    var demo=RUNTIME.mode!=="production";
+    el.textContent=demo?"MODE DÉMO":"MODE PRODUCTION";
+    el.classList.toggle("demo",demo);
+    el.classList.toggle("production",!demo);
+  }
+
+  function registerServiceWorker(){
+    if(!("serviceWorker" in navigator))return;
+    window.addEventListener("load",function(){
+      navigator.serviceWorker.register("./service-worker.js").catch(function(){});
+    },{once:true});
+  }
+
   function clock(){
     setText("footer-clock",new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeStyle:"medium"}).format(new Date()));
   }
 
-  loadState();bind();render();clock();setInterval(clock,1000);
+  loadState();
+  bind();
+  applyRuntimeMode();
+  updateConnectivity();
+  window.addEventListener("online",updateConnectivity);
+  window.addEventListener("offline",updateConnectivity);
+  registerServiceWorker();
+  render();
+  clock();
+  setInterval(clock,1000);
 })();
