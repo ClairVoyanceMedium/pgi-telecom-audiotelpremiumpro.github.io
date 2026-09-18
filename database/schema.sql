@@ -23,7 +23,6 @@ CREATE TABLE sva_numbers (
   service_rate_ttc_per_min numeric(10,6) NOT NULL,
   status text NOT NULL CHECK (status IN ('pending','active','porting','suspended','closed')),
   assigned_to_label text,
-  carrier_name text,
   portability_status text,
   activated_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
@@ -250,7 +249,7 @@ CREATE TABLE callers (
 
 CREATE TABLE calls (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  external_call_id text UNIQUE,
+  external_call_id text,
   cdr_source text NOT NULL DEFAULT 'freeswitch',
   caller_id bigint REFERENCES callers(id),
   sva_number_id bigint NOT NULL REFERENCES sva_numbers(id),
@@ -297,6 +296,9 @@ CREATE TABLE calls (
   CHECK (ended_at >= started_at)
 );
 
+CREATE UNIQUE INDEX calls_host_external_unique
+  ON calls(host_carrier_id, external_call_id)
+  WHERE host_carrier_id IS NOT NULL AND external_call_id IS NOT NULL;
 CREATE INDEX calls_started_at_idx ON calls(started_at DESC);
 CREATE INDEX calls_expert_started_idx ON calls(expert_id, started_at DESC);
 CREATE INDEX calls_origin_carrier_started_idx ON calls(origin_carrier_id, started_at DESC);
