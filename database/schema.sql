@@ -37,6 +37,130 @@ CREATE TABLE carriers (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE carrier_adapters (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  carrier_id bigint NOT NULL REFERENCES carriers(id),
+  adapter_key text NOT NULL,
+  adapter_version text NOT NULL DEFAULT '1',
+  enabled boolean NOT NULL DEFAULT true,
+  capabilities jsonb NOT NULL DEFAULT '{}'::jsonb,
+  cdr_mapping jsonb NOT NULL DEFAULT '{}'::jsonb,
+  settlement_mapping jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (carrier_id, adapter_key, adapter_version)
+);
+
+CREATE TABLE carrier_connections (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  carrier_id bigint NOT NULL REFERENCES carriers(id),
+  connection_name text NOT NULL,
+  purpose text NOT NULL CHECK (purpose IN ('sip_inbound','cdr','settlement','api','sftp','other')),
+  state text NOT NULL DEFAULT 'configured'
+    CHECK (state IN ('configured','testing','ready','active','standby','disabled','error')),
+  transport text,
+  endpoint_host text,
+  endpoint_port integer CHECK (endpoint_port IS NULL OR endpoint_port BETWEEN 1 AND 65535),
+  auth_mode text,
+  secret_ref text,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  last_health_at timestamptz,
+  last_health_status text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (carrier_id, connection_name)
+);
+
+CREATE TABLE number_carrier_assignments (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  sva_number_id bigint NOT NULL REFERENCES sva_numbers(id),
+  carrier_id bigint NOT NULL REFERENCES carriers(id),
+  valid_from timestamptz NOT NULL,
+  valid_to timestamptz,
+  assignment_status text NOT NULL DEFAULT 'planned'
+    CHECK (assignment_status IN ('planned','testing','active','draining','ended','cancelled')),
+  portability_reference text,
+  portability_status text,
+  notes text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (valid_to IS NULL OR valid_to >= valid_from)
+);
+
+CREATE INDEX number_carrier_assignments_number_time_idx
+  ON number_carrier_assignments(sva_number_id, valid_from DESC);
+
+CREATE TABLE logical_carrier_routes (
+  route_key text PRIMARY KEY,
+  description text NOT NULL,
+  active_carrier_id bigint REFERENCES carriers(id),
+  standby_carrier_id bigint REFERENCES carriers(id),
+  active_connection_id bigint REFERENCES carrier_connections(id),
+  standby_connection_id bigint REFERENCES carrier_connections(id),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (active_carrier_id IS NULL OR standby_carrier_id IS NULL OR active_carrier_id <> standby_carrier_id)
+);
+
+INSERT INTO logical_carrier_routes(route_key,description)
+VALUES ('sva-primary','Logical inbound SVA host route')
+ON CONFLICT (route_key) DO NOTHING;
+
+CREATE TABLE carrier_switches (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  route_key text NOT NULL REFERENCES logical_carrier_routes(route_key),
+  from_carrier_id bigint REFERENCES carriers(id),
+  to_carrier_id bigint NOT NULL REFERENCES carriers(id),
+  requested_at timestamptz NOT NULL DEFAULT now(),
+  requested_by bigint REFERENCES app_users(id),
+  scheduled_for timestamptz,
+  started_at timestamptz,
+  completed_at timestamptz,
+  rollback_deadline timestamptz,
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','testing','ready','switching','completed','rolled_back','failed','cancelled')),
+  validation jsonb NOT NULL DEFAULT '{}'::jsonb,
+  notes text
+);
+
+CREATE INDEX carrier_switches_route_time_idx
+  ON carrier_switches(route_key, requested_at DESC);
+
+CREATE OR REPLACE FUNCTION activate_logical_carrier_route(
+  p_route_key text,
+  p_to_carrier_id bigint,
+  p_connection_id bigint
+)
+RETURNS bigint
+LANGUAGE plpgsql
+AS $
+DECLARE
+  v_generation bigint;
+BEGIN
+  UPDATE logical_carrier_routes
+  SET standby_carrier_id = active_carrier_id,
+      standby_connection_id = active_connection_id,
+      active_carrier_id = p_to_carrier_id,
+      active_connection_id = p_connection_id,
+      generation = generation + 1,
+      updated_at = now()
+  WHERE route_key = p_route_key
+    AND EXISTS (
+      SELECT 1
+      FROM carrier_connections cc
+      WHERE cc.id = p_connection_id
+        AND cc.carrier_id = p_to_carrier_id
+        AND cc.purpose = 'sip_inbound'
+        AND cc.state IN ('ready','active','standby')
+    )
+  RETURNING generation INTO v_generation;
+
+  IF v_generation IS NULL THEN
+    RAISE EXCEPTION 'route activation rejected: carrier connection is not ready';
+  END IF;
+
+  RETURN v_generation;
+END;
+$;
+
 CREATE TABLE carrier_contracts (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   carrier_id bigint NOT NULL REFERENCES carriers(id),
