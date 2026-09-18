@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {createBackend} from "../backend/server.mjs";
+import {createBackend,evaluateReadiness} from "../backend/server.mjs";
 import {hashPassword,verifyPassword,issueSession,verifySession,sessionCookie,csrfCookie} from "../backend/src/security.mjs";
 import {selectExpert} from "../backend/src/expert-router.mjs";
 import {clientIp,routeMatch} from "../backend/src/http.mjs";
@@ -135,6 +135,30 @@ test("expert compensation engine supports all declared modes",()=>{
   assert.equal(computeExpertCost({type:"fixed",rate:2.5,billableSeconds:600,expectedPayoutHt:5}),2.5);
   assert.equal(computeExpertCost({type:"none",rate:99,billableSeconds:600,expectedPayoutHt:5}),0);
   assert.throws(()=>computeExpertCost({type:"percentage",rate:120,billableSeconds:600,expectedPayoutHt:5}),/percentage/);
+});
+
+test("readiness requires production database and critical workers",()=>{
+  const ok=evaluateReadiness(
+    {store:"postgres"},
+    {stats:{lastOutboxSuccessAt:"2026-09-18T12:00:00Z",lastAlertsSuccessAt:"2026-09-18T12:00:00Z"}},
+    {mode:"production"}
+  );
+  assert.equal(ok.ready,true);
+  assert.deepEqual(ok.checks,{database:true,outbox_worker:true,alerts_worker:true});
+
+  const badStore=evaluateReadiness(
+    {store:"memory"},
+    {stats:{lastOutboxSuccessAt:"2026-09-18T12:00:00Z",lastAlertsSuccessAt:"2026-09-18T12:00:00Z"}},
+    {mode:"production"}
+  );
+  assert.equal(badStore.ready,false);
+
+  const badWorker=evaluateReadiness(
+    {store:"postgres"},
+    {stats:{lastOutboxSuccessAt:null,lastAlertsSuccessAt:"2026-09-18T12:00:00Z"}},
+    {mode:"production"}
+  );
+  assert.equal(badWorker.ready,false);
 });
 
 test("expert router chooses available least-loaded expert",()=>{
