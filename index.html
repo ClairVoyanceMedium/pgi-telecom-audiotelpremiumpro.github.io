@@ -1,1 +1,176 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#060810">
+  <meta name="description" content="PGI Telecom • Audiotel Premium Pro — cockpit Audiotel, financier et télécom.">
+  <title>PGI Telecom • Audiotel Premium Pro</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Navigation principale">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div><strong>PGI Telecom</strong><small>Audiotel Premium Pro</small></div>
+      </div>
+      <nav class="nav-list">
+        <button class="nav-item active" data-view="overview"><span>⌂</span>Vue d’ensemble</button>
+        <button class="nav-item" data-view="calls"><span>◫</span>Appels</button>
+        <button class="nav-item" data-view="finance"><span>€</span>Finance</button>
+        <button class="nav-item" data-view="experts"><span>◎</span>Experts</button>
+        <button class="nav-item" data-view="carriers"><span>⇄</span>Opérateurs</button>
+        <button class="nav-item" data-view="system"><span>⌁</span>Système</button>
+        <button class="nav-item" data-view="settings"><span>⚙</span>Paramètres</button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="status-line"><i class="dot ok"></i><span>Système disponible</span></div>
+        <small>V1 • GitHub Pages</small>
+      </div>
+    </aside>
 
+    <main class="main">
+      <header class="topbar">
+        <div><p class="eyebrow">COCKPIT OPÉRATEUR</p><h1 id="view-title">Vue d’ensemble</h1></div>
+        <div class="top-actions">
+          <span class="pill demo">MODE DÉMO</span>
+          <span class="pill"><i class="dot ok"></i>SIP prêt</span>
+          <button class="icon-btn" id="refresh-btn" type="button" aria-label="Actualiser">↻</button>
+        </div>
+      </header>
+
+      <section class="toolbar" aria-label="Période">
+        <div class="periods" role="group" aria-label="Période">
+          <button class="period active" data-period="today" type="button">Aujourd’hui</button>
+          <button class="period" data-period="7d" type="button">7 jours</button>
+          <button class="period" data-period="week" type="button">Semaine</button>
+          <button class="period" data-period="month" type="button">Mois</button>
+          <button class="period" data-period="year" type="button">Année</button>
+        </div>
+        <div class="custom-range">
+          <label>Du <input id="date-from" type="date"></label>
+          <label>au <input id="date-to" type="date"></label>
+          <button id="apply-custom" class="secondary-btn" type="button">Appliquer</button>
+        </div>
+      </section>
+
+      <div id="view-overview" class="view active">
+        <section class="kpi-grid">
+          <article class="kpi emphasis"><div class="kpi-head"><span>CA généré</span><span class="trend up" id="ca-trend">+0%</span></div><strong id="kpi-ca">0,00 €</strong><small>Service D080 TTC théorique</small></article>
+          <article class="kpi"><div class="kpi-head"><span>Reversement attendu</span><span class="mini-tag cyan">NET</span></div><strong id="kpi-expected">0,00 €</strong><small id="kpi-rate">Taux moyen : 0,00 €/min</small></article>
+          <article class="kpi"><div class="kpi-head"><span>Reversement encaissé</span><span class="mini-tag green">PAYÉ</span></div><strong id="kpi-paid">0,00 €</strong><small id="kpi-gap">Écart : 0,00 €</small></article>
+          <article class="kpi"><div class="kpi-head"><span>Marge estimée</span><span class="mini-tag violet">MARGE</span></div><strong id="kpi-margin">0,00 €</strong><small>Après rémunérations & coûts démo</small></article>
+          <article class="kpi compact"><span>Appels</span><strong id="kpi-calls">0</strong><small id="kpi-connected">0 aboutis</small></article>
+          <article class="kpi compact"><span>Minutes facturables</span><strong id="kpi-minutes">0</strong><small id="kpi-acd">ACD 0:00</small></article>
+          <article class="kpi compact"><span>Taux de décroché</span><strong id="kpi-asr">0%</strong><small id="kpi-abandon">0 abandons</small></article>
+          <article class="kpi compact"><span>Experts actifs</span><strong id="kpi-experts">0</strong><small id="kpi-live">0 appel en cours</small></article>
+        </section>
+
+        <section class="split-grid">
+          <article class="panel chart-panel">
+            <div class="panel-head"><div><p class="panel-kicker">PERFORMANCE</p><h2>CA & reversement</h2></div><div class="legend"><span><i class="legend-dot revenue"></i>CA</span><span><i class="legend-dot payout"></i>Reversement</span></div></div>
+            <div class="chart-wrap"><svg id="revenue-chart" viewBox="0 0 760 250" role="img" aria-label="Évolution du chiffre d'affaires et du reversement"></svg></div>
+          </article>
+
+          <article class="panel realtime">
+            <div class="panel-head"><div><p class="panel-kicker">TEMPS RÉEL</p><h2>Activité</h2></div><span class="live-badge"><i class="dot ok pulse"></i>LIVE</span></div>
+            <div class="live-stats">
+              <div><span>Appels en cours</span><strong id="live-calls">0</strong></div>
+              <div><span>Experts disponibles</span><strong id="live-available">0</strong></div>
+              <div><span>File d’attente</span><strong id="live-queue">0</strong></div>
+            </div>
+            <div class="health-row"><span>SIP trunk</span><span class="health ok">OPÉRATIONNEL</span></div>
+            <div class="health-row"><span>API</span><span class="health ok">PRÊTE</span></div>
+            <div class="health-row"><span>CDR</span><span class="health ok">SYNCHRONISÉ</span></div>
+            <div class="health-row"><span>Rapprochement</span><span class="health warn">MODE DÉMO</span></div>
+          </article>
+        </section>
+
+        <section class="split-grid lower">
+          <article class="panel">
+            <div class="panel-head"><div><p class="panel-kicker">DERNIERS APPELS</p><h2>Flux téléphonique</h2></div><button class="text-btn" data-go="calls" type="button">Voir tout →</button></div>
+            <div class="table-wrap"><table><thead><tr><th>Heure</th><th>Appelant</th><th>Expert</th><th>Durée</th><th>Statut</th><th>Rev.</th></tr></thead><tbody id="recent-calls"></tbody></table></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><div><p class="panel-kicker">ANOMALIES</p><h2>Contrôle financier</h2></div><span class="counter" id="alert-count">0</span></div>
+            <div id="alerts-list" class="alerts-list"></div>
+          </article>
+        </section>
+      </div>
+
+      <div id="view-calls" class="view">
+        <section class="panel">
+          <div class="panel-head"><div><p class="panel-kicker">CDR</p><h2>Détail des appels</h2></div><span class="pill" id="calls-total-label">0 appels</span></div>
+          <div class="table-wrap wide"><table><thead><tr><th>Date</th><th>Heure</th><th>Appelant</th><th>Réseau</th><th>089</th><th>Expert</th><th>Attente</th><th>Conversation</th><th>Facturable</th><th>Reversement</th><th>Statut</th></tr></thead><tbody id="calls-table"></tbody></table></div>
+        </section>
+      </div>
+
+      <div id="view-finance" class="view">
+        <section class="kpi-grid finance-kpis">
+          <article class="kpi emphasis"><span>CA généré</span><strong id="fin-ca">0,00 €</strong><small>D080 TTC théorique</small></article>
+          <article class="kpi"><span>Attendu</span><strong id="fin-expected">0,00 €</strong><small>Selon CDR internes</small></article>
+          <article class="kpi"><span>Confirmé</span><strong id="fin-confirmed">0,00 €</strong><small>Règlements opérateur</small></article>
+          <article class="kpi"><span>Écart à rapprocher</span><strong id="fin-gap">0,00 €</strong><small>Contrôle automatique</small></article>
+        </section>
+        <section class="panel"><div class="panel-head"><div><p class="panel-kicker">RÉCONCILIATION</p><h2>Attendu vs opérateur</h2></div></div><div class="recon-grid" id="recon-grid"></div></section>
+      </div>
+
+      <div id="view-experts" class="view">
+        <section class="panel"><div class="panel-head"><div><p class="panel-kicker">ÉQUIPE</p><h2>Performance experts</h2></div></div><div id="experts-grid" class="entity-grid"></div></section>
+      </div>
+
+      <div id="view-carriers" class="view">
+        <section class="panel"><div class="panel-head"><div><p class="panel-kicker">ORIGINE RÉSEAU</p><h2>Opérateurs appelants</h2></div></div><div id="carrier-grid" class="entity-grid"></div></section>
+      </div>
+
+      <div id="view-system" class="view">
+        <section class="system-grid">
+          <article class="panel"><p class="panel-kicker">SIP</p><h2>Trunk & routage</h2><div class="big-status ok">OPÉRATIONNEL</div><div class="metric-row"><span>Latence</span><strong>—</strong></div><div class="metric-row"><span>Jitter</span><strong>—</strong></div><div class="metric-row"><span>Perte paquets</span><strong>—</strong></div><small class="muted">Les mesures réelles seront alimentées par Kamailio/FreeSWITCH.</small></article>
+          <article class="panel"><p class="panel-kicker">DONNÉES</p><h2>Pipeline CDR</h2><div class="big-status ok">PRÊT</div><div class="metric-row"><span>Dernière synchro</span><strong id="last-sync">Maintenant</strong></div><div class="metric-row"><span>CDR en erreur</span><strong>0</strong></div><div class="metric-row"><span>Retard ingestion</span><strong>0 s</strong></div></article>
+          <article class="panel"><p class="panel-kicker">SÉCURITÉ</p><h2>État plateforme</h2><div class="big-status warn">FRONT PUBLIC</div><p class="muted">Cette V1 GitHub Pages n’embarque aucun secret et aucune donnée client réelle. Le futur backend privé gérera l’authentification et les données sensibles.</p></article>
+        </section>
+      </div>
+
+      <div id="view-settings" class="view">
+        <section class="settings-grid">
+          <article class="panel">
+            <p class="panel-kicker">MÉTRIQUES</p><h2>Point de départ statistique</h2>
+            <p class="muted">Une remise à zéro ne supprime jamais les CDR. Elle crée un nouveau point de départ pour les compteurs visibles.</p>
+            <div class="baseline-card"><span>Baseline actuelle</span><strong id="baseline-label">Historique complet</strong></div>
+            <button id="reset-metrics" class="danger-btn" type="button">Remettre les métriques à zéro</button>
+          </article>
+          <article class="panel"><p class="panel-kicker">AUDIT</p><h2>Historique des remises à zéro</h2><div id="reset-log" class="reset-log"></div></article>
+          <article class="panel">
+            <p class="panel-kicker">CONFIGURATION DÉMO</p><h2>Hypothèses financières</h2>
+            <div class="metric-row"><span>Tarif service</span><strong>0,80 € TTC/min</strong></div>
+            <div class="metric-row"><span>Reversement cible</span><strong>0,46 € HT/min</strong></div>
+            <div class="metric-row"><span>Coût expert démo</span><strong>0,18 €/min</strong></div>
+            <p class="muted">Ces valeurs sont uniquement utilisées pour la démonstration. Elles seront remplacées par les contrats opérateur réels.</p>
+          </article>
+        </section>
+      </div>
+
+      <footer class="app-footer"><span>PGI Telecom • Audiotel Premium Pro</span><span id="footer-clock"></span></footer>
+    </main>
+  </div>
+
+  <nav class="mobile-nav" aria-label="Navigation mobile">
+    <button class="active" data-view="overview"><span>⌂</span><small>Accueil</small></button>
+    <button data-view="calls"><span>◫</span><small>Appels</small></button>
+    <button data-view="finance"><span>€</span><small>Finance</small></button>
+    <button data-view="system"><span>⌁</span><small>Système</small></button>
+    <button data-view="settings"><span>⚙</span><small>Réglages</small></button>
+  </nav>
+
+  <dialog id="reset-dialog">
+    <form method="dialog" class="dialog-card">
+      <span class="warning-icon">!</span><h2>Nouvelle baseline ?</h2>
+      <p>Les compteurs visibles repartiront de zéro à partir de maintenant. Les CDR et l’historique resteront intacts.</p>
+      <div class="dialog-actions"><button value="cancel" class="secondary-btn">Annuler</button><button id="confirm-reset" value="default" class="danger-btn">Confirmer</button></div>
+    </form>
+  </dialog>
+  <script src="assets/app.js"></script>
+</body>
+</html>
