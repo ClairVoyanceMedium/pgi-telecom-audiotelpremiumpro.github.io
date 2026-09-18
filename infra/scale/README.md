@@ -11,6 +11,14 @@ Le writer PostgreSQL est fourni par `PGI_DATABASE_URL`. Une réplique de lecture
 
 Les secrets ne sont jamais présents dans Git. Les exemples utilisent un Secret Kubernetes `pgi-secrets` et un ConfigMap `pgi-runtime` à créer dans l'environnement cible.
 
-L'autoscaling API est basé ici sur CPU/mémoire. En production très chargée, ajouter des métriques applicatives comme requêtes/seconde, latence p95 et profondeur de file.
+Les exemples fournis comprennent :
+
+- `api-deployment.example.yaml` : plusieurs API stateless ;
+- `api-hpa.example.yaml` : autoscaling API de 3 à 100 pods ;
+- `worker-deployment.example.yaml` : pool de workers séparé ;
+- `worker-hpa.example.yaml` : autoscaling workers de 2 à 50 pods ;
+- `pod-disruption-budgets.example.yaml` : disponibilité minimale pendant les maintenances.
+
+L'autoscaling de départ utilise CPU/mémoire. En production très chargée, ajouter des métriques applicatives comme requêtes/seconde, latence p95 et profondeur de file.
 
 Voir `docs/HYPERSCALE.md`.
