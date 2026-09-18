@@ -66,6 +66,54 @@ paths:
       responses:
         "200":
           description: Santé
+  /carrier-routing:
+    get:
+      summary: État des routes logiques opérateur
+      responses:
+        "200":
+          description: Opérateur actif, standby, génération et état des connexions
+  /carrier-switches:
+    post:
+      summary: Prépare un changement d'opérateur sans modifier le cœur PGI
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [route_key, to_carrier_id, connection_id]
+              properties:
+                route_key: { type: string, example: sva-primary }
+                to_carrier_id: { type: integer }
+                connection_id: { type: integer }
+                scheduled_for: { type: string, format: date-time }
+                rollback_window_minutes: { type: integer, minimum: 5, maximum: 10080, default: 1440 }
+      responses:
+        "201":
+          description: Plan de bascule créé
+  /carrier-switches/{id}/activate:
+    post:
+      summary: Active atomiquement la nouvelle route après validation
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Nouvelle route active, ancienne route conservée en standby
+  /carrier-switches/{id}/rollback:
+    post:
+      summary: Revient à l'opérateur précédent pendant la fenêtre de rollback
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Rollback effectué
   /metrics/baselines:
     post:
       summary: Crée une nouvelle baseline sans supprimer les données
