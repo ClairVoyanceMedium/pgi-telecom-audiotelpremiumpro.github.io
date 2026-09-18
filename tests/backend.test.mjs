@@ -317,6 +317,8 @@ test("dashboard analytics provides bounded chart dimensions",async()=>{
     assert.ok(Array.isArray(body.series)&&body.series.length>0);
     assert.ok(Array.isArray(body.hours)&&body.hours.length>0&&body.hours.length<=24);
     assert.ok(Array.isArray(body.weekdays)&&body.weekdays.length>0&&body.weekdays.length<=7);
+    assert.ok(Array.isArray(body.heatmap)&&body.heatmap.length>0&&body.heatmap.length<=168);
+    assert.ok(body.quality&&Number(body.quality.samples)>=0);
     assert.ok(Array.isArray(body.experts)&&body.experts.length<=12);
     assert.ok(Array.isArray(body.carriers)&&body.carriers.length<=12);
     assert.ok(Array.isArray(body.durations));
@@ -328,7 +330,7 @@ test("wholesale overview is read-only and empty in simulator",async()=>{
     const r=await fetch(base+"/api/v1/platform/overview");
     assert.equal(r.status,200);
     const body=await r.json();
-    assert.equal(body.foundation_version,"1.14");
+    assert.equal(body.foundation_version,"1.15");
     assert.equal(body.summary.tenants_total,0);
     assert.equal(body.summary.assignments_total,0);
     assert.equal(body.summary.payment_compliance_active,false);
