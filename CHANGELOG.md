@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.10.1 — 2026-09-18
+
+Ergonomie mobile et identité :
+
+- nom officiel visible : **PGI • Telecom - Audiotel Premium Pro** ;
+- mode mobile **Vue essentielle** par défaut pour réduire fortement la longueur de l'accueil ;
+- analyses avancées accessibles par **Voir l’analyse complète** ;
+- préférence mobile conservée localement ;
+- priorité mobile donnée au lancement SVA, aux KPI, au temps réel et aux alertes ;
+- cache PWA porté à v11 et versions alignées sur 1.10.1.
+
+
 ## 1.10.0 — 2026-09-18
 
 Pilotage SVA orienté lancement et mobile :
@@ -22,7 +34,7 @@ Pilotage SVA orienté lancement et mobile :
 
 Wholesale SVA Control Center et nouveau nom officiel :
 
-- renommage du produit visible en **PGI • Telecom Audiotel Premium Pro** ;
+- renommage du produit visible en **PGI • Telecom - Audiotel Premium Pro** ;
 - nouvelle vue `Plateforme SVA` dans la navigation desktop et mobile ;
 - synthèse wholesale directement sur la vue d'ensemble ;
 - API read-only `GET /api/v1/platform/overview` ;
