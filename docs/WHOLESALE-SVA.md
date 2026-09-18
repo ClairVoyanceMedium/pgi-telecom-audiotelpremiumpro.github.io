@@ -297,3 +297,12 @@ appel
 ```
 
 Les écritures financières restent auditables et append-only.
+
+
+## Extension internationale
+
+La couche Wholesale est désormais multi-marchés. Le pays juridique du tenant est distinct de ses marchés d’exploitation, et chaque marché peut avoir sa propre devise, locale, timezone, conformité, numérotation et capacité opérateur.
+
+Les numéros restent canoniques en E.164 et les formes livrées par les trunks sont gérées par des alias explicites. Les reversements sont regroupés par devise et ne sont jamais consolidés entre monnaies sans politique de change.
+
+Voir `docs/INTERNATIONAL.md` pour le modèle complet et la procédure contrôlée d’ouverture d’un nouveau pays.
