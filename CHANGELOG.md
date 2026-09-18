@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.16.0 — 2026-09-19
+
+Operator Efficiency et optimisation du temps de travail :
+
+- endpoints consolidés `/api/v1/app/bootstrap` et `/api/v1/dashboard/bootstrap` ;
+- chargement initial réduit à deux blocs principaux plus le détail CDR borné ;
+- cache des métadonnées control-plane pendant 60 secondes ;
+- synchronisation SSE différenciée : dashboard, incrémentale ou complète ;
+- un nouvel appel ne recharge plus que la page CDR récente ;
+- les événements expert/opérateur/alerte ne rechargent plus les CDR ;
+- suspension SSE lorsque l'application passe en arrière-plan ;
+- reprise incrémentale ou complète selon la durée d'absence ;
+- file de synchronisation empêchant la perte d'un changement de période pendant une requête ;
+- rendu limité à la vue active ;
+- workspace persistant : vue, période, dates personnalisées, marché et mode mobile ;
+- palette universelle Actions sur desktop et mobile avec raccourci Ctrl/⌘ + K ;
+- centre d'alertes rendu actionnable : finance, ASR, RTP, API, CDR, queue et dead letters ;
+- Experts, Opérateurs et Réconciliation basculés sur les agrégats exacts serveur ;
+- runtime frontend découpé en modules cacheables ;
+- nouveaux modules inclus dans le shell PWA ;
+- cache PWA porté à v19 ;
+- `app.js` maintenu sous le budget strict de 90 KiB sans relever la limite ;
+- versions front, backend, Docker et manifests scale alignées sur 1.16.0.
+
 ## 1.15.0 — 2026-09-19
 
 Cockpit Intelligence et supervision enrichie :
