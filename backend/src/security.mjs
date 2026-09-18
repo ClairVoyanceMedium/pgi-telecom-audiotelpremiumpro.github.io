@@ -62,14 +62,14 @@ export function constantTimeTokenEqual(a,b){
 }
 
 export function sessionCookie(token,maxAge){
-  return "pgi_session="+encodeURIComponent(token)+"; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age="+maxAge;
+  return "__Host-pgi_session="+encodeURIComponent(token)+"; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age="+maxAge;
 }
 export function csrfCookie(token,maxAge){
-  return "pgi_csrf="+encodeURIComponent(token)+"; Path=/; Secure; SameSite=Strict; Max-Age="+maxAge;
+  return "__Host-pgi_csrf="+encodeURIComponent(token)+"; Path=/; Secure; SameSite=Strict; Max-Age="+maxAge;
 }
 export function clearSessionCookies(){
   return [
-    "pgi_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0",
-    "pgi_csrf=; Path=/; Secure; SameSite=Strict; Max-Age=0"
+    "__Host-pgi_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0",
+    "__Host-pgi_csrf=; Path=/; Secure; SameSite=Strict; Max-Age=0"
   ];
 }
