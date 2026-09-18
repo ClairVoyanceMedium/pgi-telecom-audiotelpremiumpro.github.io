@@ -507,7 +507,9 @@ export class MemoryStore{
       cdr_lag_seconds:last?Math.max(0,(Date.now()-Date.parse(last.ended_at))/1000):0,
       outbox_pending:this.outbox.filter(x=>!x.published_at).length,
       event_subscribers:this.eventBus.size,
-      carrier_route:{...this.route}
+      carrier_route:{...this.route},
+      work_queue:await this.workQueueHealth(),
+      resilience:{regions_total:1,regions_ready:1,dr_targets_total:4}
     };
   }
 
