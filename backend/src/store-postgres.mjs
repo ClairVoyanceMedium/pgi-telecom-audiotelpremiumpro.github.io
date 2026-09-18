@@ -137,12 +137,25 @@ export class PostgresStore{
       const expert=rows[0];
       if(!expert)return null;
       const updated=await tx.unsafe(
-        "UPDATE experts SET last_assigned_at=now() WHERE id=$1"+
+        "UPDATE experts SET last_assigned_at=now(),active_calls=active_calls+1,status='busy' WHERE id=$1"+
         " RETURNING id,code,display_name,destination_uri,status,active_calls,last_assigned_at,enabled",
         [expert.id]
       );
       return updated[0];
     });
+  }
+
+  async releaseExpert(id){
+    const rows=await this.sql.unsafe(
+      "UPDATE experts SET active_calls=GREATEST(active_calls-1,0),"+
+      " status=CASE WHEN GREATEST(active_calls-1,0)=0 AND status='busy' THEN 'available' ELSE status END"+
+      " WHERE id=$1 RETURNING id,code,display_name,destination_uri,status,active_calls,last_assigned_at,enabled",
+      [Number(id)]
+    );
+    const expert=rows[0];
+    if(!expert)throw problem(404,"EXPERT_NOT_FOUND");
+    this.eventBus.publish("expert.released",{id:expert.id,status:expert.status,active_calls:expert.active_calls});
+    return expert;
   }
 
   async ingestCdr(envelope){
