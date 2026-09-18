@@ -812,7 +812,14 @@
     renderResetLog();
     var now=new Date();
     state.diagnostics.lastRenderMs=Math.max(0,performance.now()-started);
-    setText("last-sync",new Intl.DateTimeFormat("fr-FR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(now));
+    var syncLabel=new Intl.DateTimeFormat("fr-FR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(now);
+    setText("last-sync",syncLabel);
+    setText("command-sync",syncLabel);
+    setText("command-release",RUNTIME.releaseId?String(RUNTIME.releaseId).slice(0,12):(RUNTIME.mode==="production"?"inconnue":"demo"));
+    var periodLabels={today:"Aujourd’hui","7d":"7 jours",week:"Semaine",month:"Mois",year:"Année",custom:"Personnalisée"};
+    setText("command-period",periodLabels[state.period]||"Période");
+    var commandSystem=RUNTIME.mode!=="production"?"Mode démo":(state.diagnostics.apiStatus==="ok"?"Opérationnel":(state.diagnostics.apiStatus==="error"?"Dégradé":"Connexion"));
+    setText("command-system",commandSystem);
     setText("render-time",nfmt(state.diagnostics.lastRenderMs,1)+" ms");
     setText("runtime-errors",String(state.diagnostics.errors));
     setText("runtime-version",RUNTIME.version||"dev");
