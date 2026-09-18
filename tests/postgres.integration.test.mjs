@@ -65,6 +65,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(calls.data[0].carrier_rate_ht_per_min,0.55);
     assert.equal(calls.data[0].expected_payout_ht,5);
     assert.equal(calls.data[0].retail_service_amount_ttc,8);
+    assert.equal(calls.data[0].expert_cost_ht,1.8);
 
     const rawPayload=await store.sql.unsafe("SELECT payload FROM raw_cdr_events WHERE source_event_id='evt-1'");
     assert.equal(rawPayload.length,1);
