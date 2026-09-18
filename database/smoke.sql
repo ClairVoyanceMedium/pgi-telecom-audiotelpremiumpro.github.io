@@ -6,8 +6,8 @@ INSERT INTO carriers(name,kind) VALUES
   ('Test SVA Host B','sva_host'),
   ('Test Origin','origin_network');
 
-INSERT INTO sva_numbers(e164,display_number,tariff_code,service_rate_ttc_per_min,status,carrier_name)
-VALUES ('33890000000','0890 00 00 00','D080',0.800000,'active','Test SVA Host');
+INSERT INTO sva_numbers(e164,display_number,tariff_code,service_rate_ttc_per_min,status)
+VALUES ('33890000000','0890 00 00 00','D080',0.800000,'active');
 
 INSERT INTO experts(code,display_name,status,compensation_type,compensation_rate)
 VALUES ('TEST01','Expert Test','available','per_minute',0.180000);
