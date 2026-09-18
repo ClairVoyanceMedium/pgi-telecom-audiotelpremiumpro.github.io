@@ -217,6 +217,10 @@
       state.authUser=me&&me.user?me.user:null;
       closeLogin();
       var logout=$("logout-btn");if(logout)logout.hidden=false;
+      var baselineResult=await window.PGIApi.baselines({scope:"global",limit:"20"});
+      var baselineRows=Array.isArray(baselineResult&&baselineResult.data)?baselineResult.data:[];
+      state.resets=baselineRows.map(function(x){return {at:x.effective_from||x.created_at,scope:x.scope,reason:x.reason||""};});
+      state.baseline=baselineRows.length?new Date(baselineRows[0].effective_from||baselineRows[0].created_at):null;
       var range=getRange();
       var windowRange=productionDataRange();
       var results=await Promise.all([
@@ -274,6 +278,7 @@
   }
 
   function loadState(){
+    if(RUNTIME.mode==="production")return;
     try{
       var raw=localStorage.getItem("pgi-audiotel-state");
       if(raw){
@@ -284,6 +289,7 @@
     }catch(e){}
   }
   function saveState(){
+    if(RUNTIME.mode==="production")return;
     try{localStorage.setItem("pgi-audiotel-state",JSON.stringify({baseline:state.baseline?state.baseline.toISOString():null,resets:state.resets}));}catch(e){}
   }
 
