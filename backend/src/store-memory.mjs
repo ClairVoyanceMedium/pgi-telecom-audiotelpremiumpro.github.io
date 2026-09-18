@@ -1,5 +1,6 @@
 import {createRequire} from "node:module";
 import {createHash,randomUUID} from "node:crypto";
+import {sanitizeCdrPayload,deriveCallerHash} from "./cdr-privacy.mjs";
 import {selectExpert} from "./expert-router.mjs";
 
 const require=createRequire(import.meta.url);
@@ -187,7 +188,7 @@ export class MemoryStore{
     if(this.rawEventKeys.has(key))return {duplicate:true};
     this.rawEventKeys.add(key);
 
-    const p=envelope.payload||{};
+    const p=sanitizeCdrPayload(envelope.payload||{});
     if(!p.external_call_id||!p.started_at||!p.ended_at)throw problem(400,"CDR_REQUIRED_FIELDS_MISSING");
     if(this.calls.some(x=>x.external_call_id===p.external_call_id))return {duplicate:true};
 
@@ -220,7 +221,7 @@ export class MemoryStore{
       bridged_at:p.bridged_at?new Date(p.bridged_at).toISOString():null,
       ended_at:new Date(p.ended_at).toISOString(),
       caller_masked:String(p.caller_masked||"Masqué"),
-      caller_hash:String(p.caller_hash||createHash("sha256").update(String(p.caller_masked||"unknown")).digest("hex")),
+      caller_hash:deriveCallerHash(p,{key:this.config.callerHashKey,source:envelope.source,sourceEventId:envelope.source_event_id}),
       origin_carrier:String(p.origin_carrier||"Unknown"),
       origin_type:originType,
       host_carrier:String(p.host_carrier||this.route.active_carrier||"Unknown"),
