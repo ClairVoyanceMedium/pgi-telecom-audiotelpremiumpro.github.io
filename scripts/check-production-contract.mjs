@@ -5,6 +5,7 @@ const failures=[];
 const compose=fs.readFileSync("infra/docker-compose.production.yml","utf8");
 const runtime=fs.readFileSync("assets/config.production.example.js","utf8");
 const envExample=fs.readFileSync("infra/production.env.example.txt","utf8");
+const caddy=fs.readFileSync("infra/Caddyfile.production.example","utf8");
 
 const requiredCompose=[
   "POSTGRES_PASSWORD",
