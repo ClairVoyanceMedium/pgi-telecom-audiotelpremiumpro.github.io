@@ -17,6 +17,13 @@
     -Server
   }
 
+  # Les routes machine locales ne doivent jamais traverser le proxy public.
+  # FreeSWITCH/Kamailio les appellent directement sur 127.0.0.1:8080.
+  @internalMachine path /api/v1/internal/* /api/v1/ingest/freeswitch
+  handle @internalMachine {
+    respond 404
+  }
+
   @api path /api/*
   handle @api {
     reverse_proxy 127.0.0.1:8080 {
