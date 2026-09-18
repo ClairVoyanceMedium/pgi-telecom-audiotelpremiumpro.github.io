@@ -1,10 +1,10 @@
-# PGI • Telecom Audiotel Premium Pro
+# PGI • Telecom - Audiotel Premium Pro
 
 Cockpit Audiotel, financier et télécom de PGI Telecom.
 
 ## État actuel
 
-Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.10.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
+Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.10.1 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
 
 Fonctions déjà présentes :
 
@@ -89,9 +89,9 @@ Le projet possède désormais des garde-fous de préproduction :
 
 La version GitHub Pages reste une démonstration. Les statuts SIP/API affichent explicitement qu'ils ne sont pas connectés tant que l'infrastructure réelle n'existe pas.
 
-## Validation release 1.10.0
+## Validation release 1.10.1
 
-La release 1.10.0 transforme la fondation Wholesale SVA en véritable centre de contrôle : vue Plateforme SVA, synthèse wholesale sur l'accueil, clients/tenants, affectations 089, stock libre, KYC, opérateur attributaire, conformité PSP/DSP2 et reversements par éditeur alimentés par PostgreSQL en production.
+La release 1.10.1 transforme la fondation Wholesale SVA en véritable centre de contrôle : vue Plateforme SVA, synthèse wholesale sur l'accueil, clients/tenants, affectations 089, stock libre, KYC, opérateur attributaire, conformité PSP/DSP2 et reversements par éditeur alimentés par PostgreSQL en production.
 
 
 
