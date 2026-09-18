@@ -49,8 +49,11 @@ export function json(res,status,payload,extraHeaders={}){
 
 export function problemJson(res,error,requestId){
   const status=Number(error?.status)||500;
-  const code=status>=500?"INTERNAL_ERROR":String(error?.code||"REQUEST_FAILED");
-  json(res,status,{error:{code,message:status>=500?"Internal server error":String(error?.message||code),request_id:requestId}});
+  const internalCode=String(error?.code||"REQUEST_FAILED");
+  const expose=error?.expose===true;
+  const code=status>=500&&!expose?"INTERNAL_ERROR":internalCode;
+  const message=status>=500&&!expose?"Internal server error":String(error?.message||code);
+  json(res,status,{error:{code,message,request_id:requestId}});
 }
 
 export function routeMatch(pathname,pattern){
