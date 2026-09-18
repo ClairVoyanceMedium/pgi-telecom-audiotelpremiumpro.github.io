@@ -8,12 +8,13 @@
     "check:static": "node scripts/check-static.mjs",
     "check:secrets": "node scripts/check-secrets.mjs",
     "test": "node --test tests/*.test.mjs",
-    "verify": "npm run check:js && npm run check:static && npm run check:html && npm run check:size && npm run check:carriers && npm run check:dependencies && npm run check:secrets && npm test",
+    "verify": "npm run check:js && npm run check:static && npm run check:html && npm run check:size && npm run check:carriers && npm run check:dependencies && npm run check:sql && npm run check:secrets && npm test",
     "check:html": "node scripts/check-html.mjs",
     "check:size": "node scripts/check-size.mjs",
     "build:static": "node scripts/build-static.mjs",
     "check:carriers": "node scripts/validate-carrier-profiles.mjs",
-    "check:dependencies": "node scripts/check-dependency-policy.mjs"
+    "check:dependencies": "node scripts/check-dependency-policy.mjs",
+    "check:sql": "node scripts/check-sql.mjs"
   },
   "engines": {
     "node": ">=20"
