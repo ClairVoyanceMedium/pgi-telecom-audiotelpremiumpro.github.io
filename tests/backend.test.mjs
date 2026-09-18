@@ -256,6 +256,8 @@ test("backend health summary calls and metrics are operational",async()=>{
     assert.match(metricsText,/pgi_http_requests_total/);
     assert.match(metricsText,/pgi_worker_outbox_errors_total/);
     assert.match(metricsText,/pgi_worker_alert_errors_total/);
+    assert.match(metricsText,/pgi_cdr_lag_seconds/);
+    assert.match(metricsText,/pgi_experts_available/);
   });
 });
 
