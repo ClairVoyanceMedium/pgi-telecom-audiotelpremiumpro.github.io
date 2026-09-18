@@ -48,6 +48,7 @@ if(!/npm run verify/.test(deploy))failures.push("production deploy must verify b
 if(/^\s{2}valkey:/m.test(compose))failures.push("default production stack must not start unused Valkey");
 if(!/pg_restore --list/.test(backupScript))failures.push("backup must validate dump readability with pg_restore");
 if(!/sha256sum --check/.test(backupScript))failures.push("backup must verify its checksum before success");
+if(!/PGI_BACKUP_KEEP_COUNT/.test(backupScript)||!/Backup pruned/.test(backupScript))failures.push("backup tooling must enforce bounded retention");
 if(!/pg_restore/.test(restoreDrill)||!/pgi_restore_drill_/.test(restoreDrill))failures.push("restore drill must restore into an isolated temporary database");
 if(!/migrate:\s*[\s\S]*command: \["node","backend\/migrate\.mjs"\]/.test(compose))failures.push("production stack must run the migration service");
 if(!/migrate:\s*\n\s*condition: service_completed_successfully/.test(compose))failures.push("production API must wait for successful migrations");
