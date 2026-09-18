@@ -56,7 +56,18 @@ export function routeMatch(pathname,pattern){
 }
 
 export function clientIp(req){
-  return req.socket?.remoteAddress||"unknown";
+  const socketIp=String(req.socket?.remoteAddress||"unknown");
+  if(isLoopbackProxy(socketIp)){
+    const raw=req.headers?.["x-forwarded-for"];
+    const value=Array.isArray(raw)?raw[0]:raw;
+    const first=String(value||"").split(",")[0].trim();
+    if(first&&first.length<=64&&/^[0-9a-fA-F:.%]+$/.test(first))return first;
+  }
+  return socketIp;
+}
+
+function isLoopbackProxy(ip){
+  return ip==="127.0.0.1"||ip==="::1"||ip==="::ffff:127.0.0.1";
 }
 
 export function text(res,status,payload,contentType="text/plain; charset=utf-8"){
