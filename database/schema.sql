@@ -29,6 +29,42 @@ CREATE TABLE sva_numbers (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE number_portability_events (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  sva_number_id bigint NOT NULL REFERENCES sva_numbers(id),
+  from_carrier_id bigint,
+  to_carrier_id bigint,
+  portability_reference text,
+  requested_at timestamptz NOT NULL DEFAULT now(),
+  scheduled_at timestamptz,
+  activated_at timestamptz,
+  completed_at timestamptz,
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','requested','confirmed','scheduled','activating','completed','failed','cancelled')),
+  validation jsonb NOT NULL DEFAULT '{}'::jsonb,
+  notes text
+);
+
+CREATE INDEX number_portability_events_number_idx
+  ON number_portability_events(sva_number_id, requested_at DESC);
+
+CREATE OR REPLACE FUNCTION protect_active_sva_identity()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $
+BEGIN
+  IF OLD.status IN ('active','porting')
+     AND NEW.e164 IS DISTINCT FROM OLD.e164 THEN
+    RAISE EXCEPTION 'active SVA number identity cannot be changed during carrier operations';
+  END IF;
+  RETURN NEW;
+END;
+$;
+
+CREATE TRIGGER sva_numbers_protect_identity
+BEFORE UPDATE ON sva_numbers
+FOR EACH ROW EXECUTE FUNCTION protect_active_sva_identity();
+
 CREATE TABLE carriers (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   name text NOT NULL UNIQUE,
