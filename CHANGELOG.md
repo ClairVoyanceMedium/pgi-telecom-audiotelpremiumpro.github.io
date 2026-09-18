@@ -14,6 +14,7 @@ Fondation internationale multi-marchés :
 - profils de conformité paiement rattachables à chaque marché ;
 - bootstrap PostgreSQL neuf rendu compatible avec les migrations immuables à checksum ;
 - cockpit Wholesale enrichi avec marchés et devises ;
+- sélecteur de marché global, automatique et mémorisé lorsque plusieurs marchés sont actifs ;
 - documentation d'ouverture d'un nouveau pays ;
 - cache PWA porté à v15 ;
 - versions front/backend/Docker alignées sur 1.12.0.
