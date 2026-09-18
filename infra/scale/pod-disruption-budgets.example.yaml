@@ -1,0 +1,19 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: pgi-api
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: pgi-api
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: pgi-worker
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: pgi-worker
