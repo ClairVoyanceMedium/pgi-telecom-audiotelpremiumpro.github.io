@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pgi-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pgi-worker
+  template:
+    metadata:
+      labels:
+        app: pgi-worker
+    spec:
+      terminationGracePeriodSeconds: 45
+      containers:
+        - name: worker
+          image: pgi-telecom-api:1.13.0
+          env:
+            - name: PGI_BACKEND_MODE
+              value: production
+            - name: PGI_PROCESS_ROLE
+              value: worker
+            - name: PGI_BACKEND_HOST
+              value: 0.0.0.0
+          envFrom:
+            - secretRef:
+                name: pgi-secrets
+            - configMapRef:
+                name: pgi-runtime
+          readinessProbe:
+            httpGet:
+              path: /api/v1/ready
+              port: 8080
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8080
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
