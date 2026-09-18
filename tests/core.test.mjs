@@ -50,3 +50,13 @@ test("confirmé et payé restent distincts",()=>{
 test("les valeurs financières négatives sont refusées",()=>{
   assert.throws(()=>core.computeCallFinancials({conversationSeconds:60},{serviceRateTtcPerMin:-.8}),/>= 0/);
 });
+
+test("le rapprochement respecte une tolérance configurable",()=>{
+  assert.equal(core.reconcileAmounts(10,9.995,.01).status,"matched");
+  assert.equal(core.reconcileAmounts(10,9.98,.01).status,"variance");
+  assert.equal(core.reconcileAmounts(10,9.98,.01).varianceHt,.02);
+});
+
+test("le rapprochement refuse les montants négatifs",()=>{
+  assert.throws(()=>core.reconcileAmounts(-1,0,.01),/>= 0/);
+});
