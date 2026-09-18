@@ -4,7 +4,7 @@ Cockpit Audiotel, financier et télécom de PGI Telecom.
 
 ## État actuel
 
-Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.9.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
+Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.10.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
 
 Fonctions déjà présentes :
 
@@ -19,7 +19,7 @@ Fonctions déjà présentes :
 - remise à zéro non destructive des métriques avec historique local ;
 - architecture prête à recevoir une API privée.
 
-## Cockpit production 1.9
+## Cockpit production 1.10
 
 Le front exploite directement l’API privée lorsque `PGI_CONFIG.mode` vaut `production` et que `apiBaseUrl` pointe vers `/api/v1` : authentification par session, cookies `__Host-`, protection CSRF, anti-bruteforce, CDR paginés, experts, KPI live, routage opérateur et rafraîchissement SSE. En production, aucune donnée CDR ni aucun taux financier de démonstration n’est injecté.
 
@@ -89,9 +89,9 @@ Le projet possède désormais des garde-fous de préproduction :
 
 La version GitHub Pages reste une démonstration. Les statuts SIP/API affichent explicitement qu'ils ne sont pas connectés tant que l'infrastructure réelle n'existe pas.
 
-## Validation release 1.9.0
+## Validation release 1.10.0
 
-La release 1.9.0 transforme la fondation Wholesale SVA en véritable centre de contrôle : vue Plateforme SVA, synthèse wholesale sur l'accueil, clients/tenants, affectations 089, stock libre, KYC, opérateur attributaire, conformité PSP/DSP2 et reversements par éditeur alimentés par PostgreSQL en production.
+La release 1.10.0 transforme la fondation Wholesale SVA en véritable centre de contrôle : vue Plateforme SVA, synthèse wholesale sur l'accueil, clients/tenants, affectations 089, stock libre, KYC, opérateur attributaire, conformité PSP/DSP2 et reversements par éditeur alimentés par PostgreSQL en production.
 
 
 
@@ -122,7 +122,7 @@ Aucun portail client ni flux de fonds tiers n'est activé automatiquement par ce
 Voir `docs/WHOLESALE-SVA.md` pour la trajectoire réglementaire, commerciale et technique.
 
 
-### Dashboard Wholesale 1.9
+### Dashboard Wholesale 1.10
 
 Le cockpit comporte maintenant une vue dédiée `Plateforme SVA` et un résumé sur l'accueil.
 
@@ -137,3 +137,21 @@ En production, la vue consomme `GET /api/v1/platform/overview` et expose uniquem
 - état du profil de conformité des paiements.
 
 En démo, aucun faux client, faux KYC ou faux reversement n'est généré : les compteurs wholesale restent à zéro et l'interface indique explicitement qu'il s'agit d'une fondation prête architecturalement.
+
+
+### Centre de lancement SVA 1.10
+
+L'accueil mobile et desktop donne désormais la priorité au passage réel en production.
+
+Le centre de lancement calcule quatre prérequis :
+
+1. opérateur SVA amont configuré ;
+2. au moins un numéro SVA réel présent ;
+3. route SIP opérateur active vers PGI ;
+4. fondation multi-clients conforme, avec KYC et profil de paiement lorsqu'ils deviennent nécessaires.
+
+Le cockpit affiche automatiquement la prochaine action bloquante et envoie vers la bonne vue : Opérateurs, Plateforme SVA ou Système.
+
+Sur mobile, la Plateforme SVA est maintenant accessible directement depuis la barre de navigation principale au lieu d'être cachée dans le menu Plus.
+
+En mode démo, le cockpit n'invente aucun contrat, numéro, trunk SIP, client ou paiement réel.
