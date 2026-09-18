@@ -8,7 +8,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
-  <meta name="description" content="PGI Telecom • Audiotel Premium Pro — cockpit Audiotel, financier et télécom.">\n  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="description" content="PGI Telecom • Audiotel Premium Pro — cockpit Audiotel, financier et télécom.">
+  <meta name="robots" content="noindex,nofollow,noarchive">
   <title>PGI Telecom • Audiotel Premium Pro</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="manifest" href="manifest.webmanifest">
@@ -43,7 +44,7 @@
         <div class="top-actions">
           <span class="pill demo" id="runtime-mode">MODE DÉMO</span>
           <span class="pill" id="network-state"><i class="dot ok"></i><span>En ligne</span></span>
-          <span class="pill"><i class="dot ok"></i>SIP prêt</span>
+          <span class="pill"><i class="dot offline"></i>SIP non connecté</span>
           <button class="icon-btn" id="refresh-btn" type="button" aria-label="Actualiser">↻</button>
         </div>
       </header>
@@ -89,7 +90,7 @@
               <div><span>Experts disponibles</span><strong id="live-available">0</strong></div>
               <div><span>File d’attente</span><strong id="live-queue">0</strong></div>
             </div>
-            <div class="health-row"><span>SIP trunk</span><span class="health ok">OPÉRATIONNEL</span></div>
+            <div class="health-row"><span>SIP trunk</span><span class="health warn">NON CONNECTÉ</span></div>
             <div class="health-row"><span>API</span><span class="health ok">PRÊTE</span></div>
             <div class="health-row"><span>CDR</span><span class="health ok">SYNCHRONISÉ</span></div>
             <div class="health-row"><span>Rapprochement</span><span class="health warn">MODE DÉMO</span></div>
@@ -149,8 +150,9 @@
         <section class="kpi-grid finance-kpis">
           <article class="kpi emphasis"><span>CA généré</span><strong id="fin-ca">0,00 €</strong><small>D080 TTC théorique</small></article>
           <article class="kpi"><span>Attendu</span><strong id="fin-expected">0,00 €</strong><small>Selon CDR internes</small></article>
-          <article class="kpi"><span>Confirmé</span><strong id="fin-confirmed">0,00 €</strong><small>Règlements opérateur</small></article>
-          <article class="kpi"><span>Écart à rapprocher</span><strong id="fin-gap">0,00 €</strong><small>Contrôle automatique</small></article>
+          <article class="kpi"><span>Confirmé</span><strong id="fin-confirmed">0,00 €</strong><small>Reconnu par l’opérateur</small></article>
+          <article class="kpi"><span>Encaissé</span><strong id="fin-paid">0,00 €</strong><small>Réellement payé</small></article>
+          <article class="kpi"><span>Écart à rapprocher</span><strong id="fin-gap">0,00 €</strong><small>Attendu − confirmé</small></article>
         </section>
         <section class="panel"><div class="panel-head"><div><p class="panel-kicker">RÉCONCILIATION</p><h2>Attendu vs opérateur</h2></div><button id="print-finance" class="secondary-btn" type="button">Imprimer / PDF</button></div><div class="recon-grid" id="recon-grid"></div></section>
       </div>
@@ -165,7 +167,7 @@
 
       <div id="view-system" class="view">
         <section class="system-grid">
-          <article class="panel"><p class="panel-kicker">SIP</p><h2>Trunk & routage</h2><div class="big-status ok">OPÉRATIONNEL</div><div class="metric-row"><span>Latence</span><strong>—</strong></div><div class="metric-row"><span>Jitter</span><strong>—</strong></div><div class="metric-row"><span>Perte paquets</span><strong>—</strong></div><small class="muted">Les mesures réelles seront alimentées par Kamailio/FreeSWITCH.</small></article>
+          <article class="panel"><p class="panel-kicker">SIP</p><h2>Trunk & routage</h2><div class="big-status warn">EN ATTENTE OPÉRATEUR</div><div class="metric-row"><span>Latence</span><strong>—</strong></div><div class="metric-row"><span>Jitter</span><strong>—</strong></div><div class="metric-row"><span>Perte paquets</span><strong>—</strong></div><small class="muted">Les mesures réelles seront alimentées par Kamailio/FreeSWITCH.</small></article>
           <article class="panel"><p class="panel-kicker">DONNÉES</p><h2>Pipeline CDR</h2><div class="big-status ok">PRÊT</div><div class="metric-row"><span>Dernière synchro</span><strong id="last-sync">Maintenant</strong></div><div class="metric-row"><span>CDR en erreur</span><strong>0</strong></div><div class="metric-row"><span>Retard ingestion</span><strong>0 s</strong></div></article>
           <article class="panel"><p class="panel-kicker">SÉCURITÉ</p><h2>État plateforme</h2><div class="big-status warn">FRONT PUBLIC</div><p class="muted">Cette V1 GitHub Pages n’embarque aucun secret et aucune donnée client réelle. Le futur backend privé gérera l’authentification et les données sensibles.</p></article>
         </section>
@@ -221,6 +223,8 @@
     </form>
   </dialog>
   <script src="assets/config.js"></script>
+  <script src="assets/core.js"></script>
+  <script src="assets/api-client.js"></script>
   <script src="assets/app.js"></script>
 </body>
 </html>
