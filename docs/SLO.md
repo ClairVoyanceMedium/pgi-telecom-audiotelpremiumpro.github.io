@@ -47,3 +47,45 @@ Avant go-live, tester au minimum :
 - disque < 10 % libre : critique ;
 - croissance file d'attente outbox : warning ;
 - variance financière non résolue : warning puis critique selon montant/ancienneté.
+
+
+## Error budget et burn-rate
+
+Pour un objectif mensuel de disponibilité API de 99,9 %, le budget d'erreur théorique est de 0,1 %.
+
+Le fichier `infra/observability/prometheus-alerts.example.yml` fournit deux signaux :
+
+- burn rapide pour une dégradation brutale ;
+- burn soutenu pour une consommation durable du budget.
+
+Ces seuils sont des valeurs initiales de conception et doivent être recalibrés avec les métriques réelles.
+
+## Queue distribuée
+
+Objectifs initiaux :
+
+- aucun dead letter non expliqué ;
+- ancienneté du plus vieux job < 120 s en régime normal ;
+- reprise automatique après expiration d'un lease ;
+- aucun job perdu lors de l'arrêt d'un worker.
+
+## Résilience
+
+Les RPO/RTO sont suivis par composant dans `disaster_recovery_targets`.
+
+Aucun objectif de reprise ne doit être considéré atteint sans exercice réel enregistré dans `disaster_recovery_drills`.
+
+## Capacité hyperscale
+
+Les tests de capacité doivent être progressifs et reproductibles :
+
+- jeu de données 100 000 CDR ;
+- jeu de données 1 000 000 CDR ;
+- croissance multi-tenant simulée ;
+- montée en charge API par paliers ;
+- workers interrompus puis repris ;
+- test d'une queue saturée ;
+- mesure p50, p95 et p99 ;
+- vérification du writer, des replicas et des partitions.
+
+Le chiffre de clients n'est pas utilisé seul comme preuve de capacité : le dimensionnement dépend du nombre de requêtes, d'appels, de CDR, de jobs et de données par tenant.
