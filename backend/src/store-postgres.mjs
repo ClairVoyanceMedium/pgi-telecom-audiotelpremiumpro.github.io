@@ -43,7 +43,7 @@ export class PostgresStore{
   }
 
   async summary(from,to,market=null){
-    const rows=await this.sql.unsafe(
+    const rows=await this.readSql.unsafe(
       "SELECT COALESCE(sum(retail_service_amount_ttc),0)::float8 AS generated_revenue_ttc,"+
       " COALESCE(sum(expected_payout_ht),0)::float8 AS expected_payout_ht,"+
       " COALESCE(sum(confirmed_payout_ht),0)::float8 AS confirmed_payout_ht,"+
@@ -57,11 +57,11 @@ export class PostgresStore{
       " COALESCE(sum(billable_seconds),0)::float8/60.0 AS billable_minutes,"+
       " COALESCE(sum(payout_eligible_seconds),0)::float8/60.0 AS payout_eligible_minutes,"+
       " COALESCE(avg(conversation_seconds) FILTER (WHERE call_status='connected'),0)::float8 AS acd_seconds"+
-      " FROM calls WHERE started_at >= $1::timestamptz AND started_at <= $2::timestamptz"+
+      " FROM call_facts WHERE started_at >= $1::timestamptz AND started_at <= $2::timestamptz"+
       " AND ($3::text IS NULL OR market_id=(SELECT id FROM operating_markets WHERE country_code=$3))",
       [from,to,market||null]
     );
-    const presence=await this.sql.unsafe(
+    const presence=await this.readSql.unsafe(
       "SELECT count(*) FILTER (WHERE status='available' AND enabled)::int AS active_experts,"+
       " COALESCE(sum(active_calls),0)::int AS live_calls FROM experts"
     );
@@ -83,7 +83,7 @@ export class PostgresStore{
       params.origin_carrier||null,params.status||null,params.market||null,
       cursor?.started_at||null,cursor?.id||null,limit+1
     ];
-    const rows=await this.sql.unsafe(
+    const rows=await this.readSql.unsafe(
       "SELECT c.id,c.external_call_id,c.started_at,c.ivr_started_at,c.queued_at,c.bridged_at,c.ended_at,"+
       " ca.caller_masked,oc.name AS origin_carrier,hc.name AS host_carrier,sn.display_number AS sva_number,"+
       " c.currency,m.country_code AS market,e.id AS expert_id,e.display_name AS expert_name,c.wait_seconds,c.conversation_seconds,c.total_seconds,"+
@@ -93,12 +93,13 @@ export class PostgresStore{
       " c.paid_payout_ht::float8,c.expert_cost_ht::float8,c.technical_cost_ht::float8,c.estimated_margin_ht::float8,"+
       " c.reconciliation_variance_ht::float8,c.reconciliation_status,q.rtp_packet_loss_percent::float8 AS packet_loss_percent,"+
       " q.jitter_ms::float8,q.latency_ms::float8,q.mos::float8"+
-      " FROM calls c LEFT JOIN callers ca ON ca.id=c.caller_id LEFT JOIN carriers oc ON oc.id=c.origin_carrier_id"+
+      " FROM call_facts f JOIN calls c ON c.id=f.call_id AND c.tenant_bucket=f.tenant_bucket"+
+      " LEFT JOIN callers ca ON ca.id=c.caller_id LEFT JOIN carriers oc ON oc.id=c.origin_carrier_id"+
       " LEFT JOIN carriers hc ON hc.id=c.host_carrier_id LEFT JOIN sva_numbers sn ON sn.id=c.sva_number_id"+
       " LEFT JOIN operating_markets m ON m.id=c.market_id"+
       " LEFT JOIN experts e ON e.id=c.expert_id LEFT JOIN call_quality q ON q.call_id=c.id"+
-      " WHERE ($1::timestamptz IS NULL OR c.started_at >= $1::timestamptz)"+
-      " AND ($2::timestamptz IS NULL OR c.started_at <= $2::timestamptz)"+
+      " WHERE ($1::timestamptz IS NULL OR f.started_at >= $1::timestamptz)"+
+      " AND ($2::timestamptz IS NULL OR f.started_at <= $2::timestamptz)"+
       " AND ($3::bigint IS NULL OR c.expert_id=$3)"+
       " AND ($4::text IS NULL OR oc.name=$4)"+
       " AND ($5::text IS NULL OR c.call_status=$5)"+
@@ -342,6 +343,20 @@ export class PostgresStore{
         return {duplicate:true};
       }
 
+      await tx.unsafe(
+        "INSERT INTO call_facts("+
+        " tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,origin_carrier_id,host_carrier_id,"+
+        " started_at,ended_at,call_status,conversation_seconds,billable_seconds,payout_eligible_seconds,"+
+        " retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,expert_cost_ht,technical_cost_ht,"+
+        " estimated_margin_ht,reconciliation_variance_ht,created_at)"+
+        " SELECT tenant_bucket,id,tenant_id,market_id,currency,sva_number_id,expert_id,origin_carrier_id,host_carrier_id,"+
+        " started_at,ended_at,call_status,conversation_seconds,billable_seconds,payout_eligible_seconds,"+
+        " retail_service_amount_ttc,expected_payout_ht,COALESCE(confirmed_payout_ht,0),paid_payout_ht,expert_cost_ht,technical_cost_ht,"+
+        " estimated_margin_ht,reconciliation_variance_ht,created_at FROM calls WHERE id=$1"+
+        " ON CONFLICT (tenant_bucket,call_id) DO NOTHING",
+        [call.id]
+      );
+
       if(p.quality){
         await tx.unsafe(
           "INSERT INTO call_quality(call_id,rtp_packet_loss_percent,jitter_ms,latency_ms,mos,dtmf_errors) VALUES($1,$2,$3,$4,$5,$6)",
@@ -353,8 +368,9 @@ export class PostgresStore{
       if(paid!==0)await ledger(tx,call.id,sva.tenant_id,sva.market_id,sva.currency,"paid",paid,envelope);
 
       await tx.unsafe(
-        "INSERT INTO outbox_events(event_type,aggregate_type,aggregate_id,payload) VALUES('call.ingested','call',$1,$2::jsonb)",
-        [String(call.id),JSON.stringify({external_call_id:p.external_call_id})]
+        "INSERT INTO outbox_events(tenant_id,market_id,event_type,aggregate_type,aggregate_id,payload)"+
+        " VALUES($1,$2,'call.ingested','call',$3,$4::jsonb)",
+        [sva.tenant_id||null,sva.market_id||null,String(call.id),JSON.stringify({external_call_id:p.external_call_id})]
       );
       await tx.unsafe(
         "INSERT INTO audit_log(tenant_id,action,entity_type,entity_id,details) VALUES($1,'cdr.ingest','call',$2,$3::jsonb)",
@@ -445,6 +461,15 @@ export class PostgresStore{
       );
 
       await tx.unsafe(
+        "UPDATE call_facts f SET confirmed_payout_ht=x.amount,"+
+        " paid_payout_ht=CASE WHEN $2::boolean THEN x.amount ELSE f.paid_payout_ht END,"+
+        " reconciliation_variance_ht=f.expected_payout_ht-x.amount,"+
+        " estimated_margin_ht=GREATEST(x.amount-f.expert_cost_ht-f.technical_cost_ht,0)"+
+        " FROM jsonb_to_recordset($1::jsonb) AS x(call_id bigint,amount numeric) WHERE f.call_id=x.call_id",
+        [matchJson,settlement.status==="paid"]
+      );
+
+      await tx.unsafe(
         "INSERT INTO financial_ledger(market_id,call_id,settlement_id,event_type,amount_ht,currency,source_reference,source_hash,reason,created_by,metadata)"+
         " SELECT c.market_id,x.call_id,$1,'confirmed',x.amount,c.currency,$2,$3,'carrier settlement import',$4,$5::jsonb"+
         " FROM jsonb_to_recordset($6::jsonb) AS x(call_id bigint,amount numeric)"+
@@ -518,6 +543,12 @@ export class PostgresStore{
       await tx.unsafe(
         "UPDATE calls c SET paid_payout_ht=x.amount FROM jsonb_to_recordset($1::jsonb) AS x(call_id bigint,amount numeric)"+
         " WHERE c.id=x.call_id",
+        [matchJson]
+      );
+
+      await tx.unsafe(
+        "UPDATE call_facts f SET paid_payout_ht=x.amount FROM jsonb_to_recordset($1::jsonb) AS x(call_id bigint,amount numeric)"+
+        " WHERE f.call_id=x.call_id",
         [matchJson]
       );
       await tx.unsafe(
