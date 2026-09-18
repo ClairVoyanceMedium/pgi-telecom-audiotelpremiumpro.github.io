@@ -162,9 +162,9 @@
     setText("fin-confirmed",money(a.confirmed));
     setText("fin-paid",money(a.paid));
     setText("fin-gap",money(a.gap));
-    setText("live-calls",rows.length?"2":"0");
-    setText("live-available",rows.length?"3":"0");
-    setText("live-queue",rows.length?"1":"0");
+    setText("live-calls","0");
+    setText("live-available","0");
+    setText("live-queue","0");
     var trend=$("ca-trend");
     if(trend){
       var pct=revenueTrendPercent(rows);
@@ -193,6 +193,195 @@
       }
       return true;
     });
+  }
+
+  function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
+
+  function previousPeriodRows(){
+    if(state.baseline)return [];
+    var r=getRange(),now=new Date(),effectiveTo=r.to<now?r.to:now;
+    var duration=Math.max(1,effectiveTo-r.from);
+    var prevTo=new Date(r.from.getTime()-1);
+    var prevFrom=new Date(prevTo.getTime()-duration);
+    return allCalls.filter(function(c){return c.ts>=prevFrom&&c.ts<=prevTo;});
+  }
+
+  function percentDelta(current,previous){
+    if(!Number.isFinite(previous)||previous===0)return null;
+    return (current-previous)/Math.abs(previous)*100;
+  }
+
+  function deltaText(current,previous,suffix){
+    var d=percentDelta(current,previous);
+    if(d==null||!Number.isFinite(d))return "—";
+    return (d>=0?"+":"")+nfmt(d,1)+"%"+(suffix||"");
+  }
+
+  function qualityStats(rows){
+    var valid=rows.filter(function(c){
+      return c.status==="connected"&&Number.isFinite(c.mos)&&Number.isFinite(c.packetLoss)&&Number.isFinite(c.jitter)&&Number.isFinite(c.latency);
+    });
+    if(!valid.length)return {count:0,mos:0,loss:0,jitter:0,latency:0,score:0,grade:"—"};
+    var avg=function(key){return valid.reduce(function(s,x){return s+Number(x[key]||0);},0)/valid.length;};
+    var mos=avg("mos"),loss=avg("packetLoss"),jitter=avg("jitter"),latency=avg("latency");
+    var score=clamp(
+      (clamp((mos-1)/3.5*100,0,100)*.45)+
+      (clamp(100-loss*22,0,100)*.20)+
+      (clamp(100-jitter*2.5,0,100)*.15)+
+      (clamp(100-latency*.55,0,100)*.20),0,100
+    );
+    var grade=score>=92?"A+":score>=86?"A":score>=78?"B":score>=68?"C":"D";
+    return {count:valid.length,mos:mos,loss:loss,jitter:jitter,latency:latency,score:score,grade:grade};
+  }
+
+  function renderExecutive(rows){
+    var cur=aggregate(rows),prev=aggregate(previousPeriodRows()),q=qualityStats(rows);
+    var recScore=cur.expected>0?clamp(100-(cur.gap/cur.expected*100*5),0,100):100;
+    var asrScore=cur.calls?clamp(cur.asr/90*100,0,100):0;
+    var ops=cur.calls?Math.round(asrScore*.45+recScore*.30+q.score*.25):0;
+    setText("ops-score",String(ops));
+    var ring=$("ops-score-ring");if(ring)ring.style.setProperty("--score",String(ops));
+    var label=ops>=92?"Excellent":ops>=82?"Très solide":ops>=70?"Correct":ops>=55?"À renforcer":"Insuffisant";
+    setText("ops-score-label",label);
+    setText("ops-score-detail",cur.calls?"ASR "+nfmt(cur.asr,1)+"% • concordance "+nfmt(recScore,1)+"% • qualité "+q.grade:"Aucune donnée sur la période");
+
+    setText("cmp-ca",deltaText(cur.ca,prev.ca));
+    setText("cmp-calls",deltaText(cur.calls,prev.calls));
+    setText("cmp-minutes",deltaText(cur.mins,prev.mins));
+    var asrDiff=(prev.calls?cur.asr-prev.asr:null);
+    setText("cmp-asr",asrDiff==null?"—":(asrDiff>=0?"+":"")+nfmt(asrDiff,1)+" pt");
+  }
+
+  function renderHeatmap(rows){
+    var labels=["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"],matrix=[],max=0,peak={count:0,day:0,hour:0};
+    for(var d=0;d<7;d++){matrix[d]=Array(24).fill(0);}
+    rows.forEach(function(c){
+      var day=(c.ts.getDay()+6)%7,h=c.ts.getHours();
+      matrix[day][h]++;
+      if(matrix[day][h]>peak.count)peak={count:matrix[day][h],day:day,hour:h};
+      if(matrix[day][h]>max)max=matrix[day][h];
+    });
+    var html="";
+    for(var day=0;day<7;day++){
+      html+='<span class="heatmap-day">'+labels[day]+'</span><div class="heatmap-row">';
+      for(var h=0;h<24;h++){
+        var count=matrix[day][h],level=max?count/max:0;
+        html+='<i class="heat-cell" style="--heat:'+level.toFixed(3)+'" title="'+labels[day]+' '+pad(h)+'h : '+count+' appel'+(count>1?"s":"")+'"></i>';
+      }
+      html+="</div>";
+    }
+    var el=$("traffic-heatmap");if(el)el.innerHTML=html;
+    setText("peak-slot",peak.count?labels[peak.day]+" "+pad(peak.hour)+"h • "+peak.count:"Pic —");
+  }
+
+  function renderFunnel(rows){
+    var total=rows.length,connected=rows.filter(function(x){return x.status==="connected";}).length;
+    var longCalls=rows.filter(function(x){return x.status==="connected"&&x.conversation>=600;}).length;
+    var payable=rows.filter(function(x){return x.expected>0;}).length;
+    var stages=[
+      ["Entrants",total],
+      ["Aboutis",connected],
+      ["> 10 min",longCalls],
+      ["Éligibles reversement",payable]
+    ];
+    var max=Math.max(1,total);
+    var el=$("call-funnel");
+    if(el)el.innerHTML=stages.map(function(s,i){
+      var pct=s[1]/max*100;
+      return '<div class="funnel-stage"><div class="funnel-meta"><span>'+esc(s[0])+'</span><strong>'+nfmt(s[1])+' <small>'+nfmt(pct,1)+'%</small></strong></div><i><b style="width:'+pct.toFixed(1)+'%"></b></i></div>';
+    }).join("");
+  }
+
+  function renderQuality(rows){
+    var q=qualityStats(rows);
+    setText("quality-grade",q.grade);
+    setText("quality-mos",q.count?nfmt(q.mos,2):"—");
+    setText("quality-loss",q.count?nfmt(q.loss,3)+"%":"—");
+    setText("quality-jitter",q.count?nfmt(q.jitter,1)+" ms":"—");
+    setText("quality-latency",q.count?nfmt(q.latency,1)+" ms":"—");
+    var bars={
+      "quality-mos-bar":q.count?clamp(q.mos/5*100,0,100):0,
+      "quality-loss-bar":q.count?clamp(100-q.loss*20,0,100):0,
+      "quality-jitter-bar":q.count?clamp(100-q.jitter*2,0,100):0,
+      "quality-latency-bar":q.count?clamp(100-q.latency*.5,0,100):0
+    };
+    Object.keys(bars).forEach(function(id){var el=$(id);if(el)el.style.width=bars[id].toFixed(1)+"%";});
+    setText("noc-voice-grade",q.grade);
+  }
+
+  function expertMetrics(rows){
+    return experts.map(function(name){
+      var r=rows.filter(function(x){return x.expert===name;}),m=aggregate(r);
+      return {name:name,rows:r,m:m};
+    });
+  }
+
+  function renderOverviewExpertRanking(rows){
+    var data=expertMetrics(rows).sort(function(a,b){return b.m.expected-a.m.expected;}).slice(0,4);
+    var max=data.length?Math.max.apply(null,data.map(function(x){return x.m.expected;})):1;
+    var el=$("overview-expert-ranking");
+    if(el)el.innerHTML=data.map(function(x,i){
+      var width=max?x.m.expected/max*100:0;
+      return '<div class="ranking-item"><span class="rank-no">'+(i+1)+'</span><div class="rank-main"><div><strong>'+esc(x.name)+'</strong><small>'+nfmt(x.m.mins)+' min • ASR '+nfmt(x.m.asr,1)+'%</small></div><i><b style="width:'+width.toFixed(1)+'%"></b></i></div><strong class="rank-value">'+money(x.m.expected)+'</strong></div>';
+    }).join("")||'<p class="muted">Aucune donnée.</p>';
+  }
+
+  function renderNetworkMix(rows){
+    var counts=carriers.map(function(name){return {name:name,count:rows.filter(function(x){return x.carrier===name;}).length};});
+    var total=rows.length||1,cum=0,stops=[],colors=["var(--cyan)","var(--purple)","var(--green)","var(--amber)"];
+    counts.forEach(function(x,i){
+      var from=cum/total*100;cum+=x.count;var to=cum/total*100;
+      stops.push(colors[i]+" "+from.toFixed(2)+"% "+to.toFixed(2)+"%");
+    });
+    var donut=$("network-donut");if(donut)donut.style.background="conic-gradient("+stops.join(",")+")";
+    setText("network-total",nfmt(rows.length));
+    var legend=$("network-legend");
+    if(legend)legend.innerHTML=counts.map(function(x,i){
+      var pct=rows.length?x.count/rows.length*100:0;
+      return '<div><i style="--dot:'+colors[i]+'"></i><span>'+esc(x.name)+'</span><strong>'+nfmt(pct,1)+'%</strong></div>';
+    }).join("");
+  }
+
+  function renderFinanceAnalytics(rows){
+    var m=aggregate(rows),max=Math.max(1,m.ca,m.expected,m.confirmed,m.paid,Math.max(0,m.margin));
+    var stages=[
+      ["CA service TTC",m.ca,"cyan"],
+      ["Reversement attendu",m.expected,"purple"],
+      ["Confirmé",m.confirmed,"green"],
+      ["Encaissé",m.paid,"green"],
+      ["Marge estimée",Math.max(0,m.margin),"amber"]
+    ];
+    var el=$("finance-waterfall");
+    if(el)el.innerHTML=stages.map(function(s){
+      return '<div class="waterfall-row"><span>'+esc(s[0])+'</span><div><i><b class="'+s[2]+'" style="width:'+(s[1]/max*100).toFixed(1)+'%"></b></i><strong>'+money(s[1])+'</strong></div></div>';
+    }).join("");
+    setText("ratio-payout",m.ca? nfmt(m.expected/m.ca*100,1)+"%":"—");
+    setText("ratio-confirmed",m.expected? nfmt(m.confirmed/m.expected*100,1)+"%":"—");
+    setText("ratio-paid",m.confirmed? nfmt(m.paid/m.confirmed*100,1)+"%":"—");
+    setText("ratio-margin",m.confirmed? nfmt(m.margin/m.confirmed*100,1)+"%":"—");
+  }
+
+  function renderExpertSummary(rows){
+    var data=expertMetrics(rows).filter(function(x){return x.m.calls>0;});
+    if(!data.length){
+      ["expert-best","expert-best-acd","expert-best-asr"].forEach(function(id){setText(id,"—");});
+      setText("expert-team-minutes","0");return;
+    }
+    var byContribution=data.slice().sort(function(a,b){return b.m.expected-a.m.expected;})[0];
+    var byAcd=data.slice().sort(function(a,b){return b.m.acd-a.m.acd;})[0];
+    var byAsr=data.slice().sort(function(a,b){return b.m.asr-a.m.asr;})[0];
+    setText("expert-best",byContribution.name+" • "+money(byContribution.m.expected));
+    setText("expert-best-acd",byAcd.name+" • "+fmtDuration(byAcd.m.acd));
+    setText("expert-best-asr",byAsr.name+" • "+nfmt(byAsr.m.asr,1)+"%");
+    setText("expert-team-minutes",nfmt(aggregate(rows).mins));
+  }
+
+  function renderNoc(rows){
+    var m=aggregate(rows),q=qualityStats(rows);
+    setText("noc-availability",navigator.onLine?"100% local":"Hors ligne");
+    setText("noc-cdr-total",nfmt(rows.length));
+    setText("noc-fin-alerts",m.gap>.01?"1":"0");
+    setText("noc-voice-grade",q.grade);
   }
 
   function renderCalls(rows){
@@ -348,7 +537,24 @@
   function render(){
     var started=performance.now();
     var rows=filteredCalls();
-    renderKPIs(rows);renderCalls(rows);renderChart(rows);renderAlerts(rows);renderExperts(rows);renderHostCarrier();renderCarriers(rows);renderRecon(rows);renderResetLog();
+    renderKPIs(rows);
+    renderExecutive(rows);
+    renderCalls(rows);
+    renderChart(rows);
+    renderHeatmap(rows);
+    renderFunnel(rows);
+    renderQuality(rows);
+    renderOverviewExpertRanking(rows);
+    renderNetworkMix(rows);
+    renderFinanceAnalytics(rows);
+    renderExpertSummary(rows);
+    renderNoc(rows);
+    renderAlerts(rows);
+    renderExperts(rows);
+    renderHostCarrier();
+    renderCarriers(rows);
+    renderRecon(rows);
+    renderResetLog();
     var now=new Date();
     state.diagnostics.lastRenderMs=Math.max(0,performance.now()-started);
     setText("last-sync",new Intl.DateTimeFormat("fr-FR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(now));
