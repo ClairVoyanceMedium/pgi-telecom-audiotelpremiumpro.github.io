@@ -3,8 +3,8 @@
 
   var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
   var CONFIG={serviceRate:0.80,payoutRate:0.46,expertCostPerMin:0.18,fixedCostPerCall:0.03};
-  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
-  var titles={overview:"Vue d’ensemble",calls:"Appels",finance:"Finance",experts:"Experts",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Système",settings:"Paramètres"};
+  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
+  var titles={overview:"Cockpit",calls:"Appels",finance:"Finance",experts:"Experts",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Supervision",settings:"Paramètres"};
   var experts=["Frederick","Sofia","Emma","Lina","Clara","Nora"];
   var carriers=["Orange","SFR","Bouygues","Free"];
   var number089="0890 80 24 24";
@@ -201,6 +201,7 @@
     state.wholesale=null;
     state.serverSummary=null;
     state.previousSummary=null;
+    state.serverAnalytics=null;
     state.cdrSampleTruncated=false;
     setProductionLive({});
     render();
@@ -271,6 +272,7 @@
         prevRange
           ?window.PGIApi.summary(prevRange.from.toISOString(),prevRange.to.toISOString(),state.market)
           :Promise.resolve(null),
+        window.PGIApi.analytics(range.from.toISOString(),range.to.toISOString(),state.market),
         window.PGIApi.experts(),
         window.PGIApi.systemHealth(),
         window.PGIApi.carrierRouting()
@@ -282,15 +284,16 @@
       state.cdrSampleTruncated=!!sample.truncated;
       state.serverSummary=results[1]||null;
       state.previousSummary=results[2]||null;
+      state.serverAnalytics=results[3]||null;
       if(state.serverSummary&&Number(state.serverSummary.currency_count||0)===1&&state.serverSummary.currency){
         state.marketCurrency=String(state.serverSummary.currency);
       }
-      var expertRows=Array.isArray(results[3]&&results[3].data)?results[3].data:[];
+      var expertRows=Array.isArray(results[4]&&results[4].data)?results[4].data:[];
       experts=expertRows.map(function(x){return x.display_name;}).filter(Boolean);
       var networkNames=Array.from(new Set(allCalls.map(function(x){return x.carrier;}).filter(Boolean)));
       carriers=networkNames;
-      state.system=results[4]||null;
-      state.route=results[5]||null;
+      state.system=results[5]||null;
+      state.route=results[6]||null;
       setProductionLive(state.serverSummary||{});
       state.diagnostics.apiStatus="ok";
       render();
