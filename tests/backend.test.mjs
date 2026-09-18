@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {createBackend} from "../backend/server.mjs";
 import {hashPassword,verifyPassword,issueSession,verifySession} from "../backend/src/security.mjs";
 import {selectExpert} from "../backend/src/expert-router.mjs";
+import {clientIp} from "../backend/src/http.mjs";
 
 function config(overrides={}){
   return {
@@ -144,4 +145,12 @@ test("production cannot accidentally start with memory store",()=>{
     mode:"production",authMode:"session",sessionSecret:"x".repeat(40),
     adminPasswordHash:"configured",ingestToken:"y".repeat(24)
   })}),/persistent store/);
+});
+
+
+test("forwarded client IP is trusted only from the loopback proxy",()=>{
+  assert.equal(clientIp({socket:{remoteAddress:"127.0.0.1"},headers:{"x-forwarded-for":"203.0.113.7, 127.0.0.1"}}),"203.0.113.7");
+  assert.equal(clientIp({socket:{remoteAddress:"::ffff:127.0.0.1"},headers:{"x-forwarded-for":"2001:db8::7"}}),"2001:db8::7");
+  assert.equal(clientIp({socket:{remoteAddress:"198.51.100.9"},headers:{"x-forwarded-for":"203.0.113.7"}}),"198.51.100.9");
+  assert.equal(clientIp({socket:{remoteAddress:"127.0.0.1"},headers:{"x-forwarded-for":"spoofed-host"}}),"127.0.0.1");
 });
