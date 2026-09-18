@@ -120,6 +120,49 @@ export function createBackend(options={}){
         return done(res,metrics,started,"auth.me",200,{user:publicActor(actor)});
       }
 
+      if(method==="GET"&&pathname==="/api/v1/app/bootstrap"){
+        requireRole(actor,["admin","finance","readonly"]);
+        const [baselines,wholesale]=await Promise.all([
+          store.listBaselines({scope:"global",limit:20}),
+          store.wholesaleOverview()
+        ]);
+        return done(res,metrics,started,"app.bootstrap",200,{
+          user:publicActor(actor),
+          baselines:{data:baselines},
+          wholesale,
+          server_time:new Date().toISOString()
+        });
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/dashboard/bootstrap"){
+        requireRole(actor,["admin","finance","readonly"]);
+        const range=rangeParams(url);
+        const market=url.searchParams.get("market")||null;
+        const previousFrom=url.searchParams.get("previous_from")||null;
+        const previousTo=url.searchParams.get("previous_to")||null;
+        if((previousFrom&&!previousTo)||(!previousFrom&&previousTo)||
+           (previousFrom&&(!Number.isFinite(Date.parse(previousFrom))||!Number.isFinite(Date.parse(previousTo))||Date.parse(previousTo)<Date.parse(previousFrom)))){
+          const e=new Error("Invalid previous range");e.status=400;e.code="INVALID_PREVIOUS_RANGE";throw e;
+        }
+        const [summary,previousSummary,analytics,experts,system,route]=await Promise.all([
+          store.summary(range.from,range.to,market),
+          previousFrom?store.summary(previousFrom,previousTo,market):Promise.resolve(null),
+          store.dashboardAnalytics(range.from,range.to,market),
+          store.listExperts(),
+          store.systemSnapshot(),
+          store.carrierRouting()
+        ]);
+        return done(res,metrics,started,"dashboard.bootstrap",200,{
+          summary,
+          previous_summary:previousSummary,
+          analytics,
+          experts:{data:experts},
+          system,
+          route,
+          server_time:new Date().toISOString()
+        });
+      }
+
       if(method==="GET"&&pathname==="/api/v1/dashboard/summary"){
         requireRole(actor,["admin","finance","expert","readonly"]);
         const range=rangeParams(url);
