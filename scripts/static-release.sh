@@ -44,7 +44,11 @@ case "$action" in
     ;;
 
   rollback)
-    [ -L "$previous" ] || fail "no previous release available"
+    if [ ! -L "$previous" ]; then
+      rm -f -- "$current"
+      echo "ROLLED_BACK to no active release (no previous release available)"
+      exit 0
+    fi
     target="$(readlink "$previous")"
     [ -d "$base/$target" ] || fail "previous release target missing"
     old=""
