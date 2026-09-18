@@ -21,6 +21,11 @@ const apiClient=fs.readFileSync("assets/api-client.js","utf8");
 const buildStatic=fs.readFileSync("scripts/build-static.mjs","utf8");
 const security=fs.readFileSync("backend/src/security.mjs","utf8");
 const staticRelease=fs.readFileSync("scripts/static-release.sh","utf8");
+const wholesaleMigration=fs.readFileSync("database/migrations/002_wholesale_multitenant_foundation.sql","utf8");
+const wholesaleComplianceMigration=fs.readFileSync("database/migrations/003_wholesale_compliance_foundation.sql","utf8");
+const postgresStore=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
+const backendServer=fs.readFileSync("backend/server.mjs","utf8");
+const wholesaleDoc=fs.readFileSync("docs/WHOLESALE-SVA.md","utf8");
 
 const requiredCompose=[
   "POSTGRES_PASSWORD",
@@ -82,6 +87,11 @@ if(!/PGI_RELEASE_ID/.test(deploy)||!/releaseId/.test(deploy))failures.push("fron
 if(!/PGI_RELEASE_ID/.test(backendRelease)||!/"release"/.test(backendRelease))failures.push("backend deployment must inject and verify the Git SHA");
 if(!/lock_timeout/.test(migrationRunner)||!/statement_timeout/.test(migrationRunner))failures.push("migration runner must bound lock and statement time");
 if(!/CREATE OR REPLACE behavioral object/.test(migrationSafety))failures.push("migration safety must preserve rollback-compatible behavioral objects");
+if(!/CREATE TABLE tenants/.test(wholesaleMigration)||!/tenant_number_assignments/.test(wholesaleMigration)||!/tenant_settlements/.test(wholesaleMigration))failures.push("wholesale migration must preserve tenant, number assignment and settlement foundations");
+if(!/tenant_kyc_profiles/.test(wholesaleComplianceMigration)||!/payment_compliance_profiles/.test(wholesaleComplianceMigration)||!/regulatory_assignor_carrier_id/.test(wholesaleComplianceMigration))failures.push("wholesale compliance migration must preserve KYC, payment and regulatory assignor controls");
+if(!/SVA_NUMBER_NOT_ROUTABLE/.test(postgresStore)||!/EXPERT_TENANT_MISMATCH/.test(postgresStore)||!/tenant_id/.test(postgresStore))failures.push("PostgreSQL routing must remain tenant-bound");
+if(!/SVA_ROUTING_CONTEXT_REQUIRED/.test(backendServer)||!/resolveTelephonyRoutingContext/.test(backendServer))failures.push("production telephony must require an SVA routing context");
+if(!/DSP2/.test(wholesaleDoc)||!/opérateur attributaire/i.test(wholesaleDoc)||!/multi-éditeurs/i.test(wholesaleDoc))failures.push("wholesale roadmap must retain regulatory and payment-compliance boundaries");
 
 
 try{
