@@ -23,6 +23,11 @@ const security=fs.readFileSync("backend/src/security.mjs","utf8");
 const staticRelease=fs.readFileSync("scripts/static-release.sh","utf8");
 const wholesaleMigration=fs.readFileSync("database/migrations/002_wholesale_multitenant_foundation.sql","utf8");
 const wholesaleComplianceMigration=fs.readFileSync("database/migrations/003_wholesale_compliance_foundation.sql","utf8");
+const hyperscaleMigration=fs.readFileSync("database/migrations/005_hyperscale_foundation.sql","utf8");
+const identityEntitlementsMigration=fs.readFileSync("database/migrations/006_hyperscale_identity_entitlements.sql","utf8");
+const externalIdentityMigration=fs.readFileSync("database/migrations/007_external_customer_identity.sql","utf8");
+const hyperscaleDoc=fs.readFileSync("docs/HYPERSCALE.md","utf8");
+const scaleHpa=fs.readFileSync("infra/scale/api-hpa.example.yaml","utf8");
 const postgresStore=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
 const backendServer=fs.readFileSync("backend/server.mjs","utf8");
 const wholesaleDoc=fs.readFileSync("docs/WHOLESALE-SVA.md","utf8");
@@ -95,6 +100,15 @@ if(!/\/api\/v1\/platform\/overview/.test(backendServer)||!/platform\.overview/.t
 if(!/wholesaleOverview/.test(apiClient))failures.push("frontend API client must expose the wholesale overview");
 if(!/upstream_payout_ht/.test(postgresStore)||!/platform_fee_ht/.test(postgresStore)||!/net_payout_ht/.test(postgresStore))failures.push("wholesale overview must expose authoritative settlement totals");
 if(!/DSP2/.test(wholesaleDoc)||!/opérateur attributaire/i.test(wholesaleDoc)||!/multi-éditeurs/i.test(wholesaleDoc))failures.push("wholesale roadmap must retain regulatory and payment-compliance boundaries");
+if(!/PGI_PROCESS_ROLE/.test(compose)||!/PGI_PROCESS_ROLE=/.test(envExample))failures.push("production contract must expose the API/worker process role");
+if(!/PGI_DATABASE_READ_URL/.test(compose)||!/PGI_DATABASE_READ_URL=/.test(envExample))failures.push("production contract must support an optional read replica");
+if(!/CREATE TABLE data_clusters/.test(hyperscaleMigration)||!/CREATE TABLE routing_buckets/.test(hyperscaleMigration)||!/CREATE TABLE tenant_data_placement/.test(hyperscaleMigration))failures.push("hyperscale migration must preserve multi-cluster tenant placement");
+if(!/CREATE TABLE call_facts/.test(hyperscaleMigration)||!/PARTITION BY HASH/.test(hyperscaleMigration)||!/CREATE TABLE worker_leases/.test(hyperscaleMigration)||!/CREATE TABLE work_queue/.test(hyperscaleMigration))failures.push("hyperscale migration must preserve partitioned facts and durable worker coordination");
+if(!/CREATE TABLE service_plans/.test(identityEntitlementsMigration)||!/CREATE TABLE tenant_subscriptions/.test(identityEntitlementsMigration)||!/CREATE TABLE tenant_quota_policies/.test(identityEntitlementsMigration))failures.push("hyperscale customer foundation must preserve plans, subscriptions and quotas");
+if(!/CREATE TABLE customer_principals/.test(externalIdentityMigration)||!/CREATE TABLE customer_tenant_memberships/.test(externalIdentityMigration))failures.push("external customer identities must remain isolated from PGI staff users");
+if(!/4096 tenant buckets/.test(hyperscaleDoc)||!/Control plane et data plane/.test(hyperscaleDoc))failures.push("hyperscale runbook must document bucket routing and plane separation");
+if(!/autoscaling\/v2/.test(scaleHpa)||!/maxReplicas: 100/.test(scaleHpa))failures.push("hyperscale API example must retain horizontal autoscaling");
+
 
 
 try{
