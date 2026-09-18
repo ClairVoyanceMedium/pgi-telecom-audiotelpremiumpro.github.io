@@ -25,6 +25,26 @@ async function withServer(fn){
   try{await fn({app,base});}finally{await app.close();}
 }
 
+test("production config rejects missing or malformed release identity",()=>{
+  const secret="x".repeat(48);
+  const base={
+    PGI_BACKEND_MODE:"production",
+    PGI_AUTH_MODE:"session",
+    PGI_SESSION_SECRET:secret,
+    PGI_ADMIN_PASSWORD_HASH:"scrypt$16384$8$1$placeholder$placeholder",
+    PGI_INGEST_TOKEN:secret,
+    PGI_TELEPHONY_USER:"pgi-telephony",
+    PGI_TELEPHONY_PASSWORD:secret,
+    PGI_CALLER_HASH_KEY:secret,
+    PGI_DATABASE_URL:"postgresql://user:password@postgres:5432/pgi_telecom",
+    PGI_DATABASE_SSL:"disable"
+  };
+  assert.throws(()=>loadConfig(base),/PGI_RELEASE_ID/);
+  assert.throws(()=>loadConfig({...base,PGI_RELEASE_ID:"abc"}),/PGI_RELEASE_ID/);
+  const cfg=loadConfig({...base,PGI_RELEASE_ID:"a".repeat(40)});
+  assert.equal(cfg.releaseId,"a".repeat(40));
+});
+
 test("password hashing and signed sessions reject tampering",()=>{
   const encoded=hashPassword("a-very-long-test-password");
   assert.equal(verifyPassword("a-very-long-test-password",encoded),true);
