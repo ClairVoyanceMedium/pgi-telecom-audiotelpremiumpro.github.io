@@ -58,6 +58,7 @@ fi
 
 need_env PGI_BACKEND_MODE
 need_env PGI_AUTH_MODE
+need_env PGI_RELEASE_ID
 need_env POSTGRES_DB
 need_env POSTGRES_USER
 need_env POSTGRES_PASSWORD
@@ -75,6 +76,13 @@ fi
 if [ "${PGI_AUTH_MODE:-}" != "session" ]; then
   echo "FAIL PGI_AUTH_MODE must be session"
   fail=1
+fi
+
+if [[ ! "${PGI_RELEASE_ID:-}" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "FAIL PGI_RELEASE_ID must be a 40-character Git SHA"
+  fail=1
+else
+  echo "OK   release: ${PGI_RELEASE_ID:0:12}"
 fi
 
 need_min_length PGI_SESSION_SECRET 32
