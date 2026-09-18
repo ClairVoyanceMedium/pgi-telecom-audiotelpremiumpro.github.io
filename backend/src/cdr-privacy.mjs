@@ -4,8 +4,7 @@ const ALLOWED_KEYS=new Set([
   "external_call_id","started_at","ivr_started_at","queued_at","bridged_at","ended_at",
   "wait_seconds","conversation_seconds","total_seconds","call_status",
   "caller_masked","caller_hash","origin_carrier","origin_type","host_carrier","sva_number",
-  "expert_id","expert_name","sip_final_code","hangup_cause","codec","quality",
-  "confirmed_payout_ht","paid_payout_ht","technical_cost_ht"
+  "expert_id","expert_name","sip_final_code","hangup_cause","codec","quality"
 ]);
 const QUALITY_KEYS=new Set(["packet_loss_percent","jitter_ms","latency_ms","mos","dtmf_errors"]);
 
