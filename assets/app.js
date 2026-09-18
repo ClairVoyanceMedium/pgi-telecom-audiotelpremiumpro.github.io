@@ -3,8 +3,8 @@
 
   var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
   var CONFIG={serviceRate:0.80,payoutRate:0.46,expertCostPerMin:0.18,fixedCostPerCall:0.03};
-  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,system:null,route:null};
-  var titles={overview:"Vue d’ensemble",calls:"Appels",finance:"Finance",experts:"Experts",carriers:"Opérateurs",system:"Système",settings:"Paramètres"};
+  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,system:null,route:null,wholesale:null};
+  var titles={overview:"Vue d’ensemble",calls:"Appels",finance:"Finance",experts:"Experts",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Système",settings:"Paramètres"};
   var experts=["Frederick","Sofia","Emma","Lina","Clara","Nora"];
   var carriers=["Orange","SFR","Bouygues","Free"];
   var number089="0890 80 24 24";
@@ -164,6 +164,7 @@
     carriers=[];
     state.system=null;
     state.route=null;
+    state.wholesale=null;
     setProductionLive({});
     render();
   }
@@ -228,7 +229,8 @@
         window.PGIApi.summary(range.from.toISOString(),range.to.toISOString()),
         window.PGIApi.experts(),
         window.PGIApi.systemHealth(),
-        window.PGIApi.carrierRouting()
+        window.PGIApi.carrierRouting(),
+        window.PGIApi.wholesaleOverview()
       ]);
       allCalls=results[0].map(apiCallToUi).filter(function(x){return Number.isFinite(x.ts.getTime());}).sort(function(a,b){return b.ts-a.ts;});
       var expertRows=Array.isArray(results[2]&&results[2].data)?results[2].data:[];
@@ -237,6 +239,7 @@
       carriers=networkNames;
       state.system=results[3]||null;
       state.route=results[4]||null;
+      state.wholesale=results[5]||null;
       setProductionLive(results[1]||{});
       state.diagnostics.apiStatus="ok";
       render();
@@ -780,6 +783,73 @@
     var d=$("call-dialog");if(d&&typeof d.showModal==="function")d.showModal();
   }
 
+  function platformChip(value){
+    var v=String(value||"unknown").toLowerCase();
+    var ok=["active","verified","paid","reconciled","payable"].includes(v);
+    var warn=["pending","pending_kyc","planned","onboarding","open","testing","not_started"].includes(v);
+    var bad=["rejected","expired","suspended","disputed","closed"].includes(v);
+    var label={
+      active:"ACTIF",verified:"VÉRIFIÉ",paid:"PAYÉ",reconciled:"RAPPROCHÉ",payable:"À PAYER",
+      pending:"EN ATTENTE",pending_kyc:"KYC EN ATTENTE",planned:"PLANIFIÉ",onboarding:"ONBOARDING",
+      open:"OUVERT",testing:"TEST",not_started:"NON DÉMARRÉ",rejected:"REJETÉ",expired:"EXPIRÉ",
+      suspended:"SUSPENDU",disputed:"LITIGE",closed:"FERMÉ"
+    }[v]||String(value||"—").toUpperCase();
+    return '<span class="platform-status '+(ok?"ok":warn?"warn":bad?"bad":"neutral")+'">'+esc(label)+"</span>";
+  }
+
+  function renderWholesale(){
+    var data=RUNTIME.mode==="production"?state.wholesale:null;
+    var summary=data&&data.summary?data.summary:{};
+    var tenants=data&&Array.isArray(data.tenants)?data.tenants:[];
+    var numbers=data&&Array.isArray(data.numbers)?data.numbers:[];
+    var settlements=data&&Array.isArray(data.settlements)?data.settlements:[];
+    var profiles=data&&Array.isArray(data.payment_profiles)?data.payment_profiles:[];
+
+    var real=RUNTIME.mode==="production"&&!!data;
+    setText("wh-tenants-total",nfmt(summary.tenants_total||0));
+    setText("wh-tenants-active",nfmt(summary.tenants_active||0)+" actifs");
+    setText("wh-numbers-total",nfmt(summary.assignments_total||0));
+    setText("wh-numbers-active",nfmt(summary.assignments_active||0)+" actifs");
+    setText("wh-kyc-verified",nfmt(summary.kyc_verified||0));
+    setText("wh-kyc-pending",nfmt(summary.kyc_pending||0)+" en attente");
+    setText("wh-net-payout",money(summary.net_payout_ht||0));
+    setText("wh-platform-fees","Frais plateforme : "+money(summary.platform_fee_ht||0));
+    setText("wh-tenant-count",nfmt(tenants.length));
+    setText("wh-number-count",nfmt(numbers.length));
+    setText("wh-settlement-count",nfmt(settlements.length));
+
+    setText("wh-foundation-status",real?"Backend wholesale connecté":"Prête architecturalement");
+    setText("wh-foundation-detail",real
+      ?nfmt(summary.tenants_total||0)+" client(s) réel(s) • données PostgreSQL"
+      :"Aucun client réel chargé en mode démo.");
+    setText("wh-compliance-badge",real?(summary.payment_compliance_active?"PSP ACTIF":"CONFORMITÉ À VALIDER"):"FONDATION 1.9");
+    setText("wh-check-kyc",real
+      ?((summary.kyc_pending||0)>0?nfmt(summary.kyc_pending)+" dossier(s) en attente":((summary.tenants_total||0)>0?"Aucun KYC en attente":"Aucun éditeur réel"))
+      :"Aucun éditeur réel");
+    setText("wh-check-assignor",real
+      ?((summary.assignments_total||0)>0?nfmt(summary.assignments_with_assignor||0)+"/"+nfmt(summary.assignments_total)+" affectation(s) tracée(s)":"Aucune affectation réelle")
+      :"En attente du contrat amont");
+    setText("wh-check-payments",real
+      ?(summary.payment_compliance_active?"Profil de paiement actif":(profiles.length?"Profil présent, non actif":"Aucun profil actif"))
+      :"Non activé");
+
+    var tenantBody=$("wh-tenants-table");
+    if(tenantBody)tenantBody.innerHTML=tenants.length?tenants.map(function(x){
+      return "<tr><td><strong>"+esc(x.display_name||x.slug||"—")+"</strong></td><td>"+esc(x.tenant_type||"—")+"</td><td>"+esc(x.country_code||"—")+"</td><td>"+platformChip(x.status)+"</td><td>"+platformChip(x.kyc_status)+"</td><td>"+nfmt(x.number_assignments||0)+"</td><td>"+nfmt(x.experts||0)+"</td></tr>";
+    }).join(""):'<tr><td colspan="7">Aucun éditeur réel configuré.</td></tr>';
+
+    var numberBody=$("wh-numbers-table");
+    if(numberBody)numberBody.innerHTML=numbers.length?numbers.map(function(x){
+      return "<tr><td><strong>"+esc(x.tenant||"—")+"</strong></td><td>"+esc(x.display_number||x.e164||"—")+"</td><td>"+esc(x.tariff_code||"—")+"</td><td>"+esc(x.assignment_type||"—")+"</td><td>"+platformChip(x.status)+"</td><td>"+platformChip(x.kyc_status)+"</td><td>"+esc(x.regulatory_assignor||"Non défini")+"</td></tr>";
+    }).join(""):'<tr><td colspan="7">Aucune affectation SVA réelle.</td></tr>';
+
+    var settlementBody=$("wh-settlements-table");
+    if(settlementBody)settlementBody.innerHTML=settlements.length?settlements.map(function(x){
+      var period=(x.period_start||"—")+" → "+(x.period_end||"—");
+      return "<tr><td><strong>"+esc(x.tenant||"—")+"</strong></td><td>"+esc(period)+"</td><td>"+money(x.upstream_payout_ht||0)+"</td><td>"+money(x.platform_fee_ht||0)+"</td><td><strong>"+money(x.net_payout_ht||0)+"</strong></td><td>"+platformChip(x.status)+"</td></tr>";
+    }).join(""):'<tr><td colspan="6">Aucun reversement client réel.</td></tr>';
+  }
+
   function renderResetLog(){
     var label=state.baseline?new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeStyle:"short"}).format(state.baseline):"Historique complet";
     setText("baseline-label",label);
@@ -809,6 +879,7 @@
     renderCarriers(rows);
     renderRecon(rows);
     renderFinancialSettings(rows);
+    renderWholesale();
     renderResetLog();
     var now=new Date();
     state.diagnostics.lastRenderMs=Math.max(0,performance.now()-started);
@@ -838,7 +909,7 @@
   function switchView(name){
     qsa(".view").forEach(function(v){v.classList.toggle("active",v.id==="view-"+name);});
     qsa("[data-view]").forEach(function(b){b.classList.toggle("active",b.getAttribute("data-view")===name);});
-    setText("view-title",titles[name]||"PGI Telecom");
+    setText("view-title",titles[name]||"PGI • Telecom");
     window.scrollTo({top:0,behavior:"smooth"});
   }
 
