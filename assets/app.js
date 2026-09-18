@@ -37,10 +37,17 @@
         var status=r<0.84?"connected":(r<0.94?"abandoned":"failed");
         var wait=Math.round(8+seeded(i*17+day)*85);
         var conv=status==="connected"?Math.round(140+seeded(i*23+day*3)*1900):0;
-        var billable=status==="connected"?Math.max(1,Math.ceil(conv/60)):0;
-        var expected=billable*CONFIG.payoutRate;
+        var originType=(i+day)%3===0?"fixed":"mobile";
+        var financial=status==="connected"&&window.PGICore?window.PGICore.computeCallFinancials(
+          {conversationSeconds:conv,originType:originType},
+          {serviceRateTtcPerMin:CONFIG.serviceRate,payoutRateHtPerMin:CONFIG.payoutRate,mobileDeductionHtPerMin:0,billingIncrementSeconds:60,minimumPayableSeconds:0,rounding:"ceil"}
+        ):{billableSeconds:0,payoutEligibleSeconds:0,serviceAmountTtc:0,expectedPayoutHt:0};
+        var billable=financial.billableSeconds/60;
+        var expected=financial.expectedPayoutHt;
         var variance=status==="connected"?(seeded(day*11+i*101)<0.045?expected*(0.015+seeded(i)*0.035):0):0;
         var confirmed=Math.max(0,expected-variance);
+        var ageDays=Math.floor((now-d)/86400000);
+        var paid=ageDays>=60?confirmed:0;
         var ivrStarted=new Date(d.getTime()+2000);
         var queued=new Date(d.getTime()+7000);
         var bridged=status==="connected"?new Date(d.getTime()+wait*1000):null;
@@ -50,9 +57,13 @@
           id:id++,ts:d,ivrStarted:ivrStarted,queued:queued,bridged:bridged,ended:ended,
           caller:maskPhone(i+day),carrier:carriers[(i+day)%carriers.length],number:number089,
           expert:experts[(i*3+day)%experts.length],wait:wait,conversation:conv,total:Math.max(0,Math.round((ended-d)/1000)),billable:billable,
-          payoutEligible:billable,expected:expected,confirmed:confirmed,status:status,
+          originType:originType,
+          payoutEligible:financial.payoutEligibleSeconds/60,expected:expected,confirmed:confirmed,paid:paid,status:status,
+          billableSeconds:financial.billableSeconds,payoutEligibleSeconds:financial.payoutEligibleSeconds,
+          expectedPayoutHt:expected,confirmedPayoutHt:confirmed,paidPayoutHt:paid,
           expertCost:billable*CONFIG.expertCostPerMin,cost:CONFIG.fixedCostPerCall,
-          serviceAmount:billable*CONFIG.serviceRate,
+          expertCostHt:billable*CONFIG.expertCostPerMin,technicalCostHt:CONFIG.fixedCostPerCall,
+          serviceAmount:financial.serviceAmountTtc,serviceAmountTtc:financial.serviceAmountTtc,
           variance:Math.max(0,expected-confirmed),
           sipFinalCode:status==="connected"?200:(status==="abandoned"?487:503),
           hangupCause:status==="connected"?"NORMAL_CLEARING":(status==="abandoned"?"ORIGINATOR_CANCEL":"NORMAL_TEMPORARY_FAILURE"),
@@ -103,17 +114,15 @@
   }
 
   function aggregate(rows){
-    var connected=rows.filter(function(x){return x.status==="connected";});
-    var abandoned=rows.filter(function(x){return x.status==="abandoned";}).length;
-    var mins=connected.reduce(function(s,x){return s+x.billable;},0);
-    var expected=connected.reduce(function(s,x){return s+x.expected;},0);
-    var confirmed=connected.reduce(function(s,x){return s+x.confirmed;},0);
-    var ca=mins*CONFIG.serviceRate;
-    var expert=connected.reduce(function(s,x){return s+x.expertCost;},0);
-    var costs=rows.reduce(function(s,x){return s+x.cost;},0);
-    var margin=confirmed-expert-costs;
-    var acd=connected.length?connected.reduce(function(s,x){return s+x.conversation;},0)/connected.length:0;
-    return {calls:rows.length,connected:connected.length,abandoned:abandoned,mins:mins,expected:expected,confirmed:confirmed,ca:ca,margin:margin,acd:acd,asr:rows.length?connected.length/rows.length*100:0,gap:expected-confirmed};
+    if(window.PGICore){
+      var x=window.PGICore.aggregateCalls(rows);
+      return {
+        calls:x.calls,connected:x.connected,abandoned:x.abandoned,failed:x.failed,
+        mins:x.billableSeconds/60,expected:x.expectedPayoutHt,confirmed:x.confirmedPayoutHt,paid:x.paidPayoutHt,
+        ca:x.generatedRevenueTtc,margin:x.estimatedMarginHt,acd:x.acdSeconds,asr:x.asrPercent,gap:x.reconciliationVarianceHt
+      };
+    }
+    return {calls:0,connected:0,abandoned:0,failed:0,mins:0,expected:0,confirmed:0,paid:0,ca:0,margin:0,acd:0,asr:0,gap:0};
   }
 
   function setText(id,val){var e=$(id);if(e)e.textContent=val;}
@@ -121,7 +130,7 @@
     var a=aggregate(rows);
     setText("kpi-ca",money(a.ca));
     setText("kpi-expected",money(a.expected));
-    setText("kpi-paid",money(a.confirmed));
+    setText("kpi-paid",money(a.paid));
     setText("kpi-gap","Écart : "+money(a.gap));
     setText("kpi-margin",money(a.margin));
     setText("kpi-calls",nfmt(a.calls));
@@ -136,6 +145,7 @@
     setText("fin-ca",money(a.ca));
     setText("fin-expected",money(a.expected));
     setText("fin-confirmed",money(a.confirmed));
+    setText("fin-paid",money(a.paid));
     setText("fin-gap",money(a.gap));
     setText("live-calls",rows.length?"2":"0");
     setText("live-available",rows.length?"3":"0");
@@ -285,7 +295,7 @@
       label("Début",fmtTime(c.ts))+label("Entrée SVI",fmtTime(c.ivrStarted))+label("Mise en file",fmtTime(c.queued))+label("Mise en relation",c.bridged?fmtTime(c.bridged):"—")+
       label("Fin",fmtTime(c.ended))+label("Attente",fmtDuration(c.wait))+label("Conversation",fmtDuration(c.conversation))+label("Durée totale",fmtDuration(c.total))+
       label("Facturable",c.billable+" min")+label("Éligible reversement",c.payoutEligible+" min")+label("CA service TTC",money(c.serviceAmount))+label("Reversement attendu HT",money(c.expected))+
-      label("Reversement confirmé HT",money(c.confirmed))+label("Écart",money(c.variance))+label("SIP final",String(c.sipFinalCode))+label("Cause de fin",c.hangupCause)+
+      label("Reversement confirmé HT",money(c.confirmed))+label("Reversement payé HT",money(c.paid))+label("Écart",money(c.variance))+label("SIP final",String(c.sipFinalCode))+label("Cause de fin",c.hangupCause)+
       label("Codec",c.codec)+label("Perte paquets",nfmt(c.packetLoss,3)+" %")+label("Jitter",nfmt(c.jitter,2)+" ms")+label("Latence",nfmt(c.latency,2)+" ms")+label("MOS",nfmt(c.mos,2));
     var d=$("call-dialog");if(d&&typeof d.showModal==="function")d.showModal();
   }
