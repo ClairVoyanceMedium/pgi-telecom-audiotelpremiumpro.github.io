@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.8.0 — 2026-09-18
+
+Fondation Wholesale SVA / multi-clients :
+
+- modèle `tenants` pour préparer plusieurs éditeurs et revendeurs ;
+- droits utilisateurs par tenant ;
+- affectations de numéros SVA par client avec opérateur attributaire explicitement identifié ;
+- rattachement tenant des numéros, experts, appels, audits et écritures financières ;
+- relevés de reversement client et justification appel par appel ;
+- profils KYC éditeurs sans stockage des pièces sensibles dans Git ;
+- profils de conformité des flux financiers / DSP2 ;
+- documentation de la trajectoire éditeur → plateforme multi-éditeurs → opérateur SVA attributaire ;
+- routage experts isolé par numéro SVA et tenant ;
+- rejet des CDR qui associent un expert d'un autre tenant ;
+- obligation du contexte `sva_number` sur les routes téléphonie internes en production ;
+- contrat CI renforcé pour empêcher la suppression silencieuse des garde-fous wholesale ;
+- cache PWA porté à v8 et versions front/backend/Docker alignées sur 1.8.0.
+
+La release n'active pas un portail revendeur ni la circulation de fonds de tiers : ces fonctions restent volontairement bloquées jusqu'à validation des contrats opérateur, du KYC et du cadre de paiement.
+
+
 ## 1.7.0 — 2026-09-18
 
 Refonte Executive Premium du cockpit :
