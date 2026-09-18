@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.14.0 — 2026-09-19
+
+Résilience hyperscale et isolation renforcée :
+
+- frontière SQL tenant via contexte transactionnel et vues `security_barrier` ;
+- work queue exécutable avec lease, reprise, retry exponentiel et dead-letter ;
+- handlers de queue explicitement enregistrés ;
+- politiques multi-région et résidence des données par tenant ;
+- cibles RPO/RTO, exercices DR et événements de failover ;
+- propagation W3C `traceparent` et trace ID ;
+- histogrammes Prometheus de latence par route et compteurs HTTP par statut ;
+- métriques queue, dead letters et fraîcheur des workers ;
+- règles d'alerte burn-rate, p95, CDR, outbox et jobs ;
+- visibilité régions/DR dans le cockpit Wholesale et dans le NOC ;
+- variables de queue configurables en production ;
+- cache PWA porté à v17 ;
+- versions front/backend/Docker alignées sur 1.14.0.
+
 ## 1.13.0 — 2026-09-18
 
 Fondation hyperscale pour plusieurs millions de clients :
