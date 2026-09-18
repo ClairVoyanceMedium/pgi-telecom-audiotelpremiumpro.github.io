@@ -33,6 +33,34 @@ try{
 
   if(!files.length)throw new Error("No migration files found");
 
+  const appliedCount=await sql.unsafe("SELECT count(*)::int AS count FROM schema_migrations");
+  if(Number(appliedCount[0]?.count||0)===0){
+    const bootstrapTable=await sql.unsafe("SELECT to_regclass('public.schema_bootstrap_migrations') AS name");
+    if(bootstrapTable[0]?.name){
+      const bootstrapRows=await sql.unsafe("SELECT version,checksum FROM schema_bootstrap_migrations ORDER BY version");
+      const fileChecksums=new Map(files.map(name=>{
+        const content=fs.readFileSync(path.join(migrationsDir,name),"utf8");
+        return [name.slice(0,-4),createHash("sha256").update(content).digest("hex")];
+      }));
+      for(const row of bootstrapRows){
+        const actual=fileChecksums.get(row.version);
+        if(!actual)throw new Error("Bootstrap migration missing from image: "+row.version);
+        if(actual!==row.checksum)throw new Error("Bootstrap migration checksum mismatch: "+row.version);
+      }
+      if(bootstrapRows.length){
+        await sql.begin(async tx=>{
+          for(const row of bootstrapRows){
+            await tx.unsafe(
+              "INSERT INTO schema_migrations(version,checksum) VALUES($1,$2) ON CONFLICT(version) DO NOTHING",
+              [row.version,row.checksum]
+            );
+          }
+        });
+        console.log("BOOTSTRAP",bootstrapRows.length,"migration(s) already present in fresh schema");
+      }
+    }
+  }
+
   for(const name of files){
     const file=path.join(migrationsDir,name);
     const content=fs.readFileSync(file,"utf8");
