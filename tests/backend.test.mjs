@@ -64,7 +64,7 @@ test("admin login has a dedicated per-client brute-force limit",async()=>{
   }
 });
 
-test("session cookies use the Host-only prefix",()=>{
+test("invalid encoded route parameters fail as a client error",()=>{\n  assert.throws(()=>routeMatch("/api/v1/experts/%25ZZ/status","/api/v1/experts/:id/status"),error=>error.status===400&&error.code==="INVALID_PATH_ENCODING");\n});\n\ntest("session cookies use the Host-only prefix",()=>{
   const session=sessionCookie("token",60);
   const csrf=csrfCookie("token",60);
   assert.match(session,/^__Host-pgi_session=/);
