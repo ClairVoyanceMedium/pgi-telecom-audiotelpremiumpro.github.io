@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.6.0 — 2026-09-18
+
+Déploiement et exploitation Premium 24/7 :
+
+- déploiement front immuable par commit Git ;
+- bascule atomique du symlink `current` et rollback automatique sur smoke test en échec ;
+- conservation et purge contrôlée des anciennes releases ;
+- Caddy sert uniquement la release atomique courante ;
+- pipeline backend séparé, explicitement gated et utilisable avant choix opérateur ;
+- sauvegarde PostgreSQL et exercice de restauration obligatoires avant mise à jour d’un backend existant ;
+- migrations automatiques limitées aux changements expand-only compatibles rollback ;
+- migrations bornées par `lock_timeout` et `statement_timeout` ;
+- readiness stricte sur PostgreSQL et fraîcheur des workers critiques ;
+- healthcheck Docker basé sur la readiness ;
+- arrêt gracieux borné, avec drainage explicite des connexions SSE ;
+- logs HTTP JSON corrélés par `request_id`, sans URL brute ni données client ;
+- identité exacte de release par SHA Git injectée dans le front et le backend ;
+- vérification publique de la version et du SHA après déploiement ;
+- CI renforcée sur les scripts de déploiement, rollback, migrations et contrats production.
+
+
 ## 1.5.0 — 2026-09-18
 
 Durcissement Premium préproduction avant choix opérateur :
