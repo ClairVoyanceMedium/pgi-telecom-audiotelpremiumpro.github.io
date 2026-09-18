@@ -4,7 +4,7 @@ Cockpit Audiotel, financier et télécom de PGI Telecom.
 
 ## État actuel
 
-Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.12.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
+Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.13.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
 
 Fonctions déjà présentes :
 
@@ -192,3 +192,23 @@ France reste le seul marché activé automatiquement. Les futurs pays doivent ê
 Les numéros utilisent E.164 comme identité canonique avec alias opérateur explicites. Les CDR et écritures financières transportent leur marché et leur devise, et le cockpit Wholesale n'additionne jamais des monnaies différentes.
 
 Voir `docs/INTERNATIONAL.md` pour la procédure d'ouverture d'un nouveau marché.
+
+
+## Hyperscale 1.13
+
+Le socle est préparé pour une croissance jusqu'à plusieurs millions de tenants sans dupliquer l'application :
+
+- 4 096 buckets de placement client ;
+- clusters de données extensibles ;
+- 64 partitions physiques pour le plan analytique des appels ;
+- API stateless et workers séparables ;
+- workers distribués avec leases et `SKIP LOCKED` ;
+- réplique PostgreSQL de lecture optionnelle ;
+- identité externe client séparée du back-office PGI ;
+- abonnements, entitlements, quotas et compteurs d'usage ;
+- exemples Kubernetes avec autoscaling horizontal ;
+- capacité visible directement dans le cockpit Wholesale.
+
+Le déploiement courant reste volontairement compact et économique. Le passage multi-instance ou multi-cluster se fait par configuration et capacité, pas par changement d'identité client ni refonte du modèle métier.
+
+Voir `docs/HYPERSCALE.md`.
