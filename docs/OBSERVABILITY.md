@@ -67,3 +67,41 @@ Les alertes doivent être dédupliquées et contenir :
 - lien vers la vue technique concernée.
 
 Aucune alerte ne doit exposer le numéro complet d'un appelant.
+
+
+## Traçage distribué
+
+Le backend accepte un en-tête W3C `traceparent` valide.
+
+Il conserve le `trace_id` reçu et crée un nouveau span local pour la réponse. Si aucun contexte valide n'est reçu, un nouveau trace ID est créé.
+
+Les réponses exposent :
+
+- `traceparent` ;
+- `X-Trace-Id` ;
+- `X-Request-Id`.
+
+Les logs HTTP JSON incluent `request_id`, `trace_id`, route logique, statut et durée sans enregistrer les paramètres sensibles.
+
+## Métriques SLO
+
+Le endpoint Prometheus expose notamment :
+
+- `pgi_http_requests_total` ;
+- `pgi_http_responses_total{status}` ;
+- `pgi_http_route_requests_total{route}` ;
+- `pgi_http_request_duration_ms_bucket{route,le}` ;
+- `pgi_cdr_lag_seconds` ;
+- `pgi_outbox_pending` ;
+- `pgi_work_queue_pending` ;
+- `pgi_work_queue_oldest_pending_seconds` ;
+- `pgi_work_queue_dead_lettered` ;
+- métriques de fraîcheur et d'erreur des workers.
+
+Les labels restent de cardinalité bornée : les routes sont des noms logiques, jamais des URL contenant des IDs clients.
+
+## Alerting
+
+Les règles d'exemple sont dans `infra/observability/prometheus-alerts.example.yml`.
+
+Elles couvrent burn-rate 5xx, p95, retard CDR, backlog outbox, âge de queue, dead letters et workers stagnants.
