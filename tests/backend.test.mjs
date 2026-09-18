@@ -308,6 +308,21 @@ test("backend health summary calls and metrics are operational",async()=>{
   });
 });
 
+test("dashboard analytics provides bounded chart dimensions",async()=>{
+  await withServer(async({base})=>{
+    const r=await fetch(base+"/api/v1/dashboard/analytics");
+    assert.equal(r.status,200);
+    const body=await r.json();
+    assert.ok(["hour","day"].includes(body.granularity));
+    assert.ok(Array.isArray(body.series)&&body.series.length>0);
+    assert.ok(Array.isArray(body.hours)&&body.hours.length>0&&body.hours.length<=24);
+    assert.ok(Array.isArray(body.weekdays)&&body.weekdays.length>0&&body.weekdays.length<=7);
+    assert.ok(Array.isArray(body.experts)&&body.experts.length<=12);
+    assert.ok(Array.isArray(body.carriers)&&body.carriers.length<=12);
+    assert.ok(Array.isArray(body.durations));
+  });
+});
+
 test("wholesale overview is read-only and empty in simulator",async()=>{
   await withServer(async({base})=>{
     const r=await fetch(base+"/api/v1/platform/overview");
