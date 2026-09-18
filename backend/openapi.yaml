@@ -102,6 +102,7 @@ components:
         generated_revenue_ttc: { type: number }
         expected_payout_ht: { type: number }
         confirmed_payout_ht: { type: number }
+        paid_payout_ht: { type: number }
         estimated_margin_ht: { type: number }
         calls_total: { type: integer }
         calls_connected: { type: integer }
