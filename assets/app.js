@@ -838,6 +838,10 @@
     var profiles=data&&Array.isArray(data.payment_profiles)?data.payment_profiles:[];
     var markets=data&&Array.isArray(data.markets)?data.markets:[];
     var currencyTotals=data&&Array.isArray(data.settlement_totals_by_currency)?data.settlement_totals_by_currency:[];
+    var scale=data&&data.scale?data.scale:{
+      clusters_total:1,clusters_ready:1,routing_buckets_active:4096,bucket_capacity:4096,
+      call_fact_partitions:64,read_replica_enabled:false,process_role:"all"
+    };
     var singleCurrency=currencyTotals.length===1?currencyTotals[0]:null;
     var currencyList=currencyTotals.map(function(x){return String(x.currency||"EUR");});
     var netPayoutLabel=singleCurrency
@@ -909,6 +913,13 @@
     setText("wh-markets-active",nfmt(summary.markets_active||0)+" actifs");
     setText("wh-currency-count",nfmt(currencyTotals.length));
     setText("wh-currency-list",currencyList.length?currencyList.join(" • "):"Aucune");
+    setText("wh-scale-clusters",nfmt(scale.clusters_total||0));
+    setText("wh-scale-clusters-state",nfmt(scale.clusters_ready||0)+" prêt(s)");
+    setText("wh-scale-buckets",nfmt(scale.routing_buckets_active||0)+" / "+nfmt(scale.bucket_capacity||4096));
+    setText("wh-scale-partitions",nfmt(scale.call_fact_partitions||0));
+    setText("wh-scale-read",scale.read_replica_enabled?"RÉPLIQUE":"PRIMARY");
+    var roleLabels={all:"API + workers",api:"API stateless",worker:"Workers"};
+    setText("wh-scale-role",roleLabels[scale.process_role]||String(scale.process_role||"all"));
     setText("wh-tenant-count",nfmt(tenants.length));
     setText("wh-number-count",nfmt(numbers.length));
     setText("wh-settlement-count",nfmt(settlements.length));
@@ -917,7 +928,7 @@
     setText("wh-foundation-detail",real
       ?nfmt(summary.tenants_total||0)+" client(s) • "+nfmt(summary.markets_total||markets.length||0)+" marché(s) • PostgreSQL"
       :"Aucun client réel chargé en mode démo.");
-    setText("wh-compliance-badge",real?(summary.payment_compliance_active?"PSP ACTIF":"CONFORMITÉ À VALIDER"):"FONDATION 1.12");
+    setText("wh-compliance-badge",real?(summary.payment_compliance_active?"PSP ACTIF":"CONFORMITÉ À VALIDER"):"HYPERSCALE 1.13");
     setText("wh-check-kyc",real
       ?((summary.kyc_pending||0)>0?nfmt(summary.kyc_pending)+" dossier(s) en attente":((summary.tenants_total||0)>0?"Aucun KYC en attente":"Aucun éditeur réel"))
       :"Aucun éditeur réel");
