@@ -10,21 +10,26 @@ export function loadConfig(env=process.env){
   const sessionSecret=env.PGI_SESSION_SECRET||"";
   const adminPasswordHash=env.PGI_ADMIN_PASSWORD_HASH||"";
   const ingestToken=env.PGI_INGEST_TOKEN||"";
+  const databaseUrl=env.PGI_DATABASE_URL||buildDatabaseUrl(env);
+  const databaseSsl=(env.PGI_DATABASE_SSL||"disable").toLowerCase();
+  if(!["disable","require"].includes(databaseSsl))throw new Error("PGI_DATABASE_SSL must be disable or require");
 
   if(mode==="production"){
     if(authMode!=="session")throw new Error("production requires session authentication");
     if(sessionSecret.length<32)throw new Error("production requires PGI_SESSION_SECRET >= 32 characters");
     if(!adminPasswordHash)throw new Error("production requires PGI_ADMIN_PASSWORD_HASH");
     if(ingestToken.length<24)throw new Error("production requires PGI_INGEST_TOKEN >= 24 characters");
+    if(!databaseUrl)throw new Error("production requires PGI_DATABASE_URL or POSTGRES_* variables");
   }
 
   return Object.freeze({
     mode,authMode,host,port,
-    sessionSecret,adminPasswordHash,ingestToken,
+    sessionSecret,adminPasswordHash,ingestToken,databaseUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),
     bodyLimitBytes:integer(env.PGI_BODY_LIMIT_BYTES,262144,4096,10485760,"PGI_BODY_LIMIT_BYTES"),
     rateLimitPerMinute:integer(env.PGI_RATE_LIMIT_PER_MINUTE,240,10,10000,"PGI_RATE_LIMIT_PER_MINUTE"),
+    databasePoolMax:integer(env.PGI_DATABASE_POOL_MAX,10,1,100,"PGI_DATABASE_POOL_MAX"),
     serviceRateTtcPerMin:number(env.PGI_SERVICE_RATE_TTC_PER_MIN,0.80,0,100,"PGI_SERVICE_RATE_TTC_PER_MIN"),
     payoutRateHtPerMin:number(env.PGI_PAYOUT_RATE_HT_PER_MIN,0.46,0,100,"PGI_PAYOUT_RATE_HT_PER_MIN"),
     expertCostHtPerMin:number(env.PGI_EXPERT_COST_HT_PER_MIN,0.18,0,100,"PGI_EXPERT_COST_HT_PER_MIN"),
@@ -42,4 +47,14 @@ function number(value,fallback,min,max,name){
   const n=value==null||value===""?fallback:Number(value);
   if(!Number.isFinite(n)||n<min||n>max)throw new Error(name+" invalid");
   return n;
+}
+
+function buildDatabaseUrl(env){
+  if(!env.POSTGRES_PASSWORD)return "";
+  const user=encodeURIComponent(env.POSTGRES_USER||"pgi_telecom");
+  const pass=encodeURIComponent(env.POSTGRES_PASSWORD);
+  const host=env.POSTGRES_HOST||"127.0.0.1";
+  const port=env.POSTGRES_PORT||"5432";
+  const db=encodeURIComponent(env.POSTGRES_DB||"pgi_telecom");
+  return "postgresql://"+user+":"+pass+"@"+host+":"+port+"/"+db;
 }
