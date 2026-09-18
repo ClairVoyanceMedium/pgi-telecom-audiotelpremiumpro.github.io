@@ -8,7 +8,7 @@ const css = fs.readFileSync("assets/styles.css","utf8");
 const buildStatic = fs.readFileSync("scripts/build-static.mjs","utf8");
 
 test("le nom officiel est présent", () => {
-  assert.match(index, /PGI • Telecom Audiotel Premium Pro/);
+  assert.match(index, /PGI • Telecom - Audiotel Premium Pro/);
 });
 
 test("les périodes métier principales sont présentes", () => {
@@ -122,7 +122,7 @@ test("le cockpit wholesale 1.9 est verrouillé", () => {
 });
 
 test("le nouveau nom officiel est cohérent dans le cockpit", () => {
-  assert.match(index, /PGI • Telecom Audiotel Premium Pro/);
+  assert.match(index, /PGI • Telecom - Audiotel Premium Pro/);
   assert.doesNotMatch(index, /PGI Telecom • Audiotel Premium Pro/);
 });
 
