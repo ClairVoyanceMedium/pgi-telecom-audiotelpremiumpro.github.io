@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.10.2 — 2026-09-18
+
+Identité mobile :
+
+- affiche désormais **PGI • Telecom - Audiotel Premium Pro** directement dans l’en-tête mobile ;
+- le nom reste visible même lorsque la sidebar desktop est masquée ;
+- cache PWA porté à v12 et versions alignées sur 1.10.2.
+
+
 ## 1.10.1 — 2026-09-18
 
 Ergonomie mobile et identité :
