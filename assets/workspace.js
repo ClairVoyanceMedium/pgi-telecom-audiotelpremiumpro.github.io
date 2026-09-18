@@ -24,6 +24,20 @@
     return {view:view,period:period,custom:custom};
   }
 
+  function restoreInto(target,validViews){
+    var pref=restore(validViews);
+    target.activeView=pref.view;target.period=pref.period;target.custom=pref.custom;
+    if(pref.custom){
+      var from=document.getElementById("date-from"),to=document.getElementById("date-to");
+      if(from)from.value=pref.custom.from.toISOString().slice(0,10);
+      if(to)to.value=pref.custom.to.toISOString().slice(0,10);
+    }
+    Array.prototype.slice.call(document.querySelectorAll(".period")).forEach(function(el){
+      el.classList.toggle("active",el.getAttribute("data-period")===pref.period);
+    });
+    return pref;
+  }
+
   function save(view,period,custom){
     try{
       var payload={view:view,period:period};
@@ -59,6 +73,7 @@
 
   root.PGIWorkspace=Object.freeze({
     restore:restore,
+    restoreInto:restoreInto,
     save:save,
     readMarket:readMarket,
     saveMarket:saveMarket,
