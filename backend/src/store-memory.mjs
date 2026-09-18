@@ -166,6 +166,18 @@ export class MemoryStore{
     const expert=selectExpert(this.experts);
     if(!expert)return null;
     expert.last_assigned_at=new Date().toISOString();
+    expert.active_calls=Number(expert.active_calls||0)+1;
+    expert.status="busy";
+    this.eventBus.publish("expert.busy",{id:expert.id,active_calls:expert.active_calls});
+    return {...expert};
+  }
+
+  async releaseExpert(id){
+    const expert=this.experts.find(x=>String(x.id)===String(id));
+    if(!expert)throw problem(404,"EXPERT_NOT_FOUND");
+    expert.active_calls=Math.max(0,Number(expert.active_calls||0)-1);
+    if(expert.active_calls===0&&expert.status==="busy")expert.status="available";
+    this.eventBus.publish("expert.released",{id:expert.id,status:expert.status,active_calls:expert.active_calls});
     return {...expert};
   }
 
