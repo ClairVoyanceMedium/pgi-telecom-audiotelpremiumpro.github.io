@@ -4,7 +4,7 @@ Cockpit Audiotel, financier et télécom de PGI Telecom.
 
 ## État actuel
 
-Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.15.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
+Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.16.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
 
 Fonctions déjà présentes :
 
@@ -194,7 +194,7 @@ Les numéros utilisent E.164 comme identité canonique avec alias opérateur exp
 Voir `docs/INTERNATIONAL.md` pour la procédure d'ouverture d'un nouveau marché.
 
 
-## Hyperscale 1.15
+## Hyperscale 1.16
 
 Le socle est préparé pour une croissance jusqu'à plusieurs millions de tenants sans dupliquer l'application :
 
@@ -257,3 +257,24 @@ Le Cockpit ajoute une couche analytique dense pilotée par le backend :
 En production, les graphiques principaux lisent des agrégats PostgreSQL bornés plutôt que de télécharger l'historique CDR complet dans le navigateur. Le détail des appels reste volontairement limité et paginé.
 
 Voir `docs/COCKPIT.md`.
+
+
+## Operator Efficiency 1.16
+
+La couche 1.16 vise directement le temps gagné au quotidien et la réduction de charge :
+
+- démarrage consolidé via `/app/bootstrap` et `/dashboard/bootstrap` ;
+- métadonnées applicatives mises en cache 60 secondes ;
+- événements temps réel traités selon leur coût ;
+- nouvel appel : une seule page récente de CDR est fusionnée ;
+- changements expert/opérateur : aucun rechargement CDR ;
+- suspension des SSE lorsque l'application passe en arrière-plan ;
+- resynchronisation complète après une absence prolongée ;
+- rendu limité à l'espace de travail actuellement ouvert ;
+- dernière vue, période, marché et mode mobile mémorisés ;
+- palette universelle Actions avec `Ctrl/⌘ + K` et bouton mobile ;
+- alertes regroupées comme centre de décision ;
+- Experts, Opérateurs et Réconciliation alimentés par les données exactes serveur ;
+- runtime frontend modularisé sans augmenter les budgets : `app.js` reste limité à 90 KiB et le shell à 260 KiB.
+
+Voir `docs/EFFICIENCY.md`.
