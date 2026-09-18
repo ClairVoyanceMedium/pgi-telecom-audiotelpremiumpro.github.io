@@ -67,6 +67,7 @@ export function createBackend(options={}){
 
       if(method==="POST"&&pathname==="/api/v1/auth/login"){
         if(config.authMode!=="session")return done(res,metrics,started,"auth.login",404,{error:{code:"AUTH_DISABLED"}});
+        requireSameOriginBrowser(req);
         const authKey=enforceAuthLoginRate(req,config,authBuckets,metrics);
         const body=await readJson(req,config.bodyLimitBytes);
         const usernameOk=constantTimeTokenEqual(String(body.username||""),config.adminUsername);
@@ -220,7 +221,7 @@ export function createBackend(options={}){
 
       if(method==="GET"&&pathname==="/api/v1/events"){
         requireRole(actor,["admin","finance","expert","readonly"]);
-        return openEventStream(req,res,eventBus,requestId);
+        return openEventStream(req,res,eventBus,requestId,config);
       }
 
       return done(res,metrics,started,"not_found",404,{error:{code:"NOT_FOUND",request_id:requestId}});
@@ -231,6 +232,11 @@ export function createBackend(options={}){
       problemJson(res,error,requestId);
     }
   });
+
+  server.headersTimeout=15000;
+  server.requestTimeout=30000;
+  server.keepAliveTimeout=5000;
+  server.maxRequestsPerSocket=1000;
 
   const workers=startWorkers({store,eventBus,config});
 
@@ -303,6 +309,22 @@ function authorizeIngest(req,config){
   }
 }
 function isLoopback(ip){return ip==="127.0.0.1"||ip==="::1"||ip==="::ffff:127.0.0.1";}
+function requireSameOriginBrowser(req){
+  const site=String(req.headers["sec-fetch-site"]||"").toLowerCase();
+  if(site==="cross-site"){
+    const e=new Error("Cross-site request rejected");e.status=403;e.code="CROSS_SITE_REQUEST";throw e;
+  }
+  const origin=String(req.headers.origin||"");
+  if(!origin)return;
+  let originHost="";
+  try{originHost=new URL(origin).host;}catch{
+    const e=new Error("Invalid Origin header");e.status=403;e.code="INVALID_ORIGIN";throw e;
+  }
+  const requestHost=String(req.headers.host||"");
+  if(!requestHost||!constantTimeTokenEqual(originHost.toLowerCase(),requestHost.toLowerCase())){
+    const e=new Error("Origin mismatch");e.status=403;e.code="ORIGIN_MISMATCH";throw e;
+  }
+}
 function enforceAuthLoginRate(req,config,buckets,metrics){
   const key=clientIp(req);
   const now=Date.now();
@@ -388,7 +410,10 @@ async function metricsResponse(res,metrics,store){
   res.writeHead(200,{"Content-Type":"text/plain; version=0.0.4; charset=utf-8","Content-Length":Buffer.byteLength(body)});
   res.end(body);
 }
-function openEventStream(req,res,eventBus,requestId){
+function openEventStream(req,res,eventBus,requestId,config){
+  if(eventBus.size>=Number(config.maxEventSubscribers||32)){
+    const e=new Error("Realtime capacity reached");e.status=503;e.code="SSE_CAPACITY_REACHED";throw e;
+  }
   res.writeHead(200,{
     "Content-Type":"text/event-stream; charset=utf-8",
     "Cache-Control":"no-store",
