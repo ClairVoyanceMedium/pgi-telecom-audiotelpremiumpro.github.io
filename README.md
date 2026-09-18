@@ -88,3 +88,11 @@ Le projet possède désormais des garde-fous de préproduction :
 - workflow VPS désactivé tant que les variables/secrets ne sont pas configurés.
 
 La version GitHub Pages reste une démonstration. Les statuts SIP/API affichent explicitement qu'ils ne sont pas connectés tant que l'infrastructure réelle n'existe pas.
+
+## Validation release 1.5.0
+
+La release 1.5.0 ajoute les garde-fous préproduction : sessions sécurisées, finance production sans hypothèses démo, baselines autoritaires, migrations transactionnelles, sauvegarde/restauration vérifiées, observabilité workers et séparation stricte des endpoints publics et téléphonie interne.
+
+
+
+
