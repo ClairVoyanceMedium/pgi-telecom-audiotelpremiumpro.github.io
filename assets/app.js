@@ -754,6 +754,150 @@
     setText("calls-total-label",nfmt(tableRows.length)+" appels");
   }
 
+  function cockpitAnalytics(rows){
+    if(RUNTIME.mode==="production"&&state.serverAnalytics)return state.serverAnalytics;
+    var range=getRange(),durationMs=Math.max(0,range.to-range.from);
+    var granularity=durationMs>14*86400000?"day":"hour";
+    var grouped=function(keyFn){
+      var map=new Map();
+      rows.forEach(function(x){
+        var key=keyFn(x);
+        if(!map.has(key))map.set(key,[]);
+        map.get(key).push(x);
+      });
+      return map;
+    };
+    var summarize=function(items){
+      var m=aggregate(items);
+      return {
+        calls_total:m.calls,calls_connected:m.connected,calls_abandoned:m.abandoned,calls_failed:m.failed,
+        conversation_seconds:items.reduce(function(a,x){return a+Number(x.conversation||0);},0),
+        billable_seconds:items.reduce(function(a,x){return a+Number(x.billableSeconds||x.billable*60||0);},0),
+        revenue:m.ca,expected_payout:m.expected,margin:m.margin,currency:state.marketCurrency||"EUR",currency_count:1
+      };
+    };
+    var bucket=function(c){
+      var d=new Date(c.ts);
+      if(granularity==="day")d.setHours(0,0,0,0);else d.setMinutes(0,0,0);
+      return d.toISOString();
+    };
+    var series=[...grouped(bucket)].map(function(entry){return {bucket:entry[0],...summarize(entry[1])};})
+      .sort(function(a,b){return Date.parse(a.bucket)-Date.parse(b.bucket);});
+    var hours=[...grouped(function(c){return c.ts.getHours();})].map(function(entry){
+      var x=summarize(entry[1]);return {hour:Number(entry[0]),calls_total:x.calls_total,calls_connected:x.calls_connected,billable_seconds:x.billable_seconds};
+    }).sort(function(a,b){return a.hour-b.hour;});
+    var weekdays=[...grouped(function(c){var d=c.ts.getDay();return d===0?7:d;})].map(function(entry){
+      var x=summarize(entry[1]);return {weekday:Number(entry[0]),calls_total:x.calls_total,calls_connected:x.calls_connected,billable_seconds:x.billable_seconds};
+    }).sort(function(a,b){return a.weekday-b.weekday;});
+    var dimension=function(type,keyFn,labelFn){
+      return [...grouped(keyFn)].map(function(entry){
+        var x=summarize(entry[1]);
+        return {dimension_type:type,dimension_key:String(entry[0]),dimension_label:labelFn(entry[1][0]),...x};
+      }).sort(function(a,b){return Number(b.calls_total)-Number(a.calls_total);});
+    };
+    var expertRows=dimension("expert",function(c){return c.expert||"Non affecté";},function(c){return c.expert||"Non affecté";}).slice(0,12);
+    var carrierRows=dimension("carrier",function(c){return c.carrier||"Inconnu";},function(c){return c.carrier||"Inconnu";}).slice(0,12);
+    var durationKey=function(c){return c.status!=="connected"?"not_connected":c.conversation<60?"lt_1m":c.conversation<300?"1_5m":c.conversation<600?"5_10m":c.conversation<1200?"10_20m":c.conversation<1800?"20_30m":"gte_30m";};
+    var durationLabels={not_connected:"Non aboutis",lt_1m:"< 1 min","1_5m":"1–5 min","5_10m":"5–10 min","10_20m":"10–20 min","20_30m":"20–30 min",gte_30m:"30 min +"};
+    var durationRows=dimension("duration",durationKey,function(c){return durationLabels[durationKey(c)]||"Autre";});
+    return {granularity:granularity,series:series,hours:hours,weekdays:weekdays,experts:expertRows,carriers:carrierRows,durations:durationRows};
+  }
+
+  function analyticsBucketLabel(value,granularity){
+    var d=new Date(value);
+    if(!Number.isFinite(d.getTime()))return "—";
+    if(granularity==="hour")return new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit"}).format(d);
+    return new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"2-digit"}).format(d);
+  }
+
+  function renderMetricBars(id,items,valueFn,labelFn,valueLabelFn){
+    var el=$(id);if(!el)return;
+    var list=(items||[]).filter(function(x){return Number(valueFn(x)||0)>=0;});
+    var max=list.length?Math.max.apply(null,list.map(function(x){return Number(valueFn(x)||0);})):0;
+    el.innerHTML=list.map(function(x){
+      var v=Number(valueFn(x)||0),w=max>0?v/max*100:0;
+      return '<div class="metric-bar-row"><div><span>'+esc(labelFn(x))+'</span><strong>'+esc(valueLabelFn(x,v))+'</strong></div><i><b style="width:'+w.toFixed(1)+'%"></b></i></div>';
+    }).join("")||'<p class="muted">Aucune donnée.</p>';
+  }
+
+  function renderDualTrend(svgId,seriesData,aKey,bKey,aLabel,bLabel,percentMode){
+    var svg=$(svgId);if(!svg)return;
+    var data=(seriesData||[]).map(function(x){
+      var calls=Number(x.calls_total||0),connected=Number(x.calls_connected||0),abandoned=Number(x.calls_abandoned||0);
+      var out={label:analyticsBucketLabel(x.bucket,(state.serverAnalytics||{}).granularity||cockpitAnalytics([]).granularity)};
+      out[aKey]=aKey==="asr"? (calls?connected/calls*100:0):Number(x[aKey]||0);
+      out[bKey]=bKey==="abandon_rate"? (calls?abandoned/calls*100:0):Number(x[bKey]||0);
+      return out;
+    });
+    var w=760,h=220,p={l:40,r:16,t:30,b:28};
+    if(!data.length){svg.innerHTML='<text x="380" y="110" text-anchor="middle" fill="#6d829a" font-size="12">Aucune donnée</text>';return;}
+    var maxA=percentMode?100:Math.max(1,...data.map(function(x){return Number(x[aKey]||0);}));
+    var maxB=percentMode?100:Math.max(1,...data.map(function(x){return Number(x[bKey]||0);}));
+    var sx=function(i){return p.l+(data.length===1?(w-p.l-p.r)/2:(w-p.l-p.r)*i/(data.length-1));};
+    var sy=function(v,max){return h-p.b-(h-p.t-p.b)*Number(v||0)/max;};
+    var path=function(key,max){return data.map(function(d,i){return (i?"L":"M")+sx(i).toFixed(1)+" "+sy(d[key],max).toFixed(1);}).join(" ");};
+    var grid="";for(var g=0;g<=4;g++){var y=p.t+(h-p.t-p.b)*g/4;grid+='<line class="chart-grid" x1="'+p.l+'" x2="'+(w-p.r)+'" y1="'+y+'" y2="'+y+'"/>';}
+    var labels=data.map(function(d,i){if(data.length>10&&i%Math.ceil(data.length/8))return"";return '<text class="chart-axis" text-anchor="middle" x="'+sx(i)+'" y="'+(h-7)+'">'+esc(d.label)+'</text>';}).join("");
+    svg.innerHTML=grid+labels+
+      '<text x="'+p.l+'" y="14" class="chart-legend-a">'+esc(aLabel)+'</text><text x="'+(p.l+105)+'" y="14" class="chart-legend-b">'+esc(bLabel)+'</text>'+
+      '<path class="cockpit-line-a" d="'+path(aKey,maxA)+'"/><path class="cockpit-line-b" d="'+path(bKey,maxB)+'"/>';
+  }
+
+  function renderCockpitIntelligence(rows){
+    var data=cockpitAnalytics(rows),m=currentAggregate(rows),weekNames=["","Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
+    setText("cockpit-analytics-mode",RUNTIME.mode==="production"?"AGRÉGATS SERVEUR":"CALCUL DÉMO");
+    var hours=data.hours||[],days=data.weekdays||[];
+    var peakHour=hours.slice().sort(function(a,b){return Number(b.calls_total)-Number(a.calls_total);})[0];
+    var peakDay=days.slice().sort(function(a,b){return Number(b.calls_total)-Number(a.calls_total);})[0];
+    setText("cockpit-peak-hour",peakHour?pad(Number(peakHour.hour))+"h":"—");
+    setText("cockpit-peak-hour-detail",peakHour?nfmt(peakHour.calls_total)+" appel(s)":"0 appel");
+    setText("cockpit-peak-day",peakDay?(weekNames[Number(peakDay.weekday)]||"—"):"—");
+    setText("cockpit-peak-day-detail",peakDay?nfmt(peakDay.calls_total)+" appel(s)":"0 appel");
+    setText("cockpit-value-call",m.mixedCurrency||!m.calls?"—":money(m.ca/m.calls));
+    setText("cockpit-value-minute",m.mixedCurrency||!m.mins?"—":money(m.ca/m.mins));
+    setText("cockpit-margin-call",m.mixedCurrency||!m.calls?"—":money(m.margin/m.calls));
+    setText("cockpit-average-duration",m.connected?fmtDuration(m.acd):"—");
+    setText("cockpit-volume-total",nfmt(m.calls)+" appels");
+    setText("cockpit-asr-average","ASR "+nfmt(m.asr,1)+"%");
+
+    var trend=(data.series||[]).map(function(x){
+      return {...x,billable_minutes:Number(x.billable_seconds||0)/60};
+    });
+    renderDualTrend("cockpit-volume-chart",trend,"calls_total","billable_minutes","Appels","Minutes",false);
+    renderDualTrend("cockpit-conversion-chart",trend,"asr","abandon_rate","ASR","Abandons",true);
+
+    var fullHours=Array.from({length:24},function(_,i){
+      return hours.find(function(x){return Number(x.hour)===i;})||{hour:i,calls_total:0};
+    });
+    renderMetricBars("cockpit-hour-bars",fullHours,function(x){return x.calls_total;},function(x){return pad(x.hour)+"h";},function(x,v){return nfmt(v);});
+    var fullDays=Array.from({length:7},function(_,i){
+      return days.find(function(x){return Number(x.weekday)===i+1;})||{weekday:i+1,calls_total:0};
+    });
+    renderMetricBars("cockpit-weekday-bars",fullDays,function(x){return x.calls_total;},function(x){return weekNames[x.weekday];},function(x,v){return nfmt(v);});
+
+    var total=Math.max(1,m.calls),connected=Math.max(0,m.connected),abandoned=Math.max(0,m.abandoned),failed=Math.max(0,m.failed);
+    var p1=connected/total*100,p2=(connected+abandoned)/total*100;
+    var donut=$("cockpit-status-donut");
+    if(donut)donut.style.background="conic-gradient(var(--green) 0 "+p1.toFixed(2)+"%,var(--amber) "+p1.toFixed(2)+"% "+p2.toFixed(2)+"%,var(--red) "+p2.toFixed(2)+"% 100%)";
+    setText("cockpit-status-total",nfmt(m.calls));
+    var legend=$("cockpit-status-legend");
+    if(legend)legend.innerHTML=[
+      ["Aboutis",connected,"var(--green)"],["Abandons",abandoned,"var(--amber)"],["Échecs",failed,"var(--red)"]
+    ].map(function(x){return '<div><i style="--dot:'+x[2]+'"></i><span>'+x[0]+'</span><strong>'+nfmt(x[1])+' • '+nfmt(x[1]/total*100,1)+'%</strong></div>';}).join("");
+
+    renderMetricBars("cockpit-duration-bars",data.durations||[],function(x){return x.calls_total;},function(x){return x.dimension_label;},function(x,v){return nfmt(v);});
+    renderMetricBars("cockpit-expert-bars",(data.experts||[]).slice(0,7),function(x){return x.expected_payout==null?x.calls_total:x.expected_payout;},function(x){return x.dimension_label;},function(x,v){return x.expected_payout==null?nfmt(x.calls_total)+" appels":money(v);});
+    renderMetricBars("cockpit-carrier-bars",(data.carriers||[]).slice(0,7),function(x){return x.calls_total;},function(x){return x.dimension_label;},function(x,v){return nfmt(v)+" appels";});
+
+    var sampleNote=$("analytics-sample-note");
+    if(sampleNote){
+      sampleNote.hidden=!state.cdrSampleTruncated;
+      sampleNote.textContent=state.cdrSampleTruncated
+        ?"Les graphiques du Tour de contrôle utilisent les agrégats serveur exacts. Seuls la qualité RTP, la heatmap historique détaillée et certains détails CDR restent limités aux 1 000 appels récents chargés dans le navigateur."
+        :"Les analyses affichées couvrent toute la période sélectionnée.";
+    }
+  }
+
   function bucketKey(d,range){
     var diff=(range.to-range.from)/(86400000);
     if(diff<=1)return pad(d.getHours())+"h";
@@ -1089,6 +1233,7 @@
     renderHeatmap(rows);
     renderFunnel(rows);
     renderQuality(rows);
+    renderCockpitIntelligence(rows);
     renderOverviewExpertRanking(rows);
     renderNetworkMix(rows);
     renderFinanceAnalytics(rows);
