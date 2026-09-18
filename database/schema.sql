@@ -224,6 +224,7 @@ CREATE TABLE experts (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   code text NOT NULL UNIQUE,
   display_name text NOT NULL,
+  destination_uri text,
   status text NOT NULL DEFAULT 'offline' CHECK (status IN ('available','busy','away','offline')),
   compensation_type text NOT NULL DEFAULT 'per_minute' CHECK (compensation_type IN ('per_minute','percentage','fixed','none')),
   compensation_rate numeric(12,6) NOT NULL DEFAULT 0,
