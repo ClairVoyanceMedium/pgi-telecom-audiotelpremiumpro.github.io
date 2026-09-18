@@ -13,7 +13,21 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: pgi_test
+          POSTGRES_USER: pgi_test
+          POSTGRES_PASSWORD: pgi_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pgi_test -d pgi_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,3 +39,11 @@ jobs:
 
       - name: Verify repository
         run: npm run verify
+
+      - name: Validate PostgreSQL schema and smoke tests
+        env:
+          PGPASSWORD: pgi_test
+        run: |
+          docker run --rm --network host -e PGPASSWORD="$PGPASSWORD" -v "$PWD/database:/sql:ro" postgres:16-alpine             psql -h 127.0.0.1 -U pgi_test -d pgi_test -v ON_ERROR_STOP=1 -f /sql/schema.sql
+          docker run --rm --network host -e PGPASSWORD="$PGPASSWORD" -v "$PWD/database:/sql:ro" postgres:16-alpine             psql -h 127.0.0.1 -U pgi_test -d pgi_test -v ON_ERROR_STOP=1 -f /sql/views.sql
+          docker run --rm --network host -e PGPASSWORD="$PGPASSWORD" -v "$PWD/database:/sql:ro" postgres:16-alpine             psql -h 127.0.0.1 -U pgi_test -d pgi_test -v ON_ERROR_STOP=1 -f /sql/smoke.sql
