@@ -108,6 +108,89 @@ export class PostgresStore{
     };
   }
 
+  async dashboardAnalytics(from,to,market=null){
+    const durationMs=Math.max(0,Date.parse(to)-Date.parse(from));
+    const granularity=durationMs>14*86400000?"day":"hour";
+    const baseCte=
+      "WITH bounds AS ("+
+      " SELECT $1::timestamptz AS from_ts,$2::timestamptz AS to_ts,"+
+      " CASE WHEN $1::timestamptz=date_trunc('hour',$1::timestamptz) THEN $1::timestamptz"+
+      " ELSE date_trunc('hour',$1::timestamptz)+interval '1 hour' END AS full_from,"+
+      " date_trunc('hour',$2::timestamptz) AS full_to,"+
+      " (SELECT id FROM operating_markets WHERE country_code=$3) AS market_id"+
+      "), base AS ("+
+      " SELECT r.bucket_start AS ts,r.currency,r.calls_total,r.calls_connected,r.calls_abandoned,r.calls_failed,"+
+      " r.conversation_seconds,r.billable_seconds,r.generated_revenue_ttc,r.expected_payout_ht,r.estimated_margin_ht"+
+      " FROM platform_rollups_hourly_sharded r CROSS JOIN bounds b"+
+      " WHERE b.full_to>b.full_from AND r.bucket_start>=b.full_from AND r.bucket_start<b.full_to"+
+      " AND ($3::text IS NULL OR r.market_id=b.market_id)"+
+      " UNION ALL"+
+      " SELECT f.started_at AS ts,f.currency,1::bigint,"+
+      " (f.call_status='connected')::int::bigint,(f.call_status='abandoned')::int::bigint,"+
+      " (f.call_status NOT IN ('connected','abandoned'))::int::bigint,"+
+      " f.conversation_seconds::bigint,f.billable_seconds::bigint,"+
+      " f.retail_service_amount_ttc,f.expected_payout_ht,f.estimated_margin_ht"+
+      " FROM call_facts f CROSS JOIN bounds b"+
+      " WHERE f.started_at>=b.from_ts AND f.started_at<=b.to_ts"+
+      " AND NOT (b.full_to>b.full_from AND f.started_at>=b.full_from AND f.started_at<b.full_to)"+
+      " AND ($3::text IS NULL OR f.market_id=b.market_id)"+
+      ") ";
+
+    const [series,hours,weekdays,dimensions]=await Promise.all([
+      this.readSql.unsafe(
+        baseCte+
+        "SELECT date_trunc($4::text,ts) AS bucket,min(currency) AS currency,count(DISTINCT currency)::int AS currency_count,"+
+        " sum(calls_total)::bigint AS calls_total,sum(calls_connected)::bigint AS calls_connected,"+
+        " sum(calls_abandoned)::bigint AS calls_abandoned,sum(calls_failed)::bigint AS calls_failed,"+
+        " sum(conversation_seconds)::bigint AS conversation_seconds,sum(billable_seconds)::bigint AS billable_seconds,"+
+        " CASE WHEN count(DISTINCT currency)<=1 THEN sum(generated_revenue_ttc)::float8 ELSE NULL END AS revenue,"+
+        " CASE WHEN count(DISTINCT currency)<=1 THEN sum(expected_payout_ht)::float8 ELSE NULL END AS expected_payout,"+
+        " CASE WHEN count(DISTINCT currency)<=1 THEN sum(estimated_margin_ht)::float8 ELSE NULL END AS margin"+
+        " FROM base GROUP BY date_trunc($4::text,ts) ORDER BY bucket",
+        [from,to,market||null,granularity]
+      ),
+      this.readSql.unsafe(
+        baseCte+
+        "SELECT EXTRACT(hour FROM ts)::int AS hour,sum(calls_total)::bigint AS calls_total,"+
+        " sum(calls_connected)::bigint AS calls_connected,sum(billable_seconds)::bigint AS billable_seconds"+
+        " FROM base GROUP BY EXTRACT(hour FROM ts) ORDER BY hour",
+        [from,to,market||null]
+      ),
+      this.readSql.unsafe(
+        baseCte+
+        "SELECT EXTRACT(isodow FROM ts)::int AS weekday,sum(calls_total)::bigint AS calls_total,"+
+        " sum(calls_connected)::bigint AS calls_connected,sum(billable_seconds)::bigint AS billable_seconds"+
+        " FROM base GROUP BY EXTRACT(isodow FROM ts) ORDER BY weekday",
+        [from,to,market||null]
+      ),
+      this.readSql.unsafe(
+        "SELECT d.dimension_type,d.dimension_key,max(d.dimension_label) AS dimension_label,"+
+        " sum(d.calls_total)::bigint AS calls_total,sum(d.calls_connected)::bigint AS calls_connected,"+
+        " sum(d.conversation_seconds)::bigint AS conversation_seconds,sum(d.billable_seconds)::bigint AS billable_seconds,"+
+        " CASE WHEN count(DISTINCT d.currency)<=1 THEN sum(d.generated_revenue_ttc)::float8 ELSE NULL END AS revenue,"+
+        " CASE WHEN count(DISTINCT d.currency)<=1 THEN sum(d.expected_payout_ht)::float8 ELSE NULL END AS expected_payout"+
+        " FROM dashboard_dimension_rollups_daily d LEFT JOIN operating_markets m ON m.id=d.market_id"+
+        " WHERE d.bucket_date BETWEEN $1::timestamptz::date AND $2::timestamptz::date"+
+        " AND ($3::text IS NULL OR m.country_code=$3)"+
+        " GROUP BY d.dimension_type,d.dimension_key"+
+        " ORDER BY d.dimension_type,calls_total DESC",
+        [from,to,market||null]
+      )
+    ]);
+
+    const byType={expert:[],carrier:[],duration:[]};
+    for(const row of dimensions)if(byType[row.dimension_type])byType[row.dimension_type].push(row);
+    return {
+      granularity,
+      series,
+      hours,
+      weekdays,
+      experts:byType.expert.slice(0,12),
+      carriers:byType.carrier.slice(0,12),
+      durations:byType.duration
+    };
+  }
+
   async listCalls(params={}){
     const limit=clampInt(params.limit,100,1,250);
     const cursor=decodeCursor(params.cursor);
@@ -391,6 +474,7 @@ export class PostgresStore{
       );
 
       await writeHourlyRollup(tx,call.id);
+      await writeDashboardDimensionRollups(tx,call.id);
 
       if(p.quality){
         await tx.unsafe(
@@ -1131,6 +1215,54 @@ export class PostgresStore{
     ]);
     return {...calls[0],...outbox[0],event_subscribers:this.eventBus.size};
   }
+}
+
+async function writeDashboardDimensionRollups(tx,callId){
+  const common=
+    " INSERT INTO dashboard_dimension_rollups_daily("+
+    " bucket_date,market_id,currency,dimension_type,dimension_key,dimension_label,calls_total,calls_connected,"+
+    " conversation_seconds,billable_seconds,generated_revenue_ttc,expected_payout_ht,estimated_margin_ht) ";
+  const conflict=
+    " ON CONFLICT(bucket_date,market_id,currency,dimension_type,dimension_key) DO UPDATE SET"+
+    " dimension_label=EXCLUDED.dimension_label,"+
+    " calls_total=dashboard_dimension_rollups_daily.calls_total+EXCLUDED.calls_total,"+
+    " calls_connected=dashboard_dimension_rollups_daily.calls_connected+EXCLUDED.calls_connected,"+
+    " conversation_seconds=dashboard_dimension_rollups_daily.conversation_seconds+EXCLUDED.conversation_seconds,"+
+    " billable_seconds=dashboard_dimension_rollups_daily.billable_seconds+EXCLUDED.billable_seconds,"+
+    " generated_revenue_ttc=dashboard_dimension_rollups_daily.generated_revenue_ttc+EXCLUDED.generated_revenue_ttc,"+
+    " expected_payout_ht=dashboard_dimension_rollups_daily.expected_payout_ht+EXCLUDED.expected_payout_ht,"+
+    " estimated_margin_ht=dashboard_dimension_rollups_daily.estimated_margin_ht+EXCLUDED.estimated_margin_ht,updated_at=now()";
+
+  await tx.unsafe(
+    common+
+    " SELECT f.started_at::date,f.market_id,f.currency,'expert',COALESCE(f.expert_id::text,'unassigned'),"+
+    " COALESCE(e.display_name,'Non affecté'),1,(f.call_status='connected')::int,f.conversation_seconds,f.billable_seconds,"+
+    " f.retail_service_amount_ttc,f.expected_payout_ht,f.estimated_margin_ht"+
+    " FROM call_facts f LEFT JOIN experts e ON e.id=f.expert_id WHERE f.call_id=$1 AND f.market_id IS NOT NULL"+
+    conflict,[callId]
+  );
+  await tx.unsafe(
+    common+
+    " SELECT f.started_at::date,f.market_id,f.currency,'carrier',COALESCE(f.origin_carrier_id::text,'unknown'),"+
+    " COALESCE(c.name,'Inconnu'),1,(f.call_status='connected')::int,f.conversation_seconds,f.billable_seconds,"+
+    " f.retail_service_amount_ttc,f.expected_payout_ht,f.estimated_margin_ht"+
+    " FROM call_facts f LEFT JOIN carriers c ON c.id=f.origin_carrier_id WHERE f.call_id=$1 AND f.market_id IS NOT NULL"+
+    conflict,[callId]
+  );
+  await tx.unsafe(
+    common+
+    " SELECT f.started_at::date,f.market_id,f.currency,'duration',"+
+    " CASE WHEN f.call_status<>'connected' THEN 'not_connected' WHEN f.conversation_seconds<60 THEN 'lt_1m'"+
+    " WHEN f.conversation_seconds<300 THEN '1_5m' WHEN f.conversation_seconds<600 THEN '5_10m'"+
+    " WHEN f.conversation_seconds<1200 THEN '10_20m' WHEN f.conversation_seconds<1800 THEN '20_30m' ELSE 'gte_30m' END,"+
+    " CASE WHEN f.call_status<>'connected' THEN 'Non aboutis' WHEN f.conversation_seconds<60 THEN '< 1 min'"+
+    " WHEN f.conversation_seconds<300 THEN '1–5 min' WHEN f.conversation_seconds<600 THEN '5–10 min'"+
+    " WHEN f.conversation_seconds<1200 THEN '10–20 min' WHEN f.conversation_seconds<1800 THEN '20–30 min' ELSE '30 min +' END,"+
+    " 1,(f.call_status='connected')::int,f.conversation_seconds,f.billable_seconds,"+
+    " f.retail_service_amount_ttc,f.expected_payout_ht,f.estimated_margin_ht"+
+    " FROM call_facts f WHERE f.call_id=$1 AND f.market_id IS NOT NULL"+
+    conflict,[callId]
+  );
 }
 
 async function writeHourlyRollup(tx,callId){
