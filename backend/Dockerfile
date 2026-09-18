@@ -8,6 +8,7 @@ RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
 COPY assets/core.js ./assets/core.js
 COPY backend ./backend
+COPY database/migrations ./database/migrations
 
 RUN chown -R node:node /app
 USER node
