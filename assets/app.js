@@ -270,6 +270,15 @@
     $("experts-grid").innerHTML=html;
   }
 
+  function renderHostCarrier(){
+    setText("host-sva-number","089 à attribuer");
+    setText("host-active-carrier","Non configuré");
+    setText("host-standby-carrier","Aucun");
+    setText("host-route-generation","1");
+    setText("host-portability","À contractualiser");
+    setText("host-switch-state","Prêt architecturalement");
+  }
+
   function renderCarriers(rows){
     var total=aggregate(rows);
     $("carrier-grid").innerHTML=carriers.map(function(name){
@@ -339,7 +348,7 @@
   function render(){
     var started=performance.now();
     var rows=filteredCalls();
-    renderKPIs(rows);renderCalls(rows);renderChart(rows);renderAlerts(rows);renderExperts(rows);renderCarriers(rows);renderRecon(rows);renderResetLog();
+    renderKPIs(rows);renderCalls(rows);renderChart(rows);renderAlerts(rows);renderExperts(rows);renderHostCarrier();renderCarriers(rows);renderRecon(rows);renderResetLog();
     var now=new Date();
     state.diagnostics.lastRenderMs=Math.max(0,performance.now()-started);
     setText("last-sync",new Intl.DateTimeFormat("fr-FR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(now));
