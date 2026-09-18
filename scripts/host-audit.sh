@@ -38,7 +38,7 @@ do
   fi
 done
 
-for command in curl docker df find stat awk grep sed date readlink; do
+for command in curl docker df find stat awk grep sed date readlink sha256sum sort head cut; do
   command -v "$command" >/dev/null 2>&1 || { echo "Missing required command: $command" >&2; exit 2; }
 done
 
@@ -54,6 +54,9 @@ backend_release="$(release_from_link "$backend_base" || true)"
 front_release="$(release_from_link "$front_base" || true)"
 
 if [ -z "$backend_release" ]; then fail "backend current release symlink is invalid"; else ok "backend release ${backend_release:0:12}"; fi
+if [ -n "$backend_release" ]; then
+  export PGI_RELEASE_ID="$backend_release"
+fi
 if [ -z "$front_release" ]; then fail "front current release symlink is invalid"; else ok "front release ${front_release:0:12}"; fi
 
 if [ "$PGI_REQUIRE_RELEASE_ALIGNMENT" = "true" ] && [ -n "$backend_release" ] && [ -n "$front_release" ]; then
