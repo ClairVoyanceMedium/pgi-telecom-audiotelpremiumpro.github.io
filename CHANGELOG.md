@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.11.0 — 2026-09-18
+
+Optimisation mobile Android et iOS :
+
+- zones sûres iPhone/iPad et navigation compatible encoche/Home Indicator ;
+- hauteur dynamique `100dvh` ;
+- cibles tactiles de 44 px minimum ;
+- formulaires 16 px pour empêcher le zoom automatique Safari ;
+- tableaux tactiles avec scroll inertiel et première colonne figée ;
+- optimisation portrait/paysage ;
+- responsive renforcé jusqu'à 320 px ;
+- navigation et cartes recalibrées pour les doigts et non la souris ;
+- métadonnées PWA Android/iOS renforcées ;
+- cache PWA porté à v13 ;
+- versions front/backend/Docker alignées sur 1.11.0.
+
+
 ## 1.10.2 — 2026-09-18
 
 Identité mobile :
