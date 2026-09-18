@@ -1051,7 +1051,11 @@ export class PostgresStore{
         " (SELECT count(*)::int FROM data_clusters WHERE state='ready') AS clusters_ready,"+
         " (SELECT count(*)::int FROM routing_buckets WHERE state='active') AS routing_buckets_active,"+
         " (SELECT count(*)::bigint FROM tenant_data_placement WHERE state='active') AS placements_active,"+
-        " (SELECT count(*)::int FROM pg_inherits WHERE inhparent='call_facts'::regclass) AS call_fact_partitions"
+        " (SELECT count(*)::int FROM pg_inherits WHERE inhparent='call_facts'::regclass) AS call_fact_partitions,"+
+        " (SELECT count(*)::int FROM platform_regions) AS regions_total,"+
+        " (SELECT count(*)::int FROM platform_regions WHERE status IN ('ready','active')) AS regions_ready,"+
+        " (SELECT count(*)::int FROM disaster_recovery_targets WHERE enabled) AS dr_targets_total,"+
+        " (SELECT count(*)::int FROM disaster_recovery_drills WHERE status='passed') AS dr_drills_passed"
       )
     ]);
     const singleCurrency=currencyTotals.length===1?currencyTotals[0]:null;
@@ -1065,7 +1069,7 @@ export class PostgresStore{
       payment_compliance_active:payments.some(x=>x.status==="active")
     };
     return {
-      foundation_version:"1.13",
+      foundation_version:"1.14",
       summary,
       tenants,
       numbers,
