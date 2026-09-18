@@ -1,7 +1,9 @@
+import {randomUUID} from "node:crypto";
 import {evaluateAlerts} from "./alerts.mjs";
 
 export function startWorkers({store,eventBus,config}){
   let stopped=false;
+  const ownerId=randomUUID();
   const timers=[];
   const stats={
     outboxRuns:0,outboxErrors:0,alertsRuns:0,alertsErrors:0,
@@ -31,6 +33,13 @@ export function startWorkers({store,eventBus,config}){
     if(stopped)return;
     stats.alertsRuns++;
     try{
+      if(typeof store.acquireWorkerLease==="function"){
+        const acquired=await store.acquireWorkerLease("alerts",ownerId,config.workerLeaseSeconds||45);
+        if(!acquired){
+          stats.lastAlertsSuccessAt=new Date().toISOString();
+          return;
+        }
+      }
       const now=new Date();
       const from=new Date(now.getTime()-24*3600000);
       const [summary,system]=await Promise.all([
@@ -64,6 +73,9 @@ export function startWorkers({store,eventBus,config}){
     stop(){
       stopped=true;
       for(const t of timers)clearInterval(t);
+      if(typeof store.releaseWorkerLease==="function"){
+        Promise.resolve(store.releaseWorkerLease("alerts",ownerId)).catch(()=>{});
+      }
     }
   };
 }
