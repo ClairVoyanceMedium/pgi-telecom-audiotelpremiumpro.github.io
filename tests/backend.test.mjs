@@ -4,6 +4,7 @@ import {createBackend} from "../backend/server.mjs";
 import {hashPassword,verifyPassword,issueSession,verifySession,sessionCookie,csrfCookie} from "../backend/src/security.mjs";
 import {selectExpert} from "../backend/src/expert-router.mjs";
 import {clientIp,routeMatch} from "../backend/src/http.mjs";
+import {sanitizeCdrPayload,deriveCallerHash} from "../backend/src/cdr-privacy.mjs";
 
 function config(overrides={}){
   return {
@@ -104,6 +105,27 @@ test("session cookies use the Host-only prefix",()=>{
   assert.match(csrf,/; Path=\//);
   assert.match(csrf,/; Secure/);
   assert.match(csrf,/; SameSite=Strict/);
+});
+
+test("generic CDR privacy removes full caller identifiers",()=>{
+  const p=sanitizeCdrPayload({
+    external_call_id:"c1",
+    caller_masked:"0612345678",
+    caller_id_number:"0612345678",
+    ani:"0612345678",
+    secret_field:"do-not-store",
+    quality:{mos:4.2,private_metric:"no"}
+  });
+  assert.equal(p.caller_masked,"•• •• •• 56 78");
+  assert.equal("caller_id_number" in p,false);
+  assert.equal("ani" in p,false);
+  assert.equal("secret_field" in p,false);
+  assert.deepEqual(p.quality,{mos:4.2});
+
+  const a=deriveCallerHash(p,{key:"k".repeat(32),source:"carrier",sourceEventId:"evt-1"});
+  const b=deriveCallerHash({...p,external_call_id:"c2"},{key:"k".repeat(32),source:"carrier",sourceEventId:"evt-2"});
+  assert.match(a,/^[a-f0-9]{64}$/);
+  assert.notEqual(a,b);
 });
 
 test("expert router chooses available least-loaded expert",()=>{
