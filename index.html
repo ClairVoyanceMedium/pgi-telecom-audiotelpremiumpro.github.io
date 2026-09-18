@@ -4,12 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#060810">
+  <meta name="color-scheme" content="dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
   <meta name="description" content="PGI Telecom • Audiotel Premium Pro — cockpit Audiotel, financier et télécom.">
   <title>PGI Telecom • Audiotel Premium Pro</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="assets/styles.css">
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Aller au contenu principal</a>
   <div class="app-shell">
     <aside class="sidebar" aria-label="Navigation principale">
       <div class="brand">
@@ -31,15 +37,17 @@
       </div>
     </aside>
 
-    <main class="main">
+    <main class="main" id="main-content">
       <header class="topbar">
         <div><p class="eyebrow">COCKPIT OPÉRATEUR</p><h1 id="view-title">Vue d’ensemble</h1></div>
         <div class="top-actions">
-          <span class="pill demo">MODE DÉMO</span>
+          <span class="pill demo" id="runtime-mode">MODE DÉMO</span>
+          <span class="pill" id="network-state"><i class="dot ok"></i><span>En ligne</span></span>
           <span class="pill"><i class="dot ok"></i>SIP prêt</span>
           <button class="icon-btn" id="refresh-btn" type="button" aria-label="Actualiser">↻</button>
         </div>
       </header>
+      <div id="offline-banner" class="offline-banner" hidden>Connexion réseau indisponible — l’interface reste consultable, mais aucune donnée temps réel ne peut être actualisée.</div>
 
       <section class="toolbar" aria-label="Période">
         <div class="periods" role="group" aria-label="Période">
@@ -171,6 +179,7 @@
       <div class="dialog-actions"><button value="cancel" class="secondary-btn">Annuler</button><button id="confirm-reset" value="default" class="danger-btn">Confirmer</button></div>
     </form>
   </dialog>
+  <script src="assets/config.js"></script>
   <script src="assets/app.js"></script>
 </body>
 </html>
