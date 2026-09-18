@@ -5,6 +5,7 @@ import {hashPassword,verifyPassword,issueSession,verifySession,sessionCookie,csr
 import {selectExpert} from "../backend/src/expert-router.mjs";
 import {clientIp,routeMatch} from "../backend/src/http.mjs";
 import {sanitizeCdrPayload,deriveCallerHash} from "../backend/src/cdr-privacy.mjs";
+import {computeExpertCost} from "../backend/src/expert-finance.mjs";
 
 function config(overrides={}){
   return {
@@ -126,6 +127,14 @@ test("generic CDR privacy removes full caller identifiers",()=>{
   const b=deriveCallerHash({...p,external_call_id:"c2"},{key:"k".repeat(32),source:"carrier",sourceEventId:"evt-2"});
   assert.match(a,/^[a-f0-9]{64}$/);
   assert.notEqual(a,b);
+});
+
+test("expert compensation engine supports all declared modes",()=>{
+  assert.equal(computeExpertCost({type:"per_minute",rate:.18,billableSeconds:600,expectedPayoutHt:5}),1.8);
+  assert.equal(computeExpertCost({type:"percentage",rate:20,billableSeconds:600,expectedPayoutHt:5}),1);
+  assert.equal(computeExpertCost({type:"fixed",rate:2.5,billableSeconds:600,expectedPayoutHt:5}),2.5);
+  assert.equal(computeExpertCost({type:"none",rate:99,billableSeconds:600,expectedPayoutHt:5}),0);
+  assert.throws(()=>computeExpertCost({type:"percentage",rate:120,billableSeconds:600,expectedPayoutHt:5}),/percentage/);
 });
 
 test("expert router chooses available least-loaded expert",()=>{
