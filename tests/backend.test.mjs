@@ -208,6 +208,23 @@ test("carrier switch can activate and rollback",async()=>{
   });
 });
 
+test("realtime subscribers are bounded",async()=>{
+  const app=createBackend({config:config({maxEventSubscribers:1})});
+  const address=await app.listen();
+  const base=`http://127.0.0.1:${address.port}`;
+  const controller=new AbortController();
+  try{
+    const first=await fetch(base+"/api/v1/events",{signal:controller.signal});
+    assert.equal(first.status,200);
+    const second=await fetch(base+"/api/v1/events");
+    assert.equal(second.status,503);
+    assert.equal((await second.json()).error.code,"SSE_CAPACITY_REACHED");
+  }finally{
+    controller.abort();
+    await app.close();
+  }
+});
+
 test("production cannot accidentally start with memory store",()=>{
   assert.throws(()=>createBackend({config:config({
     mode:"production",authMode:"session",sessionSecret:"x".repeat(40),
