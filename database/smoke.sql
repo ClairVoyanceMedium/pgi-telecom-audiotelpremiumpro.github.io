@@ -3,6 +3,7 @@ BEGIN;
 
 INSERT INTO carriers(name,kind) VALUES
   ('Test SVA Host','sva_host'),
+  ('Test SVA Host B','sva_host'),
   ('Test Origin','origin_network');
 
 INSERT INTO sva_numbers(e164,display_number,tariff_code,service_rate_ttc_per_min,status,carrier_name)
@@ -10,6 +11,20 @@ VALUES ('33890000000','0890 00 00 00','D080',0.800000,'active','Test SVA Host');
 
 INSERT INTO experts(code,display_name,status,compensation_type,compensation_rate)
 VALUES ('TEST01','Expert Test','available','per_minute',0.180000);
+
+INSERT INTO carrier_connections(carrier_id,connection_name,purpose,state,transport,endpoint_host,endpoint_port,auth_mode)
+SELECT id,'primary-inbound','sip_inbound','ready','udp','192.0.2.10',5060,'ip_acl'
+FROM carriers WHERE name='Test SVA Host';
+
+INSERT INTO carrier_connections(carrier_id,connection_name,purpose,state,transport,endpoint_host,endpoint_port,auth_mode)
+SELECT id,'primary-inbound','sip_inbound','ready','udp','192.0.2.20',5060,'ip_acl'
+FROM carriers WHERE name='Test SVA Host B';
+
+SELECT activate_logical_carrier_route(
+  'sva-primary',
+  (SELECT id FROM carriers WHERE name='Test SVA Host'),
+  (SELECT id FROM carrier_connections WHERE connection_name='primary-inbound' AND carrier_id=(SELECT id FROM carriers WHERE name='Test SVA Host'))
+);
 
 INSERT INTO carrier_contracts(
   carrier_id,sva_number_id,valid_from,valid_to,payout_rate_ht_per_min,
@@ -91,6 +106,38 @@ BEGIN
 
   SELECT count(*) INTO c FROM outbox_events WHERE aggregate_id='test-call-001';
   IF c <> 1 THEN RAISE EXCEPTION 'outbox insert failed: %', c; END IF;
+
+  PERFORM activate_logical_carrier_route(
+    'sva-primary',
+    (SELECT id FROM carriers WHERE name='Test SVA Host B'),
+    (SELECT id FROM carrier_connections WHERE connection_name='primary-inbound' AND carrier_id=(SELECT id FROM carriers WHERE name='Test SVA Host B'))
+  );
+
+  SELECT count(*) INTO c
+  FROM logical_carrier_routes r
+  JOIN carriers a ON a.id=r.active_carrier_id
+  JOIN carriers b ON b.id=r.standby_carrier_id
+  WHERE r.route_key='sva-primary'
+    AND a.name='Test SVA Host B'
+    AND b.name='Test SVA Host'
+    AND r.generation=3;
+  IF c <> 1 THEN RAISE EXCEPTION 'carrier A->B switch failed: %', c; END IF;
+
+  PERFORM activate_logical_carrier_route(
+    'sva-primary',
+    (SELECT id FROM carriers WHERE name='Test SVA Host'),
+    (SELECT id FROM carrier_connections WHERE connection_name='primary-inbound' AND carrier_id=(SELECT id FROM carriers WHERE name='Test SVA Host'))
+  );
+
+  SELECT count(*) INTO c
+  FROM logical_carrier_routes r
+  JOIN carriers a ON a.id=r.active_carrier_id
+  JOIN carriers b ON b.id=r.standby_carrier_id
+  WHERE r.route_key='sva-primary'
+    AND a.name='Test SVA Host'
+    AND b.name='Test SVA Host B'
+    AND r.generation=4;
+  IF c <> 1 THEN RAISE EXCEPTION 'carrier rollback B->A failed: %', c; END IF;
 
   BEGIN
     INSERT INTO carrier_contracts(
