@@ -9,8 +9,9 @@ const require=createRequire(import.meta.url);
 const core=require("../../assets/core.js");
 
 export class PostgresStore{
-  constructor(sql,config,eventBus){
+  constructor(sql,config,eventBus,readSql=null){
     this.sql=sql;
+    this.readSql=readSql||sql;
     this.config=config;
     this.eventBus=eventBus;
   }
@@ -18,19 +19,28 @@ export class PostgresStore{
   static async connect(config,eventBus){
     const mod=await import("postgres");
     const postgres=mod.default;
-    const sql=postgres(config.databaseUrl,{
-      max:config.databasePoolMax,
+    const makeClient=(url,max)=>postgres(url,{
+      max,
       idle_timeout:30,
       connect_timeout:10,
       prepare:true,
       ssl:config.databaseSsl==="require"?"require":false,
       transform:{undefined:null}
     });
+    const sql=makeClient(config.databaseUrl,config.databasePoolMax);
     await sql.unsafe("select 1 as ok");
-    return new PostgresStore(sql,config,eventBus);
+    let readSql=sql;
+    if(config.databaseReadUrl){
+      readSql=makeClient(config.databaseReadUrl,config.databaseReadPoolMax);
+      await readSql.unsafe("select 1 as ok");
+    }
+    return new PostgresStore(sql,config,eventBus,readSql);
   }
 
-  async close(){await this.sql.end({timeout:5});}
+  async close(){
+    if(this.readSql!==this.sql)await this.readSql.end({timeout:5});
+    await this.sql.end({timeout:5});
+  }
 
   async summary(from,to,market=null){
     const rows=await this.sql.unsafe(
