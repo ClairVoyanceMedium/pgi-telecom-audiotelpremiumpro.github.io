@@ -103,7 +103,7 @@ export class PostgresStore{
 
   async listExperts(){
     return this.sql.unsafe(
-      "SELECT id,code,display_name,status,active_calls,last_assigned_at,enabled,compensation_type,compensation_rate::float8"+
+      "SELECT id,code,display_name,destination_uri,status,active_calls,last_assigned_at,enabled,compensation_type,compensation_rate::float8"+
       " FROM experts ORDER BY display_name"
     );
   }
@@ -112,7 +112,7 @@ export class PostgresStore{
     if(!["available","busy","away","offline"].includes(status))throw problem(400,"INVALID_STATUS");
     return this.sql.begin(async tx=>{
       const rows=await tx.unsafe(
-        "UPDATE experts SET status=$1 WHERE id=$2 RETURNING id,code,display_name,status,active_calls,last_assigned_at,enabled",
+        "UPDATE experts SET status=$1 WHERE id=$2 RETURNING id,code,display_name,destination_uri,status,active_calls,last_assigned_at,enabled",
         [status,Number(id)]
       );
       const expert=rows[0];
@@ -130,15 +130,15 @@ export class PostgresStore{
   async selectExpert(){
     return this.sql.begin(async tx=>{
       const rows=await tx.unsafe(
-        "SELECT id,code,display_name,status,active_calls,last_assigned_at,enabled FROM experts"+
-        " WHERE enabled AND status='available' ORDER BY active_calls ASC,last_assigned_at NULLS FIRST,id ASC"+
+        "SELECT id,code,display_name,destination_uri,status,active_calls,last_assigned_at,enabled FROM experts"+
+        " WHERE enabled AND status='available' AND destination_uri IS NOT NULL ORDER BY active_calls ASC,last_assigned_at NULLS FIRST,id ASC"+
         " LIMIT 1 FOR UPDATE SKIP LOCKED"
       );
       const expert=rows[0];
       if(!expert)return null;
       const updated=await tx.unsafe(
         "UPDATE experts SET last_assigned_at=now() WHERE id=$1"+
-        " RETURNING id,code,display_name,status,active_calls,last_assigned_at,enabled",
+        " RETURNING id,code,display_name,destination_uri,status,active_calls,last_assigned_at,enabled",
         [expert.id]
       );
       return updated[0];
