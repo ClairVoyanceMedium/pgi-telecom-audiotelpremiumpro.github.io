@@ -1,0 +1,514 @@
+
+import {createHash} from "node:crypto";
+import {createRequire} from "node:module";
+
+const require=createRequire(import.meta.url);
+const core=require("../../assets/core.js");
+
+export class PostgresStore{
+  constructor(sql,config,eventBus){
+    this.sql=sql;
+    this.config=config;
+    this.eventBus=eventBus;
+  }
+
+  static async connect(config,eventBus){
+    const mod=await import("postgres");
+    const postgres=mod.default;
+    const sql=postgres(config.databaseUrl,{
+      max:config.databasePoolMax,
+      idle_timeout:30,
+      connect_timeout:10,
+      prepare:true,
+      ssl:config.databaseSsl==="require"?"require":false,
+      transform:{undefined:null}
+    });
+    await sql.unsafe("select 1 as ok");
+    return new PostgresStore(sql,config,eventBus);
+  }
+
+  async close(){await this.sql.end({timeout:5});}
+
+  async summary(from,to){
+    const rows=await this.sql.unsafe(
+      "SELECT COALESCE(sum(retail_service_amount_ttc),0)::float8 AS generated_revenue_ttc,"+
+      " COALESCE(sum(expected_payout_ht),0)::float8 AS expected_payout_ht,"+
+      " COALESCE(sum(confirmed_payout_ht),0)::float8 AS confirmed_payout_ht,"+
+      " COALESCE(sum(paid_payout_ht),0)::float8 AS paid_payout_ht,"+
+      " COALESCE(sum(estimated_margin_ht),0)::float8 AS estimated_margin_ht,"+
+      " COALESCE(sum(reconciliation_variance_ht),0)::float8 AS reconciliation_variance_ht,"+
+      " count(*)::int AS calls_total,"+
+      " count(*) FILTER (WHERE call_status='connected')::int AS calls_connected,"+
+      " count(*) FILTER (WHERE call_status='abandoned')::int AS calls_abandoned,"+
+      " count(*) FILTER (WHERE call_status NOT IN ('connected','abandoned'))::int AS calls_failed,"+
+      " COALESCE(sum(billable_seconds),0)::float8/60.0 AS billable_minutes,"+
+      " COALESCE(sum(payout_eligible_seconds),0)::float8/60.0 AS payout_eligible_minutes,"+
+      " COALESCE(avg(conversation_seconds) FILTER (WHERE call_status='connected'),0)::float8 AS acd_seconds"+
+      " FROM calls WHERE started_at >= $1::timestamptz AND started_at <= $2::timestamptz",
+      [from,to]
+    );
+    const presence=await this.sql.unsafe(
+      "SELECT count(*) FILTER (WHERE status='available' AND enabled)::int AS active_experts,"+
+      " COALESCE(sum(active_calls),0)::int AS live_calls FROM experts"
+    );
+    const r=rows[0],p=presence[0];
+    return {
+      ...r,
+      asr_percent:r.calls_total?Number(r.calls_connected)/Number(r.calls_total)*100:0,
+      active_experts:p.active_experts,
+      live_calls:p.live_calls,
+      queue_depth:0
+    };
+  }
+
+  async listCalls(params={}){
+    const limit=clampInt(params.limit,100,1,250);
+    const cursor=decodeCursor(params.cursor);
+    const values=[
+      params.from||null,params.to||null,params.expert_id?Number(params.expert_id):null,
+      params.origin_carrier||null,params.status||null,cursor?.started_at||null,cursor?.id||null,limit+1
+    ];
+    const rows=await this.sql.unsafe(
+      "SELECT c.id,c.external_call_id,c.started_at,c.ivr_started_at,c.queued_at,c.bridged_at,c.ended_at,"+
+      " ca.caller_masked,oc.name AS origin_carrier,hc.name AS host_carrier,sn.display_number AS sva_number,"+
+      " e.id AS expert_id,e.display_name AS expert_name,c.wait_seconds,c.conversation_seconds,c.total_seconds,"+
+      " c.billable_seconds,c.payout_eligible_seconds,c.call_status,c.sip_final_code,c.hangup_cause,c.codec,"+
+      " c.service_rate_ttc_per_min::float8,c.carrier_rate_ht_per_min::float8,c.retail_service_amount_ttc::float8,"+
+      " c.expected_payout_ht::float8,COALESCE(c.confirmed_payout_ht,0)::float8 AS confirmed_payout_ht,"+
+      " c.paid_payout_ht::float8,c.expert_cost_ht::float8,c.technical_cost_ht::float8,c.estimated_margin_ht::float8,"+
+      " c.reconciliation_variance_ht::float8,c.reconciliation_status,q.rtp_packet_loss_percent::float8 AS packet_loss_percent,"+
+      " q.jitter_ms::float8,q.latency_ms::float8,q.mos::float8"+
+      " FROM calls c LEFT JOIN callers ca ON ca.id=c.caller_id LEFT JOIN carriers oc ON oc.id=c.origin_carrier_id"+
+      " LEFT JOIN carriers hc ON hc.id=c.host_carrier_id LEFT JOIN sva_numbers sn ON sn.id=c.sva_number_id"+
+      " LEFT JOIN experts e ON e.id=c.expert_id LEFT JOIN call_quality q ON q.call_id=c.id"+
+      " WHERE ($1::timestamptz IS NULL OR c.started_at >= $1::timestamptz)"+
+      " AND ($2::timestamptz IS NULL OR c.started_at <= $2::timestamptz)"+
+      " AND ($3::bigint IS NULL OR c.expert_id=$3)"+
+      " AND ($4::text IS NULL OR oc.name=$4)"+
+      " AND ($5::text IS NULL OR c.call_status=$5)"+
+      " AND ($6::timestamptz IS NULL OR (c.started_at,c.id) < ($6::timestamptz,$7::bigint))"+
+      " ORDER BY c.started_at DESC,c.id DESC LIMIT $8",
+      values
+    );
+    const hasMore=rows.length>limit;
+    const page=hasMore?rows.slice(0,limit):rows;
+    const last=page.at(-1);
+    return {
+      data:page.map(x=>({...x,quality:x.packet_loss_percent==null?null:{
+        packet_loss_percent:x.packet_loss_percent,jitter_ms:x.jitter_ms,latency_ms:x.latency_ms,mos:x.mos
+      }})),
+      next_cursor:hasMore&&last?encodeCursor({started_at:last.started_at,id:Number(last.id)}):null
+    };
+  }
+
+  async listExperts(){
+    return this.sql.unsafe(
+      "SELECT id,code,display_name,status,active_calls,last_assigned_at,enabled,compensation_type,compensation_rate::float8"+
+      " FROM experts ORDER BY display_name"
+    );
+  }
+
+  async setExpertStatus(id,status){
+    if(!["available","busy","away","offline"].includes(status))throw problem(400,"INVALID_STATUS");
+    return this.sql.begin(async tx=>{
+      const rows=await tx.unsafe(
+        "UPDATE experts SET status=$1 WHERE id=$2 RETURNING id,code,display_name,status,active_calls,last_assigned_at,enabled",
+        [status,Number(id)]
+      );
+      const expert=rows[0];
+      if(!expert)throw problem(404,"EXPERT_NOT_FOUND");
+      await tx.unsafe("INSERT INTO expert_presence_events(expert_id,status,source) VALUES($1,$2,'api')",[expert.id,status]);
+      await tx.unsafe(
+        "INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('expert.status','expert',$1,$2::jsonb)",
+        [String(expert.id),JSON.stringify({status})]
+      );
+      this.eventBus.publish("expert.status",{id:expert.id,status});
+      return expert;
+    });
+  }
+
+  async selectExpert(){
+    return this.sql.begin(async tx=>{
+      const rows=await tx.unsafe(
+        "SELECT id,code,display_name,status,active_calls,last_assigned_at,enabled FROM experts"+
+        " WHERE enabled AND status='available' ORDER BY active_calls ASC,last_assigned_at NULLS FIRST,id ASC"+
+        " LIMIT 1 FOR UPDATE SKIP LOCKED"
+      );
+      const expert=rows[0];
+      if(!expert)return null;
+      const updated=await tx.unsafe(
+        "UPDATE experts SET last_assigned_at=now() WHERE id=$1"+
+        " RETURNING id,code,display_name,status,active_calls,last_assigned_at,enabled",
+        [expert.id]
+      );
+      return updated[0];
+    });
+  }
+
+  async ingestCdr(envelope){
+    validateEnvelope(envelope);
+    const p=envelope.payload||{};
+    const payloadHash=createHash("sha256").update(JSON.stringify(p)).digest("hex");
+    const result=await this.sql.begin(async tx=>{
+      const inserted=await tx.unsafe(
+        "INSERT INTO raw_cdr_events(source,source_event_id,event_time,payload,payload_sha256)"+
+        " VALUES($1,$2,$3::timestamptz,$4::jsonb,$5) ON CONFLICT(source,source_event_id) DO NOTHING RETURNING id",
+        [envelope.source,envelope.source_event_id,envelope.event_time||null,JSON.stringify(p),payloadHash]
+      );
+      if(!inserted.length)return {duplicate:true};
+      if(!p.external_call_id||!p.started_at||!p.ended_at)throw problem(400,"CDR_REQUIRED_FIELDS_MISSING");
+
+      const status=p.call_status||"connected";
+      const conversation=Math.max(0,Number(p.conversation_seconds||0));
+      const financial=status==="connected"?core.computeCallFinancials(
+        {conversationSeconds:conversation,originType:p.origin_type||"unknown"},
+        {
+          serviceRateTtcPerMin:this.config.serviceRateTtcPerMin,
+          payoutRateHtPerMin:this.config.payoutRateHtPerMin,
+          mobileDeductionHtPerMin:Number(p.mobile_deduction_ht_per_min||0),
+          billingIncrementSeconds:Number(p.billing_increment_seconds||60),
+          minimumPayableSeconds:Number(p.minimum_payable_seconds||0),
+          rounding:p.payout_rounding||"ceil"
+        }
+      ):{billableSeconds:0,payoutEligibleSeconds:0,serviceAmountTtc:0,expectedPayoutHt:0};
+
+      let hostRows;
+      if(p.host_carrier){
+        hostRows=await tx.unsafe("SELECT id,name FROM carriers WHERE name=$1 AND kind='sva_host' LIMIT 1",[String(p.host_carrier)]);
+      }else{
+        hostRows=await tx.unsafe(
+          "SELECT c.id,c.name FROM logical_carrier_routes r JOIN carriers c ON c.id=r.active_carrier_id"+
+          " WHERE r.route_key='sva-primary'"
+        );
+      }
+      const host=hostRows[0];
+      if(!host)throw problem(409,"HOST_CARRIER_NOT_CONFIGURED");
+
+      const originRows=await tx.unsafe(
+        "INSERT INTO carriers(name,kind) VALUES($1,'origin_network')"+
+        " ON CONFLICT(name) DO UPDATE SET name=EXCLUDED.name RETURNING id,name",
+        [String(p.origin_carrier||"Unknown")]
+      );
+      const origin=originRows[0];
+
+      const svaRows=await tx.unsafe(
+        "SELECT id,e164,display_number FROM sva_numbers WHERE e164=$1 OR display_number=$1 LIMIT 1",
+        [String(p.sva_number||"")]
+      );
+      const sva=svaRows[0];
+      if(!sva)throw problem(409,"SVA_NUMBER_NOT_CONFIGURED");
+
+      const callerHash=String(p.caller_hash||createHash("sha256").update(String(p.caller_masked||"unknown")).digest("hex"));
+      const callerRows=await tx.unsafe(
+        "INSERT INTO callers(caller_hash,caller_masked,first_seen_at,last_seen_at,call_count,total_conversation_seconds)"+
+        " VALUES($1,$2,$3::timestamptz,$3::timestamptz,1,$4)"+
+        " ON CONFLICT(caller_hash) DO UPDATE SET caller_masked=EXCLUDED.caller_masked,"+
+        " last_seen_at=GREATEST(callers.last_seen_at,EXCLUDED.last_seen_at),call_count=callers.call_count+1,"+
+        " total_conversation_seconds=callers.total_conversation_seconds+EXCLUDED.total_conversation_seconds RETURNING id",
+        [callerHash,String(p.caller_masked||"Masqué"),p.started_at,conversation]
+      );
+      const caller=callerRows[0];
+
+      const confirmed=p.confirmed_payout_ht==null?0:Number(p.confirmed_payout_ht);
+      const paid=p.paid_payout_ht==null?0:Number(p.paid_payout_ht);
+      const recon=core.reconcileAmounts(financial.expectedPayoutHt,confirmed,this.config.reconciliationToleranceHt);
+      const expertCost=(financial.billableSeconds/60)*this.config.expertCostHtPerMin;
+      const technicalCost=Number(p.technical_cost_ht||0);
+      const totalSeconds=Math.max(0,Number(p.total_seconds||Math.round((Date.parse(p.ended_at)-Date.parse(p.started_at))/1000)));
+
+      const callValues=[
+        String(p.external_call_id),envelope.source,caller.id,sva.id,p.expert_id==null?null:Number(p.expert_id),origin.id,host.id,
+        p.started_at,p.ivr_started_at||null,p.queued_at||null,p.bridged_at||null,p.ended_at,
+        Math.max(0,Number(p.wait_seconds||0)),conversation,totalSeconds,financial.billableSeconds,financial.payoutEligibleSeconds,
+        status,p.sip_final_code==null?null:Number(p.sip_final_code),String(p.hangup_cause||""),String(p.codec||""),
+        this.config.serviceRateTtcPerMin,this.config.payoutRateHtPerMin,Number(p.mobile_deduction_ht_per_min||0),
+        financial.serviceAmountTtc,financial.expectedPayoutHt,confirmed,paid,expertCost,technicalCost,
+        Math.max(0,confirmed-expertCost-technicalCost),recon.status,recon.varianceHt
+      ];
+      const callRows=await tx.unsafe(
+        "INSERT INTO calls(external_call_id,cdr_source,caller_id,sva_number_id,expert_id,origin_carrier_id,host_carrier_id,"+
+        " started_at,ivr_started_at,queued_at,bridged_at,ended_at,wait_seconds,conversation_seconds,total_seconds,billable_seconds,"+
+        " payout_eligible_seconds,call_status,sip_final_code,hangup_cause,codec,service_rate_ttc_per_min,carrier_rate_ht_per_min,"+
+        " mobile_deduction_ht_per_min,retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,"+
+        " expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_status,reconciliation_variance_ht)"+
+        " VALUES($1,$2,$3,$4,$5,$6,$7,$8::timestamptz,$9::timestamptz,$10::timestamptz,$11::timestamptz,$12::timestamptz,"+
+        " $13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)"+
+        " ON CONFLICT(host_carrier_id,external_call_id) WHERE host_carrier_id IS NOT NULL AND external_call_id IS NOT NULL"+
+        " DO NOTHING RETURNING id",
+        callValues
+      );
+      const call=callRows[0];
+      if(!call){
+        await tx.unsafe("UPDATE raw_cdr_events SET processing_status='duplicate',processed_at=now() WHERE id=$1",[inserted[0].id]);
+        return {duplicate:true};
+      }
+
+      if(p.quality){
+        await tx.unsafe(
+          "INSERT INTO call_quality(call_id,rtp_packet_loss_percent,jitter_ms,latency_ms,mos,dtmf_errors) VALUES($1,$2,$3,$4,$5,$6)",
+          [call.id,nullableNumber(p.quality.packet_loss_percent),nullableNumber(p.quality.jitter_ms),nullableNumber(p.quality.latency_ms),nullableNumber(p.quality.mos),Number(p.quality.dtmf_errors||0)]
+        );
+      }
+      if(financial.expectedPayoutHt!==0)await ledger(tx,call.id,"expected",financial.expectedPayoutHt,envelope);
+      if(confirmed!==0)await ledger(tx,call.id,"confirmed",confirmed,envelope);
+      if(paid!==0)await ledger(tx,call.id,"paid",paid,envelope);
+
+      await tx.unsafe(
+        "INSERT INTO outbox_events(event_type,aggregate_type,aggregate_id,payload) VALUES('call.ingested','call',$1,$2::jsonb)",
+        [String(call.id),JSON.stringify({external_call_id:p.external_call_id})]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('cdr.ingest','call',$1,$2::jsonb)",
+        [String(call.id),JSON.stringify({source:envelope.source})]
+      );
+      await tx.unsafe("UPDATE raw_cdr_events SET processing_status='processed',processed_at=now() WHERE id=$1",[inserted[0].id]);
+      return {duplicate:false,call_id:call.id};
+    });
+
+    if(!result.duplicate)this.eventBus.publish("call.ingested",{id:result.call_id});
+    return result;
+  }
+
+  async reconciliation(from,to){
+    return this.sql.unsafe(
+      "SELECT COALESCE(hc.name,'Unknown') AS carrier,count(*)::int AS calls,"+
+      " COALESCE(sum(c.expected_payout_ht),0)::float8 AS expected_payout_ht,"+
+      " COALESCE(sum(c.confirmed_payout_ht),0)::float8 AS confirmed_payout_ht,"+
+      " COALESCE(sum(c.paid_payout_ht),0)::float8 AS paid_payout_ht,"+
+      " COALESCE(sum(c.reconciliation_variance_ht),0)::float8 AS variance_ht,"+
+      " count(*) FILTER(WHERE c.reconciliation_status='variance')::int AS variance_calls"+
+      " FROM calls c LEFT JOIN carriers hc ON hc.id=c.host_carrier_id"+
+      " WHERE c.started_at >= $1::timestamptz AND c.started_at <= $2::timestamptz"+
+      " GROUP BY hc.name ORDER BY hc.name",
+      [from,to]
+    );
+  }
+
+  async createBaseline(payload,actor){
+    if(!["global","expert","sva_number"].includes(payload.scope))throw problem(400,"INVALID_SCOPE");
+    const rows=await this.sql.unsafe(
+      "INSERT INTO metric_baselines(created_by,scope,scope_id,reason,effective_from) VALUES($1,$2,$3,$4,now())"+
+      " RETURNING id,scope,scope_id,reason,created_at,effective_from",
+      [numericActor(actor),payload.scope,payload.scope_id==null?null:Number(payload.scope_id),String(payload.reason||"")]
+    );
+    const row=rows[0];
+    await this.sql.unsafe(
+      "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'baseline.create','metric_baseline',$2,$3::jsonb)",
+      [numericActor(actor),String(row.id),JSON.stringify({scope:row.scope})]
+    );
+    this.eventBus.publish("baseline.created",{id:row.id,scope:row.scope});
+    return row;
+  }
+
+  async carrierRouting(){
+    const rows=await this.sql.unsafe(
+      "SELECT r.route_key,r.generation,r.updated_at,a.name AS active_carrier,s.name AS standby_carrier,"+
+      " ac.state AS active_connection_state,sc.state AS standby_connection_state"+
+      " FROM logical_carrier_routes r LEFT JOIN carriers a ON a.id=r.active_carrier_id"+
+      " LEFT JOIN carriers s ON s.id=r.standby_carrier_id LEFT JOIN carrier_connections ac ON ac.id=r.active_connection_id"+
+      " LEFT JOIN carrier_connections sc ON sc.id=r.standby_connection_id WHERE r.route_key='sva-primary'"
+    );
+    return rows[0]||{route_key:"sva-primary",generation:1,active_carrier:null,standby_carrier:null};
+  }
+
+  async planCarrierSwitch(payload,actor){
+    const connections=await this.sql.unsafe(
+      "SELECT cc.id,cc.carrier_id,c.name AS carrier_name,cc.state FROM carrier_connections cc JOIN carriers c ON c.id=cc.carrier_id"+
+      " WHERE cc.id=$1 AND cc.carrier_id=$2 AND cc.purpose='sip_inbound' AND cc.state IN ('ready','active','standby')",
+      [Number(payload.connection_id),Number(payload.to_carrier_id)]
+    );
+    const connection=connections[0];
+    if(!connection)throw problem(409,"TARGET_CONNECTION_NOT_READY");
+    const routes=await this.sql.unsafe("SELECT active_carrier_id FROM logical_carrier_routes WHERE route_key=$1",[payload.route_key||"sva-primary"]);
+    const route=routes[0];
+    if(!route)throw problem(404,"ROUTE_NOT_FOUND");
+    const rollbackMinutes=clampInt(payload.rollback_window_minutes,1440,5,10080);
+    const rows=await this.sql.unsafe(
+      "INSERT INTO carrier_switches(route_key,from_carrier_id,to_carrier_id,requested_by,scheduled_for,status,validation,notes)"+
+      " VALUES($1,$2,$3,$4,$5::timestamptz,'ready',$6::jsonb,$7) RETURNING *",
+      [payload.route_key||"sva-primary",route.active_carrier_id,connection.carrier_id,numericActor(actor),payload.scheduled_for||null,JSON.stringify({connection_id:connection.id,rollback_window_minutes:rollbackMinutes}),String(payload.notes||"")]
+    );
+    return rows[0];
+  }
+
+  async activateCarrierSwitch(id){
+    const result=await this.sql.begin(async tx=>{
+      const switchRows=await tx.unsafe("SELECT * FROM carrier_switches WHERE id=$1 FOR UPDATE",[Number(id)]);
+      const sw=switchRows[0];
+      if(!sw)throw problem(404,"SWITCH_NOT_FOUND");
+      if(!["ready","planned"].includes(sw.status))throw problem(409,"SWITCH_NOT_READY");
+      const connectionId=Number(sw.validation?.connection_id);
+      const rollbackMinutes=clampInt(sw.validation?.rollback_window_minutes,1440,5,10080);
+      const gens=await tx.unsafe("SELECT activate_logical_carrier_route($1,$2,$3) AS generation",[sw.route_key,sw.to_carrier_id,connectionId]);
+      const updated=await tx.unsafe(
+        "UPDATE carrier_switches SET status='completed',started_at=COALESCE(started_at,now()),completed_at=now(),"+
+        " rollback_deadline=now()+make_interval(mins=>$1) WHERE id=$2 RETURNING *",
+        [rollbackMinutes,sw.id]
+      );
+      await tx.unsafe("UPDATE carrier_connections SET state='active',updated_at=now() WHERE id=$1",[connectionId]);
+      if(sw.from_carrier_id)await tx.unsafe(
+        "UPDATE carrier_connections SET state='standby',updated_at=now() WHERE carrier_id=$1 AND purpose='sip_inbound' AND state='active'",
+        [sw.from_carrier_id]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('carrier_switch.activate','carrier_switch',$1,$2::jsonb)",
+        [String(sw.id),JSON.stringify({generation:gens[0].generation})]
+      );
+      return {switch:updated[0],route:await routeWith(tx,sw.route_key)};
+    });
+    this.eventBus.publish("carrier.switched",{id:Number(id),active:result.route.active_carrier,generation:result.route.generation});
+    return result;
+  }
+
+  async rollbackCarrierSwitch(id){
+    const result=await this.sql.begin(async tx=>{
+      const switchRows=await tx.unsafe("SELECT * FROM carrier_switches WHERE id=$1 FOR UPDATE",[Number(id)]);
+      const sw=switchRows[0];
+      if(!sw)throw problem(404,"SWITCH_NOT_FOUND");
+      if(sw.status!=="completed")throw problem(409,"SWITCH_NOT_COMPLETED");
+      if(sw.rollback_deadline&&Date.now()>Date.parse(sw.rollback_deadline))throw problem(409,"ROLLBACK_WINDOW_EXPIRED");
+      const routeRows=await tx.unsafe("SELECT * FROM logical_carrier_routes WHERE route_key=$1 FOR UPDATE",[sw.route_key]);
+      const route=routeRows[0];
+      if(!route?.standby_carrier_id||!route?.standby_connection_id)throw problem(409,"NO_STANDBY_ROUTE");
+      await tx.unsafe("SELECT activate_logical_carrier_route($1,$2,$3)",[sw.route_key,route.standby_carrier_id,route.standby_connection_id]);
+      const updated=await tx.unsafe("UPDATE carrier_switches SET status='rolled_back' WHERE id=$1 RETURNING *",[sw.id]);
+      await tx.unsafe(
+        "INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('carrier_switch.rollback','carrier_switch',$1,'{}'::jsonb)",
+        [String(sw.id)]
+      );
+      return {switch:updated[0],route:await routeWith(tx,sw.route_key)};
+    });
+    this.eventBus.publish("carrier.rollback",{id:Number(id),active:result.route.active_carrier,generation:result.route.generation});
+    return result;
+  }
+
+  async idempotent(key,operation,requestBody,fn){
+    if(!key)throw problem(400,"IDEMPOTENCY_KEY_REQUIRED");
+    const requestHash=createHash("sha256").update(JSON.stringify(requestBody??null)).digest("hex");
+    const claimed=await this.sql.unsafe(
+      "INSERT INTO api_idempotency_keys(idempotency_key,operation,request_sha256,expires_at)"+
+      " VALUES($1::uuid,$2,$3,now()+interval '24 hours') ON CONFLICT(idempotency_key) DO NOTHING RETURNING idempotency_key",
+      [key,operation,requestHash]
+    );
+    if(!claimed.length){
+      const rows=await this.sql.unsafe(
+        "SELECT operation,request_sha256,response_status,response_body FROM api_idempotency_keys WHERE idempotency_key=$1::uuid",
+        [key]
+      );
+      const existing=rows[0];
+      if(!existing||existing.operation!==operation||existing.request_sha256!==requestHash)throw problem(409,"IDEMPOTENCY_KEY_REUSED");
+      if(existing.response_status==null)throw problem(409,"IDEMPOTENCY_REQUEST_IN_PROGRESS");
+      return {replayed:true,value:existing.response_body};
+    }
+    try{
+      const value=await fn();
+      await this.sql.unsafe(
+        "UPDATE api_idempotency_keys SET response_status=200,response_body=$1::jsonb WHERE idempotency_key=$2::uuid",
+        [JSON.stringify(value),key]
+      );
+      return {replayed:false,value};
+    }catch(error){
+      await this.sql.unsafe("DELETE FROM api_idempotency_keys WHERE idempotency_key=$1::uuid AND response_status IS NULL",[key]);
+      throw error;
+    }
+  }
+
+  async drainOutbox(handler,limit=100){
+    const claimed=await this.sql.begin(async tx=>{
+      const rows=await tx.unsafe(
+        "SELECT id,event_type,aggregate_type,aggregate_id,payload,created_at,attempts FROM outbox_events"+
+        " WHERE published_at IS NULL AND available_at<=now() ORDER BY id LIMIT $1 FOR UPDATE SKIP LOCKED",
+        [limit]
+      );
+      if(rows.length)await tx.unsafe(
+        "UPDATE outbox_events SET attempts=attempts+1,available_at=now()+interval '30 seconds' WHERE id=ANY($1::bigint[])",
+        [rows.map(x=>Number(x.id))]
+      );
+      return rows;
+    });
+    let published=0;
+    for(const event of claimed){
+      try{
+        await handler(event);
+        await this.sql.unsafe("UPDATE outbox_events SET published_at=now(),last_error=NULL WHERE id=$1",[event.id]);
+        published++;
+      }catch(error){
+        await this.sql.unsafe("UPDATE outbox_events SET last_error=$1 WHERE id=$2",[String(error?.message||"handler failed").slice(0,500),event.id]);
+      }
+    }
+    const rows=await this.sql.unsafe("SELECT count(*)::int AS count FROM outbox_events WHERE published_at IS NULL");
+    return {processed:claimed.length,published,pending:rows[0].count};
+  }
+
+  async systemSnapshot(){
+    const [counts,last,route]=await Promise.all([
+      this.sql.unsafe(
+        "SELECT count(*)::int AS calls_total,(SELECT count(*)::int FROM experts WHERE enabled AND status='available') AS experts_available,"+
+        " (SELECT count(*)::int FROM outbox_events WHERE published_at IS NULL) AS outbox_pending FROM calls"
+      ),
+      this.sql.unsafe("SELECT ended_at FROM calls ORDER BY ended_at DESC LIMIT 1"),
+      this.carrierRouting()
+    ]);
+    return {
+      mode:this.config.mode,store:"postgres",
+      calls_total:counts[0].calls_total,experts_available:counts[0].experts_available,
+      cdr_lag_seconds:last[0]?Math.max(0,(Date.now()-Date.parse(last[0].ended_at))/1000):0,
+      outbox_pending:counts[0].outbox_pending,event_subscribers:this.eventBus.size,carrier_route:route
+    };
+  }
+
+  async metrics(){
+    const [calls,outbox]=await Promise.all([
+      this.sql.unsafe("SELECT count(*)::int AS calls_total,count(*) FILTER(WHERE call_status='connected')::int AS calls_connected FROM calls"),
+      this.sql.unsafe("SELECT count(*)::int AS outbox_pending FROM outbox_events WHERE published_at IS NULL")
+    ]);
+    return {...calls[0],...outbox[0],event_subscribers:this.eventBus.size};
+  }
+}
+
+async function ledger(tx,callId,type,amount,envelope){
+  await tx.unsafe(
+    "INSERT INTO financial_ledger(call_id,event_type,amount_ht,source_reference,metadata) VALUES($1,$2,$3,$4,$5::jsonb)",
+    [callId,type,amount,envelope.source_event_id,JSON.stringify({source:envelope.source})]
+  );
+}
+async function routeWith(sql,key){
+  const rows=await sql.unsafe(
+    "SELECT r.route_key,r.generation,r.updated_at,a.name AS active_carrier,s.name AS standby_carrier,"+
+    " ac.state AS active_connection_state,sc.state AS standby_connection_state"+
+    " FROM logical_carrier_routes r LEFT JOIN carriers a ON a.id=r.active_carrier_id"+
+    " LEFT JOIN carriers s ON s.id=r.standby_carrier_id LEFT JOIN carrier_connections ac ON ac.id=r.active_connection_id"+
+    " LEFT JOIN carrier_connections sc ON sc.id=r.standby_connection_id WHERE r.route_key=$1",
+    [key]
+  );
+  return rows[0];
+}
+function numericActor(actor){
+  const n=Number(actor?.sub);
+  return Number.isInteger(n)&&n>0?n:null;
+}
+function nullableNumber(v){
+  if(v==null||v==="")return null;
+  const n=Number(v);return Number.isFinite(n)?n:null;
+}
+function clampInt(v,fallback,min,max){
+  const n=v==null||v===""?fallback:Number(v);
+  if(!Number.isInteger(n))return fallback;
+  return Math.max(min,Math.min(max,n));
+}
+function encodeCursor(x){return Buffer.from(JSON.stringify(x)).toString("base64url");}
+function decodeCursor(v){
+  if(!v)return null;
+  try{
+    const x=JSON.parse(Buffer.from(String(v),"base64url").toString("utf8"));
+    if(!x.started_at||!Number.isInteger(Number(x.id)))return null;
+    return {started_at:x.started_at,id:Number(x.id)};
+  }catch{return null;}
+}
+function validateEnvelope(x){
+  if(!x||typeof x!=="object")throw problem(400,"INVALID_CDR_ENVELOPE");
+  if(!x.source||!x.source_event_id||!x.payload)throw problem(400,"CDR_ENVELOPE_FIELDS_MISSING");
+}
+function problem(status,code,message=code){
+  const e=new Error(message);e.status=status;e.code=code;return e;
+}
