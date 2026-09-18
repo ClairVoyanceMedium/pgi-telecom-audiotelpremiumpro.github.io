@@ -263,3 +263,40 @@ Les seuils exacts dépendent du trafic réel, mais l'architecture doit déclench
 - un tenant représente une part disproportionnée du trafic total.
 
 La décision de créer un nouveau cluster doit être prise sur métriques, pas sur un nombre arbitraire de clients.
+
+
+## Identité client à grande échelle
+
+Les comptes internes PGI et les comptes des entreprises clientes sont séparés.
+
+- `app_users` : personnel et opérateurs du control plane PGI ;
+- `customer_principals` : utilisateurs externes des tenants ;
+- `customer_identities` : identités provenant d'un fournisseur OIDC/SAML ou autre ;
+- `customer_tenant_memberships` : rôles et permissions dans une organisation cliente ;
+- `customer_refresh_sessions` : sessions durables révocables ;
+- `customer_api_clients` et `service_accounts` : accès machine-to-machine avec secrets stockés uniquement sous forme de hash.
+
+Un utilisateur externe n'obtient jamais un rôle global PGI par simple appartenance à un tenant.
+
+La colonne `authorization_version` du tenant permet d'invalider des claims ou caches d'autorisation lorsque les adhésions changent.
+
+## Plans, droits et quotas
+
+La plateforme peut accueillir des clients de tailles très différentes sans coder des limites dans l'application.
+
+- `service_plans` décrit les offres ;
+- `plan_entitlements` décrit les capacités incluses ;
+- `tenant_subscriptions` rattache les clients à une offre par marché ;
+- `tenant_entitlement_overrides` permet les contrats négociés ;
+- `tenant_quota_policies` définit les limites souples et dures ;
+- `tenant_usage_counters` conserve l'usage quotidien dans 64 partitions.
+
+Un très gros client peut donc passer de `standard` à `high_volume`, `dedicated` ou `strategic` sans changer d'identité ni de modèle API.
+
+## Limite volontaire du temps réel compact
+
+Le bus mémoire actuel reste adapté au mode compact. Il ne constitue pas un bus temps réel distribué.
+
+Avant de mettre plusieurs instances API derrière un load balancer avec SSE temps réel actif, le transport d'événements doit être branché sur une implémentation partagée à partir de l'outbox durable. Le contrat producteur reste inchangé : transaction métier → outbox → transport.
+
+Cette séparation est volontaire afin de ne pas introduire aujourd'hui une dépendance Redis/Kafka coûteuse alors que le volume réel ne la justifie pas.
