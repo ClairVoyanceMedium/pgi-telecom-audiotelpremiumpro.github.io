@@ -3,7 +3,7 @@
 
   var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
   var CONFIG={serviceRate:0.80,payoutRate:0.46,expertCostPerMin:0.18,fixedCostPerCall:0.03};
-  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""}};
+  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"}};
   var titles={overview:"Vue d’ensemble",calls:"Appels",finance:"Finance",experts:"Experts",carriers:"Opérateurs",system:"Système",settings:"Paramètres"};
   var experts=["Frederick","Sofia","Emma","Lina","Clara","Nora"];
   var carriers=["Orange","SFR","Bouygues","Free"];
@@ -278,11 +278,14 @@
         c.packetLoss,c.jitter,c.latency,c.mos,c.status
       ].map(csvCell).join(";"));
     });
+    var button=$("export-csv");
+    if(button&&button.disabled)return;
+    if(button)button.disabled=true;
     var blob=new Blob(["\ufeff"+lines.join("\n")],{type:"text/csv;charset=utf-8"});
     var url=URL.createObjectURL(blob),a=document.createElement("a");
     a.href=url;a.download="pgi-audiotel-cdr-"+new Date().toISOString().slice(0,10)+".csv";
     document.body.appendChild(a);a.click();a.remove();
-    setTimeout(function(){URL.revokeObjectURL(url);},1000);
+    setTimeout(function(){URL.revokeObjectURL(url);if(button)button.disabled=false;},1000);
   }
 
   function showCallDetail(id){
@@ -309,9 +312,18 @@
   }
 
   function render(){
+    var started=performance.now();
     var rows=filteredCalls();
     renderKPIs(rows);renderCalls(rows);renderChart(rows);renderAlerts(rows);renderExperts(rows);renderCarriers(rows);renderRecon(rows);renderResetLog();
-    setText("last-sync",new Intl.DateTimeFormat("fr-FR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(new Date()));
+    var now=new Date();
+    state.diagnostics.lastRenderMs=Math.max(0,performance.now()-started);
+    setText("last-sync",new Intl.DateTimeFormat("fr-FR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(now));
+    setText("render-time",nfmt(state.diagnostics.lastRenderMs,1)+" ms");
+    setText("runtime-errors",String(state.diagnostics.errors));
+    setText("runtime-version",RUNTIME.version||"dev");
+    setText("data-mode",RUNTIME.mode==="production"?"Production":"Démo");
+    setText("data-freshness",RUNTIME.mode==="production"?"En attente API":"Générée localement");
+    setText("cdr-errors","0");
   }
 
   function switchView(name){
@@ -356,6 +368,11 @@
     });
   }
 
+  function recordRuntimeError(){
+    state.diagnostics.errors++;
+    setText("runtime-errors",String(state.diagnostics.errors));
+  }
+
   function updateConnectivity(){
     var online=navigator.onLine;
     var stateEl=$("network-state");
@@ -369,11 +386,38 @@
 
   function applyRuntimeMode(){
     var el=$("runtime-mode");
-    if(!el)return;
     var demo=RUNTIME.mode!=="production";
-    el.textContent=demo?"MODE DÉMO":"MODE PRODUCTION";
-    el.classList.toggle("demo",demo);
-    el.classList.toggle("production",!demo);
+    if(el){
+      el.textContent=demo?"MODE DÉMO":"MODE PRODUCTION";
+      el.classList.toggle("demo",demo);
+      el.classList.toggle("production",!demo);
+    }
+    setText("runtime-version",RUNTIME.version||"dev");
+    setText("data-mode",demo?"Démo":"Production");
+  }
+
+  async function probeApiHealth(){
+    var el=$("api-health-state");
+    if(RUNTIME.mode!=="production"||!RUNTIME.apiBaseUrl||!window.PGIApi){
+      state.diagnostics.apiStatus="not_configured";
+      if(el){el.textContent="API NON CONNECTÉE";el.className="big-status warn";}
+      return;
+    }
+    try{
+      await window.PGIApi.health();
+      state.diagnostics.apiStatus="ok";
+      if(el){el.textContent="API OPÉRATIONNELLE";el.className="big-status ok";}
+    }catch(e){
+      state.diagnostics.apiStatus="error";
+      if(el){el.textContent="API INDISPONIBLE";el.className="big-status warn";}
+    }
+  }
+
+  function startHealthLoop(){
+    probeApiHealth();
+    setInterval(function(){
+      if(!document.hidden)probeApiHealth();
+    },30000);
   }
 
   function registerServiceWorker(){
@@ -387,10 +431,13 @@
     setText("footer-clock",new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeStyle:"medium"}).format(new Date()));
   }
 
+  window.addEventListener("error",recordRuntimeError);
+  window.addEventListener("unhandledrejection",recordRuntimeError);
   loadState();
   bind();
   applyRuntimeMode();
   updateConnectivity();
+  startHealthLoop();
   window.addEventListener("online",updateConnectivity);
   window.addEventListener("offline",updateConnectivity);
   registerServiceWorker();
