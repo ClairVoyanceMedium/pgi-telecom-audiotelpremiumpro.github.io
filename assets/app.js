@@ -3,7 +3,7 @@
 
   var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
   var CONFIG={serviceRate:0.80,payoutRate:0.46,expertCostPerMin:0.18,fixedCostPerCall:0.03};
-  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,system:null,route:null,wholesale:null,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
+  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
   var titles={overview:"Vue d’ensemble",calls:"Appels",finance:"Finance",experts:"Experts",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Système",settings:"Paramètres"};
   var experts=["Frederick","Sofia","Emma","Lina","Clara","Nora"];
   var carriers=["Orange","SFR","Bouygues","Free"];
@@ -125,7 +125,7 @@
   }
 
   async function loadAllApiCalls(from,to,market){
-    var data=[],cursor=null,pages=0;
+    var data=[],cursor=null,pages=0,maxPages=4;
     do{
       var params={from:from.toISOString(),to:to.toISOString(),limit:"250"};
       if(market)params.market=market;
@@ -134,9 +134,8 @@
       data=data.concat(Array.isArray(page.data)?page.data:[]);
       cursor=page.next_cursor||null;
       pages++;
-      if(pages>400)throw new Error("API_CALL_PAGINATION_LIMIT");
-    }while(cursor);
-    return data;
+    }while(cursor&&pages<maxPages);
+    return {data:data,truncated:!!cursor};
   }
 
   function setProductionLive(summary){
@@ -196,6 +195,9 @@
     state.system=null;
     state.route=null;
     state.wholesale=null;
+    state.serverSummary=null;
+    state.previousSummary=null;
+    state.cdrSampleTruncated=false;
     setProductionLive({});
     render();
   }
