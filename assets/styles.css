@@ -530,3 +530,7 @@ dialog::backdrop{background:rgba(0,0,0,.7);backdrop-filter:blur(5px)}
 .auth-field input:focus{border-color:rgba(0,212,255,.45)}
 .auth-submit{width:100%;min-height:44px;margin-top:16px;border-color:rgba(0,212,255,.2);background:rgba(0,212,255,.075);color:#dff9ff;font-weight:900}
 .auth-note{display:block;margin-top:12px;color:#60758d;font-size:8px;line-height:1.5;text-align:center}
+
+.session-btn{min-height:36px;padding:8px 11px;font-size:9px;font-weight:850;letter-spacing:.035em;border-color:rgba(34,211,165,.18);background:rgba(34,211,165,.055);color:#bff4e3}
+.session-btn:hover{border-color:rgba(34,211,165,.35);background:rgba(34,211,165,.09)}
+@media (max-width:520px){.session-btn{padding-inline:9px;font-size:8px}}
