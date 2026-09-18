@@ -4,7 +4,7 @@ Cockpit Audiotel, financier et télécom de PGI Telecom.
 
 ## État actuel
 
-Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.10.2 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
+Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.11.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
 
 Fonctions déjà présentes :
 
@@ -89,9 +89,9 @@ Le projet possède désormais des garde-fous de préproduction :
 
 La version GitHub Pages reste une démonstration. Les statuts SIP/API affichent explicitement qu'ils ne sont pas connectés tant que l'infrastructure réelle n'existe pas.
 
-## Validation release 1.10.2
+## Validation release 1.11.0
 
-La release 1.10.2 transforme la fondation Wholesale SVA en véritable centre de contrôle : vue Plateforme SVA, synthèse wholesale sur l'accueil, clients/tenants, affectations 089, stock libre, KYC, opérateur attributaire, conformité PSP/DSP2 et reversements par éditeur alimentés par PostgreSQL en production.
+La release 1.11.0 transforme la fondation Wholesale SVA en véritable centre de contrôle : vue Plateforme SVA, synthèse wholesale sur l'accueil, clients/tenants, affectations 089, stock libre, KYC, opérateur attributaire, conformité PSP/DSP2 et reversements par éditeur alimentés par PostgreSQL en production.
 
 
 
@@ -155,3 +155,24 @@ Le cockpit affiche automatiquement la prochaine action bloquante et envoie vers 
 Sur mobile, la Plateforme SVA est maintenant accessible directement depuis la barre de navigation principale au lieu d'être cachée dans le menu Plus.
 
 En mode démo, le cockpit n'invente aucun contrat, numéro, trunk SIP, client ou paiement réel.
+
+
+### Mobile Android / iOS 1.11
+
+Le cockpit est optimisé comme une application mobile responsive sans modifier la version desktop.
+
+Points verrouillés :
+
+- zones sûres iPhone via `env(safe-area-inset-*)` ;
+- hauteur dynamique `100dvh` pour Safari/Chrome mobile ;
+- barre de navigation fixe compatible encoche et indicateur Home ;
+- cibles tactiles de 44 px minimum ;
+- champs de formulaire à 16 px pour éviter le zoom automatique Safari ;
+- tableaux à défilement inertiel avec première colonne visible ;
+- vue essentielle mobile par défaut et analyses avancées à la demande ;
+- mise en page dédiée portrait et paysage ;
+- adaptation petits écrans jusqu'à 320 px ;
+- support `pointer: coarse` et réduction des effets hover non pertinents au tactile ;
+- métadonnées PWA Android/iOS et `display_override` pour l'installation.
+
+Le nom visible reste **PGI • Telecom - Audiotel Premium Pro**.
