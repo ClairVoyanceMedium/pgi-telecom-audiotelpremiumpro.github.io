@@ -1274,13 +1274,8 @@
     }).join(""):'<tr><td colspan="8">Aucun reversement client réel.</td></tr>';
   }
 
-  function saveUiPreferences(){
-    if(window.PGIWorkspace)window.PGIWorkspace.save(state.activeView,state.period,state.custom);
-  }
-
-  function restoreUiPreferences(){
-    if(window.PGIWorkspace)window.PGIWorkspace.restoreInto(state,titles);
-  }
+  function saveUiPreferences(){if(window.PGIWorkspace)window.PGIWorkspace.save(state.activeView,state.period,state.custom);}
+  function restoreUiPreferences(){if(window.PGIWorkspace)window.PGIWorkspace.restoreInto(state,titles);}
 
   function applyMobileOverviewMode(){
     var view=$("view-overview");
