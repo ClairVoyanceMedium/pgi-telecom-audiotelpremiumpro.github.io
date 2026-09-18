@@ -1,6 +1,7 @@
 
 import {createHash} from "node:crypto";
 import {sanitizeCdrPayload,deriveCallerHash} from "./cdr-privacy.mjs";
+import {computeExpertCost} from "./expert-finance.mjs";
 import {createRequire} from "node:module";
 
 const require=createRequire(import.meta.url);
@@ -232,6 +233,16 @@ export class PostgresStore{
         }
       ):{billableSeconds:0,payoutEligibleSeconds:0,serviceAmountTtc:0,expectedPayoutHt:0};
 
+      let expert=null;
+      if(p.expert_id!=null){
+        const expertRows=await tx.unsafe(
+          "SELECT id,compensation_type,compensation_rate::float8 FROM experts WHERE id=$1 AND enabled LIMIT 1",
+          [Number(p.expert_id)]
+        );
+        expert=expertRows[0]||null;
+        if(!expert)throw problem(409,"EXPERT_NOT_CONFIGURED");
+      }
+
       const callerHash=deriveCallerHash(p,{key:this.config.callerHashKey,source:envelope.source,sourceEventId:envelope.source_event_id});
       const callerRows=await tx.unsafe(
         "INSERT INTO callers(caller_hash,caller_masked,first_seen_at,last_seen_at,call_count,total_conversation_seconds)"+
@@ -247,12 +258,18 @@ export class PostgresStore{
       const confirmed=hasConfirmed?Number(p.confirmed_payout_ht):null;
       const paid=p.paid_payout_ht==null?0:Number(p.paid_payout_ht);
       const recon=hasConfirmed?core.reconcileAmounts(financial.expectedPayoutHt,confirmed,this.config.reconciliationToleranceHt):null;
-      const expertCost=(financial.billableSeconds/60)*this.config.expertCostHtPerMin;
+      const expertCost=computeExpertCost({
+        type:expert?.compensation_type||"none",
+        rate:expert?.compensation_rate||0,
+        billableSeconds:financial.billableSeconds,
+        expectedPayoutHt:financial.expectedPayoutHt,
+        connected:status==="connected"
+      });
       const technicalCost=Number(p.technical_cost_ht||0);
       const totalSeconds=Math.max(0,Number(p.total_seconds||Math.round((Date.parse(p.ended_at)-Date.parse(p.started_at))/1000)));
 
       const callValues=[
-        String(p.external_call_id),envelope.source,caller.id,sva.id,p.expert_id==null?null:Number(p.expert_id),origin.id,host.id,
+        String(p.external_call_id),envelope.source,caller.id,sva.id,expert?.id||null,origin.id,host.id,
         p.started_at,p.ivr_started_at||null,p.queued_at||null,p.bridged_at||null,p.ended_at,
         Math.max(0,Number(p.wait_seconds||0)),conversation,totalSeconds,financial.billableSeconds,financial.payoutEligibleSeconds,
         status,p.sip_final_code==null?null:Number(p.sip_final_code),String(p.hangup_cause||""),String(p.codec||""),
