@@ -144,13 +144,14 @@ export function createBackend(options={}){
            (previousFrom&&(!Number.isFinite(Date.parse(previousFrom))||!Number.isFinite(Date.parse(previousTo))||Date.parse(previousTo)<Date.parse(previousFrom)))){
           const e=new Error("Invalid previous range");e.status=400;e.code="INVALID_PREVIOUS_RANGE";throw e;
         }
-        const [summary,previousSummary,analytics,experts,system,route]=await Promise.all([
+        const [summary,previousSummary,analytics,experts,system,route,reconciliation]=await Promise.all([
           store.summary(range.from,range.to,market),
           previousFrom?store.summary(previousFrom,previousTo,market):Promise.resolve(null),
           store.dashboardAnalytics(range.from,range.to,market),
           store.listExperts(),
           store.systemSnapshot(),
-          store.carrierRouting()
+          store.carrierRouting(),
+          store.reconciliation(range.from,range.to,market)
         ]);
         return done(res,metrics,started,"dashboard.bootstrap",200,{
           summary,
@@ -159,6 +160,7 @@ export function createBackend(options={}){
           experts:{data:experts},
           system,
           route,
+          reconciliation:{data:reconciliation},
           server_time:new Date().toISOString()
         });
       }
