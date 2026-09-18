@@ -94,3 +94,16 @@ test("la release Git exacte est visible et obligatoire en production", () => {
   assert.match(buildStatic, /PGI_RELEASE_ID/);
   assert.match(buildStatic, /40-character Git SHA/);
 });
+
+
+test("le design executive premium 1.7 est verrouillé", () => {
+  for (const id of ["command-system","command-sync","command-period","command-release"]) {
+    assert.ok(index.includes('id="'+id+'"'), "missing #"+id);
+  }
+  assert.match(index, /PGI EXECUTIVE CONTROL/);
+  assert.match(css, /PGI Telecom 1\.7 — Executive Premium Design System/);
+  assert.match(css, /\.command-deck/);
+  assert.match(css, /backdrop-filter:blur/);
+  assert.match(app, /commandSystem/);
+  assert.match(app, /command-period/);
+});
