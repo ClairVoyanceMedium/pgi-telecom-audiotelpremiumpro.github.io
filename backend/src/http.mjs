@@ -58,3 +58,9 @@ export function routeMatch(pathname,pattern){
 export function clientIp(req){
   return req.socket?.remoteAddress||"unknown";
 }
+
+export function text(res,status,payload,contentType="text/plain; charset=utf-8"){
+  const body=String(payload??"");
+  res.writeHead(status,{"Content-Type":contentType,"Content-Length":Buffer.byteLength(body),"Cache-Control":"no-store"});
+  res.end(body);
+}
