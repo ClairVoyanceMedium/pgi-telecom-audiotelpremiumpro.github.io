@@ -1201,7 +1201,7 @@ export class PostgresStore{
       payment_compliance_active:payments.some(x=>x.status==="active")
     };
     return {
-      foundation_version:"1.14",
+      foundation_version:"1.15",
       summary,
       tenants,
       numbers,
