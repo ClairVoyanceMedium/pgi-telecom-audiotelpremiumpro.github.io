@@ -106,3 +106,58 @@ adaptateur normalisé
 ```
 
 Un changement d'opérateur ne modifie ni le numéro, ni les experts, ni le modèle d'appel, ni le dashboard. L'ancien opérateur reste identifiable sur les appels historiques via `host_carrier_id`.
+
+
+## Architecture multi-tenant / wholesale
+
+PGI est désormais conçu pour pouvoir évoluer d'un éditeur unique vers une plateforme multi-clients.
+
+```
+Opérateurs SVA / collecteurs
+          │
+          ▼
+   Carrier adapters PGI
+          │
+          ▼
+   Route logique SVA
+          │
+          ▼
+       Numéro 089
+          │
+          ▼
+Tenant / éditeur final
+          │
+   ┌──────┼──────┐
+   ▼      ▼      ▼
+Experts  CDR   Finance
+```
+
+### Isolation des clients
+
+Le modèle introduit :
+
+- `tenants` : organisation cliente ou interne ;
+- `tenant_memberships` : droits par utilisateur ;
+- `tenant_number_assignments` : relation commerciale et réglementaire entre client et numéro ;
+- `tenant_kyc_profiles` : état de vérification de l'éditeur ;
+- `tenant_settlements` : relevés de reversement client ;
+- `tenant_settlement_calls` : traçabilité appel par appel ;
+- `payment_compliance_profiles` : cadre de circulation des fonds.
+
+Les tables `sva_numbers`, `experts`, `calls`, `metric_baselines`, `audit_log` et `financial_ledger` disposent d'un `tenant_id` additif pour préparer l'isolation sans casser le runtime actuel.
+
+### Autorité d'affectation d'un numéro SVA
+
+Tant que PGI n'est pas lui-même opérateur attributaire, l'opérateur amont reste l'autorité réglementaire qui affecte le numéro spécial à l'utilisateur final.
+
+Le champ `regulatory_assignor_carrier_id` conserve cette distinction.
+
+PGI peut orchestrer l'onboarding, le routage, le reporting et la facturation de plateforme, mais ne doit pas présenter une affectation comme provenant juridiquement de PGI tant que PGI ne détient pas lui-même la ressource correspondante.
+
+### Séparation des fonds
+
+La circulation des fonds SVA est indépendante du routage télécom.
+
+Aucun reversement tiers ne doit passer en mode production sans un `payment_compliance_profile` actif correspondant au montage validé : paiement direct amont→éditeur, agent PSP ou autre rôle réglementaire approprié.
+
+Voir `docs/WHOLESALE-SVA.md` pour la trajectoire complète.
