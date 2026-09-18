@@ -92,13 +92,21 @@
     me:function(){return request("/auth/me",{timeoutMs:4000});},
     login:function(username,password){return request("/auth/login",{method:"POST",body:{username:username,password:password},timeoutMs:8000});},
     logout:function(){return request("/auth/logout",{method:"POST",body:{}});},
-    summary:function(from,to){return request("/dashboard/summary?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to));},
+    summary:function(from,to,market){
+      var q=new URLSearchParams({from:from,to:to});
+      if(market)q.set("market",market);
+      return request("/dashboard/summary?"+q.toString());
+    },
     calls:function(params){
       var q=new URLSearchParams(params||{}).toString();
       return request("/calls"+(q?"?"+q:""));
     },
     experts:function(){return request("/experts");},
-    reconciliation:function(from,to){return request("/finance/reconciliation?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to));},
+    reconciliation:function(from,to,market){
+      var q=new URLSearchParams({from:from,to:to});
+      if(market)q.set("market",market);
+      return request("/finance/reconciliation?"+q.toString());
+    },
     systemHealth:function(){return request("/system/health");},
     carrierRouting:function(){return request("/carrier-routing");},
     wholesaleOverview:function(){return request("/platform/overview");},
