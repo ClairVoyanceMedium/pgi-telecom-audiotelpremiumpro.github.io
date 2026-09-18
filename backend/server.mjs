@@ -33,7 +33,7 @@ export function createBackend(options={}){
 
   const metrics={
     requests:0,errors:0,rateLimited:0,authFailures:0,authRateLimited:0,
-    startedAt:Date.now(),byStatus:new Map(),byRoute:new Map()
+    startedAt:Date.now(),byStatus:new Map(),byRoute:new Map(),latencyByRoute:new Map()
   };
   const rateBuckets=new Map();
   const authBuckets=new Map();
@@ -41,15 +41,21 @@ export function createBackend(options={}){
 
   const server=http.createServer(async(req,res)=>{
     const requestId=randomUUID();
+    const trace=traceContext(req);
     const started=performance.now();
     securityHeaders(res,requestId);
+    res.setHeader("traceparent",trace.traceparent);
+    res.setHeader("X-Trace-Id",trace.traceId);
     res.once("finish",()=>{
+      const durationMs=Math.max(0,performance.now()-started);
+      observeLatency(metrics,res.pgiRoute||"unclassified",durationMs);
       logHttpRequest(config,{
         requestId,
+        traceId:trace.traceId,
         route:res.pgiRoute||"unclassified",
         method:String(req.method||"GET").toUpperCase(),
         status:res.statusCode,
-        durationMs:Math.max(0,performance.now()-started)
+        durationMs
       });
     });
 
@@ -476,7 +482,11 @@ function done(res,metrics,started,route,status,payload,headers={}){
 }
 function bump(map,key){map.set(String(key),(map.get(String(key))||0)+1);}
 async function metricsResponse(res,metrics,store,workers){
-  const [m,snapshot]=await Promise.all([store.metrics(),store.systemSnapshot()]);
+  const [m,snapshot,queue]=await Promise.all([
+    store.metrics(),
+    store.systemSnapshot(),
+    typeof store.workQueueHealth==="function"?store.workQueueHealth():Promise.resolve({pending:0,leased:0,dead_lettered:0,oldest_pending_seconds:0})
+  ]);
   const lines=[
     "# TYPE pgi_http_requests_total counter",
     "pgi_http_requests_total "+metrics.requests,
@@ -508,9 +518,28 @@ async function metricsResponse(res,metrics,store,workers){
     "pgi_worker_outbox_last_success_unixtime "+timestampMetric(workers?.stats?.lastOutboxSuccessAt),
     "# TYPE pgi_worker_alerts_last_success_unixtime gauge",
     "pgi_worker_alerts_last_success_unixtime "+timestampMetric(workers?.stats?.lastAlertsSuccessAt),
+    "# TYPE pgi_work_queue_pending gauge",
+    "pgi_work_queue_pending "+Number(queue.pending||0),
+    "# TYPE pgi_work_queue_leased gauge",
+    "pgi_work_queue_leased "+Number(queue.leased||0),
+    "# TYPE pgi_work_queue_dead_lettered gauge",
+    "pgi_work_queue_dead_lettered "+Number(queue.dead_lettered||0),
+    "# TYPE pgi_work_queue_oldest_pending_seconds gauge",
+    "pgi_work_queue_oldest_pending_seconds "+Number(queue.oldest_pending_seconds||0).toFixed(3),
     "# TYPE pgi_process_uptime_seconds gauge",
     "pgi_process_uptime_seconds "+((Date.now()-metrics.startedAt)/1000).toFixed(3)
   ];
+  for(const [route,h] of metrics.latencyByRoute){
+    const label=promLabel(route);
+    let cumulative=0;
+    for(let i=0;i<LATENCY_BUCKETS_MS.length;i++){
+      cumulative+=h.buckets[i]||0;
+      lines.push('pgi_http_request_duration_ms_bucket{route="'+label+'",le="'+LATENCY_BUCKETS_MS[i]+'"} '+cumulative);
+    }
+    lines.push('pgi_http_request_duration_ms_bucket{route="'+label+'",le="+Inf"} '+h.count);
+    lines.push('pgi_http_request_duration_ms_sum{route="'+label+'"} '+h.sum.toFixed(3));
+    lines.push('pgi_http_request_duration_ms_count{route="'+label+'"} '+h.count);
+  }
   const body=lines.join("\n")+"\n";
   res.writeHead(200,{"Content-Type":"text/plain; version=0.0.4; charset=utf-8","Content-Length":Buffer.byteLength(body)});
   res.end(body);
@@ -536,13 +565,14 @@ function openEventStream(req,res,eventBus,requestId,config,clients){
   heartbeat.unref?.();
   req.on("close",()=>{clearInterval(heartbeat);unsubscribe();clients?.delete(res);});
 }
-function logHttpRequest(config,{requestId,route,method,status,durationMs}){
+function logHttpRequest(config,{requestId,traceId,route,method,status,durationMs}){
   if(config?.mode!=="production")return;
   const level=status>=500?"error":status>=400?"warn":"info";
   process.stdout.write(JSON.stringify({
     level,
     event:"http_request",
     request_id:requestId,
+    trace_id:traceId||null,
     route:String(route||"unclassified"),
     method:String(method||"GET"),
     status:Number(status)||0,
@@ -567,6 +597,33 @@ function closeHttpServer(server,graceMs){
     timer.unref?.();
     server.closeIdleConnections?.();
   });
+}
+const LATENCY_BUCKETS_MS=[10,25,50,100,250,500,1000,2500,5000];
+function observeLatency(metrics,route,durationMs){
+  const key=String(route||"unclassified");
+  let h=metrics.latencyByRoute.get(key);
+  if(!h){
+    h={count:0,sum:0,buckets:Array(LATENCY_BUCKETS_MS.length).fill(0)};
+    metrics.latencyByRoute.set(key,h);
+  }
+  h.count++;
+  h.sum+=Number(durationMs)||0;
+  for(let i=0;i<LATENCY_BUCKETS_MS.length;i++){
+    if(durationMs<=LATENCY_BUCKETS_MS[i]){
+      h.buckets[i]++;
+      break;
+    }
+  }
+}
+function promLabel(value){
+  return String(value||"").replace(/\\/g,"\\\\").replace(/"/g,'\\"').replace(/\n/g,"\\n");
+}
+function traceContext(req){
+  const raw=String(req.headers?.traceparent||"").trim().toLowerCase();
+  const match=/^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/.exec(raw);
+  const traceId=match&&match[1]!==("0".repeat(32))?match[1]:randomUUID().replace(/-/g,"");
+  const spanId=randomUUID().replace(/-/g,"").slice(0,16);
+  return {traceId,traceparent:"00-"+traceId+"-"+spanId+"-01"};
 }
 function timestampMetric(value){
   const ms=Date.parse(value||"");
