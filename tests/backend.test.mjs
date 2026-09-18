@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createBackend} from "../backend/server.mjs";
-import {hashPassword,verifyPassword,issueSession,verifySession} from "../backend/src/security.mjs";
+import {hashPassword,verifyPassword,issueSession,verifySession,sessionCookie,csrfCookie} from "../backend/src/security.mjs";
 import {selectExpert} from "../backend/src/expert-router.mjs";
 import {clientIp} from "../backend/src/http.mjs";
 
@@ -62,6 +62,13 @@ test("admin login has a dedicated per-client brute-force limit",async()=>{
   }finally{
     await app.close();
   }
+});
+
+test("session cookies use the Host-only prefix",()=>{
+  assert.match(sessionCookie("token",60),/^__Host-pgi_session=/);
+  assert.match(sessionCookie("token",60),/; HttpOnly; Secure; SameSite=Strict; Path=\//);
+  assert.match(csrfCookie("token",60),/^__Host-pgi_csrf=/);
+  assert.match(csrfCookie("token",60),/; Secure; SameSite=Strict; Path=\//);
 });
 
 test("expert router chooses available least-loaded expert",()=>{
