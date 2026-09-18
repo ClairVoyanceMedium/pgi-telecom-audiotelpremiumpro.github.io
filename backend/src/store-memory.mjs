@@ -170,6 +170,13 @@ export class MemoryStore{
     const series=[...group(rows,bucketKey)].map(([bucket,items])=>({bucket,...summarize(items)})).sort((a,b)=>Date.parse(a.bucket)-Date.parse(b.bucket));
     const hours=[...group(rows,x=>new Date(x.started_at).getHours())].map(([hour,items])=>({hour:Number(hour),calls_total:items.length,calls_connected:items.filter(x=>x.call_status==="connected").length,billable_seconds:sum(items,"billable_seconds")})).sort((a,b)=>a.hour-b.hour);
     const weekdays=[...group(rows,x=>{const d=new Date(x.started_at).getDay();return d===0?7:d;})].map(([weekday,items])=>({weekday:Number(weekday),calls_total:items.length,calls_connected:items.filter(x=>x.call_status==="connected").length,billable_seconds:sum(items,"billable_seconds")})).sort((a,b)=>a.weekday-b.weekday);
+    const heatmap=[...group(rows,x=>{
+      const d=new Date(x.started_at),day=d.getDay()===0?7:d.getDay();
+      return day+":"+d.getHours();
+    })].map(([key,items])=>{
+      const parts=String(key).split(":");
+      return {weekday:Number(parts[0]),hour:Number(parts[1]),calls_total:items.length};
+    }).sort((a,b)=>a.weekday-b.weekday||a.hour-b.hour);
     const dim=(type,keyFn,labelFn)=>{
       const out=[...group(rows,keyFn)].map(([dimension_key,items])=>({
         dimension_type:type,dimension_key:String(dimension_key),dimension_label:labelFn(items[0]),
@@ -184,7 +191,7 @@ export class MemoryStore{
     const durationKey=x=>x.call_status!=="connected"?"not_connected":x.conversation_seconds<60?"lt_1m":x.conversation_seconds<300?"1_5m":x.conversation_seconds<600?"5_10m":x.conversation_seconds<1200?"10_20m":x.conversation_seconds<1800?"20_30m":"gte_30m";
     const durationLabels={not_connected:"Non aboutis",lt_1m:"< 1 min","1_5m":"1–5 min","5_10m":"5–10 min","10_20m":"10–20 min","20_30m":"20–30 min",gte_30m:"30 min +"};
     const durations=dim("duration",durationKey,x=>durationLabels[durationKey(x)]||durationKey(x));
-    return {granularity,series,hours,weekdays,experts:expertsRows,carriers:carriersRows,durations};
+    return {granularity,series,hours,weekdays,heatmap,experts:expertsRows,carriers:carriersRows,durations};
   }
 
   async listCalls(params={}){
