@@ -119,7 +119,7 @@ prune_releases(){
 
 case "$action" in
   deploy)
-    PGI_ENV_FILE="$env_file" bash "$release_dir/scripts/preflight.sh"
+    (cd "$release_dir" && PGI_ENV_FILE="$env_file" bash scripts/preflight.sh)
 
     if running_postgres; then
       echo "Existing PostgreSQL detected: backup and restore drill required."
