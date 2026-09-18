@@ -62,7 +62,7 @@ export function createBackend(options={}){
         });
       }
       if(method==="GET"&&pathname==="/metrics"){
-        return metricsResponse(res,metrics,store);
+        return metricsResponse(res,metrics,store,workers);
       }
 
       if(method==="POST"&&pathname==="/api/v1/auth/login"){
@@ -388,7 +388,7 @@ function done(res,metrics,started,route,status,payload,headers={}){
   json(res,status,payload,headers);
 }
 function bump(map,key){map.set(String(key),(map.get(String(key))||0)+1);}
-async function metricsResponse(res,metrics,store){
+async function metricsResponse(res,metrics,store,workers){
   const m=await store.metrics();
   const lines=[
     "# TYPE pgi_http_requests_total counter",
@@ -409,6 +409,14 @@ async function metricsResponse(res,metrics,store){
     "pgi_outbox_pending "+m.outbox_pending,
     "# TYPE pgi_event_subscribers gauge",
     "pgi_event_subscribers "+m.event_subscribers,
+    "# TYPE pgi_worker_outbox_errors_total counter",
+    "pgi_worker_outbox_errors_total "+Number(workers?.stats?.outboxErrors||0),
+    "# TYPE pgi_worker_alert_errors_total counter",
+    "pgi_worker_alert_errors_total "+Number(workers?.stats?.alertsErrors||0),
+    "# TYPE pgi_worker_outbox_last_success_unixtime gauge",
+    "pgi_worker_outbox_last_success_unixtime "+timestampMetric(workers?.stats?.lastOutboxSuccessAt),
+    "# TYPE pgi_worker_alerts_last_success_unixtime gauge",
+    "pgi_worker_alerts_last_success_unixtime "+timestampMetric(workers?.stats?.lastAlertsSuccessAt),
     "# TYPE pgi_process_uptime_seconds gauge",
     "pgi_process_uptime_seconds "+((Date.now()-metrics.startedAt)/1000).toFixed(3)
   ];
@@ -435,6 +443,10 @@ function openEventStream(req,res,eventBus,requestId,config){
   const heartbeat=setInterval(()=>{if(!res.destroyed)res.write(": ping\n\n");},15000);
   heartbeat.unref?.();
   req.on("close",()=>{clearInterval(heartbeat);unsubscribe();});
+}
+function timestampMetric(value){
+  const ms=Date.parse(value||"");
+  return Number.isFinite(ms)?Math.floor(ms/1000):0;
 }
 function safeEventName(x){return String(x||"event").replace(/[^a-zA-Z0-9_.-]/g,"_");}
 
