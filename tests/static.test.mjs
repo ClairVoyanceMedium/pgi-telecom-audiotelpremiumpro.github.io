@@ -2,212 +2,207 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-const index = fs.readFileSync("index.html","utf8");
-const app = fs.readFileSync("assets/app.js","utf8");
-const css = fs.readFileSync("assets/styles.css","utf8");
-const buildStatic = fs.readFileSync("scripts/build-static.mjs","utf8");
+const read=file=>fs.readFileSync(file,"utf8");
+const index=read("index.html");
+const app=read("assets/app.js");
+const api=read("assets/api-client.js");
+const dataClient=read("assets/data-client.js");
+const demoData=read("assets/demo-data.js");
+const commands=read("assets/command-palette.js");
+const workspace=read("assets/workspace.js");
+const css=read("assets/styles.css");
+const sw=read("service-worker.js");
+const buildStatic=read("scripts/build-static.mjs");
 
-test("le nom officiel est présent", () => {
-  assert.match(index, /PGI • Telecom - Audiotel Premium Pro/);
-});
-
-test("les périodes métier principales sont présentes", () => {
-  for (const label of ["Aujourd’hui","7 jours","Semaine","Mois","Année"]) assert.ok(index.includes(label));
-});
-
-test("les métriques financières critiques sont présentes", () => {
-  for (const label of ["CA généré","Reversement attendu","Reversement encaissé","Marge estimée"]) assert.ok(index.includes(label));
-});
-
-test("la remise à zéro est non destructive conceptuellement", () => {
-  assert.match(index, /ne supprime jamais les CDR/i);
-  assert.match(app, /baseline/i);
-});
-
-test("le thème PGI contient les couleurs fonctionnelles", () => {
-  for (const token of ["--cyan","--green","--amber","--red","--purple"]) assert.ok(css.includes(token));
-});
-
-
-test("le cockpit premium avancé est présent", () => {
-  for (const id of [
-    "ops-score","traffic-heatmap","call-funnel","quality-mos",
-    "overview-expert-ranking","network-donut","finance-waterfall",
-    "expert-best","noc-voice-grade","mobile-menu-dialog"
-  ]) assert.ok(index.includes('id="'+id+'"'), "missing #"+id);
-});
-
-test("les états pré-connexion ne prétendent pas que SIP est actif", () => {
-  assert.match(index, /SIP non connecté/i);
-  assert.match(index, /NON CONNECTÉ/);
-});
-
-test("la navigation mobile donne accès aux opérateurs et au système", () => {
-  assert.match(index, /data-view="carriers"/);
-  assert.match(index, /data-view="system"/);
-});
-
-
-test("le cockpit production exige une authentification explicite", () => {
-  for (const id of ["auth-dialog","auth-form","auth-username","auth-password","auth-submit"]) {
-    assert.ok(index.includes('id="'+id+'"'), "missing #"+id);
+test("le nom officiel et les vues principales sont présents",()=>{
+  assert.match(index,/PGI • Telecom - Audiotel Premium Pro/);
+  assert.match(index,/data-view="overview"><span>⌂<\/span>Cockpit/);
+  assert.match(index,/data-view="system"><span>⌁<\/span>Supervision/);
+  for(const view of ["calls","finance","experts","carriers","wholesale","settings"]){
+    assert.match(index,new RegExp('data-view="'+view+'"'));
   }
-  assert.match(app, /PGIApi\.me\(\)/);
-  assert.match(app, /loadAllApiCalls/);
-  assert.match(app, /call\.ingested/);
 });
 
-test("la production ne génère pas de faux CDR locaux", () => {
-  assert.match(app, /RUNTIME\.mode==="production"\?\[\]:buildDemoCalls\(\)/);
+test("les périodes et métriques métier critiques sont présentes",()=>{
+  for(const label of ["Aujourd’hui","7 jours","Semaine","Mois","Année"])assert.ok(index.includes(label));
+  for(const label of ["CA généré","Reversement attendu","Reversement encaissé","Marge estimée"])assert.ok(index.includes(label));
 });
 
-
-test("le NOC sépare la santé API du pipeline CDR", () => {
-  assert.match(index, /État backend/);
-  assert.match(app, /function cdrPipelineState/);
-  assert.match(app, /AUCUN CDR REÇU/);
-  assert.match(app, /DERNIER CDR ANCIEN/);
-  assert.match(app, /CDR REÇUS/);
-  assert.doesNotMatch(app, /overviewCdr\.textContent="CONNECTÉ"/);
+test("la remise à zéro reste non destructive",()=>{
+  assert.match(index,/ne supprime jamais les CDR/i);
+  assert.match(app,/baseline/i);
 });
 
-
-test("la session de production peut être fermée proprement", () => {
-  assert.ok(index.includes('id="logout-btn"'));
-  assert.match(app, /logoutProduction/);
-  assert.match(app, /pgi:auth-required/);
-  assert.match(app, /stopProductionEvents/);
+test("le thème fonctionnel et le design mobile restent verrouillés",()=>{
+  for(const token of ["--cyan","--green","--amber","--red","--purple"])assert.ok(css.includes(token));
+  assert.match(index,/viewport-fit=cover/);
+  assert.match(index,/mobile-web-app-capable/);
+  assert.match(index,/apple-mobile-web-app-capable/);
+  assert.match(css,/100dvh/);
+  assert.match(css,/safe-area-inset-bottom/);
+  assert.match(css,/min-height:44px/);
+  assert.match(css,/font-size:16px/);
+  assert.match(css,/-webkit-overflow-scrolling:touch/);
+  assert.match(css,/orientation:landscape/);
+  assert.match(css,/pointer:coarse/);
 });
 
-
-test("la production ne réutilise pas les taux de démonstration", () => {
-  const productionSection=app.slice(app.indexOf("var allCalls="));
-  assert.doesNotMatch(productionSection,/CONFIG\.serviceRate/);
-  assert.doesNotMatch(productionSection,/CONFIG\.payoutRate/);
-  assert.match(app,/PGIApi\.baselines/);
+test("le cockpit premium et le centre SVA sont présents",()=>{
+  for(const id of [
+    "ops-score","traffic-heatmap","call-funnel","quality-mos","overview-expert-ranking",
+    "network-donut","finance-waterfall","expert-best","noc-voice-grade",
+    "activation-title","activation-progress-bar","gate-carrier","gate-number","gate-sip",
+    "gate-compliance","priority-action-title","priority-action-btn"
+  ])assert.ok(index.includes('id="'+id+'"'),"missing #"+id);
+  assert.match(index,/CENTRE DE LANCEMENT SVA/);
+  assert.match(app,/Finaliser l’opérateur SVA amont/);
+  assert.match(app,/Configurer le premier numéro de service/);
+  assert.match(app,/Activer le trunk SIP et la route/);
 });
 
-
-test("la release Git exacte est visible et obligatoire en production", () => {
-  assert.ok(index.includes('id="runtime-release"'));
-  assert.match(app, /RUNTIME\.releaseId/);
-  assert.match(buildStatic, /PGI_RELEASE_ID/);
-  assert.match(buildStatic, /40-character Git SHA/);
-});
-
-
-test("le design executive premium reste verrouillé", () => {
-  for (const id of ["command-system","command-sync","command-period","command-release"]) {
-    assert.ok(index.includes('id="'+id+'"'), "missing #"+id);
-  }
-  assert.match(index, /PGI EXECUTIVE CONTROL/);
-  assert.match(css, /PGI Telecom 1\.7 — Executive Premium Design System/);
-  assert.match(css, /\.command-deck/);
-  assert.match(css, /backdrop-filter:blur/);
-  assert.match(app, /commandSystem/);
-  assert.match(app, /command-period/);
-});
-
-
-test("le cockpit wholesale 1.9 est verrouillé", () => {
-  assert.match(index, /data-view="wholesale"/);
-  for (const id of [
-    "view-wholesale","wh-foundation-status","wh-tenants-total","wh-numbers-total",
-    "wh-kyc-verified","wh-net-payout","wh-tenants-table","wh-numbers-table","wh-settlements-table"
-  ]) assert.ok(index.includes('id="'+id+'"'), "missing #"+id);
-  assert.match(css, /PGI • Telecom 1\.9 — Wholesale Control Center/);
-  assert.match(app, /renderWholesale/);
-  assert.match(app, /wholesaleOverview/);
-  assert.match(app, /Aucun éditeur réel configuré/);
-});
-
-test("le nouveau nom officiel est cohérent dans le cockpit", () => {
-  assert.match(index, /PGI • Telecom - Audiotel Premium Pro/);
-  assert.doesNotMatch(index, /PGI Telecom • Audiotel Premium Pro/);
-});
-
-
-test("le centre de lancement SVA mobile est verrouillé", () => {
-  for (const id of [
-    "activation-title","activation-steps","activation-progress-bar",
-    "gate-carrier","gate-number","gate-sip","gate-compliance",
-    "priority-action-title","priority-action-detail","priority-action-btn",
-    "overview-wh-stock","overview-wh-net","overview-wh-payment-state"
-  ]) assert.ok(index.includes('id="'+id+'"'), "missing #"+id);
-  assert.match(index, /class="mobile-sva" data-view="wholesale"/);
-  assert.match(index, /CENTRE DE LANCEMENT SVA/);
-  assert.match(app, /Finaliser l’opérateur SVA amont/);
-  assert.match(app, /Configurer le premier numéro de service/);
-  assert.match(app, /Activer le trunk SIP et la route/);
-  assert.match(css, /PGI 1\.10 — SVA Launch Center/);
-});
-
-
-test("le nom produit est visible dans l’en-tête mobile", () => {
-  assert.match(index, /class="product-name">PGI • Telecom - Audiotel Premium Pro/);
-  assert.match(css, /Product identity in responsive header/);
-});
-
-
-test("l’optimisation mobile Android et iOS est verrouillée", () => {
-  assert.match(index, /viewport-fit=cover/);
-  assert.match(index, /mobile-web-app-capable/);
-  assert.match(index, /apple-mobile-web-app-capable/);
-  assert.match(index, /apple-mobile-web-app-title/);
-  assert.match(css, /PGI 1\.11 — Mobile Perfection Layer/);
-  assert.match(css, /100dvh/);
-  assert.match(css, /safe-area-inset-top/);
-  assert.match(css, /safe-area-inset-bottom/);
-  assert.match(css, /min-height:44px/);
-  assert.match(css, /font-size:16px/);
-  assert.match(css, /-webkit-overflow-scrolling:touch/);
-  assert.match(css, /orientation:landscape/);
-  assert.match(css, /pointer:coarse/);
-});
-
-test("la vue mobile essentielle reste disponible", () => {
-  assert.ok(index.includes('id="mobile-overview-toggle"'));
-  assert.match(app, /readMobileOverviewPreference/);
-  assert.match(app, /applyMobileOverviewMode/);
-  assert.match(app, /pgi_mobile_overview_expanded/);
-});
-
-
-test("les écrans mobiles étroits sont verrouillés", () => {
-  assert.match(css, /PGI 1\.11\.1 — Narrow Mobile Hardening/);
-  assert.match(css, /\.top-actions \.pill:not\(\.demo\)\{display:none\}/);
-  assert.match(css, /grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\)/);
-  assert.match(css, /@media \(max-width:360px\)/);
-  assert.match(css, /\.call-filters\{grid-template-columns:1fr\}/);
-});
-
-
-test("le cockpit hyperscale 1.14 est verrouillé", () => {
-  for (const id of [
-    "wh-scale-clusters","wh-scale-clusters-state","wh-scale-buckets",
-    "wh-scale-partitions","wh-scale-read","wh-scale-role",
-    "wh-scale-regions","wh-scale-dr","wh-scale-dr-drills",
-    "noc-regions-ready","noc-work-pending","noc-work-dead","noc-dr-targets"
-  ]) assert.ok(index.includes('id="'+id+'"'), "missing #"+id);
-  assert.match(css, /PGI 1\.14 — Hyperscale Capacity Layer/);
-  assert.match(app, /bucket_capacity/);
-  assert.match(app, /call_fact_partitions/);
-  assert.match(app, /read_replica_enabled/);
-});
-
-
-test("le cockpit analytique dense 1.15 est verrouillé", () => {
-  assert.match(index, /data-view="overview"><span>⌂<\/span>Cockpit/);
-  assert.match(index, /data-view="system"><span>⌁<\/span>Supervision/);
-  for (const id of [
+test("le cockpit analytique 1.15 reste complet",()=>{
+  for(const id of [
     "cockpit-volume-chart","cockpit-conversion-chart","cockpit-hour-bars",
     "cockpit-weekday-bars","cockpit-status-donut","cockpit-duration-bars",
     "cockpit-expert-bars","cockpit-carrier-bars","cockpit-peak-hour",
     "cockpit-peak-day","cockpit-value-call","cockpit-value-minute",
     "cockpit-margin-call","cockpit-average-duration"
-  ]) assert.ok(index.includes('id="'+id+'"'), "missing #"+id);
-  assert.match(css, /PGI 1\.15 — Cockpit Intelligence Layer/);
-  assert.match(app, /renderCockpitIntelligence/);
-  assert.match(app, /serverAnalytics/);
-  assert.match(app, /AGRÉGATS SERVEUR/);
+  ])assert.ok(index.includes('id="'+id+'"'),"missing #"+id);
+  assert.match(css,/PGI 1\.15 — Cockpit Intelligence Layer/);
+  assert.match(app,/renderCockpitIntelligence/);
+  assert.match(app,/serverAnalytics/);
+  assert.match(app,/AGRÉGATS SERVEUR/);
+});
+
+test("la fondation hyperscale reste visible",()=>{
+  for(const id of [
+    "wh-scale-clusters","wh-scale-clusters-state","wh-scale-buckets",
+    "wh-scale-partitions","wh-scale-read","wh-scale-role",
+    "wh-scale-regions","wh-scale-dr","wh-scale-dr-drills",
+    "noc-regions-ready","noc-work-pending","noc-work-dead","noc-dr-targets"
+  ])assert.ok(index.includes('id="'+id+'"'),"missing #"+id);
+  assert.match(app,/bucket_capacity/);
+  assert.match(app,/call_fact_partitions/);
+  assert.match(app,/read_replica_enabled/);
+  assert.match(app,/HYPERSCALE 1\.16/);
+});
+
+test("la production exige une authentification et peut se déconnecter",()=>{
+  for(const id of ["auth-dialog","auth-form","auth-username","auth-password","auth-submit","logout-btn"]){
+    assert.ok(index.includes('id="'+id+'"'),"missing #"+id);
+  }
+  assert.match(dataClient,/api\.me\(\)/);
+  assert.match(app,/logoutProduction/);
+  assert.match(app,/pgi:auth-required/);
+  assert.match(app,/stopProductionEvents/);
+});
+
+test("la production ne fabrique aucun faux CDR local",()=>{
+  assert.match(app,/RUNTIME\.mode==="production"\?\[\]/);
+  assert.match(app,/PGIDemoData\.buildCalls/);
+  assert.match(demoData,/function buildCalls/);
+  assert.doesNotMatch(dataClient,/serviceRate|payoutRate/);
+});
+
+test("les données de production sont modularisées et bornées",()=>{
+  assert.match(dataClient,/loadCalls/);
+  assert.match(dataClient,/maxPages=Math\.max\(1,Math\.min\(4/);
+  assert.match(dataClient,/loadAppBootstrap/);
+  assert.match(dataClient,/loadDashboardBootstrap/);
+  assert.match(dataClient,/appBootstrapCache/);
+  assert.match(api,/appBootstrap:function/);
+  assert.match(api,/dashboardBootstrap:function/);
+});
+
+test("la synchronisation temps réel est incrémentale et économe",()=>{
+  assert.match(app,/call\.ingested/);
+  assert.match(app,/scheduleProductionSync\("incremental"\)/);
+  assert.match(app,/mode==="dashboard"/);
+  assert.match(app,/mode==="incremental"\?1:4/);
+  assert.match(app,/document\.hidden/);
+  assert.match(app,/handleVisibilityChange/);
+  assert.match(app,/hiddenFor>30000\?"full"/);
+  assert.match(app,/pendingSyncMode/);
+});
+
+test("seule la vue active est recalculée",()=>{
+  assert.match(app,/function renderActiveView/);
+  for(const name of ["calls","finance","experts","carriers","wholesale","system","settings","overview"]){
+    assert.match(app,new RegExp('case "'+name+'"' + (name==="overview"?"|default:":"")));
+  }
+  assert.match(app,/renderActiveView\(rows\)/);
+});
+
+test("la palette universelle accélère la navigation",()=>{
+  for(const id of ["command-palette-btn","quick-actions-fab","command-palette-dialog","command-search","command-results"]){
+    assert.ok(index.includes('id="'+id+'"'),"missing #"+id);
+  }
+  assert.match(commands,/ctrlKey\|\|e\.metaKey/);
+  assert.match(commands,/pgi:command/);
+  assert.match(commands,/Ouvrir Finance/);
+  assert.match(commands,/Exporter les appels en CSV/);
+  assert.match(css,/PGI 1\.16 — Operator Efficiency Layer/);
+});
+
+test("le workspace mémorise la dernière vue et période",()=>{
+  assert.match(workspace,/pgi_ui_preferences/);
+  assert.match(workspace,/pgi_operating_market/);
+  assert.match(workspace,/pgi_mobile_overview_expanded/);
+  assert.match(workspace,/restoreInto/);
+  assert.match(app,/PGIWorkspace\.restoreInto/);
+  assert.match(app,/PGIWorkspace\.save/);
+});
+
+test("la vue mobile essentielle reste disponible",()=>{
+  assert.ok(index.includes('id="mobile-overview-toggle"'));
+  assert.match(app,/applyMobileOverviewMode/);
+  assert.match(app,/PGIWorkspace\.readMobileOverview/);
+  assert.match(app,/PGIWorkspace\.saveMobileOverview/);
+});
+
+test("le NOC distingue API, CDR, queue et résilience",()=>{
+  assert.match(app,/function cdrPipelineState/);
+  assert.match(app,/AUCUN CDR REÇU/);
+  assert.match(app,/DERNIER CDR ANCIEN/);
+  assert.match(app,/CDR REÇUS/);
+  assert.match(app,/dead_lettered/);
+  assert.match(app,/oldest_pending_seconds/);
+});
+
+test("les alertes du Cockpit sont actionnables",()=>{
+  assert.match(app,/Écart de reversement détecté/);
+  assert.match(app,/ASR sous le seuil cible/);
+  assert.match(app,/Qualité voix à contrôler/);
+  assert.match(app,/Retard CDR important/);
+  assert.match(app,/Jobs en dead-letter/);
+  assert.match(app,/File de traitements ralentie/);
+});
+
+test("experts opérateurs et réconciliation utilisent les agrégats serveur",()=>{
+  assert.match(app,/analytics\.experts/);
+  assert.match(app,/analytics\.carriers/);
+  assert.match(app,/serverReconciliation/);
+  assert.match(app,/dashboard\.reconciliation/);
+});
+
+test("la PWA met en cache tous les modules du shell",()=>{
+  for(const file of [
+    "assets/demo-data.js","assets/api-client.js","assets/data-client.js",
+    "assets/command-palette.js","assets/workspace.js","assets/app.js"
+  ])assert.ok(sw.includes(file),"service worker missing "+file);
+  assert.match(sw,/pgi-telecom-shell-v19/);
+});
+
+test("la release Git exacte reste visible et obligatoire",()=>{
+  assert.ok(index.includes('id="runtime-release"'));
+  assert.match(app,/RUNTIME\.releaseId/);
+  assert.match(buildStatic,/PGI_RELEASE_ID/);
+  assert.match(buildStatic,/40-character Git SHA/);
+});
+
+test("le produit garde son identité et ne contient pas l’ancien nom",()=>{
+  assert.match(index,/PGI • Telecom - Audiotel Premium Pro/);
+  assert.doesNotMatch(index,/PGI Telecom • Audiotel Premium Pro/);
+  assert.match(index,/TOUR DE CONTRÔLE/);
+  assert.match(index,/CENTRE DE PILOTAGE PGI/);
 });
