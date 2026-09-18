@@ -96,3 +96,5 @@ La release 1.5.0 ajoute les garde-fous préproduction : sessions sécurisées, f
 Validation CI relancée après correction du test de routage encodé.
 
 Validation CI finale après correction de l’exposition contrôlée des erreurs SSE.
+
+Validation PostgreSQL finale après correction du fixture de route logique.
