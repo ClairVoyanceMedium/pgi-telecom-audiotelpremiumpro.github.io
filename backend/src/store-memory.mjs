@@ -20,6 +20,7 @@ export class MemoryStore{
     this.baselines=[];
     this.rawEventKeys=new Set();
     this.outbox=[];
+    this.workQueue=[];
     this.idempotency=new Map();
     this.audit=[];
     this.route={
@@ -387,6 +388,74 @@ export class MemoryStore{
       }
     }
     return {processed:pending.length,published,pending:this.outbox.filter(x=>!x.published_at).length};
+  }
+
+  async enqueueWork(queueName,payload={},options={}){
+    const now=new Date().toISOString();
+    const dedupe=options.dedupe_key?String(options.dedupe_key):null;
+    if(dedupe){
+      const existing=this.workQueue.find(x=>x.queue_name===queueName&&x.dedupe_key===dedupe&&!x.completed_at&&!x.failed_at);
+      if(existing)return structuredClone(existing);
+    }
+    const row={
+      id:this.workQueue.length+1,queue_name:String(queueName),tenant_id:options.tenant_id??null,
+      dedupe_key:dedupe,priority:Number(options.priority||100),payload:structuredClone(payload||{}),
+      available_at:options.available_at||now,locked_at:null,locked_by:null,lease_expires_at:null,
+      attempts:0,max_attempts:Number(options.max_attempts||10),correlation_id:randomUUID(),
+      trace_id:options.trace_id||null,completed_at:null,failed_at:null,dead_lettered_at:null,last_error:null,created_at:now
+    };
+    this.workQueue.push(row);
+    return structuredClone(row);
+  }
+
+  async claimWork(queueName,workerId,limit=25,leaseSeconds=60){
+    const now=Date.now(),ttl=Math.max(15,Math.min(900,Number(leaseSeconds)||60))*1000;
+    const ready=this.workQueue
+      .filter(x=>x.queue_name===String(queueName)&&!x.completed_at&&!x.failed_at&&!x.dead_lettered_at&&Date.parse(x.available_at)<=now&&(!x.locked_at||!x.lease_expires_at||Date.parse(x.lease_expires_at)<=now))
+      .sort((a,b)=>a.priority-b.priority||Date.parse(a.available_at)-Date.parse(b.available_at)||a.id-b.id)
+      .slice(0,Math.max(1,Math.min(100,Number(limit)||25)));
+    for(const row of ready){
+      row.locked_at=new Date(now).toISOString();
+      row.locked_by=String(workerId);
+      row.lease_expires_at=new Date(now+ttl).toISOString();
+      row.attempts++;
+    }
+    return structuredClone(ready);
+  }
+
+  async completeWork(id,workerId){
+    const row=this.workQueue.find(x=>x.id===Number(id)&&x.locked_by===String(workerId)&&!x.completed_at&&!x.failed_at&&!x.dead_lettered_at);
+    if(!row)throw problem(409,"WORK_LEASE_LOST");
+    row.completed_at=new Date().toISOString();
+    row.locked_at=null;row.locked_by=null;row.lease_expires_at=null;row.last_error=null;
+    return structuredClone(row);
+  }
+
+  async failWork(id,workerId,errorMessage,retryDelaySeconds=30){
+    const row=this.workQueue.find(x=>x.id===Number(id)&&x.locked_by===String(workerId)&&!x.completed_at&&!x.failed_at&&!x.dead_lettered_at);
+    if(!row)throw problem(409,"WORK_LEASE_LOST");
+    row.last_error=String(errorMessage||"worker failed").slice(0,1000);
+    if(row.attempts>=row.max_attempts){
+      row.failed_at=new Date().toISOString();
+      row.dead_lettered_at=row.failed_at;
+      row.locked_at=null;row.locked_by=null;row.lease_expires_at=null;
+      return {id:row.id,state:"dead_lettered",attempts:row.attempts};
+    }
+    const delay=Math.min(3600,Math.max(1,Number(retryDelaySeconds)||30)*Math.pow(2,Math.max(0,row.attempts-1)));
+    row.available_at=new Date(Date.now()+delay*1000).toISOString();
+    row.locked_at=null;row.locked_by=null;row.lease_expires_at=null;
+    return {id:row.id,state:"retry",attempts:row.attempts,retry_in_seconds:Math.round(delay)};
+  }
+
+  async workQueueHealth(){
+    const pending=this.workQueue.filter(x=>!x.completed_at&&!x.failed_at&&!x.dead_lettered_at);
+    const oldest=pending.length?Math.max(0,(Date.now()-Math.min(...pending.map(x=>Date.parse(x.created_at))))/1000):0;
+    return {
+      pending:pending.length,
+      leased:pending.filter(x=>x.locked_at).length,
+      dead_lettered:this.workQueue.filter(x=>x.dead_lettered_at).length,
+      oldest_pending_seconds:oldest
+    };
   }
 
   async listTenants(params={}){
