@@ -21,7 +21,7 @@
     "hash:password": "node scripts/hash-password.mjs",
     "check:lock": "node scripts/check-lock.mjs",
     "check:production": "node scripts/check-production-contract.mjs",
-    "check:shell": "bash -n scripts/preflight.sh scripts/backup-postgres.sh scripts/restore-drill.sh"
+    "check:shell": "bash -n scripts/preflight.sh scripts/backup-postgres.sh scripts/restore-drill.sh scripts/static-release.sh"
   },
   "engines": {
     "node": ">=20"
