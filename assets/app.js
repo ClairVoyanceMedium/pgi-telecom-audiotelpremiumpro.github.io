@@ -572,13 +572,24 @@
 
   function renderHeatmap(rows){
     var labels=["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"],matrix=[],max=0,peak={count:0,day:0,hour:0};
-    for(var d=0;d<7;d++){matrix[d]=Array(24).fill(0);}
-    rows.forEach(function(c){
-      var day=(c.ts.getDay()+6)%7,h=c.ts.getHours();
-      matrix[day][h]++;
-      if(matrix[day][h]>peak.count)peak={count:matrix[day][h],day:day,hour:h};
-      if(matrix[day][h]>max)max=matrix[day][h];
-    });
+    for(var d=0;d<7;d++)matrix[d]=Array(24).fill(0);
+    var analytics=cockpitAnalytics(rows);
+    if(Array.isArray(analytics.heatmap)&&analytics.heatmap.length){
+      analytics.heatmap.forEach(function(cell){
+        var day=Math.max(0,Math.min(6,Number(cell.weekday||1)-1)),hour=Math.max(0,Math.min(23,Number(cell.hour||0)));
+        matrix[day][hour]=Number(cell.calls_total||0);
+      });
+    }else{
+      rows.forEach(function(c){
+        var day=(c.ts.getDay()+6)%7,h=c.ts.getHours();
+        matrix[day][h]++;
+      });
+    }
+    for(var day=0;day<7;day++)for(var h=0;h<24;h++){
+      var count=matrix[day][h];
+      if(count>peak.count)peak={count:count,day:day,hour:h};
+      if(count>max)max=count;
+    }
     var html="";
     for(var day=0;day<7;day++){
       html+='<span class="heatmap-day">'+labels[day]+'</span><div class="heatmap-row">';
@@ -593,20 +604,17 @@
   }
 
   function renderFunnel(rows){
-    var total=rows.length,connected=rows.filter(function(x){return x.status==="connected";}).length;
-    var longCalls=rows.filter(function(x){return x.status==="connected"&&x.conversation>=600;}).length;
-    var payable=rows.filter(function(x){return x.expected>0;}).length;
-    var stages=[
-      ["Entrants",total],
-      ["Aboutis",connected],
-      ["> 10 min",longCalls],
-      ["Éligibles reversement",payable]
-    ];
-    var max=Math.max(1,total);
-    var el=$("call-funnel");
-    if(el)el.innerHTML=stages.map(function(s,i){
-      var pct=s[1]/max*100;
-      return '<div class="funnel-stage"><div class="funnel-meta"><span>'+esc(s[0])+'</span><strong>'+nfmt(s[1])+' <small>'+nfmt(pct,1)+'%</small></strong></div><i><b style="width:'+pct.toFixed(1)+'%"></b></i></div>';
+    var analytics=cockpitAnalytics(rows),m=currentAggregate(rows);
+    var durationMap={};
+    (analytics.durations||[]).forEach(function(x){durationMap[x.dimension_key]=Number(x.calls_total||0);});
+    var total=Number(m.calls||0),connected=Number(m.connected||0);
+    var longCalls=(durationMap["10_20m"]||0)+(durationMap["20_30m"]||0)+(durationMap["gte_30m"]||0);
+    var payable=connected;
+    var stages=[["Entrants",total],["Aboutis",connected],["> 10 min",longCalls],["Éligibles reversement",payable]];
+    var max=Math.max(1,total),el=$("call-funnel");
+    if(el)el.innerHTML=stages.map(function(stage){
+      var pct=stage[1]/max*100;
+      return '<div class="funnel-stage"><div class="funnel-meta"><span>'+esc(stage[0])+'</span><strong>'+nfmt(stage[1])+' <small>'+nfmt(pct,1)+'%</small></strong></div><i><b style="width:'+pct.toFixed(1)+'%"></b></i></div>';
     }).join("");
   }
 
@@ -806,6 +814,10 @@
     var weekdays=[...grouped(function(c){var d=c.ts.getDay();return d===0?7:d;})].map(function(entry){
       var x=summarize(entry[1]);return {weekday:Number(entry[0]),calls_total:x.calls_total,calls_connected:x.calls_connected,billable_seconds:x.billable_seconds};
     }).sort(function(a,b){return a.weekday-b.weekday;});
+    var heatmap=[...grouped(function(c){var d=c.ts.getDay(),day=d===0?7:d;return day+":"+c.ts.getHours();})].map(function(entry){
+      var parts=String(entry[0]).split(":");
+      return {weekday:Number(parts[0]),hour:Number(parts[1]),calls_total:entry[1].length};
+    }).sort(function(a,b){return a.weekday-b.weekday||a.hour-b.hour;});
     var dimension=function(type,keyFn,labelFn){
       return [...grouped(keyFn)].map(function(entry){
         var x=summarize(entry[1]);
@@ -817,7 +829,7 @@
     var durationKey=function(c){return c.status!=="connected"?"not_connected":c.conversation<60?"lt_1m":c.conversation<300?"1_5m":c.conversation<600?"5_10m":c.conversation<1200?"10_20m":c.conversation<1800?"20_30m":"gte_30m";};
     var durationLabels={not_connected:"Non aboutis",lt_1m:"< 1 min","1_5m":"1–5 min","5_10m":"5–10 min","10_20m":"10–20 min","20_30m":"20–30 min",gte_30m:"30 min +"};
     var durationRows=dimension("duration",durationKey,function(c){return durationLabels[durationKey(c)]||"Autre";});
-    return {granularity:granularity,series:series,hours:hours,weekdays:weekdays,experts:expertRows,carriers:carrierRows,durations:durationRows};
+    return {granularity:granularity,series:series,hours:hours,weekdays:weekdays,heatmap:heatmap,experts:expertRows,carriers:carrierRows,durations:durationRows};
   }
 
   function analyticsBucketLabel(value,granularity){
@@ -910,7 +922,7 @@
     if(sampleNote){
       sampleNote.hidden=!state.cdrSampleTruncated;
       sampleNote.textContent=state.cdrSampleTruncated
-        ?"Les graphiques du Tour de contrôle utilisent les agrégats serveur exacts. Seuls la qualité RTP, la heatmap historique détaillée et certains détails CDR restent limités aux 1 000 appels récents chargés dans le navigateur."
+        ?"Les graphiques du Tour de contrôle utilisent les agrégats serveur exacts. Seuls la qualité RTP, la qualité RTP et certains détails CDR restent limités aux 1 000 appels récents chargés dans le navigateur."
         :"Les analyses affichées couvrent toute la période sélectionnée.";
     }
   }
