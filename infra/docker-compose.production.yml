@@ -13,6 +13,7 @@ services:
       PGI_BACKEND_HOST: 0.0.0.0
       PGI_BACKEND_PORT: 8080
       PGI_VERSION: ${PGI_VERSION:-1.5.0}
+      PGI_RELEASE_ID: ${PGI_RELEASE_ID}
       PGI_DATABASE_URL: postgresql://${POSTGRES_USER:-pgi_telecom}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pgi_telecom}
       PGI_DATABASE_SSL: disable
       PGI_DATABASE_POOL_MAX: ${PGI_DATABASE_POOL_MAX:-10}
