@@ -148,6 +148,43 @@
     if(dialog&&dialog.open)dialog.close();
   }
 
+  function stopProductionEvents(){
+    if(state.eventSource){
+      try{state.eventSource.close();}catch(e){}
+      state.eventSource=null;
+    }
+  }
+
+  function clearProductionData(){
+    if(RUNTIME.mode!=="production")return;
+    allCalls=[];
+    experts=[];
+    carriers=[];
+    state.system=null;
+    state.route=null;
+    setProductionLive({});
+    render();
+  }
+
+  function requireProductionLogin(message){
+    if(RUNTIME.mode!=="production")return;
+    state.authUser=null;
+    stopProductionEvents();
+    var logout=$("logout-btn");if(logout)logout.hidden=true;
+    clearProductionData();
+    showLogin(message||"Session requise. Saisissez vos identifiants administrateur.");
+  }
+
+  async function logoutProduction(){
+    if(RUNTIME.mode!=="production"||!window.PGIApi)return;
+    var button=$("logout-btn");if(button)button.disabled=true;
+    try{await window.PGIApi.logout();}catch(e){}
+    finally{
+      if(button)button.disabled=false;
+      requireProductionLogin("Session fermée. Identifiez-vous pour continuer.");
+    }
+  }
+
   function scheduleProductionSync(){
     if(RUNTIME.mode!=="production")return;
     clearTimeout(state.syncTimer);
@@ -177,6 +214,7 @@
       var me=await window.PGIApi.me();
       state.authUser=me&&me.user?me.user:null;
       closeLogin();
+      var logout=$("logout-btn");if(logout)logout.hidden=false;
       var range=getRange();
       var windowRange=productionDataRange();
       var results=await Promise.all([
@@ -199,8 +237,7 @@
       startProductionEvents();
     }catch(e){
       if(e&&e.status===401){
-        state.authUser=null;
-        showLogin("Session requise. Saisissez vos identifiants administrateur.");
+        requireProductionLogin("Session expirée. Identifiez-vous de nouveau.");
       }else{
         state.diagnostics.apiStatus="error";
         recordRuntimeError();
@@ -810,6 +847,11 @@
     });
     var authForm=$("auth-form");
     if(authForm)authForm.addEventListener("submit",function(e){e.preventDefault();submitLogin();});
+    var authDialog=$("auth-dialog");
+    if(authDialog)authDialog.addEventListener("cancel",function(e){if(RUNTIME.mode==="production")e.preventDefault();});
+    var logoutButton=$("logout-btn");
+    if(logoutButton)logoutButton.addEventListener("click",logoutProduction);
+    window.addEventListener("pgi:auth-required",function(){requireProductionLogin("Session expirée. Identifiez-vous de nouveau.");});
   }
 
   function recordRuntimeError(){
