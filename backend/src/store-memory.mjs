@@ -363,6 +363,14 @@ export class MemoryStore{
     return {replayed:false,value};
   }
 
+  async acquireWorkerLease(){
+    return true;
+  }
+
+  async releaseWorkerLease(){
+    return true;
+  }
+
   async drainOutbox(handler,limit=100){
     const pending=this.outbox.filter(x=>!x.published_at).slice(0,limit);
     let published=0;
