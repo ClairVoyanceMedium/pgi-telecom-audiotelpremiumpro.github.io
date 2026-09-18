@@ -341,3 +341,20 @@ La `work_queue` est désormais exécutable avec :
 Les requêtes exposent une corrélation W3C `traceparent`, des histogrammes de latence par route et des compteurs HTTP.
 
 Les règles Prometheus d'exemple surveillent notamment le burn-rate du budget d'erreur, le p95, le retard CDR, l'âge des jobs et les dead letters.
+
+
+## Metered billing à très grande échelle
+
+Les compteurs agrégés ne sont pas une preuve suffisante pour une facturation contractuelle.
+
+Le socle conserve désormais `tenant_usage_events`, un ledger append-only partitionné sur 64 partitions, avec déduplication par source et identifiant d'événement.
+
+`tenant_billing_cycles` matérialise ensuite les périodes de rating et de facturation sans modifier les événements d'usage historiques.
+
+## Stockage objet et cycle de vie
+
+Les pièces KYC, relevés opérateurs, factures, exports CDR, sauvegardes et gros artefacts ne doivent pas être stockés comme blobs dans PostgreSQL.
+
+`object_assets` conserve uniquement les références, checksum, taille, classification, région, chiffrement, rétention et legal hold.
+
+`data_retention_policies` et `data_subject_requests` préparent la gestion des durées de conservation et demandes de confidentialité par tenant et marché.
