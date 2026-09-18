@@ -4,7 +4,7 @@ Cockpit Audiotel, financier et télécom de PGI Telecom.
 
 ## État actuel
 
-Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.11.1 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
+Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.12.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
 
 Fonctions déjà présentes :
 
@@ -89,9 +89,9 @@ Le projet possède désormais des garde-fous de préproduction :
 
 La version GitHub Pages reste une démonstration. Les statuts SIP/API affichent explicitement qu'ils ne sont pas connectés tant que l'infrastructure réelle n'existe pas.
 
-## Validation release 1.11.1
+## Validation release 1.12.0
 
-La release 1.11.1 transforme la fondation Wholesale SVA en véritable centre de contrôle : vue Plateforme SVA, synthèse wholesale sur l'accueil, clients/tenants, affectations 089, stock libre, KYC, opérateur attributaire, conformité PSP/DSP2 et reversements par éditeur alimentés par PostgreSQL en production.
+La release 1.12.0 transforme la fondation Wholesale SVA en véritable centre de contrôle : vue Plateforme SVA, synthèse wholesale sur l'accueil, clients/tenants, affectations 089, stock libre, KYC, opérateur attributaire, conformité PSP/DSP2 et reversements par éditeur alimentés par PostgreSQL en production.
 
 
 
@@ -178,6 +178,17 @@ Points verrouillés :
 Le nom visible reste **PGI • Telecom - Audiotel Premium Pro**.
 
 
-### Durcissement petits écrans 1.11.1
+### Durcissement petits écrans 1.12.0
 
 La couche mobile est renforcée pour les écrans Android et iPhone les plus étroits : l’en-tête conserve le nom du produit sans débordement, les statuts secondaires sont retirés de la barre supérieure sur petit écran car ils restent disponibles dans les vues de santé, les filtres et périodes personnalisées se réorganisent automatiquement, et les actions de tableaux restent utilisables au doigt sans compression horizontale.
+
+
+### Internationalisation 1.12
+
+Le socle est désormais France-first mais nativement multi-marchés. Un tenant peut exploiter plusieurs pays sans duplication du backend : marché, langue/locale, fuseau horaire, devise, conformité, numérotation, capacité opérateur et reversements sont découplés.
+
+France reste le seul marché activé automatiquement. Les futurs pays doivent être créés en préparation puis activés uniquement après validation contractuelle, télécom, réglementaire et financière.
+
+Les numéros utilisent E.164 comme identité canonique avec alias opérateur explicites. Les CDR et écritures financières transportent leur marché et leur devise, et le cockpit Wholesale n'additionne jamais des monnaies différentes.
+
+Voir `docs/INTERNATIONAL.md` pour la procédure d'ouverture d'un nouveau marché.
