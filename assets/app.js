@@ -3,7 +3,7 @@
 
   var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
   var CONFIG={serviceRate:0.80,payoutRate:0.46,expertCostPerMin:0.18,fixedCostPerCall:0.03};
-  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,system:null,route:null,wholesale:null,mobileOverviewExpanded:false};
+  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,system:null,route:null,wholesale:null,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
   var titles={overview:"Vue d’ensemble",calls:"Appels",finance:"Finance",experts:"Experts",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Système",settings:"Paramètres"};
   var experts=["Frederick","Sofia","Emma","Lina","Clara","Nora"];
   var carriers=["Orange","SFR","Bouygues","Free"];
@@ -60,7 +60,7 @@
         var qseed=seeded(day*19+i*7);
         rows.push({
           id:id++,ts:d,ivrStarted:ivrStarted,queued:queued,bridged:bridged,ended:ended,
-          caller:maskPhone(i+day),carrier:carriers[(i+day)%carriers.length],number:number089,
+          caller:maskPhone(i+day),carrier:carriers[(i+day)%carriers.length],number:number089,market:"FR",currency:"EUR",
           expert:experts[(i*3+day)%experts.length],wait:wait,conversation:conv,total:Math.max(0,Math.round((ended-d)/1000)),billable:billable,
           originType:originType,
           payoutEligible:financial.payoutEligibleSeconds/60,expected:expected,confirmed:confirmed,paid:paid,status:status,
@@ -124,10 +124,11 @@
     return {from:new Date(r.from.getTime()-duration-1),to:r.to};
   }
 
-  async function loadAllApiCalls(from,to){
+  async function loadAllApiCalls(from,to,market){
     var data=[],cursor=null,pages=0;
     do{
       var params={from:from.toISOString(),to:to.toISOString(),limit:"250"};
+      if(market)params.market=market;
       if(cursor)params.cursor=cursor;
       var page=await window.PGIApi.calls(params);
       data=data.concat(Array.isArray(page.data)?page.data:[]);
@@ -142,6 +143,30 @@
     state.live.calls=Number(summary&&summary.live_calls||0);
     state.live.available=Number(summary&&summary.active_experts||0);
     state.live.queue=Number(summary&&summary.queue_depth||0);
+  }
+
+  function syncMarketSelector(data){
+    var markets=data&&Array.isArray(data.markets)?data.markets:[];
+    var active=markets.filter(function(x){return String(x.status||"").toLowerCase()==="active";});
+    var current=state.market;
+    if(!active.some(function(x){return x.country_code===current;})){
+      var preferred=active.find(function(x){return x.country_code==="FR";})||active[0]||null;
+      current=preferred?preferred.country_code:null;
+    }
+    state.market=current;
+    var selected=active.find(function(x){return x.country_code===current;})||null;
+    state.marketCurrency=selected&&selected.default_currency?selected.default_currency:"EUR";
+
+    var wrap=$("market-filter-wrap"),select=$("market-filter");
+    if(select){
+      select.innerHTML=active.map(function(x){
+        var label=(x.display_name||x.country_code)+" ("+x.country_code+")";
+        return '<option value="'+esc(x.country_code)+'">'+esc(label)+"</option>";
+      }).join("");
+      if(current)select.value=current;
+      select.disabled=active.length<2;
+    }
+    if(wrap)wrap.hidden=active.length<2;
   }
 
   function showLogin(message){
@@ -228,15 +253,17 @@
       var baselineRows=Array.isArray(baselineResult&&baselineResult.data)?baselineResult.data:[];
       state.resets=baselineRows.map(function(x){return {at:x.effective_from||x.created_at,scope:x.scope,reason:x.reason||""};});
       state.baseline=baselineRows.length?new Date(baselineRows[0].effective_from||baselineRows[0].created_at):null;
+      var wholesale=await window.PGIApi.wholesaleOverview().catch(function(){return null;});
+      state.wholesale=wholesale;
+      syncMarketSelector(wholesale);
       var range=getRange();
       var windowRange=productionDataRange();
       var results=await Promise.all([
-        loadAllApiCalls(windowRange.from,windowRange.to),
-        window.PGIApi.summary(range.from.toISOString(),range.to.toISOString()),
+        loadAllApiCalls(windowRange.from,windowRange.to,state.market),
+        window.PGIApi.summary(range.from.toISOString(),range.to.toISOString(),state.market),
         window.PGIApi.experts(),
         window.PGIApi.systemHealth(),
-        window.PGIApi.carrierRouting(),
-        window.PGIApi.wholesaleOverview().catch(function(){return null;})
+        window.PGIApi.carrierRouting()
       ]);
       allCalls=results[0].map(apiCallToUi).filter(function(x){return Number.isFinite(x.ts.getTime());}).sort(function(a,b){return b.ts-a.ts;});
       var expertRows=Array.isArray(results[2]&&results[2].data)?results[2].data:[];
@@ -245,7 +272,6 @@
       carriers=networkNames;
       state.system=results[3]||null;
       state.route=results[4]||null;
-      state.wholesale=results[5]||null;
       setProductionLive(results[1]||{});
       state.diagnostics.apiStatus="ok";
       render();
@@ -988,7 +1014,7 @@
     setText("command-sync",syncLabel);
     setText("command-release",RUNTIME.releaseId?String(RUNTIME.releaseId).slice(0,12):(RUNTIME.mode==="production"?"inconnue":"demo"));
     var periodLabels={today:"Aujourd’hui","7d":"7 jours",week:"Semaine",month:"Mois",year:"Année",custom:"Personnalisée"};
-    setText("command-period",periodLabels[state.period]||"Période");
+    setText("command-period",(periodLabels[state.period]||"Période")+(state.market?" • "+state.market:""));
     var commandSystem=RUNTIME.mode!=="production"?"Mode démo":(state.diagnostics.apiStatus==="ok"?"Opérationnel":(state.diagnostics.apiStatus==="error"?"Dégradé":"Connexion"));
     setText("command-system",commandSystem);
     setText("render-time",nfmt(state.diagnostics.lastRenderMs,1)+" ms");
@@ -1028,6 +1054,11 @@
     $("refresh-btn").addEventListener("click",refreshData);
     var mobileOverviewToggle=$("mobile-overview-toggle");
     if(mobileOverviewToggle)mobileOverviewToggle.addEventListener("click",toggleMobileOverview);
+    var marketFilter=$("market-filter");
+    if(marketFilter)marketFilter.addEventListener("change",function(){
+      state.market=marketFilter.value||null;
+      syncProductionData();
+    });
     var more=$("mobile-more");
     if(more)more.addEventListener("click",function(){
       var d=$("mobile-menu-dialog");
