@@ -134,7 +134,8 @@ export function createBackend(options={}){
           res.end("");
           return;
         }
-        text(res,200,expert.destination_uri);
+        const line=[expert.destination_uri,String(expert.id||""),String(expert.display_name||"").replace(/[\t\r\n]/g," ")].join("\t");
+        text(res,200,line);
         return;
       }
 
