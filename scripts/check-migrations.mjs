@@ -38,7 +38,8 @@ for(const file of files){
     [/\bALTER\s+TABLE\b[\s\S]*\bRENAME\b/,"ALTER TABLE RENAME"],
     [/\bALTER\s+TABLE\b[\s\S]*\bALTER\s+COLUMN\b/,"ALTER COLUMN"],
     [/\bALTER\s+TYPE\b/,"ALTER TYPE"],
-    [/\bDELETE\s+FROM\b/,"DELETE FROM"]
+    [/\bDELETE\s+FROM\b/,"DELETE FROM"],
+    [/\bCREATE\s+OR\s+REPLACE\s+(VIEW|FUNCTION|PROCEDURE|TRIGGER)\b/,"CREATE OR REPLACE behavioral object"]
   ];
 
   for(const [pattern,label] of forbidden){
