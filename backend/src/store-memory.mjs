@@ -472,7 +472,7 @@ export class MemoryStore{
 
   async wholesaleOverview(){
     return {
-      foundation_version:"1.13",
+      foundation_version:"1.14",
       summary:{
         tenants_total:0,tenants_active:0,kyc_verified:0,kyc_pending:0,
         markets_total:1,markets_active:1,tenant_markets_active:0,
@@ -491,6 +491,7 @@ export class MemoryStore{
       scale:{
         clusters_total:1,clusters_ready:1,routing_buckets_active:4096,
         placements_active:1,call_fact_partitions:64,bucket_capacity:4096,
+        regions_total:1,regions_ready:1,dr_targets_total:4,dr_drills_passed:0,
         read_replica_enabled:false,process_role:this.config.processRole||"all"
       }
     };
