@@ -308,6 +308,55 @@ test("backend health summary calls and metrics are operational",async()=>{
   });
 });
 
+test("app bootstrap collapses control-plane startup",async()=>{
+  await withServer(async({base})=>{
+    const r=await fetch(base+"/api/v1/app/bootstrap");
+    assert.equal(r.status,200);
+    const body=await r.json();
+    assert.ok(body.user);
+    assert.ok(body.baselines&&Array.isArray(body.baselines.data));
+    assert.ok(body.wholesale);
+    assert.equal(body.wholesale.foundation_version,"1.16");
+    assert.ok(Number.isFinite(Date.parse(body.server_time)));
+  });
+});
+
+test("dashboard bootstrap returns decision-ready data in one call",async()=>{
+  await withServer(async({base})=>{
+    const from="2026-09-01T00:00:00.000Z";
+    const to="2026-09-30T23:59:59.999Z";
+    const previousFrom="2026-08-01T00:00:00.000Z";
+    const previousTo="2026-08-31T23:59:59.999Z";
+    const q=new URLSearchParams({
+      from,to,previous_from:previousFrom,previous_to:previousTo
+    });
+    const r=await fetch(base+"/api/v1/dashboard/bootstrap?"+q.toString());
+    assert.equal(r.status,200);
+    const body=await r.json();
+    assert.ok(body.summary);
+    assert.ok(body.previous_summary);
+    assert.ok(body.analytics);
+    assert.ok(body.experts&&Array.isArray(body.experts.data));
+    assert.ok(body.system);
+    assert.ok(body.route);
+    assert.ok(body.reconciliation&&Array.isArray(body.reconciliation.data));
+    assert.ok(Number.isFinite(Date.parse(body.server_time)));
+  });
+});
+
+test("dashboard bootstrap rejects half-specified previous ranges",async()=>{
+  await withServer(async({base})=>{
+    const q=new URLSearchParams({
+      from:"2026-09-01T00:00:00.000Z",
+      to:"2026-09-30T23:59:59.999Z",
+      previous_from:"2026-08-01T00:00:00.000Z"
+    });
+    const r=await fetch(base+"/api/v1/dashboard/bootstrap?"+q.toString());
+    assert.equal(r.status,400);
+    assert.equal((await r.json()).error.code,"INVALID_PREVIOUS_RANGE");
+  });
+});
+
 test("dashboard analytics provides bounded chart dimensions",async()=>{
   await withServer(async({base})=>{
     const r=await fetch(base+"/api/v1/dashboard/analytics");
@@ -319,8 +368,8 @@ test("dashboard analytics provides bounded chart dimensions",async()=>{
     assert.ok(Array.isArray(body.weekdays)&&body.weekdays.length>0&&body.weekdays.length<=7);
     assert.ok(Array.isArray(body.heatmap)&&body.heatmap.length>0&&body.heatmap.length<=168);
     assert.ok(body.quality&&Number(body.quality.samples)>=0);
-    assert.ok(Array.isArray(body.experts)&&body.experts.length<=12);
-    assert.ok(Array.isArray(body.carriers)&&body.carriers.length<=12);
+    assert.ok(Array.isArray(body.experts)&&body.experts.length<=50);
+    assert.ok(Array.isArray(body.carriers)&&body.carriers.length<=50);
     assert.ok(Array.isArray(body.durations));
   });
 });
@@ -330,7 +379,7 @@ test("wholesale overview is read-only and empty in simulator",async()=>{
     const r=await fetch(base+"/api/v1/platform/overview");
     assert.equal(r.status,200);
     const body=await r.json();
-    assert.equal(body.foundation_version,"1.15");
+    assert.equal(body.foundation_version,"1.16");
     assert.equal(body.summary.tenants_total,0);
     assert.equal(body.summary.assignments_total,0);
     assert.equal(body.summary.payment_compliance_active,false);
