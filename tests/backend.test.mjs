@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createBackend,evaluateReadiness} from "../backend/server.mjs";
+import {loadConfig} from "../backend/src/config.mjs";
 import {hashPassword,verifyPassword,issueSession,verifySession,sessionCookie,csrfCookie} from "../backend/src/security.mjs";
 import {selectExpert} from "../backend/src/expert-router.mjs";
 import {clientIp,routeMatch} from "../backend/src/http.mjs";
