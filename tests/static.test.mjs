@@ -171,3 +171,12 @@ test("la vue mobile essentielle reste disponible", () => {
   assert.match(app, /applyMobileOverviewMode/);
   assert.match(app, /pgi_mobile_overview_expanded/);
 });
+
+
+test("les écrans mobiles étroits sont verrouillés", () => {
+  assert.match(css, /PGI 1\.11\.1 — Narrow Mobile Hardening/);
+  assert.match(css, /\.top-actions \.pill:not\(\.demo\)\{display:none\}/);
+  assert.match(css, /grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\)/);
+  assert.match(css, /@media \(max-width:360px\)/);
+  assert.match(css, /\.call-filters\{grid-template-columns:1fr\}/);
+});
