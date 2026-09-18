@@ -10,14 +10,21 @@ permissions:
 
 concurrency:
   group: "production-front"
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
     if: ${{ vars.PGI_VPS_DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     environment: production
+    env:
+      VPS_HOST: ${{ vars.PGI_VPS_HOST }}
+      VPS_USER: ${{ vars.PGI_VPS_USER }}
+      VPS_PATH: ${{ vars.PGI_VPS_FRONT_PATH }}
+      PUBLIC_URL: ${{ vars.PGI_PRODUCTION_URL }}
+      RELEASE_ID: ${{ github.sha }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,17 +40,39 @@ jobs:
       - name: Verify
         run: npm run verify
 
+      - name: Validate deployment variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$VPS_HOST" =~ ^[A-Za-z0-9._:-]+$ ]]
+          [[ "$VPS_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]
+          [[ "$VPS_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]]
+          [[ "$PUBLIC_URL" =~ ^https://[A-Za-z0-9._:-]+/?$ ]]
+          [[ "$RELEASE_ID" =~ ^[0-9a-f]{40}$ ]]
+
       - name: Build production front
         env:
           PGI_RUNTIME_MODE: production
           PGI_API_BASE_URL: /api/v1
         run: npm run build:static
 
+      - name: Verify production artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/index.html
+          test -s dist/assets/app.js
+          test -s dist/assets/config.js
+          grep -F '"mode": "production"' dist/assets/config.js
+          expected_version="$(node -p "require('./package.json').version")"
+          grep -F "\"version\": \"$expected_version\"" dist/assets/config.js
+
       - name: Configure SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.PGI_VPS_SSH_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.PGI_VPS_KNOWN_HOSTS }}
         run: |
+          set -euo pipefail
           test -n "$SSH_PRIVATE_KEY"
           test -n "$SSH_KNOWN_HOSTS"
           install -m 700 -d ~/.ssh
@@ -52,21 +81,52 @@ jobs:
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Deploy static artifact
-        env:
-          VPS_HOST: ${{ vars.PGI_VPS_HOST }}
-          VPS_USER: ${{ vars.PGI_VPS_USER }}
-          VPS_PATH: ${{ vars.PGI_VPS_FRONT_PATH }}
+      - name: Upload immutable release
+        shell: bash
         run: |
-          test -n "$VPS_HOST"
-          test -n "$VPS_USER"
-          test -n "$VPS_PATH"
-          rsync -az --delete --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r             dist/ "$VPS_USER@$VPS_HOST:$VPS_PATH/"
+          set -euo pipefail
+          remote_release="$VPS_PATH/releases/$RELEASE_ID"
+          ssh "$VPS_USER@$VPS_HOST" "mkdir -p '$remote_release'"
+          rsync -az --checksum --delete --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r \
+            dist/ "$VPS_USER@$VPS_HOST:$remote_release/"
+          scp scripts/static-release.sh "$VPS_USER@$VPS_HOST:$VPS_PATH/static-release.sh"
+          ssh "$VPS_USER@$VPS_HOST" \
+            "chmod 700 '$VPS_PATH/static-release.sh' && test -s '$remote_release/index.html' && test -s '$remote_release/assets/app.js' && test -s '$remote_release/assets/config.js'"
 
-      - name: Verify deployed files
-        env:
-          VPS_HOST: ${{ vars.PGI_VPS_HOST }}
-          VPS_USER: ${{ vars.PGI_VPS_USER }}
-          VPS_PATH: ${{ vars.PGI_VPS_FRONT_PATH }}
+      - name: Promote release atomically
+        id: promote
+        shell: bash
         run: |
-          ssh "$VPS_USER@$VPS_HOST" "test -s '$VPS_PATH/index.html' && test -s '$VPS_PATH/assets/app.js'"
+          set -euo pipefail
+          ssh "$VPS_USER@$VPS_HOST" "$VPS_PATH/static-release.sh promote '$VPS_PATH' '$RELEASE_ID'"
+          deployed="$(ssh "$VPS_USER@$VPS_HOST" "$VPS_PATH/static-release.sh verify '$VPS_PATH'")"
+          test "$deployed" = "$RELEASE_ID"
+
+      - name: Smoke test public production
+        id: smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${PUBLIC_URL%/}"
+          curl --fail --silent --show-error --retry 5 --retry-delay 2 --max-time 12 "$base/" >/dev/null
+          config="$(curl --fail --silent --show-error --retry 5 --retry-delay 2 --max-time 12 "$base/assets/config.js")"
+          expected_version="$(node -p "require('./package.json').version")"
+          printf '%s' "$config" | grep -F '"mode": "production"'
+          printf '%s' "$config" | grep -F "\"version\": \"$expected_version\""
+          curl --fail --silent --show-error --retry 5 --retry-delay 2 --max-time 12 "$base/api/v1/health" \
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const x=JSON.parse(s);if(x.status!=="ok")process.exit(1)})'
+
+      - name: Roll back automatically on failed smoke test
+        if: ${{ failure() && steps.promote.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh "$VPS_USER@$VPS_HOST" "$VPS_PATH/static-release.sh rollback '$VPS_PATH'"
+          ssh "$VPS_USER@$VPS_HOST" "$VPS_PATH/static-release.sh verify '$VPS_PATH'"
+
+      - name: Prune old releases
+        if: ${{ success() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh "$VPS_USER@$VPS_HOST" "$VPS_PATH/static-release.sh prune '$VPS_PATH' '' 5"
