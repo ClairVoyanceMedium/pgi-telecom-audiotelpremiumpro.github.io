@@ -702,6 +702,8 @@ export class PostgresStore{
         " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal' AND status='active') AS tenants_active,"+
         " (SELECT count(*)::int FROM tenant_kyc_profiles k JOIN tenants t ON t.id=k.tenant_id WHERE t.tenant_type<>'internal' AND k.status='verified') AS kyc_verified,"+
         " (SELECT count(*)::int FROM tenant_kyc_profiles k JOIN tenants t ON t.id=k.tenant_id WHERE t.tenant_type<>'internal' AND k.status='pending') AS kyc_pending,"+
+        " (SELECT count(*)::int FROM sva_numbers) AS inventory_total,"+
+        " (SELECT count(*)::int FROM sva_numbers WHERE tenant_id IS NULL AND status IN ('pending','active')) AS inventory_unassigned,"+
         " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal') AS assignments_total,"+
         " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.status='active') AS assignments_active,"+
         " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.regulatory_assignor_carrier_id IS NOT NULL) AS assignments_with_assignor,"+
