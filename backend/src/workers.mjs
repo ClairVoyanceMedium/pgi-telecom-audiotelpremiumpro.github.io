@@ -1,14 +1,15 @@
 import {randomUUID} from "node:crypto";
 import {evaluateAlerts} from "./alerts.mjs";
 
-export function startWorkers({store,eventBus,config}){
+export function startWorkers({store,eventBus,config,queueHandlers={}}){
   let stopped=false;
   const ownerId=randomUUID();
   const timers=[];
   const stats={
     outboxRuns:0,outboxErrors:0,alertsRuns:0,alertsErrors:0,
-    lastOutboxSuccessAt:null,lastAlertsSuccessAt:null,
-    lastOutboxErrorAt:null,lastAlertsErrorAt:null
+    queueRuns:0,queueErrors:0,queueProcessed:0,queueDeadLetters:0,
+    lastOutboxSuccessAt:null,lastAlertsSuccessAt:null,lastQueueSuccessAt:null,
+    lastOutboxErrorAt:null,lastAlertsErrorAt:null,lastQueueErrorAt:null
   };
 
   const runOutbox=async()=>{
@@ -61,12 +62,51 @@ export function startWorkers({store,eventBus,config}){
     }
   };
 
+  const runQueues=async()=>{
+    if(stopped||typeof store.claimWork!=="function")return;
+    const queueNames=Object.keys(queueHandlers||{}).sort();
+    if(!queueNames.length)return;
+    stats.queueRuns++;
+    try{
+      for(const queueName of queueNames){
+        const handler=queueHandlers[queueName];
+        if(typeof handler!=="function")continue;
+        const work=await store.claimWork(
+          queueName,ownerId,
+          config.workQueueBatchSize||25,
+          config.workQueueLeaseSeconds||60
+        );
+        for(const item of work){
+          try{
+            await handler(item,{store,eventBus,config,ownerId});
+            await store.completeWork(item.id,ownerId);
+            stats.queueProcessed++;
+          }catch(error){
+            const result=await store.failWork(
+              item.id,ownerId,error?.message||"queue handler failed",
+              config.workQueueRetryBaseSeconds||15
+            );
+            if(result?.state==="dead_lettered")stats.queueDeadLetters++;
+            stats.queueErrors++;
+            stats.lastQueueErrorAt=new Date().toISOString();
+          }
+        }
+      }
+      stats.lastQueueSuccessAt=new Date().toISOString();
+    }catch{
+      stats.queueErrors++;
+      stats.lastQueueErrorAt=new Date().toISOString();
+    }
+  };
+
   timers.push(setInterval(runOutbox,1000));
   timers.push(setInterval(runAlerts,30000));
+  timers.push(setInterval(runQueues,config.workQueuePollMs||1000));
   for(const t of timers)t.unref?.();
 
   runOutbox();
   runAlerts();
+  runQueues();
 
   return {
     stats,
