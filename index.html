@@ -8,9 +8,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
-  <meta name="description" content="PGI Telecom • Audiotel Premium Pro — cockpit Audiotel, financier et télécom.">
+  <meta name="description" content="PGI • Telecom Audiotel Premium Pro — cockpit Audiotel, financier et télécom.">
   <meta name="robots" content="noindex,nofollow,noarchive">
-  <title>PGI Telecom • Audiotel Premium Pro</title>
+  <title>PGI • Telecom Audiotel Premium Pro</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="assets/styles.css">
@@ -21,7 +21,7 @@
     <aside class="sidebar" aria-label="Navigation principale">
       <div class="brand">
         <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
-        <div><strong>PGI Telecom</strong><small>Audiotel Premium Pro</small></div>
+        <div><strong>PGI • Telecom</strong><small>Audiotel Premium Pro</small></div>
       </div>
       <nav class="nav-list">
         <button class="nav-item active" data-view="overview"><span>⌂</span>Vue d’ensemble</button>
@@ -29,6 +29,7 @@
         <button class="nav-item" data-view="finance"><span>€</span>Finance</button>
         <button class="nav-item" data-view="experts"><span>◎</span>Experts</button>
         <button class="nav-item" data-view="carriers"><span>⇄</span>Opérateurs</button>
+        <button class="nav-item" data-view="wholesale"><span>◇</span>Plateforme SVA</button>
         <button class="nav-item" data-view="system"><span>⌁</span>Système</button>
         <button class="nav-item" data-view="settings"><span>⚙</span>Paramètres</button>
       </nav>
@@ -293,6 +294,62 @@
         <section class="panel"><div class="panel-head"><div><p class="panel-kicker">ORIGINE RÉSEAU</p><h2>Réseaux appelants</h2></div></div><div id="carrier-grid" class="entity-grid"></div></section>
       </div>
 
+      <div id="view-wholesale" class="view">
+        <section class="wholesale-hero">
+          <div>
+            <p class="panel-kicker">PLATEFORME MULTI-ÉDITEURS</p>
+            <h2>Wholesale SVA Control</h2>
+            <p>Clients, affectations 089, KYC, opérateur attributaire et reversements réunis dans une vue de contrôle dédiée.</p>
+          </div>
+          <div class="wholesale-hero-state">
+            <span>Fondation</span>
+            <strong id="wh-foundation-status">Prête architecturalement</strong>
+            <small id="wh-foundation-detail">Aucun client réel chargé en mode démo.</small>
+          </div>
+        </section>
+
+        <section class="kpi-grid wholesale-kpis">
+          <article class="kpi emphasis"><div class="kpi-head"><span>Éditeurs clients</span><span class="mini-tag cyan">TENANTS</span></div><strong id="wh-tenants-total">0</strong><small id="wh-tenants-active">0 actifs</small></article>
+          <article class="kpi"><div class="kpi-head"><span>Numéros affectés</span><span class="mini-tag violet">089</span></div><strong id="wh-numbers-total">0</strong><small id="wh-numbers-active">0 actifs</small></article>
+          <article class="kpi"><div class="kpi-head"><span>KYC vérifiés</span><span class="mini-tag green">KYC</span></div><strong id="wh-kyc-verified">0</strong><small id="wh-kyc-pending">0 en attente</small></article>
+          <article class="kpi"><div class="kpi-head"><span>Reversements clients</span><span class="mini-tag cyan">NET</span></div><strong id="wh-net-payout">0,00 €</strong><small id="wh-platform-fees">Frais plateforme : 0,00 €</small></article>
+        </section>
+
+        <section class="wholesale-control-grid">
+          <article class="panel wholesale-control-card">
+            <div class="panel-head"><div><p class="panel-kicker">CONFORMITÉ</p><h2>Garde-fous plateforme</h2></div><span class="metric-badge" id="wh-compliance-badge">PRÉPARATION</span></div>
+            <div class="wholesale-checks">
+              <div><span>KYC éditeurs</span><strong id="wh-check-kyc">En attente d’activité</strong></div>
+              <div><span>Opérateur attributaire</span><strong id="wh-check-assignor">Non requis en démo</strong></div>
+              <div><span>Flux PSP / DSP2</span><strong id="wh-check-payments">Non activé</strong></div>
+              <div><span>Isolation routage</span><strong class="ok-text">Numéro → tenant → experts</strong></div>
+            </div>
+          </article>
+          <article class="panel wholesale-control-card">
+            <div class="panel-head"><div><p class="panel-kicker">MODÈLE</p><h2>Chaîne opérationnelle</h2></div></div>
+            <div class="wholesale-flow" aria-label="Flux wholesale SVA">
+              <span>Opérateur SVA</span><i>→</i><span>PGI • Telecom</span><i>→</i><span>Éditeurs</span><i>→</i><span>Experts</span>
+            </div>
+            <p class="muted">Tant que PGI n’est pas attributaire, l’opérateur amont reste l’autorité réglementaire d’affectation du numéro.</p>
+          </article>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><div><p class="panel-kicker">CLIENTS</p><h2>Éditeurs / tenants</h2></div><span class="counter" id="wh-tenant-count">0</span></div>
+          <div class="table-wrap wide"><table><thead><tr><th>Éditeur</th><th>Type</th><th>Pays</th><th>Statut</th><th>KYC</th><th>Numéros</th><th>Experts</th></tr></thead><tbody id="wh-tenants-table"></tbody></table></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><div><p class="panel-kicker">NUMÉROTATION</p><h2>Affectations SVA</h2></div><span class="counter" id="wh-number-count">0</span></div>
+          <div class="table-wrap wide"><table><thead><tr><th>Éditeur</th><th>Numéro</th><th>Tarif</th><th>Affectation</th><th>Statut</th><th>KYC</th><th>Opérateur attributaire</th></tr></thead><tbody id="wh-numbers-table"></tbody></table></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><div><p class="panel-kicker">REVERSEMENTS</p><h2>Règlements par éditeur</h2></div><span class="counter" id="wh-settlement-count">0</span></div>
+          <div class="table-wrap wide"><table><thead><tr><th>Éditeur</th><th>Période</th><th>Amont</th><th>Frais plateforme</th><th>Net client</th><th>Statut</th></tr></thead><tbody id="wh-settlements-table"></tbody></table></div>
+        </section>
+      </div>
+
       <div id="view-system" class="view">
         <section class="noc-strip">
           <div><span>État backend</span><strong id="noc-availability">Démo</strong></div>
@@ -326,7 +383,7 @@
         </section>
       </div>
 
-      <footer class="app-footer"><span>PGI Telecom • Audiotel Premium Pro</span><span id="footer-clock"></span></footer>
+      <footer class="app-footer"><span>PGI • Telecom Audiotel Premium Pro</span><span id="footer-clock"></span></footer>
     </main>
   </div>
 
@@ -342,11 +399,12 @@
     <form method="dialog" class="mobile-sheet">
       <div class="mobile-sheet-handle"></div>
       <div class="dialog-head">
-        <div><p class="panel-kicker">NAVIGATION</p><h2>PGI Telecom</h2></div>
+        <div><p class="panel-kicker">NAVIGATION</p><h2>PGI • Telecom</h2></div>
         <button class="icon-btn" value="cancel" aria-label="Fermer">×</button>
       </div>
       <div class="mobile-sheet-grid">
         <button value="cancel" data-view="carriers"><span>⇄</span><strong>Opérateurs</strong><small>SVA, routes, portabilité</small></button>
+        <button value="cancel" data-view="wholesale"><span>◇</span><strong>Plateforme SVA</strong><small>Clients, KYC, numéros, reversements</small></button>
         <button value="cancel" data-view="system"><span>⌁</span><strong>Système</strong><small>NOC, API, CDR, SIP</small></button>
         <button value="cancel" data-view="settings"><span>⚙</span><strong>Paramètres</strong><small>Baseline, audit, configuration</small></button>
       </div>
@@ -368,7 +426,7 @@
     <form id="auth-form" class="dialog-card auth-card" autocomplete="on">
       <div class="auth-mark" aria-hidden="true"><span></span><span></span><span></span></div>
       <p class="panel-kicker">ACCÈS PRODUCTION</p>
-      <h2>Connexion PGI Telecom</h2>
+      <h2>Connexion PGI • Telecom</h2>
       <p id="auth-message">Identifiez-vous pour accéder aux données de production.</p>
       <label class="auth-field">Identifiant
         <input id="auth-username" name="username" type="text" autocomplete="username" required maxlength="120">
