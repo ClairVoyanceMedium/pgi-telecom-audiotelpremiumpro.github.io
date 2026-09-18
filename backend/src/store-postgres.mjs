@@ -1087,19 +1087,28 @@ export class PostgresStore{
   }
 
   async systemSnapshot(){
-    const [counts,last,route]=await Promise.all([
+    const [counts,last,route,queue,resilienceRows]=await Promise.all([
       this.sql.unsafe(
         "SELECT count(*)::int AS calls_total,(SELECT count(*)::int FROM experts WHERE enabled AND status='available') AS experts_available,"+
         " (SELECT count(*)::int FROM outbox_events WHERE published_at IS NULL) AS outbox_pending FROM calls"
       ),
       this.sql.unsafe("SELECT ended_at FROM calls ORDER BY ended_at DESC LIMIT 1"),
-      this.carrierRouting()
+      this.carrierRouting(),
+      this.workQueueHealth(),
+      this.readSql.unsafe(
+        "SELECT"+
+        " (SELECT count(*)::int FROM platform_regions) AS regions_total,"+
+        " (SELECT count(*)::int FROM platform_regions WHERE status IN ('ready','active')) AS regions_ready,"+
+        " (SELECT count(*)::int FROM disaster_recovery_targets WHERE enabled) AS dr_targets_total"
+      )
     ]);
     return {
       mode:this.config.mode,store:"postgres",
       calls_total:counts[0].calls_total,experts_available:counts[0].experts_available,
       cdr_lag_seconds:last[0]?Math.max(0,(Date.now()-Date.parse(last[0].ended_at))/1000):0,
-      outbox_pending:counts[0].outbox_pending,event_subscribers:this.eventBus.size,carrier_route:route
+      outbox_pending:counts[0].outbox_pending,event_subscribers:this.eventBus.size,carrier_route:route,
+      work_queue:queue,
+      resilience:resilienceRows[0]||{regions_total:0,regions_ready:0,dr_targets_total:0}
     };
   }
 
