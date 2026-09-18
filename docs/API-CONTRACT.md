@@ -102,3 +102,73 @@ Expose :
 Crée une nouvelle baseline. Ne supprime aucune donnée.
 
 Le backend doit journaliser l'utilisateur, la date, la portée et la raison.
+
+
+## API wholesale / multi-tenant — contrat cible, non activé
+
+Ces routes décrivent la prochaine couche opérateur. Elles ne doivent pas être exposées comme fonctionnelles tant que l'implémentation backend et l'autorisation par rôle ne sont pas terminées.
+
+### GET /platform/tenants
+
+Réservé aux administrateurs PGI.
+
+Filtres prévus :
+
+- status
+- tenant_type
+- country_code
+- limit
+- cursor
+
+Expose uniquement des métadonnées non sensibles et l'état KYC, jamais les pièces d'identité.
+
+### POST /platform/tenants
+
+Crée un client/éditeur dans l'état `pending`.
+
+Aucune activation SVA n'est autorisée tant que :
+
+- le KYC n'est pas vérifié ;
+- l'opérateur réglementairement assignant n'est pas défini ;
+- le contrat commercial n'est pas actif.
+
+### GET /platform/numbers
+
+Expose par numéro :
+
+- tenant_id
+- sva_number
+- tariff_code
+- commercial status
+- regulatory_assignor_carrier_id
+- upstream_assignment_reference
+- kyc_status
+- logical carrier route
+- portability status
+
+### POST /platform/number-assignments
+
+Crée une demande interne d'affectation.
+
+Cette route ne doit jamais être interprétée comme une attribution réglementaire automatique. Tant que PGI n'est pas attributaire, l'activation finale dépend de la confirmation de l'opérateur amont.
+
+### GET /platform/settlements
+
+Regroupe les reversements par tenant et période :
+
+- gross_service_amount_ht
+- upstream_payout_ht
+- platform_fee_ht
+- net_payout_ht
+- payment status
+- source settlement reference
+
+### GET /platform/settlements/{id}/calls
+
+Expose la justification appel par appel du reversement tenant.
+
+### Principe d'autorisation
+
+Toutes les routes `/platform/*` exigent un rôle plateforme PGI et ne sont jamais accessibles à un tenant ordinaire.
+
+Les futures routes tenant utilisent le contexte authentifié ; aucun `tenant_id` fourni par le navigateur ne doit suffire à élargir le périmètre d'accès.
