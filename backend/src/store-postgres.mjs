@@ -784,6 +784,41 @@ export class PostgresStore{
     return {processed:claimed.length,published,pending:rows[0].count};
   }
 
+  async listTenants(params={}){
+    const limit=clampInt(params.limit,50,1,250);
+    const cursor=decodeNumericCursor(params.cursor);
+    const q=String(params.q||"").trim().toLowerCase();
+    if(q.length>120)throw problem(400,"TENANT_SEARCH_TOO_LONG");
+    const status=params.status?String(params.status):null;
+    if(status&&!["pending","active","suspended","closed"].includes(status))throw problem(400,"INVALID_TENANT_STATUS");
+    const country=params.country?String(params.country).trim().toUpperCase():null;
+    if(country&&!/^[A-Z]{2}$/.test(country))throw problem(400,"INVALID_COUNTRY_CODE");
+    const rows=await this.readSql.unsafe(
+      "SELECT t.public_id,t.slug,t.display_name,t.legal_name,t.tenant_type,t.status,t.country_code,"+
+      " t.preferred_locale,t.default_currency,t.timezone,t.home_region,t.capacity_tier,"+
+      " COALESCE(k.status,'not_started') AS kyc_status,t.created_at"+
+      " FROM tenants t LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id"+
+      " WHERE t.tenant_type<>'internal'"+
+      " AND ($1::text IS NULL OR t.slug_search LIKE $1||'%' OR t.display_name_search LIKE $1||'%' OR t.legal_name_search LIKE $1||'%')"+
+      " AND ($2::text IS NULL OR t.status=$2)"+
+      " AND ($3::text IS NULL OR t.country_code=$3)"+
+      " AND ($4::bigint IS NULL OR t.id<$4)"+
+      " ORDER BY t.id DESC LIMIT $5",
+      [q||null,status,country,cursor,limit+1]
+    );
+    const hasMore=rows.length>limit;
+    const page=hasMore?rows.slice(0,limit):rows;
+    let nextCursor=null;
+    if(hasMore&&page.length){
+      const ids=await this.readSql.unsafe(
+        "SELECT id FROM tenants WHERE public_id=$1::uuid LIMIT 1",
+        [page.at(-1).public_id]
+      );
+      if(ids[0])nextCursor=encodeNumericCursor(Number(ids[0].id));
+    }
+    return {data:page,next_cursor:nextCursor};
+  }
+
   async wholesaleOverview(){
     const [summaryRows,tenants,numbers,settlements,payments,markets,currencyTotals,scaleRows]=await Promise.all([
       this.readSql.unsafe(
@@ -952,6 +987,16 @@ function clampInt(v,fallback,min,max){
   const n=v==null||v===""?fallback:Number(v);
   if(!Number.isInteger(n))return fallback;
   return Math.max(min,Math.min(max,n));
+}
+function encodeNumericCursor(value){
+  return Buffer.from(String(value)).toString("base64url");
+}
+function decodeNumericCursor(value){
+  if(!value)return null;
+  try{
+    const n=Number(Buffer.from(String(value),"base64url").toString("utf8"));
+    return Number.isInteger(n)&&n>0?n:null;
+  }catch{return null;}
 }
 function encodeCursor(x){return Buffer.from(JSON.stringify(x)).toString("base64url");}
 function decodeCursor(v){
