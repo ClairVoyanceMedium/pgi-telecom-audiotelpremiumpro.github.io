@@ -163,7 +163,8 @@ export class MemoryStore{
     return {...expert};
   }
 
-  async selectExpert(){
+  async selectExpert(context={}){
+    void context;
     const expert=selectExpert(this.experts);
     if(!expert)return null;
     expert.last_assigned_at=new Date().toISOString();
