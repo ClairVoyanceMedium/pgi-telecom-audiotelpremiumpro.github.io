@@ -136,7 +136,7 @@ export class PostgresStore{
       " AND ($3::text IS NULL OR f.market_id=b.market_id)"+
       ") ";
 
-    const [series,hours,weekdays,dimensions]=await Promise.all([
+    const [series,hours,weekdays,heatmap,dimensions]=await Promise.all([
       this.readSql.unsafe(
         baseCte+
         "SELECT date_trunc($4::text,ts) AS bucket,min(currency) AS currency,count(DISTINCT currency)::int AS currency_count,"+
@@ -164,6 +164,13 @@ export class PostgresStore{
         [from,to,market||null]
       ),
       this.readSql.unsafe(
+        baseCte+
+        "SELECT EXTRACT(isodow FROM ts)::int AS weekday,EXTRACT(hour FROM ts)::int AS hour,"+
+        " sum(calls_total)::bigint AS calls_total"+
+        " FROM base GROUP BY EXTRACT(isodow FROM ts),EXTRACT(hour FROM ts) ORDER BY weekday,hour",
+        [from,to,market||null]
+      ),
+      this.readSql.unsafe(
         "SELECT d.dimension_type,d.dimension_key,max(d.dimension_label) AS dimension_label,"+
         " sum(d.calls_total)::bigint AS calls_total,sum(d.calls_connected)::bigint AS calls_connected,"+
         " sum(d.conversation_seconds)::bigint AS conversation_seconds,sum(d.billable_seconds)::bigint AS billable_seconds,"+
@@ -185,6 +192,7 @@ export class PostgresStore{
       series,
       hours,
       weekdays,
+      heatmap,
       experts:byType.expert.slice(0,12),
       carriers:byType.carrier.slice(0,12),
       durations:byType.duration
