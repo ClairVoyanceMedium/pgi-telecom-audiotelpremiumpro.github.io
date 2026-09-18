@@ -4,7 +4,7 @@ Cockpit Audiotel, financier et télécom de PGI Telecom.
 
 ## État actuel
 
-Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.13.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
+Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.14.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
 
 Fonctions déjà présentes :
 
@@ -212,3 +212,21 @@ Le socle est préparé pour une croissance jusqu'à plusieurs millions de tenant
 Le déploiement courant reste volontairement compact et économique. Le passage multi-instance ou multi-cluster se fait par configuration et capacité, pas par changement d'identité client ni refonte du modèle métier.
 
 Voir `docs/HYPERSCALE.md`.
+
+
+## Résilience 1.14
+
+La plateforme ajoute une couche d'exploitation destinée aux très grandes volumétries :
+
+- frontière SQL tenant via contexte transactionnel et vues `security_barrier` ;
+- work queue distribuée avec lease, reprise après crash, retry exponentiel et dead-letter ;
+- handlers de queue explicitement enregistrés afin qu'un job inconnu ne soit jamais consommé ;
+- régions, politiques de résidence, cibles RPO/RTO et exercices de Disaster Recovery ;
+- propagation W3C `traceparent` et `trace_id` dans les logs ;
+- histogrammes Prometheus de latence par route ;
+- métriques queue/dead-letter et règles d'alerte burn-rate SLO ;
+- NOC affichant régions prêtes, jobs en attente, ancienneté et cibles DR.
+
+La présence de ces structures ne simule jamais une capacité réellement provisionnée : le cockpit reste à une région tant qu'une seconde région n'a pas été déployée et validée.
+
+Voir `docs/RESILIENCE.md`.
