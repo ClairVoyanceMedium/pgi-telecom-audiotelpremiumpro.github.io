@@ -3,7 +3,7 @@
 
   var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
   var CONFIG={serviceRate:0.80,payoutRate:0.46,expertCostPerMin:0.18,fixedCostPerCall:0.03};
-  var state={period:"today",custom:null,baseline:null,resets:[]};
+  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""}};
   var titles={overview:"Vue d’ensemble",calls:"Appels",finance:"Finance",experts:"Experts",carriers:"Opérateurs",system:"Système",settings:"Paramètres"};
   var experts=["Frederick","Sofia","Emma","Lina","Clara","Nora"];
   var carriers=["Orange","SFR","Bouygues","Free"];
@@ -41,11 +41,26 @@
         var expected=billable*CONFIG.payoutRate;
         var variance=status==="connected"?(seeded(day*11+i*101)<0.045?expected*(0.015+seeded(i)*0.035):0):0;
         var confirmed=Math.max(0,expected-variance);
+        var ivrStarted=new Date(d.getTime()+2000);
+        var queued=new Date(d.getTime()+7000);
+        var bridged=status==="connected"?new Date(d.getTime()+wait*1000):null;
+        var ended=new Date((bridged||d).getTime()+(status==="connected"?conv*1000:wait*1000));
+        var qseed=seeded(day*19+i*7);
         rows.push({
-          id:id++,ts:d,caller:maskPhone(i+day),carrier:carriers[(i+day)%carriers.length],number:number089,
-          expert:experts[(i*3+day)%experts.length],wait:wait,conversation:conv,billable:billable,
-          expected:expected,confirmed:confirmed,status:status,
-          expertCost:billable*CONFIG.expertCostPerMin,cost:CONFIG.fixedCostPerCall
+          id:id++,ts:d,ivrStarted:ivrStarted,queued:queued,bridged:bridged,ended:ended,
+          caller:maskPhone(i+day),carrier:carriers[(i+day)%carriers.length],number:number089,
+          expert:experts[(i*3+day)%experts.length],wait:wait,conversation:conv,total:Math.max(0,Math.round((ended-d)/1000)),billable:billable,
+          payoutEligible:billable,expected:expected,confirmed:confirmed,status:status,
+          expertCost:billable*CONFIG.expertCostPerMin,cost:CONFIG.fixedCostPerCall,
+          serviceAmount:billable*CONFIG.serviceRate,
+          variance:Math.max(0,expected-confirmed),
+          sipFinalCode:status==="connected"?200:(status==="abandoned"?487:503),
+          hangupCause:status==="connected"?"NORMAL_CLEARING":(status==="abandoned"?"ORIGINATOR_CANCEL":"NORMAL_TEMPORARY_FAILURE"),
+          codec:"PCMA",
+          packetLoss:+(qseed*0.35).toFixed(3),
+          jitter:+(3+qseed*7).toFixed(2),
+          latency:+(18+qseed*28).toFixed(2),
+          mos:+(4.45-qseed*0.35).toFixed(2)
         });
       }
     }
@@ -131,6 +146,20 @@
   function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c];});}
   function chip(status){var label=status==="connected"?"ABOUTI":status==="abandoned"?"ABANDON":"ÉCHEC";return '<span class="status-chip '+status+'">'+label+"</span>";}
 
+  function applyCallFilters(rows){
+    var f=state.callFilters||{},s=(f.search||"").trim().toLowerCase();
+    return rows.filter(function(c){
+      if(f.expert&&c.expert!==f.expert)return false;
+      if(f.carrier&&c.carrier!==f.carrier)return false;
+      if(f.status&&c.status!==f.status)return false;
+      if(s){
+        var hay=[c.caller,c.carrier,c.expert,c.number,c.status].join(" ").toLowerCase();
+        if(hay.indexOf(s)===-1)return false;
+      }
+      return true;
+    });
+  }
+
   function renderCalls(rows){
     var recent=rows.slice(0,7);
     var rhtml=recent.map(function(c){
@@ -139,12 +168,13 @@
     if(!rhtml)rhtml='<tr><td colspan="6">Aucune donnée sur cette période.</td></tr>';
     $("recent-calls").innerHTML=rhtml;
 
-    var full=rows.slice(0,120).map(function(c){
-      return "<tr><td>"+fmtDate(c.ts)+"</td><td>"+fmtTime(c.ts)+"</td><td>"+esc(c.caller)+"</td><td>"+esc(c.carrier)+"</td><td>"+esc(c.number)+"</td><td><strong>"+esc(c.expert)+"</strong></td><td>"+fmtDuration(c.wait)+"</td><td>"+fmtDuration(c.conversation)+"</td><td>"+c.billable+" min</td><td>"+money(c.expected)+"</td><td>"+chip(c.status)+"</td></tr>";
+    var tableRows=applyCallFilters(rows);
+    var full=tableRows.slice(0,250).map(function(c){
+      return "<tr><td>"+fmtDate(c.ts)+"</td><td>"+fmtTime(c.ts)+"</td><td>"+esc(c.caller)+"</td><td>"+esc(c.carrier)+"</td><td>"+esc(c.number)+"</td><td><strong>"+esc(c.expert)+"</strong></td><td>"+fmtDuration(c.wait)+"</td><td>"+fmtDuration(c.conversation)+"</td><td>"+c.billable+" min</td><td>"+money(c.expected)+"</td><td>"+chip(c.status)+'</td><td><button class="detail-btn" type="button" data-call-id="'+c.id+'">Voir</button></td></tr>';
     }).join("");
-    if(!full)full='<tr><td colspan="11">Aucune donnée sur cette période.</td></tr>';
+    if(!full)full='<tr><td colspan="12">Aucune donnée sur cette période.</td></tr>';
     $("calls-table").innerHTML=full;
-    setText("calls-total-label",nfmt(rows.length)+" appels");
+    setText("calls-total-label",nfmt(tableRows.length)+" appels");
   }
 
   function bucketKey(d,range){
@@ -222,6 +252,44 @@
     }).join("");
   }
 
+  function csvCell(v){
+    var s=String(v==null?"":v);
+    return '"'+s.replace(/"/g,'""')+'"';
+  }
+
+  function exportCallsCsv(){
+    var rows=applyCallFilters(filteredCalls());
+    var header=["date","heure","appelant_masque","reseau","numero_sva","expert","attente_s","conversation_s","total_s","minutes_facturables","minutes_reversement","ca_service_ttc","reversement_attendu_ht","reversement_confirme_ht","ecart_ht","sip_code","cause_fin","codec","perte_paquets_pct","jitter_ms","latence_ms","mos","statut"];
+    var lines=[header.join(";")];
+    rows.forEach(function(c){
+      lines.push([
+        fmtDate(c.ts),fmtTime(c.ts),c.caller,c.carrier,c.number,c.expert,c.wait,c.conversation,c.total,c.billable,c.payoutEligible,
+        c.serviceAmount.toFixed(2),c.expected.toFixed(2),c.confirmed.toFixed(2),c.variance.toFixed(2),c.sipFinalCode,c.hangupCause,c.codec,
+        c.packetLoss,c.jitter,c.latency,c.mos,c.status
+      ].map(csvCell).join(";"));
+    });
+    var blob=new Blob(["\ufeff"+lines.join("\n")],{type:"text/csv;charset=utf-8"});
+    var url=URL.createObjectURL(blob),a=document.createElement("a");
+    a.href=url;a.download="pgi-audiotel-cdr-"+new Date().toISOString().slice(0,10)+".csv";
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(function(){URL.revokeObjectURL(url);},1000);
+  }
+
+  function showCallDetail(id){
+    var c=allCalls.find(function(x){return String(x.id)===String(id);});
+    if(!c)return;
+    var label=function(k,v){return '<div class="detail-metric"><span>'+esc(k)+'</span><strong>'+esc(v)+'</strong></div>';};
+    setText("call-detail-title","Appel #"+c.id+" • "+fmtDate(c.ts)+" "+fmtTime(c.ts));
+    $("call-detail-grid").innerHTML=
+      label("Appelant",c.caller)+label("Réseau",c.carrier)+label("Numéro SVA",c.number)+label("Expert",c.expert)+
+      label("Début",fmtTime(c.ts))+label("Entrée SVI",fmtTime(c.ivrStarted))+label("Mise en file",fmtTime(c.queued))+label("Mise en relation",c.bridged?fmtTime(c.bridged):"—")+
+      label("Fin",fmtTime(c.ended))+label("Attente",fmtDuration(c.wait))+label("Conversation",fmtDuration(c.conversation))+label("Durée totale",fmtDuration(c.total))+
+      label("Facturable",c.billable+" min")+label("Éligible reversement",c.payoutEligible+" min")+label("CA service TTC",money(c.serviceAmount))+label("Reversement attendu HT",money(c.expected))+
+      label("Reversement confirmé HT",money(c.confirmed))+label("Écart",money(c.variance))+label("SIP final",String(c.sipFinalCode))+label("Cause de fin",c.hangupCause)+
+      label("Codec",c.codec)+label("Perte paquets",nfmt(c.packetLoss,3)+" %")+label("Jitter",nfmt(c.jitter,2)+" ms")+label("Latence",nfmt(c.latency,2)+" ms")+label("MOS",nfmt(c.mos,2));
+    var d=$("call-dialog");if(d&&typeof d.showModal==="function")d.showModal();
+  }
+
   function renderResetLog(){
     var label=state.baseline?new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeStyle:"short"}).format(state.baseline):"Historique complet";
     setText("baseline-label",label);
@@ -256,6 +324,22 @@
       state.period="custom";state.custom={from:fd,to:td};qsa(".period").forEach(function(x){x.classList.remove("active");});render();
     });
     $("refresh-btn").addEventListener("click",render);
+    ["call-search","call-expert","call-carrier","call-status"].forEach(function(id){
+      var el=$(id);if(!el)return;
+      el.addEventListener(id==="call-search"?"input":"change",function(){
+        state.callFilters.search=$("call-search").value||"";
+        state.callFilters.expert=$("call-expert").value||"";
+        state.callFilters.carrier=$("call-carrier").value||"";
+        state.callFilters.status=$("call-status").value||"";
+        renderCalls(filteredCalls());
+      });
+    });
+    $("calls-table").addEventListener("click",function(e){
+      var b=e.target.closest("[data-call-id]");if(b)showCallDetail(b.getAttribute("data-call-id"));
+    });
+    $("export-csv").addEventListener("click",exportCallsCsv);
+    $("print-calls").addEventListener("click",function(){window.print();});
+    $("print-finance").addEventListener("click",function(){window.print();});
     $("reset-metrics").addEventListener("click",function(){var d=$("reset-dialog");if(typeof d.showModal==="function")d.showModal();});
     $("confirm-reset").addEventListener("click",function(){
       state.baseline=new Date();state.resets.push({at:state.baseline.toISOString(),scope:"global"});saveState();render();
