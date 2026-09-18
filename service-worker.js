@@ -4,6 +4,8 @@ const SHELL = [
   "./index.html",
   "./assets/styles.css",
   "./assets/config.js",
+  "./assets/core.js",
+  "./assets/api-client.js",
   "./assets/app.js",
   "./assets/favicon.svg",
   "./manifest.webmanifest"
