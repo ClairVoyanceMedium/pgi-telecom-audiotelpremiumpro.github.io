@@ -37,7 +37,9 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
         conversation_seconds:600,
         total_seconds:610,
         call_status:"connected",
-        caller_masked:"06 •• •• 00 01",
+        caller_masked:"0612345678",
+        caller_id_number:"0612345678",
+        secret_field:"must-not-persist",
         origin_carrier:"Orange",
         origin_type:"mobile",
         sva_number:"33890000000",
@@ -57,6 +59,12 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const calls=await store.listCalls({limit:10});
     assert.equal(calls.data.length,1);
     assert.equal(calls.data[0].origin_carrier,"Orange");
+
+    const rawPayload=await store.sql.unsafe("SELECT payload FROM raw_cdr_events WHERE source_event_id='evt-1'");
+    assert.equal(rawPayload.length,1);
+    assert.equal(rawPayload[0].payload.caller_masked,"•• •• •• 56 78");
+    assert.equal("caller_id_number" in rawPayload[0].payload,false);
+    assert.equal("secret_field" in rawPayload[0].payload,false);
 
     const expert=await store.selectExpert();
     assert.equal(expert.display_name,"Expert 1");
