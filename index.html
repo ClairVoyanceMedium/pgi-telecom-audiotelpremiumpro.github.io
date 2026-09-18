@@ -77,6 +77,25 @@
           <article class="kpi compact"><span>Experts ayant traité</span><strong id="kpi-experts">0</strong><small id="kpi-live">Temps réel séparé</small></article>
         </section>
 
+        <section class="executive-strip">
+          <article class="executive-score">
+            <div class="score-ring" id="ops-score-ring" style="--score:0">
+              <div><strong id="ops-score">0</strong><small>/100</small></div>
+            </div>
+            <div class="score-copy">
+              <p class="panel-kicker">INDICE OPÉRATIONNEL PGI</p>
+              <h2 id="ops-score-label">En calcul</h2>
+              <p id="ops-score-detail">Synthèse ASR, réconciliation et qualité média.</p>
+            </div>
+          </article>
+          <div class="comparison-grid">
+            <div class="compare-card"><span>CA vs période précédente</span><strong id="cmp-ca">—</strong><small id="cmp-ca-base">Période comparable</small></div>
+            <div class="compare-card"><span>Appels vs période précédente</span><strong id="cmp-calls">—</strong><small id="cmp-calls-base">Période comparable</small></div>
+            <div class="compare-card"><span>Minutes vs période précédente</span><strong id="cmp-minutes">—</strong><small id="cmp-minutes-base">Période comparable</small></div>
+            <div class="compare-card"><span>ASR vs période précédente</span><strong id="cmp-asr">—</strong><small id="cmp-asr-base">Écart en points</small></div>
+          </div>
+        </section>
+
         <section class="split-grid">
           <article class="panel chart-panel">
             <div class="panel-head"><div><p class="panel-kicker">PERFORMANCE</p><h2>CA & reversement</h2></div><div class="legend"><span><i class="legend-dot revenue"></i>CA</span><span><i class="legend-dot payout"></i>Reversement</span></div></div>
@@ -94,6 +113,50 @@
             <div class="health-row"><span>API</span><span class="health ok">PRÊTE</span></div>
             <div class="health-row"><span>CDR</span><span class="health ok">SYNCHRONISÉ</span></div>
             <div class="health-row"><span>Rapprochement</span><span class="health warn">MODE DÉMO</span></div>
+          </article>
+        </section>
+
+        <section class="analytics-grid">
+          <article class="panel heatmap-panel">
+            <div class="panel-head">
+              <div><p class="panel-kicker">TRAFIC</p><h2>Heatmap jours × heures</h2></div>
+              <span class="metric-badge" id="peak-slot">Pic —</span>
+            </div>
+            <div class="heatmap-wrap">
+              <div class="heatmap-axis-hours"><span>00h</span><span>06h</span><span>12h</span><span>18h</span><span>23h</span></div>
+              <div id="traffic-heatmap" class="traffic-heatmap" aria-label="Heatmap des appels par jour et heure"></div>
+            </div>
+          </article>
+
+          <article class="panel funnel-panel">
+            <div class="panel-head"><div><p class="panel-kicker">CONVERSION</p><h2>Entonnoir appels</h2></div></div>
+            <div id="call-funnel" class="call-funnel"></div>
+          </article>
+
+          <article class="panel quality-panel">
+            <div class="panel-head"><div><p class="panel-kicker">QUALITÉ MÉDIA</p><h2>RTP / voix</h2></div><span class="metric-badge" id="quality-grade">—</span></div>
+            <div class="quality-grid">
+              <div><span>MOS moyen</span><strong id="quality-mos">—</strong><i class="quality-meter"><b id="quality-mos-bar"></b></i></div>
+              <div><span>Perte paquets</span><strong id="quality-loss">—</strong><i class="quality-meter"><b id="quality-loss-bar"></b></i></div>
+              <div><span>Jitter</span><strong id="quality-jitter">—</strong><i class="quality-meter"><b id="quality-jitter-bar"></b></i></div>
+              <div><span>Latence</span><strong id="quality-latency">—</strong><i class="quality-meter"><b id="quality-latency-bar"></b></i></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="insight-grid">
+          <article class="panel">
+            <div class="panel-head"><div><p class="panel-kicker">TOP EXPERTS</p><h2>Contribution période</h2></div><button class="text-btn" data-go="experts" type="button">Détails →</button></div>
+            <div id="overview-expert-ranking" class="ranking-list"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><div><p class="panel-kicker">MIX RÉSEAU</p><h2>Origine des appels</h2></div><button class="text-btn" data-go="carriers" type="button">Détails →</button></div>
+            <div class="network-mix">
+              <div class="donut" id="network-donut" style="--p1:25;--p2:50;--p3:75">
+                <div><strong id="network-total">0</strong><small>appels</small></div>
+              </div>
+              <div id="network-legend" class="network-legend"></div>
+            </div>
           </article>
         </section>
 
@@ -154,10 +217,31 @@
           <article class="kpi"><span>Encaissé</span><strong id="fin-paid">0,00 €</strong><small>Réellement payé</small></article>
           <article class="kpi"><span>Écart à rapprocher</span><strong id="fin-gap">0,00 €</strong><small>Attendu − confirmé</small></article>
         </section>
+        <section class="finance-analytics-grid">
+          <article class="panel">
+            <div class="panel-head"><div><p class="panel-kicker">WATERFALL</p><h2>Du CA à la marge</h2></div></div>
+            <div id="finance-waterfall" class="finance-waterfall"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><div><p class="panel-kicker">EFFICACITÉ</p><h2>Ratios financiers</h2></div></div>
+            <div class="ratio-grid">
+              <div><span>Taux de reversement effectif</span><strong id="ratio-payout">—</strong></div>
+              <div><span>Taux de confirmation</span><strong id="ratio-confirmed">—</strong></div>
+              <div><span>Taux d’encaissement</span><strong id="ratio-paid">—</strong></div>
+              <div><span>Marge / reversement confirmé</span><strong id="ratio-margin">—</strong></div>
+            </div>
+          </article>
+        </section>
         <section class="panel"><div class="panel-head"><div><p class="panel-kicker">RÉCONCILIATION</p><h2>Attendu vs opérateur</h2></div><button id="print-finance" class="secondary-btn" type="button">Imprimer / PDF</button></div><div class="recon-grid" id="recon-grid"></div></section>
       </div>
 
       <div id="view-experts" class="view">
+        <section class="expert-summary-strip">
+          <div><span>Meilleur contributeur</span><strong id="expert-best">—</strong></div>
+          <div><span>Meilleur ACD</span><strong id="expert-best-acd">—</strong></div>
+          <div><span>Meilleur ASR</span><strong id="expert-best-asr">—</strong></div>
+          <div><span>Minutes équipe</span><strong id="expert-team-minutes">0</strong></div>
+        </section>
         <section class="panel"><div class="panel-head"><div><p class="panel-kicker">ÉQUIPE</p><h2>Performance experts</h2></div></div><div id="experts-grid" class="entity-grid"></div></section>
       </div>
 
@@ -193,6 +277,12 @@
       </div>
 
       <div id="view-system" class="view">
+        <section class="noc-strip">
+          <div><span>Disponibilité cockpit</span><strong id="noc-availability">100%</strong></div>
+          <div><span>CDR traités</span><strong id="noc-cdr-total">0</strong></div>
+          <div><span>Anomalies financières</span><strong id="noc-fin-alerts">0</strong></div>
+          <div><span>Qualité voix</span><strong id="noc-voice-grade">—</strong></div>
+        </section>
         <section class="system-grid">
           <article class="panel"><p class="panel-kicker">SIP</p><h2>Trunk & routage</h2><div class="big-status warn">EN ATTENTE OPÉRATEUR</div><div class="metric-row"><span>Latence</span><strong>—</strong></div><div class="metric-row"><span>Jitter</span><strong>—</strong></div><div class="metric-row"><span>Perte paquets</span><strong>—</strong></div><small class="muted">Les mesures réelles seront alimentées par Kamailio/FreeSWITCH.</small></article>
           <article class="panel"><p class="panel-kicker">DONNÉES</p><h2>Pipeline CDR</h2><div class="big-status warn" id="cdr-state">MODE DÉMO</div><div class="metric-row"><span>Dernière actualisation</span><strong id="last-sync">Maintenant</strong></div><div class="metric-row"><span>Fraîcheur</span><strong id="data-freshness">Locale</strong></div><div class="metric-row"><span>CDR en erreur</span><strong id="cdr-errors">0</strong></div></article>
