@@ -265,7 +265,7 @@ export class PostgresStore{
         expectedPayoutHt:financial.expectedPayoutHt,
         connected:status==="connected"
       });
-      const technicalCost=Number(p.technical_cost_ht||0);
+      const technicalCost=Number(this.config.technicalCostHtPerCall||0);
       const totalSeconds=Math.max(0,Number(p.total_seconds||Math.round((Date.parse(p.ended_at)-Date.parse(p.started_at))/1000)));
 
       const callValues=[
