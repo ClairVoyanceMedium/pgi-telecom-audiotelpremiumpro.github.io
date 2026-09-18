@@ -110,6 +110,10 @@
     systemHealth:function(){return request("/system/health");},
     carrierRouting:function(){return request("/carrier-routing");},
     wholesaleOverview:function(){return request("/platform/overview");},
+    tenants:function(params){
+      var q=new URLSearchParams(params||{}).toString();
+      return request("/platform/tenants"+(q?"?"+q:""));
+    },
     events:events,
     baselines:function(params){
       var q=new URLSearchParams(params||{}).toString();
