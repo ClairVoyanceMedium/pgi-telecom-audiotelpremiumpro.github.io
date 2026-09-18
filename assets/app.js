@@ -1274,55 +1274,19 @@
     }).join(""):'<tr><td colspan="8">Aucun reversement client réel.</td></tr>';
   }
 
-  function readUiPreferences(){
-    try{
-      var raw=localStorage.getItem("pgi_ui_preferences");
-      if(!raw)return {};
-      var parsed=JSON.parse(raw);
-      return parsed&&typeof parsed==="object"?parsed:{};
-    }catch(e){return {};}
-  }
-
   function saveUiPreferences(){
-    try{
-      var payload={view:state.activeView,period:state.period};
-      if(state.period==="custom"&&state.custom){
-        payload.custom={from:state.custom.from.toISOString(),to:state.custom.to.toISOString()};
-      }
-      localStorage.setItem("pgi_ui_preferences",JSON.stringify(payload));
-    }catch(e){}
+    if(window.PGIWorkspace)window.PGIWorkspace.save(state.activeView,state.period,state.custom);
   }
 
   function restoreUiPreferences(){
-    var pref=readUiPreferences();
-    if(pref&&titles[pref.view])state.activeView=pref.view;
-    if(pref&&["today","7d","week","month","year","custom"].includes(pref.period))state.period=pref.period;
-    if(state.period==="custom"&&pref.custom&&Number.isFinite(Date.parse(pref.custom.from))&&Number.isFinite(Date.parse(pref.custom.to))){
-      state.custom={from:new Date(pref.custom.from),to:new Date(pref.custom.to)};
+    var pref=window.PGIWorkspace?window.PGIWorkspace.restore(titles):{view:"overview",period:"today",custom:null};
+    state.activeView=pref.view;state.period=pref.period;state.custom=pref.custom;
+    if(state.custom){
       var df=$("date-from"),dt=$("date-to");
       if(df)df.value=state.custom.from.toISOString().slice(0,10);
       if(dt)dt.value=state.custom.to.toISOString().slice(0,10);
-    }else if(state.period==="custom"){
-      state.period="today";
-      state.custom=null;
     }
     qsa(".period").forEach(function(x){x.classList.toggle("active",x.getAttribute("data-period")===state.period);});
-  }
-
-  function readMarketPreference(){
-    try{
-      var saved=String(localStorage.getItem("pgi_operating_market")||"").trim().toUpperCase();
-      return /^[A-Z]{2}$/.test(saved)?saved:null;
-    }catch(e){return null;}
-  }
-
-  function readMobileOverviewPreference(){
-    try{
-      var saved=localStorage.getItem("pgi_mobile_overview_expanded");
-      if(saved==="1")return true;
-      if(saved==="0")return false;
-    }catch(e){}
-    return false;
   }
 
   function applyMobileOverviewMode(){
@@ -1342,7 +1306,7 @@
 
   function toggleMobileOverview(){
     state.mobileOverviewExpanded=!state.mobileOverviewExpanded;
-    try{localStorage.setItem("pgi_mobile_overview_expanded",state.mobileOverviewExpanded?"1":"0");}catch(e){}
+    if(window.PGIWorkspace)window.PGIWorkspace.saveMobileOverview(state.mobileOverviewExpanded);
     applyMobileOverviewMode();
   }
 
@@ -1490,11 +1454,8 @@
     var marketFilter=$("market-filter");
     if(marketFilter)marketFilter.addEventListener("change",function(){
       state.market=marketFilter.value||null;
-      try{
-        if(state.market)localStorage.setItem("pgi_operating_market",state.market);
-        else localStorage.removeItem("pgi_operating_market");
-      }catch(e){}
-      syncProductionData();
+      if(window.PGIWorkspace)window.PGIWorkspace.saveMarket(state.market);
+      syncProductionData({mode:"full"});
     });
     var more=$("mobile-more");
     if(more)more.addEventListener("click",function(){
@@ -1643,8 +1604,8 @@
   window.addEventListener("unhandledrejection",recordRuntimeError);
   loadState();
   restoreUiPreferences();
-  state.market=RUNTIME.mode==="production"?readMarketPreference():"FR";
-  state.mobileOverviewExpanded=readMobileOverviewPreference();
+  state.market=RUNTIME.mode==="production"&&window.PGIWorkspace?window.PGIWorkspace.readMarket():"FR";
+  state.mobileOverviewExpanded=window.PGIWorkspace?window.PGIWorkspace.readMobileOverview():false;
   applyMobileOverviewMode();
   bind();
   switchView(state.activeView,{noScroll:true,noRender:true});
