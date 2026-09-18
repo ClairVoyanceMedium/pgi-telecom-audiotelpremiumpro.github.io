@@ -814,6 +814,7 @@
     setText("wh-tenants-active",nfmt(summary.tenants_active||0)+" actifs");
     setText("wh-numbers-total",nfmt(summary.assignments_total||0));
     setText("wh-numbers-active",nfmt(summary.assignments_active||0)+" actifs");
+    setText("wh-numbers-stock",nfmt(summary.inventory_unassigned||0)+" libres");
     setText("wh-kyc-verified",nfmt(summary.kyc_verified||0));
     setText("wh-kyc-pending",nfmt(summary.kyc_pending||0)+" en attente");
     setText("wh-net-payout",money(summary.net_payout_ht||0));
