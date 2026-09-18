@@ -40,7 +40,7 @@
   header @html Cache-Control "no-cache, must-revalidate"
 
   handle {
-    root * /srv/pgi-dashboard
+    root * /srv/pgi-dashboard/current
     try_files {path} /index.html
     file_server
   }
