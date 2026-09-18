@@ -5,12 +5,20 @@ PGI_ENV=production
 PGI_TIMEZONE=UTC
 PGI_PUBLIC_APP_URL=https://example.invalid
 PGI_API_URL=https://api.example.invalid
+PGI_BACKEND_MODE=production
+PGI_AUTH_MODE=session
+PGI_BACKEND_HOST=127.0.0.1
+PGI_BACKEND_PORT=8080
+# PGI_SESSION_SECRET, PGI_ADMIN_PASSWORD_HASH et PGI_INGEST_TOKEN sont des secrets.
 
 POSTGRES_DB=pgi_telecom
 POSTGRES_USER=pgi_telecom
 POSTGRES_HOST=127.0.0.1
 POSTGRES_PORT=5432
-# POSTGRES_PASSWORD doit être injecté par le gestionnaire de secrets.
+PGI_DATABASE_POOL_MAX=10
+PGI_DATABASE_SSL=disable
+# PGI_DATABASE_URL peut remplacer les variables POSTGRES_*.
+# POSTGRES_PASSWORD / PGI_DATABASE_URL doivent être injectés par le gestionnaire de secrets.
 
 VALKEY_HOST=127.0.0.1
 VALKEY_PORT=6379
