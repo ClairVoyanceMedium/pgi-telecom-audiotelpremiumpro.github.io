@@ -149,7 +149,8 @@ export function createBackend(options={}){
 
       if(method==="GET"&&pathname==="/api/v1/internal/routing/next-expert/text"){
         authorizeTelephony(req,config);
-        const expert=await store.selectExpert();
+        const routingContext=resolveTelephonyRoutingContext(url,config);
+        const expert=await store.selectExpert(routingContext);
         if(!expert?.destination_uri){
           res.writeHead(404,{"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"});
           res.end("");
@@ -162,7 +163,8 @@ export function createBackend(options={}){
 
       if(method==="GET"&&pathname==="/api/v1/internal/routing/next-expert"){
         authorizeTelephony(req,config);
-        const expert=await store.selectExpert();
+        const routingContext=resolveTelephonyRoutingContext(url,config);
+        const expert=await store.selectExpert(routingContext);
         return done(res,metrics,started,"routing.internal",expert?200:404,expert||{error:{code:"NO_EXPERT_AVAILABLE"}});
       }
 
@@ -281,6 +283,17 @@ export function createBackend(options={}){
       if(options.closeStore&&typeof store.close==="function")await store.close();
     }
   };
+}
+
+export function resolveTelephonyRoutingContext(url,config){
+  const svaNumber=String(url?.searchParams?.get("sva_number")||"").trim();
+  if(svaNumber&&(svaNumber.length>32||!/^[+0-9 .()\-]+$/.test(svaNumber))){
+    const e=new Error("Invalid SVA routing context");e.status=400;e.code="INVALID_SVA_ROUTING_CONTEXT";throw e;
+  }
+  if(config?.mode==="production"&&!svaNumber){
+    const e=new Error("SVA number is required for production telephony routing");e.status=400;e.code="SVA_ROUTING_CONTEXT_REQUIRED";throw e;
+  }
+  return {svaNumber:svaNumber||null};
 }
 
 export function evaluateReadiness(snapshot,workers,config,nowMs=Date.now()){
