@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.15.0 — 2026-09-19
+
+Cockpit Intelligence et supervision enrichie :
+
+- navigation `Vue d’ensemble` renommée `Cockpit` ;
+- navigation `Système` renommée `Supervision` ;
+- en-tête `Tour de contrôle` pour éviter les libellés redondants ;
+- nouvelle couche analytique serveur `/api/v1/dashboard/analytics` ;
+- agrégats dimensionnels quotidiens experts, opérateurs et durées ;
+- agrégats qualité RTP horaires pour MOS, perte paquets, jitter et latence ;
+- heatmap jour × heure exacte côté serveur ;
+- graphiques appels/minutes et ASR/abandons ;
+- répartitions horaires et hebdomadaires ;
+- donut statuts et histogramme de durées ;
+- classements experts/opérateurs alimentés par les agrégats serveur ;
+- économie unitaire : valeur/appel, CA/minute, marge/appel, durée moyenne ;
+- anciens graphiques CA/reversement, experts et réseaux raccordés au même moteur analytique ;
+- garde-fous multi-devises sur les graphiques financiers ;
+- repli automatique sur les CDR récents pendant un déploiement si l'endpoint analytique n'est pas encore disponible ;
+- cache PWA porté à v18 ;
+- front, backend, Docker et exemples de scale alignés sur 1.15.0.
+
 ## 1.14.0 — 2026-09-19
 
 Résilience hyperscale et isolation renforcée :
