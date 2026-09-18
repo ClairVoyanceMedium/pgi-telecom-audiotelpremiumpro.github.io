@@ -47,6 +47,7 @@ jobs:
           [[ "$VPS_HOST" =~ ^[A-Za-z0-9._:-]+$ ]]
           [[ "$VPS_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]
           [[ "$VPS_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]]
+          test "$VPS_PATH" = "/srv/pgi-dashboard"
           [[ "$PUBLIC_URL" =~ ^https://[A-Za-z0-9._:-]+/?$ ]]
           [[ "$RELEASE_ID" =~ ^[0-9a-f]{40}$ ]]
 
