@@ -1671,3 +1671,54 @@ dialog{max-height:100dvh}
     max-width:min(62vw,260px)
   }
 }
+
+
+/* PGI 1.13 — Hyperscale Capacity Layer */
+.hyperscale-readiness{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:7px;
+  margin:0 0 12px;
+}
+.hyperscale-readiness>div{
+  min-width:0;
+  padding:11px 12px;
+  border:1px solid rgba(90,205,255,.12);
+  border-radius:12px;
+  background:linear-gradient(145deg,rgba(8,20,31,.92),rgba(6,13,22,.94));
+}
+.hyperscale-readiness span{
+  display:block;
+  color:#63839b;
+  font-size:6.5px;
+  font-weight:850;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.hyperscale-readiness strong{
+  display:block;
+  margin-top:5px;
+  color:#e4f4fb;
+  font-size:14px;
+  letter-spacing:-.025em;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.hyperscale-readiness small{
+  display:block;
+  margin-top:3px;
+  color:#71899e;
+  font-size:7px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+@media (max-width:820px){
+  .hyperscale-readiness{grid-template-columns:1fr 1fr;gap:6px}
+  .hyperscale-readiness>div{padding:10px}
+  .hyperscale-readiness strong{font-size:12px}
+}
+@media (max-width:360px){
+  .hyperscale-readiness{grid-template-columns:1fr}
+}
