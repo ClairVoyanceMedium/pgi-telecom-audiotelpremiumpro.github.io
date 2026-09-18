@@ -704,7 +704,10 @@ export class PostgresStore{
         " (SELECT count(*)::int FROM tenant_kyc_profiles k JOIN tenants t ON t.id=k.tenant_id WHERE t.tenant_type<>'internal' AND k.status='pending') AS kyc_pending,"+
         " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal') AS assignments_total,"+
         " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.status='active') AS assignments_active,"+
-        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.regulatory_assignor_carrier_id IS NOT NULL) AS assignments_with_assignor"
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.regulatory_assignor_carrier_id IS NOT NULL) AS assignments_with_assignor,"+
+        " (SELECT COALESCE(sum(s.upstream_payout_ht),0)::float8 FROM tenant_settlements s JOIN tenants t ON t.id=s.tenant_id WHERE t.tenant_type<>'internal') AS upstream_payout_ht,"+
+        " (SELECT COALESCE(sum(s.platform_fee_ht),0)::float8 FROM tenant_settlements s JOIN tenants t ON t.id=s.tenant_id WHERE t.tenant_type<>'internal') AS platform_fee_ht,"+
+        " (SELECT COALESCE(sum(s.net_payout_ht),0)::float8 FROM tenant_settlements s JOIN tenants t ON t.id=s.tenant_id WHERE t.tenant_type<>'internal') AS net_payout_ht"
       ),
       this.sql.unsafe(
         "SELECT t.id,t.slug,t.display_name,t.tenant_type,t.status,t.country_code,"+
@@ -735,15 +738,9 @@ export class PostgresStore{
         " FROM payment_compliance_profiles ORDER BY created_at DESC LIMIT 20"
       )
     ]);
-    const settlementTotals=settlements.reduce((acc,row)=>{
-      acc.upstream_payout_ht+=Number(row.upstream_payout_ht||0);
-      acc.platform_fee_ht+=Number(row.platform_fee_ht||0);
-      acc.net_payout_ht+=Number(row.net_payout_ht||0);
-      return acc;
-    },{upstream_payout_ht:0,platform_fee_ht:0,net_payout_ht:0});
     return {
       foundation_version:"1.9",
-      summary:{...summary[0],...settlementTotals,payment_compliance_active:payments.some(x=>x.status==="active")},
+      summary:{...summary[0],payment_compliance_active:payments.some(x=>x.status==="active")},
       tenants,
       numbers,
       settlements,
