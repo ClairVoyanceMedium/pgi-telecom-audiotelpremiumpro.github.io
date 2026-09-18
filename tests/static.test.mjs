@@ -137,7 +137,7 @@ test("le centre de lancement SVA mobile est verrouillé", () => {
   assert.match(index, /class="mobile-sva" data-view="wholesale"/);
   assert.match(index, /CENTRE DE LANCEMENT SVA/);
   assert.match(app, /Finaliser l’opérateur SVA amont/);
-  assert.match(app, /Configurer le premier numéro 089/);
+  assert.match(app, /Configurer le premier numéro de service/);
   assert.match(app, /Activer le trunk SIP et la route/);
   assert.match(css, /PGI 1\.10 — SVA Launch Center/);
 });
