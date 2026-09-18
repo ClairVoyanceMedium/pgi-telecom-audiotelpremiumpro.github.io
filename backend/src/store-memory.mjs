@@ -550,7 +550,7 @@ export class MemoryStore{
 
   async wholesaleOverview(){
     return {
-      foundation_version:"1.14",
+      foundation_version:"1.15",
       summary:{
         tenants_total:0,tenants_active:0,kyc_verified:0,kyc_pending:0,
         markets_total:1,markets_active:1,tenant_markets_active:0,
