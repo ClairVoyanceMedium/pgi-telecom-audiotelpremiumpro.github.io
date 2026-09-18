@@ -117,11 +117,15 @@
   }
 
   function productionDataRange(){
-    var r=getRange();
-    if(state.baseline)return r;
-    var now=new Date(),effectiveTo=r.to<now?r.to:now;
-    var duration=Math.max(1,effectiveTo-r.from);
-    return {from:new Date(r.from.getTime()-duration-1),to:r.to};
+    return getRange();
+  }
+
+  function comparisonRange(range){
+    if(state.baseline)return null;
+    var now=new Date(),effectiveTo=range.to<now?range.to:now;
+    var duration=Math.max(1,effectiveTo-range.from);
+    var to=new Date(range.from.getTime()-1);
+    return {from:new Date(to.getTime()-duration),to:to};
   }
 
   async function loadAllApiCalls(from,to,market){
@@ -260,21 +264,34 @@
       syncMarketSelector(wholesale);
       var range=getRange();
       var windowRange=productionDataRange();
+      var prevRange=comparisonRange(range);
       var results=await Promise.all([
         loadAllApiCalls(windowRange.from,windowRange.to,state.market),
         window.PGIApi.summary(range.from.toISOString(),range.to.toISOString(),state.market),
+        prevRange
+          ?window.PGIApi.summary(prevRange.from.toISOString(),prevRange.to.toISOString(),state.market)
+          :Promise.resolve(null),
         window.PGIApi.experts(),
         window.PGIApi.systemHealth(),
         window.PGIApi.carrierRouting()
       ]);
-      allCalls=results[0].map(apiCallToUi).filter(function(x){return Number.isFinite(x.ts.getTime());}).sort(function(a,b){return b.ts-a.ts;});
-      var expertRows=Array.isArray(results[2]&&results[2].data)?results[2].data:[];
+      var sample=results[0]||{data:[],truncated:false};
+      allCalls=(Array.isArray(sample.data)?sample.data:[]).map(apiCallToUi)
+        .filter(function(x){return Number.isFinite(x.ts.getTime());})
+        .sort(function(a,b){return b.ts-a.ts;});
+      state.cdrSampleTruncated=!!sample.truncated;
+      state.serverSummary=results[1]||null;
+      state.previousSummary=results[2]||null;
+      if(state.serverSummary&&Number(state.serverSummary.currency_count||0)===1&&state.serverSummary.currency){
+        state.marketCurrency=String(state.serverSummary.currency);
+      }
+      var expertRows=Array.isArray(results[3]&&results[3].data)?results[3].data:[];
       experts=expertRows.map(function(x){return x.display_name;}).filter(Boolean);
       var networkNames=Array.from(new Set(allCalls.map(function(x){return x.carrier;}).filter(Boolean)));
       carriers=networkNames;
-      state.system=results[3]||null;
-      state.route=results[4]||null;
-      setProductionLive(results[1]||{});
+      state.system=results[4]||null;
+      state.route=results[5]||null;
+      setProductionLive(state.serverSummary||{});
       state.diagnostics.apiStatus="ok";
       render();
       startProductionEvents();
