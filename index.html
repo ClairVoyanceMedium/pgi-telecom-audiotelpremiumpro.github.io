@@ -148,7 +148,16 @@
           <article class="kpi compact"><span>Experts ayant traité</span><strong id="kpi-experts">0</strong><small id="kpi-live">Temps réel séparé</small></article>
         </section>
 
-        <section class="executive-strip">
+        <section class="mobile-overview-control" aria-label="Affichage du tableau de bord mobile">
+          <div>
+            <p class="panel-kicker">AFFICHAGE MOBILE</p>
+            <strong id="mobile-overview-mode">Vue essentielle</strong>
+            <small id="mobile-overview-note">Priorité au lancement SVA, aux finances, au temps réel et aux alertes.</small>
+          </div>
+          <button id="mobile-overview-toggle" type="button" aria-expanded="false">Voir l’analyse complète</button>
+        </section>
+
+        <section class="executive-strip mobile-advanced">
           <article class="executive-score">
             <div class="score-ring" id="ops-score-ring" style="--score:0">
               <div><strong id="ops-score">0</strong><small>/100</small></div>
@@ -168,7 +177,7 @@
         </section>
 
         <section class="split-grid">
-          <article class="panel chart-panel">
+          <article class="panel chart-panel mobile-advanced">
             <div class="panel-head"><div><p class="panel-kicker">PERFORMANCE</p><h2>CA & reversement</h2></div><div class="legend"><span><i class="legend-dot revenue"></i>CA</span><span><i class="legend-dot payout"></i>Reversement</span></div></div>
             <div class="chart-wrap"><svg id="revenue-chart" viewBox="0 0 760 250" role="img" aria-label="Évolution du chiffre d'affaires et du reversement"></svg></div>
           </article>
@@ -187,7 +196,7 @@
           </article>
         </section>
 
-        <section class="analytics-grid">
+        <section class="analytics-grid mobile-advanced">
           <article class="panel heatmap-panel">
             <div class="panel-head">
               <div><p class="panel-kicker">TRAFIC</p><h2>Heatmap jours × heures</h2></div>
@@ -215,7 +224,7 @@
           </article>
         </section>
 
-        <section class="insight-grid">
+        <section class="insight-grid mobile-advanced">
           <article class="panel">
             <div class="panel-head"><div><p class="panel-kicker">TOP EXPERTS</p><h2>Contribution période</h2></div><button class="text-btn" data-go="experts" type="button">Détails →</button></div>
             <div id="overview-expert-ranking" class="ranking-list"></div>
@@ -232,7 +241,7 @@
         </section>
 
         <section class="split-grid lower">
-          <article class="panel">
+          <article class="panel mobile-advanced">
             <div class="panel-head"><div><p class="panel-kicker">DERNIERS APPELS</p><h2>Flux téléphonique</h2></div><button class="text-btn" data-go="calls" type="button">Voir tout →</button></div>
             <div class="table-wrap"><table><thead><tr><th>Heure</th><th>Appelant</th><th>Expert</th><th>Durée</th><th>Statut</th><th>Rev.</th></tr></thead><tbody id="recent-calls"></tbody></table></div>
           </article>
