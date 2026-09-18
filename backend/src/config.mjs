@@ -39,7 +39,7 @@ export function loadConfig(env=process.env){
     payoutRateHtPerMin:number(env.PGI_PAYOUT_RATE_HT_PER_MIN,0.46,0,100,"PGI_PAYOUT_RATE_HT_PER_MIN"),
     expertCostHtPerMin:number(env.PGI_EXPERT_COST_HT_PER_MIN,0.18,0,100,"PGI_EXPERT_COST_HT_PER_MIN"),
     reconciliationToleranceHt:number(env.PGI_RECONCILIATION_TOLERANCE_HT,0.01,0,100,"PGI_RECONCILIATION_TOLERANCE_HT"),
-    version:env.PGI_VERSION||"1.3.0"
+    version:env.PGI_VERSION||"1.4.0"
   });
 }
 
