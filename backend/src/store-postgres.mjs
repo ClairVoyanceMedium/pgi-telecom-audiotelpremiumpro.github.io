@@ -775,6 +775,16 @@ export class PostgresStore{
     }
   }
 
+  async withTenantContext(tenantId,fn){
+    const id=Number(tenantId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_CONTEXT");
+    if(typeof fn!=="function")throw problem(500,"TENANT_CONTEXT_HANDLER_REQUIRED");
+    return this.sql.begin(async tx=>{
+      await tx.unsafe("SELECT set_config('pgi.tenant_id',$1,true)",[String(id)]);
+      return fn(tx);
+    });
+  }
+
   async acquireWorkerLease(leaseKey,ownerId,ttlSeconds=45){
     const rows=await this.sql.unsafe(
       "INSERT INTO worker_leases(lease_key,owner_id,expires_at)"+
