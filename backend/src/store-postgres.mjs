@@ -32,7 +32,7 @@ export class PostgresStore{
 
   async close(){await this.sql.end({timeout:5});}
 
-  async summary(from,to){
+  async summary(from,to,market=null){
     const rows=await this.sql.unsafe(
       "SELECT COALESCE(sum(retail_service_amount_ttc),0)::float8 AS generated_revenue_ttc,"+
       " COALESCE(sum(expected_payout_ht),0)::float8 AS expected_payout_ht,"+
@@ -47,8 +47,9 @@ export class PostgresStore{
       " COALESCE(sum(billable_seconds),0)::float8/60.0 AS billable_minutes,"+
       " COALESCE(sum(payout_eligible_seconds),0)::float8/60.0 AS payout_eligible_minutes,"+
       " COALESCE(avg(conversation_seconds) FILTER (WHERE call_status='connected'),0)::float8 AS acd_seconds"+
-      " FROM calls WHERE started_at >= $1::timestamptz AND started_at <= $2::timestamptz",
-      [from,to]
+      " FROM calls WHERE started_at >= $1::timestamptz AND started_at <= $2::timestamptz"+
+      " AND ($3::text IS NULL OR market_id=(SELECT id FROM operating_markets WHERE country_code=$3))",
+      [from,to,market||null]
     );
     const presence=await this.sql.unsafe(
       "SELECT count(*) FILTER (WHERE status='available' AND enabled)::int AS active_experts,"+
@@ -69,7 +70,8 @@ export class PostgresStore{
     const cursor=decodeCursor(params.cursor);
     const values=[
       params.from||null,params.to||null,params.expert_id?Number(params.expert_id):null,
-      params.origin_carrier||null,params.status||null,cursor?.started_at||null,cursor?.id||null,limit+1
+      params.origin_carrier||null,params.status||null,params.market||null,
+      cursor?.started_at||null,cursor?.id||null,limit+1
     ];
     const rows=await this.sql.unsafe(
       "SELECT c.id,c.external_call_id,c.started_at,c.ivr_started_at,c.queued_at,c.bridged_at,c.ended_at,"+
@@ -90,8 +92,9 @@ export class PostgresStore{
       " AND ($3::bigint IS NULL OR c.expert_id=$3)"+
       " AND ($4::text IS NULL OR oc.name=$4)"+
       " AND ($5::text IS NULL OR c.call_status=$5)"+
-      " AND ($6::timestamptz IS NULL OR (c.started_at,c.id) < ($6::timestamptz,$7::bigint))"+
-      " ORDER BY c.started_at DESC,c.id DESC LIMIT $8",
+      " AND ($6::text IS NULL OR m.country_code=$6)"+
+      " AND ($7::timestamptz IS NULL OR (c.started_at,c.id) < ($7::timestamptz,$8::bigint))"+
+      " ORDER BY c.started_at DESC,c.id DESC LIMIT $9",
       values
     );
     const hasMore=rows.length>limit;
@@ -531,7 +534,7 @@ export class PostgresStore{
     return result;
   }
 
-  async reconciliation(from,to){
+  async reconciliation(from,to,market=null){
     return this.sql.unsafe(
       "SELECT COALESCE(hc.name,'Unknown') AS carrier,count(*)::int AS calls,"+
       " COALESCE(sum(c.expected_payout_ht),0)::float8 AS expected_payout_ht,"+
@@ -540,9 +543,11 @@ export class PostgresStore{
       " COALESCE(sum(c.reconciliation_variance_ht),0)::float8 AS variance_ht,"+
       " count(*) FILTER(WHERE c.reconciliation_status='variance')::int AS variance_calls"+
       " FROM calls c LEFT JOIN carriers hc ON hc.id=c.host_carrier_id"+
+      " LEFT JOIN operating_markets m ON m.id=c.market_id"+
       " WHERE c.started_at >= $1::timestamptz AND c.started_at <= $2::timestamptz"+
+      " AND ($3::text IS NULL OR m.country_code=$3)"+
       " GROUP BY hc.name ORDER BY hc.name",
-      [from,to]
+      [from,to,market||null]
     );
   }
 
