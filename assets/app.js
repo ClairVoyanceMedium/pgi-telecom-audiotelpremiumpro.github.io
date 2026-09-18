@@ -3,7 +3,7 @@
 
   var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
   var CONFIG={serviceRate:0.80,payoutRate:0.46,expertCostPerMin:0.18,fixedCostPerCall:0.03};
-  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
+  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,lastSyncAt:null,activeView:"overview",commandIndex:0,system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
   var titles={overview:"Cockpit",calls:"Appels",finance:"Finance",experts:"Experts",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Supervision",settings:"Paramètres"};
   var experts=["Frederick","Sofia","Emma","Lina","Clara","Nora"];
   var carriers=["Orange","SFR","Bouygues","Free"];
@@ -228,8 +228,12 @@
 
   function scheduleProductionSync(){
     if(RUNTIME.mode!=="production")return;
+    if(document.hidden){
+      state.pendingSync=true;
+      return;
+    }
     clearTimeout(state.syncTimer);
-    state.syncTimer=setTimeout(function(){syncProductionData();},700);
+    state.syncTimer=setTimeout(function(){syncProductionData();},900);
   }
 
   function startProductionEvents(){
@@ -328,8 +332,9 @@
       state.route=dashboard.route||null;
       setProductionLive(state.serverSummary||{});
       state.diagnostics.apiStatus="ok";
+      state.lastSyncAt=Date.now();
       render();
-      startProductionEvents();
+      if(!document.hidden)startProductionEvents();
     }catch(e){
       if(e&&e.status===401){
         requireProductionLogin("Session expirée. Identifiez-vous de nouveau.");
@@ -1270,6 +1275,41 @@
     }).join(""):'<tr><td colspan="8">Aucun reversement client réel.</td></tr>';
   }
 
+  function readUiPreferences(){
+    try{
+      var raw=localStorage.getItem("pgi_ui_preferences");
+      if(!raw)return {};
+      var parsed=JSON.parse(raw);
+      return parsed&&typeof parsed==="object"?parsed:{};
+    }catch(e){return {};}
+  }
+
+  function saveUiPreferences(){
+    try{
+      var payload={view:state.activeView,period:state.period};
+      if(state.period==="custom"&&state.custom){
+        payload.custom={from:state.custom.from.toISOString(),to:state.custom.to.toISOString()};
+      }
+      localStorage.setItem("pgi_ui_preferences",JSON.stringify(payload));
+    }catch(e){}
+  }
+
+  function restoreUiPreferences(){
+    var pref=readUiPreferences();
+    if(pref&&titles[pref.view])state.activeView=pref.view;
+    if(pref&&["today","7d","week","month","year","custom"].includes(pref.period))state.period=pref.period;
+    if(state.period==="custom"&&pref.custom&&Number.isFinite(Date.parse(pref.custom.from))&&Number.isFinite(Date.parse(pref.custom.to))){
+      state.custom={from:new Date(pref.custom.from),to:new Date(pref.custom.to)};
+      var df=$("date-from"),dt=$("date-to");
+      if(df)df.value=state.custom.from.toISOString().slice(0,10);
+      if(dt)dt.value=state.custom.to.toISOString().slice(0,10);
+    }else if(state.period==="custom"){
+      state.period="today";
+      state.custom=null;
+    }
+    qsa(".period").forEach(function(x){x.classList.toggle("active",x.getAttribute("data-period")===state.period);});
+  }
+
   function readMarketPreference(){
     try{
       var saved=String(localStorage.getItem("pgi_operating_market")||"").trim().toUpperCase();
@@ -1364,26 +1404,144 @@
     }
   }
 
-  function switchView(name){
+  function switchView(name,options){
+    if(!titles[name])return;
+    state.activeView=name;
     qsa(".view").forEach(function(v){v.classList.toggle("active",v.id==="view-"+name);});
     qsa("[data-view]").forEach(function(b){b.classList.toggle("active",b.getAttribute("data-view")===name);});
     setText("view-title",titles[name]||"PGI • Telecom");
-    window.scrollTo({top:0,behavior:"smooth"});
+    saveUiPreferences();
+    if(!(options&&options.noScroll))window.scrollTo({top:0,behavior:"smooth"});
+  }
+
+  function setPeriod(period){
+    if(!["today","7d","week","month","year"].includes(period))return;
+    state.period=period;
+    state.custom=null;
+    qsa(".period").forEach(function(x){x.classList.toggle("active",x.getAttribute("data-period")===period);});
+    saveUiPreferences();
+    refreshData();
+  }
+
+  function commandNormalize(value){
+    return String(value||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+  }
+
+  function commandCatalog(){
+    return [
+      {id:"view-overview",group:"Navigation",label:"Ouvrir le Cockpit",hint:"Accueil et pilotage",keywords:"dashboard accueil cockpit",run:function(){switchView("overview");}},
+      {id:"view-calls",group:"Navigation",label:"Ouvrir les Appels",hint:"CDR et détail",keywords:"cdr telephone appels",run:function(){switchView("calls");}},
+      {id:"view-finance",group:"Navigation",label:"Ouvrir Finance",hint:"CA, reversements, rapprochement",keywords:"argent marge paiement reversement",run:function(){switchView("finance");}},
+      {id:"view-experts",group:"Navigation",label:"Ouvrir Experts",hint:"Disponibilité et performance",keywords:"equipe consultants experts",run:function(){switchView("experts");}},
+      {id:"view-carriers",group:"Navigation",label:"Ouvrir Opérateurs",hint:"SIP, routes, portabilité",keywords:"operateur carrier sip route",run:function(){switchView("carriers");}},
+      {id:"view-wholesale",group:"Navigation",label:"Ouvrir Plateforme SVA",hint:"Clients, numéros, KYC",keywords:"sva wholesale clients numeros kyc",run:function(){switchView("wholesale");}},
+      {id:"view-system",group:"Navigation",label:"Ouvrir Supervision",hint:"NOC, API, CDR, résilience",keywords:"systeme noc api supervision erreurs",run:function(){switchView("system");}},
+      {id:"view-settings",group:"Navigation",label:"Ouvrir Paramètres",hint:"Configuration et audit",keywords:"reglages parametres config",run:function(){switchView("settings");}},
+      {id:"period-today",group:"Période",label:"Afficher aujourd’hui",hint:"Période : aujourd’hui",keywords:"jour today",run:function(){setPeriod("today");}},
+      {id:"period-7d",group:"Période",label:"Afficher 7 jours",hint:"Période glissante",keywords:"semaine sept jours",run:function(){setPeriod("7d");}},
+      {id:"period-week",group:"Période",label:"Afficher cette semaine",hint:"Lundi à aujourd’hui",keywords:"semaine",run:function(){setPeriod("week");}},
+      {id:"period-month",group:"Période",label:"Afficher ce mois",hint:"Depuis le 1er",keywords:"mois month",run:function(){setPeriod("month");}},
+      {id:"period-year",group:"Période",label:"Afficher cette année",hint:"Depuis janvier",keywords:"annee year annuel",run:function(){setPeriod("year");}},
+      {id:"refresh",group:"Action",label:"Actualiser maintenant",hint:"Synchroniser les données",keywords:"refresh synchro actualiser mise a jour",run:function(){refreshData();}},
+      {id:"priority",group:"Action",label:"Ouvrir l’action prioritaire",hint:"Prochaine étape recommandée",keywords:"priorite prochaine action",run:function(){switchView("overview");setTimeout(function(){var b=$("priority-action-btn");if(b)b.focus();},250);}},
+      {id:"analysis",group:"Action",label:state.mobileOverviewExpanded?"Revenir à la vue essentielle":"Afficher l’analyse complète",hint:"Cockpit mobile",keywords:"mobile graphiques analyse essentiel",run:function(){switchView("overview");toggleMobileOverview();}},
+      {id:"export",group:"Action",label:"Exporter les appels en CSV",hint:"Période et filtres actuels",keywords:"csv export appels fichier",run:function(){switchView("calls");setTimeout(exportCallsCsv,80);}},
+      {id:"print-calls",group:"Action",label:"Imprimer les appels / PDF",hint:"Vue appels",keywords:"pdf impression appels",run:function(){switchView("calls");setTimeout(function(){window.print();},120);}},
+      {id:"print-finance",group:"Action",label:"Imprimer Finance / PDF",hint:"Vue finance",keywords:"pdf impression finance",run:function(){switchView("finance");setTimeout(function(){window.print();},120);}}
+    ];
+  }
+
+  function filteredCommands(query){
+    var needle=commandNormalize(query);
+    return commandCatalog().filter(function(cmd){
+      return !needle||commandNormalize(cmd.label+" "+cmd.hint+" "+cmd.group+" "+(cmd.keywords||"")).includes(needle);
+    }).slice(0,18);
+  }
+
+  function renderCommandPalette(){
+    var input=$("command-search"),results=$("command-results");
+    if(!results)return;
+    var list=filteredCommands(input?input.value:"");
+    if(state.commandIndex>=list.length)state.commandIndex=Math.max(0,list.length-1);
+    results.innerHTML=list.length?list.map(function(cmd,index){
+      return '<button type="button" class="command-result'+(index===state.commandIndex?' selected':'')+'" data-command-id="'+esc(cmd.id)+'" role="option" aria-selected="'+(index===state.commandIndex?'true':'false')+'"><span><small>'+esc(cmd.group)+'</small><strong>'+esc(cmd.label)+'</strong><em>'+esc(cmd.hint||"")+'</em></span><i>↵</i></button>';
+    }).join(""):'<div class="command-empty">Aucune action correspondante.</div>';
+    var selected=results.querySelector(".command-result.selected");
+    if(selected)selected.scrollIntoView({block:"nearest"});
+  }
+
+  function openCommandPalette(initialQuery){
+    var dialog=$("command-palette-dialog"),input=$("command-search");
+    if(!dialog||typeof dialog.showModal!=="function")return;
+    state.commandIndex=0;
+    if(input)input.value=initialQuery||"";
+    renderCommandPalette();
+    if(!dialog.open)dialog.showModal();
+    setTimeout(function(){if(input){input.focus();input.select();}},20);
+  }
+
+  function closeCommandPalette(){
+    var dialog=$("command-palette-dialog");
+    if(dialog&&dialog.open)dialog.close();
+  }
+
+  function runCommand(id){
+    var cmd=commandCatalog().find(function(x){return x.id===id;});
+    if(!cmd)return;
+    closeCommandPalette();
+    cmd.run();
+  }
+
+  function moveCommandSelection(delta){
+    var list=filteredCommands($("command-search")?$("command-search").value:"");
+    if(!list.length)return;
+    state.commandIndex=(state.commandIndex+delta+list.length)%list.length;
+    renderCommandPalette();
   }
 
   function bind(){
     qsa("[data-view]").forEach(function(b){b.addEventListener("click",function(){switchView(b.getAttribute("data-view"));});});
     qsa("[data-go]").forEach(function(b){b.addEventListener("click",function(){switchView(b.getAttribute("data-go"));});});
     qsa(".period").forEach(function(b){b.addEventListener("click",function(){
-      state.period=b.getAttribute("data-period");state.custom=null;
-      qsa(".period").forEach(function(x){x.classList.toggle("active",x===b);});refreshData();
+      setPeriod(b.getAttribute("data-period"));
     });});
     $("apply-custom").addEventListener("click",function(){
       var f=$("date-from").value,t=$("date-to").value;if(!f||!t)return;
       var fd=new Date(f+"T00:00:00"),td=new Date(t+"T00:00:00");if(td<fd){var tmp=fd;fd=td;td=tmp;}
-      state.period="custom";state.custom={from:fd,to:td};qsa(".period").forEach(function(x){x.classList.remove("active");});refreshData();
+      state.period="custom";state.custom={from:fd,to:td};qsa(".period").forEach(function(x){x.classList.remove("active");});saveUiPreferences();refreshData();
     });
     $("refresh-btn").addEventListener("click",refreshData);
+    var paletteButton=$("command-palette-btn");
+    var paletteFab=$("quick-actions-fab");
+    var paletteClose=$("command-palette-close");
+    var paletteSearch=$("command-search");
+    var paletteResults=$("command-results");
+    if(paletteButton)paletteButton.addEventListener("click",function(){openCommandPalette();});
+    if(paletteFab)paletteFab.addEventListener("click",function(){openCommandPalette();});
+    if(paletteClose)paletteClose.addEventListener("click",closeCommandPalette);
+    if(paletteSearch){
+      paletteSearch.addEventListener("input",function(){state.commandIndex=0;renderCommandPalette();});
+      paletteSearch.addEventListener("keydown",function(e){
+        if(e.key==="ArrowDown"){e.preventDefault();moveCommandSelection(1);}
+        else if(e.key==="ArrowUp"){e.preventDefault();moveCommandSelection(-1);}
+        else if(e.key==="Enter"){
+          e.preventDefault();
+          var list=filteredCommands(paletteSearch.value);
+          if(list[state.commandIndex])runCommand(list[state.commandIndex].id);
+        }else if(e.key==="Escape"){e.preventDefault();closeCommandPalette();}
+      });
+    }
+    if(paletteResults)paletteResults.addEventListener("click",function(e){
+      var button=e.target.closest("[data-command-id]");
+      if(button)runCommand(button.getAttribute("data-command-id"));
+    });
+    document.addEventListener("keydown",function(e){
+      if((e.ctrlKey||e.metaKey)&&String(e.key).toLowerCase()==="k"){
+        e.preventDefault();
+        openCommandPalette();
+      }
+    });
+
     var mobileOverviewToggle=$("mobile-overview-toggle");
     if(mobileOverviewToggle)mobileOverviewToggle.addEventListener("click",toggleMobileOverview);
     var marketFilter=$("market-filter");
@@ -1500,6 +1658,20 @@
     }
   }
 
+  function handleVisibilityChange(){
+    if(RUNTIME.mode!=="production")return;
+    if(document.hidden){
+      clearTimeout(state.syncTimer);
+      state.pendingSync=true;
+      stopProductionEvents();
+      return;
+    }
+    var shouldSync=state.pendingSync||!state.lastSyncAt||(Date.now()-state.lastSyncAt)>30000;
+    state.pendingSync=false;
+    if(shouldSync)syncProductionData();
+    else startProductionEvents();
+  }
+
   function startHealthLoop(){
     probeApiHealth();
     setInterval(function(){
@@ -1521,15 +1693,18 @@
   window.addEventListener("error",recordRuntimeError);
   window.addEventListener("unhandledrejection",recordRuntimeError);
   loadState();
+  restoreUiPreferences();
   state.market=RUNTIME.mode==="production"?readMarketPreference():"FR";
   state.mobileOverviewExpanded=readMobileOverviewPreference();
   applyMobileOverviewMode();
   bind();
+  switchView(state.activeView,{noScroll:true});
   applyRuntimeMode();
   updateConnectivity();
   startHealthLoop();
   window.addEventListener("online",updateConnectivity);
   window.addEventListener("offline",updateConnectivity);
+  document.addEventListener("visibilitychange",handleVisibilityChange);
   registerServiceWorker();
   if(RUNTIME.mode==="production")syncProductionData();else render();
   clock();
