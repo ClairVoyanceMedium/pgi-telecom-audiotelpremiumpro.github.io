@@ -69,3 +69,11 @@ test("le NOC sépare la santé API du pipeline CDR", () => {
   assert.match(app, /CDR REÇUS/);
   assert.doesNotMatch(app, /overviewCdr\.textContent="CONNECTÉ"/);
 });
+
+
+test("la session de production peut être fermée proprement", () => {
+  assert.ok(index.includes('id="logout-btn"'));
+  assert.match(app, /logoutProduction/);
+  assert.match(app, /pgi:auth-required/);
+  assert.match(app, /stopProductionEvents/);
+});
