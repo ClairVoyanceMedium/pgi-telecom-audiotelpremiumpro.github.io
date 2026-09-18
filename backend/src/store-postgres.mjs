@@ -736,6 +736,27 @@ export class PostgresStore{
     }
   }
 
+  async acquireWorkerLease(leaseKey,ownerId,ttlSeconds=45){
+    const rows=await this.sql.unsafe(
+      "INSERT INTO worker_leases(lease_key,owner_id,expires_at)"+
+      " VALUES($1,$2,now()+make_interval(secs=>$3))"+
+      " ON CONFLICT(lease_key) DO UPDATE SET"+
+      " owner_id=EXCLUDED.owner_id,heartbeat_at=now(),expires_at=EXCLUDED.expires_at"+
+      " WHERE worker_leases.owner_id=EXCLUDED.owner_id OR worker_leases.expires_at<=now()"+
+      " RETURNING lease_key,owner_id,expires_at",
+      [String(leaseKey),String(ownerId),Math.max(10,Math.min(300,Number(ttlSeconds)||45))]
+    );
+    return rows.length>0;
+  }
+
+  async releaseWorkerLease(leaseKey,ownerId){
+    const rows=await this.sql.unsafe(
+      "DELETE FROM worker_leases WHERE lease_key=$1 AND owner_id=$2 RETURNING lease_key",
+      [String(leaseKey),String(ownerId)]
+    );
+    return rows.length>0;
+  }
+
   async drainOutbox(handler,limit=100){
     const claimed=await this.sql.begin(async tx=>{
       const rows=await tx.unsafe(
