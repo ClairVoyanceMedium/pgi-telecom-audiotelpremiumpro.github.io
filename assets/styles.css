@@ -301,3 +301,16 @@ dialog::backdrop{background:rgba(0,0,0,.7);backdrop-filter:blur(5px)}
 .secondary-btn:disabled,.danger-btn:disabled,.icon-btn:disabled{
   opacity:.45;cursor:not-allowed;filter:saturate(.4)
 }
+
+.carrier-host-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);gap:12px;margin-bottom:12px}
+.carrier-route-state{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:16px 0}
+.carrier-route-state div{padding:11px;border:1px solid var(--border);border-radius:11px;background:rgba(255,255,255,.014)}
+.carrier-route-state span{display:block;color:var(--muted);font-size:8px;text-transform:uppercase;letter-spacing:.06em}
+.carrier-route-state strong{display:block;margin-top:6px;font-size:11px;color:#e5f3ff}
+.switch-steps{margin:14px 0 0;padding-left:20px;color:#aebed0;font-size:10px;line-height:1.9}
+@media (max-width:900px){
+  .carrier-host-grid{grid-template-columns:1fr}
+}
+@media (max-width:520px){
+  .carrier-route-state{grid-template-columns:1fr 1fr}
+}
