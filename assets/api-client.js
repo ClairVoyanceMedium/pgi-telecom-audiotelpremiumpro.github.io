@@ -90,6 +90,16 @@
     health:function(){return request("/health",{timeoutMs:4000});},
     ready:function(){return request("/ready",{timeoutMs:4000});},
     me:function(){return request("/auth/me",{timeoutMs:4000});},
+    appBootstrap:function(){return request("/app/bootstrap",{timeoutMs:8000});},
+    dashboardBootstrap:function(from,to,market,previousFrom,previousTo){
+      var q=new URLSearchParams({from:from,to:to});
+      if(market)q.set("market",market);
+      if(previousFrom&&previousTo){
+        q.set("previous_from",previousFrom);
+        q.set("previous_to",previousTo);
+      }
+      return request("/dashboard/bootstrap?"+q.toString(),{timeoutMs:10000});
+    },
     login:function(username,password){return request("/auth/login",{method:"POST",body:{username:username,password:password},timeoutMs:8000});},
     logout:function(){return request("/auth/logout",{method:"POST",body:{}});},
     summary:function(from,to,market){
