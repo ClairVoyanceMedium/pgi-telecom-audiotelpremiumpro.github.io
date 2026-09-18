@@ -435,7 +435,7 @@ function done(res,metrics,started,route,status,payload,headers={}){
 }
 function bump(map,key){map.set(String(key),(map.get(String(key))||0)+1);}
 async function metricsResponse(res,metrics,store,workers){
-  const m=await store.metrics();
+  const [m,snapshot]=await Promise.all([store.metrics(),store.systemSnapshot()]);
   const lines=[
     "# TYPE pgi_http_requests_total counter",
     "pgi_http_requests_total "+metrics.requests,
@@ -453,6 +453,10 @@ async function metricsResponse(res,metrics,store,workers){
     "pgi_calls_connected "+m.calls_connected,
     "# TYPE pgi_outbox_pending gauge",
     "pgi_outbox_pending "+m.outbox_pending,
+    "# TYPE pgi_cdr_lag_seconds gauge",
+    "pgi_cdr_lag_seconds "+Number(snapshot.cdr_lag_seconds||0),
+    "# TYPE pgi_experts_available gauge",
+    "pgi_experts_available "+Number(snapshot.experts_available||0),
     "# TYPE pgi_event_subscribers gauge",
     "pgi_event_subscribers "+m.event_subscribers,
     "# TYPE pgi_worker_outbox_errors_total counter",
