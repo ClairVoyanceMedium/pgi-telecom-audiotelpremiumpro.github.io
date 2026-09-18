@@ -273,9 +273,21 @@ export class MemoryStore{
     return [...groups.values()].map(roundFinance);
   }
 
+  async listBaselines(params={}){
+    const scope=params.scope||"global";
+    const limit=clampInt(params.limit,20,1,100);
+    return this.baselines
+      .filter(x=>x.scope===scope)
+      .slice()
+      .sort((a,b)=>Date.parse(b.effective_from||b.created_at)-Date.parse(a.effective_from||a.created_at))
+      .slice(0,limit)
+      .map(x=>({...x}));
+  }
+
   async createBaseline(payload,actor){
     if(!["global","expert","sva_number"].includes(payload.scope))throw problem(400,"INVALID_SCOPE");
-    const row={id:this.nextBaselineId++,scope:payload.scope,scope_id:payload.scope_id??null,reason:String(payload.reason||""),created_at:new Date().toISOString(),created_by:actor?.sub||null};
+    const now=new Date().toISOString();
+    const row={id:this.nextBaselineId++,scope:payload.scope,scope_id:payload.scope_id??null,reason:String(payload.reason||""),created_at:now,effective_from:now,created_by:actor?.sub||null};
     this.baselines.push(row);
     this.#audit("baseline.create",String(row.id),row);
     this.eventBus.publish("baseline.created",{id:row.id,scope:row.scope});
