@@ -8,7 +8,7 @@ const css = fs.readFileSync("assets/styles.css","utf8");
 const buildStatic = fs.readFileSync("scripts/build-static.mjs","utf8");
 
 test("le nom officiel est présent", () => {
-  assert.match(index, /PGI Telecom • Audiotel Premium Pro/);
+  assert.match(index, /PGI • Telecom Audiotel Premium Pro/);
 });
 
 test("les périodes métier principales sont présentes", () => {
@@ -96,7 +96,7 @@ test("la release Git exacte est visible et obligatoire en production", () => {
 });
 
 
-test("le design executive premium 1.7 est verrouillé", () => {
+test("le design executive premium reste verrouillé", () => {
   for (const id of ["command-system","command-sync","command-period","command-release"]) {
     assert.ok(index.includes('id="'+id+'"'), "missing #"+id);
   }
@@ -106,4 +106,22 @@ test("le design executive premium 1.7 est verrouillé", () => {
   assert.match(css, /backdrop-filter:blur/);
   assert.match(app, /commandSystem/);
   assert.match(app, /command-period/);
+});
+
+
+test("le cockpit wholesale 1.9 est verrouillé", () => {
+  assert.match(index, /data-view="wholesale"/);
+  for (const id of [
+    "view-wholesale","wh-foundation-status","wh-tenants-total","wh-numbers-total",
+    "wh-kyc-verified","wh-net-payout","wh-tenants-table","wh-numbers-table","wh-settlements-table"
+  ]) assert.ok(index.includes('id="'+id+'"'), "missing #"+id);
+  assert.match(css, /PGI • Telecom 1\.9 — Wholesale Control Center/);
+  assert.match(app, /renderWholesale/);
+  assert.match(app, /wholesaleOverview/);
+  assert.match(app, /Aucun éditeur réel configuré/);
+});
+
+test("le nouveau nom officiel est cohérent dans le cockpit", () => {
+  assert.match(index, /PGI • Telecom Audiotel Premium Pro/);
+  assert.doesNotMatch(index, /PGI Telecom • Audiotel Premium Pro/);
 });
