@@ -15,6 +15,7 @@ export function loadConfig(env=process.env){
   const callerHashKey=env.PGI_CALLER_HASH_KEY||"";
   const databaseUrl=env.PGI_DATABASE_URL||buildDatabaseUrl(env);
   const databaseSsl=(env.PGI_DATABASE_SSL||"disable").toLowerCase();
+  const releaseId=env.PGI_RELEASE_ID||"";
   if(!["disable","require"].includes(databaseSsl))throw new Error("PGI_DATABASE_SSL must be disable or require");
 
   if(mode==="production"){
@@ -25,10 +26,11 @@ export function loadConfig(env=process.env){
     if(telephonyUser.length<3||telephonyPassword.length<24)throw new Error("production requires PGI_TELEPHONY_USER and PGI_TELEPHONY_PASSWORD >= 24 characters");
     if(callerHashKey.length<32)throw new Error("production requires PGI_CALLER_HASH_KEY >= 32 characters");
     if(!databaseUrl)throw new Error("production requires PGI_DATABASE_URL or POSTGRES_* variables");
+    if(!/^[0-9a-f]{40}$/.test(releaseId))throw new Error("production requires PGI_RELEASE_ID as a 40-character Git SHA");
   }
 
   return Object.freeze({
-    mode,authMode,host,port,
+    mode,authMode,host,port,releaseId,
     sessionSecret,adminPasswordHash,ingestToken,telephonyUser,telephonyPassword,callerHashKey,databaseUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),
