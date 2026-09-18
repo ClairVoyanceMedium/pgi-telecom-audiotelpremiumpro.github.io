@@ -38,6 +38,7 @@ export function loadConfig(env=process.env){
     authFailureWindowSeconds:integer(env.PGI_AUTH_FAILURE_WINDOW_SECONDS,900,60,86400,"PGI_AUTH_FAILURE_WINDOW_SECONDS"),
     maxEventSubscribers:integer(env.PGI_MAX_EVENT_SUBSCRIBERS,32,1,1000,"PGI_MAX_EVENT_SUBSCRIBERS"),
     databasePoolMax:integer(env.PGI_DATABASE_POOL_MAX,10,1,100,"PGI_DATABASE_POOL_MAX"),
+    requireCarrierContract:booleanValue(env.PGI_REQUIRE_CARRIER_CONTRACT,false,"PGI_REQUIRE_CARRIER_CONTRACT"),
     serviceRateTtcPerMin:number(env.PGI_SERVICE_RATE_TTC_PER_MIN,0.80,0,100,"PGI_SERVICE_RATE_TTC_PER_MIN"),
     payoutRateHtPerMin:number(env.PGI_PAYOUT_RATE_HT_PER_MIN,0.46,0,100,"PGI_PAYOUT_RATE_HT_PER_MIN"),
     expertCostHtPerMin:number(env.PGI_EXPERT_COST_HT_PER_MIN,0.18,0,100,"PGI_EXPERT_COST_HT_PER_MIN"),
@@ -50,6 +51,13 @@ function integer(value,fallback,min,max,name){
   const n=value==null||value===""?fallback:Number(value);
   if(!Number.isInteger(n)||n<min||n>max)throw new Error(name+" invalid");
   return n;
+}
+function booleanValue(value,fallback,name){
+  if(value==null||value==="")return fallback;
+  const normalized=String(value).trim().toLowerCase();
+  if(["1","true","yes","on"].includes(normalized))return true;
+  if(["0","false","no","off"].includes(normalized))return false;
+  throw new Error(name+" invalid");
 }
 function number(value,fallback,min,max,name){
   const n=value==null||value===""?fallback:Number(value);
