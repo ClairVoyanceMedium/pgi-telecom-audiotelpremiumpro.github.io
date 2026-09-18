@@ -117,7 +117,8 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/dashboard/summary"){
         requireRole(actor,["admin","finance","expert","readonly"]);
         const range=rangeParams(url);
-        return done(res,metrics,started,"dashboard.summary",200,await store.summary(range.from,range.to));
+        const market=url.searchParams.get("market")||null;
+        return done(res,metrics,started,"dashboard.summary",200,await store.summary(range.from,range.to,market));
       }
 
       if(method==="GET"&&pathname==="/api/v1/calls"){
@@ -177,7 +178,8 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/finance/reconciliation"){
         requireRole(actor,["admin","finance","readonly"]);
         const range=rangeParams(url);
-        return done(res,metrics,started,"finance.reconciliation",200,{data:await store.reconciliation(range.from,range.to)});
+        const market=url.searchParams.get("market")||null;
+        return done(res,metrics,started,"finance.reconciliation",200,{data:await store.reconciliation(range.from,range.to,market)});
       }
 
       if(method==="GET"&&pathname==="/api/v1/system/health"){
