@@ -63,3 +63,14 @@ test("une base neuve pré-enregistre uniquement des migrations checksum-vérifi�
   assert.ok(migrator.includes("Bootstrap migration checksum mismatch"));
   assert.ok(migrator.includes("schema_bootstrap_migrations"));
 });
+
+test("le cockpit opérationnel peut être filtré par marché",()=>{
+  const server=fs.readFileSync("backend/server.mjs","utf8");
+  const api=fs.readFileSync("assets/api-client.js","utf8");
+  assert.ok(server.includes('url.searchParams.get("market")'));
+  assert.ok(store.includes("m.country_code=$6"));
+  assert.ok(store.includes("summary(from,to,market=null)"));
+  assert.ok(api.includes("summary:function(from,to,market)"));
+  assert.ok(app.includes("syncMarketSelector"));
+  assert.ok(index.includes('id="market-filter"'));
+});
