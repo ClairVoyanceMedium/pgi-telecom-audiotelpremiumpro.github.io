@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.9.0 — 2026-09-18
+
+Wholesale SVA Control Center et nouveau nom officiel :
+
+- renommage du produit visible en **PGI • Telecom Audiotel Premium Pro** ;
+- nouvelle vue `Plateforme SVA` dans la navigation desktop et mobile ;
+- synthèse wholesale directement sur la vue d'ensemble ;
+- API read-only `GET /api/v1/platform/overview` ;
+- suivi des éditeurs/tenants, statuts, KYC et volumes d'affectation ;
+- vue des numéros SVA, tarifs, statuts, opérateur attributaire et KYC ;
+- inventaire du parc SVA et compteur de numéros libres ;
+- vue des règlements par éditeur : amont, frais plateforme et net client ;
+- état de conformité des profils PSP/DSP2 ;
+- totaux financiers calculés sur l'ensemble des règlements, indépendamment de la pagination d'affichage ;
+- données wholesale nulles et explicitement non réelles en mode démo ;
+- compatibilité front/backend tolérante pendant un déploiement légèrement décalé ;
+- contrôles CI renforcés sur l'API wholesale et les fonctions de sécurité ;
+- version front/backend/Docker/PWA alignée sur 1.9.0, cache PWA v9.
+
+
 ## 1.8.0 — 2026-09-18
 
 Fondation Wholesale SVA / multi-clients :
