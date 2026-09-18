@@ -1,0 +1,249 @@
+# PGI Telecom — trajectoire Wholesale SVA
+
+Dernière vérification marché et réglementation : 18 septembre 2026.
+
+## Objectif
+
+PGI Telecom doit pouvoir évoluer d'un service Audiotel exploité pour compte propre vers une plateforme SVA multi-clients, puis éventuellement vers un opérateur SVA attributaire de ses propres ressources.
+
+La plateforme technique reste indépendante de l'opérateur amont : SIP/FreeSWITCH, routage, CDR, réconciliation, supervision, dashboard, clients et experts restent dans PGI.
+
+## Principe réglementaire à respecter
+
+Pour les numéros spéciaux et courts, un opérateur attributaire ne peut pas mettre de nouveaux numéros à disposition d'un autre opérateur. Hors portabilité, le numéro spécial doit être affecté à l'utilisateur final par l'opérateur attributaire.
+
+Conséquence pour PGI :
+
+- avant d'être lui-même attributaire, PGI peut être intégrateur / plateforme / partenaire commercial ;
+- l'opérateur amont reste l'autorité réglementaire d'affectation du 089 à l'éditeur final ;
+- PGI conserve dans sa base le tenant, l'éditeur, le numéro, le contrat commercial et l'identité de l'opérateur réglementairement assignant ;
+- aucune interface PGI ne doit laisser croire qu'un numéro est juridiquement attribué par PGI tant que PGI n'est pas lui-même attributaire.
+
+Sources :
+- ARCEP, décision 2018-0881 et règles de gestion des numéros ;
+- consultation ARCEP 2025 sur le plan de numérotation ;
+- https://www.arcep.fr/uploads/tx_gsavis/18-0881.pdf
+- https://www.arcep.fr/uploads/tx_gspublication/consultation-plan-de-numerotation-2025_juil2025.pdf
+
+## Paiements / reversements
+
+Le marché SVA est concerné par la réglementation des services de paiement.
+
+Si les fonds transitent par PGI avant reversement à plusieurs éditeurs, le schéma doit être validé sous un cadre conforme, par exemple :
+
+- reversement direct de l'opérateur/PSP à l'éditeur ;
+- PGI agent d'un prestataire de services de paiement agréé ;
+- autre montage validé par un PSP / conseil réglementaire compétent.
+
+Ne jamais activer un flux de fonds tiers en production en utilisant uniquement un compte bancaire PGI sans profil de conformité actif dans `payment_compliance_profiles`.
+
+L'AF2M publie une liste de PSP du marché SVA et indique notamment le modèle agent de PSP / établissement de paiement :
+- https://af2m.org/liste-prestataires-services-paiement-dsp2/
+- https://af2m.org/mise-en-conformite-marche-sva-dsp2-reunion-acpr-decembre-2020/
+
+## KYC éditeurs
+
+Chaque éditeur final doit pouvoir être identifié et contrôlé avant activation d'un numéro majoré. PGI conserve uniquement l'état et les références nécessaires dans son modèle ; les documents sensibles doivent rester chez le fournisseur KYC/PSP ou dans un stockage privé prévu à cet effet, jamais dans le dépôt Git.
+
+Les règles déontologiques SVA applicables depuis le 1er septembre 2026 sont publiées par l'AF2M :
+- https://af2m.org/rd-sva/
+
+## Phases
+
+### Phase A — PGI éditeur unique
+
+Flux :
+
+```
+Opérateur SVA attributaire
+        │
+        │ numéro 089 + collecte + reversement
+        ▼
+PGI Telecom
+        │ SIP
+        ▼
+FreeSWITCH / routage / experts
+```
+
+L'opérateur amont fournit le 089 et la collecte. PGI fournit le service et toute la couche technique.
+
+### Phase B — PGI plateforme multi-éditeurs
+
+Flux :
+
+```
+Opérateur SVA attributaire
+        │
+        ├── 089 → Editeur A
+        ├── 089 → Editeur B
+        └── 089 → Editeur C
+                │
+                ▼
+           PGI Telecom
+                │
+       ┌────────┼────────┐
+       ▼        ▼        ▼
+    Tenant A Tenant B Tenant C
+```
+
+L'opérateur attributaire reste le titulaire réglementaire de l'affectation. PGI gère :
+
+- onboarding et états KYC ;
+- configuration commerciale ;
+- routage SIP ;
+- isolation des données ;
+- experts/destinations ;
+- CDR ;
+- calculs de reversements ;
+- reporting ;
+- facturation de la plateforme ;
+- rapprochement entre relevés amont et comptes clients.
+
+### Phase C — PGI opérateur SVA attributaire
+
+Objectifs supplémentaires :
+
+1. Obtenir les ressources de numérotation auprès de l'ARCEP.
+2. Mettre en place les interconnexions et conventions nécessaires.
+3. Souscrire aux Conditions Générales de Services SVA AF2M.
+4. Adhérer aux processus APNF requis et obtenir les identifiants opérateur correspondants.
+5. Mettre en œuvre la conformité DSP2 via un PSP/agent ou autre schéma validé.
+6. Mettre en place les procédures KYC/LCB-FT et de contrôle des éditeurs.
+7. Assurer portabilité, ouverture réseau, lutte antifraude, réconciliation et obligations de reporting.
+
+AF2M — souscription opérateur SVA :
+https://af2m.org/souscrire-aux-cgs-sva/
+
+ARCEP — taxes de numérotation :
+https://www.arcep.fr/la-regulation/grands-dossiers-thematiques-transverses/la-numerotation/taxes-de-numerotation.html
+
+## Candidats amont identifiés
+
+### Orange Wholesale France
+
+Positionnement : niveau interconnexion opérateur.
+
+Offre officielle SVA :
+- ouverture des numéros SVA sur réseaux Orange et opérateurs tiers ;
+- collecte/facturation/recouvrement ;
+- interconnexion IP ;
+- convention d'interconnexion requise.
+
+Source :
+https://wholesale.orange.com/france/fr/nos-solutions/interconnexion/fixe/service-a-valeur-ajoutee/
+
+Statut PGI : cible stratégique pour la phase opérateur. Le contact commercial passe par le formulaire Orange Wholesale.
+
+### Remmedia
+
+Positionnement : opérateur SVA attributaire spécialisé.
+
+Éléments vérifiés :
+- tranches SVA/089 en propre ;
+- collecte et portabilité ;
+- portail de portabilité en marque blanche pour opérateurs ;
+- CGV prévoyant le cas où le client n'exploite pas directement le numéro et doit fournir l'identité/KYC de l'éditeur final ;
+- présence d'un montage PSP/agent dans son offre.
+
+Sources :
+https://www.remmedia.fr/operateur-sva-france/
+https://www.remmedia.fr/vos_numeros_appels/portabilite-de-numeros-entreprise-fixe-mobile/
+https://www.remmedia.fr/cgu/
+
+Statut PGI : demande wholesale/marque blanche envoyée le 18/09/2026 à commercial@remmedia.fr.
+
+### Even Media Interactive
+
+Positionnement : opérateur télécom + monétisation.
+
+Éléments vérifiés :
+- numéros SVA ;
+- trunks SIP ;
+- monétisation d'audience ;
+- hébergement et développement d'applications audio.
+
+Sources :
+https://evenmedia.fr/
+https://evenmedia.fr/presentation
+
+Statut PGI : demande wholesale/SIP envoyée le 18/09/2026 à contact@evenmedia.fr.
+
+### Axialys
+
+Positionnement : opérateur / plateforme relation client.
+
+Éléments vérifiés :
+- catalogue de numéros SVA ;
+- reversements ;
+- trunk SIP documenté ;
+- API/statistiques et interconnexion IP.
+
+Sources :
+https://www.axialys.com/solutions-marketing/numeros-speciaux/
+https://guide.axialys.com/guide/guide-technique-trunk-sip/
+
+Statut PGI : demande wholesale/SIP envoyée le 18/09/2026 à axialys@axialys.com.
+
+### Keyyo / Bouygues Telecom Pro
+
+Positionnement : opérateur entreprise avec réseau de revendeurs.
+
+Éléments vérifiés :
+- tarifs et reversements SVA publiés ;
+- réseau de plus de 300 partenaires revendeurs ;
+- programme partenaire.
+
+Sources :
+https://www.keyyo.com/fr/numeros-speciaux/tarifications-reversements
+https://partner.keyyo.com/fr/devenir-partenaire
+
+Statut PGI : à qualifier via le programme partenaire / formulaire officiel.
+
+## Données à obtenir de chaque fournisseur
+
+Aucun fournisseur n'est considéré validé tant que les éléments suivants ne sont pas reçus par écrit :
+
+- preuve que le fournisseur est attributaire ou identité exacte de l'attributaire ;
+- modèle contractuel wholesale / marque blanche / partenaire ;
+- capacité à gérer plusieurs éditeurs finaux ;
+- règles KYC et secteurs autorisés ;
+- liste des paliers 089 ;
+- reversement net par palier ;
+- frais fixes et variables ;
+- réserve de fraude / holdback ;
+- délais de paiement ;
+- livraison SIP vers notre SBC/FreeSWITCH ;
+- redondance et SLA ;
+- formats CDR/API/SFTP ;
+- données de règlement pour rapprochement appel par appel ;
+- procédure de portabilité ;
+- API de provisioning en volume ;
+- conditions de sortie et conservation/portabilité des numéros.
+
+## Règle d'architecture PGI
+
+Aucun fournisseur ne doit être codé en dur.
+
+La chaîne reste :
+
+```
+tenant
+  → tenant_number_assignment
+  → sva_number
+  → logical carrier route
+  → carrier adapter
+  → upstream carrier
+```
+
+Les flux financiers restent séparés :
+
+```
+appel
+  → revenu service théorique
+  → payout amont attendu
+  → payout amont confirmé
+  → frais plateforme PGI
+  → reversement tenant
+```
+
+Les écritures financières restent auditables et append-only.
