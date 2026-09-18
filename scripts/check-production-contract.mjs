@@ -8,6 +8,8 @@ const envExample=fs.readFileSync("infra/production.env.example.txt","utf8");
 const caddy=fs.readFileSync("infra/Caddyfile.production.example","utf8");
 const preflight=fs.readFileSync("scripts/preflight.sh","utf8");
 const deploy=fs.readFileSync(".github/workflows/deploy-production.yml","utf8");
+const backendDeploy=fs.readFileSync(".github/workflows/deploy-backend-production.yml","utf8");
+const backendRelease=fs.readFileSync("scripts/deploy-backend-release.sh","utf8");
 const backupScript=fs.readFileSync("scripts/backup-postgres.sh","utf8");
 const restoreDrill=fs.readFileSync("scripts/restore-drill.sh","utf8");
 const migrationRunner=fs.readFileSync("backend/migrate.mjs","utf8");
@@ -57,6 +59,12 @@ if(!/static-release\.sh promote/.test(deploy)||!/static-release\.sh rollback/.te
 if(!/Smoke test public production/.test(deploy)||!/api\/v1\/health/.test(deploy))failures.push("production deploy must smoke-test the public front and API");
 if(!/atomic_link/.test(staticRelease)||!/mv -Tf/.test(staticRelease))failures.push("static release switch must use atomic symlink replacement");
 if(!/prune/.test(staticRelease)||!/previous/.test(staticRelease))failures.push("static release tooling must retain rollback state and prune old releases");
+if(!/PGI_VPS_BACKEND_DEPLOY_ENABLED/.test(backendDeploy))failures.push("backend deployment must remain explicitly gated");
+if(!/npm run verify/.test(backendDeploy))failures.push("backend deployment must verify repository before release");
+if(!/backup-postgres\.sh/.test(backendRelease)||!/restore-drill\.sh/.test(backendRelease))failures.push("backend deployment must back up and restore-test PostgreSQL before migration");
+if(!/api\/v1\/ready/.test(backendRelease)||!/wait_ready/.test(backendRelease))failures.push("backend deployment must gate promotion on strict readiness");
+if(!/rollback_previous/.test(backendRelease))failures.push("backend deployment must support automatic application rollback");
+if(!/PGI_PRODUCTION_URL/.test(backendDeploy)||!/api\/v1\/health/.test(backendDeploy))failures.push("backend deployment must verify the public API path after deployment");
 
 
 try{
