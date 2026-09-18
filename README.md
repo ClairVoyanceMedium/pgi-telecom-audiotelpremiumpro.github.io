@@ -92,3 +92,5 @@ La version GitHub Pages reste une démonstration. Les statuts SIP/API affichent 
 ## Validation release 1.5.0
 
 La release 1.5.0 ajoute les garde-fous préproduction : sessions sécurisées, finance production sans hypothèses démo, baselines autoritaires, migrations transactionnelles, sauvegarde/restauration vérifiées, observabilité workers et séparation stricte des endpoints publics et téléphonie interne.
+
+Validation CI relancée après correction du test de routage encodé.
