@@ -178,6 +178,13 @@ test("baseline mutations replay safely with same idempotency key",async()=>{
     const b=await r.json();
     assert.equal(b.replayed,true);
     assert.equal(b.id,a.id);
+
+    r=await fetch(base+"/api/v1/metrics/baselines?scope=global&limit=20");
+    assert.equal(r.status,200);
+    const history=await r.json();
+    assert.equal(history.data.length,1);
+    assert.equal(history.data[0].id,a.id);
+    assert.ok(history.data[0].effective_from);
   });
 });
 
