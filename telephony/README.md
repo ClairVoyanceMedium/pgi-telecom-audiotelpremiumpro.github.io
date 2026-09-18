@@ -97,4 +97,4 @@ En mode production :
 
 Ce comportement est volontairement fail-closed : aucun appel ne doit pouvoir tomber sur l'équipe d'un autre éditeur à cause d'une configuration incomplète.
 
-Le `destination_number` FreeSWITCH doit être propagé sans invention ni substitution. Le format exact (national/E.164) sera figé lors de l'intégration opérateur et devra correspondre à la valeur configurée dans `sva_numbers`.
+Le `destination_number` FreeSWITCH doit être propagé sans invention ni substitution. PGI conserve le numéro canonique en E.164 dans `sva_numbers` et n'accepte une forme nationale ou spécifique à un trunk que si elle a été explicitement configurée dans `sva_number_aliases`. Aucune normalisation ambiguë ne doit être devinée en production.
