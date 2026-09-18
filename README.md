@@ -64,3 +64,21 @@ Les valeurs visibles dans la V1 sont générées localement dans le navigateur. 
 - coût expert démo : 0,18 €/min.
 
 Ces hypothèses seront remplacées par les paramètres contractuels réels de l'opérateur retenu.
+
+
+## Durcissement technique 1.1
+
+Le projet possède désormais des garde-fous de préproduction :
+
+- moteur financier testé indépendamment du DOM ;
+- tests de calcul, réconciliation et charge ;
+- validation PostgreSQL réelle prévue dans GitHub Actions ;
+- ingestion CDR et commandes API idempotentes ;
+- journal financier immuable ;
+- artefact statique minimal : seule l'application est publiée ;
+- budgets de performance ;
+- autodiagnostic du runtime ;
+- architecture production same-origin sans Cloudflare ;
+- workflow VPS désactivé tant que les variables/secrets ne sont pas configurés.
+
+La version GitHub Pages reste une démonstration. Les statuts SIP/API affichent explicitement qu'ils ne sont pas connectés tant que l'infrastructure réelle n'existe pas.
