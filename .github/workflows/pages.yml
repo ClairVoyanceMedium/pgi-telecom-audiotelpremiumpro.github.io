@@ -32,13 +32,19 @@ jobs:
       - name: Verify
         run: npm run verify
 
+      - name: Build minimal demo artifact
+        env:
+          PGI_RUNTIME_MODE: demo
+          PGI_API_BASE_URL: ""
+        run: npm run build:static
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
       - name: Upload static site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: "."
+          path: "dist"
 
       - name: Deploy to GitHub Pages
         id: deployment
