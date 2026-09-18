@@ -140,6 +140,14 @@ BEGIN
   IF c <> 1 THEN RAISE EXCEPTION 'carrier rollback B->A failed: %', c; END IF;
 
   BEGIN
+    UPDATE sva_numbers SET e164='33891111111' WHERE e164='33890000000';
+    RAISE EXCEPTION 'active SVA identity unexpectedly mutable';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM = 'active SVA identity unexpectedly mutable' THEN RAISE; END IF;
+  END;
+
+  BEGIN
     INSERT INTO carrier_contracts(
       carrier_id,sva_number_id,valid_from,valid_to,payout_rate_ht_per_min
     )
