@@ -11,6 +11,7 @@ const deploy=fs.readFileSync(".github/workflows/deploy-production.yml","utf8");
 const backupScript=fs.readFileSync("scripts/backup-postgres.sh","utf8");
 const restoreDrill=fs.readFileSync("scripts/restore-drill.sh","utf8");
 const migrationRunner=fs.readFileSync("backend/migrate.mjs","utf8");
+const migrationSafety=fs.readFileSync("scripts/check-migrations.mjs","utf8");
 const apiClient=fs.readFileSync("assets/api-client.js","utf8");
 const security=fs.readFileSync("backend/src/security.mjs","utf8");
 const staticRelease=fs.readFileSync("scripts/static-release.sh","utf8");
@@ -48,6 +49,7 @@ if(!/pg_restore/.test(restoreDrill)||!/pgi_restore_drill_/.test(restoreDrill))fa
 if(!/migrate:\s*[\s\S]*command: \["node","backend\/migrate\.mjs"\]/.test(compose))failures.push("production stack must run the migration service");
 if(!/migrate:\s*\n\s*condition: service_completed_successfully/.test(compose))failures.push("production API must wait for successful migrations");
 if(!/schema_migrations/.test(migrationRunner)||!/checksum/.test(migrationRunner))failures.push("migration runner must keep a checksum ledger");
+if(!/destructive operation/.test(migrationSafety)||!/TRUNCATE/.test(migrationSafety)||!/ALTER TABLE RENAME/.test(migrationSafety))failures.push("automated migrations must have a destructive-operation denylist");
 if(!/__Host-pgi_csrf/.test(apiClient))failures.push("frontend must use Host-only CSRF cookie");
 if(!/__Host-pgi_session/.test(security)||!/__Host-pgi_csrf/.test(security))failures.push("backend must issue Host-only session cookies");
 if(!/root \* \/srv\/pgi-dashboard\/current/.test(caddy))failures.push("production front must be served from the atomic current symlink");
