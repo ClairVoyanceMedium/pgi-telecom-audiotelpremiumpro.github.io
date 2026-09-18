@@ -283,7 +283,7 @@ export function createBackend(options={}){
 
   const workers=config.processRole==="api"
     ?disabledWorkers()
-    :startWorkers({store,eventBus,config});
+    :startWorkers({store,eventBus,config,queueHandlers:options.queueHandlers||{}});
 
   return {
     server,store,eventBus,config,metrics,
@@ -343,8 +343,9 @@ function disabledWorkers(){
   return {
     stats:{
       outboxRuns:0,outboxErrors:0,alertsRuns:0,alertsErrors:0,
-      lastOutboxSuccessAt:null,lastAlertsSuccessAt:null,
-      lastOutboxErrorAt:null,lastAlertsErrorAt:null,
+      queueRuns:0,queueErrors:0,queueProcessed:0,queueDeadLetters:0,
+      lastOutboxSuccessAt:null,lastAlertsSuccessAt:null,lastQueueSuccessAt:null,
+      lastOutboxErrorAt:null,lastAlertsErrorAt:null,lastQueueErrorAt:null,
       disabled:true
     },
     stop(){}
