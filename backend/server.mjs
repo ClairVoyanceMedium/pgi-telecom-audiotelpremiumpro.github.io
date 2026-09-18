@@ -32,10 +32,11 @@ export function createBackend(options={}){
   if(config.mode==="simulator"&&typeof store.seedSimulator==="function")store.seedSimulator();
 
   const metrics={
-    requests:0,errors:0,rateLimited:0,authFailures:0,
+    requests:0,errors:0,rateLimited:0,authFailures:0,authRateLimited:0,
     startedAt:Date.now(),byStatus:new Map(),byRoute:new Map()
   };
   const rateBuckets=new Map();
+  const authBuckets=new Map();
 
   const server=http.createServer(async(req,res)=>{
     const requestId=randomUUID();
@@ -66,12 +67,17 @@ export function createBackend(options={}){
 
       if(method==="POST"&&pathname==="/api/v1/auth/login"){
         if(config.authMode!=="session")return done(res,metrics,started,"auth.login",404,{error:{code:"AUTH_DISABLED"}});
+        const authKey=enforceAuthLoginRate(req,config,authBuckets,metrics);
         const body=await readJson(req,config.bodyLimitBytes);
-        const ok=String(body.username||"")===config.adminUsername&&verifyPassword(String(body.password||""),config.adminPasswordHash);
+        const usernameOk=constantTimeTokenEqual(String(body.username||""),config.adminUsername);
+        const passwordOk=verifyPassword(String(body.password||""),config.adminPasswordHash);
+        const ok=usernameOk&&passwordOk;
         if(!ok){
           metrics.authFailures++;
+          recordAuthFailure(authKey,config,authBuckets);
           const e=new Error("Invalid credentials");e.status=401;e.code="INVALID_CREDENTIALS";throw e;
         }
+        authBuckets.delete(authKey);
         const issued=issueSession({
           secret:config.sessionSecret,
           user:{id:"admin",role:"admin",name:"Administrator"},
@@ -296,6 +302,31 @@ function authorizeIngest(req,config){
   }
 }
 function isLoopback(ip){return ip==="127.0.0.1"||ip==="::1"||ip==="::ffff:127.0.0.1";}
+function enforceAuthLoginRate(req,config,buckets,metrics){
+  const key=clientIp(req);
+  const now=Date.now();
+  const windowMs=Number(config.authFailureWindowSeconds||900)*1000;
+  const current=buckets.get(key);
+  if(current&&now-current.startedAt>=windowMs){
+    buckets.delete(key);
+    return key;
+  }
+  if(current&&current.failures>=Number(config.authMaxFailures||8)){
+    metrics.authRateLimited++;
+    const e=new Error("Too many authentication attempts");e.status=429;e.code="AUTH_RATE_LIMITED";throw e;
+  }
+  return key;
+}
+function recordAuthFailure(key,config,buckets){
+  const now=Date.now();
+  const windowMs=Number(config.authFailureWindowSeconds||900)*1000;
+  const current=buckets.get(key);
+  if(!current||now-current.startedAt>=windowMs)buckets.set(key,{startedAt:now,failures:1});
+  else current.failures++;
+  if(buckets.size>5000){
+    for(const [k,v] of buckets)if(now-v.startedAt>=windowMs)buckets.delete(k);
+  }
+}
 function rangeParams(url){
   const now=new Date();
   const from=url.searchParams.get("from")||new Date(now.getTime()-24*3600000).toISOString();
@@ -339,6 +370,8 @@ async function metricsResponse(res,metrics,store){
     "pgi_rate_limited_total "+metrics.rateLimited,
     "# TYPE pgi_auth_failures_total counter",
     "pgi_auth_failures_total "+metrics.authFailures,
+    "# TYPE pgi_auth_rate_limited_total counter",
+    "pgi_auth_rate_limited_total "+metrics.authRateLimited,
     "# TYPE pgi_calls_total gauge",
     "pgi_calls_total "+m.calls_total,
     "# TYPE pgi_calls_connected gauge",
