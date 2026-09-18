@@ -201,7 +201,7 @@ export class MemoryStore{
       latency_ms:qavg("latency_ms"),
       dtmf_errors:qualityRows.reduce((a,x)=>a+Number(x.quality.dtmf_errors||0),0)
     };
-    return {granularity,series,hours,weekdays,heatmap,quality,experts:expertsRows,carriers:carriersRows,durations};
+    return {granularity,series,hours,weekdays,heatmap,quality,experts:expertsRows.slice(0,50),carriers:carriersRows.slice(0,50),durations};
   }
 
   async listCalls(params={}){
