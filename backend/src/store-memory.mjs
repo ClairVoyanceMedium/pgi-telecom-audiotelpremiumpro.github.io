@@ -107,7 +107,8 @@ export class MemoryStore{
     this.calls.sort((a,b)=>Date.parse(b.started_at)-Date.parse(a.started_at));
   }
 
-  async summary(from,to){
+  async summary(from,to,market=null){
+    void market;
     const rows=this.#range(from,to);
     const mapped=rows.map(toCoreRow);
     const a=core.aggregateCalls(mapped);
@@ -258,7 +259,8 @@ export class MemoryStore{
     return {duplicate:false,call:{...call}};
   }
 
-  async reconciliation(from,to){
+  async reconciliation(from,to,market=null){
+    void market;
     const rows=this.#range(from,to);
     const groups=new Map();
     for(const c of rows){
@@ -381,18 +383,22 @@ export class MemoryStore{
 
   async wholesaleOverview(){
     return {
-      foundation_version:"1.9",
+      foundation_version:"1.12",
       summary:{
         tenants_total:0,tenants_active:0,kyc_verified:0,kyc_pending:0,
+        markets_total:1,markets_active:1,tenant_markets_active:0,
         inventory_total:0,inventory_unassigned:0,
         assignments_total:0,assignments_active:0,assignments_with_assignor:0,
+        settlement_currency_count:0,settlement_currency:null,
         upstream_payout_ht:0,platform_fee_ht:0,net_payout_ht:0,
         payment_compliance_active:false
       },
       tenants:[],
       numbers:[],
       settlements:[],
-      payment_profiles:[]
+      payment_profiles:[],
+      markets:[{country_code:"FR",display_name:"France",status:"active",default_currency:"EUR",default_locale:"fr-FR",timezone:"Europe/Paris",tenants:0,numbers:0}],
+      settlement_totals_by_currency:[]
     };
   }
 
