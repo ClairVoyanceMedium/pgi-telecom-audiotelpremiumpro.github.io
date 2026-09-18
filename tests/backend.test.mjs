@@ -174,6 +174,26 @@ test("expert router chooses available least-loaded expert",()=>{
   assert.equal(x.id,2);
 });
 
+test("shutdown drains an open SSE stream without hanging",async()=>{
+  const app=createBackend({config:config({shutdownGraceMs:1000})});
+  const address=await app.listen();
+  const base=`http://127.0.0.1:${address.port}`;
+  const response=await fetch(base+"/api/v1/events");
+  assert.equal(response.status,200);
+  const reader=response.body.getReader();
+  const first=await reader.read();
+  assert.equal(first.done,false);
+  assert.match(Buffer.from(first.value).toString("utf8"),/event: ready/);
+
+  await Promise.race([
+    app.close(),
+    new Promise((_,reject)=>setTimeout(()=>reject(new Error("shutdown timeout")),1500))
+  ]);
+
+  const final=await reader.read();
+  assert.equal(final.done,true);
+});
+
 test("backend health summary calls and metrics are operational",async()=>{
   await withServer(async({base})=>{
     let r=await fetch(base+"/api/v1/health");
