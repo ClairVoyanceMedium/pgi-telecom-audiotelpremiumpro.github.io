@@ -51,7 +51,7 @@ export class PostgresStore{
       " date_trunc('hour',$2::timestamptz) AS full_to,"+
       " (SELECT id FROM operating_markets WHERE country_code=$3) AS market_id"+
       "), rollup_rows AS ("+
-      " SELECT r.calls_total,r.calls_connected,r.calls_abandoned,r.calls_failed,r.conversation_seconds,"+
+      " SELECT r.currency,r.calls_total,r.calls_connected,r.calls_abandoned,r.calls_failed,r.conversation_seconds,"+
       " r.billable_seconds,r.payout_eligible_seconds,r.generated_revenue_ttc,r.expected_payout_ht,"+
       " r.confirmed_payout_ht,r.paid_payout_ht,r.expert_cost_ht,r.technical_cost_ht,"+
       " r.estimated_margin_ht,r.reconciliation_variance_ht"+
@@ -59,7 +59,7 @@ export class PostgresStore{
       " WHERE b.full_to>b.full_from AND r.bucket_start>=b.full_from AND r.bucket_start<b.full_to"+
       " AND ($3::text IS NULL OR r.market_id=b.market_id)"+
       "), edge_rows AS ("+
-      " SELECT 1::bigint AS calls_total,"+
+      " SELECT f.currency,1::bigint AS calls_total,"+
       " (f.call_status='connected')::int::bigint AS calls_connected,"+
       " (f.call_status='abandoned')::int::bigint AS calls_abandoned,"+
       " (f.call_status NOT IN ('connected','abandoned'))::int::bigint AS calls_failed,"+
@@ -73,18 +73,21 @@ export class PostgresStore{
       "), combined AS ("+
       " SELECT * FROM rollup_rows UNION ALL SELECT * FROM edge_rows"+
       ") SELECT"+
-      " COALESCE(sum(generated_revenue_ttc),0)::float8 AS generated_revenue_ttc,"+
-      " COALESCE(sum(expected_payout_ht),0)::float8 AS expected_payout_ht,"+
-      " COALESCE(sum(confirmed_payout_ht),0)::float8 AS confirmed_payout_ht,"+
-      " COALESCE(sum(paid_payout_ht),0)::float8 AS paid_payout_ht,"+
-      " COALESCE(sum(estimated_margin_ht),0)::float8 AS estimated_margin_ht,"+
-      " COALESCE(sum(reconciliation_variance_ht),0)::float8 AS reconciliation_variance_ht,"+
+      " CASE WHEN count(DISTINCT currency)<=1 THEN COALESCE(sum(generated_revenue_ttc),0)::float8 ELSE NULL END AS generated_revenue_ttc,"+
+      " CASE WHEN count(DISTINCT currency)<=1 THEN COALESCE(sum(expected_payout_ht),0)::float8 ELSE NULL END AS expected_payout_ht,"+
+      " CASE WHEN count(DISTINCT currency)<=1 THEN COALESCE(sum(confirmed_payout_ht),0)::float8 ELSE NULL END AS confirmed_payout_ht,"+
+      " CASE WHEN count(DISTINCT currency)<=1 THEN COALESCE(sum(paid_payout_ht),0)::float8 ELSE NULL END AS paid_payout_ht,"+
+      " CASE WHEN count(DISTINCT currency)<=1 THEN COALESCE(sum(estimated_margin_ht),0)::float8 ELSE NULL END AS estimated_margin_ht,"+
+      " CASE WHEN count(DISTINCT currency)<=1 THEN COALESCE(sum(reconciliation_variance_ht),0)::float8 ELSE NULL END AS reconciliation_variance_ht,"+
       " COALESCE(sum(calls_total),0)::bigint AS calls_total,"+
       " COALESCE(sum(calls_connected),0)::bigint AS calls_connected,"+
       " COALESCE(sum(calls_abandoned),0)::bigint AS calls_abandoned,"+
       " COALESCE(sum(calls_failed),0)::bigint AS calls_failed,"+
       " COALESCE(sum(billable_seconds),0)::float8/60.0 AS billable_minutes,"+
       " COALESCE(sum(payout_eligible_seconds),0)::float8/60.0 AS payout_eligible_minutes,"+
+      " COALESCE(sum(expert_cost_ht),0)::float8 AS expert_cost_ht,"+
+      " COALESCE(sum(technical_cost_ht),0)::float8 AS technical_cost_ht,"+
+      " count(DISTINCT currency)::int AS currency_count,min(currency) AS currency,"+
       " CASE WHEN COALESCE(sum(calls_connected),0)>0"+
       " THEN COALESCE(sum(conversation_seconds),0)::float8/sum(calls_connected) ELSE 0 END AS acd_seconds"+
       " FROM combined",
@@ -97,6 +100,7 @@ export class PostgresStore{
     const r=rows[0],p=presence[0];
     return {
       ...r,
+      mixed_currency:Number(r.currency_count||0)>1,
       asr_percent:Number(r.calls_total)?Number(r.calls_connected)/Number(r.calls_total)*100:0,
       active_experts:p.active_experts,
       live_calls:p.live_calls,
