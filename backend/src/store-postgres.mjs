@@ -694,6 +694,63 @@ export class PostgresStore{
     return {processed:claimed.length,published,pending:rows[0].count};
   }
 
+  async wholesaleOverview(){
+    const [summary,tenants,numbers,settlements,payments]=await Promise.all([
+      this.sql.unsafe(
+        "SELECT"+
+        " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal') AS tenants_total,"+
+        " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal' AND status='active') AS tenants_active,"+
+        " (SELECT count(*)::int FROM tenant_kyc_profiles k JOIN tenants t ON t.id=k.tenant_id WHERE t.tenant_type<>'internal' AND k.status='verified') AS kyc_verified,"+
+        " (SELECT count(*)::int FROM tenant_kyc_profiles k JOIN tenants t ON t.id=k.tenant_id WHERE t.tenant_type<>'internal' AND k.status='pending') AS kyc_pending,"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal') AS assignments_total,"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.status='active') AS assignments_active,"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.regulatory_assignor_carrier_id IS NOT NULL) AS assignments_with_assignor"
+      ),
+      this.sql.unsafe(
+        "SELECT t.id,t.slug,t.display_name,t.tenant_type,t.status,t.country_code,"+
+        " COALESCE(k.status,'not_started') AS kyc_status,"+
+        " count(DISTINCT a.id)::int AS number_assignments,"+
+        " count(DISTINCT e.id)::int AS experts"+
+        " FROM tenants t LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id"+
+        " LEFT JOIN tenant_number_assignments a ON a.tenant_id=t.id"+
+        " LEFT JOIN experts e ON e.tenant_id=t.id"+
+        " WHERE t.tenant_type<>'internal'"+
+        " GROUP BY t.id,k.status ORDER BY t.created_at DESC LIMIT 50"
+      ),
+      this.sql.unsafe(
+        "SELECT a.id,t.display_name AS tenant,sn.display_number,sn.e164,a.tariff_code,a.assignment_type,a.status,a.kyc_status,"+
+        " c.name AS regulatory_assignor,a.upstream_assignment_reference,a.valid_from,a.valid_to"+
+        " FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id"+
+        " JOIN sva_numbers sn ON sn.id=a.sva_number_id LEFT JOIN carriers c ON c.id=a.regulatory_assignor_carrier_id"+
+        " WHERE t.tenant_type<>'internal' ORDER BY a.created_at DESC LIMIT 50"
+      ),
+      this.sql.unsafe(
+        "SELECT s.id,t.display_name AS tenant,s.period_start,s.period_end,s.upstream_payout_ht::float8,"+
+        " s.platform_fee_ht::float8,s.net_payout_ht::float8,s.status,s.payment_due_date,s.paid_at"+
+        " FROM tenant_settlements s JOIN tenants t ON t.id=s.tenant_id"+
+        " WHERE t.tenant_type<>'internal' ORDER BY s.period_end DESC,s.id DESC LIMIT 50"
+      ),
+      this.sql.unsafe(
+        "SELECT profile_name,regulatory_role,provider_name,funds_flow_mode,status,valid_from,valid_to"+
+        " FROM payment_compliance_profiles ORDER BY created_at DESC LIMIT 20"
+      )
+    ]);
+    const settlementTotals=settlements.reduce((acc,row)=>{
+      acc.upstream_payout_ht+=Number(row.upstream_payout_ht||0);
+      acc.platform_fee_ht+=Number(row.platform_fee_ht||0);
+      acc.net_payout_ht+=Number(row.net_payout_ht||0);
+      return acc;
+    },{upstream_payout_ht:0,platform_fee_ht:0,net_payout_ht:0});
+    return {
+      foundation_version:"1.9",
+      summary:{...summary[0],...settlementTotals,payment_compliance_active:payments.some(x=>x.status==="active")},
+      tenants,
+      numbers,
+      settlements,
+      payment_profiles:payments
+    };
+  }
+
   async systemSnapshot(){
     const [counts,last,route]=await Promise.all([
       this.sql.unsafe(
