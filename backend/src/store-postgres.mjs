@@ -794,7 +794,7 @@ export class PostgresStore{
     const country=params.country?String(params.country).trim().toUpperCase():null;
     if(country&&!/^[A-Z]{2}$/.test(country))throw problem(400,"INVALID_COUNTRY_CODE");
     const rows=await this.readSql.unsafe(
-      "SELECT t.public_id,t.slug,t.display_name,t.legal_name,t.tenant_type,t.status,t.country_code,"+
+      "SELECT t.id AS _cursor_id,t.public_id,t.slug,t.display_name,t.legal_name,t.tenant_type,t.status,t.country_code,"+
       " t.preferred_locale,t.default_currency,t.timezone,t.home_region,t.capacity_tier,"+
       " COALESCE(k.status,'not_started') AS kyc_status,t.created_at"+
       " FROM tenants t LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id"+
@@ -808,15 +808,14 @@ export class PostgresStore{
     );
     const hasMore=rows.length>limit;
     const page=hasMore?rows.slice(0,limit):rows;
-    let nextCursor=null;
-    if(hasMore&&page.length){
-      const ids=await this.readSql.unsafe(
-        "SELECT id FROM tenants WHERE public_id=$1::uuid LIMIT 1",
-        [page.at(-1).public_id]
-      );
-      if(ids[0])nextCursor=encodeNumericCursor(Number(ids[0].id));
-    }
-    return {data:page,next_cursor:nextCursor};
+    const nextCursor=hasMore&&page.length?encodeNumericCursor(Number(page.at(-1)._cursor_id)):null;
+    return {
+      data:page.map(row=>{
+        const {_cursor_id,...publicRow}=row;
+        return publicRow;
+      }),
+      next_cursor:nextCursor
+    };
   }
 
   async wholesaleOverview(){
