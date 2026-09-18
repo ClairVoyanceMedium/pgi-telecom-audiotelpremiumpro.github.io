@@ -401,7 +401,7 @@ export class PostgresStore{
       if(duplicate.length)throw problem(409,"SETTLEMENT_PERIOD_EXISTS");
 
       const periodCalls=await tx.unsafe(
-        "SELECT id,external_call_id,market_id,currency,expected_payout_ht::float8,expert_cost_ht::float8,technical_cost_ht::float8"+
+        "SELECT id,external_call_id,tenant_bucket,market_id,currency,expected_payout_ht::float8,expert_cost_ht::float8,technical_cost_ht::float8"+
         " FROM calls WHERE host_carrier_id=$1 AND started_at::date BETWEEN $2::date AND $3::date"+
         " AND currency=$4",
         [carrier.id,settlement.period_start,settlement.period_end,settlement.currency]
@@ -413,6 +413,7 @@ export class PostgresStore{
         if(settlement.market_id!=null&&Number(call.market_id)!==Number(settlement.market_id))throw problem(409,"SETTLEMENT_MARKET_MISMATCH");
         return {
           call_id:Number(call.id),
+          tenant_bucket:Number(call.tenant_bucket||0),
           external_call_id:item.external_call_id,
           market_id:call.market_id==null?null:Number(call.market_id),
           currency:String(call.currency||settlement.currency),
@@ -442,7 +443,7 @@ export class PostgresStore{
         ]
       );
       const row=inserted[0];
-      const matchJson=JSON.stringify(matched.map(x=>({call_id:x.call_id,amount:x.amount})));
+      const matchJson=JSON.stringify(matched.map(x=>({call_id:x.call_id,tenant_bucket:x.tenant_bucket,amount:x.amount})));
 
       await tx.unsafe(
         "INSERT INTO settlement_call_matches(settlement_id,call_id,carrier_amount_ht)"+
@@ -465,7 +466,8 @@ export class PostgresStore{
         " paid_payout_ht=CASE WHEN $2::boolean THEN x.amount ELSE f.paid_payout_ht END,"+
         " reconciliation_variance_ht=f.expected_payout_ht-x.amount,"+
         " estimated_margin_ht=GREATEST(x.amount-f.expert_cost_ht-f.technical_cost_ht,0)"+
-        " FROM jsonb_to_recordset($1::jsonb) AS x(call_id bigint,amount numeric) WHERE f.call_id=x.call_id",
+        " FROM jsonb_to_recordset($1::jsonb) AS x(call_id bigint,tenant_bucket smallint,amount numeric)"+
+        " WHERE f.tenant_bucket=x.tenant_bucket AND f.call_id=x.call_id",
         [matchJson,settlement.status==="paid"]
       );
 
@@ -528,7 +530,8 @@ export class PostgresStore{
       if(settlement.status==="paid")return {...settlement,changed:false};
 
       const matches=await tx.unsafe(
-        "SELECT call_id,carrier_amount_ht::float8 AS amount FROM settlement_call_matches WHERE settlement_id=$1",
+        "SELECT scm.call_id,c.tenant_bucket,scm.carrier_amount_ht::float8 AS amount"+
+        " FROM settlement_call_matches scm JOIN calls c ON c.id=scm.call_id WHERE scm.settlement_id=$1",
         [settlementId]
       );
       if(!matches.length)throw problem(409,"SETTLEMENT_HAS_NO_MATCHES");
@@ -547,8 +550,9 @@ export class PostgresStore{
       );
 
       await tx.unsafe(
-        "UPDATE call_facts f SET paid_payout_ht=x.amount FROM jsonb_to_recordset($1::jsonb) AS x(call_id bigint,amount numeric)"+
-        " WHERE f.call_id=x.call_id",
+        "UPDATE call_facts f SET paid_payout_ht=x.amount"+
+        " FROM jsonb_to_recordset($1::jsonb) AS x(call_id bigint,tenant_bucket smallint,amount numeric)"+
+        " WHERE f.tenant_bucket=x.tenant_bucket AND f.call_id=x.call_id",
         [matchJson]
       );
       await tx.unsafe(
@@ -576,19 +580,19 @@ export class PostgresStore{
   }
 
   async reconciliation(from,to,market=null){
-    return this.sql.unsafe(
+    return this.readSql.unsafe(
       "SELECT COALESCE(hc.name,'Unknown') AS carrier,count(*)::int AS calls,"+
-      " COALESCE(sum(c.expected_payout_ht),0)::float8 AS expected_payout_ht,"+
-      " COALESCE(sum(c.confirmed_payout_ht),0)::float8 AS confirmed_payout_ht,"+
-      " COALESCE(sum(c.paid_payout_ht),0)::float8 AS paid_payout_ht,"+
-      " COALESCE(sum(c.reconciliation_variance_ht),0)::float8 AS variance_ht,"+
-      " count(*) FILTER(WHERE c.reconciliation_status='variance')::int AS variance_calls"+
-      " FROM calls c LEFT JOIN carriers hc ON hc.id=c.host_carrier_id"+
-      " LEFT JOIN operating_markets m ON m.id=c.market_id"+
-      " WHERE c.started_at >= $1::timestamptz AND c.started_at <= $2::timestamptz"+
+      " COALESCE(sum(f.expected_payout_ht),0)::float8 AS expected_payout_ht,"+
+      " COALESCE(sum(f.confirmed_payout_ht),0)::float8 AS confirmed_payout_ht,"+
+      " COALESCE(sum(f.paid_payout_ht),0)::float8 AS paid_payout_ht,"+
+      " COALESCE(sum(f.reconciliation_variance_ht),0)::float8 AS variance_ht,"+
+      " count(*) FILTER(WHERE abs(f.reconciliation_variance_ht)>$4)::int AS variance_calls"+
+      " FROM call_facts f LEFT JOIN carriers hc ON hc.id=f.host_carrier_id"+
+      " LEFT JOIN operating_markets m ON m.id=f.market_id"+
+      " WHERE f.started_at >= $1::timestamptz AND f.started_at <= $2::timestamptz"+
       " AND ($3::text IS NULL OR m.country_code=$3)"+
       " GROUP BY hc.name ORDER BY hc.name",
-      [from,to,market||null]
+      [from,to,market||null,this.config.reconciliationToleranceHt]
     );
   }
 
