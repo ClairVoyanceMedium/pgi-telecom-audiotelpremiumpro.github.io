@@ -1,6 +1,6 @@
 {
   "name": "pgi-telecom-audiotel-premium-pro",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "PGI Telecom • Audiotel Premium Pro — dashboard SVA/Audiotel",
   "scripts": {
@@ -8,7 +8,9 @@
     "check:static": "node scripts/check-static.mjs",
     "check:secrets": "node scripts/check-secrets.mjs",
     "test": "node --test tests/*.test.mjs",
-    "verify": "npm run check:js && npm run check:static && npm run check:secrets && npm test"
+    "verify": "npm run check:js && npm run check:static && npm run check:html && npm run check:size && npm run check:secrets && npm test",
+    "check:html": "node scripts/check-html.mjs",
+    "check:size": "node scripts/check-size.mjs"
   },
   "engines": {
     "node": ">=20"
