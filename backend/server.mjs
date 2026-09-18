@@ -269,7 +269,9 @@ export function createBackend(options={}){
   server.keepAliveTimeout=5000;
   server.maxRequestsPerSocket=1000;
 
-  const workers=startWorkers({store,eventBus,config});
+  const workers=config.processRole==="api"
+    ?disabledWorkers()
+    :startWorkers({store,eventBus,config});
 
   return {
     server,store,eventBus,config,metrics,
@@ -305,22 +307,35 @@ export function resolveTelephonyRoutingContext(url,config){
 
 export function evaluateReadiness(snapshot,workers,config,nowMs=Date.now()){
   const productionStore=config?.mode!=="production"||snapshot?.store==="postgres";
+  const role=config?.processRole||"all";
   const outboxAge=ageSeconds(workers?.stats?.lastOutboxSuccessAt,nowMs);
   const alertsAge=ageSeconds(workers?.stats?.lastAlertsSuccessAt,nowMs);
   const outboxWorker=Number.isFinite(outboxAge)&&outboxAge<=Number(config?.outboxWorkerStaleSeconds||15);
   const alertsWorker=Number.isFinite(alertsAge)&&alertsAge<=Number(config?.alertsWorkerStaleSeconds||120);
-  const checks={
-    database:productionStore,
-    outbox_worker:outboxWorker,
-    alerts_worker:alertsWorker
-  };
+  const checks={database:productionStore};
+  if(role!=="api"){
+    checks.outbox_worker=outboxWorker;
+    checks.alerts_worker=alertsWorker;
+  }
   return {
     ready:Object.values(checks).every(Boolean),
     checks,
+    process_role:role,
     ages_seconds:{
       outbox_worker:Number.isFinite(outboxAge)?Math.round(outboxAge):null,
       alerts_worker:Number.isFinite(alertsAge)?Math.round(alertsAge):null
     }
+  };
+}
+function disabledWorkers(){
+  return {
+    stats:{
+      outboxRuns:0,outboxErrors:0,alertsRuns:0,alertsErrors:0,
+      lastOutboxSuccessAt:null,lastAlertsSuccessAt:null,
+      lastOutboxErrorAt:null,lastAlertsErrorAt:null,
+      disabled:true
+    },
+    stop(){}
   };
 }
 function ageSeconds(value,nowMs){
