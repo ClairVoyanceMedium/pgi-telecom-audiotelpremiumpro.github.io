@@ -64,7 +64,7 @@ test("admin login has a dedicated per-client brute-force limit",async()=>{
   }
 });
 
-test("invalid encoded route parameters fail as a client error",()=>{\n  assert.throws(()=>routeMatch("/api/v1/experts/%25ZZ/status","/api/v1/experts/:id/status"),error=>error.status===400&&error.code==="INVALID_PATH_ENCODING");\n});\n\ntest("different-origin browser login is rejected",async()=>{
+test("invalid encoded route parameters fail as a client error",()=>{\n  assert.throws(()=>routeMatch("/api/v1/experts/%/status","/api/v1/experts/:id/status"),error=>error.status===400&&error.code==="INVALID_PATH_ENCODING");\n});\n\ntest("different-origin browser login is rejected",async()=>{
   const password="correct-test-password-123";
   const app=createBackend({config:config({
     authMode:"session",sessionSecret:"x".repeat(40),
