@@ -7,6 +7,10 @@ const budgets = {
   "assets/config.js": 8 * 1024,
   "assets/core.js": 24 * 1024,
   "assets/api-client.js": 16 * 1024,
+  "assets/data-client.js": 12 * 1024,
+  "assets/demo-data.js": 8 * 1024,
+  "assets/command-palette.js": 10 * 1024,
+  "assets/workspace.js": 6 * 1024,
   "assets/app.js": 90 * 1024,
   "service-worker.js": 16 * 1024
 };
