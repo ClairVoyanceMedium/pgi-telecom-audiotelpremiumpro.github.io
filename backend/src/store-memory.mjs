@@ -134,6 +134,59 @@ export class MemoryStore{
     };
   }
 
+  async dashboardAnalytics(from,to,market=null){
+    void market;
+    const rows=this.#range(from,to);
+    const durationMs=Math.max(0,Date.parse(to)-Date.parse(from));
+    const granularity=durationMs>14*86400000?"day":"hour";
+    const group=(items,keyFn)=>{
+      const map=new Map();
+      for(const x of items){
+        const key=keyFn(x);
+        if(!map.has(key))map.set(key,[]);
+        map.get(key).push(x);
+      }
+      return map;
+    };
+    const sum=(items,key)=>items.reduce((a,x)=>a+Number(x[key]||0),0);
+    const summarize=(items)=>({
+      calls_total:items.length,
+      calls_connected:items.filter(x=>x.call_status==="connected").length,
+      calls_abandoned:items.filter(x=>x.call_status==="abandoned").length,
+      calls_failed:items.filter(x=>!["connected","abandoned"].includes(x.call_status)).length,
+      conversation_seconds:sum(items,"conversation_seconds"),
+      billable_seconds:sum(items,"billable_seconds"),
+      revenue:sum(items,"retail_service_amount_ttc"),
+      expected_payout:sum(items,"expected_payout_ht"),
+      margin:sum(items,"estimated_margin_ht"),
+      currency:"EUR",currency_count:1
+    });
+    const bucketKey=x=>{
+      const d=new Date(x.started_at);
+      if(granularity==="day")d.setHours(0,0,0,0);
+      else d.setMinutes(0,0,0);
+      return d.toISOString();
+    };
+    const series=[...group(rows,bucketKey)].map(([bucket,items])=>({bucket,...summarize(items)})).sort((a,b)=>Date.parse(a.bucket)-Date.parse(b.bucket));
+    const hours=[...group(rows,x=>new Date(x.started_at).getHours())].map(([hour,items])=>({hour:Number(hour),calls_total:items.length,calls_connected:items.filter(x=>x.call_status==="connected").length,billable_seconds:sum(items,"billable_seconds")})).sort((a,b)=>a.hour-b.hour);
+    const weekdays=[...group(rows,x=>{const d=new Date(x.started_at).getDay();return d===0?7:d;})].map(([weekday,items])=>({weekday:Number(weekday),calls_total:items.length,calls_connected:items.filter(x=>x.call_status==="connected").length,billable_seconds:sum(items,"billable_seconds")})).sort((a,b)=>a.weekday-b.weekday);
+    const dim=(type,keyFn,labelFn)=>{
+      const out=[...group(rows,keyFn)].map(([dimension_key,items])=>({
+        dimension_type:type,dimension_key:String(dimension_key),dimension_label:labelFn(items[0]),
+        calls_total:items.length,calls_connected:items.filter(x=>x.call_status==="connected").length,
+        conversation_seconds:sum(items,"conversation_seconds"),billable_seconds:sum(items,"billable_seconds"),
+        revenue:sum(items,"retail_service_amount_ttc"),expected_payout:sum(items,"expected_payout_ht")
+      }));
+      return out.sort((a,b)=>b.calls_total-a.calls_total);
+    };
+    const expertsRows=dim("expert",x=>x.expert_id||"unassigned",x=>x.expert_name||"Non affecté").slice(0,12);
+    const carriersRows=dim("carrier",x=>x.origin_carrier||"unknown",x=>x.origin_carrier||"Inconnu").slice(0,12);
+    const durationKey=x=>x.call_status!=="connected"?"not_connected":x.conversation_seconds<60?"lt_1m":x.conversation_seconds<300?"1_5m":x.conversation_seconds<600?"5_10m":x.conversation_seconds<1200?"10_20m":x.conversation_seconds<1800?"20_30m":"gte_30m";
+    const durationLabels={not_connected:"Non aboutis",lt_1m:"< 1 min","1_5m":"1–5 min","5_10m":"5–10 min","10_20m":"10–20 min","20_30m":"20–30 min",gte_30m:"30 min +"};
+    const durations=dim("duration",durationKey,x=>durationLabels[durationKey(x)]||durationKey(x));
+    return {granularity,series,hours,weekdays,experts:expertsRows,carriers:carriersRows,durations};
+  }
+
   async listCalls(params={}){
     const limit=clampInt(params.limit,100,1,250);
     const offset=decodeCursor(params.cursor);
