@@ -93,19 +93,54 @@ N’exposer publiquement que ce qui est nécessaire :
 
 PostgreSQL reste sur le réseau Docker privé. L’API n’est publiée que sur `127.0.0.1:8080`.
 
+## Déploiement front atomique
+
+Le workflow `.github/workflows/deploy-production.yml` reste désactivé tant que `PGI_VPS_DEPLOY_ENABLED` n’est pas égal à `true`.
+
+Variables GitHub requises :
+
+- `PGI_VPS_HOST` ;
+- `PGI_VPS_USER` ;
+- `PGI_VPS_FRONT_PATH`, attendu typiquement à `/srv/pgi-dashboard` ;
+- `PGI_PRODUCTION_URL`, obligatoirement en HTTPS.
+
+Secrets GitHub requis :
+
+- `PGI_VPS_SSH_KEY` ;
+- `PGI_VPS_KNOWN_HOSTS`.
+
+Chaque commit est copié dans `releases/<sha>`. Caddy sert uniquement `/srv/pgi-dashboard/current`. La bascule du symlink `current` est atomique. Le workflow contrôle ensuite le mode production, la version, le SHA Git et `/api/v1/health`. En cas d’échec du smoke test, il réactive automatiquement la release précédente.
+
+## Déploiement backend gardé
+
+Le workflow `.github/workflows/deploy-backend-production.yml` est indépendant et reste désactivé tant que `PGI_VPS_BACKEND_DEPLOY_ENABLED` n’est pas égal à `true`.
+
+Variables supplémentaires :
+
+- `PGI_VPS_APP_PATH`, par exemple `/srv/pgi-backend` ;
+- `PGI_VPS_ENV_FILE`, chemin absolu d’un fichier d’environnement protégé, lisible mais non modifiable par l’utilisateur SSH de déploiement.
+
+Séquence backend :
+
+```
+npm ci + npm run verify
+→ upload release immuable par SHA
+→ preflight
+→ si PostgreSQL existe : pg_dump vérifié
+→ restore drill dans une base temporaire
+→ build Docker
+→ migrations expand-only avec timeouts
+→ démarrage API
+→ /ready local
+→ contrôle version + SHA
+→ contrôle /health public
+→ promotion de la release
+```
+
+Si la nouvelle API ne devient pas prête, le script redéploie automatiquement la release backend précédente. Cette stratégie est compatible avec le rollback parce que les migrations automatisées sont limitées aux changements additifs.
+
 ## Déploiement
 
-Le workflow `.github/workflows/deploy-production.yml` est volontairement bloqué tant que la variable GitHub `PGI_VPS_DEPLOY_ENABLED` n’est pas égale à `true`.
-
-Pipeline :
-
-```
-push GitHub
-→ npm ci verrouillé
-→ vérifications qualité/sécurité
-→ build production
-→ transfert VPS
-→ contrôle des fichiers déployés
-```
+Les deux workflows de production restent explicitement gated. Aucun déploiement n’est activé uniquement parce qu’un commit arrive sur `main`.
 
 Le cœur PGI peut donc être mis en place et validé avant l’opérateur. Seule la couche SIP/SVA réelle reste en attente des paramètres contractuels.
