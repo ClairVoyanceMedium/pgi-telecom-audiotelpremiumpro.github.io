@@ -69,6 +69,12 @@ paths:
   /metrics/baselines:
     post:
       summary: Crée une nouvelle baseline sans supprimer les données
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, format: uuid }
+          description: Empêche la création en double lors d'un retry réseau.
       requestBody:
         required: true
         content:
@@ -83,6 +89,8 @@ paths:
       responses:
         "201":
           description: Baseline créée
+        "409":
+          description: Clé d'idempotence déjà utilisée avec une requête différente
 components:
   securitySchemes:
     sessionCookie:
