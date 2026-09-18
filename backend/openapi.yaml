@@ -1,0 +1,118 @@
+openapi: 3.1.0
+info:
+  title: PGI Telecom • Audiotel Premium Pro API
+  version: 1.0.0
+  description: API privée du cockpit Audiotel. Les réponses réelles nécessitent authentification.
+servers:
+  - url: https://api.example.invalid/api/v1
+    description: Placeholder — remplacé au déploiement
+paths:
+  /health:
+    get:
+      summary: Santé de l'API
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok, degraded] }
+                  timestamp: { type: string, format: date-time }
+  /dashboard/summary:
+    get:
+      summary: KPI agrégés
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date-time } }
+      responses:
+        "200":
+          description: Résumé
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+  /calls:
+    get:
+      summary: Liste paginée des CDR
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: expert_id, in: query, schema: { type: integer } }
+        - { name: origin_carrier, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 250, default: 100 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: CDR
+  /finance/reconciliation:
+    get:
+      summary: Réconciliation attendue / confirmée
+      responses:
+        "200":
+          description: Agrégats et anomalies
+  /experts:
+    get:
+      summary: Présence et performance experts
+      responses:
+        "200":
+          description: Experts
+  /system/health:
+    get:
+      summary: Santé télécom et données
+      responses:
+        "200":
+          description: Santé
+  /metrics/baselines:
+    post:
+      summary: Crée une nouvelle baseline sans supprimer les données
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope]
+              properties:
+                scope: { type: string, enum: [global, expert, sva_number] }
+                scope_id: { type: integer }
+                reason: { type: string, maxLength: 500 }
+      responses:
+        "201":
+          description: Baseline créée
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: pgi_session
+  schemas:
+    DashboardSummary:
+      type: object
+      required:
+        - generated_revenue_ttc
+        - expected_payout_ht
+        - confirmed_payout_ht
+        - calls_total
+        - billable_minutes
+      properties:
+        generated_revenue_ttc: { type: number }
+        expected_payout_ht: { type: number }
+        confirmed_payout_ht: { type: number }
+        estimated_margin_ht: { type: number }
+        calls_total: { type: integer }
+        calls_connected: { type: integer }
+        calls_abandoned: { type: integer }
+        calls_failed: { type: integer }
+        billable_minutes: { type: number }
+        payout_eligible_minutes: { type: number }
+        acd_seconds: { type: number }
+        asr_percent: { type: number }
+        active_experts: { type: integer }
+        live_calls: { type: integer }
+        queue_depth: { type: integer }
+security:
+  - sessionCookie: []
