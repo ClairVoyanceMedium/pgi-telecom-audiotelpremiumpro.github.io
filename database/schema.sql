@@ -51,7 +51,7 @@ CREATE INDEX number_portability_events_number_idx
 CREATE OR REPLACE FUNCTION protect_active_sva_identity()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $
+AS $$
 BEGIN
   IF OLD.status IN ('active','porting')
      AND NEW.e164 IS DISTINCT FROM OLD.e164 THEN
@@ -59,7 +59,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$;
+$$;
 
 CREATE TRIGGER sva_numbers_protect_identity
 BEFORE UPDATE ON sva_numbers
@@ -171,7 +171,7 @@ CREATE OR REPLACE FUNCTION activate_logical_carrier_route(
 )
 RETURNS bigint
 LANGUAGE plpgsql
-AS $
+AS $$
 DECLARE
   v_generation bigint;
 BEGIN
@@ -199,7 +199,7 @@ BEGIN
 
   RETURN v_generation;
 END;
-$;
+$$;
 
 CREATE TABLE carrier_contracts (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -417,11 +417,11 @@ CREATE INDEX financial_ledger_type_time_idx ON financial_ledger(event_type, occu
 CREATE OR REPLACE FUNCTION prevent_ledger_mutation()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $
+AS $$
 BEGIN
   RAISE EXCEPTION 'financial_ledger is append-only';
 END;
-$;
+$$;
 
 CREATE TRIGGER financial_ledger_no_update
 BEFORE UPDATE OR DELETE ON financial_ledger
@@ -430,12 +430,12 @@ FOR EACH ROW EXECUTE FUNCTION prevent_ledger_mutation();
 CREATE OR REPLACE FUNCTION touch_updated_at()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $
+AS $$
 BEGIN
   NEW.updated_at = now();
   RETURN NEW;
 END;
-$;
+$$;
 
 CREATE TRIGGER calls_touch_updated_at
 BEFORE UPDATE ON calls
@@ -480,7 +480,7 @@ CREATE INDEX financial_ledger_occurred_at_brin ON financial_ledger USING brin(oc
 CREATE OR REPLACE FUNCTION prevent_contract_overlap()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $
+AS $$
 BEGIN
   IF EXISTS (
     SELECT 1
@@ -495,7 +495,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$;
+$$;
 
 CREATE TRIGGER carrier_contracts_no_overlap
 BEFORE INSERT OR UPDATE ON carrier_contracts
