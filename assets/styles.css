@@ -1506,3 +1506,72 @@ dialog{max-height:100dvh}
     transform:scale(.985)
   }
 }
+
+
+/* PGI 1.11.1 — Narrow Mobile Hardening */
+@media (max-width:520px){
+  .topbar{
+    align-items:flex-start;
+    gap:8px
+  }
+  .topbar-title{
+    flex:1 1 auto;
+    min-width:0
+  }
+  .product-name{
+    max-width:100%;
+    letter-spacing:.035em
+  }
+  .top-actions{
+    flex:0 0 auto;
+    gap:6px
+  }
+  .top-actions .pill:not(.demo){display:none}
+  .top-actions .pill.demo{
+    min-height:36px;
+    padding-inline:8px;
+    font-size:6.5px
+  }
+  #logout-btn{
+    max-width:86px;
+    min-height:44px;
+    padding-inline:8px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis
+  }
+  .toolbar{overflow:visible}
+  .custom-range{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    gap:6px;
+    width:100%
+  }
+  .custom-range label{
+    display:grid;
+    gap:4px;
+    min-width:0
+  }
+  .custom-range input{
+    width:100%;
+    min-width:0
+  }
+  .custom-range #apply-custom{
+    grid-column:1/-1;
+    width:100%
+  }
+  .panel-actions{
+    width:100%;
+    display:grid;
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    gap:6px
+  }
+  .panel-actions .pill{grid-column:1/-1}
+  .call-filters{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+}
+
+@media (max-width:360px){
+  .custom-range{grid-template-columns:1fr}
+  .custom-range #apply-custom{grid-column:auto}
+  .call-filters{grid-template-columns:1fr}
+}
