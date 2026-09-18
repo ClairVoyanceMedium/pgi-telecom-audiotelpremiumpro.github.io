@@ -257,7 +257,7 @@ function authenticate(req,config){
     return {sub:"local-admin",role:"admin",name:"Local Simulator",csrf:"disabled"};
   }
   const cookies=parseCookies(req.headers.cookie||"");
-  return verifySession(cookies.pgi_session,config.sessionSecret);
+  return verifySession(cookies["__Host-pgi_session"],config.sessionSecret);
 }
 function requireActor(actor){
   if(!actor){const e=new Error("Authentication required");e.status=401;e.code="AUTH_REQUIRED";throw e;}
@@ -270,7 +270,8 @@ function requireCsrf(req,actor,config){
   if(config.authMode==="disabled")return;
   const cookies=parseCookies(req.headers.cookie||"");
   const header=String(req.headers["x-csrf-token"]||"");
-  if(!header||!cookies.pgi_csrf||header!==cookies.pgi_csrf||header!==actor.csrf){
+  const cookieToken=cookies["__Host-pgi_csrf"]||"";
+  if(!header||!cookieToken||!constantTimeTokenEqual(header,cookieToken)||!constantTimeTokenEqual(header,actor.csrf)){
     const e=new Error("CSRF validation failed");e.status=403;e.code="CSRF_FAILED";throw e;
   }
 }
