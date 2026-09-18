@@ -806,6 +806,10 @@
     var profiles=data&&Array.isArray(data.payment_profiles)?data.payment_profiles:[];
 
     var real=RUNTIME.mode==="production"&&!!data;
+    setText("overview-wh-state",real?(summary.tenants_total>0?"Plateforme active":"Backend prêt • aucun client"):"Fondation prête");
+    setText("overview-wh-tenants",nfmt(summary.tenants_total||0));
+    setText("overview-wh-numbers",nfmt(summary.assignments_total||0));
+    setText("overview-wh-kyc",nfmt(summary.kyc_pending||0));
     setText("wh-tenants-total",nfmt(summary.tenants_total||0));
     setText("wh-tenants-active",nfmt(summary.tenants_active||0)+" actifs");
     setText("wh-numbers-total",nfmt(summary.assignments_total||0));
