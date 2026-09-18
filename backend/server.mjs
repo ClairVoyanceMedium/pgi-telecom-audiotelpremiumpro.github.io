@@ -37,6 +37,7 @@ export function createBackend(options={}){
   };
   const rateBuckets=new Map();
   const authBuckets=new Map();
+  const sseClients=new Set();
 
   const server=http.createServer(async(req,res)=>{
     const requestId=randomUUID();
@@ -230,7 +231,7 @@ export function createBackend(options={}){
 
       if(method==="GET"&&pathname==="/api/v1/events"){
         requireRole(actor,["admin","finance","expert","readonly"]);
-        return openEventStream(req,res,eventBus,requestId,config);
+        return openEventStream(req,res,eventBus,requestId,config,sseClients);
       }
 
       return done(res,metrics,started,"not_found",404,{error:{code:"NOT_FOUND",request_id:requestId}});
@@ -260,7 +261,11 @@ export function createBackend(options={}){
     },
     async close(){
       workers.stop();
-      if(server.listening)await new Promise(resolve=>server.close(()=>resolve()));
+      for(const client of sseClients){
+        try{client.end();}catch{}
+      }
+      sseClients.clear();
+      if(server.listening)await closeHttpServer(server,Number(config.shutdownGraceMs||10000));
       if(options.closeStore&&typeof store.close==="function")await store.close();
     }
   };
@@ -452,7 +457,7 @@ async function metricsResponse(res,metrics,store,workers){
   res.writeHead(200,{"Content-Type":"text/plain; version=0.0.4; charset=utf-8","Content-Length":Buffer.byteLength(body)});
   res.end(body);
 }
-function openEventStream(req,res,eventBus,requestId,config){
+function openEventStream(req,res,eventBus,requestId,config,clients){
   if(eventBus.size>=Number(config.maxEventSubscribers||32)){
     const e=new Error("Realtime capacity reached");e.status=503;e.code="SSE_CAPACITY_REACHED";e.expose=true;throw e;
   }
@@ -464,13 +469,32 @@ function openEventStream(req,res,eventBus,requestId,config){
     "X-Request-Id":requestId
   });
   res.write("event: ready\ndata: {}\n\n");
+  clients?.add(res);
   const unsubscribe=eventBus.subscribe(event=>{
     if(res.destroyed)return;
     res.write("event: "+safeEventName(event.type)+"\ndata: "+JSON.stringify(event)+"\n\n");
   });
   const heartbeat=setInterval(()=>{if(!res.destroyed)res.write(": ping\n\n");},15000);
   heartbeat.unref?.();
-  req.on("close",()=>{clearInterval(heartbeat);unsubscribe();});
+  req.on("close",()=>{clearInterval(heartbeat);unsubscribe();clients?.delete(res);});
+}
+function closeHttpServer(server,graceMs){
+  return new Promise(resolve=>{
+    let settled=false;
+    const finish=()=>{
+      if(settled)return;
+      settled=true;
+      clearTimeout(timer);
+      resolve();
+    };
+    server.close(finish);
+    const timer=setTimeout(()=>{
+      server.closeAllConnections?.();
+      finish();
+    },Math.max(1000,graceMs));
+    timer.unref?.();
+    server.closeIdleConnections?.();
+  });
 }
 function timestampMetric(value){
   const ms=Date.parse(value||"");
