@@ -22,7 +22,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     await store.sql.unsafe("INSERT INTO carriers(name,kind) VALUES('Host A','sva_host'),('Host B','sva_host')");
     await store.sql.unsafe("INSERT INTO logical_carrier_routes(route_key,description) VALUES('sva-primary','Integration test route')");
     await store.sql.unsafe("INSERT INTO sva_numbers(e164,display_number,tariff_code,service_rate_ttc_per_min,status) VALUES('33890000000','0890 00 00 00','D080',0.8,'active')");
-    await store.sql.unsafe("INSERT INTO experts(code,display_name,status,compensation_type,compensation_rate) VALUES('E1','Expert 1','available','per_minute',0.18)");
+    await store.sql.unsafe("INSERT INTO experts(code,display_name,destination_uri,status,compensation_type,compensation_rate) VALUES('E1','Expert 1','loopback/9101','available','per_minute',0.18)");
     await store.sql.unsafe("INSERT INTO carrier_connections(carrier_id,connection_name,purpose,state,transport,endpoint_host,endpoint_port,auth_mode) SELECT id,'primary','sip_inbound','ready','udp','192.0.2.10',5060,'ip_acl' FROM carriers WHERE name='Host A'");
     await store.sql.unsafe("SELECT activate_logical_carrier_route('sva-primary',(SELECT id FROM carriers WHERE name='Host A'),(SELECT id FROM carrier_connections WHERE connection_name='primary'))");
 
