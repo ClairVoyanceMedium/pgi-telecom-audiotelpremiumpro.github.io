@@ -1,0 +1,29 @@
+node_modules/
+*.log
+*.tmp
+*.swp
+*.swo
+.DS_Store
+
+# Secrets and environment
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+
+# Data and exports
+*.dump
+*.sql.gz
+backups/
+exports/
+cdr/
+settlements/private/
+
+# Build / coverage
+coverage/
+dist/
+.tmp/
