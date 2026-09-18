@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.2.0 — 2026-09-18
+
+Abstraction complète de l'opérateur SVA :
+
+- numéro 089 découplé de l'opérateur hôte ;
+- adaptateurs opérateur versionnés ;
+- connexions SIP/CDR/règlement séparées ;
+- route logique `sva-primary` ;
+- opérateur actif + standby ;
+- bascule atomique A→B ;
+- rollback B→A testé ;
+- événements de portabilité historisés ;
+- identité du 089 protégée pendant activité/portage ;
+- contrats opérateur conservés par période ;
+- appels historiquement rattachés au vrai opérateur hôte ;
+- API de préparation, activation et rollback de bascule ;
+- dashboard opérateur actif/standby/portabilité ;
+- validation automatique des profils opérateur.
+
 ## 1.1.0 — 2026-09-18
 
 Durcissement technique avant branchement opérateur :
