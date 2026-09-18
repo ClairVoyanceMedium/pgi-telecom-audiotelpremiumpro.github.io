@@ -785,7 +785,7 @@ export class PostgresStore{
   }
 
   async wholesaleOverview(){
-    const [summaryRows,tenants,numbers,settlements,payments,markets,currencyTotals]=await Promise.all([
+    const [summaryRows,tenants,numbers,settlements,payments,markets,currencyTotals,scaleRows]=await Promise.all([
       this.readSql.unsafe(
         "SELECT"+
         " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal') AS tenants_total,"+
@@ -855,6 +855,14 @@ export class PostgresStore{
         " COALESCE(sum(s.net_payout_ht),0)::float8 AS net_payout"+
         " FROM tenant_settlements s JOIN tenants t ON t.id=s.tenant_id"+
         " WHERE t.tenant_type<>'internal' GROUP BY s.currency ORDER BY s.currency"
+      ),
+      this.readSql.unsafe(
+        "SELECT"+
+        " (SELECT count(*)::int FROM data_clusters) AS clusters_total,"+
+        " (SELECT count(*)::int FROM data_clusters WHERE state='ready') AS clusters_ready,"+
+        " (SELECT count(*)::int FROM routing_buckets WHERE state='active') AS routing_buckets_active,"+
+        " (SELECT count(*)::bigint FROM tenant_data_placement WHERE state='active') AS placements_active,"+
+        " (SELECT count(*)::int FROM pg_inherits WHERE inhparent='call_facts'::regclass) AS call_fact_partitions"
       )
     ]);
     const singleCurrency=currencyTotals.length===1?currencyTotals[0]:null;
@@ -868,14 +876,20 @@ export class PostgresStore{
       payment_compliance_active:payments.some(x=>x.status==="active")
     };
     return {
-      foundation_version:"1.12",
+      foundation_version:"1.13",
       summary,
       tenants,
       numbers,
       settlements,
       payment_profiles:payments,
       markets,
-      settlement_totals_by_currency:currencyTotals
+      settlement_totals_by_currency:currencyTotals,
+      scale:{
+        ...(scaleRows[0]||{}),
+        bucket_capacity:4096,
+        read_replica_enabled:this.readSql!==this.sql,
+        process_role:this.config.processRole||"all"
+      }
     };
   }
 
