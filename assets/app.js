@@ -378,7 +378,7 @@
 
   function renderNoc(rows){
     var m=aggregate(rows),q=qualityStats(rows);
-    setText("noc-availability",navigator.onLine?"100% local":"Hors ligne");
+    setText("noc-availability",navigator.onLine?"En ligne":"Hors ligne");
     setText("noc-cdr-total",nfmt(rows.length));
     setText("noc-fin-alerts",m.gap>.01?"1":"0");
     setText("noc-voice-grade",q.grade);
@@ -586,6 +586,11 @@
       state.period="custom";state.custom={from:fd,to:td};qsa(".period").forEach(function(x){x.classList.remove("active");});render();
     });
     $("refresh-btn").addEventListener("click",render);
+    var more=$("mobile-more");
+    if(more)more.addEventListener("click",function(){
+      var d=$("mobile-menu-dialog");
+      if(d&&typeof d.showModal==="function")d.showModal();
+    });
     ["call-search","call-expert","call-carrier","call-status"].forEach(function(id){
       var el=$(id);if(!el)return;
       el.addEventListener(id==="call-search"?"input":"change",function(){
@@ -633,7 +638,17 @@
       el.classList.toggle("production",!demo);
     }
     setText("runtime-version",RUNTIME.version||"dev");
+    setText("sidebar-version","v"+(RUNTIME.version||"dev")+" • "+(demo?"Démo":"Production"));
     setText("data-mode",demo?"Démo":"Production");
+    var live=$("live-mode-badge");
+    if(live){
+      live.innerHTML=demo?'<i class="dot offline"></i>DÉMO':'<i class="dot ok pulse"></i>LIVE';
+    }
+    var cdrState=$("overview-cdr-state");
+    if(cdrState){
+      cdrState.textContent=demo?"DÉMO LOCALE":"EN ATTENTE";
+      cdrState.className="health warn";
+    }
   }
 
   async function probeApiHealth(){
@@ -641,15 +656,23 @@
     if(RUNTIME.mode!=="production"||!RUNTIME.apiBaseUrl||!window.PGIApi){
       state.diagnostics.apiStatus="not_configured";
       if(el){el.textContent="API NON CONNECTÉE";el.className="big-status warn";}
+      var overviewApi=$("overview-api-state");
+      if(overviewApi){overviewApi.textContent="NON CONNECTÉE";overviewApi.className="health warn";}
       return;
     }
     try{
       await window.PGIApi.health();
       state.diagnostics.apiStatus="ok";
       if(el){el.textContent="API OPÉRATIONNELLE";el.className="big-status ok";}
+      var overviewApi=$("overview-api-state");
+      if(overviewApi){overviewApi.textContent="OPÉRATIONNELLE";overviewApi.className="health ok";}
+      var overviewCdr=$("overview-cdr-state");
+      if(overviewCdr){overviewCdr.textContent="CONNECTÉ";overviewCdr.className="health ok";}
     }catch(e){
       state.diagnostics.apiStatus="error";
       if(el){el.textContent="API INDISPONIBLE";el.className="big-status warn";}
+      var overviewApi=$("overview-api-state");
+      if(overviewApi){overviewApi.textContent="INDISPONIBLE";overviewApi.className="health warn";}
     }
   }
 
