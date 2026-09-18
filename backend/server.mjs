@@ -127,6 +127,13 @@ export function createBackend(options={}){
         return done(res,metrics,started,"dashboard.summary",200,await store.summary(range.from,range.to,market));
       }
 
+      if(method==="GET"&&pathname==="/api/v1/dashboard/analytics"){
+        requireRole(actor,["admin","finance","readonly"]);
+        const range=rangeParams(url);
+        const market=url.searchParams.get("market")||null;
+        return done(res,metrics,started,"dashboard.analytics",200,await store.dashboardAnalytics(range.from,range.to,market));
+      }
+
       if(method==="GET"&&pathname==="/api/v1/calls"){
         requireRole(actor,["admin","finance","expert","readonly"]);
         const params=Object.fromEntries(url.searchParams.entries());
