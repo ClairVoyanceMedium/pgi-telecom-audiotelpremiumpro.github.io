@@ -104,9 +104,29 @@ Crée une nouvelle baseline. Ne supprime aucune donnée.
 Le backend doit journaliser l'utilisateur, la date, la portée et la raison.
 
 
-## API wholesale / multi-tenant — contrat cible, non activé
+## API wholesale / multi-tenant
 
-Ces routes décrivent la prochaine couche opérateur. Elles ne doivent pas être exposées comme fonctionnelles tant que l'implémentation backend et l'autorisation par rôle ne sont pas terminées.
+La lecture de synthèse wholesale est maintenant implémentée. Les routes de mutation restent contractuelles et ne doivent pas être exposées comme fonctionnelles tant que leur implémentation backend, leur autorisation par rôle et le cadre opérateur/PSP ne sont pas terminés.
+
+### GET /platform/overview
+
+Implémenté en lecture seule pour les rôles `admin`, `finance` et `readonly`.
+
+Expose sans données KYC sensibles :
+
+- nombre d'éditeurs clients et actifs ;
+- KYC vérifiés / en attente ;
+- affectations SVA totales / actives ;
+- affectations disposant d'un opérateur attributaire identifié ;
+- reversement amont cumulé ;
+- frais plateforme cumulés ;
+- reversement net client cumulé ;
+- état du profil de conformité paiements ;
+- jusqu'à 50 tenants récents ;
+- jusqu'à 50 affectations récentes ;
+- jusqu'à 50 règlements récents.
+
+Les totaux financiers sont calculés sur l'ensemble des règlements, indépendamment de la limite d'affichage.
 
 ### GET /platform/tenants
 
