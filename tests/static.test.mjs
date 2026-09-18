@@ -5,6 +5,7 @@ import fs from "node:fs";
 const index = fs.readFileSync("index.html","utf8");
 const app = fs.readFileSync("assets/app.js","utf8");
 const css = fs.readFileSync("assets/styles.css","utf8");
+const buildStatic = fs.readFileSync("scripts/build-static.mjs","utf8");
 
 test("le nom officiel est présent", () => {
   assert.match(index, /PGI Telecom • Audiotel Premium Pro/);
@@ -84,4 +85,12 @@ test("la production ne réutilise pas les taux de démonstration", () => {
   assert.doesNotMatch(productionSection,/CONFIG\.serviceRate/);
   assert.doesNotMatch(productionSection,/CONFIG\.payoutRate/);
   assert.match(app,/PGIApi\.baselines/);
+});
+
+
+test("la release Git exacte est visible et obligatoire en production", () => {
+  assert.ok(index.includes('id="runtime-release"'));
+  assert.match(app, /RUNTIME\.releaseId/);
+  assert.match(buildStatic, /PGI_RELEASE_ID/);
+  assert.match(buildStatic, /40-character Git SHA/);
 });
