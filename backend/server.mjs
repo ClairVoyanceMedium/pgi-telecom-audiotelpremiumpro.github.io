@@ -266,16 +266,29 @@ export function createBackend(options={}){
   };
 }
 
-export function evaluateReadiness(snapshot,workers,config){
+export function evaluateReadiness(snapshot,workers,config,nowMs=Date.now()){
   const productionStore=config?.mode!=="production"||snapshot?.store==="postgres";
-  const outboxWorker=Boolean(workers?.stats?.lastOutboxSuccessAt);
-  const alertsWorker=Boolean(workers?.stats?.lastAlertsSuccessAt);
+  const outboxAge=ageSeconds(workers?.stats?.lastOutboxSuccessAt,nowMs);
+  const alertsAge=ageSeconds(workers?.stats?.lastAlertsSuccessAt,nowMs);
+  const outboxWorker=Number.isFinite(outboxAge)&&outboxAge<=Number(config?.outboxWorkerStaleSeconds||15);
+  const alertsWorker=Number.isFinite(alertsAge)&&alertsAge<=Number(config?.alertsWorkerStaleSeconds||120);
   const checks={
     database:productionStore,
     outbox_worker:outboxWorker,
     alerts_worker:alertsWorker
   };
-  return {ready:Object.values(checks).every(Boolean),checks};
+  return {
+    ready:Object.values(checks).every(Boolean),
+    checks,
+    ages_seconds:{
+      outbox_worker:Number.isFinite(outboxAge)?Math.round(outboxAge):null,
+      alerts_worker:Number.isFinite(alertsAge)?Math.round(alertsAge):null
+    }
+  };
+}
+function ageSeconds(value,nowMs){
+  const ms=Date.parse(value||"");
+  return Number.isFinite(ms)?Math.max(0,(nowMs-ms)/1000):Infinity;
 }
 
 function authenticate(req,config){
