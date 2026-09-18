@@ -28,7 +28,7 @@ const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "assets/app.js"), "utf8");
 
 const failures = [];
-if (!index.includes("PGI Telecom • Audiotel Premium Pro")) failures.push("Nom officiel absent de index.html");
+if (!index.includes("PGI • Telecom - Audiotel Premium Pro")) failures.push("Nom officiel absent de index.html");
 if (!index.includes('name="viewport"')) failures.push("Viewport mobile absent");
 if (/http:\/\//i.test(index + app)) failures.push("Référence HTTP non chiffrée détectée");
 if (/localhost|127\.0\.0\.1/i.test(index + app)) failures.push("Endpoint local détecté dans le front");
