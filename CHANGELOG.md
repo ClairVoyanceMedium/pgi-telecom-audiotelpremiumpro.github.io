@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.12.0 — 2026-09-18
+
+Fondation internationale multi-marchés :
+
+- séparation client, marché, numérotation, opérateur, devise, langue et fuseau horaire ;
+- France conservée comme seul marché actif par défaut ;
+- numéros canoniques E.164 avec alias opérateur explicites ;
+- capacités opérateurs et connexions rattachables par marché ;
+- CDR, contrats, règlements et ledger enrichis par marché et devise ;
+- regroupement des reversements par devise sans consolidation artificielle ;
+- profils client/marché pour locale, fiscalité, conformité et résidence des données ;
+- profils de conformité paiement rattachables à chaque marché ;
+- bootstrap PostgreSQL neuf rendu compatible avec les migrations immuables à checksum ;
+- cockpit Wholesale enrichi avec marchés et devises ;
+- documentation d'ouverture d'un nouveau pays ;
+- cache PWA porté à v15 ;
+- versions front/backend/Docker alignées sur 1.12.0.
+
+
 ## 1.11.1 — 2026-09-18
 
 Durcissement mobile petits écrans :
