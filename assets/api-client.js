@@ -101,6 +101,7 @@
     reconciliation:function(from,to){return request("/finance/reconciliation?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to));},
     systemHealth:function(){return request("/system/health");},
     carrierRouting:function(){return request("/carrier-routing");},
+    wholesaleOverview:function(){return request("/platform/overview");},
     events:events,
     baselines:function(params){
       var q=new URLSearchParams(params||{}).toString();
