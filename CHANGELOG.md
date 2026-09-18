@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.11.1 — 2026-09-18
+
+Durcissement mobile petits écrans :
+
+- en-tête compact sans débordement sur Android/iPhone étroits ;
+- statuts secondaires retirés de la barre supérieure mobile pour préserver l’espace utile ;
+- périodes personnalisées réorganisées en grille tactile ;
+- filtres et actions de tableaux adaptés aux largeurs 320–520 px ;
+- cache PWA porté à v14 ;
+- versions front/backend/Docker alignées sur 1.11.1.
+
+
 ## 1.11.0 — 2026-09-18
 
 Optimisation mobile Android et iOS :
