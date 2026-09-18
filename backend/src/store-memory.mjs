@@ -430,6 +430,14 @@ export class MemoryStore{
     return structuredClone(ready);
   }
 
+  async extendWorkLease(id,workerId,leaseSeconds=60){
+    const row=this.workQueue.find(x=>x.id===Number(id)&&x.locked_by===String(workerId)&&!x.completed_at&&!x.failed_at&&!x.dead_lettered_at);
+    if(!row)throw problem(409,"WORK_LEASE_LOST");
+    const ttl=Math.max(15,Math.min(900,Number(leaseSeconds)||60))*1000;
+    row.lease_expires_at=new Date(Date.now()+ttl).toISOString();
+    return {id:row.id,lease_expires_at:row.lease_expires_at};
+  }
+
   async completeWork(id,workerId){
     const row=this.workQueue.find(x=>x.id===Number(id)&&x.locked_by===String(workerId)&&!x.completed_at&&!x.failed_at&&!x.dead_lettered_at);
     if(!row)throw problem(409,"WORK_LEASE_LOST");
