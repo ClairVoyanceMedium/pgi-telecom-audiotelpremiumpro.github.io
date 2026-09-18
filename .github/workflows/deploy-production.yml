@@ -54,6 +54,7 @@ jobs:
         env:
           PGI_RUNTIME_MODE: production
           PGI_API_BASE_URL: /api/v1
+          PGI_RELEASE_ID: ${{ github.sha }}
         run: npm run build:static
 
       - name: Verify production artifact
@@ -66,6 +67,7 @@ jobs:
           grep -F '"mode": "production"' dist/assets/config.js
           expected_version="$(node -p "require('./package.json').version")"
           grep -F "\"version\": \"$expected_version\"" dist/assets/config.js
+          grep -F "\"releaseId\": \"$RELEASE_ID\"" dist/assets/config.js
 
       - name: Configure SSH
         env:
@@ -113,6 +115,7 @@ jobs:
           expected_version="$(node -p "require('./package.json').version")"
           printf '%s' "$config" | grep -F '"mode": "production"'
           printf '%s' "$config" | grep -F "\"version\": \"$expected_version\""
+          printf '%s' "$config" | grep -F "\"releaseId\": \"$RELEASE_ID\""
           curl --fail --silent --show-error --retry 5 --retry-delay 2 --max-time 12 "$base/api/v1/health" \
             | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const x=JSON.parse(s);if(x.status!=="ok")process.exit(1)})'
 
