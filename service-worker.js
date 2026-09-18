@@ -1,4 +1,4 @@
-const CACHE_NAME = "pgi-telecom-shell-v18";
+const CACHE_NAME = "pgi-telecom-shell-v19";
 const SHELL = [
   "./",
   "./index.html",
@@ -6,6 +6,10 @@ const SHELL = [
   "./assets/config.js",
   "./assets/core.js",
   "./assets/api-client.js",
+  "./assets/workspace.js",
+  "./assets/command-palette.js",
+  "./assets/data-client.js",
+  "./assets/demo-data.js",
   "./assets/app.js",
   "./assets/favicon.svg",
   "./manifest.webmanifest"
