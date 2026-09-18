@@ -118,6 +118,7 @@ CREATE TABLE calls (
   retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
   expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
   confirmed_payout_ht numeric(14,6),
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
   expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
   technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
   estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
@@ -282,6 +283,7 @@ ALTER TABLE calls
     retail_service_amount_ttc >= 0 AND
     expected_payout_ht >= 0 AND
     (confirmed_payout_ht IS NULL OR confirmed_payout_ht >= 0) AND
+    paid_payout_ht >= 0 AND
     expert_cost_ht >= 0 AND
     technical_cost_ht >= 0
   ),
@@ -306,6 +308,60 @@ ALTER TABLE call_quality
     (mos IS NULL OR (mos >= 1 AND mos <= 5)) AND
     (dtmf_errors >= 0)
   );
+
+CREATE INDEX calls_started_at_brin ON calls USING brin(started_at);
+CREATE INDEX raw_cdr_received_at_brin ON raw_cdr_events USING brin(received_at);
+CREATE INDEX financial_ledger_occurred_at_brin ON financial_ledger USING brin(occurred_at);
+
+CREATE OR REPLACE FUNCTION prevent_contract_overlap()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM carrier_contracts c
+    WHERE c.carrier_id = NEW.carrier_id
+      AND c.id <> COALESCE(NEW.id,0)
+      AND c.sva_number_id IS NOT DISTINCT FROM NEW.sva_number_id
+      AND daterange(c.valid_from, COALESCE(c.valid_to + 1, 'infinity'::date), '[)')
+          && daterange(NEW.valid_from, COALESCE(NEW.valid_to + 1, 'infinity'::date), '[)')
+  ) THEN
+    RAISE EXCEPTION 'overlapping carrier contract for carrier %, SVA %', NEW.carrier_id, NEW.sva_number_id;
+  END IF;
+  RETURN NEW;
+END;
+$;
+
+CREATE TRIGGER carrier_contracts_no_overlap
+BEFORE INSERT OR UPDATE ON carrier_contracts
+FOR EACH ROW EXECUTE FUNCTION prevent_contract_overlap();
+
+CREATE TABLE metric_rollups_hourly (
+  bucket_start timestamptz NOT NULL,
+  dimension_type text NOT NULL CHECK (dimension_type IN ('global','expert','origin_carrier','sva_number')),
+  dimension_id bigint NOT NULL DEFAULT 0,
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(18,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(18,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(18,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(18,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(18,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(18,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(18,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(18,6) NOT NULL DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (bucket_start, dimension_type, dimension_id)
+);
+
+CREATE INDEX metric_rollups_hourly_dimension_idx
+  ON metric_rollups_hourly(dimension_type, dimension_id, bucket_start DESC);
 
 CREATE TABLE system_metrics (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
