@@ -219,7 +219,10 @@ export class PostgresStore{
       const origin=originRows[0];
 
       const svaRows=await tx.unsafe(
-        "SELECT id,e164,display_number,tenant_id,service_rate_ttc_per_min::float8 FROM sva_numbers WHERE e164=$1 OR display_number=$1 LIMIT 1",
+        "SELECT sn.id,sn.e164,sn.display_number,sn.tenant_id,sn.market_id,sn.currency,sn.service_rate_ttc_per_min::float8"+
+        " FROM sva_numbers sn LEFT JOIN sva_number_aliases a ON a.sva_number_id=sn.id AND a.enabled"+
+        " WHERE sn.e164=$1 OR sn.display_number=$1 OR a.alias=$1"+
+        " ORDER BY CASE WHEN sn.e164=$1 THEN 0 WHEN sn.display_number=$1 THEN 1 ELSE 2 END LIMIT 1",
         [String(p.sva_number||"")]
       );
       const sva=svaRows[0];
@@ -301,16 +304,17 @@ export class PostgresStore{
         status,p.sip_final_code==null?null:Number(p.sip_final_code),String(p.hangup_cause||""),String(p.codec||""),
         serviceRate,payoutRate,mobileDeduction,
         financial.serviceAmountTtc,financial.expectedPayoutHt,confirmed,paid,expertCost,technicalCost,
-        Math.max(0,(confirmed||0)-expertCost-technicalCost),recon?recon.status:"pending",recon?recon.varianceHt:0,sva.tenant_id||null
+        Math.max(0,(confirmed||0)-expertCost-technicalCost),recon?recon.status:"pending",recon?recon.varianceHt:0,
+        sva.tenant_id||null,sva.market_id||null,String(sva.currency||"EUR")
       ];
       const callRows=await tx.unsafe(
         "INSERT INTO calls(external_call_id,cdr_source,caller_id,sva_number_id,expert_id,origin_carrier_id,host_carrier_id,"+
         " started_at,ivr_started_at,queued_at,bridged_at,ended_at,wait_seconds,conversation_seconds,total_seconds,billable_seconds,"+
         " payout_eligible_seconds,call_status,sip_final_code,hangup_cause,codec,service_rate_ttc_per_min,carrier_rate_ht_per_min,"+
         " mobile_deduction_ht_per_min,retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,"+
-        " expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_status,reconciliation_variance_ht,tenant_id)"+
+        " expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_status,reconciliation_variance_ht,tenant_id,market_id,currency)"+
         " VALUES($1,$2,$3,$4,$5,$6,$7,$8::timestamptz,$9::timestamptz,$10::timestamptz,$11::timestamptz,$12::timestamptz,"+
-        " $13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)"+
+        " $13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36)"+
         " ON CONFLICT(host_carrier_id,external_call_id) WHERE host_carrier_id IS NOT NULL AND external_call_id IS NOT NULL"+
         " DO NOTHING RETURNING id",
         callValues
@@ -327,9 +331,9 @@ export class PostgresStore{
           [call.id,nullableNumber(p.quality.packet_loss_percent),nullableNumber(p.quality.jitter_ms),nullableNumber(p.quality.latency_ms),nullableNumber(p.quality.mos),Number(p.quality.dtmf_errors||0)]
         );
       }
-      if(financial.expectedPayoutHt!==0)await ledger(tx,call.id,sva.tenant_id,"expected",financial.expectedPayoutHt,envelope);
-      if(confirmed!=null&&confirmed!==0)await ledger(tx,call.id,sva.tenant_id,"confirmed",confirmed,envelope);
-      if(paid!==0)await ledger(tx,call.id,sva.tenant_id,"paid",paid,envelope);
+      if(financial.expectedPayoutHt!==0)await ledger(tx,call.id,sva.tenant_id,sva.market_id,sva.currency,"expected",financial.expectedPayoutHt,envelope);
+      if(confirmed!=null&&confirmed!==0)await ledger(tx,call.id,sva.tenant_id,sva.market_id,sva.currency,"confirmed",confirmed,envelope);
+      if(paid!==0)await ledger(tx,call.id,sva.tenant_id,sva.market_id,sva.currency,"paid",paid,envelope);
 
       await tx.unsafe(
         "INSERT INTO outbox_events(event_type,aggregate_type,aggregate_id,payload) VALUES('call.ingested','call',$1,$2::jsonb)",
@@ -776,10 +780,11 @@ export class PostgresStore{
   }
 }
 
-async function ledger(tx,callId,tenantId,type,amount,envelope){
+async function ledger(tx,callId,tenantId,marketId,currency,type,amount,envelope){
   await tx.unsafe(
-    "INSERT INTO financial_ledger(tenant_id,call_id,event_type,amount_ht,source_reference,metadata) VALUES($1,$2,$3,$4,$5,$6::jsonb)",
-    [tenantId||null,callId,type,amount,envelope.source_event_id,JSON.stringify({source:envelope.source})]
+    "INSERT INTO financial_ledger(tenant_id,market_id,call_id,event_type,amount_ht,currency,source_reference,metadata)"+
+    " VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)",
+    [tenantId||null,marketId||null,callId,type,amount,String(currency||"EUR"),envelope.source_event_id,JSON.stringify({source:envelope.source})]
   );
 }
 async function routeWith(sql,key){
