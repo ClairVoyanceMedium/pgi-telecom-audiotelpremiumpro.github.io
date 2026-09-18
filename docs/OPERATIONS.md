@@ -43,6 +43,15 @@ Avant chaque déploiement backend, le service `migrate` doit terminer avec succ�
 
 Ne jamais corriger rétroactivement un fichier déjà présent dans `schema_migrations`. Ajouter une nouvelle migration corrective.
 
+## Liveness et readiness
+
+Deux sondes ont des rôles distincts :
+
+- `/api/v1/health` confirme uniquement que le processus HTTP répond ;
+- `/api/v1/ready` reste privé et valide PostgreSQL ainsi que la fraîcheur des workers outbox et alertes.
+
+Le healthcheck Docker utilise `/ready`. Par défaut, le worker outbox doit avoir réussi dans les 15 dernières secondes et le worker alertes dans les 120 dernières secondes. Ces seuils peuvent être ajustés par environnement sans modifier le code.
+
 ## Alertes production à prévoir
 
 - trunk SIP indisponible ;
