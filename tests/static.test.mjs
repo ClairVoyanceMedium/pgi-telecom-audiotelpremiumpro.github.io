@@ -59,3 +59,13 @@ test("le cockpit production exige une authentification explicite", () => {
 test("la production ne génère pas de faux CDR locaux", () => {
   assert.match(app, /RUNTIME\.mode==="production"\?\[\]:buildDemoCalls\(\)/);
 });
+
+
+test("le NOC sépare la santé API du pipeline CDR", () => {
+  assert.match(index, /État backend/);
+  assert.match(app, /function cdrPipelineState/);
+  assert.match(app, /AUCUN CDR REÇU/);
+  assert.match(app, /DERNIER CDR ANCIEN/);
+  assert.match(app, /CDR REÇUS/);
+  assert.doesNotMatch(app, /overviewCdr\.textContent="CONNECTÉ"/);
+});
