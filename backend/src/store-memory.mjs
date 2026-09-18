@@ -364,6 +364,13 @@ export class MemoryStore{
     return {replayed:false,value};
   }
 
+  async withTenantContext(tenantId,fn){
+    const id=Number(tenantId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_CONTEXT");
+    if(typeof fn!=="function")throw problem(500,"TENANT_CONTEXT_HANDLER_REQUIRED");
+    return fn(this);
+  }
+
   async acquireWorkerLease(){
     return true;
   }
