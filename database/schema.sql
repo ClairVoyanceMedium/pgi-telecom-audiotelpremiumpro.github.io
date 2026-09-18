@@ -209,6 +209,104 @@ CREATE TABLE audit_log (
 CREATE INDEX audit_log_time_idx ON audit_log(occurred_at DESC);
 CREATE INDEX audit_log_entity_idx ON audit_log(entity_type, entity_id, occurred_at DESC);
 
+CREATE TABLE raw_cdr_events (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  source text NOT NULL,
+  source_event_id text NOT NULL,
+  received_at timestamptz NOT NULL DEFAULT now(),
+  event_time timestamptz,
+  payload jsonb NOT NULL,
+  payload_sha256 char(64) NOT NULL,
+  processed_at timestamptz,
+  processing_status text NOT NULL DEFAULT 'pending'
+    CHECK (processing_status IN ('pending','processed','rejected','duplicate','manual_review')),
+  processing_error text,
+  UNIQUE (source, source_event_id)
+);
+
+CREATE INDEX raw_cdr_events_pending_idx
+  ON raw_cdr_events(processing_status, received_at)
+  WHERE processing_status IN ('pending','manual_review');
+
+CREATE TABLE financial_ledger (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  occurred_at timestamptz NOT NULL DEFAULT now(),
+  call_id bigint REFERENCES calls(id),
+  settlement_id bigint REFERENCES carrier_settlements(id),
+  event_type text NOT NULL
+    CHECK (event_type IN ('expected','confirmed','paid','adjustment','reversal','fee')),
+  amount_ht numeric(16,6) NOT NULL,
+  currency char(3) NOT NULL DEFAULT 'EUR',
+  source_reference text,
+  source_hash char(64),
+  reason text,
+  created_by bigint REFERENCES app_users(id),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (amount_ht <> 0 OR event_type = 'expected')
+);
+
+CREATE INDEX financial_ledger_call_idx ON financial_ledger(call_id, occurred_at);
+CREATE INDEX financial_ledger_settlement_idx ON financial_ledger(settlement_id, occurred_at);
+CREATE INDEX financial_ledger_type_time_idx ON financial_ledger(event_type, occurred_at DESC);
+
+CREATE OR REPLACE FUNCTION prevent_ledger_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $
+BEGIN
+  RAISE EXCEPTION 'financial_ledger is append-only';
+END;
+$;
+
+CREATE TRIGGER financial_ledger_no_update
+BEFORE UPDATE OR DELETE ON financial_ledger
+FOR EACH ROW EXECUTE FUNCTION prevent_ledger_mutation();
+
+CREATE OR REPLACE FUNCTION touch_updated_at()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$;
+
+CREATE TRIGGER calls_touch_updated_at
+BEFORE UPDATE ON calls
+FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+ALTER TABLE calls
+  ADD CONSTRAINT calls_financial_nonnegative
+  CHECK (
+    retail_service_amount_ttc >= 0 AND
+    expected_payout_ht >= 0 AND
+    (confirmed_payout_ht IS NULL OR confirmed_payout_ht >= 0) AND
+    expert_cost_ht >= 0 AND
+    technical_cost_ht >= 0
+  ),
+  ADD CONSTRAINT calls_timeline_consistent
+  CHECK (
+    (ivr_started_at IS NULL OR ivr_started_at >= started_at) AND
+    (queued_at IS NULL OR queued_at >= started_at) AND
+    (bridged_at IS NULL OR bridged_at >= started_at) AND
+    ended_at >= COALESCE(bridged_at, queued_at, ivr_started_at, started_at)
+  ),
+  ADD CONSTRAINT calls_connected_has_bridge
+  CHECK (call_status <> 'connected' OR bridged_at IS NOT NULL),
+  ADD CONSTRAINT calls_conversation_not_over_total
+  CHECK (conversation_seconds <= total_seconds);
+
+ALTER TABLE call_quality
+  ADD CONSTRAINT call_quality_ranges
+  CHECK (
+    (rtp_packet_loss_percent IS NULL OR (rtp_packet_loss_percent >= 0 AND rtp_packet_loss_percent <= 100)) AND
+    (jitter_ms IS NULL OR jitter_ms >= 0) AND
+    (latency_ms IS NULL OR latency_ms >= 0) AND
+    (mos IS NULL OR (mos >= 1 AND mos <= 5)) AND
+    (dtmf_errors >= 0)
+  );
+
 CREATE TABLE system_metrics (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   measured_at timestamptz NOT NULL,
