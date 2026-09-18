@@ -946,6 +946,13 @@
     }).join(""):'<tr><td colspan="8">Aucun reversement client réel.</td></tr>';
   }
 
+  function readMarketPreference(){
+    try{
+      var saved=String(localStorage.getItem("pgi_operating_market")||"").trim().toUpperCase();
+      return /^[A-Z]{2}$/.test(saved)?saved:null;
+    }catch(e){return null;}
+  }
+
   function readMobileOverviewPreference(){
     try{
       var saved=localStorage.getItem("pgi_mobile_overview_expanded");
@@ -1057,6 +1064,10 @@
     var marketFilter=$("market-filter");
     if(marketFilter)marketFilter.addEventListener("change",function(){
       state.market=marketFilter.value||null;
+      try{
+        if(state.market)localStorage.setItem("pgi_operating_market",state.market);
+        else localStorage.removeItem("pgi_operating_market");
+      }catch(e){}
       syncProductionData();
     });
     var more=$("mobile-more");
@@ -1185,6 +1196,7 @@
   window.addEventListener("error",recordRuntimeError);
   window.addEventListener("unhandledrejection",recordRuntimeError);
   loadState();
+  state.market=readMarketPreference();
   state.mobileOverviewExpanded=readMobileOverviewPreference();
   applyMobileOverviewMode();
   bind();
