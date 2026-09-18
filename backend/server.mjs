@@ -57,8 +57,11 @@ export function createBackend(options={}){
       }
       if(method==="GET"&&pathname==="/api/v1/ready"){
         const snapshot=await store.systemSnapshot();
-        return done(res,metrics,started,"ready",200,{
-          status:"ok",timestamp:new Date().toISOString(),store:snapshot.store,mode:config.mode
+        const readiness=evaluateReadiness(snapshot,workers,config);
+        return done(res,metrics,started,"ready",readiness.ready?200:503,{
+          status:readiness.ready?"ready":"degraded",
+          timestamp:new Date().toISOString(),
+          checks:readiness.checks
         });
       }
       if(method==="GET"&&pathname==="/metrics"){
@@ -261,6 +264,18 @@ export function createBackend(options={}){
       if(options.closeStore&&typeof store.close==="function")await store.close();
     }
   };
+}
+
+export function evaluateReadiness(snapshot,workers,config){
+  const productionStore=config?.mode!=="production"||snapshot?.store==="postgres";
+  const outboxWorker=Boolean(workers?.stats?.lastOutboxSuccessAt);
+  const alertsWorker=Boolean(workers?.stats?.lastAlertsSuccessAt);
+  const checks={
+    database:productionStore,
+    outbox_worker:outboxWorker,
+    alerts_worker:alertsWorker
+  };
+  return {ready:Object.values(checks).every(Boolean),checks};
 }
 
 function authenticate(req,config){
