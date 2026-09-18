@@ -3,7 +3,7 @@
 
   var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
   var CONFIG={serviceRate:0.80,payoutRate:0.46,expertCostPerMin:0.18,fixedCostPerCall:0.03};
-  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,system:null,route:null,wholesale:null};
+  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,system:null,route:null,wholesale:null,mobileOverviewExpanded:false};
   var titles={overview:"Vue d’ensemble",calls:"Appels",finance:"Finance",experts:"Experts",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Système",settings:"Paramètres"};
   var experts=["Frederick","Sofia","Emma","Lina","Clara","Nora"];
   var carriers=["Orange","SFR","Bouygues","Free"];
@@ -899,6 +899,36 @@
     }).join(""):'<tr><td colspan="6">Aucun reversement client réel.</td></tr>';
   }
 
+  function readMobileOverviewPreference(){
+    try{
+      var saved=localStorage.getItem("pgi_mobile_overview_expanded");
+      if(saved==="1")return true;
+      if(saved==="0")return false;
+    }catch(e){}
+    return false;
+  }
+
+  function applyMobileOverviewMode(){
+    var view=$("view-overview");
+    var button=$("mobile-overview-toggle");
+    var expanded=!!state.mobileOverviewExpanded;
+    if(view)view.classList.toggle("mobile-essential",!expanded);
+    if(button){
+      button.textContent=expanded?"Revenir à l’essentiel":"Voir l’analyse complète";
+      button.setAttribute("aria-expanded",expanded?"true":"false");
+    }
+    setText("mobile-overview-mode",expanded?"Analyse complète":"Vue essentielle");
+    setText("mobile-overview-note",expanded
+      ?"Tous les indicateurs avancés sont affichés."
+      :"Priorité au lancement SVA, aux finances, au temps réel et aux alertes.");
+  }
+
+  function toggleMobileOverview(){
+    state.mobileOverviewExpanded=!state.mobileOverviewExpanded;
+    try{localStorage.setItem("pgi_mobile_overview_expanded",state.mobileOverviewExpanded?"1":"0");}catch(e){}
+    applyMobileOverviewMode();
+  }
+
   function renderResetLog(){
     var label=state.baseline?new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeStyle:"short"}).format(state.baseline):"Historique complet";
     setText("baseline-label",label);
@@ -975,6 +1005,8 @@
       state.period="custom";state.custom={from:fd,to:td};qsa(".period").forEach(function(x){x.classList.remove("active");});refreshData();
     });
     $("refresh-btn").addEventListener("click",refreshData);
+    var mobileOverviewToggle=$("mobile-overview-toggle");
+    if(mobileOverviewToggle)mobileOverviewToggle.addEventListener("click",toggleMobileOverview);
     var more=$("mobile-more");
     if(more)more.addEventListener("click",function(){
       var d=$("mobile-menu-dialog");
@@ -1101,6 +1133,8 @@
   window.addEventListener("error",recordRuntimeError);
   window.addEventListener("unhandledrejection",recordRuntimeError);
   loadState();
+  state.mobileOverviewExpanded=readMobileOverviewPreference();
+  applyMobileOverviewMode();
   bind();
   applyRuntimeMode();
   updateConnectivity();
