@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {createBackend} from "../backend/server.mjs";
 import {hashPassword,verifyPassword,issueSession,verifySession,sessionCookie,csrfCookie} from "../backend/src/security.mjs";
 import {selectExpert} from "../backend/src/expert-router.mjs";
-import {clientIp} from "../backend/src/http.mjs";
+import {clientIp,routeMatch} from "../backend/src/http.mjs";
 
 function config(overrides={}){
   return {
