@@ -3,7 +3,7 @@
 
   var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
   var CONFIG={serviceRate:0.80,payoutRate:0.46,expertCostPerMin:0.18,fixedCostPerCall:0.03};
-  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false};
+  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,system:null,route:null};
   var titles={overview:"Vue d’ensemble",calls:"Appels",finance:"Finance",experts:"Experts",carriers:"Opérateurs",system:"Système",settings:"Paramètres"};
   var experts=["Frederick","Sofia","Emma","Lina","Clara","Nora"];
   var carriers=["Orange","SFR","Bouygues","Free"];
@@ -182,13 +182,17 @@
       var results=await Promise.all([
         loadAllApiCalls(windowRange.from,windowRange.to),
         window.PGIApi.summary(range.from.toISOString(),range.to.toISOString()),
-        window.PGIApi.experts()
+        window.PGIApi.experts(),
+        window.PGIApi.systemHealth(),
+        window.PGIApi.carrierRouting()
       ]);
       allCalls=results[0].map(apiCallToUi).filter(function(x){return Number.isFinite(x.ts.getTime());}).sort(function(a,b){return b.ts-a.ts;});
       var expertRows=Array.isArray(results[2]&&results[2].data)?results[2].data:[];
       experts=expertRows.map(function(x){return x.display_name;}).filter(Boolean);
       var networkNames=Array.from(new Set(allCalls.map(function(x){return x.carrier;}).filter(Boolean)));
-      if(networkNames.length)carriers=networkNames;
+      carriers=networkNames;
+      state.system=results[3]||null;
+      state.route=results[4]||null;
       setProductionLive(results[1]||{});
       state.diagnostics.apiStatus="ok";
       render();
@@ -610,6 +614,16 @@
   }
 
   function renderHostCarrier(){
+    if(RUNTIME.mode==="production"&&state.route){
+      setText("host-sva-number","089 à attribuer");
+      setText("host-active-carrier",state.route.active_carrier||"Non configuré");
+      setText("host-standby-carrier",state.route.standby_carrier||"Aucun");
+      setText("host-route-generation",String(state.route.generation||1));
+      setText("host-portability",state.route.active_carrier?"Route active":"À contractualiser");
+      var connection=state.route.active_connection_state||"non configurée";
+      setText("host-switch-state",state.route.active_carrier?"Connexion "+connection:"Prêt architecturalement");
+      return;
+    }
     setText("host-sva-number","089 à attribuer");
     setText("host-active-carrier","Non configuré");
     setText("host-standby-carrier","Aucun");
@@ -712,8 +726,14 @@
     setText("runtime-errors",String(state.diagnostics.errors));
     setText("runtime-version",RUNTIME.version||"dev");
     setText("data-mode",RUNTIME.mode==="production"?"Production":"Démo");
-    setText("data-freshness",RUNTIME.mode==="production"?"En attente API":"Générée localement");
-    setText("cdr-errors","0");
+    if(RUNTIME.mode==="production"){
+      var lag=state.system&&Number.isFinite(Number(state.system.cdr_lag_seconds))?Number(state.system.cdr_lag_seconds):null;
+      setText("data-freshness",state.diagnostics.apiStatus==="ok"?(lag==null?"Synchronisée API":"CDR il y a "+fmtDuration(lag)):"En attente API");
+      setText("cdr-errors","—");
+    }else{
+      setText("data-freshness","Générée localement");
+      setText("cdr-errors","0");
+    }
   }
 
   function switchView(name){
