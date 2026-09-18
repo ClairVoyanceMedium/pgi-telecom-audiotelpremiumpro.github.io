@@ -671,7 +671,14 @@
   }
 
   function renderFinanceAnalytics(rows){
-    var m=currentAggregate(rows),max=Math.max(1,m.ca,m.expected,m.confirmed,m.paid,Math.max(0,m.margin));
+    var m=currentAggregate(rows);
+    if(m.mixedCurrency){
+      var mixedEl=$("finance-waterfall");
+      if(mixedEl)mixedEl.innerHTML='<p class="muted">Plusieurs devises sont présentes. Sélectionnez un marché/devise pour obtenir des totaux financiers comparables.</p>';
+      ["ratio-payout","ratio-confirmed","ratio-paid","ratio-margin"].forEach(function(id){setText(id,"—");});
+      return;
+    }
+    var max=Math.max(1,m.ca,m.expected,m.confirmed,m.paid,Math.max(0,m.margin));
     var stages=[
       ["CA service TTC",m.ca,"cyan"],
       ["Reversement attendu",m.expected,"purple"],
@@ -950,7 +957,8 @@
   }
 
   function renderChart(rows){
-    var svg=$("revenue-chart"),data=series(rows),w=760,h=250,p={l:42,r:14,t:18,b:28};
+    var svg=$("revenue-chart"),agg=currentAggregate(rows),data=series(rows),w=760,h=250,p={l:42,r:14,t:18,b:28};
+    if(agg.mixedCurrency){svg.innerHTML='<text x="380" y="125" text-anchor="middle" fill="#6d829a" font-size="12">Plusieurs devises : sélectionner un marché comparable</text>';return;}
     if(!data.length){svg.innerHTML='<text x="380" y="125" text-anchor="middle" fill="#6d829a" font-size="12">Aucune donnée sur cette période</text>';return;}
     var max=Math.max.apply(null,data.map(function(x){return x.ca;}));if(max<=0)max=1;
     var sx=function(i){return p.l+(data.length===1?0:(w-p.l-p.r)*i/(data.length-1));};
