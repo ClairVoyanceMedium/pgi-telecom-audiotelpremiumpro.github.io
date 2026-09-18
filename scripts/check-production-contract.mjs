@@ -9,6 +9,7 @@ const caddy=fs.readFileSync("infra/Caddyfile.production.example","utf8");
 const preflight=fs.readFileSync("scripts/preflight.sh","utf8");
 const deploy=fs.readFileSync(".github/workflows/deploy-production.yml","utf8");
 const backupScript=fs.readFileSync("scripts/backup-postgres.sh","utf8");
+const restoreDrill=fs.readFileSync("scripts/restore-drill.sh","utf8");
 const migrationRunner=fs.readFileSync("backend/migrate.mjs","utf8");
 const apiClient=fs.readFileSync("assets/api-client.js","utf8");
 const security=fs.readFileSync("backend/src/security.mjs","utf8");
@@ -42,6 +43,7 @@ if(!/npm run verify/.test(deploy))failures.push("production deploy must verify b
 if(/^\s{2}valkey:/m.test(compose))failures.push("default production stack must not start unused Valkey");
 if(!/pg_restore --list/.test(backupScript))failures.push("backup must validate dump readability with pg_restore");
 if(!/sha256sum --check/.test(backupScript))failures.push("backup must verify its checksum before success");
+if(!/pg_restore/.test(restoreDrill)||!/pgi_restore_drill_/.test(restoreDrill))failures.push("restore drill must restore into an isolated temporary database");
 if(!/migrate:\s*[\s\S]*command: \["node","backend\/migrate\.mjs"\]/.test(compose))failures.push("production stack must run the migration service");
 if(!/migrate:\s*\n\s*condition: service_completed_successfully/.test(compose))failures.push("production API must wait for successful migrations");
 if(!/schema_migrations/.test(migrationRunner)||!/checksum/.test(migrationRunner))failures.push("migration runner must keep a checksum ledger");
