@@ -553,7 +553,7 @@
   }
 
   function renderExecutive(rows){
-    var cur=aggregate(rows),prev=aggregate(previousPeriodRows()),q=qualityStats(rows);
+    var cur=currentAggregate(rows),prev=RUNTIME.mode==="production"&&state.previousSummary?summaryAggregate(state.previousSummary):aggregate(previousPeriodRows()),q=qualityStats(rows);
     var recScore=cur.expected>0?clamp(100-(cur.gap/cur.expected*100*5),0,100):100;
     var asrScore=cur.calls?clamp(cur.asr/90*100,0,100):0;
     var ops=cur.calls?Math.round(asrScore*.45+recScore*.30+q.score*.25):0;
@@ -635,9 +635,19 @@
   }
 
   function renderOverviewExpertRanking(rows){
+    var el=$("overview-expert-ranking"),analytics=cockpitAnalytics(rows);
+    if(RUNTIME.mode==="production"&&Array.isArray(analytics.experts)){
+      var data=analytics.experts.slice(0,4);
+      var max=data.length?Math.max.apply(null,data.map(function(x){return Number(x.expected_payout||x.calls_total||0);})):1;
+      if(el)el.innerHTML=data.map(function(x,i){
+        var value=Number(x.expected_payout||x.calls_total||0),width=max?value/max*100:0;
+        var asr=Number(x.calls_total)?Number(x.calls_connected||0)/Number(x.calls_total)*100:0;
+        return '<div class="ranking-item"><span class="rank-no">'+(i+1)+'</span><div class="rank-main"><div><strong>'+esc(x.dimension_label||"—")+'</strong><small>'+nfmt(Number(x.billable_seconds||0)/60)+' min • ASR '+nfmt(asr,1)+'%</small></div><i><b style="width:'+width.toFixed(1)+'%"></b></i></div><strong class="rank-value">'+(x.expected_payout==null?nfmt(x.calls_total)+" appels":money(x.expected_payout))+'</strong></div>';
+      }).join("")||'<p class="muted">Aucune donnée.</p>';
+      return;
+    }
     var data=expertMetrics(rows).sort(function(a,b){return b.m.expected-a.m.expected;}).slice(0,4);
     var max=data.length?Math.max.apply(null,data.map(function(x){return x.m.expected;})):1;
-    var el=$("overview-expert-ranking");
     if(el)el.innerHTML=data.map(function(x,i){
       var width=max?x.m.expected/max*100:0;
       return '<div class="ranking-item"><span class="rank-no">'+(i+1)+'</span><div class="rank-main"><div><strong>'+esc(x.name)+'</strong><small>'+nfmt(x.m.mins)+' min • ASR '+nfmt(x.m.asr,1)+'%</small></div><i><b style="width:'+width.toFixed(1)+'%"></b></i></div><strong class="rank-value">'+money(x.m.expected)+'</strong></div>';
@@ -645,23 +655,23 @@
   }
 
   function renderNetworkMix(rows){
-    var counts=carriers.map(function(name){return {name:name,count:rows.filter(function(x){return x.carrier===name;}).length};});
-    var total=rows.length||1,cum=0,stops=[],colors=["var(--cyan)","var(--purple)","var(--green)","var(--amber)"];
-    counts.forEach(function(x,i){
-      var from=cum/total*100;cum+=x.count;var to=cum/total*100;
-      stops.push(colors[i]+" "+from.toFixed(2)+"% "+to.toFixed(2)+"%");
-    });
-    var donut=$("network-donut");if(donut)donut.style.background="conic-gradient("+stops.join(",")+")";
-    setText("network-total",nfmt(rows.length));
+    var analytics=cockpitAnalytics(rows);
+    var counts=RUNTIME.mode==="production"&&Array.isArray(analytics.carriers)
+      ?analytics.carriers.slice(0,6).map(function(x){return {name:x.dimension_label||"Inconnu",count:Number(x.calls_total||0)};})
+      :carriers.map(function(name){return {name:name,count:rows.filter(function(x){return x.carrier===name;}).length};});
+    var actualTotal=counts.reduce(function(a,x){return a+x.count;},0),total=actualTotal||1,cum=0,stops=[],colors=["var(--cyan)","var(--purple)","var(--green)","var(--amber)","#4f9cff","#f472b6"];
+    counts.forEach(function(x,i){var from=cum/total*100;cum+=x.count;var to=cum/total*100;stops.push(colors[i%colors.length]+" "+from.toFixed(2)+"% "+to.toFixed(2)+"%");});
+    var donut=$("network-donut");if(donut)donut.style.background=stops.length?"conic-gradient("+stops.join(",")+")":"rgba(255,255,255,.03)";
+    setText("network-total",nfmt(actualTotal));
     var legend=$("network-legend");
     if(legend)legend.innerHTML=counts.map(function(x,i){
-      var pct=rows.length?x.count/rows.length*100:0;
-      return '<div><i style="--dot:'+colors[i]+'"></i><span>'+esc(x.name)+'</span><strong>'+nfmt(pct,1)+'%</strong></div>';
+      var pct=actualTotal?x.count/actualTotal*100:0;
+      return '<div><i style="--dot:'+colors[i%colors.length]+'"></i><span>'+esc(x.name)+'</span><strong>'+nfmt(pct,1)+'%</strong></div>';
     }).join("");
   }
 
   function renderFinanceAnalytics(rows){
-    var m=aggregate(rows),max=Math.max(1,m.ca,m.expected,m.confirmed,m.paid,Math.max(0,m.margin));
+    var m=currentAggregate(rows),max=Math.max(1,m.ca,m.expected,m.confirmed,m.paid,Math.max(0,m.margin));
     var stages=[
       ["CA service TTC",m.ca,"cyan"],
       ["Reversement attendu",m.expected,"purple"],
@@ -728,7 +738,7 @@
   }
 
   function renderNoc(rows){
-    var m=aggregate(rows),q=qualityStats(rows);
+    var m=currentAggregate(rows),q=qualityStats(rows);
     var backendState=RUNTIME.mode==="production"?(state.diagnostics.apiStatus==="ok"?"API OK":state.diagnostics.apiStatus==="error"?"API indisponible":"En attente"):(navigator.onLine?"Démo en ligne":"Démo hors ligne");
     setText("noc-availability",backendState);
     setText("noc-cdr-total",nfmt(RUNTIME.mode==="production"&&state.system?Number(state.system.calls_total||0):rows.length));
@@ -907,22 +917,36 @@
   }
 
   function series(rows){
+    var analytics=cockpitAnalytics(rows);
+    if(Array.isArray(analytics.series)&&analytics.series.length){
+      var exact=analytics.series.map(function(x){
+        return {
+          label:analyticsBucketLabel(x.bucket,analytics.granularity),
+          ca:Number(x.revenue||0),
+          payout:Number(x.expected_payout||0)
+        };
+      });
+      if(exact.length>24){
+        var exactStep=Math.ceil(exact.length/24),exactCompressed=[];
+        for(var ei=0;ei<exact.length;ei+=exactStep){
+          var exactGroup=exact.slice(ei,ei+exactStep);
+          exactCompressed.push({
+            label:exactGroup[exactGroup.length-1].label,
+            ca:exactGroup.reduce(function(a,x){return a+x.ca;},0),
+            payout:exactGroup.reduce(function(a,x){return a+x.payout;},0)
+          });
+        }
+        exact=exactCompressed;
+      }
+      return exact;
+    }
     var r=getRange(),map={};
     rows.slice().reverse().forEach(function(c){
       var k=bucketKey(c.ts,r);
       if(!map[k])map[k]={label:k,ca:0,payout:0};
       if(c.status==="connected"){map[k].ca+=Number(c.serviceAmountTtc||0);map[k].payout+=Number(c.expectedPayoutHt||0);}
     });
-    var vals=Object.keys(map).map(function(k){return map[k];});
-    if(vals.length>14){
-      var step=Math.ceil(vals.length/14),compressed=[];
-      for(var i=0;i<vals.length;i+=step){
-        var group=vals.slice(i,i+step);
-        compressed.push({label:group[group.length-1].label,ca:group.reduce(function(s,x){return s+x.ca;},0),payout:group.reduce(function(s,x){return s+x.payout;},0)});
-      }
-      vals=compressed;
-    }
-    return vals;
+    return Object.keys(map).map(function(k){return map[k];});
   }
 
   function renderChart(rows){
