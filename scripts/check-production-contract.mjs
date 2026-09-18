@@ -11,6 +11,7 @@ const deploy=fs.readFileSync(".github/workflows/deploy-production.yml","utf8");
 const backendDeploy=fs.readFileSync(".github/workflows/deploy-backend-production.yml","utf8");
 const backendRelease=fs.readFileSync("scripts/deploy-backend-release.sh","utf8");
 const backupScript=fs.readFileSync("scripts/backup-postgres.sh","utf8");
+const hostAudit=fs.readFileSync("scripts/host-audit.sh","utf8");
 const restoreDrill=fs.readFileSync("scripts/restore-drill.sh","utf8");
 const migrationRunner=fs.readFileSync("backend/migrate.mjs","utf8");
 const migrationSafety=fs.readFileSync("scripts/check-migrations.mjs","utf8");
@@ -49,6 +50,10 @@ if(/^\s{2}valkey:/m.test(compose))failures.push("default production stack must n
 if(!/pg_restore --list/.test(backupScript))failures.push("backup must validate dump readability with pg_restore");
 if(!/sha256sum --check/.test(backupScript))failures.push("backup must verify its checksum before success");
 if(!/PGI_BACKUP_KEEP_COUNT/.test(backupScript)||!/Backup pruned/.test(backupScript))failures.push("backup tooling must enforce bounded retention");
+if(!/api\/v1\/ready/.test(hostAudit)||!/pgi_cdr_lag_seconds/.test(hostAudit))failures.push("host audit must verify readiness and CDR freshness");
+if(!/PGI_MAX_BACKUP_AGE_HOURS/.test(hostAudit)||!/sha256sum --check/.test(hostAudit))failures.push("host audit must verify backup age and checksum");
+if(!/PGI_MIN_FREE_DISK_GB/.test(hostAudit)||!/pgi_outbox_pending/.test(hostAudit))failures.push("host audit must verify disk and outbox health");
+if(!/PGI_REQUIRE_RELEASE_ALIGNMENT/.test(hostAudit)||!/front\/backend release mismatch/.test(hostAudit))failures.push("host audit must detect front/backend release drift");
 if(!/pg_restore/.test(restoreDrill)||!/pgi_restore_drill_/.test(restoreDrill))failures.push("restore drill must restore into an isolated temporary database");
 if(!/migrate:\s*[\s\S]*command: \["node","backend\/migrate\.mjs"\]/.test(compose))failures.push("production stack must run the migration service");
 if(!/migrate:\s*\n\s*condition: service_completed_successfully/.test(compose))failures.push("production API must wait for successful migrations");
