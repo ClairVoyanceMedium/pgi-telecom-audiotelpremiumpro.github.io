@@ -1,0 +1,29 @@
+# PGI Telecom • Audiotel Premium Pro
+# Modèle de variables — ne contient aucun secret réel.
+
+PGI_ENV=production
+PGI_TIMEZONE=UTC
+PGI_PUBLIC_APP_URL=https://example.invalid
+PGI_API_URL=https://api.example.invalid
+
+POSTGRES_DB=pgi_telecom
+POSTGRES_USER=pgi_telecom
+POSTGRES_HOST=127.0.0.1
+POSTGRES_PORT=5432
+# POSTGRES_PASSWORD doit être injecté par le gestionnaire de secrets.
+
+VALKEY_HOST=127.0.0.1
+VALKEY_PORT=6379
+
+# À renseigner uniquement après contractualisation opérateur.
+SVA_NUMBER=
+SVA_TARIFF_CODE=D080
+SVA_HOST_CARRIER=
+SIP_PRIMARY_HOST=
+SIP_SECONDARY_HOST=
+SIP_TRANSPORT=
+SIP_PORT=
+RTP_PORT_MIN=
+RTP_PORT_MAX=
+
+# Les secrets SIP ne doivent jamais être écrits dans ce fichier versionné.
