@@ -74,7 +74,7 @@ export class PostgresStore{
     const rows=await this.sql.unsafe(
       "SELECT c.id,c.external_call_id,c.started_at,c.ivr_started_at,c.queued_at,c.bridged_at,c.ended_at,"+
       " ca.caller_masked,oc.name AS origin_carrier,hc.name AS host_carrier,sn.display_number AS sva_number,"+
-      " e.id AS expert_id,e.display_name AS expert_name,c.wait_seconds,c.conversation_seconds,c.total_seconds,"+
+      " c.currency,m.country_code AS market,e.id AS expert_id,e.display_name AS expert_name,c.wait_seconds,c.conversation_seconds,c.total_seconds,"+
       " c.billable_seconds,c.payout_eligible_seconds,c.call_status,c.sip_final_code,c.hangup_cause,c.codec,"+
       " c.service_rate_ttc_per_min::float8,c.carrier_rate_ht_per_min::float8,c.retail_service_amount_ttc::float8,"+
       " c.expected_payout_ht::float8,COALESCE(c.confirmed_payout_ht,0)::float8 AS confirmed_payout_ht,"+
@@ -83,6 +83,7 @@ export class PostgresStore{
       " q.jitter_ms::float8,q.latency_ms::float8,q.mos::float8"+
       " FROM calls c LEFT JOIN callers ca ON ca.id=c.caller_id LEFT JOIN carriers oc ON oc.id=c.origin_carrier_id"+
       " LEFT JOIN carriers hc ON hc.id=c.host_carrier_id LEFT JOIN sva_numbers sn ON sn.id=c.sva_number_id"+
+      " LEFT JOIN operating_markets m ON m.id=c.market_id"+
       " LEFT JOIN experts e ON e.id=c.expert_id LEFT JOIN call_quality q ON q.call_id=c.id"+
       " WHERE ($1::timestamptz IS NULL OR c.started_at >= $1::timestamptz)"+
       " AND ($2::timestamptz IS NULL OR c.started_at <= $2::timestamptz)"+
@@ -137,7 +138,10 @@ export class PostgresStore{
       let tenantId=null;
       if(svaNumber){
         const svaRows=await tx.unsafe(
-          "SELECT id,tenant_id FROM sva_numbers WHERE (e164=$1 OR display_number=$1) AND status IN ('active','porting') LIMIT 1",
+          "SELECT sn.id,sn.tenant_id,sn.market_id FROM sva_numbers sn"+
+          " LEFT JOIN sva_number_aliases a ON a.sva_number_id=sn.id AND a.enabled"+
+          " WHERE (sn.e164=$1 OR sn.display_number=$1 OR a.alias=$1) AND sn.status IN ('active','porting')"+
+          " ORDER BY CASE WHEN sn.e164=$1 THEN 0 WHEN sn.display_number=$1 THEN 1 ELSE 2 END LIMIT 1",
           [svaNumber]
         );
         const sva=svaRows[0];
