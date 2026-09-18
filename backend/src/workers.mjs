@@ -77,18 +77,33 @@ export function startWorkers({store,eventBus,config,queueHandlers={}}){
           config.workQueueLeaseSeconds||60
         );
         for(const item of work){
+          const leaseSeconds=config.workQueueLeaseSeconds||60;
+          const heartbeat=()=>typeof store.extendWorkLease==="function"
+            ?store.extendWorkLease(item.id,ownerId,leaseSeconds)
+            :Promise.resolve(null);
+          const heartbeatTimer=typeof store.extendWorkLease==="function"
+            ?setInterval(()=>{Promise.resolve(heartbeat()).catch(()=>{});},Math.max(5000,Math.floor(leaseSeconds*1000/3)))
+            :null;
+          heartbeatTimer?.unref?.();
           try{
-            await handler(item,{store,eventBus,config,ownerId});
+            await handler(item,{store,eventBus,config,ownerId,heartbeat});
             await store.completeWork(item.id,ownerId);
             stats.queueProcessed++;
           }catch(error){
-            const result=await store.failWork(
-              item.id,ownerId,error?.message||"queue handler failed",
-              config.workQueueRetryBaseSeconds||15
-            );
+            let result=null;
+            try{
+              result=await store.failWork(
+                item.id,ownerId,error?.message||"queue handler failed",
+                config.workQueueRetryBaseSeconds||15
+              );
+            }catch(leaseError){
+              if(leaseError?.code!=="WORK_LEASE_LOST")throw leaseError;
+            }
             if(result?.state==="dead_lettered")stats.queueDeadLetters++;
             stats.queueErrors++;
             stats.lastQueueErrorAt=new Date().toISOString();
+          }finally{
+            if(heartbeatTimer)clearInterval(heartbeatTimer);
           }
         }
       }
