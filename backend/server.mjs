@@ -62,7 +62,7 @@ export function createBackend(options={}){
 
       if(method==="GET"&&pathname==="/api/v1/health"){
         return done(res,metrics,started,"health",200,{
-          status:"ok",timestamp:new Date().toISOString(),version:config.version,mode:config.mode
+          status:"ok",timestamp:new Date().toISOString(),version:config.version,release:config.releaseId||null,mode:config.mode
         });
       }
       if(method==="GET"&&pathname==="/api/v1/ready"){
@@ -539,7 +539,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   process.on("SIGTERM",()=>shutdown("SIGTERM"));
   process.on("SIGINT",()=>shutdown("SIGINT"));
   app.listen().then(address=>{
-    process.stdout.write(JSON.stringify({level:"info",event:"listening",address,mode:app.config.mode,version:app.config.version})+"\n");
+    process.stdout.write(JSON.stringify({level:"info",event:"listening",address,mode:app.config.mode,version:app.config.version,release:app.config.releaseId||null})+"\n");
   }).catch(error=>{
     process.stderr.write(JSON.stringify({level:"error",event:"startup_failed",message:error.message})+"\n");
     process.exit(1);
