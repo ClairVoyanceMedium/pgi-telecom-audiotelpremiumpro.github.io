@@ -246,3 +246,17 @@ dialog::backdrop{background:rgba(0,0,0,.7);backdrop-filter:blur(5px)}
 @media (max-width:390px){
   .kpi-grid,.finance-kpis{grid-template-columns:1fr}
 }
+
+.skip-link{
+  position:absolute;left:12px;top:10px;z-index:100;transform:translateY(-150%);
+  padding:9px 12px;border-radius:10px;background:#e7fbff;color:#06111b;font-size:12px;font-weight:800;
+}
+.skip-link:focus{transform:translateY(0)}
+.offline-banner{
+  margin:-8px 0 18px;padding:10px 12px;border:1px solid rgba(245,158,11,.24);border-radius:12px;
+  background:rgba(245,158,11,.08);color:#f8c66d;font-size:10px;line-height:1.45;
+}
+.pill.offline{border-color:rgba(245,158,11,.24);color:#f8c66d;background:rgba(245,158,11,.07)}
+.pill.production{border-color:rgba(34,211,165,.24);color:#87efd0;background:rgba(34,211,165,.07)}
+.dot.offline{background:var(--amber);box-shadow:0 0 10px rgba(245,158,11,.35)}
+[hidden]{display:none!important}
