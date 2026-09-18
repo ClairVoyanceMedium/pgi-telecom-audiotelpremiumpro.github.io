@@ -26,6 +26,7 @@ const wholesaleComplianceMigration=fs.readFileSync("database/migrations/003_whol
 const hyperscaleMigration=fs.readFileSync("database/migrations/005_hyperscale_foundation.sql","utf8");
 const identityEntitlementsMigration=fs.readFileSync("database/migrations/006_hyperscale_identity_entitlements.sql","utf8");
 const externalIdentityMigration=fs.readFileSync("database/migrations/007_external_customer_identity.sql","utf8");
+const tenantDirectoryMigration=fs.readFileSync("database/migrations/008_scalable_tenant_directory.sql","utf8");
 const hyperscaleDoc=fs.readFileSync("docs/HYPERSCALE.md","utf8");
 const scaleHpa=fs.readFileSync("infra/scale/api-hpa.example.yaml","utf8");
 const postgresStore=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
@@ -106,6 +107,8 @@ if(!/CREATE TABLE data_clusters/.test(hyperscaleMigration)||!/CREATE TABLE routi
 if(!/CREATE TABLE call_facts/.test(hyperscaleMigration)||!/PARTITION BY HASH/.test(hyperscaleMigration)||!/CREATE TABLE worker_leases/.test(hyperscaleMigration)||!/CREATE TABLE work_queue/.test(hyperscaleMigration))failures.push("hyperscale migration must preserve partitioned facts and durable worker coordination");
 if(!/CREATE TABLE service_plans/.test(identityEntitlementsMigration)||!/CREATE TABLE tenant_subscriptions/.test(identityEntitlementsMigration)||!/CREATE TABLE tenant_quota_policies/.test(identityEntitlementsMigration))failures.push("hyperscale customer foundation must preserve plans, subscriptions and quotas");
 if(!/CREATE TABLE customer_principals/.test(externalIdentityMigration)||!/CREATE TABLE customer_tenant_memberships/.test(externalIdentityMigration))failures.push("external customer identities must remain isolated from PGI staff users");
+if(!/tenants_slug_prefix_idx/.test(tenantDirectoryMigration)||!/tenants_display_name_prefix_idx/.test(tenantDirectoryMigration)||!/tenants_directory_cursor_idx/.test(tenantDirectoryMigration))failures.push("tenant directory must stay prefix-indexed and cursor-ready");
+if(!/\/api\/v1\/platform\/tenants/.test(backendServer)||!/listTenants/.test(postgresStore))failures.push("backend must expose a scalable tenant directory");
 if(!/4096 tenant buckets/.test(hyperscaleDoc)||!/Control plane et data plane/.test(hyperscaleDoc))failures.push("hyperscale runbook must document bucket routing and plane separation");
 if(!/autoscaling\/v2/.test(scaleHpa)||!/maxReplicas: 100/.test(scaleHpa))failures.push("hyperscale API example must retain horizontal autoscaling");
 
