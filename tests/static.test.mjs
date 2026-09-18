@@ -141,3 +141,9 @@ test("le centre de lancement SVA mobile est verrouillé", () => {
   assert.match(app, /Activer le trunk SIP et la route/);
   assert.match(css, /PGI 1\.10 — SVA Launch Center/);
 });
+
+
+test("le nom produit est visible dans l’en-tête mobile", () => {
+  assert.match(index, /class="product-name">PGI • Telecom - Audiotel Premium Pro/);
+  assert.match(css, /Product identity in responsive header/);
+});
