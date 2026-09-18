@@ -6,6 +6,11 @@ const migration=fs.readFileSync("database/migrations/005_hyperscale_foundation.s
 const identityEntitlements=fs.readFileSync("database/migrations/006_hyperscale_identity_entitlements.sql","utf8");
 const externalIdentity=fs.readFileSync("database/migrations/007_external_customer_identity.sql","utf8");
 const tenantDirectoryMigration=fs.readFileSync("database/migrations/008_scalable_tenant_directory.sql","utf8");
+const tenantBoundaryMigration=fs.readFileSync("database/migrations/011_tenant_sql_access_boundary.sql","utf8");
+const resilientQueueMigration=fs.readFileSync("database/migrations/012_resilient_work_queue.sql","utf8");
+const multiRegionMigration=fs.readFileSync("database/migrations/013_multi_region_dr_foundation.sql","utf8");
+const resilienceDocs=fs.readFileSync("docs/RESILIENCE.md","utf8");
+const alertRules=fs.readFileSync("infra/observability/prometheus-alerts.example.yml","utf8");
 const schema=fs.readFileSync("database/schema.sql","utf8");
 const store=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
 const server=fs.readFileSync("backend/server.mjs","utf8");
@@ -55,7 +60,7 @@ test("une réplique de lecture peut être ajoutée sans changer le métier",()=>
   assert.ok(store.includes("read_replica_enabled"));
 });
 
-test("le schéma neuf et le cockpit exposent la fondation 1.13",()=>{
+test("le schéma neuf et le cockpit exposent la fondation 1.14",()=>{
   assert.ok(schema.includes("005_hyperscale_foundation"));
   assert.ok(schema.includes("8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69"));
   assert.ok(index.includes('id="wh-scale-buckets"'));
@@ -90,4 +95,42 @@ test("l'annuaire client reste indexé et paginé à grande échelle",()=>{
   assert.ok(store.includes("async listTenants(params={})"));
   assert.ok(store.includes("decodeNumericCursor"));
   assert.ok(server.includes("/api/v1/platform/tenants"));
+});
+
+
+test("la frontière SQL tenant est transactionnelle et security-barrier",()=>{
+  assert.ok(tenantBoundaryMigration.includes("pgi_current_tenant_id"));
+  assert.ok(tenantBoundaryMigration.includes("security_barrier=true"));
+  assert.ok(tenantBoundaryMigration.includes("tenant_scoped_call_facts"));
+  assert.ok(store.includes("set_config('pgi.tenant_id'"));
+  assert.ok(store.includes("async withTenantContext("));
+});
+
+test("la work queue possède lease retry exponentiel et dead-letter",()=>{
+  assert.ok(resilientQueueMigration.includes("lease_expires_at"));
+  assert.ok(resilientQueueMigration.includes("work_queue_dead_letters"));
+  assert.ok(store.includes("async claimWork("));
+  assert.ok(store.includes("async completeWork("));
+  assert.ok(store.includes("async failWork("));
+  assert.ok(workers.includes("queueHandlers"));
+  assert.ok(workers.includes("queueDeadLetters"));
+});
+
+test("le plan multi-région formalise résidence RPO RTO et exercices",()=>{
+  assert.ok(multiRegionMigration.includes("CREATE TABLE platform_regions"));
+  assert.ok(multiRegionMigration.includes("CREATE TABLE tenant_residency_policies"));
+  assert.ok(multiRegionMigration.includes("CREATE TABLE disaster_recovery_targets"));
+  assert.ok(multiRegionMigration.includes("CREATE TABLE disaster_recovery_drills"));
+  assert.ok(multiRegionMigration.includes("CREATE TABLE region_failover_events"));
+  assert.ok(resilienceDocs.includes("RPO"));
+  assert.ok(resilienceDocs.includes("RTO"));
+});
+
+test("les SLO sont mesurables et alertables",()=>{
+  assert.ok(server.includes("pgi_http_request_duration_ms_bucket"));
+  assert.ok(server.includes("pgi_work_queue_dead_lettered"));
+  assert.ok(server.includes("traceparent"));
+  assert.ok(alertRules.includes("PGIApiFastErrorBudgetBurn"));
+  assert.ok(alertRules.includes("PGIApiLatencyP95High"));
+  assert.ok(alertRules.includes("PGIWorkQueueDeadLetter"));
 });
