@@ -347,6 +347,23 @@
     </form>
   </dialog>
 
+  <dialog id="auth-dialog" class="auth-dialog">
+    <form id="auth-form" class="dialog-card auth-card" autocomplete="on">
+      <div class="auth-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+      <p class="panel-kicker">ACCÈS PRODUCTION</p>
+      <h2>Connexion PGI Telecom</h2>
+      <p id="auth-message">Identifiez-vous pour accéder aux données de production.</p>
+      <label class="auth-field">Identifiant
+        <input id="auth-username" name="username" type="text" autocomplete="username" required maxlength="120">
+      </label>
+      <label class="auth-field">Mot de passe
+        <input id="auth-password" name="password" type="password" autocomplete="current-password" required maxlength="256">
+      </label>
+      <button id="auth-submit" class="secondary-btn auth-submit" type="submit">Se connecter</button>
+      <small class="auth-note">Session sécurisée, cookie HttpOnly et protection CSRF.</small>
+    </form>
+  </dialog>
+
   <dialog id="reset-dialog">
     <form method="dialog" class="dialog-card">
       <span class="warning-icon">!</span><h2>Nouvelle baseline ?</h2>
