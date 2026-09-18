@@ -60,6 +60,30 @@ Chaque requête production écrit un log JSON minimal avec `request_id`, route l
 
 Le front et l’API exposent la version ainsi que le SHA Git exact. Après chaque déploiement, ces deux valeurs doivent correspondre au commit attendu.
 
+## Audit hôte 24/7
+
+Le script `scripts/host-audit.sh` réalise un contrôle local complet sans exposer de nouvel endpoint Internet :
+
+- symlinks de releases front/backend et alignement des SHA Git ;
+- identité de release réellement annoncée par le front et l’API ;
+- `/health` et `/ready` ;
+- métriques locales : outbox, retard CDR et experts disponibles ;
+- état des conteneurs PostgreSQL/API ;
+- espace disque libre ;
+- présence, âge et checksum de la dernière sauvegarde PostgreSQL.
+
+Seuils par défaut :
+
+- sauvegarde : maximum 30 h ;
+- espace libre : minimum 5 GiB ;
+- retard CDR en phase opérateur : maximum 900 s ;
+- outbox : maximum 100 événements ;
+- alignement SHA front/backend : obligatoire.
+
+Les exemples `infra/systemd/pgi-host-audit.service.example` et `infra/systemd/pgi-host-audit.timer.example` exécutent cet audit toutes les cinq minutes. Les chemins de référence sont `/srv/pgi-backend`, `/srv/pgi-dashboard` et `/etc/pgi-telecom/production.env`. Si d’autres chemins sont retenus lors de l’installation du serveur, adapter l’unité avant activation.
+
+L’audit écrit uniquement dans le journal systemd. Aucun service de monitoring supplémentaire n’est requis pour ce contrôle local.
+
 ## Alertes production à prévoir
 
 - trunk SIP indisponible ;
