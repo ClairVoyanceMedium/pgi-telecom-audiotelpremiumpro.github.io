@@ -297,3 +297,7 @@ dialog::backdrop{background:rgba(0,0,0,.7);backdrop-filter:blur(5px)}
   .panel *, .kpi *{color:#000!important}
   table{min-width:0}th,td{color:#000;border-color:#ddd}
 }
+
+.secondary-btn:disabled,.danger-btn:disabled,.icon-btn:disabled{
+  opacity:.45;cursor:not-allowed;filter:saturate(.4)
+}
