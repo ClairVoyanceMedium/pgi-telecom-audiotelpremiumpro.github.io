@@ -48,13 +48,14 @@ atomic_link(){
 
 wait_ready(){
   local expected="$1"
+  local expected_release="$2"
   local attempt health
   for attempt in $(seq 1 45); do
     if curl --fail --silent --show-error --max-time 4 "http://127.0.0.1:8080/api/v1/ready" >/dev/null 2>&1; then
       health="$(curl --fail --silent --show-error --max-time 4 "http://127.0.0.1:8080/api/v1/health" 2>/dev/null || true)"
       if printf '%s' "$health" | grep -F "\"version\":\"$expected\"" >/dev/null \
-        && printf '%s' "$health" | grep -F "\"release\":\"$release\"" >/dev/null; then
-        echo "READY version $expected release $release"
+        && printf '%s' "$health" | grep -F "\"release\":\"$expected_release\"" >/dev/null; then
+        echo "READY version $expected release $expected_release"
         return 0
       fi
     fi
@@ -81,21 +82,22 @@ backup_and_drill(){
 }
 
 rollback_previous(){
-  local old_target old_dir old_version old_compose
+  local old_target old_dir old_version old_release old_compose
   [ -L "$current" ] || return 1
   old_target="$(readlink "$current")"
   old_dir="$base/$old_target"
   [ -s "$old_dir/package.json" ] || return 1
   old_version="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$old_dir/package.json" | head -n1)"
+  old_release="${old_target#releases/}"
   [ -n "$old_version" ] || return 1
   old_compose="$old_dir/infra/docker-compose.production.yml"
   [ -s "$old_compose" ] || return 1
 
   echo "ROLLBACK backend to $old_version"
-  PGI_VERSION="$old_version" docker compose --env-file "$env_file" -f "$old_compose" \
+  PGI_VERSION="$old_version" PGI_RELEASE_ID="$old_release" docker compose --env-file "$env_file" -f "$old_compose" \
     up -d --build --remove-orphans
 
-  if ! wait_ready "$old_version"; then
+  if ! wait_ready "$old_version" "$old_release"; then
     echo "ROLLBACK FAILED: previous backend did not become ready" >&2
     return 1
   fi
@@ -140,7 +142,7 @@ case "$action" in
       exit 1
     fi
 
-    if ! wait_ready "$version"; then
+    if ! wait_ready "$version" "$release"; then
       echo "New backend failed readiness." >&2
       rollback_previous || true
       exit 1
@@ -155,7 +157,7 @@ case "$action" in
     ;;
 
   verify)
-    wait_ready "$version"
+    wait_ready "$version" "$release"
     ;;
 
   *)
