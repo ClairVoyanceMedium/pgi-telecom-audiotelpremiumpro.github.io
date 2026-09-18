@@ -3,7 +3,7 @@
 
   var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
   var CONFIG={serviceRate:0.80,payoutRate:0.46,expertCostPerMin:0.18,fixedCostPerCall:0.03};
-  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,pendingSyncMode:"dashboard",hiddenAt:null,appBootstrapCache:null,appBootstrapAt:0,lastSyncAt:null,activeView:"overview",commandIndex:0,system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
+  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,pendingSyncMode:"dashboard",hiddenAt:null,lastSyncAt:null,activeView:"overview",commandIndex:0,system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
   var titles={overview:"Cockpit",calls:"Appels",finance:"Finance",experts:"Experts",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Supervision",settings:"Paramètres"};
   var experts=["Frederick","Sofia","Emma","Lina","Clara","Nora"];
   var carriers=["Orange","SFR","Bouygues","Free"];
@@ -86,36 +86,6 @@
 
   var allCalls=RUNTIME.mode==="production"?[]:buildDemoCalls();
 
-  function apiCallToUi(c){
-    var q=c.quality||{};
-    var ts=new Date(c.started_at);
-    var ivr=c.ivr_started_at?new Date(c.ivr_started_at):new Date(ts.getTime()+2000);
-    var queued=c.queued_at?new Date(c.queued_at):ivr;
-    var bridged=c.bridged_at?new Date(c.bridged_at):null;
-    var ended=c.ended_at?new Date(c.ended_at):new Date(ts.getTime()+Number(c.total_seconds||0)*1000);
-    var billableSeconds=Number(c.billable_seconds||0);
-    var payoutEligibleSeconds=Number(c.payout_eligible_seconds||0);
-    return {
-      id:c.id,ts:ts,ivrStarted:ivr,queued:queued,bridged:bridged,ended:ended,
-      caller:c.caller_masked||"—",carrier:c.origin_carrier||"Inconnu",number:c.sva_number||"—",
-      market:c.market||"FR",currency:c.currency||"EUR",
-      expert:c.expert_name||"Non attribué",expertId:c.expert_id||null,
-      wait:Number(c.wait_seconds||0),conversation:Number(c.conversation_seconds||0),total:Number(c.total_seconds||0),
-      billable:billableSeconds/60,originType:c.origin_type||"unknown",payoutEligible:payoutEligibleSeconds/60,
-      expected:Number(c.expected_payout_ht||0),confirmed:c.confirmed_payout_ht==null?0:Number(c.confirmed_payout_ht||0),
-      paid:Number(c.paid_payout_ht||0),status:c.call_status||"failed",
-      billableSeconds:billableSeconds,payoutEligibleSeconds:payoutEligibleSeconds,
-      expectedPayoutHt:Number(c.expected_payout_ht||0),confirmedPayoutHt:c.confirmed_payout_ht==null?0:Number(c.confirmed_payout_ht||0),
-      paidPayoutHt:Number(c.paid_payout_ht||0),expertCost:Number(c.expert_cost_ht||0),cost:Number(c.technical_cost_ht||0),
-      expertCostHt:Number(c.expert_cost_ht||0),technicalCostHt:Number(c.technical_cost_ht||0),
-      serviceAmount:Number(c.retail_service_amount_ttc||0),serviceAmountTtc:Number(c.retail_service_amount_ttc||0),
-      serviceRate:Number(c.service_rate_ttc_per_min||0),carrierRate:Number(c.carrier_rate_ht_per_min||0),
-      variance:Number(c.reconciliation_variance_ht||0),sipFinalCode:Number(c.sip_final_code||0),
-      hangupCause:c.hangup_cause||"—",codec:c.codec||"—",
-      packetLoss:Number(q.packet_loss_percent||0),jitter:Number(q.jitter_ms||0),latency:Number(q.latency_ms||0),mos:Number(q.mos||0)
-    };
-  }
-
   function productionDataRange(){
     return getRange();
   }
@@ -126,21 +96,6 @@
     var duration=Math.max(1,effectiveTo-range.from);
     var to=new Date(range.from.getTime()-1);
     return {from:new Date(to.getTime()-duration),to:to};
-  }
-
-  async function loadAllApiCalls(from,to,market,maxPages){
-    var data=[],cursor=null,pages=0;
-    maxPages=Math.max(1,Math.min(4,Number(maxPages)||4));
-    do{
-      var params={from:from.toISOString(),to:to.toISOString(),limit:"250"};
-      if(market)params.market=market;
-      if(cursor)params.cursor=cursor;
-      var page=await window.PGIApi.calls(params);
-      data=data.concat(Array.isArray(page.data)?page.data:[]);
-      cursor=page.next_cursor||null;
-      pages++;
-    }while(cursor&&pages<maxPages);
-    return {data:data,truncated:!!cursor};
   }
 
   function setProductionLive(summary){
@@ -258,65 +213,13 @@
         es.addEventListener(name,function(){scheduleProductionSync("dashboard");});
       });
       es.addEventListener("baseline.created",function(){
-        state.appBootstrapAt=0;
+        window.PGIDataClient.invalidateAppBootstrap();
         scheduleProductionSync("full");
       });
       es.onerror=function(){
         if(es.readyState===EventSource.CLOSED){state.eventSource=null;}
       };
     }catch(e){recordRuntimeError();}
-  }
-
-  async function loadAppBootstrap(force){
-    if(!force&&state.appBootstrapCache&&(Date.now()-state.appBootstrapAt)<60000){
-      return state.appBootstrapCache;
-    }
-    var result=null;
-    if(window.PGIApi&&typeof window.PGIApi.appBootstrap==="function"){
-      try{result=await window.PGIApi.appBootstrap();}catch(e){
-        if(e&&e.status!==404&&e.status!==405)throw e;
-      }
-    }
-    if(!result){
-      var legacy=await Promise.all([
-        window.PGIApi.me(),
-        window.PGIApi.baselines({scope:"global",limit:"20"}),
-        window.PGIApi.wholesaleOverview().catch(function(){return null;})
-      ]);
-      result={user:legacy[0]&&legacy[0].user?legacy[0].user:null,baselines:legacy[1],wholesale:legacy[2]};
-    }
-    state.appBootstrapCache=result;
-    state.appBootstrapAt=Date.now();
-    return result;
-  }
-
-  async function loadDashboardBootstrap(range,prevRange,market){
-    if(window.PGIApi&&typeof window.PGIApi.dashboardBootstrap==="function"){
-      try{
-        return await window.PGIApi.dashboardBootstrap(
-          range.from.toISOString(),range.to.toISOString(),market,
-          prevRange?prevRange.from.toISOString():null,
-          prevRange?prevRange.to.toISOString():null
-        );
-      }catch(e){
-        if(e&&e.status!==404&&e.status!==405)throw e;
-      }
-    }
-    var parts=await Promise.all([
-      window.PGIApi.summary(range.from.toISOString(),range.to.toISOString(),market),
-      prevRange
-        ?window.PGIApi.summary(prevRange.from.toISOString(),prevRange.to.toISOString(),market)
-        :Promise.resolve(null),
-      window.PGIApi.analytics(range.from.toISOString(),range.to.toISOString(),market).catch(function(){return null;}),
-      window.PGIApi.experts(),
-      window.PGIApi.systemHealth(),
-      window.PGIApi.carrierRouting(),
-      window.PGIApi.reconciliation(range.from.toISOString(),range.to.toISOString(),market)
-    ]);
-    return {
-      summary:parts[0],previous_summary:parts[1],analytics:parts[2],
-      experts:parts[3],system:parts[4],route:parts[5],reconciliation:parts[6]
-    };
   }
 
   async function syncProductionData(options){
@@ -337,7 +240,7 @@
     var refresh=$("refresh-btn"),syncStarted=performance.now();
     if(refresh)refresh.disabled=true;
     try{
-      var appBootstrap=await loadAppBootstrap(!!options.forceMeta);
+      var appBootstrap=await window.PGIDataClient.loadAppBootstrap(window.PGIApi,!!options.forceMeta);
       state.authUser=appBootstrap&&appBootstrap.user?appBootstrap.user:null;
       closeLogin();
       var logout=$("logout-btn");if(logout)logout.hidden=false;
@@ -351,14 +254,14 @@
       var range=getRange(),windowRange=productionDataRange(),prevRange=comparisonRange(range);
       var callsPromise=mode==="dashboard"
         ?Promise.resolve(null)
-        :loadAllApiCalls(windowRange.from,windowRange.to,state.market,mode==="incremental"?1:4);
+        :window.PGIDataClient.loadCalls(window.PGIApi,windowRange.from,windowRange.to,state.market,mode==="incremental"?1:4);
       var payloads=await Promise.all([
         callsPromise,
-        loadDashboardBootstrap(range,prevRange,state.market)
+        window.PGIDataClient.loadDashboardBootstrap(window.PGIApi,range,prevRange,state.market)
       ]);
       var sample=payloads[0],dashboard=payloads[1]||{};
       if(sample){
-        var incoming=(Array.isArray(sample.data)?sample.data:[]).map(apiCallToUi)
+        var incoming=(Array.isArray(sample.data)?sample.data:[]).map(window.PGIDataClient.mapCall)
           .filter(function(x){return Number.isFinite(x.ts.getTime());});
         if(mode==="incremental"){
           var merged=new Map();
@@ -396,8 +299,7 @@
       startProductionEvents();
     }catch(e){
       if(e&&e.status===401){
-        state.appBootstrapCache=null;
-        state.appBootstrapAt=0;
+        window.PGIDataClient.invalidateAppBootstrap();
         requireProductionLogin("Session expirée. Identifiez-vous de nouveau.");
       }else{
         state.diagnostics.apiStatus="error";
