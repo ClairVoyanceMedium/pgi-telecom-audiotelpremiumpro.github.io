@@ -95,7 +95,7 @@
           <div class="activation-top">
             <div>
               <p class="panel-kicker">CENTRE DE LANCEMENT SVA</p>
-              <h2 id="activation-title">Préparation du lancement 089</h2>
+              <h2 id="activation-title">Préparation du lancement SVA</h2>
               <p id="activation-detail">PGI vérifie automatiquement les prérequis opérateur, numérotation, SIP et conformité.</p>
             </div>
             <div class="activation-score">
@@ -368,7 +368,7 @@
           <div>
             <p class="panel-kicker">PLATEFORME MULTI-ÉDITEURS</p>
             <h2>Wholesale SVA Control</h2>
-            <p>Clients, affectations 089, KYC, opérateur attributaire et reversements réunis dans une vue de contrôle dédiée.</p>
+            <p>Clients, marchés, numérotation internationale, KYC, opérateurs et reversements multi-devises réunis dans une vue de contrôle dédiée.</p>
           </div>
           <div class="wholesale-hero-state">
             <span>Fondation</span>
@@ -377,9 +377,16 @@
           </div>
         </section>
 
+        <section class="international-readiness" aria-label="Préparation internationale">
+          <div><span>Marchés configurés</span><strong id="wh-markets-total">0</strong><small id="wh-markets-active">0 actifs</small></div>
+          <div><span>Devises de règlement</span><strong id="wh-currency-count">0</strong><small id="wh-currency-list">Aucune</small></div>
+          <div><span>Numérotation</span><strong>E.164</strong><small>Référence canonique</small></div>
+          <div><span>Langues & fuseaux</span><strong>BCP 47 / IANA</strong><small>Par client et par marché</small></div>
+        </section>
+
         <section class="kpi-grid wholesale-kpis">
           <article class="kpi emphasis"><div class="kpi-head"><span>Éditeurs clients</span><span class="mini-tag cyan">TENANTS</span></div><strong id="wh-tenants-total">0</strong><small id="wh-tenants-active">0 actifs</small></article>
-          <article class="kpi"><div class="kpi-head"><span>Numéros affectés</span><span class="mini-tag violet">089</span></div><strong id="wh-numbers-total">0</strong><small><span id="wh-numbers-active">0 actifs</span> • <span id="wh-numbers-stock">0 libres</span></small></article>
+          <article class="kpi"><div class="kpi-head"><span>Numéros affectés</span><span class="mini-tag violet">NUMÉROS</span></div><strong id="wh-numbers-total">0</strong><small><span id="wh-numbers-active">0 actifs</span> • <span id="wh-numbers-stock">0 libres</span></small></article>
           <article class="kpi"><div class="kpi-head"><span>KYC vérifiés</span><span class="mini-tag green">KYC</span></div><strong id="wh-kyc-verified">0</strong><small id="wh-kyc-pending">0 en attente</small></article>
           <article class="kpi"><div class="kpi-head"><span>Reversements clients</span><span class="mini-tag cyan">NET</span></div><strong id="wh-net-payout">0,00 €</strong><small id="wh-platform-fees">Frais plateforme : 0,00 €</small></article>
         </section>
@@ -405,17 +412,17 @@
 
         <section class="panel">
           <div class="panel-head"><div><p class="panel-kicker">CLIENTS</p><h2>Éditeurs / tenants</h2></div><span class="counter" id="wh-tenant-count">0</span></div>
-          <div class="table-wrap wide"><table><thead><tr><th>Éditeur</th><th>Type</th><th>Pays</th><th>Statut</th><th>KYC</th><th>Numéros</th><th>Experts</th></tr></thead><tbody id="wh-tenants-table"></tbody></table></div>
+          <div class="table-wrap wide"><table><thead><tr><th>Éditeur</th><th>Type</th><th>Siège</th><th>Marchés</th><th>Langue</th><th>Devise</th><th>Statut</th><th>KYC</th><th>Numéros</th><th>Experts</th></tr></thead><tbody id="wh-tenants-table"></tbody></table></div>
         </section>
 
         <section class="panel">
           <div class="panel-head"><div><p class="panel-kicker">NUMÉROTATION</p><h2>Affectations SVA</h2></div><span class="counter" id="wh-number-count">0</span></div>
-          <div class="table-wrap wide"><table><thead><tr><th>Éditeur</th><th>Numéro</th><th>Tarif</th><th>Affectation</th><th>Statut</th><th>KYC</th><th>Opérateur attributaire</th></tr></thead><tbody id="wh-numbers-table"></tbody></table></div>
+          <div class="table-wrap wide"><table><thead><tr><th>Éditeur</th><th>Marché</th><th>Numéro</th><th>Type</th><th>Devise</th><th>Tarif</th><th>Affectation</th><th>Statut</th><th>KYC</th><th>Opérateur attributaire</th></tr></thead><tbody id="wh-numbers-table"></tbody></table></div>
         </section>
 
         <section class="panel">
           <div class="panel-head"><div><p class="panel-kicker">REVERSEMENTS</p><h2>Règlements par éditeur</h2></div><span class="counter" id="wh-settlement-count">0</span></div>
-          <div class="table-wrap wide"><table><thead><tr><th>Éditeur</th><th>Période</th><th>Amont</th><th>Frais plateforme</th><th>Net client</th><th>Statut</th></tr></thead><tbody id="wh-settlements-table"></tbody></table></div>
+          <div class="table-wrap wide"><table><thead><tr><th>Éditeur</th><th>Marché</th><th>Devise</th><th>Période</th><th>Amont</th><th>Frais plateforme</th><th>Net client</th><th>Statut</th></tr></thead><tbody id="wh-settlements-table"></tbody></table></div>
         </section>
       </div>
 
