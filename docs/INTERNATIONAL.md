@@ -106,3 +106,9 @@ L’activation d’un nouveau marché doit rester bloquée tant que les points l
 9. Passer le marché et ses dépendances à `active` uniquement après validation.
 
 Cette procédure évite toute duplication d’application. L’ajout d’un pays consiste principalement à ajouter de la configuration, des contrats et des connecteurs.
+
+## Cockpit par marché
+
+L’API de synthèse, la liste des appels et la réconciliation acceptent un marché opérationnel. Le front sélectionne automatiquement la France tant qu’elle est le seul marché actif.
+
+Lorsque plusieurs marchés passent au statut `active`, un sélecteur apparaît dans le cockpit. Le choix est mémorisé localement et les appels/KPI opérationnels sont chargés uniquement pour le marché sélectionné, ce qui empêche les agrégations transfrontalières involontaires.
