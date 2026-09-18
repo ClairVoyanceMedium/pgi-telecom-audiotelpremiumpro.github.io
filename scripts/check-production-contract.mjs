@@ -18,6 +18,11 @@ const restoreDrill=fs.readFileSync("scripts/restore-drill.sh","utf8");
 const migrationRunner=fs.readFileSync("backend/migrate.mjs","utf8");
 const migrationSafety=fs.readFileSync("scripts/check-migrations.mjs","utf8");
 const apiClient=fs.readFileSync("assets/api-client.js","utf8");
+const dataClient=fs.readFileSync("assets/data-client.js","utf8");
+const commandPalette=fs.readFileSync("assets/command-palette.js","utf8");
+const workspace=fs.readFileSync("assets/workspace.js","utf8");
+const appSource=fs.readFileSync("assets/app.js","utf8");
+const serviceWorker=fs.readFileSync("service-worker.js","utf8");
 const buildStatic=fs.readFileSync("scripts/build-static.mjs","utf8");
 const security=fs.readFileSync("backend/src/security.mjs","utf8");
 const staticRelease=fs.readFileSync("scripts/static-release.sh","utf8");
@@ -132,6 +137,17 @@ if(!/object_assets/.test(objectLifecycleMigration)||!/data_retention_policies/.t
 if(!/dashboard_dimension_rollups_daily/.test(dashboardDimensionMigration)||!/dimension_type/.test(dashboardDimensionMigration)||!/duration/.test(dashboardDimensionMigration))failures.push("dashboard analytics must retain bounded dimension rollups");
 if(!/\/api\/v1\/dashboard\/analytics/.test(backendServer)||!/dashboardAnalytics/.test(postgresStore))failures.push("backend must expose scalable dashboard analytics");
 if(!/analytics:function/.test(apiClient))failures.push("frontend API client must expose dashboard analytics");
+if(!/\/api\/v1\/app\/bootstrap/.test(backendServer)||!/\/api\/v1\/dashboard\/bootstrap/.test(backendServer))failures.push("dashboard startup must retain consolidated bootstrap endpoints");
+if(!/appBootstrap:function/.test(apiClient)||!/dashboardBootstrap:function/.test(apiClient))failures.push("frontend API client must retain bootstrap methods");
+if(!/loadAppBootstrap/.test(dataClient)||!/loadDashboardBootstrap/.test(dataClient)||!/appBootstrapCache/.test(dataClient))failures.push("data client must retain bootstrap fallback and metadata cache");
+if(!/maxPages=Math\.max\(1,Math\.min\(4/.test(dataClient))failures.push("CDR browser loading must remain hard-bounded");
+if(!/scheduleProductionSync\("incremental"\)/.test(appSource)||!/mode==="dashboard"/.test(appSource)||!/document\.hidden/.test(appSource))failures.push("realtime sync must remain incremental and visibility-aware");
+if(!/function renderActiveView/.test(appSource)||!/renderActiveView\(rows\)/.test(appSource))failures.push("dashboard must render only the active workspace");
+if(!/pgi:command/.test(commandPalette)||!/ctrlKey\|\|e\.metaKey/.test(commandPalette))failures.push("universal command palette must retain keyboard access");
+if(!/pgi_ui_preferences/.test(workspace)||!/pgi_operating_market/.test(workspace))failures.push("workspace preferences must remain persistent");
+for(const file of ["assets/demo-data.js","assets/data-client.js","assets/command-palette.js","assets/workspace.js"]){
+  if(!serviceWorker.includes(file))failures.push("PWA shell missing "+file);
+}
 if(!/quality_rollups_hourly_sharded/.test(qualityRollupMigration)||!/mos_sum/.test(qualityRollupMigration)||!/packet_loss_sum/.test(qualityRollupMigration))failures.push("quality analytics must retain bounded RTP rollups");
 if(!/writeQualityRollup/.test(postgresStore)||!/quality:quality\[0\]/.test(postgresStore))failures.push("backend must write and expose scalable voice-quality aggregates");
 for(const name of ["PGI_WORK_QUEUE_BATCH_SIZE","PGI_WORK_QUEUE_LEASE_SECONDS","PGI_WORK_QUEUE_RETRY_BASE_SECONDS","PGI_WORK_QUEUE_POLL_MS"]){
