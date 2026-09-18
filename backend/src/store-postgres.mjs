@@ -136,7 +136,7 @@ export class PostgresStore{
       " AND ($3::text IS NULL OR f.market_id=b.market_id)"+
       ") ";
 
-    const [series,hours,weekdays,heatmap,dimensions]=await Promise.all([
+    const [series,hours,weekdays,heatmap,quality,dimensions]=await Promise.all([
       this.readSql.unsafe(
         baseCte+
         "SELECT date_trunc($4::text,ts) AS bucket,min(currency) AS currency,count(DISTINCT currency)::int AS currency_count,"+
@@ -171,6 +171,32 @@ export class PostgresStore{
         [from,to,market||null]
       ),
       this.readSql.unsafe(
+        "WITH bounds AS ("+
+        " SELECT $1::timestamptz AS from_ts,$2::timestamptz AS to_ts,"+
+        " CASE WHEN $1::timestamptz=date_trunc('hour',$1::timestamptz) THEN $1::timestamptz"+
+        " ELSE date_trunc('hour',$1::timestamptz)+interval '1 hour' END AS full_from,"+
+        " date_trunc('hour',$2::timestamptz) AS full_to,"+
+        " (SELECT id FROM operating_markets WHERE country_code=$3) AS market_id"+
+        "), qbase AS ("+
+        " SELECT r.quality_samples,r.mos_sum,r.packet_loss_sum,r.jitter_ms_sum,r.latency_ms_sum,r.dtmf_errors"+
+        " FROM quality_rollups_hourly_sharded r CROSS JOIN bounds b"+
+        " WHERE b.full_to>b.full_from AND r.bucket_start>=b.full_from AND r.bucket_start<b.full_to"+
+        " AND ($3::text IS NULL OR r.market_id=b.market_id)"+
+        " UNION ALL"+
+        " SELECT 1::bigint,COALESCE(q.mos,0),COALESCE(q.rtp_packet_loss_percent,0),COALESCE(q.jitter_ms,0),COALESCE(q.latency_ms,0),COALESCE(q.dtmf_errors,0)::bigint"+
+        " FROM calls c JOIN call_quality q ON q.call_id=c.id CROSS JOIN bounds b"+
+        " WHERE c.started_at>=b.from_ts AND c.started_at<=b.to_ts"+
+        " AND NOT (b.full_to>b.full_from AND c.started_at>=b.full_from AND c.started_at<b.full_to)"+
+        " AND ($3::text IS NULL OR c.market_id=b.market_id)"+
+        ") SELECT COALESCE(sum(quality_samples),0)::bigint AS samples,"+
+        " CASE WHEN sum(quality_samples)>0 THEN (sum(mos_sum)/sum(quality_samples))::float8 ELSE NULL END AS mos,"+
+        " CASE WHEN sum(quality_samples)>0 THEN (sum(packet_loss_sum)/sum(quality_samples))::float8 ELSE NULL END AS packet_loss_percent,"+
+        " CASE WHEN sum(quality_samples)>0 THEN (sum(jitter_ms_sum)/sum(quality_samples))::float8 ELSE NULL END AS jitter_ms,"+
+        " CASE WHEN sum(quality_samples)>0 THEN (sum(latency_ms_sum)/sum(quality_samples))::float8 ELSE NULL END AS latency_ms,"+
+        " COALESCE(sum(dtmf_errors),0)::bigint AS dtmf_errors FROM qbase",
+        [from,to,market||null]
+      ),
+      this.readSql.unsafe(
         "SELECT d.dimension_type,d.dimension_key,max(d.dimension_label) AS dimension_label,"+
         " sum(d.calls_total)::bigint AS calls_total,sum(d.calls_connected)::bigint AS calls_connected,"+
         " sum(d.conversation_seconds)::bigint AS conversation_seconds,sum(d.billable_seconds)::bigint AS billable_seconds,"+
@@ -193,6 +219,7 @@ export class PostgresStore{
       hours,
       weekdays,
       heatmap,
+      quality:quality[0]||{samples:0,mos:null,packet_loss_percent:null,jitter_ms:null,latency_ms:null,dtmf_errors:0},
       experts:byType.expert.slice(0,12),
       carriers:byType.carrier.slice(0,12),
       durations:byType.duration
@@ -489,6 +516,7 @@ export class PostgresStore{
           "INSERT INTO call_quality(call_id,rtp_packet_loss_percent,jitter_ms,latency_ms,mos,dtmf_errors) VALUES($1,$2,$3,$4,$5,$6)",
           [call.id,nullableNumber(p.quality.packet_loss_percent),nullableNumber(p.quality.jitter_ms),nullableNumber(p.quality.latency_ms),nullableNumber(p.quality.mos),Number(p.quality.dtmf_errors||0)]
         );
+        await writeQualityRollup(tx,call.id);
       }
       if(financial.expectedPayoutHt!==0)await ledger(tx,call.id,sva.tenant_id,sva.market_id,sva.currency,"expected",financial.expectedPayoutHt,envelope);
       if(confirmed!=null&&confirmed!==0)await ledger(tx,call.id,sva.tenant_id,sva.market_id,sva.currency,"confirmed",confirmed,envelope);
@@ -1223,6 +1251,25 @@ export class PostgresStore{
     ]);
     return {...calls[0],...outbox[0],event_subscribers:this.eventBus.size};
   }
+}
+
+async function writeQualityRollup(tx,callId){
+  await tx.unsafe(
+    "INSERT INTO quality_rollups_hourly_sharded("+
+    " bucket_start,market_id,rollup_shard,quality_samples,mos_sum,packet_loss_sum,jitter_ms_sum,latency_ms_sum,dtmf_errors)"+
+    " SELECT date_trunc('hour',c.started_at),c.market_id,(c.tenant_bucket%64)::smallint,1,"+
+    " COALESCE(q.mos,0),COALESCE(q.rtp_packet_loss_percent,0),COALESCE(q.jitter_ms,0),COALESCE(q.latency_ms,0),COALESCE(q.dtmf_errors,0)"+
+    " FROM calls c JOIN call_quality q ON q.call_id=c.id"+
+    " WHERE c.id=$1 AND c.market_id IS NOT NULL"+
+    " ON CONFLICT(bucket_start,market_id,rollup_shard) DO UPDATE SET"+
+    " quality_samples=quality_rollups_hourly_sharded.quality_samples+1,"+
+    " mos_sum=quality_rollups_hourly_sharded.mos_sum+EXCLUDED.mos_sum,"+
+    " packet_loss_sum=quality_rollups_hourly_sharded.packet_loss_sum+EXCLUDED.packet_loss_sum,"+
+    " jitter_ms_sum=quality_rollups_hourly_sharded.jitter_ms_sum+EXCLUDED.jitter_ms_sum,"+
+    " latency_ms_sum=quality_rollups_hourly_sharded.latency_ms_sum+EXCLUDED.latency_ms_sum,"+
+    " dtmf_errors=quality_rollups_hourly_sharded.dtmf_errors+EXCLUDED.dtmf_errors,updated_at=now()",
+    [callId]
+  );
 }
 
 async function writeDashboardDimensionRollups(tx,callId){
