@@ -197,6 +197,12 @@ export function createBackend(options={}){
         return done(res,metrics,started,"carrier.switch.rollback",200,{...result.value,replayed:result.replayed});
       }
 
+      if(method==="GET"&&pathname==="/api/v1/metrics/baselines"){
+        requireRole(actor,["admin","finance","readonly"]);
+        const params={scope:url.searchParams.get("scope")||"global",limit:url.searchParams.get("limit")||20};
+        return done(res,metrics,started,"baseline.list",200,{data:await store.listBaselines(params)});
+      }
+
       if(method==="POST"&&pathname==="/api/v1/metrics/baselines"){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
         const body=await readJson(req,config.bodyLimitBytes);
