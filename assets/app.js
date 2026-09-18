@@ -530,12 +530,33 @@
     setText("expert-team-minutes",nfmt(aggregate(rows).mins));
   }
 
+  function cdrPipelineState(){
+    if(RUNTIME.mode!=="production")return {label:"MODE DÉMO",overview:"DÉMO LOCALE",className:"warn"};
+    if(state.diagnostics.apiStatus!=="ok")return {label:"API INDISPONIBLE",overview:"INDISPONIBLE",className:"warn"};
+    if(!state.system)return {label:"EN ATTENTE",overview:"EN ATTENTE",className:"warn"};
+    var total=Number(state.system.calls_total||0);
+    if(total<=0)return {label:"AUCUN CDR REÇU",overview:"AUCUN CDR",className:"warn"};
+    var lag=Number(state.system.cdr_lag_seconds);
+    if(Number.isFinite(lag)&&lag>3600)return {label:"DERNIER CDR ANCIEN",overview:"CDR ANCIEN",className:"warn"};
+    return {label:"CDR REÇUS",overview:"ACTIF",className:"ok"};
+  }
+
+  function renderSystemState(){
+    var pipeline=cdrPipelineState();
+    var cdrState=$("cdr-state");
+    if(cdrState){cdrState.textContent=pipeline.label;cdrState.className="big-status "+pipeline.className;}
+    var overviewCdr=$("overview-cdr-state");
+    if(overviewCdr){overviewCdr.textContent=pipeline.overview;overviewCdr.className="health "+pipeline.className;}
+  }
+
   function renderNoc(rows){
     var m=aggregate(rows),q=qualityStats(rows);
-    setText("noc-availability",navigator.onLine?"En ligne":"Hors ligne");
-    setText("noc-cdr-total",nfmt(rows.length));
+    var backendState=RUNTIME.mode==="production"?(state.diagnostics.apiStatus==="ok"?"API OK":state.diagnostics.apiStatus==="error"?"API indisponible":"En attente"):(navigator.onLine?"Démo en ligne":"Démo hors ligne");
+    setText("noc-availability",backendState);
+    setText("noc-cdr-total",nfmt(RUNTIME.mode==="production"&&state.system?Number(state.system.calls_total||0):rows.length));
     setText("noc-fin-alerts",m.gap>.01?"1":"0");
     setText("noc-voice-grade",q.grade);
+    renderSystemState();
   }
 
   function renderCalls(rows){
@@ -836,6 +857,7 @@
       if(el){el.textContent="API NON CONNECTÉE";el.className="big-status warn";}
       var overviewApi=$("overview-api-state");
       if(overviewApi){overviewApi.textContent="NON CONNECTÉE";overviewApi.className="health warn";}
+      renderSystemState();
       return;
     }
     try{
@@ -844,13 +866,13 @@
       if(el){el.textContent="API OPÉRATIONNELLE";el.className="big-status ok";}
       var overviewApi=$("overview-api-state");
       if(overviewApi){overviewApi.textContent="OPÉRATIONNELLE";overviewApi.className="health ok";}
-      var overviewCdr=$("overview-cdr-state");
-      if(overviewCdr){overviewCdr.textContent="CONNECTÉ";overviewCdr.className="health ok";}
+      renderSystemState();
     }catch(e){
       state.diagnostics.apiStatus="error";
       if(el){el.textContent="API INDISPONIBLE";el.className="big-status warn";}
       var overviewApi=$("overview-api-state");
       if(overviewApi){overviewApi.textContent="INDISPONIBLE";overviewApi.className="health warn";}
+      renderSystemState();
     }
   }
 
