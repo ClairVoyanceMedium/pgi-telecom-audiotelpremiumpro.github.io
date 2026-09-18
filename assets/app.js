@@ -272,7 +272,7 @@
         prevRange
           ?window.PGIApi.summary(prevRange.from.toISOString(),prevRange.to.toISOString(),state.market)
           :Promise.resolve(null),
-        window.PGIApi.analytics(range.from.toISOString(),range.to.toISOString(),state.market),
+        window.PGIApi.analytics(range.from.toISOString(),range.to.toISOString(),state.market).catch(function(){return null;}),
         window.PGIApi.experts(),
         window.PGIApi.systemHealth(),
         window.PGIApi.carrierRouting()
