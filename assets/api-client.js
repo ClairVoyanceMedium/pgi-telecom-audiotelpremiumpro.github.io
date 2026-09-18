@@ -1,33 +1,73 @@
 (function(root){
   "use strict";
+
   function timeoutSignal(ms){
     if(typeof AbortSignal!=="undefined"&&typeof AbortSignal.timeout==="function")return AbortSignal.timeout(ms);
     var controller=new AbortController();
     setTimeout(function(){controller.abort();},ms);
     return controller.signal;
   }
-  async function request(path,options){
-    options=options||{};
+
+  function baseUrl(){
     var cfg=root.PGI_CONFIG||{};
     if(!cfg.apiBaseUrl)throw new Error("API_NOT_CONFIGURED");
-    var base=String(cfg.apiBaseUrl).replace(/\/$/,"");
-    var response=await fetch(base+path,{
-      method:options.method||"GET",
+    return String(cfg.apiBaseUrl).replace(/\/$/,"");
+  }
+
+  function cookie(name){
+    var prefix=encodeURIComponent(name)+"=";
+    var parts=String(document.cookie||"").split(";");
+    for(var i=0;i<parts.length;i++){
+      var item=parts[i].trim();
+      if(item.indexOf(prefix)===0){
+        try{return decodeURIComponent(item.slice(prefix.length));}
+        catch(_e){return item.slice(prefix.length);}
+      }
+    }
+    return "";
+  }
+
+  async function request(path,options){
+    options=options||{};
+    var method=(options.method||"GET").toUpperCase();
+    var headers=Object.assign(
+      {"Accept":"application/json"},
+      options.body?{"Content-Type":"application/json"}:{},
+      options.headers||{}
+    );
+    if(!["GET","HEAD","OPTIONS"].includes(method)){
+      var csrf=cookie("pgi_csrf");
+      if(csrf)headers["X-CSRF-Token"]=csrf;
+    }
+
+    var response=await fetch(baseUrl()+path,{
+      method:method,
       credentials:"include",
       cache:"no-store",
-      headers:Object.assign({"Accept":"application/json"},options.body?{"Content-Type":"application/json"}:{},options.headers||{}),
+      headers:headers,
       body:options.body?JSON.stringify(options.body):undefined,
       signal:timeoutSignal(options.timeoutMs||8000)
     });
+
+    var type=response.headers.get("content-type")||"";
+    var payload=null;
+    if(type.includes("application/json")){
+      try{payload=await response.json();}catch(_e){}
+    }
+
     if(!response.ok){
-      var error=new Error("API_HTTP_"+response.status);
+      var code=payload&&payload.error&&payload.error.code?payload.error.code:"API_HTTP_"+response.status;
+      var error=new Error(code);
       error.status=response.status;
+      error.code=code;
+      error.payload=payload;
       throw error;
     }
-    var type=response.headers.get("content-type")||"";
+
     if(!type.includes("application/json"))throw new Error("API_INVALID_CONTENT_TYPE");
-    return response.json();
+    return payload;
   }
+
   function newIdempotencyKey(){
     if(root.crypto&&typeof root.crypto.randomUUID==="function")return root.crypto.randomUUID();
     if(root.crypto&&typeof root.crypto.getRandomValues==="function"){
@@ -39,13 +79,26 @@
     throw new Error("SECURE_RANDOM_UNAVAILABLE");
   }
 
+  function events(){
+    return new EventSource(baseUrl()+"/events",{withCredentials:true});
+  }
+
   root.PGIApi=Object.freeze({
     health:function(){return request("/health",{timeoutMs:4000});},
+    ready:function(){return request("/ready",{timeoutMs:4000});},
+    me:function(){return request("/auth/me",{timeoutMs:4000});},
+    login:function(username,password){return request("/auth/login",{method:"POST",body:{username:username,password:password},timeoutMs:8000});},
+    logout:function(){return request("/auth/logout",{method:"POST",body:{}});},
     summary:function(from,to){return request("/dashboard/summary?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to));},
     calls:function(params){
       var q=new URLSearchParams(params||{}).toString();
       return request("/calls"+(q?"?"+q:""));
     },
+    experts:function(){return request("/experts");},
+    reconciliation:function(from,to){return request("/finance/reconciliation?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to));},
+    systemHealth:function(){return request("/system/health");},
+    carrierRouting:function(){return request("/carrier-routing");},
+    events:events,
     newIdempotencyKey:newIdempotencyKey,
     createBaseline:function(payload,idempotencyKey){
       if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");
