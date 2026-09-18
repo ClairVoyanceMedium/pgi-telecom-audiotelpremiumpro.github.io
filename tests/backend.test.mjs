@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {createBackend,evaluateReadiness} from "../backend/server.mjs";
+import {createBackend,evaluateReadiness,resolveTelephonyRoutingContext} from "../backend/server.mjs";
 import {loadConfig} from "../backend/src/config.mjs";
 import {hashPassword,verifyPassword,issueSession,verifySession,sessionCookie,csrfCookie} from "../backend/src/security.mjs";
 import {selectExpert} from "../backend/src/expert-router.mjs";
@@ -173,6 +173,28 @@ test("expert compensation engine supports all declared modes",()=>{
   assert.equal(computeExpertCost({type:"fixed",rate:2.5,billableSeconds:600,expectedPayoutHt:5}),2.5);
   assert.equal(computeExpertCost({type:"none",rate:99,billableSeconds:600,expectedPayoutHt:5}),0);
   assert.throws(()=>computeExpertCost({type:"percentage",rate:120,billableSeconds:600,expectedPayoutHt:5}),/percentage/);
+});
+
+
+
+test("production telephony routing requires an SVA context",()=>{
+  const production={mode:"production"};
+  assert.throws(
+    ()=>resolveTelephonyRoutingContext(new URL("https://local/api/v1/internal/routing/next-expert"),production),
+    error=>error.status===400&&error.code==="SVA_ROUTING_CONTEXT_REQUIRED"
+  );
+  assert.throws(
+    ()=>resolveTelephonyRoutingContext(new URL("https://local/api/v1/internal/routing/next-expert?sva_number=0890%3Cscript%3E"),production),
+    error=>error.status===400&&error.code==="INVALID_SVA_ROUTING_CONTEXT"
+  );
+  assert.deepEqual(
+    resolveTelephonyRoutingContext(new URL("https://local/api/v1/internal/routing/next-expert?sva_number=0890123456"),production),
+    {svaNumber:"0890123456"}
+  );
+  assert.deepEqual(
+    resolveTelephonyRoutingContext(new URL("https://local/api/v1/internal/routing/next-expert"),{mode:"simulator"}),
+    {svaNumber:null}
+  );
 });
 
 test("readiness requires production database and fresh critical workers",()=>{
