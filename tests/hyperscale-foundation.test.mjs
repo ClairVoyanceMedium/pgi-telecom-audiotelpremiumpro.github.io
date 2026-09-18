@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 const migration=fs.readFileSync("database/migrations/005_hyperscale_foundation.sql","utf8");
+const identityEntitlements=fs.readFileSync("database/migrations/006_hyperscale_identity_entitlements.sql","utf8");
+const externalIdentity=fs.readFileSync("database/migrations/007_external_customer_identity.sql","utf8");
 const schema=fs.readFileSync("database/schema.sql","utf8");
 const store=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
 const server=fs.readFileSync("backend/server.mjs","utf8");
@@ -58,4 +60,23 @@ test("le schéma neuf et le cockpit exposent la fondation 1.13",()=>{
   assert.ok(index.includes('id="wh-scale-buckets"'));
   assert.ok(app.includes("call_fact_partitions"));
   assert.ok(docs.includes("4096 buckets"));
+});
+
+
+test("les identités clients externes sont isolées du staff PGI",()=>{
+  assert.ok(identityEntitlements.includes("CREATE TABLE identity_providers"));
+  assert.ok(identityEntitlements.includes("CREATE TABLE service_accounts"));
+  assert.ok(externalIdentity.includes("CREATE TABLE customer_principals"));
+  assert.ok(externalIdentity.includes("CREATE TABLE customer_tenant_memberships"));
+  assert.ok(externalIdentity.includes("authorization_version"));
+  assert.ok(!externalIdentity.includes("REFERENCES app_users(id) ON DELETE CASCADE"));
+});
+
+test("les plans et quotas sont configurables sans code métier",()=>{
+  assert.ok(identityEntitlements.includes("CREATE TABLE service_plans"));
+  assert.ok(identityEntitlements.includes("CREATE TABLE plan_entitlements"));
+  assert.ok(identityEntitlements.includes("CREATE TABLE tenant_subscriptions"));
+  assert.ok(identityEntitlements.includes("CREATE TABLE tenant_quota_policies"));
+  assert.ok(identityEntitlements.includes("CREATE TABLE tenant_usage_counters"));
+  assert.ok(identityEntitlements.includes("PARTITION BY HASH (tenant_bucket)"));
 });
