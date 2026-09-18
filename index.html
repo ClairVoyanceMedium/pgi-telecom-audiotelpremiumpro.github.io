@@ -53,6 +53,7 @@
           <span class="pill demo" id="runtime-mode">MODE DÉMO</span>
           <span class="pill" id="network-state"><i class="dot ok"></i><span>En ligne</span></span>
           <span class="pill"><i class="dot offline"></i>SIP non connecté</span>
+          <button class="secondary-btn command-palette-btn" id="command-palette-btn" type="button" aria-haspopup="dialog" aria-controls="command-palette-dialog"><span>Actions</span><kbd>Ctrl K</kbd></button>
           <button class="secondary-btn session-btn" id="logout-btn" type="button" hidden>Déconnexion</button>
           <button class="icon-btn" id="refresh-btn" type="button" aria-label="Actualiser">↻</button>
         </div>
@@ -542,6 +543,8 @@
     </main>
   </div>
 
+  <button id="quick-actions-fab" class="quick-actions-fab" type="button" aria-label="Ouvrir les actions rapides" aria-controls="command-palette-dialog">⌕</button>
+
   <nav class="mobile-nav" aria-label="Navigation mobile">
     <button class="active" data-view="overview"><span>⌂</span><small>Cockpit</small></button>
     <button data-view="calls"><span>◫</span><small>Appels</small></button>
@@ -565,6 +568,25 @@
         <button value="cancel" data-view="settings"><span>⚙</span><strong>Paramètres</strong><small>Baseline, audit, configuration</small></button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="command-palette-dialog" class="command-palette-dialog">
+    <div class="command-palette-card">
+      <div class="command-palette-head">
+        <div><p class="panel-kicker">ACCÈS RAPIDE</p><h2>Actions PGI</h2></div>
+        <button class="icon-btn" id="command-palette-close" type="button" aria-label="Fermer">×</button>
+      </div>
+      <label class="command-search-label">
+        <span>Rechercher</span>
+        <input id="command-search" type="search" autocomplete="off" placeholder="Finance, appels, mois, actualiser…">
+      </label>
+      <div id="command-results" class="command-results" role="listbox" aria-label="Actions disponibles"></div>
+      <div class="command-palette-foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> naviguer</span>
+        <span><kbd>Entrée</kbd> ouvrir</span>
+        <span><kbd>Échap</kbd> fermer</span>
+      </div>
+    </div>
   </dialog>
 
   <dialog id="call-dialog">
