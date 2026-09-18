@@ -502,6 +502,8 @@ export class PostgresStore{
         [matchJson,settlement.status==="paid"]
       );
 
+      await refreshHourlyRollupsForCalls(tx,matchJson);
+
       await tx.unsafe(
         "INSERT INTO financial_ledger(market_id,call_id,settlement_id,event_type,amount_ht,currency,source_reference,source_hash,reason,created_by,metadata)"+
         " SELECT c.market_id,x.call_id,$1,'confirmed',x.amount,c.currency,$2,$3,'carrier settlement import',$4,$5::jsonb"+
@@ -586,6 +588,8 @@ export class PostgresStore{
         " WHERE f.tenant_bucket=x.tenant_bucket AND f.call_id=x.call_id",
         [matchJson]
       );
+
+      await refreshHourlyRollupsForCalls(tx,matchJson);
       await tx.unsafe(
         "INSERT INTO financial_ledger(market_id,call_id,settlement_id,event_type,amount_ht,currency,reason,created_by,metadata)"+
         " SELECT c.market_id,x.call_id,$1,'paid',x.amount,c.currency,'carrier settlement marked paid',$2,$3::jsonb"+
@@ -982,6 +986,90 @@ export class PostgresStore{
     ]);
     return {...calls[0],...outbox[0],event_subscribers:this.eventBus.size};
   }
+}
+
+async function writeHourlyRollup(tx,callId){
+  await tx.unsafe(
+    "INSERT INTO platform_rollups_hourly_sharded("+
+    " bucket_start,market_id,currency,rollup_shard,calls_total,calls_connected,calls_abandoned,calls_failed,"+
+    " conversation_seconds,billable_seconds,payout_eligible_seconds,generated_revenue_ttc,expected_payout_ht,"+
+    " confirmed_payout_ht,paid_payout_ht,expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht)"+
+    " SELECT date_trunc('hour',f.started_at),f.market_id,f.currency,(f.tenant_bucket%64)::smallint,1,"+
+    " (f.call_status='connected')::int,(f.call_status='abandoned')::int,"+
+    " (f.call_status NOT IN ('connected','abandoned'))::int,f.conversation_seconds,f.billable_seconds,"+
+    " f.payout_eligible_seconds,f.retail_service_amount_ttc,f.expected_payout_ht,f.confirmed_payout_ht,f.paid_payout_ht,"+
+    " f.expert_cost_ht,f.technical_cost_ht,f.estimated_margin_ht,f.reconciliation_variance_ht"+
+    " FROM call_facts f WHERE f.call_id=$1 AND f.market_id IS NOT NULL"+
+    " ON CONFLICT(bucket_start,market_id,currency,rollup_shard) DO UPDATE SET"+
+    " calls_total=platform_rollups_hourly_sharded.calls_total+EXCLUDED.calls_total,"+
+    " calls_connected=platform_rollups_hourly_sharded.calls_connected+EXCLUDED.calls_connected,"+
+    " calls_abandoned=platform_rollups_hourly_sharded.calls_abandoned+EXCLUDED.calls_abandoned,"+
+    " calls_failed=platform_rollups_hourly_sharded.calls_failed+EXCLUDED.calls_failed,"+
+    " conversation_seconds=platform_rollups_hourly_sharded.conversation_seconds+EXCLUDED.conversation_seconds,"+
+    " billable_seconds=platform_rollups_hourly_sharded.billable_seconds+EXCLUDED.billable_seconds,"+
+    " payout_eligible_seconds=platform_rollups_hourly_sharded.payout_eligible_seconds+EXCLUDED.payout_eligible_seconds,"+
+    " generated_revenue_ttc=platform_rollups_hourly_sharded.generated_revenue_ttc+EXCLUDED.generated_revenue_ttc,"+
+    " expected_payout_ht=platform_rollups_hourly_sharded.expected_payout_ht+EXCLUDED.expected_payout_ht,"+
+    " confirmed_payout_ht=platform_rollups_hourly_sharded.confirmed_payout_ht+EXCLUDED.confirmed_payout_ht,"+
+    " paid_payout_ht=platform_rollups_hourly_sharded.paid_payout_ht+EXCLUDED.paid_payout_ht,"+
+    " expert_cost_ht=platform_rollups_hourly_sharded.expert_cost_ht+EXCLUDED.expert_cost_ht,"+
+    " technical_cost_ht=platform_rollups_hourly_sharded.technical_cost_ht+EXCLUDED.technical_cost_ht,"+
+    " estimated_margin_ht=platform_rollups_hourly_sharded.estimated_margin_ht+EXCLUDED.estimated_margin_ht,"+
+    " reconciliation_variance_ht=platform_rollups_hourly_sharded.reconciliation_variance_ht+EXCLUDED.reconciliation_variance_ht,"+
+    " updated_at=now()",
+    [callId]
+  );
+}
+
+async function refreshHourlyRollupsForCalls(tx,matchJson){
+  await tx.unsafe(
+    "WITH input AS ("+
+    " SELECT * FROM jsonb_to_recordset($1::jsonb) AS x(call_id bigint,tenant_bucket smallint,amount numeric)"+
+    "), affected AS ("+
+    " SELECT DISTINCT date_trunc('hour',f.started_at) AS bucket_start,f.market_id,f.currency,"+
+    " (f.tenant_bucket%64)::smallint AS rollup_shard"+
+    " FROM call_facts f JOIN input i ON i.call_id=f.call_id AND i.tenant_bucket=f.tenant_bucket"+
+    " WHERE f.market_id IS NOT NULL"+
+    "), aggregated AS ("+
+    " SELECT a.bucket_start,a.market_id,a.currency,a.rollup_shard,"+
+    " count(*)::bigint AS calls_total,"+
+    " count(*) FILTER(WHERE f.call_status='connected')::bigint AS calls_connected,"+
+    " count(*) FILTER(WHERE f.call_status='abandoned')::bigint AS calls_abandoned,"+
+    " count(*) FILTER(WHERE f.call_status NOT IN ('connected','abandoned'))::bigint AS calls_failed,"+
+    " COALESCE(sum(f.conversation_seconds),0)::bigint AS conversation_seconds,"+
+    " COALESCE(sum(f.billable_seconds),0)::bigint AS billable_seconds,"+
+    " COALESCE(sum(f.payout_eligible_seconds),0)::bigint AS payout_eligible_seconds,"+
+    " COALESCE(sum(f.retail_service_amount_ttc),0) AS generated_revenue_ttc,"+
+    " COALESCE(sum(f.expected_payout_ht),0) AS expected_payout_ht,"+
+    " COALESCE(sum(f.confirmed_payout_ht),0) AS confirmed_payout_ht,"+
+    " COALESCE(sum(f.paid_payout_ht),0) AS paid_payout_ht,"+
+    " COALESCE(sum(f.expert_cost_ht),0) AS expert_cost_ht,"+
+    " COALESCE(sum(f.technical_cost_ht),0) AS technical_cost_ht,"+
+    " COALESCE(sum(f.estimated_margin_ht),0) AS estimated_margin_ht,"+
+    " COALESCE(sum(f.reconciliation_variance_ht),0) AS reconciliation_variance_ht"+
+    " FROM affected a JOIN call_facts f ON f.market_id=a.market_id AND f.currency=a.currency"+
+    " AND (f.tenant_bucket%64)::smallint=a.rollup_shard"+
+    " AND f.started_at>=a.bucket_start AND f.started_at<a.bucket_start+interval '1 hour'"+
+    " GROUP BY a.bucket_start,a.market_id,a.currency,a.rollup_shard"+
+    ") INSERT INTO platform_rollups_hourly_sharded("+
+    " bucket_start,market_id,currency,rollup_shard,calls_total,calls_connected,calls_abandoned,calls_failed,"+
+    " conversation_seconds,billable_seconds,payout_eligible_seconds,generated_revenue_ttc,expected_payout_ht,"+
+    " confirmed_payout_ht,paid_payout_ht,expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,updated_at)"+
+    " SELECT bucket_start,market_id,currency,rollup_shard,calls_total,calls_connected,calls_abandoned,calls_failed,"+
+    " conversation_seconds,billable_seconds,payout_eligible_seconds,generated_revenue_ttc,expected_payout_ht,"+
+    " confirmed_payout_ht,paid_payout_ht,expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,now()"+
+    " FROM aggregated"+
+    " ON CONFLICT(bucket_start,market_id,currency,rollup_shard) DO UPDATE SET"+
+    " calls_total=EXCLUDED.calls_total,calls_connected=EXCLUDED.calls_connected,"+
+    " calls_abandoned=EXCLUDED.calls_abandoned,calls_failed=EXCLUDED.calls_failed,"+
+    " conversation_seconds=EXCLUDED.conversation_seconds,billable_seconds=EXCLUDED.billable_seconds,"+
+    " payout_eligible_seconds=EXCLUDED.payout_eligible_seconds,generated_revenue_ttc=EXCLUDED.generated_revenue_ttc,"+
+    " expected_payout_ht=EXCLUDED.expected_payout_ht,confirmed_payout_ht=EXCLUDED.confirmed_payout_ht,"+
+    " paid_payout_ht=EXCLUDED.paid_payout_ht,expert_cost_ht=EXCLUDED.expert_cost_ht,"+
+    " technical_cost_ht=EXCLUDED.technical_cost_ht,estimated_margin_ht=EXCLUDED.estimated_margin_ht,"+
+    " reconciliation_variance_ht=EXCLUDED.reconciliation_variance_ht,updated_at=now()",
+    [matchJson]
+  );
 }
 
 async function ledger(tx,callId,tenantId,marketId,currency,type,amount,envelope){
