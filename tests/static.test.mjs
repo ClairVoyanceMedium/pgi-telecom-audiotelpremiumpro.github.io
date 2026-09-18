@@ -45,3 +45,17 @@ test("la navigation mobile donne accès aux opérateurs et au système", () => {
   assert.match(index, /data-view="carriers"/);
   assert.match(index, /data-view="system"/);
 });
+
+
+test("le cockpit production exige une authentification explicite", () => {
+  for (const id of ["auth-dialog","auth-form","auth-username","auth-password","auth-submit"]) {
+    assert.ok(index.includes('id="'+id+'"'), "missing #"+id);
+  }
+  assert.match(app, /PGIApi\.me\(\)/);
+  assert.match(app, /loadAllApiCalls/);
+  assert.match(app, /call\.ingested/);
+});
+
+test("la production ne génère pas de faux CDR locaux", () => {
+  assert.match(app, /RUNTIME\.mode==="production"\?\[\]:buildDemoCalls\(\)/);
+});
