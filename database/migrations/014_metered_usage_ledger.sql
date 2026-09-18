@@ -3,8 +3,8 @@
 CREATE TABLE tenant_usage_events (
   tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
   event_id uuid NOT NULL DEFAULT gen_random_uuid(),
-  tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  subscription_id bigint REFERENCES tenant_subscriptions(id) ON DELETE SET NULL,
+  tenant_id bigint NOT NULL REFERENCES tenants(id),
+  subscription_id bigint REFERENCES tenant_subscriptions(id),
   metric_key text NOT NULL,
   quantity numeric(20,6) NOT NULL CHECK (quantity >= 0),
   unit text NOT NULL,
@@ -56,8 +56,9 @@ FOR EACH ROW EXECUTE FUNCTION prevent_usage_event_mutation();
 
 CREATE TABLE tenant_billing_cycles (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  subscription_id bigint REFERENCES tenant_subscriptions(id) ON DELETE SET NULL,
+  tenant_id bigint NOT NULL REFERENCES tenants(id),
+  subscription_id bigint REFERENCES tenant_subscriptions(id),
+  subscription_scope bigint GENERATED ALWAYS AS (COALESCE(subscription_id,0)) STORED,
   period_start timestamptz NOT NULL,
   period_end timestamptz NOT NULL,
   billing_currency char(3) NOT NULL CHECK (billing_currency ~ '^[A-Z]{3}$'),
@@ -78,6 +79,6 @@ CREATE TABLE tenant_billing_cycles (
 );
 
 CREATE UNIQUE INDEX tenant_billing_cycles_period_unique
-  ON tenant_billing_cycles(tenant_id,subscription_id,period_start,period_end);
+  ON tenant_billing_cycles(tenant_id,subscription_scope,period_start,period_end);
 CREATE INDEX tenant_billing_cycles_status_idx
   ON tenant_billing_cycles(status,period_end,id);
