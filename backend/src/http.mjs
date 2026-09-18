@@ -5,11 +5,21 @@ export function securityHeaders(res,requestId){
   res.setHeader("X-Frame-Options","DENY");
   res.setHeader("Referrer-Policy","no-referrer");
   res.setHeader("Permissions-Policy","camera=(), microphone=(), geolocation=()");
+  res.setHeader("Cross-Origin-Resource-Policy","same-origin");
+  res.setHeader("Origin-Agent-Cluster","?1");
   res.setHeader("Cache-Control","no-store");
   res.setHeader("X-Request-Id",requestId||randomUUID());
 }
 
 export async function readJson(req,limitBytes){
+  const declared=Number(req.headers?.["content-length"]||0);
+  if(Number.isFinite(declared)&&declared>limitBytes){
+    const e=new Error("BODY_TOO_LARGE");e.status=413;e.code="BODY_TOO_LARGE";throw e;
+  }
+  const contentType=String(req.headers?.["content-type"]||"").toLowerCase();
+  if(declared>0&&!contentType.startsWith("application/json")){
+    const e=new Error("JSON content type required");e.status=415;e.code="UNSUPPORTED_MEDIA_TYPE";throw e;
+  }
   const chunks=[];
   let size=0;
   for await(const chunk of req){
@@ -49,8 +59,12 @@ export function routeMatch(pathname,pattern){
   if(a.length!==b.length)return null;
   const params={};
   for(let i=0;i<b.length;i++){
-    if(b[i].startsWith(":"))params[b[i].slice(1)]=decodeURIComponent(a[i]);
-    else if(a[i]!==b[i])return null;
+    if(b[i].startsWith(":")){
+      try{params[b[i].slice(1)]=decodeURIComponent(a[i]);}
+      catch{
+        const e=new Error("Invalid route parameter encoding");e.status=400;e.code="INVALID_PATH_ENCODING";throw e;
+      }
+    }else if(a[i]!==b[i])return null;
   }
   return params;
 }
