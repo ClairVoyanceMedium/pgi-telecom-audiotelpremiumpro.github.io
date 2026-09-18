@@ -5,8 +5,7 @@ const ALLOWED_KEYS=new Set([
   "wait_seconds","conversation_seconds","total_seconds","call_status",
   "caller_masked","caller_hash","origin_carrier","origin_type","host_carrier","sva_number",
   "expert_id","expert_name","sip_final_code","hangup_cause","codec","quality",
-  "mobile_deduction_ht_per_min","billing_increment_seconds","minimum_payable_seconds",
-  "payout_rounding","confirmed_payout_ht","paid_payout_ht","technical_cost_ht"
+  "confirmed_payout_ht","paid_payout_ht","technical_cost_ht"
 ]);
 const QUALITY_KEYS=new Set(["packet_loss_percent","jitter_ms","latency_ms","mos","dtmf_errors"]);
 
