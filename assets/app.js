@@ -3,7 +3,7 @@
 
   var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
   var CONFIG={serviceRate:0.80,payoutRate:0.46,expertCostPerMin:0.18,fixedCostPerCall:0.03};
-  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,lastSyncAt:null,activeView:"overview",commandIndex:0,system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
+  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,lastSyncAt:null,activeView:"overview",commandIndex:0,system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
   var titles={overview:"Cockpit",calls:"Appels",finance:"Finance",experts:"Experts",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Supervision",settings:"Paramètres"};
   var experts=["Frederick","Sofia","Emma","Lina","Clara","Nora"];
   var carriers=["Orange","SFR","Bouygues","Free"];
@@ -202,6 +202,7 @@
     state.serverSummary=null;
     state.previousSummary=null;
     state.serverAnalytics=null;
+    state.serverReconciliation=null;
     state.cdrSampleTruncated=false;
     setProductionLive({});
     render();
@@ -282,11 +283,12 @@
       window.PGIApi.analytics(range.from.toISOString(),range.to.toISOString(),market).catch(function(){return null;}),
       window.PGIApi.experts(),
       window.PGIApi.systemHealth(),
-      window.PGIApi.carrierRouting()
+      window.PGIApi.carrierRouting(),
+      window.PGIApi.reconciliation(range.from.toISOString(),range.to.toISOString(),market)
     ]);
     return {
       summary:parts[0],previous_summary:parts[1],analytics:parts[2],
-      experts:parts[3],system:parts[4],route:parts[5]
+      experts:parts[3],system:parts[4],route:parts[5],reconciliation:parts[6]
     };
   }
 
@@ -321,6 +323,7 @@
       state.serverSummary=dashboard.summary||null;
       state.previousSummary=dashboard.previous_summary||null;
       state.serverAnalytics=dashboard.analytics||null;
+      state.serverReconciliation=dashboard.reconciliation||null;
       if(state.serverSummary&&Number(state.serverSummary.currency_count||0)===1&&state.serverSummary.currency){
         state.marketCurrency=String(state.serverSummary.currency);
       }
