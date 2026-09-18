@@ -5,7 +5,8 @@ import {loadConfig} from "./src/config.mjs";
 import {EventBus} from "./src/event-bus.mjs";
 import {MemoryStore} from "./src/store-memory.mjs";
 import {parseCookies,verifyPassword,issueSession,verifySession,constantTimeTokenEqual,sessionCookie,csrfCookie,clearSessionCookies} from "./src/security.mjs";
-import {securityHeaders,readJson,json,problemJson,routeMatch,clientIp} from "./src/http.mjs";
+import {securityHeaders,readJson,json,text,problemJson,routeMatch,clientIp} from "./src/http.mjs";
+import {normalizeFreeSwitchCdr} from "./src/cdr-freeswitch.mjs";
 import {startWorkers} from "./src/workers.mjs";
 
 export async function createDefaultBackend(){
@@ -125,6 +126,24 @@ export function createBackend(options={}){
         return done(res,metrics,started,"routing.next_expert",expert?200:404,expert||{error:{code:"NO_EXPERT_AVAILABLE"}});
       }
 
+      if(method==="GET"&&pathname==="/api/v1/internal/routing/next-expert/text"){
+        authorizeTelephony(req,config);
+        const expert=await store.selectExpert();
+        if(!expert?.destination_uri){
+          res.writeHead(404,{"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"});
+          res.end("");
+          return;
+        }
+        text(res,200,expert.destination_uri);
+        return;
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/internal/routing/next-expert"){
+        authorizeTelephony(req,config);
+        const expert=await store.selectExpert();
+        return done(res,metrics,started,"routing.internal",expert?200:404,expert||{error:{code:"NO_EXPERT_AVAILABLE"}});
+      }
+
       if(method==="GET"&&pathname==="/api/v1/finance/reconciliation"){
         requireRole(actor,["admin","finance","readonly"]);
         const range=rangeParams(url);
@@ -176,6 +195,14 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes);
         const result=await store.ingestCdr(body);
         return done(res,metrics,started,"cdr.ingest",result.duplicate?200:201,result);
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/ingest/freeswitch"){
+        authorizeTelephony(req,config);
+        const raw=await readJson(req,config.bodyLimitBytes);
+        const envelope=normalizeFreeSwitchCdr(raw,{uuid:url.searchParams.get("uuid"),callerHashKey:config.callerHashKey||"simulator-caller-hash-key"});
+        const result=await store.ingestCdr(envelope);
+        return done(res,metrics,started,"cdr.freeswitch",result.duplicate?200:201,result);
       }
 
       if(method==="GET"&&pathname==="/api/v1/events"){
@@ -234,6 +261,23 @@ function requireCsrf(req,actor,config){
     const e=new Error("CSRF validation failed");e.status=403;e.code="CSRF_FAILED";throw e;
   }
 }
+function authorizeTelephony(req,config){
+  if(config.mode==="simulator"&&!config.telephonyUser&&!config.telephonyPassword){
+    if(!isLoopback(clientIp(req))){const e=new Error("Telephony endpoint restricted to loopback");e.status=403;e.code="TELEPHONY_FORBIDDEN";throw e;}
+    return;
+  }
+  const header=String(req.headers.authorization||"");
+  if(!header.startsWith("Basic ")){const e=new Error("Telephony authentication required");e.status=401;e.code="TELEPHONY_AUTH_REQUIRED";throw e;}
+  let decoded="";
+  try{decoded=Buffer.from(header.slice(6),"base64").toString("utf8");}catch{}
+  const i=decoded.indexOf(":");
+  const user=i>=0?decoded.slice(0,i):"";
+  const pass=i>=0?decoded.slice(i+1):"";
+  if(!constantTimeTokenEqual(user,config.telephonyUser)||!constantTimeTokenEqual(pass,config.telephonyPassword)){
+    const e=new Error("Invalid telephony credentials");e.status=401;e.code="TELEPHONY_AUTH_FAILED";throw e;
+  }
+}
+
 function authorizeIngest(req,config){
   if(config.mode==="simulator"&&!config.ingestToken){
     if(!isLoopback(clientIp(req))){const e=new Error("Ingest restricted to loopback");e.status=403;e.code="INGEST_FORBIDDEN";throw e;}
