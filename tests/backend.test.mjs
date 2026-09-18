@@ -55,6 +55,18 @@ test("password hashing and signed sessions reject tampering",()=>{
   assert.equal(verifySession(issued.token+"x","x".repeat(40)),null);
 });
 
+test("traceparent is propagated with the same trace id",async()=>{
+  await withServer(async({base})=>{
+    const traceId="0123456789abcdef0123456789abcdef";
+    const r=await fetch(base+"/api/v1/health",{
+      headers:{traceparent:"00-"+traceId+"-0123456789abcdef-01"}
+    });
+    assert.equal(r.status,200);
+    assert.equal(r.headers.get("x-trace-id"),traceId);
+    assert.match(r.headers.get("traceparent")||"",new RegExp("^00-"+traceId+"-[0-9a-f]{16}-01$"));
+  });
+});
+
 test("admin login has a dedicated per-client brute-force limit",async()=>{
   const password="correct-test-password-123";
   const app=createBackend({config:config({
@@ -301,7 +313,7 @@ test("wholesale overview is read-only and empty in simulator",async()=>{
     const r=await fetch(base+"/api/v1/platform/overview");
     assert.equal(r.status,200);
     const body=await r.json();
-    assert.equal(body.foundation_version,"1.13");
+    assert.equal(body.foundation_version,"1.14");
     assert.equal(body.summary.tenants_total,0);
     assert.equal(body.summary.assignments_total,0);
     assert.equal(body.summary.payment_compliance_active,false);
@@ -311,7 +323,35 @@ test("wholesale overview is read-only and empty in simulator",async()=>{
     assert.equal(body.scale.bucket_capacity,4096);
     assert.equal(body.scale.call_fact_partitions,64);
     assert.equal(body.scale.clusters_ready,1);
+    assert.equal(body.scale.regions_ready,1);
+    assert.equal(body.scale.dr_targets_total,4);
   });
+});
+
+test("distributed work queue completes and dead-letters deterministically",async()=>{
+  const app=createBackend({config:config()});
+  const ok=await app.store.enqueueWork("test", {kind:"ok"}, {max_attempts:2});
+  let claimed=await app.store.claimWork("test","worker-a",10,30);
+  assert.equal(claimed.length,1);
+  assert.equal(claimed[0].id,ok.id);
+  const completed=await app.store.completeWork(ok.id,"worker-a");
+  assert.ok(completed.completed_at);
+
+  const bad=await app.store.enqueueWork("test", {kind:"bad"}, {max_attempts:1});
+  claimed=await app.store.claimWork("test","worker-b",10,30);
+  assert.equal(claimed.length,1);
+  assert.equal(claimed[0].id,bad.id);
+  const failed=await app.store.failWork(bad.id,"worker-b","boom",1);
+  assert.equal(failed.state,"dead_lettered");
+  const health=await app.store.workQueueHealth();
+  assert.equal(health.dead_lettered,1);
+});
+
+test("tenant context contract rejects invalid tenant identifiers",async()=>{
+  const app=createBackend({config:config()});
+  await assert.rejects(()=>app.store.withTenantContext(0,async()=>true),/INVALID_TENANT_CONTEXT/);
+  const value=await app.store.withTenantContext(1,async()=>42);
+  assert.equal(value,42);
 });
 
 test("tenant directory is cursor-paginated and empty in simulator",async()=>{
