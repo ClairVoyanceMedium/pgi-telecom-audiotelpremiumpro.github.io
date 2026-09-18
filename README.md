@@ -4,7 +4,7 @@ Cockpit Audiotel, financier et télécom de PGI Telecom.
 
 ## État actuel
 
-Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.11.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
+Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.11.1 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
 
 Fonctions déjà présentes :
 
@@ -89,9 +89,9 @@ Le projet possède désormais des garde-fous de préproduction :
 
 La version GitHub Pages reste une démonstration. Les statuts SIP/API affichent explicitement qu'ils ne sont pas connectés tant que l'infrastructure réelle n'existe pas.
 
-## Validation release 1.11.0
+## Validation release 1.11.1
 
-La release 1.11.0 transforme la fondation Wholesale SVA en véritable centre de contrôle : vue Plateforme SVA, synthèse wholesale sur l'accueil, clients/tenants, affectations 089, stock libre, KYC, opérateur attributaire, conformité PSP/DSP2 et reversements par éditeur alimentés par PostgreSQL en production.
+La release 1.11.1 transforme la fondation Wholesale SVA en véritable centre de contrôle : vue Plateforme SVA, synthèse wholesale sur l'accueil, clients/tenants, affectations 089, stock libre, KYC, opérateur attributaire, conformité PSP/DSP2 et reversements par éditeur alimentés par PostgreSQL en production.
 
 
 
@@ -176,3 +176,8 @@ Points verrouillés :
 - métadonnées PWA Android/iOS et `display_override` pour l'installation.
 
 Le nom visible reste **PGI • Telecom - Audiotel Premium Pro**.
+
+
+### Durcissement petits écrans 1.11.1
+
+La couche mobile est renforcée pour les écrans Android et iPhone les plus étroits : l’en-tête conserve le nom du produit sans débordement, les statuts secondaires sont retirés de la barre supérieure sur petit écran car ils restent disponibles dans les vues de santé, les filtres et périodes personnalisées se réorganisent automatiquement, et les actions de tableaux restent utilisables au doigt sans compression horizontale.
