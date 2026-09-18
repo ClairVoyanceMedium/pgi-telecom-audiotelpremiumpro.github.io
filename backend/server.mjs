@@ -8,6 +8,17 @@ import {parseCookies,verifyPassword,issueSession,verifySession,constantTimeToken
 import {securityHeaders,readJson,json,problemJson,routeMatch,clientIp} from "./src/http.mjs";
 import {startWorkers} from "./src/workers.mjs";
 
+export async function createDefaultBackend(){
+  const config=loadConfig();
+  const eventBus=new EventBus();
+  if(config.mode==="production"){
+    const {PostgresStore}=await import("./src/store-postgres.mjs");
+    const store=await PostgresStore.connect(config,eventBus);
+    return createBackend({config,eventBus,store,closeStore:true});
+  }
+  return createBackend({config,eventBus});
+}
+
 export function createBackend(options={}){
   const config=options.config||loadConfig();
   const eventBus=options.eventBus||new EventBus();
@@ -194,7 +205,8 @@ export function createBackend(options={}){
     },
     async close(){
       workers.stop();
-      await new Promise(resolve=>server.close(()=>resolve()));
+      if(server.listening)await new Promise(resolve=>server.close(()=>resolve()));
+      if(options.closeStore&&typeof store.close==="function")await store.close();
     }
   };
 }
@@ -266,7 +278,7 @@ function done(res,metrics,started,route,status,payload,headers={}){
 }
 function bump(map,key){map.set(String(key),(map.get(String(key))||0)+1);}
 async function metricsResponse(res,metrics,store){
-  const m=store.metrics();
+  const m=await store.metrics();
   const lines=[
     "# TYPE pgi_http_requests_total counter",
     "pgi_http_requests_total "+metrics.requests,
@@ -311,7 +323,7 @@ function openEventStream(req,res,eventBus,requestId){
 function safeEventName(x){return String(x||"event").replace(/[^a-zA-Z0-9_.-]/g,"_");}
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
-  const app=createBackend();
+  const app=await createDefaultBackend();
   const shutdown=async signal=>{
     process.stdout.write(JSON.stringify({level:"info",event:"shutdown",signal})+"\n");
     await app.close();
