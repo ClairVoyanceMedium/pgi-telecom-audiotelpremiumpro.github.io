@@ -996,8 +996,17 @@ export class PostgresStore{
       const sw=switchRows[0];
       if(!sw)throw problem(404,"SWITCH_NOT_FOUND");
       if(!["ready","planned"].includes(sw.status))throw problem(409,"SWITCH_NOT_READY");
-      const connectionId=Number(sw.validation?.connection_id);
-      const rollbackMinutes=clampInt(sw.validation?.rollback_window_minutes,1440,5,10080);
+      let validation=sw.validation;
+      if(typeof validation==="string"){try{validation=JSON.parse(validation);}catch{validation={};}}
+      if(!validation||typeof validation!=="object")validation={};
+      const connectionId=Number(validation.connection_id);
+      if(!Number.isInteger(connectionId)||connectionId<=0)throw problem(409,"SWITCH_CONNECTION_MISSING");
+      const rollbackMinutes=clampInt(validation.rollback_window_minutes,1440,5,10080);
+      const connectionRows=await tx.unsafe(
+        "SELECT id,carrier_id,state FROM carrier_connections WHERE id=$1 AND carrier_id=$2 AND purpose='sip_inbound' AND state IN ('ready','active','standby') FOR UPDATE",
+        [connectionId,sw.to_carrier_id]
+      );
+      if(!connectionRows.length)throw problem(409,"TARGET_CONNECTION_NOT_READY");
       const gens=await tx.unsafe("SELECT activate_logical_carrier_route($1,$2,$3) AS generation",[sw.route_key,sw.to_carrier_id,connectionId]);
       const updated=await tx.unsafe(
         "UPDATE carrier_switches SET status='completed',started_at=COALESCE(started_at,now()),completed_at=now(),"+
