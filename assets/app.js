@@ -1,13 +1,11 @@
 (function(){
   "use strict";
-
   var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
   var CONFIG={serviceRate:.8,payoutRate:.46,expertCostPerMin:.18,fixedCostPerCall:.03};
   var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,pendingSyncMode:"dashboard",scheduledSyncMode:"dashboard",hiddenAt:null,lastSyncAt:null,activeView:"overview",system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
   var titles={overview:"Cockpit",calls:"Appels",finance:"Finance",experts:"Experts",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Supervision",settings:"Paramètres"};var experts=["Frederick","Sofia","Emma","Lina","Clara","Nora"];
 var carriers=["Orange","SFR","Bouygues","Free"];
   var number089="0890 80 24 24";
-
   function $(id){return document.getElementById(id);}
   function qsa(sel){return Array.prototype.slice.call(document.querySelectorAll(sel));}
   function money(v){return moneyIn(v,state.marketCurrency||"EUR","fr-FR");}
@@ -25,11 +23,9 @@ var carriers=["Orange","SFR","Bouygues","Free"];
   function endOfDay(d){var x=new Date(d);x.setHours(23,59,59,999);return x;}
   function daysAgo(n){var d=new Date();d.setDate(d.getDate()-n);return d;}
   var allCalls=RUNTIME.mode==="production"?[]:(window.PGIDemoData?window.PGIDemoData.buildCalls({config:CONFIG,experts:experts,carriers:carriers,number:number089,core:window.PGICore}):[]);
-
   function productionDataRange(){
     return getRange();
   }
-
   function comparisonRange(range){
     if(state.baseline)return null;
     var now=new Date(),effectiveTo=range.to<now?range.to:now;
@@ -37,13 +33,11 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     var to=new Date(range.from.getTime()-1);
     return {from:new Date(to.getTime()-duration),to:to};
   }
-
   function setProductionLive(summary){
     state.live.calls=Number(summary&&summary.live_calls||0);
     state.live.available=Number(summary&&summary.active_experts||0);
     state.live.queue=Number(summary&&summary.queue_depth||0);
   }
-
   function syncMarketSelector(data){
     var markets=data&&Array.isArray(data.markets)?data.markets:[];
     var active=markets.filter(function(x){return String(x.status||"").toLowerCase()==="active";});
@@ -55,7 +49,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     state.market=current;
     var selected=active.find(function(x){return x.country_code===current;})||null;
     state.marketCurrency=selected&&selected.default_currency?selected.default_currency:"EUR";
-
     var wrap=$("market-filter-wrap"),select=$("market-filter");
     if(select){
       select.innerHTML=active.map(function(x){
@@ -67,26 +60,22 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     }
     if(wrap)wrap.hidden=active.length<2;
   }
-
   function showLogin(message){
     var dialog=$("auth-dialog");
     var msg=$("auth-message");
     if(msg)msg.textContent=message||"Identifiez-vous pour accéder aux données de production.";
     if(dialog&&typeof dialog.showModal==="function"&&!dialog.open)dialog.showModal();
   }
-
   function closeLogin(){
     var dialog=$("auth-dialog");
     if(dialog&&dialog.open)dialog.close();
   }
-
   function stopProductionEvents(){
     if(state.eventSource){
       try{state.eventSource.close();}catch(e){}
       state.eventSource=null;
     }
   }
-
   function clearProductionData(){
     if(RUNTIME.mode!=="production")return;
     allCalls=[];
@@ -103,7 +92,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     setProductionLive({});
     render();
   }
-
   function requireProductionLogin(message){
     if(RUNTIME.mode!=="production")return;
     state.authUser=null;
@@ -112,7 +100,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     clearProductionData();
     showLogin(message||"Session requise. Saisissez vos identifiants administrateur.");
   }
-
   async function logoutProduction(){
     if(RUNTIME.mode!=="production"||!window.PGIApi)return;
     var button=$("logout-btn");if(button)button.disabled=true;
@@ -122,15 +109,12 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       requireProductionLogin("Session fermée. Identifiez-vous pour continuer.");
     }
   }
-
   function syncModeRank(mode){
     return mode==="full"?3:mode==="incremental"?2:1;
   }
-
   function mergeSyncMode(current,next){
     return syncModeRank(next)>syncModeRank(current)?next:current;
   }
-
   function scheduleProductionSync(mode){
     if(RUNTIME.mode!=="production")return;
     mode=mode||"dashboard";
@@ -147,7 +131,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       syncProductionData({mode:next});
     },900);
   }
-
   function startProductionEvents(){
     if(RUNTIME.mode!=="production"||state.eventSource||!window.PGIApi||document.hidden)return;
     try{
@@ -166,7 +149,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       };
     }catch(e){recordRuntimeError();}
   }
-
   async function syncProductionData(options){
     if(RUNTIME.mode!=="production"||!window.PGIApi)return;
     options=options||{};
@@ -195,7 +177,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       state.baseline=baselineRows.length?new Date(baselineRows[0].effective_from||baselineRows[0].created_at):null;
       state.wholesale=appBootstrap&&appBootstrap.wholesale?appBootstrap.wholesale:null;
       syncMarketSelector(state.wholesale);
-
       var range=getRange(),windowRange=productionDataRange(),prevRange=comparisonRange(range);
       var callsPromise=mode==="dashboard"
         ?Promise.resolve(null)
@@ -261,12 +242,10 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       }
     }
   }
-
   function refreshData(options){
     if(RUNTIME.mode==="production")syncProductionData({mode:"full",forceMeta:!!(options&&options.forceMeta)});
     else render();
   }
-
   async function submitLogin(){
     var username=$("auth-username"),password=$("auth-password"),button=$("auth-submit"),msg=$("auth-message");
     if(!username||!password||!window.PGIApi)return;
@@ -284,7 +263,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       if(button)button.disabled=false;
     }
   }
-
   function loadState(){
     if(RUNTIME.mode==="production")return;
     try{
@@ -300,7 +278,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     if(RUNTIME.mode==="production")return;
     try{localStorage.setItem("pgi-audiotel-state",JSON.stringify({baseline:state.baseline?state.baseline.toISOString():null,resets:state.resets}));}catch(e){}
   }
-
   function getRange(){
     var now=new Date(),from,to=endOfDay(now);
     if(state.period==="today"){from=startOfDay(now);}
@@ -314,12 +291,10 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     if(state.baseline&&state.baseline>from)from=new Date(state.baseline);
     return {from:from,to:to};
   }
-
   function filteredCalls(){
     var r=getRange();
     return allCalls.filter(function(c){return c.ts>=r.from&&c.ts<=r.to;});
   }
-
   function aggregate(rows){
     if(window.PGICore){
       var x=window.PGICore.aggregateCalls(rows);
@@ -333,7 +308,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     }
     return {calls:0,connected:0,abandoned:0,failed:0,mins:0,payoutEligibleMins:0,expected:0,confirmed:0,paid:0,ca:0,margin:0,expertCost:0,technicalCost:0,acd:0,asr:0,gap:0};
   }
-
   function summaryAggregate(summary){
     var s=summary||{},mixed=!!s.mixed_currency;
     return {
@@ -347,17 +321,13 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       gap:mixed?NaN:Number(s.reconciliation_variance_ht||0),mixedCurrency:mixed
     };
   }
-
   function currentAggregate(rows){
     return RUNTIME.mode==="production"&&state.serverSummary?summaryAggregate(state.serverSummary):aggregate(rows);
   }
-
   function monetaryLabel(value,mixed){
     return mixed?"Multi-devises":money(value);
   }
-
   function setText(id,val){var e=$(id);if(e)e.textContent=val;}
-
   function effectiveRate(rows,amountKey,secondsKey){
     var amount=0,seconds=0;
     rows.forEach(function(x){
@@ -366,7 +336,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     });
     return seconds>0?amount/(seconds/60):0;
   }
-
   function renderFinancialSettings(rows){
     var summary=RUNTIME.mode==="production"?state.serverSummary:null;
     var mixed=!!(summary&&summary.mixed_currency);
@@ -388,8 +357,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       ?"Taux effectifs dérivés des CDR et écritures financières de la période sélectionnée."
       :"Valeurs utilisées uniquement pour générer les données de démonstration.");
   }
-
-
   function revenueTrendPercent(currentRows){
     if(state.baseline)return null;
     if(RUNTIME.mode==="production"&&state.serverSummary&&state.previousSummary){
@@ -409,7 +376,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     if(previous<=0)return null;
     return (current-previous)/previous*100;
   }
-
   function renderKPIs(rows){
     var a=currentAggregate(rows),mixed=!!a.mixedCurrency;
     setText("kpi-ca",monetaryLabel(a.ca,mixed));
@@ -454,10 +420,8 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       }
     }
   }
-
   function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c];});}
   function chip(status){var label=status==="connected"?"ABOUTI":status==="abandoned"?"ABANDON":"ÉCHEC";return '<span class="status-chip '+status+'">'+label+"</span>";}
-
   function applyCallFilters(rows){
     var f=state.callFilters||{},s=(f.search||"").trim().toLowerCase();
     return rows.filter(function(c){
@@ -471,9 +435,7 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       return true;
     });
   }
-
   function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
-
   function previousPeriodRows(){
     if(state.baseline)return [];
     var r=getRange(),now=new Date(),effectiveTo=r.to<now?r.to:now;
@@ -482,18 +444,15 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     var prevFrom=new Date(prevTo.getTime()-duration);
     return allCalls.filter(function(c){return c.ts>=prevFrom&&c.ts<=prevTo;});
   }
-
   function percentDelta(current,previous){
     if(!Number.isFinite(previous)||previous===0)return null;
     return (current-previous)/Math.abs(previous)*100;
   }
-
   function deltaText(current,previous,suffix){
     var d=percentDelta(current,previous);
     if(d==null||!Number.isFinite(d))return "—";
     return (d>=0?"+":"")+nfmt(d,1)+"%"+(suffix||"");
   }
-
   function qualityStats(rows){
     var valid=rows.filter(function(c){
       return c.status==="connected"&&Number.isFinite(c.mos)&&Number.isFinite(c.packetLoss)&&Number.isFinite(c.jitter)&&Number.isFinite(c.latency);
@@ -510,7 +469,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     var grade=score>=92?"A+":score>=86?"A":score>=78?"B":score>=68?"C":"D";
     return {count:valid.length,mos:mos,loss:loss,jitter:jitter,latency:latency,score:score,grade:grade};
   }
-
   function currentQuality(rows){
     var analytics=cockpitAnalytics(rows),q=analytics&&analytics.quality;
     if(q&&Number(q.samples||0)>0){
@@ -526,7 +484,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     }
     return qualityStats(rows);
   }
-
   function renderExecutive(rows){
     var cur=currentAggregate(rows),prev=RUNTIME.mode==="production"&&state.previousSummary?summaryAggregate(state.previousSummary):aggregate(previousPeriodRows()),q=currentQuality(rows);
     var recScore=cur.expected>0?clamp(100-(cur.gap/cur.expected*100*5),0,100):100;
@@ -537,14 +494,12 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     var label=ops>=92?"Excellent":ops>=82?"Très solide":ops>=70?"Correct":ops>=55?"À renforcer":"Insuffisant";
     setText("ops-score-label",label);
     setText("ops-score-detail",cur.calls?"ASR "+nfmt(cur.asr,1)+"% • concordance "+nfmt(recScore,1)+"% • qualité "+q.grade:"Aucune donnée sur la période");
-
     setText("cmp-ca",deltaText(cur.ca,prev.ca));
     setText("cmp-calls",deltaText(cur.calls,prev.calls));
     setText("cmp-minutes",deltaText(cur.mins,prev.mins));
     var asrDiff=(prev.calls?cur.asr-prev.asr:null);
     setText("cmp-asr",asrDiff==null?"—":(asrDiff>=0?"+":"")+nfmt(asrDiff,1)+" pt");
   }
-
   function renderHeatmap(rows){
     var labels=["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"],matrix=[],max=0,peak={count:0,day:0,hour:0};
     for(var d=0;d<7;d++)matrix[d]=Array(24).fill(0);
@@ -577,7 +532,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     var el=$("traffic-heatmap");if(el)el.innerHTML=html;
     setText("peak-slot",peak.count?labels[peak.day]+" "+pad(peak.hour)+"h • "+peak.count:"Pic —");
   }
-
   function renderFunnel(rows){
     var analytics=cockpitAnalytics(rows),m=currentAggregate(rows);
     var durationMap={};
@@ -592,7 +546,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       return '<div class="funnel-stage"><div class="funnel-meta"><span>'+esc(stage[0])+'</span><strong>'+nfmt(stage[1])+' <small>'+nfmt(pct,1)+'%</small></strong></div><i><b style="width:'+pct.toFixed(1)+'%"></b></i></div>';
     }).join("");
   }
-
   function renderQuality(rows){
     var q=currentQuality(rows);
     setText("quality-grade",q.grade);
@@ -609,14 +562,12 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     Object.keys(bars).forEach(function(id){var el=$(id);if(el)el.style.width=bars[id].toFixed(1)+"%";});
     setText("noc-voice-grade",q.grade);
   }
-
   function expertMetrics(rows){
     return experts.map(function(name){
       var r=rows.filter(function(x){return x.expert===name;}),m=aggregate(r);
       return {name:name,rows:r,m:m};
     });
   }
-
   function renderOverviewExpertRanking(rows){
     var el=$("overview-expert-ranking"),analytics=cockpitAnalytics(rows);
     if(RUNTIME.mode==="production"&&Array.isArray(analytics.experts)){
@@ -636,7 +587,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       return '<div class="ranking-item"><span class="rank-no">'+(i+1)+'</span><div class="rank-main"><div><strong>'+esc(x.name)+'</strong><small>'+nfmt(x.m.mins)+' min • ASR '+nfmt(x.m.asr,1)+'%</small></div><i><b style="width:'+width.toFixed(1)+'%"></b></i></div><strong class="rank-value">'+money(x.m.expected)+'</strong></div>';
     }).join("")||'<p class="muted">Aucune donnée.</p>';
   }
-
   function renderNetworkMix(rows){
     var analytics=cockpitAnalytics(rows);
     var counts=RUNTIME.mode==="production"&&Array.isArray(analytics.carriers)
@@ -652,7 +602,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       return '<div><i style="--dot:'+colors[i%colors.length]+'"></i><span>'+esc(x.name)+'</span><strong>'+nfmt(pct,1)+'%</strong></div>';
     }).join("");
   }
-
   function renderFinanceAnalytics(rows){
     var m=currentAggregate(rows);
     if(m.mixedCurrency){
@@ -678,7 +627,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     setText("ratio-paid",m.confirmed? nfmt(m.paid/m.confirmed*100,1)+"%":"—");
     setText("ratio-margin",m.confirmed? nfmt(m.margin/m.confirmed*100,1)+"%":"—");
   }
-
   function renderExpertSummary(rows){
     var analytics=cockpitAnalytics(rows);
     if(RUNTIME.mode==="production"&&Array.isArray(analytics.experts)){
@@ -718,7 +666,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     setText("expert-best-asr",byAsr.name+" • "+nfmt(byAsr.m.asr,1)+"%");
     setText("expert-team-minutes",nfmt(aggregate(rows).mins));
   }
-
   function cdrPipelineState(){
     if(RUNTIME.mode!=="production")return {label:"MODE DÉMO",overview:"DÉMO LOCALE",className:"warn"};
     if(state.diagnostics.apiStatus!=="ok")return {label:"API INDISPONIBLE",overview:"INDISPONIBLE",className:"warn"};
@@ -729,7 +676,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     if(Number.isFinite(lag)&&lag>3600)return {label:"DERNIER CDR ANCIEN",overview:"CDR ANCIEN",className:"warn"};
     return {label:"CDR REÇUS",overview:"ACTIF",className:"ok"};
   }
-
   function renderSystemState(){
     var pipeline=cdrPipelineState();
     var cdrState=$("cdr-state");
@@ -765,7 +711,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       relayState.className="big-status "+(healthy?"ok":"warn");
     }
   }
-
   function renderNoc(rows){
     var m=currentAggregate(rows),q=currentQuality(rows);
     var backendState=RUNTIME.mode==="production"?(state.diagnostics.apiStatus==="ok"?"API OK":state.diagnostics.apiStatus==="error"?"API indisponible":"En attente"):(navigator.onLine?"Démo en ligne":"Démo hors ligne");
@@ -775,7 +720,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     setText("noc-voice-grade",q.grade);
     renderSystemState();
   }
-
   function renderRecentCalls(rows){
     var body=$("recent-calls");
     if(!body)return;
@@ -785,7 +729,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     }).join("");
     body.innerHTML=rhtml||'<tr><td colspan="6">Aucune donnée sur cette période.</td></tr>';
   }
-
   function renderCalls(rows){
     renderRecentCalls(rows);
     var tableRows=applyCallFilters(rows);
@@ -796,7 +739,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     var table=$("calls-table");if(table)table.innerHTML=full;
     setText("calls-total-label",nfmt(tableRows.length)+" appels");
   }
-
   function cockpitAnalytics(rows){
     if(RUNTIME.mode==="production"&&state.serverAnalytics)return state.serverAnalytics;
     var range=getRange(),durationMs=Math.max(0,range.to-range.from);
@@ -858,14 +800,12 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     }).filter(function(x){return x.samples>0;}).sort(function(a,b){return Date.parse(a.bucket)-Date.parse(b.bucket);});
     return {granularity:granularity,series:series,hours:hours,weekdays:weekdays,heatmap:heatmap,quality_series:qualitySeries,experts:expertRows,carriers:carrierRows,durations:durationRows};
   }
-
   function analyticsBucketLabel(value,granularity){
     var d=new Date(value);
     if(!Number.isFinite(d.getTime()))return "—";
     if(granularity==="hour")return new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit"}).format(d);
     return new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"2-digit"}).format(d);
   }
-
   function renderMetricBars(id,items,valueFn,labelFn,valueLabelFn){
     var el=$(id);if(!el)return;
     var list=(items||[]).filter(function(x){return Number(valueFn(x)||0)>=0;});
@@ -875,7 +815,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       return '<div class="metric-bar-row"><div><span>'+esc(labelFn(x))+'</span><strong>'+esc(valueLabelFn(x,v))+'</strong></div><i><b style="width:'+w.toFixed(1)+'%"></b></i></div>';
     }).join("")||'<p class="muted">Aucune donnée.</p>';
   }
-
   function renderCockpitIntelligence(rows){
     var data=cockpitAnalytics(rows),m=currentAggregate(rows),weekNames=["","Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
     setText("cockpit-analytics-mode",RUNTIME.mode==="production"?"AGRÉGATS SERVEUR":"CALCUL DÉMO");
@@ -892,7 +831,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     setText("cockpit-average-duration",m.connected?fmtDuration(m.acd):"—");
     setText("cockpit-volume-total",nfmt(m.calls)+" appels");
     setText("cockpit-asr-average","ASR "+nfmt(m.asr,1)+"%");
-
     var fullHours=Array.from({length:24},function(_,i){
       return hours.find(function(x){return Number(x.hour)===i;})||{hour:i,calls_total:0};
     });
@@ -901,7 +839,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       return days.find(function(x){return Number(x.weekday)===i+1;})||{weekday:i+1,calls_total:0};
     });
     renderMetricBars("cockpit-weekday-bars",fullDays,function(x){return x.calls_total;},function(x){return weekNames[x.weekday];},function(x,v){return nfmt(v);});
-
     var total=Math.max(1,m.calls),connected=Math.max(0,m.connected),abandoned=Math.max(0,m.abandoned),failed=Math.max(0,m.failed);
     var p1=connected/total*100,p2=(connected+abandoned)/total*100;
     var donut=$("cockpit-status-donut");
@@ -911,12 +848,10 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     if(legend)legend.innerHTML=[
       ["Aboutis",connected,"var(--green)"],["Abandons",abandoned,"var(--amber)"],["Échecs",failed,"var(--red)"]
     ].map(function(x){return '<div><i style="--dot:'+x[2]+'"></i><span>'+x[0]+'</span><strong>'+nfmt(x[1])+' • '+nfmt(x[1]/total*100,1)+'%</strong></div>';}).join("");
-
     renderMetricBars("cockpit-duration-bars",data.durations||[],function(x){return x.calls_total;},function(x){return x.dimension_label;},function(x,v){return nfmt(v);});
     renderMetricBars("cockpit-expert-bars",(data.experts||[]).slice(0,7),function(x){return x.expected_payout==null?x.calls_total:x.expected_payout;},function(x){return x.dimension_label;},function(x,v){return x.expected_payout==null?nfmt(x.calls_total)+" appels":money(v);});
     renderMetricBars("cockpit-carrier-bars",(data.carriers||[]).slice(0,7),function(x){return x.calls_total;},function(x){return x.dimension_label;},function(x,v){return nfmt(v)+" appels";});
     if(window.PGICockpitPro)window.PGICockpitPro.render({data:data,m:m,q:currentQuality(rows),currency:state.marketCurrency||"EUR"});
-
     var sampleNote=$("analytics-sample-note");
     if(sampleNote){
       sampleNote.hidden=!state.cdrSampleTruncated;
@@ -925,7 +860,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
         :"Les analyses affichées couvrent toute la période sélectionnée.";
     }
   }
-
   function bucketKey(d,range){
     var diff=(range.to-range.from)/(86400000);
     if(diff<=1)return pad(d.getHours())+"h";
@@ -933,7 +867,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     if(diff<=40)return pad(d.getDate())+"/"+pad(d.getMonth()+1);
     return new Intl.DateTimeFormat("fr-FR",{month:"short"}).format(d).replace(".","");
   }
-
   function series(rows){
     var analytics=cockpitAnalytics(rows);
     if(Array.isArray(analytics.series)&&analytics.series.length){
@@ -966,7 +899,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     });
     return Object.keys(map).map(function(k){return map[k];});
   }
-
   function renderChart(rows){
     var svg=$("revenue-chart"),agg=currentAggregate(rows),data=series(rows),w=760,h=250,p={l:42,r:14,t:18,b:28};
     if(agg.mixedCurrency){svg.innerHTML='<text x="380" y="125" text-anchor="middle" fill="#6d829a" font-size="12">Plusieurs devises : sélectionner un marché comparable</text>';return;}
@@ -981,7 +913,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     var area=line("ca")+" L "+sx(data.length-1)+" "+(h-p.b)+" L "+sx(0)+" "+(h-p.b)+" Z";
     svg.innerHTML='<defs><linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#00d4ff" stop-opacity=".18"/><stop offset="100%" stop-color="#00d4ff" stop-opacity="0"/></linearGradient></defs>'+grid+labels+'<path class="chart-area-revenue" d="'+area+'"/><path class="chart-line-revenue" d="'+line("ca")+'"/><path class="chart-line-payout" d="'+line("payout")+'"/>'+xlabels;
   }
-
   function renderAlerts(rows){
     var a=currentAggregate(rows),q=currentQuality(rows),items=[];
     if(!a.mixedCurrency&&Number(a.gap||0)>0.01){
@@ -1017,7 +948,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     $("alert-count").textContent=String(items.filter(function(x){return x.type==="warn";}).length);
     $("alerts-list").innerHTML=items.map(function(x){return '<div class="alert-item"><div class="alert-icon '+x.type+'">'+(x.type==="warn"?"!":"i")+'</div><div><strong>'+esc(x.title)+'</strong><small>'+esc(x.text)+'</small></div></div>';}).join("");
   }
-
   function renderExperts(rows){
     var analytics=cockpitAnalytics(rows),exact=RUNTIME.mode==="production"&&Array.isArray(analytics.experts)?analytics.experts:[];
     var names=Array.from(new Set(experts.concat(exact.map(function(x){return x.dimension_label;}).filter(Boolean))));
@@ -1036,7 +966,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     }).join("");
     $("experts-grid").innerHTML=html||'<p class="muted">Aucun expert configuré.</p>';
   }
-
   function renderHostCarrier(){
     if(RUNTIME.mode==="production"&&state.route){
       setText("host-sva-number","089 à attribuer");
@@ -1055,7 +984,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     setText("host-portability","À contractualiser");
     setText("host-switch-state","Prêt architecturalement");
   }
-
   function renderCarriers(rows){
     var analytics=cockpitAnalytics(rows),exact=RUNTIME.mode==="production"&&Array.isArray(analytics.carriers)?analytics.carriers:[];
     var totalCalls=exact.reduce(function(a,x){return a+Number(x.calls_total||0);},0);
@@ -1071,7 +999,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       return '<article class="entity-card"><h3>'+esc(name)+'</h3><div class="amount">'+nfmt(pct,1)+'%</div><small>Part des appels</small><div class="progress"><span style="width:'+pct.toFixed(1)+'%"></span></div><div class="entity-meta"><div><span>Appels</span><strong>'+a.calls+'</strong></div><div><span>Minutes</span><strong>'+nfmt(a.mins)+'</strong></div><div><span>Attendu</span><strong>'+money(a.expected)+'</strong></div><div><span>ASR</span><strong>'+nfmt(a.asr,1)+'%</strong></div></div></article>';
     }).join("")||'<p class="muted">Aucun opérateur observé sur la période.</p>';
   }
-
   function renderRecon(rows){
     if(RUNTIME.mode==="production"&&state.serverReconciliation&&Array.isArray(state.serverReconciliation.data)){
       var data=state.serverReconciliation.data;
@@ -1089,12 +1016,10 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       return '<article class="recon-card"><h3>'+esc(name)+'</h3><div class="amount">'+money(a.confirmed)+'</div><small>Confirmé / '+money(a.expected)+' attendu</small><div class="progress"><span style="width:'+Math.max(0,Math.min(100,ratio)).toFixed(1)+'%"></span></div><small>Concordance '+nfmt(ratio,2)+'%</small></article>';
     }).join("");
   }
-
   function csvCell(v){
     var s=String(v==null?"":v);
     return '"'+s.replace(/"/g,'""')+'"';
   }
-
   function exportCallsCsv(){
     var rows=applyCallFilters(filteredCalls());
     var header=["date","heure","appelant_masque","reseau","numero_sva","expert","attente_s","conversation_s","total_s","minutes_facturables","minutes_reversement","ca_service_ttc","reversement_attendu_ht","reversement_confirme_ht","ecart_ht","sip_code","cause_fin","codec","perte_paquets_pct","jitter_ms","latence_ms","mos","statut"];
@@ -1115,7 +1040,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     document.body.appendChild(a);a.click();a.remove();
     setTimeout(function(){URL.revokeObjectURL(url);if(button)button.disabled=false;},1000);
   }
-
   function showCallDetail(id){
     var c=allCalls.find(function(x){return String(x.id)===String(id);});
     if(!c)return;
@@ -1130,7 +1054,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       label("Codec",c.codec)+label("Perte paquets",nfmt(c.packetLoss,3)+" %")+label("Jitter",nfmt(c.jitter,2)+" ms")+label("Latence",nfmt(c.latency,2)+" ms")+label("MOS",nfmt(c.mos,2));
     var d=$("call-dialog");if(d&&typeof d.showModal==="function")d.showModal();
   }
-
   function platformChip(value){
     var v=String(value||"unknown").toLowerCase();
     var ok=["active","verified","paid","reconciled","payable"].includes(v);
@@ -1144,7 +1067,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     }[v]||String(value||"—").toUpperCase();
     return '<span class="platform-status '+(ok?"ok":warn?"warn":bad?"bad":"neutral")+'">'+esc(label)+"</span>";
   }
-
   function renderWholesale(){
     var data=RUNTIME.mode==="production"?state.wholesale:null;
     var summary=data&&data.summary?data.summary:{};
@@ -1166,7 +1088,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     var feeDetail=currencyTotals.length
       ?currencyTotals.map(function(x){return moneyIn(x.platform_fee||0,x.currency);}).join(" • ")
       :money(0);
-
     var real=RUNTIME.mode==="production"&&!!data;
     var carrierReady=!!(real&&state.route&&state.route.active_carrier);
     var numberReady=!!(real&&Number(summary.inventory_total||0)>0);
@@ -1177,7 +1098,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     var paymentReady=!!summary.payment_compliance_active;
     var complianceReady=tenantCount===0?true:(paymentReady&&kycPending===0);
     var readyCount=[carrierReady,numberReady,sipReady,complianceReady].filter(Boolean).length;
-
     setText("activation-steps",readyCount+"/4");
     var progress=$("activation-progress-bar");
     if(progress)progress.style.width=(readyCount*25)+"%";
@@ -1185,7 +1105,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     setText("activation-detail",real
       ?(readyCount===4?"Les prérequis techniques visibles dans PGI sont validés.":"PGI indique automatiquement le prochain blocage à lever avant exploitation.")
       :"Mode démo : la structure est prête, mais aucun contrat, numéro ou trunk réel n’est simulé.");
-
     function gate(id,label,ok){
       setText(id,label);
       var stateId=id+"-state";
@@ -1196,7 +1115,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     gate("gate-number",numberReady?(nfmt(summary.inventory_total||0)+" numéro(s) configuré(s)"):"Aucun numéro réel",numberReady);
     gate("gate-sip",sipReady?"Route SIP active":(carrierReady?"Connexion "+(connectionState||"à configurer"):"Non connecté"),sipReady);
     gate("gate-compliance",tenantCount===0?"Fondation prête":(complianceReady?"KYC & paiements conformes":(kycPending>0?nfmt(kycPending)+" KYC en attente":"Paiements à activer")),complianceReady);
-
     var priority={title:"Plateforme prête",detail:"Aucune action bloquante détectée dans le cockpit.",go:"wholesale"};
     if(!carrierReady)priority={title:"Finaliser l’opérateur SVA amont",detail:"Obtenir le contrat 089, le reversement et la livraison SIP avant toute activation réelle.",go:"carriers"};
     else if(!numberReady)priority={title:"Configurer le premier numéro de service",detail:"Ajouter le numéro réellement affecté par l’opérateur, son marché, sa devise, son tarif et son statut.",go:"wholesale"};
@@ -1207,7 +1125,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     setText("priority-action-detail",priority.detail);
     var priorityButton=$("priority-action-btn");
     if(priorityButton)priorityButton.setAttribute("data-go",priority.go);
-
     setText("overview-wh-state",real?(tenantCount>0?"Plateforme active":"Backend prêt"):"Fondation prête");
     setText("overview-wh-tenants",nfmt(tenantCount));
     setText("overview-wh-numbers",nfmt(summary.assignments_total||0));
@@ -1242,7 +1159,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     setText("wh-tenant-count",nfmt(tenants.length));
     setText("wh-number-count",nfmt(numbers.length));
     setText("wh-settlement-count",nfmt(settlements.length));
-
     setText("wh-foundation-status",real?"Backend wholesale connecté":"Prête architecturalement");
     setText("wh-foundation-detail",real
       ?nfmt(summary.tenants_total||0)+" client(s) • "+nfmt(summary.markets_total||markets.length||0)+" marché(s) • PostgreSQL"
@@ -1257,17 +1173,14 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     setText("wh-check-payments",real
       ?(summary.payment_compliance_active?"Profil de paiement actif":(profiles.length?"Profil présent, non actif":"Aucun profil actif"))
       :"Non activé");
-
     var tenantBody=$("wh-tenants-table");
     if(tenantBody)tenantBody.innerHTML=tenants.length?tenants.map(function(x){
       return "<tr><td><strong>"+esc(x.display_name||x.slug||"—")+"</strong></td><td>"+esc(x.tenant_type||"—")+"</td><td>"+esc(x.country_code||"—")+"</td><td>"+nfmt(x.markets||0)+"</td><td>"+esc(x.preferred_locale||"—")+"</td><td>"+esc(x.default_currency||"—")+"</td><td>"+platformChip(x.status)+"</td><td>"+platformChip(x.kyc_status)+"</td><td>"+nfmt(x.number_assignments||0)+"</td><td>"+nfmt(x.experts||0)+"</td></tr>";
     }).join(""):'<tr><td colspan="10">Aucun éditeur réel configuré.</td></tr>';
-
     var numberBody=$("wh-numbers-table");
     if(numberBody)numberBody.innerHTML=numbers.length?numbers.map(function(x){
       return "<tr><td><strong>"+esc(x.tenant||"—")+"</strong></td><td>"+esc(x.market||"—")+"</td><td>"+esc(x.display_number||x.e164||"—")+"</td><td>"+esc(x.number_type||"—")+"</td><td>"+esc(x.currency||"—")+"</td><td>"+esc(x.tariff_code||"—")+"</td><td>"+esc(x.assignment_type||"—")+"</td><td>"+platformChip(x.status)+"</td><td>"+platformChip(x.kyc_status)+"</td><td>"+esc(x.regulatory_assignor||"Non défini")+"</td></tr>";
     }).join(""):'<tr><td colspan="10">Aucune affectation réelle.</td></tr>';
-
     var settlementBody=$("wh-settlements-table");
     if(settlementBody)settlementBody.innerHTML=settlements.length?settlements.map(function(x){
       var period=(x.period_start||"—")+" → "+(x.period_end||"—");
@@ -1275,10 +1188,8 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       return "<tr><td><strong>"+esc(x.tenant||"—")+"</strong></td><td>"+esc(x.market||"—")+"</td><td>"+esc(currency)+"</td><td>"+esc(period)+"</td><td>"+moneyIn(x.upstream_payout_ht||0,currency)+"</td><td>"+moneyIn(x.platform_fee_ht||0,currency)+"</td><td><strong>"+moneyIn(x.net_payout_ht||0,currency)+"</strong></td><td>"+platformChip(x.status)+"</td></tr>";
     }).join(""):'<tr><td colspan="8">Aucun reversement client réel.</td></tr>';
   }
-
   function saveUiPreferences(){if(window.PGIWorkspace)window.PGIWorkspace.save(state.activeView,state.period,state.custom);}
   function restoreUiPreferences(){if(window.PGIWorkspace)window.PGIWorkspace.restoreInto(state,titles);}
-
   function applyMobileOverviewMode(){
     var view=$("view-overview");
     var button=$("mobile-overview-toggle");
@@ -1293,13 +1204,11 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       ?"Tous les indicateurs avancés sont affichés."
       :"Priorité au lancement SVA, aux finances, au temps réel et aux alertes.");
   }
-
   function toggleMobileOverview(){
     state.mobileOverviewExpanded=!state.mobileOverviewExpanded;
     if(window.PGIWorkspace)window.PGIWorkspace.saveMobileOverview(state.mobileOverviewExpanded);
     applyMobileOverviewMode();
   }
-
   function renderResetLog(){
     var label=state.baseline?new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeStyle:"short"}).format(state.baseline):"Historique complet";
     setText("baseline-label",label);
@@ -1307,7 +1216,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     if(!state.resets.length){log.innerHTML='<p class="muted">Aucune remise à zéro enregistrée.</p>';return;}
     log.innerHTML=state.resets.slice().reverse().map(function(x){var d=new Date(x.at);return '<div class="reset-entry"><strong>Nouvelle baseline globale</strong><small>'+new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeStyle:"short"}).format(d)+'</small></div>';}).join("");
   }
-
   function renderActiveView(rows){
     switch(state.activeView){
       case "calls":
@@ -1354,7 +1262,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
         break;
     }
   }
-
   function render(){
     var started=performance.now();
     var rows=filteredCalls();
@@ -1384,7 +1291,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       setText("cdr-errors","0");
     }
   }
-
   function switchView(name,options){
     if(!titles[name])return;
     state.activeView=name;
@@ -1395,7 +1301,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     if(!(options&&options.noRender))render();
     if(!(options&&options.noScroll))window.scrollTo({top:0,behavior:"smooth"});
   }
-
   function setPeriod(period){
     if(!["today","7d","week","month","year"].includes(period))return;
     state.period=period;
@@ -1404,7 +1309,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     saveUiPreferences();
     refreshData();
   }
-
   function executeCommand(id){
     if(id&&id.indexOf("view-")===0)return switchView(id.slice(5));
     if(id&&id.indexOf("period-")===0)return setPeriod(id.slice(7));
@@ -1416,7 +1320,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     if(id==="export"){switchView("calls");return setTimeout(exportCallsCsv,80);}
     if(id&&id.indexOf("print-")===0){switchView(id.slice(6));setTimeout(function(){window.print();},120);}
   }
-
   function bind(){
     qsa("[data-view]").forEach(function(b){b.addEventListener("click",function(){switchView(b.getAttribute("data-view"));});});
     qsa("[data-go]").forEach(function(b){b.addEventListener("click",function(){switchView(b.getAttribute("data-go"));});});
@@ -1431,7 +1334,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     $("refresh-btn").addEventListener("click",function(){refreshData({forceMeta:true});});
     if(window.PGICommandPalette)window.PGICommandPalette.init();
     window.addEventListener("pgi:command",function(e){executeCommand(e&&e.detail?e.detail.id:null);});
-
     var mobileOverviewToggle=$("mobile-overview-toggle");
     if(mobileOverviewToggle)mobileOverviewToggle.addEventListener("click",toggleMobileOverview);
     var marketFilter=$("market-filter");
@@ -1479,12 +1381,10 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     if(logoutButton)logoutButton.addEventListener("click",logoutProduction);
     window.addEventListener("pgi:auth-required",function(){requireProductionLogin("Session expirée. Identifiez-vous de nouveau.");});
   }
-
   function recordRuntimeError(){
     state.diagnostics.errors++;
     setText("runtime-errors",String(state.diagnostics.errors));
   }
-
   function updateConnectivity(){
     var online=navigator.onLine;
     var stateEl=$("network-state");
@@ -1495,7 +1395,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     }
     if(banner)banner.hidden=online;
   }
-
   function applyRuntimeMode(){
     var el=$("runtime-mode");
     var demo=RUNTIME.mode!=="production";
@@ -1518,7 +1417,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       cdrState.className="health warn";
     }
   }
-
   async function probeApiHealth(){
     var el=$("api-health-state");
     if(RUNTIME.mode!=="production"||!RUNTIME.apiBaseUrl||!window.PGIApi){
@@ -1544,7 +1442,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       renderSystemState();
     }
   }
-
   function handleVisibilityChange(){
     if(RUNTIME.mode!=="production")return;
     if(document.hidden){
@@ -1564,25 +1461,21 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     if(shouldSync)syncProductionData({mode:resumeMode});
     else startProductionEvents();
   }
-
   function startHealthLoop(){
     probeApiHealth();
     setInterval(function(){
       if(!document.hidden)probeApiHealth();
     },30000);
   }
-
   function registerServiceWorker(){
     if(!("serviceWorker" in navigator))return;
     window.addEventListener("load",function(){
       navigator.serviceWorker.register("./service-worker.js").catch(function(){});
     },{once:true});
   }
-
   function clock(){
     setText("footer-clock",new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeStyle:"medium"}).format(new Date()));
   }
-
   window.addEventListener("error",recordRuntimeError);
   window.addEventListener("unhandledrejection",recordRuntimeError);
   loadState();
