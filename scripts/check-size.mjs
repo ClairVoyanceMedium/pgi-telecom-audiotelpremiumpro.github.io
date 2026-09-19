@@ -16,6 +16,8 @@ const budgets = {
   "service-worker.js": 16 * 1024
 };
 
+const lazyBudgets = {"assets/performance-radar.js": 16 * 1024};
+
 let total = 0;
 const failures = [];
 for (const [file,max] of Object.entries(budgets)) {
@@ -23,7 +25,7 @@ for (const [file,max] of Object.entries(budgets)) {
   total += size;
   if (size > max) failures.push(`${file}: ${size} bytes > budget ${max}`);
 }
-const totalBudget = 260 * 1024;
+for (const [file,max] of Object.entries(lazyBudgets)) {\n  const size = fs.statSync(path.resolve(file)).size;\n  if (size > max) failures.push(`${file}: ${size} bytes > lazy budget ${max}`);\n}\nconst totalBudget = 260 * 1024;
 if (total > totalBudget) failures.push(`shell total: ${total} bytes > budget ${totalBudget}`);
 
 if (failures.length) {
