@@ -3,7 +3,7 @@
 
   var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
   var CONFIG={serviceRate:.8,payoutRate:.46,expertCostPerMin:.18,fixedCostPerCall:.03};
-  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,pendingSyncMode:"dashboard",hiddenAt:null,lastSyncAt:null,activeView:"overview",system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
+  var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,pendingSyncMode:"dashboard",scheduledSyncMode:"dashboard",hiddenAt:null,lastSyncAt:null,activeView:"overview",system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
   var titles={overview:"Cockpit",calls:"Appels",finance:"Finance",experts:"Experts",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Supervision",settings:"Paramètres"};var experts=["Frederick","Sofia","Emma","Lina","Clara","Nora"];
 var carriers=["Orange","SFR","Bouygues","Free"];
   var number089="0890 80 24 24";
@@ -139,8 +139,13 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       state.pendingSyncMode=mergeSyncMode(state.pendingSyncMode,mode);
       return;
     }
+    state.scheduledSyncMode=mergeSyncMode(state.scheduledSyncMode,mode);
     clearTimeout(state.syncTimer);
-    state.syncTimer=setTimeout(function(){syncProductionData({mode:mode});},900);
+    state.syncTimer=setTimeout(function(){
+      var next=state.scheduledSyncMode;
+      state.scheduledSyncMode="dashboard";
+      syncProductionData({mode:next});
+    },900);
   }
 
   function startProductionEvents(){
@@ -1403,22 +1408,17 @@ var carriers=["Orange","SFR","Bouygues","Free"];
   }
 
   function executeCommand(id){
-    if(id&&id.indexOf("view-")===0){switchView(id.slice(5));return;}
-    if(id==="period-today"){setPeriod("today");return;}
-    if(id==="period-7d"){setPeriod("7d");return;}
-    if(id==="period-week"){setPeriod("week");return;}
-    if(id==="period-month"){setPeriod("month");return;}
-    if(id==="period-year"){setPeriod("year");return;}
-    if(id==="refresh"){refreshData({forceMeta:true});return;}
-    if(id==="priority"){
-      switchView("overview");
-      setTimeout(function(){var b=$("priority-action-btn");if(b)b.focus();},250);
-      return;
+    if(id&&id.indexOf("view-")===0)return switchView(id.slice(5));
+    var periods={"period-today":"today","period-7d":"7d","period-week":"week","period-month":"month","period-year":"year"};
+    if(periods[id])return setPeriod(periods[id]);
+    if(id==="refresh")return refreshData({forceMeta:true});
+    if(id==="priority"){switchView("overview");return setTimeout(function(){var b=$("priority-action-btn");if(b)b.focus();},250);}
+    if(id==="analysis"){switchView("overview");return toggleMobileOverview();}
+    if(id==="export"){switchView("calls");return setTimeout(exportCallsCsv,80);}
+    if(id==="print-calls"||id==="print-finance"){
+      switchView(id==="print-calls"?"calls":"finance");
+      setTimeout(function(){window.print();},120);
     }
-    if(id==="analysis"){switchView("overview");toggleMobileOverview();return;}
-    if(id==="export"){switchView("calls");setTimeout(exportCallsCsv,80);return;}
-    if(id==="print-calls"){switchView("calls");setTimeout(function(){window.print();},120);return;}
-    if(id==="print-finance"){switchView("finance");setTimeout(function(){window.print();},120);}
   }
 
   function bind(){
