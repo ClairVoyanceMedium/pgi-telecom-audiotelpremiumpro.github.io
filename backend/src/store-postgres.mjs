@@ -141,7 +141,7 @@ export class PostgresStore{
       " AND ($3::text IS NULL OR f.market_id=b.market_id)"+
       ") ";
 
-    const [series,hours,weekdays,heatmap,quality,qualitySeries,dimensions]=await Promise.all([
+    const [series,hours,weekdays,heatmap,quality,qualitySeries,experience,experienceSeries,dimensions]=await Promise.all([
       this.readSql.unsafe(
         baseCte+
         "SELECT date_trunc($4::text,ts) AS bucket,min(currency) AS currency,count(DISTINCT currency)::int AS currency_count,"+
@@ -189,12 +189,14 @@ export class PostgresStore{
         " date_trunc('hour',$2::timestamptz) AS full_to,"+
         " (SELECT id FROM operating_markets WHERE country_code=$3) AS market_id"+
         "), qbase AS ("+
-        " SELECT r.quality_samples,r.mos_sum,r.packet_loss_sum,r.jitter_ms_sum,r.latency_ms_sum,r.dtmf_errors"+
+        " SELECT r.quality_samples,r.mos_sum,r.packet_loss_sum,r.jitter_ms_sum,r.latency_ms_sum,r.dtmf_errors,r.affected_samples,r.low_mos_samples"+
         " FROM quality_rollups_hourly_sharded r CROSS JOIN bounds b"+
         " WHERE b.full_to>b.full_from AND r.bucket_start>=b.full_from AND r.bucket_start<b.full_to"+
         " AND ($3::text IS NULL OR r.market_id=b.market_id)"+
         " UNION ALL"+
-        " SELECT 1::bigint,COALESCE(q.mos,0),COALESCE(q.rtp_packet_loss_percent,0),COALESCE(q.jitter_ms,0),COALESCE(q.latency_ms,0),COALESCE(q.dtmf_errors,0)::bigint"+
+        " SELECT 1::bigint,COALESCE(q.mos,0),COALESCE(q.rtp_packet_loss_percent,0),COALESCE(q.jitter_ms,0),COALESCE(q.latency_ms,0),COALESCE(q.dtmf_errors,0)::bigint,"+
+        " (COALESCE(q.rtp_packet_loss_percent,0)>=5 OR COALESCE(q.jitter_ms,0)>5 OR COALESCE(q.latency_ms,0)>150)::int::bigint,"+
+        " (q.mos IS NOT NULL AND q.mos<3.5)::int::bigint"+
         " FROM calls c JOIN call_quality q ON q.call_id=c.id CROSS JOIN bounds b"+
         " WHERE c.started_at>=b.from_ts AND c.started_at<=b.to_ts"+
         " AND NOT (b.full_to>b.full_from AND c.started_at>=b.full_from AND c.started_at<b.full_to)"+
@@ -204,7 +206,8 @@ export class PostgresStore{
         " CASE WHEN sum(quality_samples)>0 THEN (sum(packet_loss_sum)/sum(quality_samples))::float8 ELSE NULL END AS packet_loss_percent,"+
         " CASE WHEN sum(quality_samples)>0 THEN (sum(jitter_ms_sum)/sum(quality_samples))::float8 ELSE NULL END AS jitter_ms,"+
         " CASE WHEN sum(quality_samples)>0 THEN (sum(latency_ms_sum)/sum(quality_samples))::float8 ELSE NULL END AS latency_ms,"+
-        " COALESCE(sum(dtmf_errors),0)::bigint AS dtmf_errors FROM qbase",
+        " COALESCE(sum(dtmf_errors),0)::bigint AS dtmf_errors,"+
+        " COALESCE(sum(affected_samples),0)::bigint AS affected_samples,COALESCE(sum(low_mos_samples),0)::bigint AS low_mos_samples FROM qbase",
         [from,to,market||null]
       ),
       this.readSql.unsafe(
@@ -215,13 +218,15 @@ export class PostgresStore{
         " date_trunc('hour',$2::timestamptz) AS full_to,"+
         " (SELECT id FROM operating_markets WHERE country_code=$3) AS market_id"+
         "), qbase AS ("+
-        " SELECT r.bucket_start AS ts,r.quality_samples,r.mos_sum,r.packet_loss_sum,r.jitter_ms_sum,r.latency_ms_sum,r.dtmf_errors"+
+        " SELECT r.bucket_start AS ts,r.quality_samples,r.mos_sum,r.packet_loss_sum,r.jitter_ms_sum,r.latency_ms_sum,r.dtmf_errors,r.affected_samples,r.low_mos_samples"+
         " FROM quality_rollups_hourly_sharded r CROSS JOIN bounds b"+
         " WHERE b.full_to>b.full_from AND r.bucket_start>=b.full_from AND r.bucket_start<b.full_to"+
         " AND ($3::text IS NULL OR r.market_id=b.market_id)"+
         " UNION ALL"+
         " SELECT c.started_at AS ts,1::bigint,COALESCE(q.mos,0),COALESCE(q.rtp_packet_loss_percent,0),"+
-        " COALESCE(q.jitter_ms,0),COALESCE(q.latency_ms,0),COALESCE(q.dtmf_errors,0)::bigint"+
+        " COALESCE(q.jitter_ms,0),COALESCE(q.latency_ms,0),COALESCE(q.dtmf_errors,0)::bigint,"+
+        " (COALESCE(q.rtp_packet_loss_percent,0)>=5 OR COALESCE(q.jitter_ms,0)>5 OR COALESCE(q.latency_ms,0)>150)::int::bigint,"+
+        " (q.mos IS NOT NULL AND q.mos<3.5)::int::bigint"+
         " FROM calls c JOIN call_quality q ON q.call_id=c.id CROSS JOIN bounds b"+
         " WHERE c.started_at>=b.from_ts AND c.started_at<=b.to_ts"+
         " AND NOT (b.full_to>b.full_from AND c.started_at>=b.full_from AND c.started_at<b.full_to)"+
@@ -231,8 +236,87 @@ export class PostgresStore{
         " CASE WHEN sum(quality_samples)>0 THEN (sum(packet_loss_sum)/sum(quality_samples))::float8 ELSE NULL END AS packet_loss_percent,"+
         " CASE WHEN sum(quality_samples)>0 THEN (sum(jitter_ms_sum)/sum(quality_samples))::float8 ELSE NULL END AS jitter_ms,"+
         " CASE WHEN sum(quality_samples)>0 THEN (sum(latency_ms_sum)/sum(quality_samples))::float8 ELSE NULL END AS latency_ms,"+
-        " COALESCE(sum(dtmf_errors),0)::bigint AS dtmf_errors"+
+        " COALESCE(sum(dtmf_errors),0)::bigint AS dtmf_errors,COALESCE(sum(affected_samples),0)::bigint AS affected_samples,"+
+        " COALESCE(sum(low_mos_samples),0)::bigint AS low_mos_samples"+
         " FROM qbase GROUP BY date_trunc($4::text,ts) ORDER BY bucket",
+        [from,to,market||null,granularity]
+      ),
+      this.readSql.unsafe(
+        "WITH bounds AS ("+
+        " SELECT $1::timestamptz AS from_ts,$2::timestamptz AS to_ts,"+
+        " CASE WHEN $1::timestamptz=date_trunc('hour',$1::timestamptz) THEN $1::timestamptz"+
+        " ELSE date_trunc('hour',$1::timestamptz)+interval '1 hour' END AS full_from,"+
+        " date_trunc('hour',$2::timestamptz) AS full_to,"+
+        " (SELECT id FROM operating_markets WHERE country_code=$3) AS market_id"+
+        "), ebase AS ("+
+        " SELECT r.calls_total,r.calls_connected,r.calls_abandoned,r.wait_seconds_sum,r.wait_connected_seconds_sum,"+
+        " r.wait_abandoned_seconds_sum,r.answered_le_20s,r.abandoned_le_10s,r.ivr_seconds_sum,r.ivr_samples,"+
+        " r.queue_seconds_sum,r.queue_samples,r.wait_le_10s,r.wait_10_20s,r.wait_20_30s,r.wait_30_60s,r.wait_60_120s,r.wait_gt_120s"+
+        " FROM experience_rollups_hourly_sharded r CROSS JOIN bounds b"+
+        " WHERE b.full_to>b.full_from AND r.bucket_start>=b.full_from AND r.bucket_start<b.full_to"+
+        " AND ($3::text IS NULL OR r.market_id=b.market_id)"+
+        " UNION ALL"+
+        " SELECT 1::bigint,(c.call_status='connected')::int::bigint,(c.call_status='abandoned')::int::bigint,"+
+        " c.wait_seconds::bigint,(CASE WHEN c.call_status='connected' THEN c.wait_seconds ELSE 0 END)::bigint,"+
+        " (CASE WHEN c.call_status='abandoned' THEN c.wait_seconds ELSE 0 END)::bigint,"+
+        " (c.call_status='connected' AND c.wait_seconds<=20)::int::bigint,"+
+        " (c.call_status='abandoned' AND c.wait_seconds<=10)::int::bigint,"+
+        " (CASE WHEN c.queued_at IS NOT NULL AND c.ivr_started_at IS NOT NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (c.queued_at-c.ivr_started_at))) ELSE 0 END)::bigint,"+
+        " (c.queued_at IS NOT NULL AND c.ivr_started_at IS NOT NULL)::int::bigint,"+
+        " (CASE WHEN c.queued_at IS NOT NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (COALESCE(c.bridged_at,c.ended_at)-c.queued_at))) ELSE 0 END)::bigint,"+
+        " (c.queued_at IS NOT NULL)::int::bigint,(c.wait_seconds<=10)::int::bigint,"+
+        " (c.wait_seconds>10 AND c.wait_seconds<=20)::int::bigint,(c.wait_seconds>20 AND c.wait_seconds<=30)::int::bigint,"+
+        " (c.wait_seconds>30 AND c.wait_seconds<=60)::int::bigint,(c.wait_seconds>60 AND c.wait_seconds<=120)::int::bigint,"+
+        " (c.wait_seconds>120)::int::bigint"+
+        " FROM calls c CROSS JOIN bounds b"+
+        " WHERE c.started_at>=b.from_ts AND c.started_at<=b.to_ts"+
+        " AND NOT (b.full_to>b.full_from AND c.started_at>=b.full_from AND c.started_at<b.full_to)"+
+        " AND ($3::text IS NULL OR c.market_id=b.market_id)"+
+        ") SELECT COALESCE(sum(calls_total),0)::bigint AS samples,COALESCE(sum(calls_connected),0)::bigint AS connected,"+
+        " COALESCE(sum(calls_abandoned),0)::bigint AS abandoned,"+
+        " CASE WHEN sum(calls_total)>0 THEN sum(wait_seconds_sum)::float8/sum(calls_total) ELSE 0 END AS avg_wait_seconds,"+
+        " CASE WHEN sum(calls_connected)>0 THEN sum(wait_connected_seconds_sum)::float8/sum(calls_connected) ELSE 0 END AS avg_answered_wait_seconds,"+
+        " CASE WHEN sum(calls_abandoned)>0 THEN sum(wait_abandoned_seconds_sum)::float8/sum(calls_abandoned) ELSE 0 END AS avg_abandoned_wait_seconds,"+
+        " CASE WHEN sum(calls_connected)>0 THEN sum(answered_le_20s)::float8/sum(calls_connected)*100 ELSE 0 END AS answered_le_20s_percent,"+
+        " CASE WHEN sum(calls_abandoned)>0 THEN sum(abandoned_le_10s)::float8/sum(calls_abandoned)*100 ELSE 0 END AS abandoned_le_10s_percent,"+
+        " CASE WHEN sum(ivr_samples)>0 THEN sum(ivr_seconds_sum)::float8/sum(ivr_samples) ELSE 0 END AS avg_ivr_seconds,"+
+        " CASE WHEN sum(queue_samples)>0 THEN sum(queue_seconds_sum)::float8/sum(queue_samples) ELSE 0 END AS avg_queue_seconds,"+
+        " COALESCE(sum(wait_le_10s),0)::bigint AS wait_le_10s,COALESCE(sum(wait_10_20s),0)::bigint AS wait_10_20s,"+
+        " COALESCE(sum(wait_20_30s),0)::bigint AS wait_20_30s,COALESCE(sum(wait_30_60s),0)::bigint AS wait_30_60s,"+
+        " COALESCE(sum(wait_60_120s),0)::bigint AS wait_60_120s,COALESCE(sum(wait_gt_120s),0)::bigint AS wait_gt_120s"+
+        " FROM ebase",
+        [from,to,market||null]
+      ),
+      this.readSql.unsafe(
+        "WITH bounds AS ("+
+        " SELECT $1::timestamptz AS from_ts,$2::timestamptz AS to_ts,"+
+        " CASE WHEN $1::timestamptz=date_trunc('hour',$1::timestamptz) THEN $1::timestamptz"+
+        " ELSE date_trunc('hour',$1::timestamptz)+interval '1 hour' END AS full_from,"+
+        " date_trunc('hour',$2::timestamptz) AS full_to,"+
+        " (SELECT id FROM operating_markets WHERE country_code=$3) AS market_id"+
+        "), ebase AS ("+
+        " SELECT r.bucket_start AS ts,r.calls_total,r.calls_connected,r.calls_abandoned,r.wait_seconds_sum,r.wait_connected_seconds_sum,"+
+        " r.wait_abandoned_seconds_sum,r.answered_le_20s,r.abandoned_le_10s,r.queue_seconds_sum,r.queue_samples"+
+        " FROM experience_rollups_hourly_sharded r CROSS JOIN bounds b"+
+        " WHERE b.full_to>b.full_from AND r.bucket_start>=b.full_from AND r.bucket_start<b.full_to"+
+        " AND ($3::text IS NULL OR r.market_id=b.market_id)"+
+        " UNION ALL"+
+        " SELECT c.started_at AS ts,1::bigint,(c.call_status='connected')::int::bigint,(c.call_status='abandoned')::int::bigint,"+
+        " c.wait_seconds::bigint,(CASE WHEN c.call_status='connected' THEN c.wait_seconds ELSE 0 END)::bigint,"+
+        " (CASE WHEN c.call_status='abandoned' THEN c.wait_seconds ELSE 0 END)::bigint,"+
+        " (c.call_status='connected' AND c.wait_seconds<=20)::int::bigint,(c.call_status='abandoned' AND c.wait_seconds<=10)::int::bigint,"+
+        " (CASE WHEN c.queued_at IS NOT NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (COALESCE(c.bridged_at,c.ended_at)-c.queued_at))) ELSE 0 END)::bigint,"+
+        " (c.queued_at IS NOT NULL)::int::bigint"+
+        " FROM calls c CROSS JOIN bounds b"+
+        " WHERE c.started_at>=b.from_ts AND c.started_at<=b.to_ts"+
+        " AND NOT (b.full_to>b.full_from AND c.started_at>=b.full_from AND c.started_at<b.full_to)"+
+        " AND ($3::text IS NULL OR c.market_id=b.market_id)"+
+        ") SELECT date_trunc($4::text,ts) AS bucket,COALESCE(sum(calls_total),0)::bigint AS samples,"+
+        " CASE WHEN sum(calls_total)>0 THEN sum(wait_seconds_sum)::float8/sum(calls_total) ELSE 0 END AS avg_wait_seconds,"+
+        " CASE WHEN sum(calls_connected)>0 THEN sum(answered_le_20s)::float8/sum(calls_connected)*100 ELSE 0 END AS answered_le_20s_percent,"+
+        " CASE WHEN sum(calls_abandoned)>0 THEN sum(abandoned_le_10s)::float8/sum(calls_abandoned)*100 ELSE 0 END AS abandoned_le_10s_percent,"+
+        " CASE WHEN sum(queue_samples)>0 THEN sum(queue_seconds_sum)::float8/sum(queue_samples) ELSE 0 END AS avg_queue_seconds"+
+        " FROM ebase GROUP BY date_trunc($4::text,ts) ORDER BY bucket",
         [from,to,market||null,granularity]
       ),
       this.readSql.unsafe(
@@ -261,8 +345,10 @@ export class PostgresStore{
       hours:hours.map(row=>numberFields(row,["hour","calls_total","calls_connected","billable_seconds"])),
       weekdays:weekdays.map(row=>numberFields(row,["weekday","calls_total","calls_connected","billable_seconds"])),
       heatmap:heatmap.map(row=>numberFields(row,["weekday","hour","calls_total"])),
-      quality:quality[0]?numberFields(quality[0],["samples","dtmf_errors"]):{samples:0,mos:null,packet_loss_percent:null,jitter_ms:null,latency_ms:null,dtmf_errors:0},
-      quality_series:qualitySeries.map(row=>numberFields(row,["samples","dtmf_errors"])),
+      quality:quality[0]?numberFields(quality[0],["samples","dtmf_errors","affected_samples","low_mos_samples"]):{samples:0,mos:null,packet_loss_percent:null,jitter_ms:null,latency_ms:null,dtmf_errors:0,affected_samples:0,low_mos_samples:0},
+      quality_series:qualitySeries.map(row=>numberFields(row,["samples","dtmf_errors","affected_samples","low_mos_samples"])),
+      experience:experience[0]?numberFields(experience[0],["samples","connected","abandoned","wait_le_10s","wait_10_20s","wait_20_30s","wait_30_60s","wait_60_120s","wait_gt_120s"]):{samples:0},
+      experience_series:experienceSeries.map(row=>numberFields(row,["samples"])),
       experts:byType.expert.slice(0,50),
       carriers:byType.carrier.slice(0,50),
       durations:byType.duration
@@ -556,6 +642,7 @@ export class PostgresStore{
 
       await writeHourlyRollup(tx,call.id);
       await writeDashboardDimensionRollups(tx,call.id);
+      await writeExperienceRollup(tx,call.id);
 
       if(p.quality){
         await tx.unsafe(
@@ -1299,12 +1386,55 @@ export class PostgresStore{
   }
 }
 
+async function writeExperienceRollup(tx,callId){
+  await tx.unsafe(
+    "INSERT INTO experience_rollups_hourly_sharded("+
+    " bucket_start,market_id,rollup_shard,calls_total,calls_connected,calls_abandoned,wait_seconds_sum,"+
+    " wait_connected_seconds_sum,wait_abandoned_seconds_sum,answered_le_20s,abandoned_le_10s,ivr_seconds_sum,ivr_samples,"+
+    " queue_seconds_sum,queue_samples,wait_le_10s,wait_10_20s,wait_20_30s,wait_30_60s,wait_60_120s,wait_gt_120s)"+
+    " SELECT date_trunc('hour',c.started_at),c.market_id,(c.tenant_bucket%64)::smallint,1,"+
+    " (c.call_status='connected')::int,(c.call_status='abandoned')::int,c.wait_seconds,"+
+    " CASE WHEN c.call_status='connected' THEN c.wait_seconds ELSE 0 END,"+
+    " CASE WHEN c.call_status='abandoned' THEN c.wait_seconds ELSE 0 END,"+
+    " (c.call_status='connected' AND c.wait_seconds<=20)::int,(c.call_status='abandoned' AND c.wait_seconds<=10)::int,"+
+    " CASE WHEN c.queued_at IS NOT NULL AND c.ivr_started_at IS NOT NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (c.queued_at-c.ivr_started_at)))::bigint ELSE 0 END,"+
+    " (c.queued_at IS NOT NULL AND c.ivr_started_at IS NOT NULL)::int,"+
+    " CASE WHEN c.queued_at IS NOT NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (COALESCE(c.bridged_at,c.ended_at)-c.queued_at)))::bigint ELSE 0 END,"+
+    " (c.queued_at IS NOT NULL)::int,(c.wait_seconds<=10)::int,(c.wait_seconds>10 AND c.wait_seconds<=20)::int,"+
+    " (c.wait_seconds>20 AND c.wait_seconds<=30)::int,(c.wait_seconds>30 AND c.wait_seconds<=60)::int,"+
+    " (c.wait_seconds>60 AND c.wait_seconds<=120)::int,(c.wait_seconds>120)::int"+
+    " FROM calls c WHERE c.id=$1 AND c.market_id IS NOT NULL"+
+    " ON CONFLICT(bucket_start,market_id,rollup_shard) DO UPDATE SET"+
+    " calls_total=experience_rollups_hourly_sharded.calls_total+1,"+
+    " calls_connected=experience_rollups_hourly_sharded.calls_connected+EXCLUDED.calls_connected,"+
+    " calls_abandoned=experience_rollups_hourly_sharded.calls_abandoned+EXCLUDED.calls_abandoned,"+
+    " wait_seconds_sum=experience_rollups_hourly_sharded.wait_seconds_sum+EXCLUDED.wait_seconds_sum,"+
+    " wait_connected_seconds_sum=experience_rollups_hourly_sharded.wait_connected_seconds_sum+EXCLUDED.wait_connected_seconds_sum,"+
+    " wait_abandoned_seconds_sum=experience_rollups_hourly_sharded.wait_abandoned_seconds_sum+EXCLUDED.wait_abandoned_seconds_sum,"+
+    " answered_le_20s=experience_rollups_hourly_sharded.answered_le_20s+EXCLUDED.answered_le_20s,"+
+    " abandoned_le_10s=experience_rollups_hourly_sharded.abandoned_le_10s+EXCLUDED.abandoned_le_10s,"+
+    " ivr_seconds_sum=experience_rollups_hourly_sharded.ivr_seconds_sum+EXCLUDED.ivr_seconds_sum,"+
+    " ivr_samples=experience_rollups_hourly_sharded.ivr_samples+EXCLUDED.ivr_samples,"+
+    " queue_seconds_sum=experience_rollups_hourly_sharded.queue_seconds_sum+EXCLUDED.queue_seconds_sum,"+
+    " queue_samples=experience_rollups_hourly_sharded.queue_samples+EXCLUDED.queue_samples,"+
+    " wait_le_10s=experience_rollups_hourly_sharded.wait_le_10s+EXCLUDED.wait_le_10s,"+
+    " wait_10_20s=experience_rollups_hourly_sharded.wait_10_20s+EXCLUDED.wait_10_20s,"+
+    " wait_20_30s=experience_rollups_hourly_sharded.wait_20_30s+EXCLUDED.wait_20_30s,"+
+    " wait_30_60s=experience_rollups_hourly_sharded.wait_30_60s+EXCLUDED.wait_30_60s,"+
+    " wait_60_120s=experience_rollups_hourly_sharded.wait_60_120s+EXCLUDED.wait_60_120s,"+
+    " wait_gt_120s=experience_rollups_hourly_sharded.wait_gt_120s+EXCLUDED.wait_gt_120s,updated_at=now()",
+    [callId]
+  );
+}
+
 async function writeQualityRollup(tx,callId){
   await tx.unsafe(
     "INSERT INTO quality_rollups_hourly_sharded("+
-    " bucket_start,market_id,rollup_shard,quality_samples,mos_sum,packet_loss_sum,jitter_ms_sum,latency_ms_sum,dtmf_errors)"+
+    " bucket_start,market_id,rollup_shard,quality_samples,mos_sum,packet_loss_sum,jitter_ms_sum,latency_ms_sum,dtmf_errors,affected_samples,low_mos_samples)"+
     " SELECT date_trunc('hour',c.started_at),c.market_id,(c.tenant_bucket%64)::smallint,1,"+
-    " COALESCE(q.mos,0),COALESCE(q.rtp_packet_loss_percent,0),COALESCE(q.jitter_ms,0),COALESCE(q.latency_ms,0),COALESCE(q.dtmf_errors,0)"+
+    " COALESCE(q.mos,0),COALESCE(q.rtp_packet_loss_percent,0),COALESCE(q.jitter_ms,0),COALESCE(q.latency_ms,0),COALESCE(q.dtmf_errors,0),"+
+    " (COALESCE(q.rtp_packet_loss_percent,0)>=5 OR COALESCE(q.jitter_ms,0)>5 OR COALESCE(q.latency_ms,0)>150)::int,"+
+    " (q.mos IS NOT NULL AND q.mos<3.5)::int"+
     " FROM calls c JOIN call_quality q ON q.call_id=c.id"+
     " WHERE c.id=$1 AND c.market_id IS NOT NULL"+
     " ON CONFLICT(bucket_start,market_id,rollup_shard) DO UPDATE SET"+
@@ -1313,7 +1443,9 @@ async function writeQualityRollup(tx,callId){
     " packet_loss_sum=quality_rollups_hourly_sharded.packet_loss_sum+EXCLUDED.packet_loss_sum,"+
     " jitter_ms_sum=quality_rollups_hourly_sharded.jitter_ms_sum+EXCLUDED.jitter_ms_sum,"+
     " latency_ms_sum=quality_rollups_hourly_sharded.latency_ms_sum+EXCLUDED.latency_ms_sum,"+
-    " dtmf_errors=quality_rollups_hourly_sharded.dtmf_errors+EXCLUDED.dtmf_errors,updated_at=now()",
+    " dtmf_errors=quality_rollups_hourly_sharded.dtmf_errors+EXCLUDED.dtmf_errors,"+
+    " affected_samples=quality_rollups_hourly_sharded.affected_samples+EXCLUDED.affected_samples,"+
+    " low_mos_samples=quality_rollups_hourly_sharded.low_mos_samples+EXCLUDED.low_mos_samples,updated_at=now()",
     [callId]
   );
 }
