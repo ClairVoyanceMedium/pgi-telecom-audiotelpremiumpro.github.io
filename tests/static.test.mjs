@@ -240,7 +240,7 @@ test("le contrôle clients permet recherche pays impayés et suspension depuis l
   assert.match(customerAdmin,/ca-billing/);
   assert.match(customerAdmin,/ca-kyc/);
   assert.match(customerAdmin,/ca-kpis/);
-  assert.match(customerAdmin,/customer-admin\\.css/);
+  assert.match(customerAdmin,/customer-admin\.css/);
   assert.match(customerAdmin,/data-tenant-action/);
   assert.match(customerAdmin,/data-line-action/);
   assert.match(customerAdmin,/Alertes impayés/);
@@ -304,7 +304,7 @@ test("la PWA met en cache uniquement le shell critique",()=>{
   assert.doesNotMatch(index,/src="assets\/demo-data\.js"/);
   assert.match(app,/loadDemoCalls/);
   assert.doesNotMatch(sw,/assets\/command-palette\.js/);
-  assert.doesNotMatch(sw,/assets\\/customer-admin\\.css/);
+  assert.doesNotMatch(sw,/assets\/customer-admin\.css/);
   assert.match(sw,/pgi-telecom-shell-v27/);
 });
 
