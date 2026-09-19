@@ -26,7 +26,8 @@ function fmtTime(d){return new Intl.DateTimeFormat("fr-FR",{hour:"2-digit",minut
 function startOfDay(d){var x=new Date(d);x.setHours(0,0,0,0);return x;}
 function endOfDay(d){var x=new Date(d);x.setHours(23,59,59,999);return x;}
 function daysAgo(n){var d=new Date();d.setDate(d.getDate()-n);return d;}
-var allCalls=[],demoDataPromise=null;\nfunction loadDemoCalls(){if(RUNTIME.mode==="production")return Promise.resolve();if(window.PGIDemoData){allCalls=window.PGIDemoData.buildCalls({config:CONFIG,experts:experts,carriers:carriers,number:number089,core:window.PGICore});return Promise.resolve();}if(demoDataPromise)return demoDataPromise;demoDataPromise=new Promise(function(resolve,reject){var s=document.createElement("script");s.src="assets/demo-data.js";s.onload=function(){if(window.PGIDemoData)allCalls=window.PGIDemoData.buildCalls({config:CONFIG,experts:experts,carriers:carriers,number:number089,core:window.PGICore});resolve();};s.onerror=reject;document.head.appendChild(s);});return demoDataPromise;}
+var allCalls=[],demoDataPromise=null;
+function loadDemoCalls(){if(RUNTIME.mode==="production")return Promise.resolve();if(window.PGIDemoData){allCalls=window.PGIDemoData.buildCalls({config:CONFIG,experts:experts,carriers:carriers,number:number089,core:window.PGICore});return Promise.resolve();}if(demoDataPromise)return demoDataPromise;demoDataPromise=new Promise(function(resolve,reject){var s=document.createElement("script");s.src="assets/demo-data.js";s.onload=function(){if(window.PGIDemoData)allCalls=window.PGIDemoData.buildCalls({config:CONFIG,experts:experts,carriers:carriers,number:number089,core:window.PGICore});resolve();};s.onerror=reject;document.head.appendChild(s);});return demoDataPromise;}
 function productionDataRange(){
 return getRange();
 }
