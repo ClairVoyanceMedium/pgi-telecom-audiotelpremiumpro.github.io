@@ -109,6 +109,22 @@ test("oversized relay payload stays local and is not sent to PostgreSQL",async()
   await bus.close();
 });
 
+
+test("local-only events do not consume PostgreSQL notifications",async()=>{
+  const bus=new EventBus();
+  const sql=new FakeSql();
+  const received=[];
+  bus.subscribe(event=>received.push(event));
+  await bus.attachPostgres(sql,{listen:false});
+
+  bus.publish("outbox.event",{id:1},{relay:false});
+  await new Promise(resolve=>setImmediate(resolve));
+
+  assert.equal(received.length,1);
+  assert.equal(sql.notifications.length,0);
+  await bus.close();
+});
+
 test("invalid event names are rejected before publication",()=>{
   const bus=new EventBus();
   assert.throws(()=>bus.publish("bad event name",{}),/invalid event type/);
