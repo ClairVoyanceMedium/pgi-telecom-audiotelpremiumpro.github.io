@@ -69,10 +69,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const duplicateBilling=await store.applySubscriptionBillingEvent(billingEvent);
     assert.equal(duplicateBilling.duplicate,true);
 
+    await store.sql.unsafe("INSERT INTO tenant_number_assignments(tenant_id,sva_number_id,assignment_type,status,valid_from) SELECT t.id,s.id,'customer_service','active',now() FROM tenants t CROSS JOIN sva_numbers s WHERE t.slug='integration-external' AND s.e164='33890000001'");
     const externalExpert=await store.selectExpert({svaNumber:"33890000001"});
     assert.equal(externalExpert.display_name,"External Expert");
     await store.releaseExpert(externalExpert.id);
-    await store.sql.unsafe("INSERT INTO tenant_number_assignments(tenant_id,sva_number_id,assignment_type,status,valid_from) SELECT t.id,s.id,'customer_service','active',now() FROM tenants t CROSS JOIN sva_numbers s WHERE t.slug='integration-external' AND s.e164='33890000001'");
 
     const newPrice=await store.createSubscriptionPrice({amount_minor:350,currency:"EUR",effective_from:new Date(now.getTime()+60000).toISOString()},{sub:"admin"});
     assert.equal(Number(newPrice.amount_minor),350);
