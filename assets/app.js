@@ -852,7 +852,7 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     if(sampleNote){
       sampleNote.hidden=!state.cdrSampleTruncated;
       sampleNote.textContent=state.cdrSampleTruncated
-        ?"Les graphiques du Tour de contrôle utilisent les agrégats serveur exacts. Seuls certains détails CDR restent limités aux 1 000 appels récents chargés dans le navigateur."
+        ?"Agrégats serveur exacts. Certains détails CDR restent limités aux 1 000 appels récents."
         :"Les analyses affichées couvrent toute la période sélectionnée.";
     }
   }
