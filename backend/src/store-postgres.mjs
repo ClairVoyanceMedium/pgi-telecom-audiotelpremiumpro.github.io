@@ -324,7 +324,8 @@ export class PostgresStore{
         " sum(d.calls_total)::bigint AS calls_total,sum(d.calls_connected)::bigint AS calls_connected,"+
         " sum(d.conversation_seconds)::bigint AS conversation_seconds,sum(d.billable_seconds)::bigint AS billable_seconds,"+
         " CASE WHEN count(DISTINCT d.currency)<=1 THEN sum(d.generated_revenue_ttc)::float8 ELSE NULL END AS revenue,"+
-        " CASE WHEN count(DISTINCT d.currency)<=1 THEN sum(d.expected_payout_ht)::float8 ELSE NULL END AS expected_payout"+
+        " CASE WHEN count(DISTINCT d.currency)<=1 THEN sum(d.expected_payout_ht)::float8 ELSE NULL END AS expected_payout,"+
+        " CASE WHEN count(DISTINCT d.currency)<=1 THEN sum(d.estimated_margin_ht)::float8 ELSE NULL END AS margin"+
         " FROM dashboard_dimension_rollups_daily d LEFT JOIN operating_markets m ON m.id=d.market_id"+
         " WHERE d.bucket_date BETWEEN $1::timestamptz::date AND $2::timestamptz::date"+
         " AND ($3::text IS NULL OR m.country_code=$3)"+
