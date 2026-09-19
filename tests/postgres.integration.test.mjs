@@ -265,6 +265,9 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const onboardKyc=await store.sql.unsafe("SELECT status,registration_country FROM tenant_kyc_profiles WHERE tenant_id=(SELECT id FROM tenants WHERE public_id=$1::uuid)",[onboarded.public_id]);
     assert.equal(onboardKyc[0].status,"pending");
     assert.equal(onboardKyc[0].registration_country,"FR");
+    const pendingKycDirectory=await store.listTenants({q:"international",kyc:"pending",limit:10});
+    assert.equal(pendingKycDirectory.data.length,1);
+    assert.equal(pendingKycDirectory.data[0].public_id,onboarded.public_id);
     const onboardPlacement=await store.sql.unsafe("SELECT state,cluster_key FROM tenant_data_placement WHERE tenant_id=(SELECT id FROM tenants WHERE public_id=$1::uuid)",[onboarded.public_id]);
     assert.equal(onboardPlacement[0].state,"active");
     const onboardMarket=await store.sql.unsafe("SELECT status,compliance_status FROM tenant_market_profiles WHERE tenant_id=(SELECT id FROM tenants WHERE public_id=$1::uuid)",[onboarded.public_id]);
