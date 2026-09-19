@@ -16,7 +16,7 @@ FreeSWITCH
       │
       ├── SVI
       ├── files d'attente
-      ├── ponts vers experts
+      ├── ponts vers destinations des sociétés clientes
       ├── CDR
       └── événements temps réel
 ```
@@ -70,13 +70,13 @@ En production, FreeSWITCH doit transmettre le numéro SVA effectivement appelé 
 Exemple de contrat machine :
 
 ```
-GET http://127.0.0.1:8080/api/v1/internal/routing/next-expert?sva_number=0890123456
+GET http://127.0.0.1:8080/api/v1/internal/routing/next-destination?sva_number=0890123456
 ```
 
 ou, pour la réponse texte destinée au dialplan :
 
 ```
-GET http://127.0.0.1:8080/api/v1/internal/routing/next-expert/text?sva_number=0890123456
+GET http://127.0.0.1:8080/api/v1/internal/routing/next-destination/text?sva_number=0890123456
 ```
 
 Le backend résout :
@@ -84,8 +84,9 @@ Le backend résout :
 ```
 numéro SVA
   → tenant propriétaire
-  → experts appartenant au même tenant
-  → expert disponible
+  → destinations appartenant au même tenant
+  → destination spécifique au numéro ou générale
+  → priorité, capacité et secours
 ```
 
 En mode production :
@@ -98,3 +99,6 @@ En mode production :
 Ce comportement est volontairement fail-closed : aucun appel ne doit pouvoir tomber sur l'équipe d'un autre éditeur à cause d'une configuration incomplète.
 
 Le `destination_number` FreeSWITCH doit être propagé sans invention ni substitution. PGI conserve le numéro canonique en E.164 dans `sva_numbers` et n'accepte une forme nationale ou spécifique à un trunk que si elle a été explicitement configurée dans `sva_number_aliases`. Aucune normalisation ambiguë ne doit être devinée en production.
+
+
+Les destinations B2B sont stockées dans `tenant_call_destinations` et peuvent être un téléphone, un trunk SIP, un PBX ou un centre d'appels de la société cliente. Les nouvelles destinations démarrent en `testing` et doivent être explicitement activées. FreeSWITCH doit recopier `call_destination_id` dans le CDR. Les anciens endpoints `next-expert` restent disponibles uniquement pour compatibilité.

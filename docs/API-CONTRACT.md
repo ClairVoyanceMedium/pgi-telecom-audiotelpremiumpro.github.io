@@ -50,7 +50,9 @@ Chaque CDR devra exposer au minimum :
 - origin_carrier
 - origin_type
 - sva_number
-- expert_id
+- expert_id (optionnel)
+- call_destination_id
+- call_destination_label
 - wait_seconds
 - conversation_seconds
 - billable_seconds
@@ -221,3 +223,16 @@ Revient vers la route standby uniquement si l’opération est terminée et si l
 ## POST /platform/subscription-prices
 
 Publie une nouvelle version tarifaire de l’abonnement SVA externe. Les versions passées sont immuables ; la publication ferme la période de la version courante et ajoute une nouvelle version, sans réécrire l’historique.
+
+
+## Routage B2B des destinations
+
+`GET /internal/routing/next-destination?sva_number=...` est l'endpoint machine privé nominal pour FreeSWITCH. Il résout le numéro, le tenant, l'accès SVA, l'affectation et une destination active non saturée. Une destination spécifique au numéro est prioritaire sur une destination générale.
+
+`GET /internal/routing/next-destination/text?sva_number=...` fournit la variante dialplan.
+
+`POST /internal/call-destinations/:id/release` libère le compteur de concurrence.
+
+`POST /platform/tenants/:id/call-destinations` crée une destination en état `testing`. Types : `pstn`, `sip`, `pbx`, `contact_center`.
+
+`POST /platform/call-destinations/:id/status` active, remet en test ou désactive une destination.

@@ -19,7 +19,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
   const bus=new EventBus();
   const store=await PostgresStore.connect(config(),bus);
   try{
-    await store.sql.unsafe("TRUNCATE TABLE settlement_call_matches,carrier_settlements,call_quality,financial_ledger,outbox_events,raw_cdr_events,calls,callers,expert_presence_events,metric_baselines,carrier_switches,number_carrier_assignments,carrier_connections,carrier_adapters,carrier_contracts,number_portability_events,sva_numbers,carriers,audit_log,api_idempotency_keys RESTART IDENTITY CASCADE");
+    await store.sql.unsafe("TRUNCATE TABLE settlement_call_matches,carrier_settlements,call_quality,financial_ledger,outbox_events,raw_cdr_events,calls,tenant_call_destinations,callers,expert_presence_events,metric_baselines,carrier_switches,number_carrier_assignments,carrier_connections,carrier_adapters,carrier_contracts,number_portability_events,sva_numbers,carriers,audit_log,api_idempotency_keys RESTART IDENTITY CASCADE");
     await store.sql.unsafe("UPDATE app_users SET expert_id=NULL; DELETE FROM experts");
     await store.sql.unsafe("INSERT INTO carriers(name,kind) VALUES('Host A','sva_host'),('Host B','sva_host')");
     await store.sql.unsafe("INSERT INTO logical_carrier_routes(route_key,description) VALUES('sva-primary','Integration test route')");
@@ -71,6 +71,13 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(duplicateBilling.duplicate,true);
 
     await store.sql.unsafe("INSERT INTO tenant_number_assignments(tenant_id,sva_number_id,assignment_type,status,valid_from) SELECT t.id,s.id,'customer_service','active',now() FROM tenants t CROSS JOIN sva_numbers s WHERE t.slug='integration-external' AND s.e164='33890000001'");
+    const extAssignmentForRoute=await store.sql.unsafe("SELECT id FROM tenant_number_assignments WHERE tenant_id=(SELECT id FROM tenants WHERE slug='integration-external') AND sva_number_id=(SELECT id FROM sva_numbers WHERE e164='33890000001') LIMIT 1");
+    const createdDestination=await store.createCallDestination(externalIdentity[0].public_id,{assignment_id:Number(extAssignmentForRoute[0].id),label:"Standard principal",destination_type:"pstn",destination_uri:"tel:+33123456789",priority:10,max_concurrent_calls:25},{sub:"admin"});
+    assert.equal(createdDestination.status,"testing");
+    await store.setCallDestinationStatus(createdDestination.id,"active",{sub:"admin"},"integration");
+    const customerRoute=await store.selectCallDestination({svaNumber:"33890000001"});
+    assert.equal(customerRoute.route_kind,"destination");assert.equal(customerRoute.destination_uri,"tel:+33123456789");
+    await store.releaseCallDestination(customerRoute.call_destination_id);
     const externalExpert=await store.selectExpert({svaNumber:"33890000001"});
     assert.equal(externalExpert.display_name,"External Expert");
     await store.releaseExpert(externalExpert.id);
@@ -95,6 +102,8 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(controlDetail.tenant.premium_call_access,true);
     assert.equal(controlDetail.subscriptions[0].status,"active");
     assert.equal(controlDetail.lines.length,1);
+    assert.equal(controlDetail.destinations.length,1);
+    assert.equal(controlDetail.destinations[0].label,"Standard principal");
     assert.equal(controlDetail.experts.length,1);
     assert.ok(Object.hasOwn(controlDetail,"activity"));
     assert.ok(Array.isArray(controlDetail.audit));
@@ -279,10 +288,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const metrics=await store.metrics();
     assert.equal(metrics.calls_total,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
-    assert.equal(migrations.length,21);
+    assert.equal(migrations.length,22);
     assert.equal(new Set(migrations.map(x=>x.version)).size,migrations.length);
     assert.equal(migrations[0].version,"001_baseline");
-    assert.equal(migrations.at(-1).version,"021_customer_admin_filters");
+    assert.equal(migrations.at(-1).version,"022_b2b_call_destinations");
     for(const migration of migrations)assert.match(migration.checksum,/^[a-f0-9]{64}$/);
   }finally{
     await store.close();

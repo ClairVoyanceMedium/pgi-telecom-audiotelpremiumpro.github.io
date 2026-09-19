@@ -266,7 +266,11 @@ test("le dossier client 1.22 centralise les opérations sans alourdir le shell",
   assert.match(customerAdmin,/customerAdminSummary/);
   assert.match(api,/tenantControlDetail:function/);
   assert.match(api,/setExpertStatus:function/);
-  for(const label of ["DOSSIER CLIENT CENTRALISÉ","Lignes SVA","Experts du client","Reversements récents","Historique & audit"])assert.ok(tenantControlDetail.includes(label));
+  assert.match(api,/createCallDestination:function/);
+  assert.match(api,/setCallDestinationStatus:function/);
+  assert.match(tenantControlDetail,/data-destination-create/);
+  assert.match(tenantControlDetail,/data-destination-status/);
+  for(const label of ["DOSSIER CLIENT CENTRALISÉ","Lignes SVA","Destinations d’appel de la société","Agents / postes optionnels","Reversements récents","Historique & audit"])assert.ok(tenantControlDetail.includes(label));
   assert.match(tenantControlDetail,/data-tenant-status/);
   assert.match(tenantControlDetail,/data-line-status/);
   assert.match(tenantControlDetail,/data-expert-apply/);

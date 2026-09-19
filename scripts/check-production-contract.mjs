@@ -42,6 +42,7 @@ const usageLedgerMigration=fs.readFileSync("database/migrations/014_metered_usag
 const objectLifecycleMigration=fs.readFileSync("database/migrations/015_object_storage_data_lifecycle.sql","utf8");
 const dashboardDimensionMigration=fs.readFileSync("database/migrations/016_dashboard_dimension_rollups.sql","utf8");
 const qualityRollupMigration=fs.readFileSync("database/migrations/017_quality_rollups.sql","utf8");
+const b2bDestinationMigration=fs.readFileSync("database/migrations/022_b2b_call_destinations.sql","utf8");
 const workersSource=fs.readFileSync("backend/src/workers.mjs","utf8");
 const resilienceDoc=fs.readFileSync("docs/RESILIENCE.md","utf8");
 const prometheusAlerts=fs.readFileSync("infra/observability/prometheus-alerts.example.yml","utf8");
@@ -114,6 +115,8 @@ if(!/CREATE OR REPLACE behavioral object/.test(migrationSafety))failures.push("m
 if(!/CREATE TABLE tenants/.test(wholesaleMigration)||!/tenant_number_assignments/.test(wholesaleMigration)||!/tenant_settlements/.test(wholesaleMigration))failures.push("wholesale migration must preserve tenant, number assignment and settlement foundations");
 if(!/tenant_kyc_profiles/.test(wholesaleComplianceMigration)||!/payment_compliance_profiles/.test(wholesaleComplianceMigration)||!/regulatory_assignor_carrier_id/.test(wholesaleComplianceMigration))failures.push("wholesale compliance migration must preserve KYC, payment and regulatory assignor controls");
 if(!/SVA_NUMBER_NOT_ROUTABLE/.test(postgresStore)||!/EXPERT_TENANT_MISMATCH/.test(postgresStore)||!/tenant_id/.test(postgresStore))failures.push("PostgreSQL routing must remain tenant-bound");
+if(!/tenant_call_destinations/.test(b2bDestinationMigration)||!/call_destination_id/.test(b2bDestinationMigration)||!/tenant_scoped_call_destinations/.test(b2bDestinationMigration))failures.push("B2B destination migration must preserve tenant-bound call routing");
+if(!/selectCallDestination/.test(postgresStore)||!/next-destination/.test(backendServer)||!/CALL_DESTINATION_TENANT_MISMATCH/.test(postgresStore))failures.push("B2B telephony routing must prefer tenant destinations and reject cross-tenant CDRs");
 if(!/SVA_ROUTING_CONTEXT_REQUIRED/.test(backendServer)||!/resolveTelephonyRoutingContext/.test(backendServer))failures.push("production telephony must require an SVA routing context");
 if(!/\/api\/v1\/platform\/overview/.test(backendServer)||!/platform\.overview/.test(backendServer))failures.push("backend must expose the read-only wholesale overview");
 if(!/wholesaleOverview/.test(apiClient))failures.push("frontend API client must expose the wholesale overview");

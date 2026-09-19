@@ -17,6 +17,7 @@ const experienceRollupMigration=fs.readFileSync("database/migrations/018_call_ex
 const subscriptionBillingMigration=fs.readFileSync("database/migrations/019_external_subscription_billing.sql","utf8");
 const customerControlMigration=fs.readFileSync("database/migrations/020_customer_control_center.sql","utf8");
 const customerAdminFiltersMigration=fs.readFileSync("database/migrations/021_customer_admin_filters.sql","utf8");
+const b2bDestinationMigration=fs.readFileSync("database/migrations/022_b2b_call_destinations.sql","utf8");
 const resilienceDocs=fs.readFileSync("docs/RESILIENCE.md","utf8");
 const alertRules=fs.readFileSync("infra/observability/prometheus-alerts.example.yml","utf8");
 const schema=fs.readFileSync("database/schema.sql","utf8");
@@ -211,3 +212,6 @@ test("le cockpit analytique reste borné côté serveur",()=>{
   assert.ok(store.includes("writeQualityRollup"));
   assert.ok(server.includes("/api/v1/dashboard/analytics"));
 });
+
+
+test("B2B call destinations keep routing tenant-bound and expert-optional",()=>{for(const token of ["CREATE TABLE tenant_call_destinations","call_destination_id","tenant_scoped_call_destinations","max_concurrent_calls"])assert.ok(b2bDestinationMigration.includes(token),token);assert.ok(schema.includes("tenant_call_destinations"));assert.ok(store.includes("selectCallDestination"));assert.ok(store.includes("CALL_DESTINATION_TENANT_MISMATCH"));});

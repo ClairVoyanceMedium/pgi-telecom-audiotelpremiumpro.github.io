@@ -15,7 +15,7 @@ FreeSWITCH
     │
     ├── événements temps réel
     ├── CDR
-    └── routage experts
+    └── routage destinations clientes
             │
             ▼
 API PGI Telecom
@@ -105,7 +105,7 @@ adaptateur normalisé
         └── règlement
 ```
 
-Un changement d'opérateur ne modifie ni le numéro, ni les experts, ni le modèle d'appel, ni le dashboard. L'ancien opérateur reste identifiable sur les appels historiques via `host_carrier_id`.
+Un changement d'opérateur ne modifie ni le numéro, ni les destinations des sociétés clientes, ni le modèle d'appel, ni le dashboard. L'ancien opérateur reste identifiable sur les appels historiques via `host_carrier_id`.
 
 
 ## Architecture multi-tenant / wholesale
@@ -129,7 +129,7 @@ Tenant / éditeur final
           │
    ┌──────┼──────┐
    ▼      ▼      ▼
-Experts  CDR   Finance
+Destinations  CDR   Finance
 ```
 
 ### Isolation des clients
@@ -141,6 +141,7 @@ Le modèle introduit :
 - `tenant_number_assignments` : relation commerciale et réglementaire entre client et numéro ;
 - `tenant_kyc_profiles` : état de vérification de l'éditeur ;
 - `tenant_settlements` : relevés de reversement client ;
+- `tenant_call_destinations` : téléphones, SIP, standards et centres d’appels des sociétés clientes ;
 - `tenant_settlement_calls` : traçabilité appel par appel ;
 - `payment_compliance_profiles` : cadre de circulation des fonds.
 
@@ -198,3 +199,8 @@ Le control plane hyperscale est complété par :
 Les comptes internes PGI conservent l'accès control-plane. Une future API client doit utiliser un rôle SQL distinct limité aux vues tenant-scoped.
 
 Voir `docs/RESILIENCE.md`.
+
+
+## Routage B2B des appels
+
+Le routage nominal n'impose plus un expert PGI. Le backend résout le tenant propriétaire du numéro puis sélectionne une `tenant_call_destination` active : d'abord une destination liée au numéro, puis une destination générale, ensuite la priorité, la capacité disponible et la charge active. Le module `experts` reste optionnel pour les clients qui veulent gérer des agents individuels.

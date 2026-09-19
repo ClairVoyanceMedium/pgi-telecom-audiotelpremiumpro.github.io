@@ -17,6 +17,8 @@ export class MemoryStore{
       {id:3,code:"EMMA",display_name:"Emma",destination_uri:"loopback/9103",status:"away",enabled:true,active_calls:0,last_assigned_at:null},
       {id:4,code:"LINA",display_name:"Lina",destination_uri:"loopback/9104",status:"available",enabled:true,active_calls:0,last_assigned_at:null}
     ];
+    this.callDestinations=[];
+    this.nextDestinationId=1;
     this.baselines=[];
     this.rawEventKeys=new Set();
     this.outbox=[];
@@ -280,6 +282,13 @@ export class MemoryStore{
     return {...expert};
   }
 
+  async selectCallDestination(context={}){
+    const active=this.callDestinations.filter(x=>x.status==="active"&&(!x.max_concurrent_calls||x.active_calls<x.max_concurrent_calls)).sort((a,b)=>a.priority-b.priority||a.active_calls-b.active_calls||a.id-b.id)[0];
+    if(active){active.active_calls++;active.last_assigned_at=new Date().toISOString();return {...active,route_kind:"destination",call_destination_id:active.id,expert_id:null};}
+    const expert=await this.selectExpert(context);return expert?{...expert,route_kind:"expert",call_destination_id:null,expert_id:expert.id,label:expert.display_name}:null;
+  }
+  async releaseCallDestination(id){const row=this.callDestinations.find(x=>x.id===Number(id));if(!row)throw problem(404,"CALL_DESTINATION_NOT_FOUND");row.active_calls=Math.max(0,Number(row.active_calls||0)-1);return {...row};}
+
   async selectExpert(context={}){
     void context;
     const expert=selectExpert(this.experts);
@@ -346,6 +355,8 @@ export class MemoryStore{
       sva_number:String(p.sva_number||"Unknown"),
       expert_id:p.expert_id==null?null:Number(p.expert_id),
       expert_name:String(p.expert_name||""),
+      call_destination_id:p.call_destination_id==null?null:Number(p.call_destination_id),
+      call_destination_label:String(p.destination_label||""),
       wait_seconds:Math.max(0,Number(p.wait_seconds||0)),
       conversation_seconds:conversation,
       total_seconds:Math.max(0,Number(p.total_seconds||Math.round((Date.parse(p.ended_at)-Date.parse(p.started_at))/1000))),
@@ -655,6 +666,9 @@ export class MemoryStore{
     void id;void status;
     throw problem(404,"ASSIGNMENT_NOT_FOUND");
   }
+
+  async createCallDestination(publicId,input={}){void publicId;const label=String(input.label||"").trim(),destination_uri=String(input.destination_uri||"").trim();if(!label||!destination_uri)throw problem(400,"INVALID_CALL_DESTINATION");const row={id:this.nextDestinationId++,tenant_id:null,sva_number_id:null,label,destination_type:String(input.destination_type||"pstn"),destination_uri,priority:Number(input.priority||100),status:"testing",max_concurrent_calls:input.max_concurrent_calls==null?null:Number(input.max_concurrent_calls),active_calls:0};this.callDestinations.push(row);return structuredClone(row);}
+  async setCallDestinationStatus(id,status){const row=this.callDestinations.find(x=>x.id===Number(id));if(!row)throw problem(404,"CALL_DESTINATION_NOT_FOUND");if(!["active","testing","disabled"].includes(status))throw problem(400,"INVALID_CALL_DESTINATION_STATUS");row.status=status;if(status==="disabled")row.active_calls=0;return structuredClone(row);}
 
   async scanUnpaidSubscriptions(){
     return [];

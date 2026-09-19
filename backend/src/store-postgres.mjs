@@ -367,7 +367,7 @@ export class PostgresStore{
     const rows=await this.sql.unsafe(
       "SELECT c.id,c.external_call_id,c.started_at,c.ivr_started_at,c.queued_at,c.bridged_at,c.ended_at,"+
       " ca.caller_masked,oc.name AS origin_carrier,hc.name AS host_carrier,sn.display_number AS sva_number,"+
-      " c.currency,m.country_code AS market,e.id AS expert_id,e.display_name AS expert_name,c.wait_seconds,c.conversation_seconds,c.total_seconds,"+
+      " c.currency,m.country_code AS market,e.id AS expert_id,e.display_name AS expert_name,c.call_destination_id,c.call_destination_label,d.destination_type,d.destination_uri,c.wait_seconds,c.conversation_seconds,c.total_seconds,"+
       " c.billable_seconds,c.payout_eligible_seconds,c.call_status,c.sip_final_code,c.hangup_cause,c.codec,"+
       " c.service_rate_ttc_per_min::float8,c.carrier_rate_ht_per_min::float8,c.retail_service_amount_ttc::float8,"+
       " c.expected_payout_ht::float8,COALESCE(c.confirmed_payout_ht,0)::float8 AS confirmed_payout_ht,"+
@@ -378,7 +378,7 @@ export class PostgresStore{
       " LEFT JOIN callers ca ON ca.id=c.caller_id LEFT JOIN carriers oc ON oc.id=c.origin_carrier_id"+
       " LEFT JOIN carriers hc ON hc.id=c.host_carrier_id LEFT JOIN sva_numbers sn ON sn.id=c.sva_number_id"+
       " LEFT JOIN operating_markets m ON m.id=c.market_id"+
-      " LEFT JOIN experts e ON e.id=c.expert_id LEFT JOIN call_quality q ON q.call_id=c.id"+
+      " LEFT JOIN experts e ON e.id=c.expert_id LEFT JOIN tenant_call_destinations d ON d.id=c.call_destination_id LEFT JOIN call_quality q ON q.call_id=c.id"+
       " WHERE ($1::timestamptz IS NULL OR f.started_at >= $1::timestamptz)"+
       " AND ($2::timestamptz IS NULL OR f.started_at <= $2::timestamptz)"+
       " AND ($3::bigint IS NULL OR c.expert_id=$3)"+
@@ -425,6 +425,52 @@ export class PostgresStore{
     });
     this.eventBus.publish("expert.status",{id:result.id,status:result.status});
     return result;
+  }
+
+  async selectCallDestination(context={}){
+    const svaNumber=String(context.svaNumber||"").trim();
+    const routed=await this.sql.begin(async tx=>{
+      let tenantId=null,marketId=null,svaId=null;
+      if(svaNumber){
+        const svaRows=await tx.unsafe(
+          "SELECT sn.id,sn.tenant_id,sn.market_id,t.tenant_type FROM sva_numbers sn"+
+          " LEFT JOIN tenants t ON t.id=sn.tenant_id LEFT JOIN sva_number_aliases a ON a.sva_number_id=sn.id AND a.enabled"+
+          " WHERE (sn.e164=$1 OR sn.display_number=$1 OR a.alias=$1) AND sn.status IN ('active','porting')"+
+          " ORDER BY CASE WHEN sn.e164=$1 THEN 0 WHEN sn.display_number=$1 THEN 1 ELSE 2 END LIMIT 1",[svaNumber]);
+        const sva=svaRows[0];
+        if(!sva)throw problem(404,"SVA_NUMBER_NOT_ROUTABLE");
+        if(sva.tenant_id==null)throw problem(409,"SVA_TENANT_NOT_CONFIGURED");
+        tenantId=Number(sva.tenant_id);marketId=sva.market_id==null?null:Number(sva.market_id);svaId=Number(sva.id);
+        const access=await tx.unsafe("SELECT pgi_tenant_has_premium_call_access($1,$2,now()) AS allowed",[tenantId,marketId]);
+        if(!access[0]?.allowed)throw problem(402,"SVA_SUBSCRIPTION_REQUIRED");
+        if(sva.tenant_type!=="internal"){
+          const assignments=await tx.unsafe("SELECT id FROM tenant_number_assignments WHERE tenant_id=$1 AND sva_number_id=$2 AND status='active' AND (valid_from IS NULL OR valid_from<=now()) AND (valid_to IS NULL OR valid_to>=now()) LIMIT 1",[tenantId,svaId]);
+          if(!assignments.length)throw problem(423,"SVA_ASSIGNMENT_INACTIVE");
+        }
+      }
+      if(tenantId==null)return null;
+      const rows=await tx.unsafe(
+        "SELECT id,tenant_id,sva_number_id,label,destination_type,destination_uri,priority,status,failover_enabled,max_concurrent_calls,active_calls,last_assigned_at"+
+        " FROM tenant_call_destinations WHERE tenant_id=$1 AND status='active' AND (sva_number_id=$2 OR sva_number_id IS NULL)"+
+        " AND (max_concurrent_calls IS NULL OR active_calls<max_concurrent_calls)"+
+        " ORDER BY CASE WHEN sva_number_id=$2 THEN 0 ELSE 1 END,priority ASC,active_calls ASC,last_assigned_at NULLS FIRST,id ASC LIMIT 1 FOR UPDATE SKIP LOCKED",[tenantId,svaId]);
+      const destination=rows[0];if(!destination)return null;
+      const updated=await tx.unsafe(
+        "UPDATE tenant_call_destinations SET active_calls=active_calls+1,last_assigned_at=now(),updated_at=now() WHERE id=$1 AND tenant_id=$2"+
+        " RETURNING id,tenant_id,sva_number_id,label,destination_type,destination_uri,priority,status,failover_enabled,max_concurrent_calls,active_calls,last_assigned_at",[destination.id,tenantId]);
+      const row=updated[0];return {...row,route_kind:"destination",call_destination_id:Number(row.id),expert_id:null};
+    });
+    if(routed)return routed;
+    const legacy=await this.selectExpert(context);
+    return legacy?{...legacy,route_kind:"expert",call_destination_id:null,expert_id:Number(legacy.id),label:legacy.display_name}:null;
+  }
+
+  async releaseCallDestination(id){
+    id=Number(id);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_CALL_DESTINATION_ID");
+    const rows=await this.sql.unsafe("UPDATE tenant_call_destinations SET active_calls=GREATEST(active_calls-1,0),updated_at=now() WHERE id=$1 RETURNING id,tenant_id,label,destination_type,destination_uri,status,active_calls,last_assigned_at",[id]);
+    const destination=rows[0];if(!destination)throw problem(404,"CALL_DESTINATION_NOT_FOUND");
+    this.eventBus.publish("call_destination.released",{id:destination.id,tenant_id:destination.tenant_id,active_calls:destination.active_calls});
+    return destination;
   }
 
   async selectExpert(context={}){
@@ -588,6 +634,13 @@ export class PostgresStore{
         if(Number(sva.tenant_id)!==Number(expert.tenant_id))throw problem(409,"EXPERT_TENANT_MISMATCH");
       }
 
+      let callDestination=null;
+      if(p.call_destination_id!=null){
+        const rows=await tx.unsafe("SELECT id,tenant_id,label,destination_type,destination_uri FROM tenant_call_destinations WHERE id=$1 LIMIT 1",[Number(p.call_destination_id)]);
+        callDestination=rows[0]||null;if(!callDestination)throw problem(409,"CALL_DESTINATION_NOT_CONFIGURED");
+        if(Number(sva.tenant_id)!==Number(callDestination.tenant_id))throw problem(409,"CALL_DESTINATION_TENANT_MISMATCH");
+      }
+
       const callerHash=deriveCallerHash(p,{key:this.config.callerHashKey,source:envelope.source,sourceEventId:envelope.source_event_id});
       const callerRows=await tx.unsafe(
         "INSERT INTO callers(caller_hash,caller_masked,first_seen_at,last_seen_at,call_count,total_conversation_seconds)"+
@@ -614,7 +667,7 @@ export class PostgresStore{
       const totalSeconds=Math.max(0,Number(p.total_seconds||Math.round((Date.parse(p.ended_at)-Date.parse(p.started_at))/1000)));
 
       const callValues=[
-        String(p.external_call_id),envelope.source,caller.id,sva.id,expert?.id||null,origin.id,host.id,
+        String(p.external_call_id),envelope.source,caller.id,sva.id,expert?.id||null,callDestination?.id||null,callDestination?.label||p.destination_label||null,origin.id,host.id,
         p.started_at,p.ivr_started_at||null,p.queued_at||null,p.bridged_at||null,p.ended_at,
         Math.max(0,Number(p.wait_seconds||0)),conversation,totalSeconds,financial.billableSeconds,financial.payoutEligibleSeconds,
         status,p.sip_final_code==null?null:Number(p.sip_final_code),String(p.hangup_cause||""),String(p.codec||""),
@@ -624,13 +677,13 @@ export class PostgresStore{
         sva.tenant_id||null,sva.market_id||null,String(sva.currency||"EUR")
       ];
       const callRows=await tx.unsafe(
-        "INSERT INTO calls(external_call_id,cdr_source,caller_id,sva_number_id,expert_id,origin_carrier_id,host_carrier_id,"+
+        "INSERT INTO calls(external_call_id,cdr_source,caller_id,sva_number_id,expert_id,call_destination_id,call_destination_label,origin_carrier_id,host_carrier_id,"+
         " started_at,ivr_started_at,queued_at,bridged_at,ended_at,wait_seconds,conversation_seconds,total_seconds,billable_seconds,"+
         " payout_eligible_seconds,call_status,sip_final_code,hangup_cause,codec,service_rate_ttc_per_min,carrier_rate_ht_per_min,"+
         " mobile_deduction_ht_per_min,retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,"+
         " expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_status,reconciliation_variance_ht,tenant_id,market_id,currency)"+
-        " VALUES($1,$2,$3,$4,$5,$6,$7,$8::timestamptz,$9::timestamptz,$10::timestamptz,$11::timestamptz,$12::timestamptz,"+
-        " $13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36)"+
+        " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz,$11::timestamptz,$12::timestamptz,$13::timestamptz,$14::timestamptz,"+
+        " $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38)"+
         " ON CONFLICT(host_carrier_id,external_call_id) WHERE host_carrier_id IS NOT NULL AND external_call_id IS NOT NULL"+
         " DO NOTHING RETURNING id,tenant_bucket",
         callValues
@@ -1632,6 +1685,51 @@ export class PostgresStore{
     return result;
   }
 
+  async createCallDestination(publicId,input={},actor={}){
+    publicId=String(publicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    const label=String(input.label||"").trim();if(!label||label.length>120)throw problem(400,"INVALID_CALL_DESTINATION_LABEL");
+    const type=String(input.destination_type||"").trim().toLowerCase();if(!["pstn","sip","pbx","contact_center"].includes(type))throw problem(400,"INVALID_CALL_DESTINATION_TYPE");
+    const uri=String(input.destination_uri||"").trim(),isTel=/^tel:\+[1-9][0-9]{6,14}$/.test(uri),isSip=/^sips?:[^\s@]+@[^\s@]+$/i.test(uri);
+    if(type==="pstn"?!isTel:type==="sip"?!isSip:!(isTel||isSip))throw problem(400,"INVALID_CALL_DESTINATION_URI");
+    const priority=Number(input.priority??100);if(!Number.isInteger(priority)||priority<1||priority>10000)throw problem(400,"INVALID_CALL_DESTINATION_PRIORITY");
+    const max=input.max_concurrent_calls==null||input.max_concurrent_calls===""?null:Number(input.max_concurrent_calls);
+    if(max!=null&&(!Number.isInteger(max)||max<1||max>100000))throw problem(400,"INVALID_CALL_DESTINATION_CAPACITY");
+    const assignmentId=input.assignment_id==null||input.assignment_id===""?null:Number(input.assignment_id);
+    if(assignmentId!=null&&(!Number.isInteger(assignmentId)||assignmentId<=0))throw problem(400,"INVALID_ASSIGNMENT_ID");
+    const actorId=numericActor(actor);
+    const result=await this.sql.begin(async tx=>{
+      const tenants=await tx.unsafe("SELECT id,public_id,display_name,tenant_type FROM tenants WHERE public_id=$1::uuid FOR UPDATE",[publicId]);
+      const tenant=tenants[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+      let svaId=null,displayNumber=null;
+      if(assignmentId!=null){
+        const rows=await tx.unsafe("SELECT a.sva_number_id,sn.display_number FROM tenant_number_assignments a JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.id=$1 AND a.tenant_id=$2 LIMIT 1",[assignmentId,tenant.id]);
+        if(!rows[0])throw problem(404,"ASSIGNMENT_NOT_FOUND");svaId=Number(rows[0].sva_number_id);displayNumber=rows[0].display_number;
+      }
+      const inserted=await tx.unsafe("INSERT INTO tenant_call_destinations(tenant_id,sva_number_id,label,destination_type,destination_uri,priority,status,failover_enabled,max_concurrent_calls) VALUES($1,$2,$3,$4,$5,$6,'testing',true,$7) RETURNING id,tenant_id,sva_number_id,label,destination_type,destination_uri,priority,status,failover_enabled,max_concurrent_calls,active_calls,created_at",[tenant.id,svaId,label,type,uri,priority,max]);
+      const row=inserted[0];
+      await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'call_destination.create','tenant_call_destination',$3,$4::jsonb)",[tenant.id,actorId,String(row.id),JSON.stringify({label,destination_type:type,priority,assignment_id:assignmentId,display_number:displayNumber})]);
+      await tx.unsafe("INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'call_destination.created','tenant_call_destination',$2,$3::jsonb)",[tenant.id,String(row.id),JSON.stringify({tenant_public_id:publicId,label,status:row.status})]);
+      return {...row,tenant_public_id:publicId,tenant:tenant.display_name,display_number:displayNumber};
+    });
+    this.eventBus.publish("call_destination.created",{id:result.id,tenant_public_id:publicId,status:result.status});return result;
+  }
+
+  async setCallDestinationStatus(id,status,actor={},reason=""){
+    id=Number(id);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_CALL_DESTINATION_ID");
+    status=String(status||"").trim().toLowerCase();if(!["active","testing","disabled"].includes(status))throw problem(400,"INVALID_CALL_DESTINATION_STATUS");
+    reason=String(reason||"").trim().slice(0,500);const actorId=numericActor(actor);
+    const result=await this.sql.begin(async tx=>{
+      const rows=await tx.unsafe("SELECT d.id,d.tenant_id,d.status,d.label,t.public_id,t.tenant_type FROM tenant_call_destinations d JOIN tenants t ON t.id=d.tenant_id WHERE d.id=$1 FOR UPDATE",[id]);
+      const row=rows[0];if(!row)throw problem(404,"CALL_DESTINATION_NOT_FOUND");if(row.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+      const previous=row.status;if(previous===status)return {...row,previous_status:previous,changed:false};
+      const updated=await tx.unsafe("UPDATE tenant_call_destinations SET status=$1,active_calls=CASE WHEN $1='disabled' THEN 0 ELSE active_calls END,updated_at=now() WHERE id=$2 RETURNING id,tenant_id,label,destination_type,destination_uri,priority,status,max_concurrent_calls,active_calls",[status,id]);
+      await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,$3,'tenant_call_destination',$4,$5::jsonb)",[row.tenant_id,actorId,"call_destination.status."+status,String(id),JSON.stringify({previous_status:previous,status,reason})]);
+      return {...updated[0],tenant_public_id:row.public_id,previous_status:previous,changed:true};
+    });
+    if(result.changed)this.eventBus.publish("call_destination.status",{id,status:result.status,tenant_public_id:result.tenant_public_id});return result;
+  }
+
   async scanUnpaidSubscriptions(limit=500){
     limit=clampInt(limit,500,1,2000);
     const alerts=await this.sql.begin(async tx=>{
@@ -1730,7 +1828,7 @@ export class PostgresStore{
     const tenant=base[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
     if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
     const id=Number(tenant.id);
-    const [subs,lines,experts,alerts,settlements,controls,audit,activity]=await Promise.all([
+    const [subs,lines,destinations,experts,alerts,settlements,controls,audit,activity]=await Promise.all([
       this.readSql.unsafe(
         "SELECT s.id,s.status,s.billing_currency,s.starts_at,s.current_period_start,s.current_period_end,s.ends_at,"+
         " s.billing_provider,s.provider_customer_reference,s.provider_subscription_reference,s.cancel_at_period_end,s.last_payment_status,s.last_event_at,"+
@@ -1743,6 +1841,10 @@ export class PostgresStore{
         " c.name AS regulatory_assignor,a.valid_from,a.valid_to,pgi_tenant_has_premium_call_access($1,m.id,now()) AS premium_call_access"+
         " FROM tenant_number_assignments a JOIN sva_numbers sn ON sn.id=a.sva_number_id LEFT JOIN operating_markets m ON m.id=sn.market_id"+
         " LEFT JOIN carriers c ON c.id=a.regulatory_assignor_carrier_id WHERE a.tenant_id=$1 ORDER BY a.created_at DESC,a.id DESC LIMIT 100",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT d.id,d.label,d.destination_type,d.destination_uri,d.priority,d.status,d.failover_enabled,d.max_concurrent_calls,d.active_calls,d.last_assigned_at,d.sva_number_id,sn.display_number,sn.e164"+
+        " FROM tenant_call_destinations d LEFT JOIN sva_numbers sn ON sn.id=d.sva_number_id WHERE d.tenant_id=$1 ORDER BY d.priority,d.id LIMIT 100",[id]
       ),
       this.readSql.unsafe(
         "SELECT id,code,display_name,destination_uri,status,active_calls,last_assigned_at,enabled,compensation_type,compensation_rate::float8"+
@@ -1774,7 +1876,7 @@ export class PostgresStore{
     const access=await this.readSql.unsafe("SELECT pgi_tenant_has_premium_call_access($1,NULL,now()) AS allowed",[id]);
     return {
       tenant:{...tenant,premium_call_access:Boolean(access[0]?.allowed)},
-      subscriptions:subs,lines,experts,alerts,settlements,controls,audit,
+      subscriptions:subs,lines,destinations,experts,alerts,settlements,controls,audit,
       activity:activity[0]||{calls_30d:0,connected_30d:0,billable_seconds_30d:0,revenue_ttc_30d:0,margin_ht_30d:0,last_call_at:null}
     };
   }

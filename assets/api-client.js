@@ -135,6 +135,8 @@ var q=new URLSearchParams(params||{}).toString();
 return request("/platform/tenant-number-assignments"+(q?"?"+q:""));
 },
 tenantControlDetail:function(id){return request("/platform/tenants/"+encodeURIComponent(id)+"/control-center",{timeoutMs:10000});},
+createCallDestination:function(id,payload,idempotencyKey){if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");return request("/platform/tenants/"+encodeURIComponent(id)+"/call-destinations",{method:"POST",body:payload,headers:{"Idempotency-Key":idempotencyKey}});},
+setCallDestinationStatus:function(id,status,reason,idempotencyKey){if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");return request("/platform/call-destinations/"+encodeURIComponent(id)+"/status",{method:"POST",body:{status:status,reason:reason||""},headers:{"Idempotency-Key":idempotencyKey}});},
 setTenantStatus:function(id,status,reason,idempotencyKey){
 if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");
 return request("/platform/tenants/"+encodeURIComponent(id)+"/status",{method:"POST",body:{status:status,reason:reason||""},headers:{"Idempotency-Key":idempotencyKey}});

@@ -177,6 +177,8 @@ test("generic CDR privacy removes full caller identifiers",()=>{
     ()=>sanitizeCdrPayload({quality:{mos:9}}),
     error=>error.status===400&&error.code==="INVALID_CDR_FIELD"
   );
+  assert.equal(sanitizeCdrPayload({call_destination_id:7,destination_label:"Standard client"}).call_destination_id,7);
+  assert.throws(()=>sanitizeCdrPayload({call_destination_id:-1}),error=>error.status===400&&error.code==="INVALID_CDR_FIELD");
 });
 
 test("expert compensation engine supports all declared modes",()=>{
@@ -214,6 +216,7 @@ test("production telephony routing requires an SVA context",()=>{
     resolveTelephonyRoutingContext(new URL("https://local/api/v1/internal/routing/next-expert?sva_number=0890123456"),production),
     {svaNumber:"0890123456"}
   );
+  assert.deepEqual(resolveTelephonyRoutingContext(new URL("https://local/api/v1/internal/routing/next-destination?sva_number=0890123456"),production),{svaNumber:"0890123456"});
   assert.deepEqual(
     resolveTelephonyRoutingContext(new URL("https://local/api/v1/internal/routing/next-expert"),{mode:"simulator"}),
     {svaNumber:null}

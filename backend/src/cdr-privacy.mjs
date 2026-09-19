@@ -4,7 +4,7 @@ const ALLOWED_KEYS=new Set([
   "external_call_id","started_at","ivr_started_at","queued_at","bridged_at","ended_at",
   "wait_seconds","conversation_seconds","total_seconds","call_status",
   "caller_masked","caller_hash","origin_carrier","origin_type","host_carrier","sva_number",
-  "expert_id","expert_name","sip_final_code","hangup_cause","codec","quality"
+  "expert_id","expert_name","call_destination_id","destination_label","sip_final_code","hangup_cause","codec","quality"
 ]);
 const QUALITY_KEYS=new Set(["packet_loss_percent","jitter_ms","latency_ms","mos","dtmf_errors"]);
 const CALL_STATUSES=new Set(["connected","abandoned","failed","rejected","busy","cancelled"]);
@@ -20,6 +20,7 @@ const TEXT_LIMITS=Object.freeze({
   host_carrier:120,
   sva_number:32,
   expert_name:120,
+  destination_label:120,
   hangup_cause:96,
   codec:32
 });
@@ -72,6 +73,7 @@ export function sanitizeCdrPayload(input){
     if(!ORIGIN_TYPES.has(origin))throw invalidField("origin_type");
     out.origin_type=origin;
   }
+  if(out.call_destination_id!=null){const id=Number(out.call_destination_id);if(!Number.isInteger(id)||id<=0)throw invalidField("call_destination_id");out.call_destination_id=id;}
 
   out.caller_masked=safeMaskedCaller(source.caller_masked);
   if(typeof source.caller_hash==="string"&&/^[a-fA-F0-9]{64}$/.test(source.caller_hash)){

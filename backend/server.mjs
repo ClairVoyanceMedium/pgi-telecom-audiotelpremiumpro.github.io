@@ -212,6 +212,16 @@ export function createBackend(options={}){
         return done(res,metrics,started,"routing.next_expert",expert?200:404,expert||{error:{code:"NO_EXPERT_AVAILABLE"}});
       }
 
+      if(method==="GET"&&pathname==="/api/v1/internal/routing/next-destination/text"){
+        authorizeTelephony(req,config);const routingContext=resolveTelephonyRoutingContext(url,config);const route=await store.selectCallDestination(routingContext);
+        if(!route?.destination_uri){res.writeHead(404,{"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"});res.end("");return;}
+        text(res,200,[route.destination_uri,String(route.call_destination_id||""),String(route.label||route.display_name||"").replace(/[\t\r\n]/g," "),String(route.destination_type||""),String(route.route_kind||"destination"),String(route.expert_id||"")].join("\t"));return;
+      }
+      if(method==="GET"&&pathname==="/api/v1/internal/routing/next-destination"){
+        authorizeTelephony(req,config);const route=await store.selectCallDestination(resolveTelephonyRoutingContext(url,config));
+        return done(res,metrics,started,"routing.destination",route?200:404,route||{error:{code:"NO_CALL_DESTINATION_AVAILABLE"}});
+      }
+
       if(method==="GET"&&pathname==="/api/v1/internal/routing/next-expert/text"){
         authorizeTelephony(req,config);
         const routingContext=resolveTelephonyRoutingContext(url,config);
@@ -232,6 +242,9 @@ export function createBackend(options={}){
         const expert=await store.selectExpert(routingContext);
         return done(res,metrics,started,"routing.internal",expert?200:404,expert||{error:{code:"NO_EXPERT_AVAILABLE"}});
       }
+
+      match=routeMatch(pathname,"/api/v1/internal/call-destinations/:id/release");
+      if(method==="POST"&&match){authorizeTelephony(req,config);return done(res,metrics,started,"routing.destination_release",200,await store.releaseCallDestination(match.id));}
 
       match=routeMatch(pathname,"/api/v1/internal/experts/:id/release");
       if(method==="POST"&&match){
@@ -314,6 +327,11 @@ export function createBackend(options={}){
         const result=await store.idempotent(req.headers["idempotency-key"],"assignment.status",payload,()=>store.setTenantAssignmentStatus(match.id,body.status,actor,body.reason||""));
         return done(res,metrics,started,"platform.assignment_status",200,{...result.value,replayed:result.replayed});
       }
+
+      match=routeMatch(pathname,"/api/v1/platform/tenants/:id/call-destinations");
+      if(method==="POST"&&match){requireRole(actor,["admin"]);requireCsrf(req,actor,config);const body=await readJson(req,config.bodyLimitBytes);const result=await store.idempotent(req.headers["idempotency-key"],"call_destination.create",{tenant:match.id,...body},()=>store.createCallDestination(match.id,body,actor));return done(res,metrics,started,"platform.call_destination_create",201,{...result.value,replayed:result.replayed});}
+      match=routeMatch(pathname,"/api/v1/platform/call-destinations/:id/status");
+      if(method==="POST"&&match){requireRole(actor,["admin"]);requireCsrf(req,actor,config);const body=await readJson(req,config.bodyLimitBytes);const payload={id:match.id,status:body.status,reason:body.reason||""};const result=await store.idempotent(req.headers["idempotency-key"],"call_destination.status",payload,()=>store.setCallDestinationStatus(match.id,body.status,actor,body.reason||""));return done(res,metrics,started,"platform.call_destination_status",200,{...result.value,replayed:result.replayed});}
 
       if(method==="GET"&&pathname==="/api/v1/platform/billing-alerts"){
         requireRole(actor,["admin","finance","readonly"]);
