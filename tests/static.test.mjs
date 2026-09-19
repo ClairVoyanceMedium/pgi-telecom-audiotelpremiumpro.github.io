@@ -9,7 +9,7 @@ const api=read("assets/api-client.js");
 const dataClient=read("assets/data-client.js");
 const demoData=read("assets/demo-data.js");
 const commands=read("assets/command-palette.js");
-const workspace=read("assets/workspace.js");
+const workspace=read("assets/workspace.js");\nconst cockpitPro=read("assets/cockpit-pro.js");
 const css=read("assets/styles.css");
 const sw=read("service-worker.js");
 const buildStatic=read("scripts/build-static.mjs");
@@ -184,6 +184,14 @@ test("experts opérateurs et réconciliation utilisent les agrégats serveur",()
   assert.match(app,/analytics\.carriers/);
   assert.match(app,/serverReconciliation/);
   assert.match(app,/dashboard\.reconciliation/);
+});
+
+test("le Cockpit expose l'expérience appelant sans faux SLA",()=>{
+  for(const id of ["exp-wait","exp-fast-answer","exp-abandon-wait","exp-short-abandon","exp-ivr","exp-queue","exp-network-affected","exp-low-mos"])assert.ok(index.includes('id="'+id+'"'));
+  assert.match(cockpitPro,/answered_le_20s_percent/);
+  assert.match(cockpitPro,/affected_samples/);
+  assert.match(cockpitPro,/experience-trend-chart/);
+  assert.doesNotMatch(index,/SLA garanti/i);
 });
 
 test("la PWA met en cache tous les modules du shell",()=>{
