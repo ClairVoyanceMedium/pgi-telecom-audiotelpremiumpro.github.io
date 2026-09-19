@@ -21,7 +21,7 @@ export function startWorkers({store,eventBus,config,queueHandlers={}}){
           event_type:event.event_type,
           aggregate_type:event.aggregate_type,
           aggregate_id:event.aggregate_id
-        });
+        },{relay:false});
       },100);
       stats.lastOutboxSuccessAt=new Date().toISOString();
     }catch{

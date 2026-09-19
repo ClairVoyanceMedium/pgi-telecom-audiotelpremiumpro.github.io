@@ -278,3 +278,8 @@ La couche 1.16 vise directement le temps gagné au quotidien et la réduction de
 - runtime frontend modularisé sans augmenter les budgets : `app.js` reste limité à 90 KiB et le shell à 260 KiB.
 
 Voir `docs/EFFICIENCY.md`.
+
+
+### Temps réel distribué
+
+Le bus SSE de production peut maintenant être relayé entre plusieurs processus Node via PostgreSQL `LISTEN/NOTIFY`, sans dépendance Redis/Valkey supplémentaire. Les événements restent volontairement petits et servent à déclencher la resynchronisation du cockpit. Un processus worker publie sans ouvrir de connexion LISTEN inutile ; les processus API écoutent le canal partagé et ignorent leur propre écho.

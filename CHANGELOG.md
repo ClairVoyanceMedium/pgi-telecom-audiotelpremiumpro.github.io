@@ -1,5 +1,14 @@
 # Changelog
 
+
+## Unreleased
+
+- relais temps réel inter-processus via PostgreSQL `LISTEN/NOTIFY` pour les déploiements API/workers séparés ou multi-instance ;
+- aucun Redis/Valkey requis pour ce fan-out ;
+- déduplication de l’écho local et limite stricte de taille des notifications ;
+- processus worker en publication seule afin d’éviter une connexion LISTEN inutile ;
+- tests unitaires dédiés au bus distribué et fermeture propre de la souscription au shutdown.
+
 ## 1.16.0 — 2026-09-19
 
 Operator Efficiency et optimisation du temps de travail :
