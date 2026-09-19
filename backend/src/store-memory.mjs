@@ -31,6 +31,8 @@ export class MemoryStore{
     this.nextCallId=1;
     this.nextBaselineId=1;
     this.nextSwitchId=1;
+    this.subscriptionPrices=[{id:1,plan_key:"external-sva-access",currency:"EUR",amount_minor:200,billing_interval:"month",interval_count:1,effective_from:"2026-09-19T00:00:00Z",effective_to:null}];
+    this.subscriptionEvents=new Set();
   }
 
   seedSimulator(days=21){
@@ -585,6 +587,39 @@ export class MemoryStore{
     };
   }
 
+  async subscriptionBillingOverview(){
+    const current=this.subscriptionPrices.filter(x=>!x.effective_to||Date.parse(x.effective_to)>Date.now()).sort((a,b)=>Date.parse(b.effective_from)-Date.parse(a.effective_from))[0]||null;
+    return {
+      plan_key:"external-sva-access",billing_model:"subscription",cadence:"monthly",internal_usage_exempt:true,
+      current_price:current,
+      summary:{external_tenants:0,access_enabled:0,access_blocked:0,internal_exempt:1,active_subscriptions:0},
+      price_history:this.subscriptionPrices.slice().sort((a,b)=>Date.parse(b.effective_from)-Date.parse(a.effective_from)),
+      tenant_access:[]
+    };
+  }
+
+  async createSubscriptionPrice(payload={}){
+    const amount=Number(payload.amount_minor);
+    if(!Number.isInteger(amount)||amount<=0)throw problem(400,"INVALID_SUBSCRIPTION_PRICE");
+    const currency=String(payload.currency||"EUR").trim().toUpperCase();
+    if(!/^[A-Z]{3}$/.test(currency))throw problem(400,"INVALID_SUBSCRIPTION_CURRENCY");
+    const effective=payload.effective_from||new Date().toISOString();
+    if(!Number.isFinite(Date.parse(effective)))throw problem(400,"INVALID_EFFECTIVE_FROM");
+    const current=this.subscriptionPrices.filter(x=>x.currency===currency&&!x.effective_to).sort((a,b)=>Date.parse(b.effective_from)-Date.parse(a.effective_from))[0];
+    if(current&&Date.parse(effective)<=Date.parse(current.effective_from))throw problem(409,"SUBSCRIPTION_PRICE_NOT_LATER");
+    if(current)current.effective_to=effective;
+    const price={id:this.subscriptionPrices.length+1,plan_key:"external-sva-access",currency,amount_minor:amount,billing_interval:"month",interval_count:1,effective_from:effective,effective_to:null};
+    this.subscriptionPrices.push(price);
+    return structuredClone(price);
+  }
+
+  async applySubscriptionBillingEvent(payload={}){
+    const key=String(payload.provider||"")+":"+String(payload.provider_event_id||"");
+    if(this.subscriptionEvents.has(key))return {duplicate:true,subscription_id:null};
+    this.subscriptionEvents.add(key);
+    return {duplicate:false,subscription_id:1,tenant_id:null,status:String(payload.status||"active")};
+  }
+
   async listTenants(params={}){
     void params;
     return {data:[],next_cursor:null};
@@ -600,7 +635,9 @@ export class MemoryStore{
         assignments_total:0,assignments_active:0,assignments_with_assignor:0,
         settlement_currency_count:0,settlement_currency:null,
         upstream_payout_ht:0,platform_fee_ht:0,net_payout_ht:0,
-        payment_compliance_active:false
+        payment_compliance_active:false,
+        external_subscriptions_active:0,subscription_access_enabled:0,subscription_access_blocked:0,
+        subscription_price_minor:200,subscription_price_currency:"EUR",internal_billing_exempt:true
       },
       tenants:[],
       numbers:[],
