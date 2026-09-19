@@ -20,6 +20,7 @@ const files=[
   "assets/cockpit-pro.js",
   "assets/performance-radar.js",
   "assets/subscription-billing-ui.js",
+  "assets/customer-admin.js",
   "assets/app.js",
   "assets/favicon.svg"
 ];
