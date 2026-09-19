@@ -1500,6 +1500,8 @@ export class PostgresStore{
     const number=String(params.number||"").replace(/[^0-9+]/g,"").replace(/^\+/,"").slice(0,24);
     const billing=params.billing?String(params.billing).trim().toLowerCase():null;
     if(billing&&!["active","unpaid","blocked"].includes(billing))throw problem(400,"INVALID_BILLING_FILTER");
+    const kyc=params.kyc?String(params.kyc).trim().toLowerCase():null;
+    if(kyc&&!["verified","pending","rejected","expired","not_started"].includes(kyc))throw problem(400,"INVALID_KYC_FILTER");
     const rows=await this.readSql.unsafe(
       "WITH page AS ("+
       " SELECT t.id,t.public_id,t.slug,t.display_name,t.legal_name,t.tenant_type,t.status,t.country_code,"+
@@ -1511,7 +1513,8 @@ export class PostgresStore{
       " OR ($4='unpaid' AND NOT EXISTS (SELECT 1 FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id WHERE s.tenant_id=t.id AND p.plan_key='external-sva-access' AND s.status='active' AND s.current_period_end>now()))"+
       " OR ($4='blocked' AND t.status='suspended'))"+
       " AND ($5::text IS NULL OR EXISTS (SELECT 1 FROM tenant_number_assignments ta JOIN sva_numbers sn ON sn.id=ta.sva_number_id WHERE ta.tenant_id=t.id AND sn.e164 LIKE $5||'%'))"+
-      " AND ($6::bigint IS NULL OR t.id<$6) ORDER BY t.id DESC LIMIT $7"+
+      " AND ($6::text IS NULL OR ($6='not_started' AND NOT EXISTS (SELECT 1 FROM tenant_kyc_profiles kf WHERE kf.tenant_id=t.id)) OR EXISTS (SELECT 1 FROM tenant_kyc_profiles kf WHERE kf.tenant_id=t.id AND kf.status=$6))"+
+      " AND ($7::bigint IS NULL OR t.id<$7) ORDER BY t.id DESC LIMIT $8"+
       ") SELECT page.id AS _cursor_id,page.public_id,page.slug,page.display_name,page.legal_name,page.tenant_type,page.status,page.country_code,"+
       " page.preferred_locale,page.default_currency,page.timezone,page.home_region,page.capacity_tier,COALESCE(k.status,'not_started') AS kyc_status,page.created_at,"+
       " COALESCE(a.assignment_count,0)::int AS number_assignments,COALESCE(a.active_assignments,0)::int AS active_assignments,"+
@@ -1521,7 +1524,7 @@ export class PostgresStore{
       " LEFT JOIN LATERAL (SELECT count(*) AS assignment_count,count(*) FILTER (WHERE status='active') AS active_assignments FROM tenant_number_assignments a WHERE a.tenant_id=page.id) a ON true"+
       " LEFT JOIN LATERAL (SELECT x.status,x.current_period_end,x.last_payment_status,x.cancel_at_period_end,x.billing_provider FROM tenant_subscriptions x JOIN service_plans sp ON sp.id=x.service_plan_id WHERE x.tenant_id=page.id AND sp.plan_key='external-sva-access' ORDER BY x.created_at DESC,x.id DESC LIMIT 1) s ON true"+
       " ORDER BY page.id DESC",
-      [q||null,status,country,billing,number||null,cursor,limit+1]
+      [q||null,status,country,billing,number||null,kyc,cursor,limit+1]
     );
     const hasMore=rows.length>limit;
     const page=hasMore?rows.slice(0,limit):rows;
