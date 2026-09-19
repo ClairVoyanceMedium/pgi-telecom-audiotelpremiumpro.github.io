@@ -257,6 +257,11 @@ export function createBackend(options={}){
         return done(res,metrics,started,"carrier.routing",200,await store.carrierRouting());
       }
 
+      if(method==="GET"&&pathname==="/api/v1/carrier-switches/options"){
+        requireRole(actor,["admin","readonly"]);
+        return done(res,metrics,started,"carrier.switch_options",200,await store.carrierAdminOverview());
+      }
+
       if(method==="GET"&&pathname==="/api/v1/platform/overview"){
         requireRole(actor,["admin","finance","readonly"]);
         return done(res,metrics,started,"platform.overview",200,await store.wholesaleOverview());
