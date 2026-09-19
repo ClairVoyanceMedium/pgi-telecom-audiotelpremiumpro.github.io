@@ -1404,6 +1404,7 @@ export class PostgresStore{
     if(status&&!["pending","active","suspended","closed"].includes(status))throw problem(400,"INVALID_TENANT_STATUS");
     const country=params.country?String(params.country).trim().toUpperCase():null;
     if(country&&!/^[A-Z]{2}$/.test(country))throw problem(400,"INVALID_COUNTRY_CODE");
+    const number=String(params.number||"").replace(/[^0-9+]/g,"").replace(/^\+/,"").slice(0,24);
     const billing=params.billing?String(params.billing).trim().toLowerCase():null;
     if(billing&&!["active","unpaid","blocked"].includes(billing))throw problem(400,"INVALID_BILLING_FILTER");
     const rows=await this.readSql.unsafe(
@@ -1416,7 +1417,8 @@ export class PostgresStore{
       " AND ($4::text IS NULL OR ($4='active' AND pgi_tenant_has_premium_call_access(t.id,NULL,now()))"+
       " OR ($4='unpaid' AND NOT EXISTS (SELECT 1 FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id WHERE s.tenant_id=t.id AND p.plan_key='external-sva-access' AND s.status='active' AND s.current_period_end>now()))"+
       " OR ($4='blocked' AND t.status='suspended'))"+
-      " AND ($5::bigint IS NULL OR t.id<$5) ORDER BY t.id DESC LIMIT $6"+
+      " AND ($5::text IS NULL OR EXISTS (SELECT 1 FROM tenant_number_assignments ta JOIN sva_numbers sn ON sn.id=ta.sva_number_id WHERE ta.tenant_id=t.id AND sn.e164 LIKE $5||'%'))"+
+      " AND ($6::bigint IS NULL OR t.id<$6) ORDER BY t.id DESC LIMIT $7"+
       ") SELECT page.id AS _cursor_id,page.public_id,page.slug,page.display_name,page.legal_name,page.tenant_type,page.status,page.country_code,"+
       " page.preferred_locale,page.default_currency,page.timezone,page.home_region,page.capacity_tier,COALESCE(k.status,'not_started') AS kyc_status,page.created_at,"+
       " COALESCE(a.assignment_count,0)::int AS number_assignments,COALESCE(a.active_assignments,0)::int AS active_assignments,"+
@@ -1426,7 +1428,7 @@ export class PostgresStore{
       " LEFT JOIN LATERAL (SELECT count(*) AS assignment_count,count(*) FILTER (WHERE status='active') AS active_assignments FROM tenant_number_assignments a WHERE a.tenant_id=page.id) a ON true"+
       " LEFT JOIN LATERAL (SELECT x.status,x.current_period_end,x.last_payment_status,x.cancel_at_period_end,x.billing_provider FROM tenant_subscriptions x JOIN service_plans sp ON sp.id=x.service_plan_id WHERE x.tenant_id=page.id AND sp.plan_key='external-sva-access' ORDER BY x.created_at DESC,x.id DESC LIMIT 1) s ON true"+
       " ORDER BY page.id DESC",
-      [q||null,status,country,billing,cursor,limit+1]
+      [q||null,status,country,billing,number||null,cursor,limit+1]
     );
     const hasMore=rows.length>limit;
     const page=hasMore?rows.slice(0,limit):rows;
@@ -1603,6 +1605,69 @@ export class PostgresStore{
     });
     this.eventBus.publish("billing.alert.acknowledged",{id,result:"acknowledged"});
     return result;
+  }
+
+  async tenantControlDetail(publicId){
+    publicId=String(publicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    const base=await this.readSql.unsafe(
+      "SELECT t.id,t.public_id,t.slug,t.display_name,t.legal_name,t.tenant_type,t.status,t.country_code,t.billing_email,"+
+      " t.preferred_locale,t.default_currency,t.timezone,t.home_region,t.capacity_tier,t.created_at,t.updated_at,"+
+      " COALESCE(k.status,'not_started') AS kyc_status,k.registration_country,k.registration_number,"+
+      " k.legal_representative_verified,k.bank_account_verified,k.reviewed_at,k.expires_at"+
+      " FROM tenants t LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id WHERE t.public_id=$1::uuid",
+      [publicId]
+    );
+    const tenant=base[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+    if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+    const id=Number(tenant.id);
+    const [subs,lines,experts,alerts,settlements,controls,audit,activity]=await Promise.all([
+      this.readSql.unsafe(
+        "SELECT s.id,s.status,s.billing_currency,s.starts_at,s.current_period_start,s.current_period_end,s.ends_at,"+
+        " s.billing_provider,s.provider_customer_reference,s.provider_subscription_reference,s.cancel_at_period_end,s.last_payment_status,s.last_event_at,"+
+        " p.plan_key,p.display_name AS plan_name,v.amount_minor,v.currency AS price_currency"+
+        " FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id"+
+        " LEFT JOIN service_plan_price_versions v ON v.id=s.price_version_id WHERE s.tenant_id=$1 ORDER BY s.created_at DESC,s.id DESC LIMIT 10",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT a.id,sn.display_number,sn.e164,sn.currency,sn.number_type,m.country_code AS market,a.tariff_code,a.assignment_type,a.status,a.kyc_status,"+
+        " c.name AS regulatory_assignor,a.valid_from,a.valid_to,pgi_tenant_has_premium_call_access($1,m.id,now()) AS premium_call_access"+
+        " FROM tenant_number_assignments a JOIN sva_numbers sn ON sn.id=a.sva_number_id LEFT JOIN operating_markets m ON m.id=sn.market_id"+
+        " LEFT JOIN carriers c ON c.id=a.regulatory_assignor_carrier_id WHERE a.tenant_id=$1 ORDER BY a.created_at DESC,a.id DESC LIMIT 100",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,code,display_name,destination_uri,status,active_calls,last_assigned_at,enabled,compensation_type,compensation_rate::float8"+
+        " FROM experts WHERE tenant_id=$1 ORDER BY display_name,id LIMIT 100",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,alert_type,severity,state,title,message,due_at,first_detected_at,last_detected_at,acknowledged_at,resolved_at"+
+        " FROM tenant_admin_alerts WHERE tenant_id=$1 ORDER BY id DESC LIMIT 50",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT s.id,m.country_code AS market,s.currency,s.period_start,s.period_end,s.upstream_payout_ht::float8,s.platform_fee_ht::float8,s.net_payout_ht::float8,"+
+        " s.status,s.payment_due_date,s.paid_at FROM tenant_settlements s LEFT JOIN operating_markets m ON m.id=s.market_id"+
+        " WHERE s.tenant_id=$1 ORDER BY s.period_end DESC,s.id DESC LIMIT 24",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,assignment_id,action,previous_status,new_status,reason,occurred_at,details FROM tenant_control_events"+
+        " WHERE tenant_id=$1 ORDER BY occurred_at DESC,id DESC LIMIT 50",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,action,entity_type,entity_id,occurred_at,details FROM audit_log WHERE tenant_id=$1 ORDER BY occurred_at DESC,id DESC LIMIT 50",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT count(*)::int AS calls_30d,count(*) FILTER (WHERE call_status='connected')::int AS connected_30d,"+
+        " COALESCE(sum(billable_seconds),0)::float8 AS billable_seconds_30d,COALESCE(sum(retail_service_amount_ttc),0)::float8 AS revenue_ttc_30d,"+
+        " COALESCE(sum(estimated_margin_ht),0)::float8 AS margin_ht_30d,max(started_at) AS last_call_at"+
+        " FROM calls WHERE tenant_id=$1 AND started_at>=now()-interval '30 days'",[id]
+      )
+    ]);
+    const access=await this.readSql.unsafe("SELECT pgi_tenant_has_premium_call_access($1,NULL,now()) AS allowed",[id]);
+    return {
+      tenant:{...tenant,premium_call_access:Boolean(access[0]?.allowed)},
+      subscriptions:subs,lines,experts,alerts,settlements,controls,audit,
+      activity:activity[0]||{calls_30d:0,connected_30d:0,billable_seconds_30d:0,revenue_ttc_30d:0,margin_ht_30d:0,last_call_at:null}
+    };
   }
 
   async wholesaleOverview(){
