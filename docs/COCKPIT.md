@@ -181,3 +181,20 @@ La couche Expérience appelant exploite les données réellement présentes dans
 Les seuils RTP utilisés pour le signal « dégradé » sont : perte de paquets ≥5 %, jitter >5 ms ou latence >150 ms. Ils servent au diagnostic technique du Cockpit et ne constituent pas un SLA client.
 
 Les métriques sont consolidées dans `experience_rollups_hourly_sharded` et dans les colonnes de dégradation de `quality_rollups_hourly_sharded`, avec lecture des bords de période dans les CDR bruts pour conserver l'exactitude des fenêtres personnalisées.
+
+
+## Performance Radar 1.19
+
+### Signaux de dérive
+
+Le Radar calcule six signaux sur les séries déjà retournées par le backend : trafic, ASR, abandon, attente moyenne, chiffre d’affaires et MOS. La dernière période est comparée à la médiane des douze périodes précédentes. La dispersion utilise la médiane des écarts absolus, convertie avec un facteur 1,4826 et un plancher de 5 % de la médiane pour éviter les divisions instables lorsque la série est quasi constante.
+
+Le signal ne devient défavorable que dans le sens opérationnel concerné : baisse pour ASR, chiffre d’affaires et MOS ; hausse pour abandon et attente ; dérive dans les deux sens pour le trafic. Les seuils statistiques sont 2,5 pour « écart notable » et 3,5 pour « anomalie forte ». Ils ne sont pas présentés comme des SLA contractuels.
+
+### Benchmark contributeurs
+
+Les matrices Experts et Opérateurs affichent : part du trafic, nombre d’appels, ASR, ACD, CA moyen par appel et marge. Les graphiques volume × ASR positionnent jusqu’aux douze premiers contributeurs et affichent l’ASR plateforme comme référence horizontale. Les cartes de concentration indiquent la part Top 1 et Top 3 sans appliquer de jugement externe sur le niveau de concentration.
+
+### Performance front
+
+Le code du radar est un asset paresseux. Il n’est pas préchargé dans le shell PWA et ne compte donc pas dans le budget critique de 260 KiB. Il possède un budget séparé de 16 KiB et est mis en cache par la stratégie runtime des scripts après son premier chargement.
