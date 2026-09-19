@@ -1,65 +1,14 @@
-(function(root){
-"use strict";
-var $=function(id){return document.getElementById(id);};
-var clamp=function(v,a,b){return Math.max(a,Math.min(b,Number(v)||0));};
-var pct=function(v,t){return Number(t)>0?Number(v||0)/Number(t)*100:0;};
-var nf=function(v,d){return new Intl.NumberFormat("fr-FR",{maximumFractionDigits:d==null?1:d,minimumFractionDigits:d==null?0:d}).format(Number(v)||0);};
-var money=function(v,c){try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:c||"EUR"}).format(Number(v)||0);}catch{return nf(v,2)+" €";}};
-var esc=function(s){return String(s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c];});};
-var label=function(value,g){var d=new Date(value);if(!Number.isFinite(d.getTime()))return "—";return new Intl.DateTimeFormat("fr-FR",g==="hour"?{day:"2-digit",month:"2-digit",hour:"2-digit"}:{day:"2-digit",month:"2-digit"}).format(d);};
-function tone(v,g,w,inv){v=Number(v)||0;return inv?(v<=g?"good":v<=w?"warn":"bad"):(v>=g?"good":v>=w?"warn":"bad");}
-function pulse(id,text,width,t,note){
-  var e=$(id);if(e)e.textContent=text;
-  var b=$(id+"-bar");if(b)b.style.width=clamp(width,0,100).toFixed(1)+"%";
-  var n=$(id+"-note");if(n&&note!=null)n.textContent=note;
-  var card=e&&e.closest?e.closest(".pulse-card"):null;
-  if(card){card.classList.remove("good","warn","bad");if(t)card.classList.add(t);}
-}
-function multi(id,rows,defs,g){
-  var svg=$(id);if(!svg)return;
-  var data=(rows||[]).map(function(x){var o={l:label(x.bucket,g)};defs.forEach(function(d){o[d.k]=Number(d.v?d.v(x):x[d.k]||0);});return o;});
-  if(!data.length){svg.innerHTML='<text x="380" y="110" text-anchor="middle" fill="#6d829a" font-size="12">Aucune donnée</text>';return;}
-  var w=760,h=220,p={l:42,r:16,t:32,b:28},max=Math.max(1,...data.flatMap(function(x){return defs.map(function(d){return Number(x[d.k]||0);});}));
-  var sx=function(i){return p.l+(data.length===1?(w-p.l-p.r)/2:(w-p.l-p.r)*i/(data.length-1));},sy=function(v){return h-p.b-(h-p.t-p.b)*Number(v||0)/max;};
-  var path=function(k){return data.map(function(d,i){return (i?"L":"M")+sx(i).toFixed(1)+" "+sy(d[k]).toFixed(1);}).join(" ");};
-  var grid="";for(var i=0;i<=4;i++){var y=p.t+(h-p.t-p.b)*i/4;grid+='<line class="chart-grid" x1="'+p.l+'" x2="'+(w-p.r)+'" y1="'+y+'" y2="'+y+'"/>';}
-  var xlabels=data.map(function(d,i){if(data.length>10&&i%Math.ceil(data.length/8))return"";return '<text class="chart-axis" text-anchor="middle" x="'+sx(i)+'" y="'+(h-7)+'">'+esc(d.l)+'</text>';}).join("");
-  svg.innerHTML=grid+xlabels+defs.map(function(d,i){return '<text x="'+(p.l+i*128)+'" y="14" class="chart-multi-legend c'+i+'">'+esc(d.n)+'</text>';}).join("")+defs.map(function(d,i){return '<path class="cockpit-line-multi c'+i+'" d="'+path(d.k)+'"/>';}).join("");
-}
-function dual(id,rows,a,b,an,bn,g){
-  var svg=$(id);if(!svg)return;
-  var data=(rows||[]).map(function(x){return {l:label(x.bucket,g),a:Number(x[a]||0),b:Number(x[b]||0)};});
-  if(!data.length){svg.innerHTML='<text x="380" y="110" text-anchor="middle" fill="#6d829a" font-size="12">Aucune donnée</text>';return;}
-  var w=760,h=220,p={l:42,r:16,t:32,b:28},ma=Math.max(1,...data.map(function(x){return x.a;})),mb=Math.max(.1,...data.map(function(x){return x.b;}));
-  var sx=function(i){return p.l+(data.length===1?(w-p.l-p.r)/2:(w-p.l-p.r)*i/(data.length-1));},sy=function(v,m){return h-p.b-(h-p.t-p.b)*Number(v||0)/m;};
-  var path=function(k,m){return data.map(function(d,i){return (i?"L":"M")+sx(i).toFixed(1)+" "+sy(d[k],m).toFixed(1);}).join(" ");};
-  var grid="";for(var i=0;i<=4;i++){var y=p.t+(h-p.t-p.b)*i/4;grid+='<line class="chart-grid" x1="'+p.l+'" x2="'+(w-p.r)+'" y1="'+y+'" y2="'+y+'"/>';}
-  svg.innerHTML=grid+'<text x="'+p.l+'" y="14" class="chart-multi-legend c0">'+esc(an)+'</text><text x="'+(p.l+120)+'" y="14" class="chart-multi-legend c1">'+esc(bn)+'</text><path class="cockpit-line-multi c0" d="'+path("a",ma)+'"/><path class="cockpit-line-multi c1" d="'+path("b",mb)+'"/>';
-}
-function outcomes(id,rows,g){
-  var svg=$(id);if(!svg)return;
-  var d=(rows||[]).map(function(x){return {l:label(x.bucket,g),c:Number(x.calls_connected||0),a:Number(x.calls_abandoned||0),f:Number(x.calls_failed||0)};});
-  if(!d.length){svg.innerHTML='<text x="380" y="110" text-anchor="middle" fill="#6d829a" font-size="12">Aucune donnée</text>';return;}
-  var w=760,h=220,p={l:38,r:14,t:30,b:28},max=Math.max(1,...d.map(function(x){return x.c+x.a+x.f;})),slot=(w-p.l-p.r)/d.length,bw=Math.max(4,Math.min(34,slot*.62)),sy=function(v){return (h-p.t-p.b)*v/max;};
-  var bars=d.map(function(x,i){var xx=p.l+i*slot+(slot-bw)/2,y=h-p.b,hc=sy(x.c),ha=sy(x.a),hf=sy(x.f),lab=(d.length>10&&i%Math.ceil(d.length/8))?"":'<text class="chart-axis" text-anchor="middle" x="'+(xx+bw/2)+'" y="'+(h-7)+'">'+esc(x.l)+'</text>';return '<rect class="outcome-connected" x="'+xx+'" y="'+(y-hc)+'" width="'+bw+'" height="'+hc+'"/><rect class="outcome-abandoned" x="'+xx+'" y="'+(y-hc-ha)+'" width="'+bw+'" height="'+ha+'"/><rect class="outcome-failed" x="'+xx+'" y="'+(y-hc-ha-hf)+'" width="'+bw+'" height="'+hf+'"/>'+lab;}).join("");
-  svg.innerHTML='<text x="'+p.l+'" y="14" class="chart-multi-legend c0">Aboutis</text><text x="'+(p.l+105)+'" y="14" class="chart-multi-legend c1">Abandons</text><text x="'+(p.l+220)+'" y="14" class="chart-multi-legend c2">Échecs</text>'+bars;
-}
-function ladder(m,c){
-  var e=$("cockpit-payment-bars");if(!e)return;
-  if(m.mixedCurrency){e.innerHTML='<p class="muted">Analyse financière désactivée sur une sélection multi-devises.</p>';return;}
-  var ex=Math.max(0,Number(m.expected||0)),rows=[["Attendu",ex,100],["Confirmé",Math.max(0,Number(m.confirmed||0)),ex?pct(m.confirmed,ex):0],["Encaissé",Math.max(0,Number(m.paid||0)),ex?pct(m.paid,ex):0]];
-  e.innerHTML=rows.map(function(x){return '<div class="payment-step"><div><span>'+x[0]+'</span><strong>'+money(x[1],c)+'</strong><small>'+nf(x[2],1)+'%</small></div><i><b style="width:'+clamp(x[2],0,100).toFixed(1)+'%"></b></i></div>';}).join("");
-  var gap=$("cockpit-payment-gap");if(gap)gap.textContent=ex?"Écart "+money(m.gap,c):"Écart —";
-}
-function render(ctx){
-  var d=ctx.data||{},m=ctx.m||{},q=ctx.q||{},c=ctx.currency||"EUR",total=Number(m.calls||0),connected=Number(m.connected||0),ar=pct(m.abandoned,total),fr=pct(m.failed,total),dm={};
-  (d.durations||[]).forEach(function(x){dm[x.dimension_key]=Number(x.calls_total||0);});
-  var lr=pct((dm["10_20m"]||0)+(dm["20_30m"]||0)+(dm.gte_30m||0),connected),er=pct(m.payoutEligibleMins,m.mins),mr=!m.mixedCurrency&&m.ca>0?pct(m.margin,m.ca):0,cr=!m.mixedCurrency&&m.expected>0?pct(m.confirmed,m.expected):0,pr=!m.mixedCurrency&&m.expected>0?pct(m.paid,m.expected):0,rr=!m.mixedCurrency&&m.expected>0?clamp(100-Math.abs(m.gap)/m.expected*100,0,100):0,xe=(d.experts||[])[0],xc=(d.carriers||[])[0],xs=total&&xe?pct(xe.calls_total,total):0,cs=total&&xc?pct(xc.calls_total,total):0;
-  pulse("pulse-asr",nf(m.asr,1)+"%",m.asr,tone(m.asr,85,70,false));pulse("pulse-abandon",nf(ar,1)+"%",ar,tone(ar,5,12,true));pulse("pulse-failed",nf(fr,1)+"%",fr,tone(fr,3,8,true));pulse("pulse-long-calls",nf(lr,1)+"%",lr,tone(lr,45,25,false));pulse("pulse-eligible",nf(er,1)+"%",er,tone(er,90,75,false));pulse("pulse-margin-rate",m.mixedCurrency?"—":nf(mr,1)+"%",mr,tone(mr,25,12,false));pulse("pulse-confirmed",m.mixedCurrency?"—":nf(cr,1)+"%",cr,tone(cr,98,90,false));pulse("pulse-paid",m.mixedCurrency?"—":nf(pr,1)+"%",pr,tone(pr,95,80,false));pulse("pulse-recon",m.mixedCurrency?"—":nf(rr,1)+"%",rr,tone(rr,99,96,false));pulse("pulse-quality",q.count?nf(q.score,0)+"/100":"—",q.score,tone(q.score,86,72,false),q.count?"MOS "+nf(q.mos,2)+" • "+nf(q.count,0)+" échant.":"Aucun échantillon RTP");pulse("pulse-top-expert",xe?nf(xs,1)+"%":"—",xs,tone(xs,35,55,true));pulse("pulse-top-carrier",xc?nf(cs,1)+"%":"—",cs,tone(cs,45,70,true));
-  var s=d.series||[],g=d.granularity||"hour";
-  multi("cockpit-finance-trend",s,[{k:"revenue",n:"CA"},{k:"expected_payout",n:"Reversement"},{k:"margin",n:"Marge"}],g);outcomes("cockpit-outcome-chart",s,g);dual("cockpit-quality-chart",d.quality_series||[],"mos","packet_loss_percent","MOS","Perte %",g);
-  multi("cockpit-unit-chart",s.map(function(x){var n=Number(x.calls_total||0);return {...x,value_per_call:n?Number(x.revenue||0)/n:0,margin_per_call:n?Number(x.margin||0)/n:0};}),[{k:"value_per_call",n:"CA / appel"},{k:"margin_per_call",n:"Marge / appel"}],g);
-  var a=$("cockpit-margin-badge");if(a)a.textContent=m.mixedCurrency?"Marge multi-devises":"Marge "+nf(mr,1)+"%";a=$("cockpit-loss-badge");if(a)a.textContent="Pertes "+nf(ar+fr,1)+"%";a=$("cockpit-quality-samples");if(a)a.textContent=nf(q.count,0)+" échantillon"+(q.count>1?"s":"");a=$("cockpit-unit-badge");if(a)a.textContent=m.mixedCurrency?"Multi-devises":(m.calls?money(m.ca/m.calls,c)+"/appel":"—");ladder(m,c);
-}
-root.PGICockpitPro=Object.freeze({render:render});
+(function(w){"use strict";
+var $=id=>document.getElementById(id),C=(v,a,b)=>Math.max(a,Math.min(b,Number(v)||0)),P=(v,t)=>Number(t)>0?Number(v||0)/Number(t)*100:0,N=(v,d=1)=>new Intl.NumberFormat("fr-FR",{maximumFractionDigits:d,minimumFractionDigits:d?d:0}).format(Number(v)||0),E=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c])),L=(v,g)=>{var d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat("fr-FR",g==="hour"?{day:"2-digit",month:"2-digit",hour:"2-digit"}:{day:"2-digit",month:"2-digit"}).format(d):"—";};
+function M(v,c){try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:c||"EUR"}).format(Number(v)||0);}catch{return N(v,2)+" €";}}
+function T(v,g,a,i){v=Number(v)||0;return i?(v<=g?"good":v<=a?"warn":"bad"):(v>=g?"good":v>=a?"warn":"bad");}
+function S(id,t,p,k,n){var e=$(id),b=$(id+"-bar"),x=$(id+"-note"),r=e&&e.closest?e.closest(".pulse-card"):null;if(e)e.textContent=t;if(b)b.style.width=C(p,0,100).toFixed(1)+"%";if(x&&n!=null)x.textContent=n;if(r){r.classList.remove("good","warn","bad");if(k)r.classList.add(k);}}
+function D(id,rows,a,b,an,bn,g,opt){var s=$(id);if(!s)return;var d=(rows||[]).map(x=>({l:L(x.bucket,g),a:Number(x[a]||0),b:Number(x[b]||0)}));if(!d.length){s.innerHTML='<text x="380" y="110" text-anchor="middle" fill="#6d829a" font-size="12">Aucune donnée</text>';return;}var W=760,H=220,p={l:42,r:16,t:32,b:28},ma=Math.max(1,...d.map(x=>x.a)),mb=Math.max(.1,...d.map(x=>x.b));if(opt&&opt.fixed){ma=mb=opt.fixed;}else if(opt&&opt.shared){ma=mb=Math.max(ma,mb);}var sx=i=>p.l+(d.length===1?(W-p.l-p.r)/2:(W-p.l-p.r)*i/(d.length-1)),sy=(v,m)=>H-p.b-(H-p.t-p.b)*Number(v||0)/m,path=(k,m)=>d.map((x,i)=>(i?"L":"M")+sx(i).toFixed(1)+" "+sy(x[k],m).toFixed(1)).join(" "),grid="";for(var i=0;i<=4;i++){var y=p.t+(H-p.t-p.b)*i/4;grid+='<line class="chart-grid" x1="'+p.l+'" x2="'+(W-p.r)+'" y1="'+y+'" y2="'+y+'"/>';}var labs=d.map((x,i)=>d.length>10&&i%Math.ceil(d.length/8)?"":'<text class="chart-axis" text-anchor="middle" x="'+sx(i)+'" y="'+(H-7)+'">'+E(x.l)+'</text>').join("");s.innerHTML=grid+labs+'<text x="'+p.l+'" y="14" class="chart-multi-legend c0">'+E(an)+'</text><text x="'+(p.l+120)+'" y="14" class="chart-multi-legend c1">'+E(bn)+'</text><path class="cockpit-line-multi c0" d="'+path("a",ma)+'"/><path class="cockpit-line-multi c1" d="'+path("b",mb)+'"/>';}
+function R(m,c){var e=$("cockpit-payment-bars");if(!e)return;if(m.mixedCurrency){e.innerHTML='<p class="muted">Analyse financière désactivée sur une sélection multi-devises.</p>';return;}var x=Math.max(0,Number(m.expected||0)),r=[["Attendu",x,100],["Confirmé",Math.max(0,Number(m.confirmed||0)),x?P(m.confirmed,x):0],["Encaissé",Math.max(0,Number(m.paid||0)),x?P(m.paid,x):0]];e.innerHTML=r.map(v=>'<div class="payment-step"><div><span>'+v[0]+'</span><strong>'+M(v[1],c)+'</strong><small>'+N(v[2],1)+'%</small></div><i><b style="width:'+C(v[2],0,100).toFixed(1)+'%"></b></i></div>').join("");var q=$("cockpit-payment-gap");if(q)q.textContent=x?"Écart "+M(m.gap,c):"Écart —";}
+function render(o){var d=o.data||{},m=o.m||{},q=o.q||{},c=o.currency||"EUR",t=Number(m.calls||0),cn=Number(m.connected||0),ar=P(m.abandoned,t),fr=P(m.failed,t),dm={};(d.durations||[]).forEach(x=>dm[x.dimension_key]=Number(x.calls_total||0));var lr=P((dm["10_20m"]||0)+(dm["20_30m"]||0)+(dm.gte_30m||0),cn),er=P(m.payoutEligibleMins,m.mins),mr=!m.mixedCurrency&&m.ca>0?P(m.margin,m.ca):0,cr=!m.mixedCurrency&&m.expected>0?P(m.confirmed,m.expected):0,pr=!m.mixedCurrency&&m.expected>0?P(m.paid,m.expected):0,rr=!m.mixedCurrency&&m.expected>0?C(100-Math.abs(m.gap)/m.expected*100,0,100):0,xe=(d.experts||[])[0],xc=(d.carriers||[])[0],xs=t&&xe?P(xe.calls_total,t):0,cs=t&&xc?P(xc.calls_total,t):0;
+S("pulse-asr",N(m.asr,1)+"%",m.asr,T(m.asr,85,70,0));S("pulse-abandon",N(ar,1)+"%",ar,T(ar,5,12,1));S("pulse-failed",N(fr,1)+"%",fr,T(fr,3,8,1));S("pulse-long-calls",N(lr,1)+"%",lr,T(lr,45,25,0));S("pulse-eligible",N(er,1)+"%",er,T(er,90,75,0));S("pulse-margin-rate",m.mixedCurrency?"—":N(mr,1)+"%",mr,T(mr,25,12,0));S("pulse-confirmed",m.mixedCurrency?"—":N(cr,1)+"%",cr,T(cr,98,90,0));S("pulse-paid",m.mixedCurrency?"—":N(pr,1)+"%",pr,T(pr,95,80,0));S("pulse-recon",m.mixedCurrency?"—":N(rr,1)+"%",rr,T(rr,99,96,0));S("pulse-quality",q.count?N(q.score,0)+"/100":"—",q.score,T(q.score,86,72,0),q.count?"MOS "+N(q.mos,2)+" • "+N(q.count,0)+" échant.":"Aucun échantillon RTP");S("pulse-top-expert",xe?N(xs,1)+"%":"—",xs,T(xs,35,55,1));S("pulse-top-carrier",xc?N(cs,1)+"%":"—",cs,T(cs,45,70,1));
+var s=d.series||[],g=d.granularity||"hour",vol=s.map(x=>({...x,billable_minutes:Number(x.billable_seconds||0)/60})),conv=s.map(x=>({...x,asr:Number(x.calls_total||0)?P(x.calls_connected,x.calls_total):0,abandon_rate:Number(x.calls_total||0)?P(x.calls_abandoned,x.calls_total):0})),unit=s.map(x=>{var n=Number(x.calls_total||0);return {...x,value_per_call:n?Number(x.revenue||0)/n:0,margin_per_call:n?Number(x.margin||0)/n:0};});
+D("cockpit-volume-chart",vol,"calls_total","billable_minutes","Appels","Minutes",g);D("cockpit-conversion-chart",conv,"asr","abandon_rate","ASR","Abandons",g,{fixed:100});D("cockpit-finance-trend",s,"revenue","margin","CA","Marge",g,{shared:true});D("cockpit-quality-chart",d.quality_series||[],"mos","packet_loss_percent","MOS","Perte %",g);D("cockpit-unit-chart",unit,"value_per_call","margin_per_call","CA / appel","Marge / appel",g,{shared:true});
+var e=$("cockpit-margin-badge");if(e)e.textContent=m.mixedCurrency?"Marge multi-devises":"Marge "+N(mr,1)+"%";e=$("cockpit-quality-samples");if(e)e.textContent=N(q.count,0)+" échantillon"+(q.count>1?"s":"");e=$("cockpit-unit-badge");if(e)e.textContent=m.mixedCurrency?"Multi-devises":(m.calls?M(m.ca/m.calls,c)+"/appel":"—");R(m,c);}
+w.PGICockpitPro=Object.freeze({render:render});
 })(window);
