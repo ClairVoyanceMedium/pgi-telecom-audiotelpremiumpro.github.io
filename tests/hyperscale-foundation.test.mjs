@@ -13,6 +13,7 @@ const usageLedgerMigration=fs.readFileSync("database/migrations/014_metered_usag
 const objectLifecycleMigration=fs.readFileSync("database/migrations/015_object_storage_data_lifecycle.sql","utf8");
 const dashboardDimensionMigration=fs.readFileSync("database/migrations/016_dashboard_dimension_rollups.sql","utf8");
 const qualityRollupMigration=fs.readFileSync("database/migrations/017_quality_rollups.sql","utf8");
+const experienceRollupMigration=fs.readFileSync("database/migrations/018_call_experience_rollups.sql","utf8");
 const resilienceDocs=fs.readFileSync("docs/RESILIENCE.md","utf8");
 const alertRules=fs.readFileSync("infra/observability/prometheus-alerts.example.yml","utf8");
 const schema=fs.readFileSync("database/schema.sql","utf8");
@@ -164,8 +165,12 @@ test("le cockpit analytique reste borné côté serveur",()=>{
   assert.ok(dashboardDimensionMigration.includes("dashboard_dimension_rollups_daily"));
   assert.ok(dashboardDimensionMigration.includes("dimension_type"));
   assert.ok(qualityRollupMigration.includes("quality_rollups_hourly_sharded"));
+  assert.ok(experienceRollupMigration.includes("experience_rollups_hourly_sharded"));
+  assert.ok(experienceRollupMigration.includes("answered_le_20s"));
+  assert.ok(experienceRollupMigration.includes("affected_samples"));
   assert.ok(store.includes("async dashboardAnalytics("));
   assert.ok(store.includes("writeDashboardDimensionRollups"));
+  assert.ok(store.includes("writeExperienceRollup"));
   assert.ok(store.includes("writeQualityRollup"));
   assert.ok(server.includes("/api/v1/dashboard/analytics"));
 });

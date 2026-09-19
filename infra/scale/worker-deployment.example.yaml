@@ -15,7 +15,7 @@ spec:
       terminationGracePeriodSeconds: 45
       containers:
         - name: worker
-          image: pgi-telecom-api:1.17.0
+          image: pgi-telecom-api:1.18.0
           env:
             - name: PGI_BACKEND_MODE
               value: production

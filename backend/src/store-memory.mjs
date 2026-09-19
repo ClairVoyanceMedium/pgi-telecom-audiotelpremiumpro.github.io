@@ -205,17 +205,45 @@ export class MemoryStore{
       packet_loss_percent:qavg("packet_loss_percent"),
       jitter_ms:qavg("jitter_ms"),
       latency_ms:qavg("latency_ms"),
-      dtmf_errors:qualityRows.reduce((a,x)=>a+Number(x.quality.dtmf_errors||0),0)
+      dtmf_errors:qualityRows.reduce((a,x)=>a+Number(x.quality.dtmf_errors||0),0),
+      affected_samples:qualityRows.filter(x=>Number(x.quality.packet_loss_percent||0)>=5||Number(x.quality.jitter_ms||0)>5||Number(x.quality.latency_ms||0)>150).length,
+      low_mos_samples:qualityRows.filter(x=>Number(x.quality.mos||0)<3.5).length
     };
     const qualitySeries=[...group(qualityRows,bucketKey)].map(([bucket,items])=>{
       const avg=key=>items.length?items.reduce((a,x)=>a+Number(x.quality[key]||0),0)/items.length:null;
       return {
         bucket,samples:items.length,mos:avg("mos"),packet_loss_percent:avg("packet_loss_percent"),
         jitter_ms:avg("jitter_ms"),latency_ms:avg("latency_ms"),
-        dtmf_errors:items.reduce((a,x)=>a+Number(x.quality.dtmf_errors||0),0)
+        dtmf_errors:items.reduce((a,x)=>a+Number(x.quality.dtmf_errors||0),0),
+        affected_samples:items.filter(x=>Number(x.quality.packet_loss_percent||0)>=5||Number(x.quality.jitter_ms||0)>5||Number(x.quality.latency_ms||0)>150).length,
+        low_mos_samples:items.filter(x=>Number(x.quality.mos||0)<3.5).length
       };
     }).sort((a,b)=>Date.parse(a.bucket)-Date.parse(b.bucket));
-    return {granularity,series,hours,weekdays,heatmap,quality,quality_series:qualitySeries,experts:expertsRows.slice(0,50),carriers:carriersRows.slice(0,50),durations};
+    const connected=rows.filter(x=>x.call_status==="connected"),abandoned=rows.filter(x=>x.call_status==="abandoned");
+    const avg=(items,fn)=>items.length?items.reduce((a,x)=>a+Number(fn(x)||0),0)/items.length:0;
+    const ivrRows=rows.filter(x=>x.ivr_started_at&&x.queued_at),queueRows=rows.filter(x=>x.queued_at);
+    const waitBucket=x=>x.wait_seconds<=10?"wait_le_10s":x.wait_seconds<=20?"wait_10_20s":x.wait_seconds<=30?"wait_20_30s":x.wait_seconds<=60?"wait_30_60s":x.wait_seconds<=120?"wait_60_120s":"wait_gt_120s";
+    const experience={
+      samples:rows.length,connected:connected.length,abandoned:abandoned.length,
+      avg_wait_seconds:avg(rows,x=>x.wait_seconds),avg_answered_wait_seconds:avg(connected,x=>x.wait_seconds),
+      avg_abandoned_wait_seconds:avg(abandoned,x=>x.wait_seconds),
+      answered_le_20s_percent:connected.length?connected.filter(x=>x.wait_seconds<=20).length/connected.length*100:0,
+      abandoned_le_10s_percent:abandoned.length?abandoned.filter(x=>x.wait_seconds<=10).length/abandoned.length*100:0,
+      avg_ivr_seconds:avg(ivrRows,x=>(Date.parse(x.queued_at)-Date.parse(x.ivr_started_at))/1000),
+      avg_queue_seconds:avg(queueRows,x=>(Date.parse(x.bridged_at||x.ended_at)-Date.parse(x.queued_at))/1000),
+      wait_le_10s:0,wait_10_20s:0,wait_20_30s:0,wait_30_60s:0,wait_60_120s:0,wait_gt_120s:0
+    };
+    rows.forEach(x=>{experience[waitBucket(x)]++;});
+    const experienceSeries=[...group(rows,bucketKey)].map(([bucket,items])=>{
+      const con=items.filter(x=>x.call_status==="connected"),abd=items.filter(x=>x.call_status==="abandoned"),q=items.filter(x=>x.queued_at);
+      return {
+        bucket,samples:items.length,avg_wait_seconds:avg(items,x=>x.wait_seconds),
+        answered_le_20s_percent:con.length?con.filter(x=>x.wait_seconds<=20).length/con.length*100:0,
+        abandoned_le_10s_percent:abd.length?abd.filter(x=>x.wait_seconds<=10).length/abd.length*100:0,
+        avg_queue_seconds:avg(q,x=>(Date.parse(x.bridged_at||x.ended_at)-Date.parse(x.queued_at))/1000)
+      };
+    }).sort((a,b)=>Date.parse(a.bucket)-Date.parse(b.bucket));
+    return {granularity,series,hours,weekdays,heatmap,quality,quality_series:qualitySeries,experience,experience_series:experienceSeries,experts:expertsRows.slice(0,50),carriers:carriersRows.slice(0,50),durations};
   }
 
   async listCalls(params={}){

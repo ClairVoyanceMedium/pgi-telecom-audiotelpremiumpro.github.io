@@ -10,6 +10,7 @@ const dataClient=read("assets/data-client.js");
 const demoData=read("assets/demo-data.js");
 const commands=read("assets/command-palette.js");
 const workspace=read("assets/workspace.js");
+const cockpitPro=read("assets/cockpit-pro.js");
 const css=read("assets/styles.css");
 const sw=read("service-worker.js");
 const buildStatic=read("scripts/build-static.mjs");
@@ -68,7 +69,7 @@ test("le cockpit analytique 1.15 reste complet",()=>{
     "cockpit-peak-day","cockpit-value-call","cockpit-value-minute",
     "cockpit-margin-call","cockpit-average-duration"
   ])assert.ok(index.includes('id="'+id+'"'),"missing #"+id);
-  assert.match(css,/PGI 1\.15 — Cockpit Intelligence Layer/);
+  assert.match(css,/\.cockpit-intelligence\{/);
   assert.match(app,/renderCockpitIntelligence/);
   assert.match(app,/serverAnalytics/);
   assert.match(app,/AGRÉGATS SERVEUR/);
@@ -142,7 +143,7 @@ test("la palette universelle accélère la navigation",()=>{
   assert.match(commands,/pgi:command/);
   assert.match(commands,/Ouvrir Finance/);
   assert.match(commands,/Exporter les appels en CSV/);
-  assert.match(css,/PGI 1\.16 — Operator Efficiency Layer/);
+  assert.match(css,/\.command-palette-btn\{/);
 });
 
 test("le workspace mémorise la dernière vue et période",()=>{
@@ -186,12 +187,20 @@ test("experts opérateurs et réconciliation utilisent les agrégats serveur",()
   assert.match(app,/dashboard\.reconciliation/);
 });
 
+test("le Cockpit expose l'expérience appelant sans faux SLA",()=>{
+  for(const id of ["exp-wait","exp-fast-answer","exp-abandon-wait","exp-short-abandon","exp-ivr","exp-queue","exp-network-affected","exp-low-mos"])assert.ok(index.includes('id="'+id+'"'));
+  assert.match(cockpitPro,/answered_le_20s_percent/);
+  assert.match(cockpitPro,/affected_samples/);
+  assert.match(cockpitPro,/experience-trend-chart/);
+  assert.doesNotMatch(index,/SLA garanti/i);
+});
+
 test("la PWA met en cache tous les modules du shell",()=>{
   for(const file of [
     "assets/demo-data.js","assets/api-client.js","assets/data-client.js",
     "assets/command-palette.js","assets/workspace.js","assets/cockpit-pro.js","assets/app.js"
   ])assert.ok(sw.includes(file),"service worker missing "+file);
-  assert.match(sw,/pgi-telecom-shell-v20/);
+  assert.match(sw,/pgi-telecom-shell-v21/);
 });
 
 test("la release Git exacte reste visible et obligatoire",()=>{
