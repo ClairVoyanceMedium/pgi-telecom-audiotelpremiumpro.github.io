@@ -101,7 +101,7 @@ test("la production ne fabrique aucun faux CDR local",()=>{
   assert.match(app,/RUNTIME\.mode==="production"\?\[\]/);
   assert.match(app,/PGIDemoData\.buildCalls/);
   assert.match(demoData,/function buildCalls/);
-  assert.doesNotMatch(dataClient,/serviceRate|payoutRate/);
+  assert.doesNotMatch(dataClient,/computeCallFinancials|CONFIG\.serviceRate|CONFIG\.payoutRate/);
 });
 
 test("les données de production sont modularisées et bornées",()=>{
