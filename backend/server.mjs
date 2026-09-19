@@ -340,7 +340,7 @@ export function createBackend(options={}){
       if(method==="POST"&&match){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
         const body={id:match.id};
-        const result=await store.idempotent(req.headers["idempotency-key"],"carrier.switch.activate",body,()=>store.activateCarrierSwitch(match.id));
+        const result=await store.idempotent(req.headers["idempotency-key"],"carrier.switch.activate",body,()=>store.activateCarrierSwitch(match.id,actor));
         return done(res,metrics,started,"carrier.switch.activate",200,{...result.value,replayed:result.replayed});
       }
 
@@ -348,7 +348,7 @@ export function createBackend(options={}){
       if(method==="POST"&&match){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
         const body={id:match.id};
-        const result=await store.idempotent(req.headers["idempotency-key"],"carrier.switch.rollback",body,()=>store.rollbackCarrierSwitch(match.id));
+        const result=await store.idempotent(req.headers["idempotency-key"],"carrier.switch.rollback",body,()=>store.rollbackCarrierSwitch(match.id,actor));
         return done(res,metrics,started,"carrier.switch.rollback",200,{...result.value,replayed:result.replayed});
       }
 
