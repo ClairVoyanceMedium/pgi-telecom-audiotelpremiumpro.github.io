@@ -647,7 +647,7 @@ export class MemoryStore{
 
   async listAdminAlerts(params={}){
     const state=String(params.state||"open");
-    const rows=state==="all"?this.adminAlerts:this.adminAlerts.filter(x=>x.state===state);
+    const rows=state==="all"?this.adminAlerts:state==="unresolved"?this.adminAlerts.filter(x=>x.state!=="resolved"):this.adminAlerts.filter(x=>x.state===state);
     return {data:structuredClone(rows),next_cursor:null};
   }
 
