@@ -149,9 +149,12 @@ if(!/import\("\.\/command-palette\.js"\)/.test(commandPaletteLoader))failures.pu
 if(serviceWorker.includes("assets/command-palette.js"))failures.push("full command palette must remain outside the PWA shell precache");
 if(serviceWorker.includes("assets/cockpit-pro.js"))failures.push("advanced cockpit analytics must remain outside the PWA shell precache");
 if(!/pgi_ui_preferences/.test(workspace)||!/pgi_operating_market/.test(workspace))failures.push("workspace preferences must remain persistent");
-for(const file of ["assets/demo-data.js","assets/data-client.js","assets/command-palette-loader.js","assets/workspace.js"]){
+for(const file of ["assets/data-client.js","assets/command-palette-loader.js","assets/workspace.js"]){
   if(!serviceWorker.includes(file))failures.push("PWA shell missing "+file);
 }
+if(serviceWorker.includes("assets/demo-data.js"))failures.push("demo generator must remain outside the PWA shell precache");
+if(indexSource.includes('src="assets/demo-data.js"'))failures.push("demo generator must be loaded only on demand");
+if(!/loadDemoCalls/.test(appSource))failures.push("demo mode must lazy-load its generator");
 if(!/quality_rollups_hourly_sharded/.test(qualityRollupMigration)||!/mos_sum/.test(qualityRollupMigration)||!/packet_loss_sum/.test(qualityRollupMigration))failures.push("quality analytics must retain bounded RTP rollups");
 if(!/writeQualityRollup/.test(postgresStore)||!/quality:quality\[0\]/.test(postgresStore))failures.push("backend must write and expose scalable voice-quality aggregates");
 for(const name of ["PGI_WORK_QUEUE_BATCH_SIZE","PGI_WORK_QUEUE_LEASE_SECONDS","PGI_WORK_QUEUE_RETRY_BASE_SECONDS","PGI_WORK_QUEUE_POLL_MS"]){
