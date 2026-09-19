@@ -6,6 +6,8 @@
   var titles={overview:"Cockpit",calls:"Appels",finance:"Finance",experts:"Experts",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Supervision",settings:"Paramètres"};var experts=["Frederick","Sofia","Emma","Lina","Clara","Nora"];
 var carriers=["Orange","SFR","Bouygues","Free"];
   var number089="0890 80 24 24";
+  var callToolsPromise=null;
+  function callTools(){return callToolsPromise||(callToolsPromise=import("./call-tools.js"));}
   function $(id){return document.getElementById(id);}
   function qsa(sel){return Array.prototype.slice.call(document.querySelectorAll(sel));}
   function money(v){return moneyIn(v,state.marketCurrency||"EUR","fr-FR");}
@@ -1009,44 +1011,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       return '<article class="recon-card"><h3>'+esc(name)+'</h3><div class="amount">'+money(a.confirmed)+'</div><small>Confirmé / '+money(a.expected)+' attendu</small><div class="progress"><span style="width:'+Math.max(0,Math.min(100,ratio)).toFixed(1)+'%"></span></div><small>Concordance '+nfmt(ratio,2)+'%</small></article>';
     }).join("");
   }
-  function csvCell(v){
-    var s=String(v==null?"":v);
-    return '"'+s.replace(/"/g,'""')+'"';
-  }
-  function exportCallsCsv(){
-    var rows=applyCallFilters(filteredCalls());
-    var header=["date","heure","appelant_masque","reseau","numero_sva","expert","attente_s","conversation_s","total_s","minutes_facturables","minutes_reversement","ca_service_ttc","reversement_attendu_ht","reversement_confirme_ht","ecart_ht","sip_code","cause_fin","codec","perte_paquets_pct","jitter_ms","latence_ms","mos","statut"];
-    var lines=[header.join(";")];
-    rows.forEach(function(c){
-      lines.push([
-        fmtDate(c.ts),fmtTime(c.ts),c.caller,c.carrier,c.number,c.expert,c.wait,c.conversation,c.total,c.billable,c.payoutEligible,
-        c.serviceAmount.toFixed(2),c.expected.toFixed(2),c.confirmed.toFixed(2),c.variance.toFixed(2),c.sipFinalCode,c.hangupCause,c.codec,
-        c.packetLoss,c.jitter,c.latency,c.mos,c.status
-      ].map(csvCell).join(";"));
-    });
-    var button=$("export-csv");
-    if(button&&button.disabled)return;
-    if(button)button.disabled=true;
-    var blob=new Blob(["\ufeff"+lines.join("\n")],{type:"text/csv;charset=utf-8"});
-    var url=URL.createObjectURL(blob),a=document.createElement("a");
-    a.href=url;a.download="pgi-audiotel-cdr-"+new Date().toISOString().slice(0,10)+".csv";
-    document.body.appendChild(a);a.click();a.remove();
-    setTimeout(function(){URL.revokeObjectURL(url);if(button)button.disabled=false;},1000);
-  }
-  function showCallDetail(id){
-    var c=allCalls.find(function(x){return String(x.id)===String(id);});
-    if(!c)return;
-    var label=function(k,v){return '<div class="detail-metric"><span>'+esc(k)+'</span><strong>'+esc(v)+'</strong></div>';};
-    setText("call-detail-title","Appel #"+c.id+" • "+fmtDate(c.ts)+" "+fmtTime(c.ts));
-    $("call-detail-grid").innerHTML=
-      label("Appelant",c.caller)+label("Réseau",c.carrier)+label("Numéro SVA",c.number)+label("Expert",c.expert)+
-      label("Début",fmtTime(c.ts))+label("Entrée SVI",fmtTime(c.ivrStarted))+label("Mise en file",fmtTime(c.queued))+label("Mise en relation",c.bridged?fmtTime(c.bridged):"—")+
-      label("Fin",fmtTime(c.ended))+label("Attente",fmtDuration(c.wait))+label("Conversation",fmtDuration(c.conversation))+label("Durée totale",fmtDuration(c.total))+
-      label("Facturable",c.billable+" min")+label("Éligible reversement",c.payoutEligible+" min")+label("CA service TTC",money(c.serviceAmount))+label("Reversement attendu HT",money(c.expected))+
-      label("Reversement confirmé HT",money(c.confirmed))+label("Reversement payé HT",money(c.paid))+label("Écart",money(c.variance))+label("SIP final",String(c.sipFinalCode))+label("Cause de fin",c.hangupCause)+
-      label("Codec",c.codec)+label("Perte paquets",nfmt(c.packetLoss,3)+" %")+label("Jitter",nfmt(c.jitter,2)+" ms")+label("Latence",nfmt(c.latency,2)+" ms")+label("MOS",nfmt(c.mos,2));
-    var d=$("call-dialog");if(d&&typeof d.showModal==="function")d.showModal();
-  }
   function platformChip(value){
     var v=String(value||"unknown").toLowerCase();
     var ok=["active","verified","paid","reconciled","payable"].includes(v);
@@ -1313,7 +1277,7 @@ import("./subscription-billing-ui.js").then(function(m){m.render(summary,tenantC
       switchView("overview");
       return id==="analysis"?toggleMobileOverview():setTimeout(function(){var b=$("priority-action-btn");if(b)b.focus();},250);
     }
-    if(id==="export"){switchView("calls");return setTimeout(exportCallsCsv,80);}
+    if(id==="export"){switchView("calls");return setTimeout(function(){callTools().then(function(m){m.exportCsv(applyCallFilters(filteredCalls()),$("export-csv"));});},80);}
     if(id&&id.indexOf("print-")===0){switchView(id.slice(6));setTimeout(function(){window.print();},120);}
   }
   function bind(){
@@ -1354,9 +1318,9 @@ import("./subscription-billing-ui.js").then(function(m){m.render(summary,tenantC
       });
     });
     $("calls-table").addEventListener("click",function(e){
-      var b=e.target.closest("[data-call-id]");if(b)showCallDetail(b.getAttribute("data-call-id"));
+      var b=e.target.closest("[data-call-id]");if(b){var c=allCalls.find(function(x){return String(x.id)===String(b.getAttribute("data-call-id"));});if(c)callTools().then(function(m){m.showDetail(c);});}
     });
-    $("export-csv").addEventListener("click",exportCallsCsv);
+    $("export-csv").addEventListener("click",function(){callTools().then(function(m){m.exportCsv(applyCallFilters(filteredCalls()),$("export-csv"));});});
     $("print-calls").addEventListener("click",function(){window.print();});
     $("print-finance").addEventListener("click",function(){window.print();});
     $("reset-metrics").addEventListener("click",function(){var d=$("reset-dialog");if(typeof d.showModal==="function")d.showModal();});
