@@ -371,3 +371,17 @@ L'autorisation SVA est fail-closed. `pgi_tenant_has_premium_call_access` exige, 
 Les notifications du futur prestataire de paiement sont normalisées dans `subscription_billing_events`, append-only et dédupliquées. Le backend n'impose pas Stripe ou un autre fournisseur : les références provider/customer/subscription sont abstraites. Cette séparation permet de changer de prestataire sans modifier les tables d'appels ou le routage télécom.
 
 Le billing externe est désactivé par défaut. Tant que `PGI_EXTERNAL_BILLING_ENABLED=false`, le déploiement compact actuel continue de fonctionner uniquement pour PGI sans nécessiter de prestataire de paiement ni de token supplémentaire.
+
+
+## Annuaire et contrôle clients 1.21
+
+L’administration de plusieurs millions de tenants ne repose pas sur un chargement intégral en mémoire. `GET /platform/tenants` utilise une pagination par curseur, une limite bornée et des recherches préfixées indexées. Les filtres pays/statut utilisent des index composites ; les enrichissements abonnement et nombre de lignes sont évalués seulement sur la page sélectionnée.
+
+Le centre de contrôle permet deux niveaux de suspension indépendants :
+
+- suspension du tenant externe, qui suspend immédiatement toutes ses affectations SVA actives ;
+- suspension d’une affectation SVA particulière, sans désactiver les autres lignes du même client.
+
+Toutes les mutations sont idempotentes au niveau API, journalisées dans `audit_log` et `tenant_control_events`, puis relayées par l’outbox. Les tenants internes sont explicitement protégés contre ces actions.
+
+Les impayés sont contrôlés par le worker distribué sous lease. La détection est bornée et s’appuie sur `tenant_subscriptions_due_idx`. Les alertes sont persistantes, dédupliquées par abonnement/période et ne sont résolues qu’après un événement de renouvellement payé correspondant.
