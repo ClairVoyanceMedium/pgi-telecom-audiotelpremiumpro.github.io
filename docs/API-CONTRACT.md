@@ -106,7 +106,7 @@ Le backend doit journaliser l'utilisateur, la date, la portée et la raison.
 
 ## API wholesale / multi-tenant
 
-La lecture de synthèse wholesale est maintenant implémentée. Les routes de mutation restent contractuelles et ne doivent pas être exposées comme fonctionnelles tant que leur implémentation backend, leur autorisation par rôle et le cadre opérateur/PSP ne sont pas terminés.
+La lecture de synthèse wholesale est implémentée. Les mutations explicitement documentées comme implémentées ci-dessous sont protégées par rôle et CSRF ; les mutations financières ou réglementaires qui nécessitent encore un prestataire externe restent fail-closed et ne sont pas simulées comme si elles étaient autorisées.
 
 ### GET /platform/overview
 
@@ -145,13 +145,9 @@ Expose uniquement des métadonnées non sensibles et l'état KYC, jamais les pi�
 
 ### POST /platform/tenants
 
-Crée un client/éditeur dans l'état `pending`.
+Implémenté pour le rôle `admin`, avec CSRF et clé d’idempotence. Crée un client ou revendeur externe dans l’état `pending`, initialise son KYC en `pending`, déclenche son placement data hyperscale et crée un profil marché `onboarding` si le pays dispose déjà d’un marché configuré.
 
-Aucune activation SVA n'est autorisée tant que :
-
-- le KYC n'est pas vérifié ;
-- l'opérateur réglementairement assignant n'est pas défini ;
-- le contrat commercial n'est pas actif.
+Aucune activation SVA n'est accordée par cette création. Le KYC, l’abonnement payé et l’affectation SVA/opérateur restent des étapes distinctes.
 
 ### GET /platform/numbers
 
@@ -204,3 +200,24 @@ Le dossier regroupe l’identité et le statut du tenant, l’état KYC sans doc
 GET /platform/tenants accepte aussi le filtre number, normalisé en E.164 sans signe +, afin de retrouver un client à partir d’un préfixe de numéro SVA. Cette recherche s’appuie sur l’index de préfixe du parc SVA.
 
 La fiche n’accorde aucun droit supplémentaire : les mutations restent protégées par les endpoints dédiés, les rôles, CSRF et, lorsqu’exigé, une clé d’idempotence.
+
+
+## GET /carrier-switches/options
+
+Retourne la route `sva-primary`, les connexions SIP candidates dont l’état est `ready`, `active` ou `standby`, et les 20 dernières opérations de bascule. Cette route est utilisée par le panneau d’administration du cockpit.
+
+## POST /carrier-switches
+
+Rôle `admin`, CSRF et idempotence obligatoires. Prépare une bascule sans modifier la route active. La connexion cible doit être un trunk SIP entrant déjà prêt.
+
+## POST /carrier-switches/:id/activate
+
+Active atomiquement une bascule préparée. Une confirmation séparée est imposée dans le cockpit. L’action est journalisée avec l’administrateur authentifié.
+
+## POST /carrier-switches/:id/rollback
+
+Revient vers la route standby uniquement si l’opération est terminée et si la fenêtre de rollback n’est pas expirée. L’action est journalisée avec l’administrateur authentifié.
+
+## POST /platform/subscription-prices
+
+Publie une nouvelle version tarifaire de l’abonnement SVA externe. Les versions passées sont immuables ; la publication ferme la période de la version courante et ajoute une nouvelle version, sans réécrire l’historique.
