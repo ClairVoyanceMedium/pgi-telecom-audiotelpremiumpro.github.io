@@ -335,3 +335,7 @@ Les actions disponibles depuis cette fiche réutilisent les contrôles de sécur
 L’annuaire reconnaît aussi un numéro SVA comme critère de recherche. La recherche ne charge jamais le parc complet : le client est retrouvé côté PostgreSQL via le préfixe E.164 indexé, puis la fiche détaillée ne charge que des collections bornées.
 
 Les opérations réglementaires qui nécessitent une autorité externe ne sont pas artificiellement automatisées : la validation KYC, l’attribution réglementaire initiale d’un numéro et les confirmations opérateur restent exposées comme états à contrôler jusqu’au branchement des fournisseurs compétents.
+
+Le cockpit peut aussi créer un nouveau client externe. La création est volontairement fail-closed : le tenant est `pending`, son KYC est `pending`, son profil de marché est `onboarding` lorsqu’un marché correspondant existe, et aucun accès SVA n’est accordé.
+
+Le panneau Administration plateforme centralise les deux opérations transverses déjà protégées côté serveur : publication d’un nouveau tarif mensuel versionné et bascule de l’opérateur SVA. Une bascule est d’abord préparée vers une connexion SIP déjà `ready`, `active` ou `standby`, puis activée par une seconde confirmation. Le rollback reste disponible uniquement dans la fenêtre prévue et les actions d’activation/rollback sont auditées avec l’administrateur authentifié.
