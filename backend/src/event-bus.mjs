@@ -14,7 +14,7 @@ export class EventBus{
   #relayReceived=0;
   #relayErrors=0;
 
-  publish(type,payload){
+  publish(type,payload,{relay=true}={}){
     const event=Object.freeze({
       id:randomUUID(),
       type:normalizeEventType(type),
@@ -22,7 +22,7 @@ export class EventBus{
       at:new Date().toISOString()
     });
     this.#emit(event);
-    this.#publishRelay(event);
+    if(relay)this.#publishRelay(event);
     return event;
   }
 
