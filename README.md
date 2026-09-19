@@ -4,7 +4,7 @@ Cockpit Audiotel, financier et télécom de PGI Telecom.
 
 ## État actuel
 
-Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.18.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
+Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.19.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
 
 Fonctions déjà présentes :
 
@@ -297,3 +297,10 @@ Le temps réel multi-processus s’appuie sur PostgreSQL `LISTEN/NOTIFY`, sans R
 Le Cockpit exploite désormais les timestamps déjà collectés dans les CDR pour mesurer l'expérience appelant : attente moyenne, attente avant abandon, décroché en 20 secondes ou moins, abandon en 10 secondes ou moins, temps SVI, temps de file et distribution des attentes. Ces métriques sont alimentées par des agrégats horaires PostgreSQL dédiés afin de rester rapides sur de gros volumes.
 
 La qualité RTP ajoute deux indicateurs de dégradation : sessions affectées lorsque la perte de paquets atteint 5 %, le jitter dépasse 5 ms ou la latence dépasse 150 ms, et part des échantillons avec MOS inférieur à 3,5. Ces seuils sont affichés comme seuils techniques, pas comme SLA contractuel.
+
+
+## Performance Radar 1.19
+
+Le Cockpit ajoute un radar de dérive adaptatif et des benchmarks experts/opérateurs. Les signaux comparent la dernière période à la médiane des périodes précédentes avec une dispersion robuste basée sur la MAD, afin de limiter les alertes provoquées par quelques valeurs extrêmes. Les signaux sont descriptifs et ne constituent ni prévision ni SLA.
+
+Le radar est chargé à la demande. Il reste donc hors du shell critique initial, possède son propre budget de taille et bénéficie ensuite du cache runtime du service worker. Les matrices utilisent les agrégats PostgreSQL existants et n’exigent pas de télécharger l’historique complet des CDR.
