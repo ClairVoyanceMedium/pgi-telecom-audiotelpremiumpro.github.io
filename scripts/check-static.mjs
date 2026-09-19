@@ -23,6 +23,7 @@ const required = [
   "assets/call-tools.js",
   "assets/app.js",
   "assets/favicon.svg",
+  "assets/audiotel-premium-pro-icon.png",
   "manifest.webmanifest",
   "service-worker.js",
   "README.md",
