@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.18.0 — 2026-09-19
+
+Caller Experience Intelligence :
+
+- nouvelle couche Expérience appelant dans le Cockpit ;
+- attente moyenne tous appels et attente moyenne avant abandon ;
+- taux d'appels aboutis en 20 secondes ou moins ;
+- taux d'abandons en 10 secondes ou moins ;
+- temps SVI moyen et temps de file moyen ;
+- distribution des attentes en six tranches jusqu'à plus de 120 secondes ;
+- série temporelle attente moyenne / décroché rapide ;
+- détection RTP dégradée selon perte de paquets, jitter ou latence ;
+- suivi des échantillons MOS inférieurs à 3,5 ;
+- agrégats horaires PostgreSQL dédiés pour rester scalable sans scanner l'historique brut ;
+- backfill automatique des métriques d'expérience et qualité lors de la migration 018 ;
+- tests PostgreSQL réels des temps d'attente, SVI, file et qualité ;
+- cache PWA v21 et budgets front stricts conservés ;
+- versions front, backend, Docker et manifests scale alignées sur 1.18.0.
 
 ## 1.17.0 — 2026-09-19
 
