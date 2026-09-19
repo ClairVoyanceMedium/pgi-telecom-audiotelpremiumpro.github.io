@@ -132,6 +132,8 @@ CREATE INDEX subscription_billing_events_tenant_time_idx
 CREATE INDEX subscription_billing_events_subscription_time_idx
   ON subscription_billing_events(subscription_id,event_time DESC,id DESC)
   WHERE subscription_id IS NOT NULL;
+CREATE INDEX subscription_billing_events_event_time_brin
+  ON subscription_billing_events USING brin(event_time);
 
 CREATE FUNCTION pgi_prevent_subscription_billing_event_mutation()
 RETURNS trigger
@@ -152,7 +154,9 @@ CREATE OR REPLACE FUNCTION pgi_publish_service_plan_price(
   p_amount_minor bigint,
   p_effective_from timestamptz DEFAULT now(),
   p_market_id bigint DEFAULT NULL,
-  p_created_by bigint DEFAULT NULL
+  p_created_by bigint DEFAULT NULL,
+  p_provider text DEFAULT NULL,
+  p_provider_price_reference text DEFAULT NULL
 )
 RETURNS bigint
 LANGUAGE plpgsql
@@ -199,9 +203,9 @@ BEGIN
     AND effective_from<p_effective_from;
 
   INSERT INTO service_plan_price_versions(
-    service_plan_id,market_id,currency,amount_minor,billing_interval,interval_count,effective_from,created_by
+    service_plan_id,market_id,currency,amount_minor,billing_interval,interval_count,effective_from,created_by,provider,provider_price_reference
   )
-  VALUES(v_plan_id,p_market_id,p_currency,p_amount_minor,'month',1,p_effective_from,p_created_by)
+  VALUES(v_plan_id,p_market_id,p_currency,p_amount_minor,'month',1,p_effective_from,p_created_by,p_provider,p_provider_price_reference)
   RETURNING id INTO v_price_id;
 
   RETURN v_price_id;
