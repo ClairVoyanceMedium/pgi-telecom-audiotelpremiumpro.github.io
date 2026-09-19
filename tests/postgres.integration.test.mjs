@@ -245,6 +245,24 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const carrierAdminAfterPlan=await store.carrierAdminOverview();
     assert.ok(carrierAdminAfterPlan.recent_switches.some(x=>Number(x.id)===Number(plannedSwitch.id)));
 
+    const onboarded=await store.createTenant({
+      display_name:"International Onboarding Test",legal_name:"International Onboarding Test Ltd",
+      tenant_type:"customer",country_code:"FR",billing_email:"accounts@example.test",
+      preferred_locale:"fr-FR",default_currency:"EUR",timezone:"Europe/Paris"
+    },{sub:"admin"});
+    assert.equal(onboarded.status,"pending");
+    assert.equal(onboarded.country_code,"FR");
+    const onboardKyc=await store.sql.unsafe("SELECT status,registration_country FROM tenant_kyc_profiles WHERE tenant_id=(SELECT id FROM tenants WHERE public_id=$1::uuid)",[onboarded.public_id]);
+    assert.equal(onboardKyc[0].status,"pending");
+    assert.equal(onboardKyc[0].registration_country,"FR");
+    const onboardPlacement=await store.sql.unsafe("SELECT state,cluster_key FROM tenant_data_placement WHERE tenant_id=(SELECT id FROM tenants WHERE public_id=$1::uuid)",[onboarded.public_id]);
+    assert.equal(onboardPlacement[0].state,"active");
+    const onboardMarket=await store.sql.unsafe("SELECT status,compliance_status FROM tenant_market_profiles WHERE tenant_id=(SELECT id FROM tenants WHERE public_id=$1::uuid)",[onboarded.public_id]);
+    assert.equal(onboardMarket[0].status,"onboarding");
+    assert.equal(onboardMarket[0].compliance_status,"not_started");
+    const onboardAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access((SELECT id FROM tenants WHERE public_id=$1::uuid),NULL,now()) AS allowed",[onboarded.public_id]);
+    assert.equal(onboardAccess[0].allowed,false);
+
     const metrics=await store.metrics();
     assert.equal(metrics.calls_total,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
