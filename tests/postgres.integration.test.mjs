@@ -79,6 +79,57 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const externalAccessAfterPriceChange=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access(t.id,NULL,now()) AS allowed FROM tenants t WHERE t.slug='integration-external'");
     assert.equal(externalAccessAfterPriceChange[0].allowed,true);
 
+    const directoryActive=await store.listTenants({q:"external",country:"FR",billing:"active",limit:10});
+    assert.equal(directoryActive.data.length,1);
+    assert.equal(directoryActive.data[0].display_name,"External Test");
+    assert.equal(directoryActive.data[0].premium_call_access,true);
+    assert.equal(directoryActive.data[0].active_assignments,1);
+
+    let extAssignments=await store.listTenantAssignments({tenant_public_id:externalIdentity[0].public_id,limit:10});
+    assert.equal(extAssignments.data.length,1);
+    const assignmentId=Number(extAssignments.data[0].id);
+    const suspendedLine=await store.setTenantAssignmentStatus(assignmentId,"suspended",{sub:"admin"},"integration");
+    assert.equal(suspendedLine.status,"suspended");
+    const activeLine=await store.setTenantAssignmentStatus(assignmentId,"active",{sub:"admin"},"integration");
+    assert.equal(activeLine.status,"active");
+
+    const suspendedTenant=await store.setTenantStatus(externalIdentity[0].public_id,"suspended",{sub:"admin"},"integration");
+    assert.equal(suspendedTenant.status,"suspended");
+    assert.equal(suspendedTenant.suspended_assignments,1);
+    let extAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access(t.id,NULL,now()) AS allowed FROM tenants t WHERE t.slug='integration-external'");
+    assert.equal(extAccess[0].allowed,false);
+
+    const reactivatedTenant=await store.setTenantStatus(externalIdentity[0].public_id,"active",{sub:"admin"},"integration");
+    assert.equal(reactivatedTenant.status,"active");
+    extAssignments=await store.listTenantAssignments({tenant_public_id:externalIdentity[0].public_id,limit:10});
+    assert.equal(extAssignments.data[0].status,"suspended");
+    await store.setTenantAssignmentStatus(assignmentId,"active",{sub:"admin"},"integration");
+
+    const pastDueTime=new Date(now.getTime()+1000);
+    const pastDueEvent={...billingEvent,provider_event_id:"sub-past-due-1",event_type:"invoice.payment_failed",status:"past_due",event_time:pastDueTime.toISOString(),last_payment_status:"failed"};
+    const pastDueApplied=await store.applySubscriptionBillingEvent(pastDueEvent);
+    assert.equal(pastDueApplied.status,"past_due");
+    const unpaidAlerts=await store.scanUnpaidSubscriptions();
+    assert.equal(unpaidAlerts.length,1);
+    assert.equal(unpaidAlerts[0].alert_type,"subscription_unpaid");
+    extAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access(t.id,NULL,now()) AS allowed FROM tenants t WHERE t.slug='integration-external'");
+    assert.equal(extAccess[0].allowed,false);
+    const unpaidDirectory=await store.listTenants({country:"FR",billing:"unpaid",limit:10});
+    assert.ok(unpaidDirectory.data.some(x=>x.display_name==="External Test"));
+    const openAlerts=await store.listAdminAlerts({state:"open",country:"FR",limit:10});
+    assert.equal(openAlerts.data.length,1);
+    const acknowledged=await store.acknowledgeAdminAlert(openAlerts.data[0].id,{sub:"admin"});
+    assert.equal(acknowledged.state,"acknowledged");
+
+    const renewedTime=new Date(now.getTime()+2000),renewedEnd=new Date(now.getTime()+62*86400000);
+    const renewedEvent={...billingEvent,provider_event_id:"sub-renewed-1",event_type:"invoice.paid",status:"active",event_time:renewedTime.toISOString(),current_period_start:renewedTime.toISOString(),current_period_end:renewedEnd.toISOString(),last_payment_status:"paid"};
+    const renewed=await store.applySubscriptionBillingEvent(renewedEvent);
+    assert.equal(renewed.status,"active");
+    const remainingOpenAlerts=await store.listAdminAlerts({state:"open",limit:10});
+    assert.equal(remainingOpenAlerts.data.length,0);
+    extAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access(t.id,NULL,now()) AS allowed FROM tenants t WHERE t.slug='integration-external'");
+    assert.equal(extAccess[0].allowed,true);
+
     const internalExpertRows=await store.sql.unsafe("SELECT id FROM experts WHERE code='E1' LIMIT 1");
     assert.equal(internalExpertRows.length,1);
     const internalExpertId=Number(internalExpertRows[0].id);
@@ -169,10 +220,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const metrics=await store.metrics();
     assert.equal(metrics.calls_total,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
-    assert.equal(migrations.length,19);
+    assert.equal(migrations.length,20);
     assert.equal(new Set(migrations.map(x=>x.version)).size,migrations.length);
     assert.equal(migrations[0].version,"001_baseline");
-    assert.equal(migrations.at(-1).version,"019_external_subscription_billing");
+    assert.equal(migrations.at(-1).version,"020_customer_control_center");
     for(const migration of migrations)assert.match(migration.checksum,/^[a-f0-9]{64}$/);
   }finally{
     await store.close();
