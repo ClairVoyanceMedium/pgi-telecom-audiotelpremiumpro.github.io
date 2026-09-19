@@ -311,18 +311,26 @@ test("la PWA met en cache uniquement le shell critique",()=>{
   assert.match(app,/loadDemoCalls/);
   assert.doesNotMatch(sw,/assets\/command-palette\.js/);
   assert.doesNotMatch(sw,/assets\/customer-admin\.css/);
-  assert.match(sw,/pgi-telecom-shell-v30/);
+  assert.match(sw,/pgi-telecom-shell-v31/);
 });
 
 test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiques",()=>{
   assert.match(index,/assets\/audiotel-premium-pro-icon\.png/);
   assert.match(index,/assets\/audiotel-premium-pro-logo\.webp/);
+  assert.match(index,/data-brand-kind="icon"/);
+  assert.match(index,/data-brand-kind="logo"/);
+  assert.match(index,/\?v=31/);
+  assert.match(app,/function repairBrandImages/);
+  assert.match(app,/brand-image-failed/);
+  assert.match(css,/\.brand-image\{/);
+  assert.match(css,/aspect-ratio:3\/1/);
   for(const cls of ["brand-emblem","topbar-brand-emblem","command-brand-logo","auth-brand-logo","footer-brand-logo"])assert.ok(index.includes(cls),"missing branding "+cls);
   assert.match(css,/\.brand-emblem\{/);
   assert.match(css,/\.command-brand-logo\{/);
   assert.match(css,/\.auth-brand-logo\{/);
   assert.match(sw,/audiotel-premium-pro-icon\.png/);
   assert.match(sw,/audiotel-premium-pro-logo\.webp/);
+  assert.match(sw,/pgi-telecom-shell-v31/);
   assert.match(buildStatic,/audiotel-premium-pro-logo\.webp/);
   assert.doesNotMatch(css,/brand-mark|command-brand-emblem|auth-brand-lockup|auth-brand-emblem/);
   assert.doesNotMatch(sw,/favicon\.svg/);
