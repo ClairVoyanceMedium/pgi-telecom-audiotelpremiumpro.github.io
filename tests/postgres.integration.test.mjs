@@ -34,8 +34,11 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
       payload:{
         external_call_id:"call-1",
         started_at:"2026-09-18T12:00:00Z",
+        ivr_started_at:"2026-09-18T12:00:02Z",
+        queued_at:"2026-09-18T12:00:05Z",
         bridged_at:"2026-09-18T12:00:10Z",
         ended_at:"2026-09-18T12:10:10Z",
+        wait_seconds:10,
         conversation_seconds:600,
         total_seconds:610,
         call_status:"connected",
@@ -66,6 +69,13 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(analytics.quality_series.length,1);
     assert.equal(analytics.quality_series[0].samples,1);
     assert.equal(analytics.quality_series[0].mos,4.2);
+    assert.equal(analytics.quality.affected_samples,0);
+    assert.equal(analytics.experience.samples,1);
+    assert.equal(analytics.experience.avg_wait_seconds,10);
+    assert.equal(analytics.experience.answered_le_20s_percent,100);
+    assert.equal(analytics.experience.avg_ivr_seconds,3);
+    assert.equal(analytics.experience.avg_queue_seconds,5);
+    assert.equal(analytics.experience_series.length,1);
 
     const calls=await store.listCalls({limit:10});
     assert.equal(calls.data.length,1);
@@ -99,10 +109,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const metrics=await store.metrics();
     assert.equal(metrics.calls_total,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
-    assert.equal(migrations.length,17);
+    assert.equal(migrations.length,18);
     assert.equal(new Set(migrations.map(x=>x.version)).size,migrations.length);
     assert.equal(migrations[0].version,"001_baseline");
-    assert.equal(migrations.at(-1).version,"017_quality_rollups");
+    assert.equal(migrations.at(-1).version,"018_call_experience_rollups");
     for(const migration of migrations)assert.match(migration.checksum,/^[a-f0-9]{64}$/);
   }finally{
     await store.close();
