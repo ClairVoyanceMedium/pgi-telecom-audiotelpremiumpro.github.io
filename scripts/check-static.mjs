@@ -15,6 +15,7 @@ const required = [
   "assets/cockpit-pro.js",
   "assets/performance-radar.js",
   "assets/subscription-billing-ui.js",
+  "assets/customer-admin.js",
   "assets/app.js",
   "assets/favicon.svg",
   "manifest.webmanifest",
@@ -36,7 +37,7 @@ const app = fs.readFileSync(path.join(root, "assets/app.js"), "utf8");
 const frontRuntime = [
   "index.html","assets/config.js","assets/core.js","assets/api-client.js",
   "assets/data-client.js","assets/demo-data.js","assets/command-palette.js",
-  "assets/workspace.js","assets/cockpit-pro.js","assets/performance-radar.js","assets/subscription-billing-ui.js","assets/app.js","service-worker.js"
+  "assets/workspace.js","assets/cockpit-pro.js","assets/performance-radar.js","assets/subscription-billing-ui.js","assets/customer-admin.js","assets/app.js","service-worker.js"
 ].map(file=>fs.readFileSync(path.join(root,file),"utf8")).join("\n");
 
 const failures = [];

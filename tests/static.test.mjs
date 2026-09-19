@@ -13,6 +13,7 @@ const workspace=read("assets/workspace.js");
 const cockpitPro=read("assets/cockpit-pro.js");
 const performanceRadar=read("assets/performance-radar.js");
 const subscriptionBillingUi=read("assets/subscription-billing-ui.js");
+const customerAdmin=read("assets/customer-admin.js");
 const css=read("assets/styles.css");
 const sw=read("service-worker.js");
 const buildStatic=read("scripts/build-static.mjs");
@@ -219,12 +220,30 @@ test("la Plateforme SVA distingue abonnement externe et usage interne exempté",
   assert.doesNotMatch(sw,/assets\/subscription-billing-ui\.js/);
 });
 
+test("le contrôle clients permet recherche pays impayés et suspension depuis le cockpit",()=>{
+  assert.ok(index.includes('id="customer-admin-root"'));
+  assert.match(subscriptionBillingUi,/customer-admin\.js/);
+  assert.match(customerAdmin,/ADMINISTRATION CLIENTS/);
+  assert.match(customerAdmin,/ca-country/);
+  assert.match(customerAdmin,/ca-billing/);
+  assert.match(customerAdmin,/data-tenant-action/);
+  assert.match(customerAdmin,/data-line-action/);
+  assert.match(customerAdmin,/Alertes impayés/);
+  assert.match(api,/setTenantStatus:function/);
+  assert.match(api,/setTenantAssignmentStatus:function/);
+  assert.match(api,/billingAlerts:function/);
+  assert.match(subscriptionBillingUi,/Abonnement client impayé/);
+  assert.match(css,/\.product-name\{display:block/);
+  assert.match(css,/\.nav-item\[data-view="settings"\]/);
+  assert.doesNotMatch(sw,/assets\/customer-admin\.js/);
+});
+
 test("la PWA met en cache tous les modules du shell",()=>{
   for(const file of [
     "assets/demo-data.js","assets/api-client.js","assets/data-client.js",
     "assets/command-palette.js","assets/workspace.js","assets/cockpit-pro.js","assets/app.js"
   ])assert.ok(sw.includes(file),"service worker missing "+file);
-  assert.match(sw,/pgi-telecom-shell-v23/);
+  assert.match(sw,/pgi-telecom-shell-v24/);
 });
 
 test("la release Git exacte reste visible et obligatoire",()=>{

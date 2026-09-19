@@ -433,8 +433,8 @@ export class PostgresStore{
       let tenantId=null,marketId=null;
       if(svaNumber){
         const svaRows=await tx.unsafe(
-          "SELECT sn.id,sn.tenant_id,sn.market_id FROM sva_numbers sn"+
-          " LEFT JOIN sva_number_aliases a ON a.sva_number_id=sn.id AND a.enabled"+
+          "SELECT sn.id,sn.tenant_id,sn.market_id,t.tenant_type FROM sva_numbers sn"+
+          " LEFT JOIN tenants t ON t.id=sn.tenant_id LEFT JOIN sva_number_aliases a ON a.sva_number_id=sn.id AND a.enabled"+
           " WHERE (sn.e164=$1 OR sn.display_number=$1 OR a.alias=$1) AND sn.status IN ('active','porting')"+
           " ORDER BY CASE WHEN sn.e164=$1 THEN 0 WHEN sn.display_number=$1 THEN 1 ELSE 2 END LIMIT 1",
           [svaNumber]
@@ -449,6 +449,14 @@ export class PostgresStore{
           [tenantId,marketId]
         );
         if(!accessRows[0]?.allowed)throw problem(402,"SVA_SUBSCRIPTION_REQUIRED");
+        if(sva.tenant_type!=="internal"){
+          const assignmentRows=await tx.unsafe(
+            "SELECT id FROM tenant_number_assignments WHERE tenant_id=$1 AND sva_number_id=$2 AND status='active'"+
+            " AND (valid_from IS NULL OR valid_from<=now()) AND (valid_to IS NULL OR valid_to>=now()) LIMIT 1",
+            [tenantId,sva.id]
+          );
+          if(!assignmentRows.length)throw problem(423,"SVA_ASSIGNMENT_INACTIVE");
+        }
       }
 
       const rows=tenantId==null
@@ -1375,6 +1383,12 @@ export class PostgresStore{
         "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'subscription.changed','tenant_subscription',$2,$3::jsonb)",
         [tenant.id,String(subscriptionId),JSON.stringify({status,provider,event_type:eventType})]
       );
+      if(status==="active"&&periodEnd&&Date.parse(periodEnd)>Date.parse(eventTime)&&(!lastPaymentStatus||["paid","succeeded","success"].includes(lastPaymentStatus))){
+        await tx.unsafe(
+          "UPDATE tenant_admin_alerts SET state='resolved',resolved_at=now(),updated_at=now() WHERE tenant_id=$1 AND subscription_id=$2 AND alert_type='subscription_unpaid' AND state<>'resolved'",
+          [tenant.id,subscriptionId]
+        );
+      }
       return {duplicate:false,subscription_id:subscriptionId,tenant_id:Number(tenant.id),status};
     });
     if(!result.duplicate)this.eventBus.publish("subscription.changed",{id:result.subscription_id,tenant_id:result.tenant_id,status:result.status});
@@ -1390,29 +1404,205 @@ export class PostgresStore{
     if(status&&!["pending","active","suspended","closed"].includes(status))throw problem(400,"INVALID_TENANT_STATUS");
     const country=params.country?String(params.country).trim().toUpperCase():null;
     if(country&&!/^[A-Z]{2}$/.test(country))throw problem(400,"INVALID_COUNTRY_CODE");
+    const billing=params.billing?String(params.billing).trim().toLowerCase():null;
+    if(billing&&!["active","unpaid","blocked"].includes(billing))throw problem(400,"INVALID_BILLING_FILTER");
     const rows=await this.readSql.unsafe(
-      "SELECT t.id AS _cursor_id,t.public_id,t.slug,t.display_name,t.legal_name,t.tenant_type,t.status,t.country_code,"+
-      " t.preferred_locale,t.default_currency,t.timezone,t.home_region,t.capacity_tier,"+
-      " COALESCE(k.status,'not_started') AS kyc_status,t.created_at"+
-      " FROM tenants t LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id"+
-      " WHERE t.tenant_type<>'internal'"+
-      " AND ($1::text IS NULL OR t.slug_search LIKE $1||'%' OR t.display_name_search LIKE $1||'%' OR t.legal_name_search LIKE $1||'%')"+
-      " AND ($2::text IS NULL OR t.status=$2)"+
-      " AND ($3::text IS NULL OR t.country_code=$3)"+
-      " AND ($4::bigint IS NULL OR t.id<$4)"+
-      " ORDER BY t.id DESC LIMIT $5",
-      [q||null,status,country,cursor,limit+1]
+      "WITH page AS ("+
+      " SELECT t.id,t.public_id,t.slug,t.display_name,t.legal_name,t.tenant_type,t.status,t.country_code,"+
+      " t.preferred_locale,t.default_currency,t.timezone,t.home_region,t.capacity_tier,t.created_at"+
+      " FROM tenants t WHERE t.tenant_type<>'internal'"+
+      " AND ($1::text IS NULL OR t.slug_search LIKE $1||'%' OR t.display_name_search LIKE $1||'%' OR t.legal_name_search LIKE $1||'%' OR lower(t.country_code)=$1)"+
+      " AND ($2::text IS NULL OR t.status=$2) AND ($3::text IS NULL OR t.country_code=$3)"+
+      " AND ($4::text IS NULL OR ($4='active' AND pgi_tenant_has_premium_call_access(t.id,NULL,now()))"+
+      " OR ($4='unpaid' AND NOT EXISTS (SELECT 1 FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id WHERE s.tenant_id=t.id AND p.plan_key='external-sva-access' AND s.status='active' AND s.current_period_end>now()))"+
+      " OR ($4='blocked' AND t.status='suspended'))"+
+      " AND ($5::bigint IS NULL OR t.id<$5) ORDER BY t.id DESC LIMIT $6"+
+      ") SELECT page.id AS _cursor_id,page.public_id,page.slug,page.display_name,page.legal_name,page.tenant_type,page.status,page.country_code,"+
+      " page.preferred_locale,page.default_currency,page.timezone,page.home_region,page.capacity_tier,COALESCE(k.status,'not_started') AS kyc_status,page.created_at,"+
+      " COALESCE(a.assignment_count,0)::int AS number_assignments,COALESCE(a.active_assignments,0)::int AS active_assignments,"+
+      " s.status AS subscription_status,s.current_period_end,s.last_payment_status,s.cancel_at_period_end,s.billing_provider,"+
+      " COALESCE(pgi_tenant_has_premium_call_access(page.id,NULL,now()),false) AS premium_call_access"+
+      " FROM page LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=page.id"+
+      " LEFT JOIN LATERAL (SELECT count(*) AS assignment_count,count(*) FILTER (WHERE status='active') AS active_assignments FROM tenant_number_assignments a WHERE a.tenant_id=page.id) a ON true"+
+      " LEFT JOIN LATERAL (SELECT x.status,x.current_period_end,x.last_payment_status,x.cancel_at_period_end,x.billing_provider FROM tenant_subscriptions x JOIN service_plans sp ON sp.id=x.service_plan_id WHERE x.tenant_id=page.id AND sp.plan_key='external-sva-access' ORDER BY x.created_at DESC,x.id DESC LIMIT 1) s ON true"+
+      " ORDER BY page.id DESC",
+      [q||null,status,country,billing,cursor,limit+1]
     );
     const hasMore=rows.length>limit;
     const page=hasMore?rows.slice(0,limit):rows;
     const nextCursor=hasMore&&page.length?encodeNumericCursor(Number(page.at(-1)._cursor_id)):null;
-    return {
-      data:page.map(row=>{
-        const {_cursor_id,...publicRow}=row;
-        return publicRow;
-      }),
-      next_cursor:nextCursor
-    };
+    return {data:page.map(row=>{const {_cursor_id,...publicRow}=row;return publicRow;}),next_cursor:nextCursor};
+  }
+
+  async listTenantAssignments(params={}){
+    const limit=clampInt(params.limit,50,1,250),cursor=decodeNumericCursor(params.cursor);
+    const tenantPublicId=String(params.tenant_public_id||"").trim();
+    if(tenantPublicId&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantPublicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    const status=params.status?String(params.status).trim().toLowerCase():null;
+    if(status&&!["planned","pending_kyc","testing","active","suspended","ended"].includes(status))throw problem(400,"INVALID_ASSIGNMENT_STATUS");
+    const country=params.country?String(params.country).trim().toUpperCase():null;
+    if(country&&!/^[A-Z]{2}$/.test(country))throw problem(400,"INVALID_COUNTRY_CODE");
+    const q=String(params.q||"").replace(/\s+/g,"").trim();
+    if(q.length>40)throw problem(400,"NUMBER_SEARCH_TOO_LONG");
+    const rows=await this.readSql.unsafe(
+      "SELECT a.id AS _cursor_id,a.id,t.public_id AS tenant_public_id,t.display_name AS tenant,sn.display_number,sn.e164,sn.currency,sn.number_type,"+
+      " m.country_code AS market,a.tariff_code,a.assignment_type,a.status,a.kyc_status,a.valid_from,a.valid_to,"+
+      " c.name AS regulatory_assignor,pgi_tenant_has_premium_call_access(t.id,m.id,now()) AS premium_call_access"+
+      " FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id"+
+      " LEFT JOIN operating_markets m ON m.id=sn.market_id LEFT JOIN carriers c ON c.id=a.regulatory_assignor_carrier_id"+
+      " WHERE t.tenant_type<>'internal' AND ($1::uuid IS NULL OR t.public_id=$1::uuid)"+
+      " AND ($2::text IS NULL OR a.status=$2) AND ($3::text IS NULL OR m.country_code=$3)"+
+      " AND ($4::text IS NULL OR sn.e164 LIKE $4||'%' OR regexp_replace(COALESCE(sn.display_number,''),'[^0-9]','','g') LIKE $4||'%')"+
+      " AND ($5::bigint IS NULL OR a.id<$5) ORDER BY a.id DESC LIMIT $6",
+      [tenantPublicId||null,status,country,q||null,cursor,limit+1]
+    );
+    const hasMore=rows.length>limit,page=hasMore?rows.slice(0,limit):rows;
+    return {data:page.map(row=>{const {_cursor_id,...publicRow}=row;return publicRow;}),next_cursor:hasMore&&page.length?encodeNumericCursor(Number(page.at(-1)._cursor_id)):null};
+  }
+
+  async setTenantStatus(publicId,status,actor={},reason=""){
+    publicId=String(publicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    status=String(status||"").trim().toLowerCase();
+    if(!["active","suspended"].includes(status))throw problem(400,"INVALID_TENANT_CONTROL_STATUS");
+    reason=String(reason||"").trim().slice(0,500);
+    const actorId=numericActor(actor);
+    const result=await this.sql.begin(async tx=>{
+      const rows=await tx.unsafe("SELECT id,public_id,display_name,tenant_type,status,country_code FROM tenants WHERE public_id=$1::uuid FOR UPDATE",[publicId]);
+      const tenant=rows[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+      if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+      const previous=tenant.status;
+      if(previous===status)return {...tenant,status,previous_status:previous,changed:false,suspended_assignments:0};
+      const updated=await tx.unsafe("UPDATE tenants SET status=$1,updated_at=now() WHERE id=$2 RETURNING id,public_id,display_name,tenant_type,status,country_code",[status,tenant.id]);
+      if(status==="active"){
+        const access=await tx.unsafe("SELECT pgi_tenant_has_premium_call_access($1,NULL,now()) AS allowed",[tenant.id]);
+        if(!access[0]?.allowed)throw problem(409,"PAID_SUBSCRIPTION_REQUIRED_FOR_ACTIVATION");
+      }
+      let suspendedAssignments=0;
+      if(status==="suspended"){
+        const assignments=await tx.unsafe("UPDATE tenant_number_assignments SET status='suspended' WHERE tenant_id=$1 AND status='active' RETURNING id",[tenant.id]);
+        suspendedAssignments=assignments.length;
+      }
+      await tx.unsafe(
+        "INSERT INTO tenant_control_events(tenant_id,actor_user_id,action,previous_status,new_status,reason,details) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)",
+        [tenant.id,actorId,status==="suspended"?"tenant.suspend":"tenant.activate",previous,status,reason,JSON.stringify({suspended_assignments:suspendedAssignments})]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,$3,'tenant',$4,$5::jsonb)",
+        [tenant.id,actorId,"tenant.status."+status,String(tenant.id),JSON.stringify({previous_status:previous,status,reason})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'tenant.status','tenant',$2,$3::jsonb)",
+        [tenant.id,String(tenant.id),JSON.stringify({public_id:publicId,previous_status:previous,status})]
+      );
+      return {...updated[0],previous_status:previous,changed:true,suspended_assignments:suspendedAssignments};
+    });
+    if(result.changed)this.eventBus.publish("tenant.status",{public_id:publicId,status:result.status,previous_status:result.previous_status});
+    return result;
+  }
+
+  async setTenantAssignmentStatus(id,status,actor={},reason=""){
+    id=Number(id);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_ASSIGNMENT_ID");
+    status=String(status||"").trim().toLowerCase();
+    if(!["active","suspended"].includes(status))throw problem(400,"INVALID_ASSIGNMENT_CONTROL_STATUS");
+    reason=String(reason||"").trim().slice(0,500);const actorId=numericActor(actor);
+    const result=await this.sql.begin(async tx=>{
+      const rows=await tx.unsafe(
+        "SELECT a.id,a.tenant_id,a.status,t.public_id,t.display_name,t.tenant_type,sn.e164,sn.display_number FROM tenant_number_assignments a"+
+        " JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.id=$1 FOR UPDATE",[id]
+      );
+      const row=rows[0];if(!row)throw problem(404,"ASSIGNMENT_NOT_FOUND");
+      if(row.tenant_type==="internal")throw problem(409,"INTERNAL_ASSIGNMENT_PROTECTED");
+      const previous=row.status;
+      if(previous===status)return {...row,status,previous_status:previous,changed:false};
+      const updated=await tx.unsafe("UPDATE tenant_number_assignments SET status=$1 WHERE id=$2 RETURNING id,tenant_id,status,kyc_status,valid_from,valid_to",[status,id]);
+      await tx.unsafe(
+        "INSERT INTO tenant_control_events(tenant_id,assignment_id,actor_user_id,action,previous_status,new_status,reason,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)",
+        [row.tenant_id,id,actorId,status==="suspended"?"assignment.suspend":"assignment.activate",previous,status,reason,JSON.stringify({e164:row.e164})]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,$3,'tenant_number_assignment',$4,$5::jsonb)",
+        [row.tenant_id,actorId,"assignment.status."+status,String(id),JSON.stringify({previous_status:previous,status,reason,e164:row.e164})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'number.assignment.status','tenant_number_assignment',$2,$3::jsonb)",
+        [row.tenant_id,String(id),JSON.stringify({tenant_public_id:row.public_id,status,previous_status:previous})]
+      );
+      return {...updated[0],tenant_public_id:row.public_id,tenant:row.display_name,e164:row.e164,display_number:row.display_number,previous_status:previous,changed:true};
+    });
+    if(result.changed)this.eventBus.publish("number.assignment.status",{id,status:result.status,tenant_public_id:result.tenant_public_id});
+    return result;
+  }
+
+  async scanUnpaidSubscriptions(limit=500){
+    limit=clampInt(limit,500,1,2000);
+    const alerts=await this.sql.begin(async tx=>{
+      await tx.unsafe(
+        "UPDATE tenant_subscriptions s SET status='past_due',last_payment_status=COALESCE(NULLIF(last_payment_status,''),'unpaid'),updated_at=now()"+
+        " FROM service_plans p,tenants t WHERE p.id=s.service_plan_id AND t.id=s.tenant_id AND p.plan_key='external-sva-access'"+
+        " AND t.tenant_type<>'internal' AND s.status='active' AND s.current_period_end IS NOT NULL AND s.current_period_end<=now()"
+      );
+      return tx.unsafe(
+        "WITH due AS ("+
+        " SELECT s.id AS subscription_id,s.tenant_id,t.public_id,t.display_name,t.country_code,s.current_period_end,s.status,s.last_payment_status"+
+        " FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id JOIN tenants t ON t.id=s.tenant_id"+
+        " WHERE p.plan_key='external-sva-access' AND t.tenant_type<>'internal' AND t.status<>'closed'"+
+        " AND (s.status IN ('past_due','suspended') OR (s.current_period_end IS NOT NULL AND s.current_period_end<=now())"+
+        " OR lower(COALESCE(s.last_payment_status,'')) IN ('failed','unpaid','declined','past_due'))"+
+        " ORDER BY COALESCE(s.current_period_end,now()) ASC,s.id ASC LIMIT $1"+
+        "), ins AS ("+
+        " INSERT INTO tenant_admin_alerts(alert_key,tenant_id,subscription_id,alert_type,severity,title,message,due_at,details)"+
+        " SELECT 'subscription_unpaid:'||d.subscription_id||':'||COALESCE(EXTRACT(EPOCH FROM d.current_period_end)::bigint::text,d.status),d.tenant_id,d.subscription_id,"+
+        " 'subscription_unpaid','critical','Abonnement impayé','Abonnement mensuel non réglé : accès SVA bloqué.',d.current_period_end,"+
+        " jsonb_build_object('tenant_public_id',d.public_id,'tenant',d.display_name,'country_code',d.country_code,'subscription_status',d.status,'last_payment_status',d.last_payment_status)"+
+        " FROM due d ON CONFLICT(alert_key) DO NOTHING"+
+        " RETURNING id,tenant_id,subscription_id,alert_type,severity,state,title,message,due_at,details,first_detected_at,last_detected_at"+
+        ") SELECT i.*,t.public_id AS tenant_public_id,t.display_name AS tenant,t.country_code FROM ins i JOIN tenants t ON t.id=i.tenant_id",
+        [limit]
+      );
+    });
+    for(const a of alerts)this.eventBus.publish("subscription.unpaid",{alert_id:Number(a.id),tenant_public_id:a.tenant_public_id,tenant:a.tenant,country_code:a.country_code,due_at:a.due_at});
+    return alerts;
+  }
+
+  async listAdminAlerts(params={}){
+    const limit=clampInt(params.limit,50,1,250),cursor=decodeNumericCursor(params.cursor);
+    const state=params.state?String(params.state).trim().toLowerCase():"open";
+    if(!["open","acknowledged","resolved","unresolved","all"].includes(state))throw problem(400,"INVALID_ALERT_STATE");
+    const country=params.country?String(params.country).trim().toUpperCase():null;
+    if(country&&!/^[A-Z]{2}$/.test(country))throw problem(400,"INVALID_COUNTRY_CODE");
+    const rows=await this.readSql.unsafe(
+      "SELECT a.id AS _cursor_id,a.id,a.alert_type,a.severity,a.state,a.title,a.message,a.due_at,a.first_detected_at,a.last_detected_at,a.acknowledged_at,a.resolved_at,"+
+      " t.public_id AS tenant_public_id,t.display_name AS tenant,t.country_code,s.status AS subscription_status,s.last_payment_status,s.current_period_end"+
+      " FROM tenant_admin_alerts a JOIN tenants t ON t.id=a.tenant_id LEFT JOIN tenant_subscriptions s ON s.id=a.subscription_id"+
+      " WHERE ($1='all' OR ($1='unresolved' AND a.state<>'resolved') OR a.state=$1) AND ($2::text IS NULL OR t.country_code=$2) AND ($3::bigint IS NULL OR a.id<$3)"+
+      " ORDER BY a.id DESC LIMIT $4",[state,country,cursor,limit+1]
+    );
+    const hasMore=rows.length>limit,page=hasMore?rows.slice(0,limit):rows;
+    return {data:page.map(row=>{const {_cursor_id,...publicRow}=row;return publicRow;}),next_cursor:hasMore&&page.length?encodeNumericCursor(Number(page.at(-1)._cursor_id)):null};
+  }
+
+  async acknowledgeAdminAlert(id,actor={}){
+    id=Number(id);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_ALERT_ID");
+    const actorId=numericActor(actor);
+    const result=await this.sql.begin(async tx=>{
+      const rows=await tx.unsafe(
+        "UPDATE tenant_admin_alerts SET state='acknowledged',acknowledged_at=now(),acknowledged_by=$2,updated_at=now()"+
+        " WHERE id=$1 AND state='open' RETURNING id,tenant_id,state,title,message,due_at",[id,actorId]
+      );
+      const row=rows[0];if(!row)throw problem(409,"ALERT_NOT_OPEN");
+      await tx.unsafe(
+        "INSERT INTO tenant_control_events(tenant_id,actor_user_id,action,previous_status,new_status,details) VALUES($1,$2,'alert.acknowledge','open','acknowledged',$3::jsonb)",
+        [row.tenant_id,actorId,JSON.stringify({alert_id:id})]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'billing.alert.acknowledge','tenant_admin_alert',$3,$4::jsonb)",
+        [row.tenant_id,actorId,String(id),JSON.stringify({state:"acknowledged"})]
+      );
+      return row;
+    });
+    this.eventBus.publish("billing.alert.acknowledged",{id,result:"acknowledged"});
+    return result;
   }
 
   async wholesaleOverview(){
@@ -1434,6 +1624,7 @@ export class PostgresStore{
         " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND subscription_status='active' AND current_period_end>now()) AS external_subscriptions_active,"+
         " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND premium_call_access) AS subscription_access_enabled,"+
         " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND NOT premium_call_access) AS subscription_access_blocked,"+
+        " (SELECT count(*)::int FROM tenant_admin_alerts a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.alert_type='subscription_unpaid' AND a.state<>'resolved') AS subscription_unpaid_alerts,"+
         " COALESCE((SELECT v.amount_minor::int FROM service_plan_price_versions v JOIN service_plans p ON p.id=v.service_plan_id"+
         " WHERE p.plan_key='external-sva-access' AND v.market_id IS NULL AND v.currency='EUR' AND v.effective_from<=now()"+
         " AND (v.effective_to IS NULL OR v.effective_to>now()) ORDER BY v.effective_from DESC LIMIT 1),0) AS subscription_price_minor,"+

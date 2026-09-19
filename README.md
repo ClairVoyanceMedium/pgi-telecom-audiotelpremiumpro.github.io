@@ -4,7 +4,7 @@ Cockpit Audiotel, financier et télécom de PGI Telecom.
 
 ## État actuel
 
-Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.20.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
+Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.21.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
 
 Fonctions déjà présentes :
 
@@ -315,3 +315,12 @@ Le plan `external-sva-access` est initialisé à 2,00 EUR par mois. Pour un tena
 Le prix est versionné : une hausse future crée une nouvelle version avec sa date d'effet. Les abonnements existants restent reliés à leur version de prix jusqu'à une migration explicite, ce qui évite de modifier silencieusement un contrat en cours.
 
 Le fournisseur de paiement reste volontairement découplé. `PGI_EXTERNAL_BILLING_ENABLED=false` est la valeur par défaut. Lors d'une ouverture commerciale, un adaptateur de paiement peut envoyer des événements normalisés vers l'endpoint interne protégé par `PGI_BILLING_INGEST_TOKEN` sans modifier le modèle télécom.
+
+
+## Contrôle clients et impayés 1.21
+
+La vue Plateforme SVA contient un centre d’administration clients chargé à la demande. L’annuaire reste paginé par curseur et la recherche est exécutée côté PostgreSQL avec des index dédiés : nom, slug, raison sociale, pays, statut et état de facturation. Le navigateur ne tente donc jamais de charger des millions de clients.
+
+Un administrateur peut suspendre un client externe depuis le cockpit. La suspension bloque le tenant et suspend ses affectations SVA actives. La réactivation du tenant exige un abonnement SVA payé actif ; les lignes précédemment suspendues restent volontairement suspendues jusqu’à une réactivation explicite ligne par ligne.
+
+Le worker distribué détecte les abonnements échus ou en échec de paiement et crée une alerte persistante et dédupliquée. Une alerte peut être marquée comme vue, mais elle reste non résolue jusqu’à la réception d’un renouvellement payé valide. Le tenant interne PGI reste protégé et exempté de cette facturation.

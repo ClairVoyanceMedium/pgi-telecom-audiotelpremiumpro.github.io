@@ -131,6 +131,26 @@
       var q=new URLSearchParams(params||{}).toString();
       return request("/platform/tenants"+(q?"?"+q:""));
     },
+    tenantAssignments:function(params){
+      var q=new URLSearchParams(params||{}).toString();
+      return request("/platform/tenant-number-assignments"+(q?"?"+q:""));
+    },
+    setTenantStatus:function(id,status,reason,idempotencyKey){
+      if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");
+      return request("/platform/tenants/"+encodeURIComponent(id)+"/status",{method:"POST",body:{status:status,reason:reason||""},headers:{"Idempotency-Key":idempotencyKey}});
+    },
+    setTenantAssignmentStatus:function(id,status,reason,idempotencyKey){
+      if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");
+      return request("/platform/tenant-number-assignments/"+encodeURIComponent(id)+"/status",{method:"POST",body:{status:status,reason:reason||""},headers:{"Idempotency-Key":idempotencyKey}});
+    },
+    billingAlerts:function(params){
+      var q=new URLSearchParams(params||{}).toString();
+      return request("/platform/billing-alerts"+(q?"?"+q:""));
+    },
+    acknowledgeBillingAlert:function(id,idempotencyKey){
+      if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");
+      return request("/platform/billing-alerts/"+encodeURIComponent(id)+"/acknowledge",{method:"POST",body:{},headers:{"Idempotency-Key":idempotencyKey}});
+    },
     events:events,
     baselines:function(params){
       var q=new URLSearchParams(params||{}).toString();

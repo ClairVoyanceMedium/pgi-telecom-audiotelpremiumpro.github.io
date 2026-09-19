@@ -140,10 +140,7 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       ["expert.status","expert.busy","expert.released","carrier.switched","carrier.rollback","alert"].forEach(function(name){
         es.addEventListener(name,function(){scheduleProductionSync("dashboard");});
       });
-      es.addEventListener("baseline.created",function(){
-        window.PGIDataClient.invalidateAppBootstrap();
-        scheduleProductionSync("full");
-      });
+      ["baseline.created","subscription.unpaid"].forEach(function(n){es.addEventListener(n,function(){window.PGIDataClient.invalidateAppBootstrap();scheduleProductionSync("full");});});
       es.onerror=function(){
         if(es.readyState===EventSource.CLOSED){state.eventSource=null;}
       };

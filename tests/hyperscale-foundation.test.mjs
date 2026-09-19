@@ -15,6 +15,7 @@ const dashboardDimensionMigration=fs.readFileSync("database/migrations/016_dashb
 const qualityRollupMigration=fs.readFileSync("database/migrations/017_quality_rollups.sql","utf8");
 const experienceRollupMigration=fs.readFileSync("database/migrations/018_call_experience_rollups.sql","utf8");
 const subscriptionBillingMigration=fs.readFileSync("database/migrations/019_external_subscription_billing.sql","utf8");
+const customerControlMigration=fs.readFileSync("database/migrations/020_customer_control_center.sql","utf8");
 const resilienceDocs=fs.readFileSync("docs/RESILIENCE.md","utf8");
 const alertRules=fs.readFileSync("infra/observability/prometheus-alerts.example.yml","utf8");
 const schema=fs.readFileSync("database/schema.sql","utf8");
@@ -157,6 +158,22 @@ test("les clients externes ont un abonnement SVA payé versionné et PGI interne
   assert.ok(store.includes("async applySubscriptionBillingEvent("));
   assert.ok(server.includes("/api/v1/internal/billing/subscription-event"));
   assert.ok(server.includes("/api/v1/platform/subscription-prices"));
+});
+
+test("le contrôle clients hyperscale gère pays suspensions lignes et impayés",()=>{
+  assert.ok(customerControlMigration.includes("tenants_directory_country_status_cursor_idx"));
+  assert.ok(customerControlMigration.includes("tenant_admin_alerts"));
+  assert.ok(customerControlMigration.includes("tenant_control_events"));
+  assert.ok(customerControlMigration.includes("tenant_subscriptions_due_idx"));
+  assert.ok(store.includes("async listTenantAssignments("));
+  assert.ok(store.includes("async setTenantStatus("));
+  assert.ok(store.includes("async setTenantAssignmentStatus("));
+  assert.ok(store.includes("async scanUnpaidSubscriptions("));
+  assert.ok(store.includes("async listAdminAlerts("));
+  assert.ok(store.includes("PAID_SUBSCRIPTION_REQUIRED_FOR_ACTIVATION"));
+  assert.ok(server.includes("/api/v1/platform/tenant-number-assignments"));
+  assert.ok(server.includes("/api/v1/platform/billing-alerts"));
+  assert.ok(workers.includes("scanUnpaidSubscriptions(500)"));
 });
 
 test("le metered billing conserve un ledger append-only et idempotent",()=>{

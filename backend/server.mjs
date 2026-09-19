@@ -268,6 +268,44 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.tenants",200,await store.listTenants(params));
       }
 
+      if(method==="GET"&&pathname==="/api/v1/platform/tenant-number-assignments"){
+        requireRole(actor,["admin","finance","readonly"]);
+        const params=Object.fromEntries(url.searchParams.entries());
+        return done(res,metrics,started,"platform.tenant_assignments",200,await store.listTenantAssignments(params));
+      }
+
+      match=routeMatch(pathname,"/api/v1/platform/tenants/:id/status");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={id:match.id,status:body.status,reason:body.reason||""};
+        const result=await store.idempotent(req.headers["idempotency-key"],"tenant.status",payload,()=>store.setTenantStatus(match.id,body.status,actor,body.reason||""));
+        return done(res,metrics,started,"platform.tenant_status",200,{...result.value,replayed:result.replayed});
+      }
+
+      match=routeMatch(pathname,"/api/v1/platform/tenant-number-assignments/:id/status");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={id:match.id,status:body.status,reason:body.reason||""};
+        const result=await store.idempotent(req.headers["idempotency-key"],"assignment.status",payload,()=>store.setTenantAssignmentStatus(match.id,body.status,actor,body.reason||""));
+        return done(res,metrics,started,"platform.assignment_status",200,{...result.value,replayed:result.replayed});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/platform/billing-alerts"){
+        requireRole(actor,["admin","finance","readonly"]);
+        const params=Object.fromEntries(url.searchParams.entries());
+        return done(res,metrics,started,"platform.billing_alerts",200,await store.listAdminAlerts(params));
+      }
+
+      match=routeMatch(pathname,"/api/v1/platform/billing-alerts/:id/acknowledge");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const payload={id:match.id};
+        const result=await store.idempotent(req.headers["idempotency-key"],"billing.alert.acknowledge",payload,()=>store.acknowledgeAdminAlert(match.id,actor));
+        return done(res,metrics,started,"platform.billing_alert_ack",200,{...result.value,replayed:result.replayed});
+      }
+
       if(method==="GET"&&pathname==="/api/v1/platform/subscription-billing"){
         requireRole(actor,["admin","finance","readonly"]);
         return done(res,metrics,started,"platform.subscription_billing",200,await store.subscriptionBillingOverview());

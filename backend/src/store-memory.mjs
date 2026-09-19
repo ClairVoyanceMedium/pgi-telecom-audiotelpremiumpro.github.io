@@ -33,6 +33,7 @@ export class MemoryStore{
     this.nextSwitchId=1;
     this.subscriptionPrices=[{id:1,plan_key:"external-sva-access",currency:"EUR",amount_minor:200,billing_interval:"month",interval_count:1,effective_from:"2026-09-19T00:00:00Z",effective_to:null}];
     this.subscriptionEvents=new Set();
+    this.adminAlerts=[];
   }
 
   seedSimulator(days=21){
@@ -625,6 +626,38 @@ export class MemoryStore{
     return {data:[],next_cursor:null};
   }
 
+  async listTenantAssignments(params={}){
+    void params;
+    return {data:[],next_cursor:null};
+  }
+
+  async setTenantStatus(publicId,status){
+    void publicId;void status;
+    throw problem(404,"TENANT_NOT_FOUND");
+  }
+
+  async setTenantAssignmentStatus(id,status){
+    void id;void status;
+    throw problem(404,"ASSIGNMENT_NOT_FOUND");
+  }
+
+  async scanUnpaidSubscriptions(){
+    return [];
+  }
+
+  async listAdminAlerts(params={}){
+    const state=String(params.state||"open");
+    const rows=state==="all"?this.adminAlerts:state==="unresolved"?this.adminAlerts.filter(x=>x.state!=="resolved"):this.adminAlerts.filter(x=>x.state===state);
+    return {data:structuredClone(rows),next_cursor:null};
+  }
+
+  async acknowledgeAdminAlert(id){
+    const row=this.adminAlerts.find(x=>x.id===Number(id)&&x.state==="open");
+    if(!row)throw problem(409,"ALERT_NOT_OPEN");
+    row.state="acknowledged";row.acknowledged_at=new Date().toISOString();
+    return structuredClone(row);
+  }
+
   async wholesaleOverview(){
     return {
       foundation_version:"1.16",
@@ -637,7 +670,7 @@ export class MemoryStore{
         upstream_payout_ht:0,platform_fee_ht:0,net_payout_ht:0,
         payment_compliance_active:false,
         external_subscriptions_active:0,subscription_access_enabled:0,subscription_access_blocked:0,
-        subscription_price_minor:200,subscription_price_currency:"EUR",internal_billing_exempt:true
+        subscription_unpaid_alerts:0,subscription_price_minor:200,subscription_price_currency:"EUR",internal_billing_exempt:true
       },
       tenants:[],
       numbers:[],
