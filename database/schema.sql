@@ -1040,7 +1040,7 @@ FROM tenants t
 JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
 ON CONFLICT (tenant_id) DO NOTHING;
 
-CREATE FUNCTION pgi_assign_tenant_data_placement()
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
