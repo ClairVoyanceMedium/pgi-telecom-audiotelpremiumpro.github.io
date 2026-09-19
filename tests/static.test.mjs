@@ -14,6 +14,7 @@ const cockpitPro=read("assets/cockpit-pro.js");
 const performanceRadar=read("assets/performance-radar.js");
 const subscriptionBillingUi=read("assets/subscription-billing-ui.js");
 const customerAdmin=read("assets/customer-admin.js");
+const tenantControlDetail=read("assets/tenant-control-detail.js");
 const css=read("assets/styles.css");
 const sw=read("service-worker.js");
 const buildStatic=read("scripts/build-static.mjs");
@@ -238,12 +239,26 @@ test("le contrôle clients permet recherche pays impayés et suspension depuis l
   assert.doesNotMatch(sw,/assets\/customer-admin\.js/);
 });
 
+test("le dossier client 1.22 centralise les opérations sans alourdir le shell",()=>{
+  assert.match(customerAdmin,/tenant-control-detail\.js/);
+  assert.match(customerAdmin,/data-dossier/);
+  assert.match(customerAdmin,/p\.number=compact/);
+  assert.match(api,/tenantControlDetail:function/);
+  assert.match(api,/setExpertStatus:function/);
+  for(const label of ["DOSSIER CLIENT CENTRALISÉ","Lignes SVA","Experts du client","Reversements récents","Historique & audit"])assert.ok(tenantControlDetail.includes(label));
+  assert.match(tenantControlDetail,/data-tenant-status/);
+  assert.match(tenantControlDetail,/data-line-status/);
+  assert.match(tenantControlDetail,/data-expert-apply/);
+  assert.match(tenantControlDetail,/data-alert-id/);
+  assert.doesNotMatch(sw,/assets\/tenant-control-detail\.js/);
+});
+
 test("la PWA met en cache tous les modules du shell",()=>{
   for(const file of [
     "assets/demo-data.js","assets/api-client.js","assets/data-client.js",
     "assets/command-palette.js","assets/workspace.js","assets/cockpit-pro.js","assets/app.js"
   ])assert.ok(sw.includes(file),"service worker missing "+file);
-  assert.match(sw,/pgi-telecom-shell-v24/);
+  assert.match(sw,/pgi-telecom-shell-v25/);
 });
 
 test("la release Git exacte reste visible et obligatoire",()=>{
