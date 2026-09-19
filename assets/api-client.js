@@ -117,6 +117,7 @@
       return request("/calls"+(q?"?"+q:""));
     },
     experts:function(){return request("/experts");},
+    setExpertStatus:function(id,status){return request("/experts/"+encodeURIComponent(id)+"/status",{method:"POST",body:{status:status}});},
     reconciliation:function(from,to,market){
       var q=new URLSearchParams({from:from,to:to});
       if(market)q.set("market",market);
@@ -135,6 +136,7 @@
       var q=new URLSearchParams(params||{}).toString();
       return request("/platform/tenant-number-assignments"+(q?"?"+q:""));
     },
+    tenantControlDetail:function(id){return request("/platform/tenants/"+encodeURIComponent(id)+"/control-center",{timeoutMs:10000});},
     setTenantStatus:function(id,status,reason,idempotencyKey){
       if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");
       return request("/platform/tenants/"+encodeURIComponent(id)+"/status",{method:"POST",body:{status:status,reason:reason||""},headers:{"Idempotency-Key":idempotencyKey}});
