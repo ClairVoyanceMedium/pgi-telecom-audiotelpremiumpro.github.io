@@ -2,7 +2,7 @@ name: pgi-telecom-production
 
 services:
   api:
-    image: pgi-telecom-api:${PGI_VERSION:-1.18.0}
+    image: pgi-telecom-api:${PGI_VERSION:-1.19.0}
     build:
       context: ..
       dockerfile: backend/Dockerfile
@@ -13,7 +13,7 @@ services:
       PGI_BACKEND_HOST: 0.0.0.0
       PGI_BACKEND_PORT: 8080
       PGI_PROCESS_ROLE: ${PGI_PROCESS_ROLE:-all}
-      PGI_VERSION: ${PGI_VERSION:-1.18.0}
+      PGI_VERSION: ${PGI_VERSION:-1.19.0}
       PGI_RELEASE_ID: ${PGI_RELEASE_ID}
       PGI_DATABASE_URL: postgresql://${POSTGRES_USER:-pgi_telecom}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pgi_telecom}
       PGI_DATABASE_READ_URL: ${PGI_DATABASE_READ_URL:-}
@@ -60,7 +60,7 @@ services:
 
 
   migrate:
-    image: pgi-telecom-api:${PGI_VERSION:-1.18.0}
+    image: pgi-telecom-api:${PGI_VERSION:-1.19.0}
     build:
       context: ..
       dockerfile: backend/Dockerfile
