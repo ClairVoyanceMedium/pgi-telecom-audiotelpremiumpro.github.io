@@ -9,6 +9,7 @@ const required = [
   "assets/core.js",
   "assets/api-client.js",
   "assets/workspace.js",
+  "assets/command-palette-loader.js",
   "assets/command-palette.js",
   "assets/data-client.js",
   "assets/demo-data.js",
@@ -38,7 +39,7 @@ const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "assets/app.js"), "utf8");
 const frontRuntime = [
   "index.html","assets/config.js","assets/core.js","assets/api-client.js",
-  "assets/data-client.js","assets/demo-data.js","assets/command-palette.js",
+  "assets/data-client.js","assets/demo-data.js","assets/command-palette-loader.js","assets/command-palette.js",
   "assets/workspace.js","assets/cockpit-pro.js","assets/performance-radar.js","assets/subscription-billing-ui.js","assets/customer-admin.js","assets/tenant-control-detail.js","assets/platform-admin-tools.js","assets/app.js","service-worker.js"
 ].map(file=>fs.readFileSync(path.join(root,file),"utf8")).join("\n");
 
