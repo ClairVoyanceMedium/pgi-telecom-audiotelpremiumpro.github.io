@@ -270,6 +270,33 @@
             <article class="pulse-card"><div><span>Concentration opérateur</span><strong id="pulse-top-carrier">—</strong></div><small>Part du premier réseau</small><i><b id="pulse-top-carrier-bar"></b></i></article>
           </section>
 
+          <section class="experience-command" aria-label="Expérience appelant">
+            <div class="cockpit-section-head experience-head">
+              <div><p class="panel-kicker">EXPÉRIENCE APPELANT</p><h2>Attente, parcours SVI et qualité réseau</h2><p>Mesures réelles calculées à partir des CDR, de la file et des échantillons RTP.</p></div>
+              <span class="metric-badge" id="experience-sample-badge">0 appel</span>
+            </div>
+            <div class="experience-kpi-grid">
+              <article class="experience-kpi"><span>Attente moyenne</span><strong id="exp-wait">—</strong><small>Tous appels</small></article>
+              <article class="experience-kpi"><span>Décrochés ≤ 20 s</span><strong id="exp-fast-answer">—</strong><small>Parmi les appels aboutis</small></article>
+              <article class="experience-kpi"><span>Attente avant abandon</span><strong id="exp-abandon-wait">—</strong><small>Appels abandonnés</small></article>
+              <article class="experience-kpi"><span>Abandons ≤ 10 s</span><strong id="exp-short-abandon">—</strong><small>Parmi les abandons</small></article>
+              <article class="experience-kpi"><span>Temps SVI moyen</span><strong id="exp-ivr">—</strong><small>Avant mise en file</small></article>
+              <article class="experience-kpi"><span>Temps file moyen</span><strong id="exp-queue">—</strong><small>Jusqu’au pont ou raccrochage</small></article>
+              <article class="experience-kpi"><span>RTP dégradé</span><strong id="exp-network-affected">—</strong><small>Perte ≥5%, jitter &gt;5 ms ou latence &gt;150 ms</small></article>
+              <article class="experience-kpi"><span>MOS &lt; 3,5</span><strong id="exp-low-mos">—</strong><small>Part des échantillons qualité</small></article>
+            </div>
+            <div class="experience-chart-grid">
+              <article class="panel cockpit-chart-panel command-chart">
+                <div class="panel-head"><div><p class="panel-kicker">ATTENTE</p><h2>Temps d’attente & décroché rapide</h2></div><span class="metric-badge" id="experience-fast-badge">≤20 s —</span></div>
+                <div class="chart-wrap"><svg id="experience-trend-chart" class="cockpit-svg-chart" viewBox="0 0 760 220" role="img" aria-label="Évolution de l'attente moyenne et du taux de décroché en vingt secondes"></svg></div>
+              </article>
+              <article class="panel cockpit-chart-panel command-chart">
+                <div class="panel-head"><div><p class="panel-kicker">DISTRIBUTION</p><h2>Répartition des temps d’attente</h2></div><span class="metric-badge" id="experience-wait-badge">0 appel</span></div>
+                <div id="experience-wait-bars" class="metric-bars experience-bars"></div>
+              </article>
+            </div>
+          </section>
+
           <div class="cockpit-chart-grid">
             <article class="panel cockpit-chart-panel wide-chart">
               <div class="panel-head"><div><p class="panel-kicker">VOLUME</p><h2>Appels & minutes</h2></div><span class="metric-badge" id="cockpit-volume-total">0 appels</span></div>
