@@ -1409,8 +1409,7 @@ var carriers=["Orange","SFR","Bouygues","Free"];
 
   function executeCommand(id){
     if(id&&id.indexOf("view-")===0)return switchView(id.slice(5));
-    var periods={"period-today":"today","period-7d":"7d","period-week":"week","period-month":"month","period-year":"year"};
-    if(periods[id])return setPeriod(periods[id]);
+    if(id&&id.indexOf("period-")===0)return setPeriod(id.slice(7));
     if(id==="refresh")return refreshData({forceMeta:true});
     if(id==="priority"){switchView("overview");return setTimeout(function(){var b=$("priority-action-btn");if(b)b.focus();},250);}
     if(id==="analysis"){switchView("overview");return toggleMobileOverview();}
