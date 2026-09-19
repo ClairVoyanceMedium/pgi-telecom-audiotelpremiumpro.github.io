@@ -196,6 +196,12 @@ test("experts opérateurs et réconciliation utilisent les agrégats serveur",()
   assert.match(app,/dashboard\.reconciliation/);
 });
 
+test("le moteur analytique avancé est chargé à la demande",()=>{
+  assert.match(app,/import\("\.\/cockpit-pro\.js"\)/);
+  assert.doesNotMatch(index,/src="assets\/cockpit-pro\.js"/);
+  assert.doesNotMatch(sw,/assets\/cockpit-pro\.js/);
+});
+
 test("le Cockpit expose l'expérience appelant sans faux SLA",()=>{
   for(const id of ["exp-wait","exp-fast-answer","exp-abandon-wait","exp-short-abandon","exp-ivr","exp-queue","exp-network-affected","exp-low-mos"])assert.ok(index.includes('id="'+id+'"'));
   assert.match(cockpitPro,/answered_le_20s_percent/);
@@ -287,7 +293,7 @@ test("l’administration plateforme 1.22 pilote tarifs et bascules avec confirma
 test("la PWA met en cache tous les modules du shell",()=>{
   for(const file of [
     "assets/demo-data.js","assets/api-client.js","assets/data-client.js",
-    "assets/command-palette-loader.js","assets/workspace.js","assets/cockpit-pro.js","assets/app.js"
+    "assets/command-palette-loader.js","assets/workspace.js","assets/app.js"
   ])assert.ok(sw.includes(file),"service worker missing "+file);
   assert.doesNotMatch(sw,/assets\/command-palette\.js/);
   assert.match(sw,/pgi-telecom-shell-v26/);
