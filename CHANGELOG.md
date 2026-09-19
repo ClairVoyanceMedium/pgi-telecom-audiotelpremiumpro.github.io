@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.23.0 — 2026-09-19
+
+Customer Fleet & Headroom :
+
+- pilotage compact du parc clients depuis Plateforme SVA avec compteurs Clients, Actifs, KYC à traiter, Impayés, Accès SVA bloqués et Lignes actives ;
+- filtres directs par pays, statut, KYC et abonnement, plus recherche nom, société et numéro SVA ;
+- filtre KYC exécuté côté PostgreSQL et index dédié `tenant_kyc_status_tenant_idx` pour rester sélectif à grande échelle ;
+- aucun index statut+pays dupliqué : réutilisation de l’index hyperscale déjà présent ;
+- endpoint résumé clients dédié et léger, sans charger l’aperçu wholesale complet ;
+- administration clients conservée paginée par curseur à 50 lignes, sans chargement massif navigateur ;
+- cartes de pilotage compactes et défilantes horizontalement sur mobile ;
+- CSS de l’administration clients sorti du JavaScript et chargé uniquement lorsque le module est ouvert ;
+- générateur de données démo retiré du shell critique et chargé uniquement en mode démo ;
+- générateur démo retiré du précache PWA ; rotation du cache vers v27 pour purger l’ancien shell ;
+- réserve CI minimale portée de 16 KiB à 20 KiB sous le plafond shell de 260 KiB ;
+- shell critique ramené sous 238 Ko, avec plus de 27 KiB de marge pour les évolutions futures ;
+- migration 021, tests backend, PostgreSQL, hyperscale et statiques renforcés ;
+- version front, backend, Docker et manifests scale alignée sur 1.23.0.
+
 ## 1.22.0 — 2026-09-19
 
 Cockpit d’administration totale :
