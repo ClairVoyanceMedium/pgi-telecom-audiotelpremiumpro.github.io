@@ -361,12 +361,15 @@ export class PostgresStore{
   async ingestCdr(envelope){
     validateEnvelope(envelope);
     const p=sanitizeCdrPayload(envelope.payload||{});
-    const payloadHash=createHash("sha256").update(JSON.stringify(p)).digest("hex");
+    const rawPayload={...p};
+    delete rawPayload.caller_masked;
+    delete rawPayload.caller_hash;
+    const payloadHash=createHash("sha256").update(JSON.stringify(rawPayload)).digest("hex");
     const result=await this.sql.begin(async tx=>{
       const inserted=await tx.unsafe(
         "INSERT INTO raw_cdr_events(source,source_event_id,event_time,payload,payload_sha256)"+
         " VALUES($1,$2,$3::timestamptz,$4::jsonb,$5) ON CONFLICT(source,source_event_id) DO NOTHING RETURNING id",
-        [envelope.source,envelope.source_event_id,envelope.event_time||null,JSON.stringify(p),payloadHash]
+        [envelope.source,envelope.source_event_id,envelope.event_time||null,JSON.stringify(rawPayload),payloadHash]
       );
       if(!inserted.length)return {duplicate:true};
       if(!p.external_call_id||!p.started_at||!p.ended_at)throw problem(400,"CDR_REQUIRED_FIELDS_MISSING");
