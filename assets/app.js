@@ -1064,136 +1064,128 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     return '<span class="platform-status '+(ok?"ok":warn?"warn":bad?"bad":"neutral")+'">'+esc(label)+"</span>";
   }
   function renderWholesale(){
-    var data=RUNTIME.mode==="production"?state.wholesale:null;
-    var summary=data&&data.summary?data.summary:{};
-    var tenants=data&&Array.isArray(data.tenants)?data.tenants:[];
-    var numbers=data&&Array.isArray(data.numbers)?data.numbers:[];
-    var settlements=data&&Array.isArray(data.settlements)?data.settlements:[];
-    var profiles=data&&Array.isArray(data.payment_profiles)?data.payment_profiles:[];
-    var markets=data&&Array.isArray(data.markets)?data.markets:[];
-    var currencyTotals=data&&Array.isArray(data.settlement_totals_by_currency)?data.settlement_totals_by_currency:[];
-    var scale=data&&data.scale?data.scale:{
-      clusters_total:1,clusters_ready:1,routing_buckets_active:4096,bucket_capacity:4096,
-      call_fact_partitions:64,read_replica_enabled:false,process_role:"all"
-    };
-    var singleCurrency=currencyTotals.length===1?currencyTotals[0]:null;
-    var currencyList=currencyTotals.map(function(x){return String(x.currency||"EUR");});
-    var netPayoutLabel=singleCurrency
-      ?moneyIn(singleCurrency.net_payout||0,singleCurrency.currency)
-      :(currencyTotals.length>1?currencyTotals.length+" devises":money(0));
-    var feeDetail=currencyTotals.length
-      ?currencyTotals.map(function(x){return moneyIn(x.platform_fee||0,x.currency);}).join(" • ")
-      :money(0);
-    var real=RUNTIME.mode==="production"&&!!data;
-    var carrierReady=!!(real&&state.route&&state.route.active_carrier);
-    var numberReady=!!(real&&Number(summary.inventory_total||0)>0);
-    var connectionState=String(state.route&&state.route.active_connection_state||"").toLowerCase();
-    var sipReady=!!(carrierReady&&["active","ready"].includes(connectionState));
-    var tenantCount=Number(summary.tenants_total||0);
-    var kycPending=Number(summary.kyc_pending||0);
-    var paymentReady=!!summary.payment_compliance_active;
-    var subActive=Number(summary.external_subscriptions_active||0);
-    var subAccess=Number(summary.subscription_access_enabled||0);
-    var subBlocked=Number(summary.subscription_access_blocked||0);
-    var subscriptionReady=tenantCount===0||subBlocked===0;
-    var complianceReady=tenantCount===0?true:(paymentReady&&kycPending===0&&subscriptionReady);
-    var readyCount=[carrierReady,numberReady,sipReady,complianceReady].filter(Boolean).length;
-    setText("activation-steps",readyCount+"/4");
-    var progress=$("activation-progress-bar");
-    if(progress)progress.style.width=(readyCount*25)+"%";
-    setText("activation-title",readyCount===4?"Chaîne SVA prête à exploiter":(real?"Activation SVA en cours":"Préparation du lancement SVA"));
-    setText("activation-detail",real
-      ?(readyCount===4?"Les prérequis techniques visibles dans PGI sont validés.":"PGI indique automatiquement le prochain blocage à lever avant exploitation.")
-      :"Mode démo : la structure est prête, mais aucun contrat, numéro ou trunk réel n’est simulé.");
-    function gate(id,label,ok){
-      setText(id,label);
-      var stateId=id+"-state";
-      var el=$(stateId);
-      if(el){el.textContent=ok?"PRÊT":"À FAIRE";el.className=ok?"ready":"pending";}
-    }
-    gate("gate-carrier",carrierReady?(state.route.active_carrier||"Route active"):"À contractualiser",carrierReady);
-    gate("gate-number",numberReady?(nfmt(summary.inventory_total||0)+" numéro(s) configuré(s)"):"Aucun numéro réel",numberReady);
-    gate("gate-sip",sipReady?"Route SIP active":(carrierReady?"Connexion "+(connectionState||"à configurer"):"Non connecté"),sipReady);
-    gate("gate-compliance",tenantCount===0?"Fondation prête":(complianceReady?"KYC, paiements & abonnements conformes":(kycPending>0?nfmt(kycPending)+" KYC en attente":(!paymentReady?"Paiements à activer":nfmt(subBlocked)+" abonnement(s) requis"))),complianceReady);
-    var priority={title:"Plateforme prête",detail:"Aucune action bloquante détectée dans le cockpit.",go:"wholesale"};
-    if(!carrierReady)priority={title:"Finaliser l’opérateur SVA amont",detail:"Obtenir le contrat 089, le reversement et la livraison SIP avant toute activation réelle.",go:"carriers"};
-    else if(!numberReady)priority={title:"Configurer le premier numéro de service",detail:"Ajouter le numéro réellement affecté par l’opérateur, son marché, sa devise, son tarif et son statut.",go:"wholesale"};
-    else if(!sipReady)priority={title:"Activer le trunk SIP et la route",detail:"Valider la connexion opérateur vers FreeSWITCH/SBC avant le premier appel.",go:"system"};
-    else if(tenantCount>0&&kycPending>0)priority={title:"Traiter les KYC en attente",detail:"Aucun numéro client ne doit être activé tant que le dossier éditeur n’est pas vérifié.",go:"wholesale"};
-    else if(tenantCount>0&&!paymentReady)priority={title:"Activer le cadre de paiement multi-clients",detail:"Le reversement de fonds tiers reste bloqué tant qu’aucun profil PSP/DSP2 actif n’est configuré.",go:"wholesale"};
-    else if(tenantCount>0&&subBlocked>0)priority={title:"Activer les abonnements SVA externes",detail:nfmt(subBlocked)+" client(s) externe(s) n’ont pas d’abonnement payé actif et leur accès SVA reste bloqué.",go:"wholesale"};
-    setText("priority-action-title",priority.title);
-    setText("priority-action-detail",priority.detail);
-    var priorityButton=$("priority-action-btn");
-    if(priorityButton)priorityButton.setAttribute("data-go",priority.go);
-    setText("overview-wh-state",real?(tenantCount>0?"Plateforme active":"Backend prêt"):"Fondation prête");
-    setText("overview-wh-tenants",nfmt(tenantCount));
-    setText("overview-wh-numbers",nfmt(summary.assignments_total||0));
-    setText("overview-wh-stock",nfmt(summary.inventory_unassigned||0)+" libres");
-    setText("overview-wh-kyc",nfmt(kycPending));
-    setText("overview-wh-kyc-state",kycPending>0?"À traiter":"Aucun dossier");
-    setText("overview-wh-net",netPayoutLabel);
-    setText("overview-wh-payment-state",paymentReady?"Paiements actifs":(tenantCount>0?"PSP/DSP2 à activer":"Paiements non requis"));
-    setText("wh-tenants-total",nfmt(summary.tenants_total||0));
-    setText("wh-tenants-active",nfmt(summary.tenants_active||0)+" actifs");
-    setText("wh-numbers-total",nfmt(summary.assignments_total||0));
-    setText("wh-numbers-active",nfmt(summary.assignments_active||0)+" actifs");
-    setText("wh-numbers-stock",nfmt(summary.inventory_unassigned||0)+" libres");
-    setText("wh-kyc-verified",nfmt(summary.kyc_verified||0));
-    setText("wh-kyc-pending",nfmt(summary.kyc_pending||0)+" en attente");
-    setText("wh-net-payout",netPayoutLabel);
-    setText("wh-platform-fees","Frais plateforme : "+feeDetail);
-    setText("wh-markets-total",nfmt(summary.markets_total||markets.length||0));
-    setText("wh-markets-active",nfmt(summary.markets_active||0)+" actifs");
-    setText("wh-currency-count",nfmt(currencyTotals.length));
-    setText("wh-currency-list",currencyList.length?currencyList.join(" • "):"Aucune");
-    setText("wh-scale-clusters",nfmt(scale.clusters_total||0));
-    setText("wh-scale-clusters-state",nfmt(scale.clusters_ready||0)+" prêt(s)");
-    setText("wh-scale-buckets",nfmt(scale.routing_buckets_active||0)+" / "+nfmt(scale.bucket_capacity||4096));
-    setText("wh-scale-partitions",nfmt(scale.call_fact_partitions||0));
-    setText("wh-scale-read",scale.read_replica_enabled?"RÉPLIQUE":"PRIMARY");
-    setText("wh-scale-regions",nfmt(scale.regions_ready||0)+" / "+nfmt(scale.regions_total||0));
-    setText("wh-scale-dr",nfmt(scale.dr_targets_total||0)+" cible(s)");
-    setText("wh-scale-dr-drills",nfmt(scale.dr_drills_passed||0)+" exercice(s) validé(s)");
-    setText("wh-sub-price",moneyIn(Number(summary.subscription_price_minor||200)/100,summary.subscription_price_currency||"EUR")+"/mois");
-    setText("wh-sub-active",nfmt(subActive));
-    setText("wh-sub-active-detail",nfmt(tenantCount)+" client(s) externe(s)");
-    setText("wh-sub-access",nfmt(subAccess)+" / "+nfmt(tenantCount));
-    setText("wh-sub-blocked",nfmt(subBlocked)+" bloqué(s)");
-    setText("wh-sub-internal",summary.internal_billing_exempt===false?"À CONFIGURER":"EXEMPTÉ");
-    var roleLabels={all:"API + workers",api:"API stateless",worker:"Workers"};
-    setText("wh-scale-role",roleLabels[scale.process_role]||String(scale.process_role||"all"));
-    setText("wh-tenant-count",nfmt(tenants.length));
-    setText("wh-number-count",nfmt(numbers.length));
-    setText("wh-settlement-count",nfmt(settlements.length));
-    setText("wh-foundation-status",real?"Backend wholesale connecté":"Prête architecturalement");
-    setText("wh-foundation-detail",real
-      ?nfmt(summary.tenants_total||0)+" client(s) • "+nfmt(summary.markets_total||markets.length||0)+" marché(s) • PostgreSQL"
-      :"Aucun client réel chargé en mode démo.");
-    setText("wh-compliance-badge",real?(summary.payment_compliance_active?"PSP ACTIF":"CONFORMITÉ À VALIDER"):"HYPERSCALE 1.16");
-    setText("wh-check-kyc",real
-      ?((summary.kyc_pending||0)>0?nfmt(summary.kyc_pending)+" dossier(s) en attente":((summary.tenants_total||0)>0?"Aucun KYC en attente":"Aucun éditeur réel"))
-      :"Aucun éditeur réel");
-    setText("wh-check-assignor",real
-      ?((summary.assignments_total||0)>0?nfmt(summary.assignments_with_assignor||0)+"/"+nfmt(summary.assignments_total)+" affectation(s) tracée(s)":"Aucune affectation réelle")
-      :"En attente du contrat amont");
-    setText("wh-check-payments",real
-      ?(summary.payment_compliance_active?"Profil de paiement actif":(profiles.length?"Profil présent, non actif":"Aucun profil actif"))
-      :"Non activé");
-    var tenantBody=$("wh-tenants-table");
-    if(tenantBody)tenantBody.innerHTML=tenants.length?tenants.map(function(x){
-      return "<tr><td><strong>"+esc(x.display_name||x.slug||"—")+"</strong></td><td>"+esc(x.tenant_type||"—")+"</td><td>"+esc(x.country_code||"—")+"</td><td>"+nfmt(x.markets||0)+"</td><td>"+esc(x.preferred_locale||"—")+"</td><td>"+esc(x.default_currency||"—")+"</td><td>"+platformChip(x.status)+"</td><td>"+platformChip(x.kyc_status)+"</td><td>"+nfmt(x.number_assignments||0)+"</td><td>"+nfmt(x.experts||0)+"</td></tr>";
-    }).join(""):'<tr><td colspan="10">Aucun éditeur réel configuré.</td></tr>';
-    var numberBody=$("wh-numbers-table");
-    if(numberBody)numberBody.innerHTML=numbers.length?numbers.map(function(x){
-      return "<tr><td><strong>"+esc(x.tenant||"—")+"</strong></td><td>"+esc(x.market||"—")+"</td><td>"+esc(x.display_number||x.e164||"—")+"</td><td>"+esc(x.number_type||"—")+"</td><td>"+esc(x.currency||"—")+"</td><td>"+esc(x.tariff_code||"—")+"</td><td>"+esc(x.assignment_type||"—")+"</td><td>"+platformChip(x.status)+"</td><td>"+platformChip(x.kyc_status)+"</td><td>"+esc(x.regulatory_assignor||"Non défini")+"</td></tr>";
-    }).join(""):'<tr><td colspan="10">Aucune affectation réelle.</td></tr>';
-    var settlementBody=$("wh-settlements-table");
-    if(settlementBody)settlementBody.innerHTML=settlements.length?settlements.map(function(x){
-      var period=(x.period_start||"—")+" → "+(x.period_end||"—");
-      var currency=x.currency||"EUR";
-      return "<tr><td><strong>"+esc(x.tenant||"—")+"</strong></td><td>"+esc(x.market||"—")+"</td><td>"+esc(currency)+"</td><td>"+esc(period)+"</td><td>"+moneyIn(x.upstream_payout_ht||0,currency)+"</td><td>"+moneyIn(x.platform_fee_ht||0,currency)+"</td><td><strong>"+moneyIn(x.net_payout_ht||0,currency)+"</strong></td><td>"+platformChip(x.status)+"</td></tr>";
-    }).join(""):'<tr><td colspan="8">Aucun reversement client réel.</td></tr>';
+var data=RUNTIME.mode==="production"?state.wholesale:null;
+var summary=data&&data.summary?data.summary:{};
+var tenants=data&&Array.isArray(data.tenants)?data.tenants:[];
+var numbers=data&&Array.isArray(data.numbers)?data.numbers:[];
+var settlements=data&&Array.isArray(data.settlements)?data.settlements:[];
+var profiles=data&&Array.isArray(data.payment_profiles)?data.payment_profiles:[];
+var markets=data&&Array.isArray(data.markets)?data.markets:[];
+var currencyTotals=data&&Array.isArray(data.settlement_totals_by_currency)?data.settlement_totals_by_currency:[];
+var scale=data&&data.scale?data.scale:{
+  clusters_total:1,clusters_ready:1,routing_buckets_active:4096,bucket_capacity:4096,
+  call_fact_partitions:64,read_replica_enabled:false,process_role:"all"
+};
+var singleCurrency=currencyTotals.length===1?currencyTotals[0]:null;
+var currencyList=currencyTotals.map(function(x){return String(x.currency||"EUR");});
+var netPayoutLabel=singleCurrency
+  ?moneyIn(singleCurrency.net_payout||0,singleCurrency.currency)
+  :(currencyTotals.length>1?currencyTotals.length+" devises":money(0));
+var feeDetail=currencyTotals.length
+  ?currencyTotals.map(function(x){return moneyIn(x.platform_fee||0,x.currency);}).join(" • ")
+  :money(0);
+var real=RUNTIME.mode==="production"&&!!data;
+var carrierReady=!!(real&&state.route&&state.route.active_carrier);
+var numberReady=!!(real&&Number(summary.inventory_total||0)>0);
+var connectionState=String(state.route&&state.route.active_connection_state||"").toLowerCase();
+var sipReady=!!(carrierReady&&["active","ready"].includes(connectionState));
+var tenantCount=Number(summary.tenants_total||0);
+var kycPending=Number(summary.kyc_pending||0);
+var paymentReady=!!summary.payment_compliance_active;
+var subBlocked=Number(summary.subscription_access_blocked||0),subscriptionReady=tenantCount===0||subBlocked===0;
+var complianceReady=tenantCount===0?true:(paymentReady&&kycPending===0&&subscriptionReady);
+var readyCount=[carrierReady,numberReady,sipReady,complianceReady].filter(Boolean).length;
+setText("activation-steps",readyCount+"/4");
+var progress=$("activation-progress-bar");
+if(progress)progress.style.width=(readyCount*25)+"%";
+setText("activation-title",readyCount===4?"Chaîne SVA prête à exploiter":(real?"Activation SVA en cours":"Préparation du lancement SVA"));
+setText("activation-detail",real
+  ?(readyCount===4?"Les prérequis techniques visibles dans PGI sont validés.":"PGI indique automatiquement le prochain blocage à lever avant exploitation.")
+  :"Mode démo : la structure est prête, mais aucun contrat, numéro ou trunk réel n’est simulé.");
+function gate(id,label,ok){
+  setText(id,label);
+  var stateId=id+"-state";
+  var el=$(stateId);
+  if(el){el.textContent=ok?"PRÊT":"À FAIRE";el.className=ok?"ready":"pending";}
+}
+gate("gate-carrier",carrierReady?(state.route.active_carrier||"Route active"):"À contractualiser",carrierReady);
+gate("gate-number",numberReady?(nfmt(summary.inventory_total||0)+" numéro(s) configuré(s)"):"Aucun numéro réel",numberReady);
+gate("gate-sip",sipReady?"Route SIP active":(carrierReady?"Connexion "+(connectionState||"à configurer"):"Non connecté"),sipReady);
+gate("gate-compliance",tenantCount===0?"Fondation prête":(complianceReady?"KYC, paiements & abonnements conformes":(kycPending>0?nfmt(kycPending)+" KYC en attente":(!paymentReady?"Paiements à activer":nfmt(subBlocked)+" abonnement(s) requis"))),complianceReady);
+var priority={title:"Plateforme prête",detail:"Aucune action bloquante détectée dans le cockpit.",go:"wholesale"};
+if(!carrierReady)priority={title:"Finaliser l’opérateur SVA amont",detail:"Obtenir le contrat 089, le reversement et la livraison SIP avant toute activation réelle.",go:"carriers"};
+else if(!numberReady)priority={title:"Configurer le premier numéro de service",detail:"Ajouter le numéro réellement affecté par l’opérateur, son marché, sa devise, son tarif et son statut.",go:"wholesale"};
+else if(!sipReady)priority={title:"Activer le trunk SIP et la route",detail:"Valider la connexion opérateur vers FreeSWITCH/SBC avant le premier appel.",go:"system"};
+else if(tenantCount>0&&kycPending>0)priority={title:"Traiter les KYC en attente",detail:"Aucun numéro client ne doit être activé tant que le dossier éditeur n’est pas vérifié.",go:"wholesale"};
+else if(tenantCount>0&&!paymentReady)priority={title:"Activer le cadre de paiement multi-clients",detail:"Le reversement de fonds tiers reste bloqué tant qu’aucun profil PSP/DSP2 actif n’est configuré.",go:"wholesale"};
+else if(tenantCount>0&&subBlocked>0)priority={title:"Activer les abonnements SVA externes",detail:nfmt(subBlocked)+" client(s) externe(s) n’ont pas d’abonnement payé actif et leur accès SVA reste bloqué.",go:"wholesale"};
+setText("priority-action-title",priority.title);
+setText("priority-action-detail",priority.detail);
+var priorityButton=$("priority-action-btn");
+if(priorityButton)priorityButton.setAttribute("data-go",priority.go);
+setText("overview-wh-state",real?(tenantCount>0?"Plateforme active":"Backend prêt"):"Fondation prête");
+setText("overview-wh-tenants",nfmt(tenantCount));
+setText("overview-wh-numbers",nfmt(summary.assignments_total||0));
+setText("overview-wh-stock",nfmt(summary.inventory_unassigned||0)+" libres");
+setText("overview-wh-kyc",nfmt(kycPending));
+setText("overview-wh-kyc-state",kycPending>0?"À traiter":"Aucun dossier");
+setText("overview-wh-net",netPayoutLabel);
+setText("overview-wh-payment-state",paymentReady?"Paiements actifs":(tenantCount>0?"PSP/DSP2 à activer":"Paiements non requis"));
+setText("wh-tenants-total",nfmt(summary.tenants_total||0));
+setText("wh-tenants-active",nfmt(summary.tenants_active||0)+" actifs");
+setText("wh-numbers-total",nfmt(summary.assignments_total||0));
+setText("wh-numbers-active",nfmt(summary.assignments_active||0)+" actifs");
+setText("wh-numbers-stock",nfmt(summary.inventory_unassigned||0)+" libres");
+setText("wh-kyc-verified",nfmt(summary.kyc_verified||0));
+setText("wh-kyc-pending",nfmt(summary.kyc_pending||0)+" en attente");
+setText("wh-net-payout",netPayoutLabel);
+setText("wh-platform-fees","Frais plateforme : "+feeDetail);
+setText("wh-markets-total",nfmt(summary.markets_total||markets.length||0));
+setText("wh-markets-active",nfmt(summary.markets_active||0)+" actifs");
+setText("wh-currency-count",nfmt(currencyTotals.length));
+setText("wh-currency-list",currencyList.length?currencyList.join(" • "):"Aucune");
+setText("wh-scale-clusters",nfmt(scale.clusters_total||0));
+setText("wh-scale-clusters-state",nfmt(scale.clusters_ready||0)+" prêt(s)");
+setText("wh-scale-buckets",nfmt(scale.routing_buckets_active||0)+" / "+nfmt(scale.bucket_capacity||4096));
+setText("wh-scale-partitions",nfmt(scale.call_fact_partitions||0));
+setText("wh-scale-read",scale.read_replica_enabled?"RÉPLIQUE":"PRIMARY");
+setText("wh-scale-regions",nfmt(scale.regions_ready||0)+" / "+nfmt(scale.regions_total||0));
+setText("wh-scale-dr",nfmt(scale.dr_targets_total||0)+" cible(s)");
+setText("wh-scale-dr-drills",nfmt(scale.dr_drills_passed||0)+" exercice(s) validé(s)");
+var roleLabels={all:"API + workers",api:"API stateless",worker:"Workers"};
+setText("wh-scale-role",roleLabels[scale.process_role]||String(scale.process_role||"all"));
+setText("wh-tenant-count",nfmt(tenants.length));
+setText("wh-number-count",nfmt(numbers.length));
+setText("wh-settlement-count",nfmt(settlements.length));
+setText("wh-foundation-status",real?"Backend wholesale connecté":"Prête architecturalement");
+setText("wh-foundation-detail",real
+  ?nfmt(summary.tenants_total||0)+" client(s) • "+nfmt(summary.markets_total||markets.length||0)+" marché(s) • PostgreSQL"
+  :"Aucun client réel chargé en mode démo.");
+setText("wh-compliance-badge",real?(summary.payment_compliance_active?"PSP ACTIF":"CONFORMITÉ À VALIDER"):"HYPERSCALE 1.16");
+setText("wh-check-kyc",real
+  ?((summary.kyc_pending||0)>0?nfmt(summary.kyc_pending)+" dossier(s) en attente":((summary.tenants_total||0)>0?"Aucun KYC en attente":"Aucun éditeur réel"))
+  :"Aucun éditeur réel");
+setText("wh-check-assignor",real
+  ?((summary.assignments_total||0)>0?nfmt(summary.assignments_with_assignor||0)+"/"+nfmt(summary.assignments_total)+" affectation(s) tracée(s)":"Aucune affectation réelle")
+  :"En attente du contrat amont");
+setText("wh-check-payments",real
+  ?(summary.payment_compliance_active?"Profil de paiement actif":(profiles.length?"Profil présent, non actif":"Aucun profil actif"))
+  :"Non activé");
+var tenantBody=$("wh-tenants-table");
+if(tenantBody)tenantBody.innerHTML=tenants.length?tenants.map(function(x){
+  return "<tr><td><strong>"+esc(x.display_name||x.slug||"—")+"</strong></td><td>"+esc(x.tenant_type||"—")+"</td><td>"+esc(x.country_code||"—")+"</td><td>"+nfmt(x.markets||0)+"</td><td>"+esc(x.preferred_locale||"—")+"</td><td>"+esc(x.default_currency||"—")+"</td><td>"+platformChip(x.status)+"</td><td>"+platformChip(x.kyc_status)+"</td><td>"+nfmt(x.number_assignments||0)+"</td><td>"+nfmt(x.experts||0)+"</td></tr>";
+}).join(""):'<tr><td colspan="10">Aucun éditeur réel configuré.</td></tr>';
+var numberBody=$("wh-numbers-table");
+if(numberBody)numberBody.innerHTML=numbers.length?numbers.map(function(x){
+  return "<tr><td><strong>"+esc(x.tenant||"—")+"</strong></td><td>"+esc(x.market||"—")+"</td><td>"+esc(x.display_number||x.e164||"—")+"</td><td>"+esc(x.number_type||"—")+"</td><td>"+esc(x.currency||"—")+"</td><td>"+esc(x.tariff_code||"—")+"</td><td>"+esc(x.assignment_type||"—")+"</td><td>"+platformChip(x.status)+"</td><td>"+platformChip(x.kyc_status)+"</td><td>"+esc(x.regulatory_assignor||"Non défini")+"</td></tr>";
+}).join(""):'<tr><td colspan="10">Aucune affectation réelle.</td></tr>';
+var settlementBody=$("wh-settlements-table");
+if(settlementBody)settlementBody.innerHTML=settlements.length?settlements.map(function(x){
+  var period=(x.period_start||"—")+" → "+(x.period_end||"—");
+  var currency=x.currency||"EUR";
+  return "<tr><td><strong>"+esc(x.tenant||"—")+"</strong></td><td>"+esc(x.market||"—")+"</td><td>"+esc(currency)+"</td><td>"+esc(period)+"</td><td>"+moneyIn(x.upstream_payout_ht||0,currency)+"</td><td>"+moneyIn(x.platform_fee_ht||0,currency)+"</td><td><strong>"+moneyIn(x.net_payout_ht||0,currency)+"</strong></td><td>"+platformChip(x.status)+"</td></tr>";
+}).join(""):'<tr><td colspan="8">Aucun reversement client réel.</td></tr>';
+import("./subscription-billing-ui.js").then(function(m){m.render(summary,tenantCount);}).catch(function(){});
   }
   function saveUiPreferences(){if(window.PGIWorkspace)window.PGIWorkspace.save(state.activeView,state.period,state.custom);}
   function restoreUiPreferences(){if(window.PGIWorkspace)window.PGIWorkspace.restoreInto(state,titles);}
