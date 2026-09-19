@@ -238,7 +238,6 @@ AS $$
             AND s.current_period_end>p_at
             AND (s.ends_at IS NULL OR s.ends_at>p_at)
             AND (p_market_id IS NULL OR s.market_id IS NULL OR s.market_id=p_market_id)
-            AND pv.effective_from<=s.starts_at
         )
       END
     FROM tenants t
