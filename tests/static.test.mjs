@@ -12,6 +12,7 @@ const commands=read("assets/command-palette.js");
 const workspace=read("assets/workspace.js");
 const cockpitPro=read("assets/cockpit-pro.js");
 const performanceRadar=read("assets/performance-radar.js");
+const subscriptionBillingUi=read("assets/subscription-billing-ui.js");
 const css=read("assets/styles.css");
 const sw=read("service-worker.js");
 const buildStatic=read("scripts/build-static.mjs");
@@ -213,6 +214,9 @@ test("la Plateforme SVA distingue abonnement externe et usage interne exempté",
   assert.match(app,/Activer les abonnements SVA externes/);
   assert.match(api,/subscriptionBilling:function/);
   assert.match(api,/createSubscriptionPrice:function/);
+  assert.match(app,/subscription-billing-ui\.js/);
+  assert.match(subscriptionBillingUi,/subscription_price_minor/);
+  assert.doesNotMatch(sw,/assets\/subscription-billing-ui\.js/);
 });
 
 test("la PWA met en cache tous les modules du shell",()=>{
