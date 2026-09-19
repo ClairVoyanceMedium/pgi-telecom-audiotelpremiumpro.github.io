@@ -8,6 +8,8 @@ var carriers=["Orange","SFR","Bouygues","Free"];
   var number089="0890 80 24 24";
   var callToolsPromise=null;
   function callTools(){return callToolsPromise||(callToolsPromise=import("./call-tools.js"));}
+  var cockpitProPromise=null,cockpitProPayload=null;
+  function renderCockpitPro(payload){cockpitProPayload=payload;if(window.PGICockpitPro)return window.PGICockpitPro.render(payload);if(!cockpitProPromise)cockpitProPromise=import("./cockpit-pro.js").then(function(){if(window.PGICockpitPro)window.PGICockpitPro.render(cockpitProPayload);}).catch(function(){});}
   function $(id){return document.getElementById(id);}
   function qsa(sel){return Array.prototype.slice.call(document.querySelectorAll(sel));}
   function money(v){return moneyIn(v,state.marketCurrency||"EUR","fr-FR");}
@@ -846,7 +848,7 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     renderMetricBars("cockpit-duration-bars",data.durations||[],function(x){return x.calls_total;},function(x){return x.dimension_label;},function(x,v){return nfmt(v);});
     renderMetricBars("cockpit-expert-bars",(data.experts||[]).slice(0,7),function(x){return x.expected_payout==null?x.calls_total:x.expected_payout;},function(x){return x.dimension_label;},function(x,v){return x.expected_payout==null?nfmt(x.calls_total)+" appels":money(v);});
     renderMetricBars("cockpit-carrier-bars",(data.carriers||[]).slice(0,7),function(x){return x.calls_total;},function(x){return x.dimension_label;},function(x,v){return nfmt(v)+" appels";});
-    if(window.PGICockpitPro)window.PGICockpitPro.render({data:data,m:m,q:currentQuality(rows),currency:state.marketCurrency||"EUR",rows:rows});
+    renderCockpitPro({data:data,m:m,q:currentQuality(rows),currency:state.marketCurrency||"EUR",rows:rows});
     var sampleNote=$("analytics-sample-note");
     if(sampleNote){
       sampleNote.hidden=!state.cdrSampleTruncated;
