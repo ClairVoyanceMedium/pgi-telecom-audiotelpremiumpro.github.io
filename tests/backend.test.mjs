@@ -441,6 +441,17 @@ test("tenant directory is cursor-paginated and empty in simulator",async()=>{
   });
 });
 
+test("customer fleet summary stays compact",async()=>{
+  await withServer(async({base})=>{
+    const r=await fetch(base+"/api/v1/platform/tenants/summary");
+    assert.equal(r.status,200);
+    const body=await r.json();
+    assert.equal(body.tenants_total,0);
+    assert.equal(body.assignments_active,0);
+    assert.ok(Object.hasOwn(body,"subscription_access_blocked"));
+  });
+});
+
 test("CDR ingest is idempotent",async()=>{
   await withServer(async({base})=>{
     const envelope={
