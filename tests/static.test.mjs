@@ -232,7 +232,7 @@ test("le contrôle clients permet recherche pays impayés et suspension depuis l
   assert.match(api,/setTenantStatus:function/);
   assert.match(api,/setTenantAssignmentStatus:function/);
   assert.match(api,/billingAlerts:function/);
-  assert.match(app,/Abonnement client impayé/);
+  assert.match(subscriptionBillingUi,/Abonnement client impayé/);
   assert.match(css,/\.product-name\{display:block/);
   assert.match(css,/\.nav-item\[data-view="settings"\]/);
   assert.doesNotMatch(sw,/assets\/customer-admin\.js/);
