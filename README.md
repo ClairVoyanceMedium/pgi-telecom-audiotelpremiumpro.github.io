@@ -4,7 +4,7 @@ Cockpit Audiotel, financier et télécom de PGI Telecom.
 
 ## État actuel
 
-Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.21.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
+Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.22.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
 
 Fonctions déjà présentes :
 
@@ -324,3 +324,14 @@ La vue Plateforme SVA contient un centre d’administration clients chargé à l
 Un administrateur peut suspendre un client externe depuis le cockpit. La suspension bloque le tenant et suspend ses affectations SVA actives. La réactivation du tenant exige un abonnement SVA payé actif ; les lignes précédemment suspendues restent volontairement suspendues jusqu’à une réactivation explicite ligne par ligne.
 
 Le worker distribué détecte les abonnements échus ou en échec de paiement et crée une alerte persistante et dédupliquée. Une alerte peut être marquée comme vue, mais elle reste non résolue jusqu’à la réception d’un renouvellement payé valide. Le tenant interne PGI reste protégé et exempté de cette facturation.
+
+
+## Dossier client centralisé 1.22
+
+La vue Plateforme SVA dispose maintenant d’un dossier opérationnel unifié pour chaque client externe. Depuis une seule fiche, un administrateur peut voir le statut du client, son pays, son abonnement et son échéance, l’état de paiement, le KYC, l’accès SVA, l’activité des 30 derniers jours, les lignes, les experts, les alertes, les reversements récents et l’historique d’audit.
+
+Les actions disponibles depuis cette fiche réutilisent les contrôles de sécurité existants : suspension/réactivation du client, suspension/réactivation de chaque ligne, changement de présence des experts et acquittement des alertes. Les actions sensibles restent soumises aux rôles serveur et à la protection CSRF ; les mutations idempotentes conservent leur clé d’idempotence.
+
+L’annuaire reconnaît aussi un numéro SVA comme critère de recherche. La recherche ne charge jamais le parc complet : le client est retrouvé côté PostgreSQL via le préfixe E.164 indexé, puis la fiche détaillée ne charge que des collections bornées.
+
+Les opérations réglementaires qui nécessitent une autorité externe ne sont pas artificiellement automatisées : la validation KYC, l’attribution réglementaire initiale d’un numéro et les confirmations opérateur restent exposées comme états à contrôler jusqu’au branchement des fournisseurs compétents.
