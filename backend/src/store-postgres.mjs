@@ -1426,19 +1426,24 @@ export class PostgresStore{
     const tenantType=String(payload.tenant_type||"customer").trim().toLowerCase();
     const country=String(payload.country_code||"").trim().toUpperCase();
     const billingEmail=String(payload.billing_email||"").trim().toLowerCase().slice(0,254);
-    const locale=String(payload.preferred_locale||"fr-FR").trim().slice(0,35);
-    const currency=String(payload.default_currency||"EUR").trim().toUpperCase();
-    const timezone=String(payload.timezone||"Europe/Paris").trim().slice(0,80);
+    const localeInput=payload.preferred_locale==null?"":String(payload.preferred_locale).trim().slice(0,35);
+    const currencyInput=payload.default_currency==null?"":String(payload.default_currency).trim().toUpperCase();
+    const timezoneInput=payload.timezone==null?"":String(payload.timezone).trim().slice(0,80);
     if(displayName.length<2)throw problem(400,"TENANT_DISPLAY_NAME_REQUIRED");
     if(!["customer","reseller"].includes(tenantType))throw problem(400,"INVALID_TENANT_TYPE");
     if(!/^[A-Z]{2}$/.test(country))throw problem(400,"INVALID_COUNTRY_CODE");
     if(billingEmail&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(billingEmail))throw problem(400,"INVALID_BILLING_EMAIL");
-    if(!/^[A-Z]{3}$/.test(currency))throw problem(400,"INVALID_TENANT_CURRENCY");
-    if(!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(locale))throw problem(400,"INVALID_TENANT_LOCALE");
-    if(!/^[A-Za-z0-9_+\-/]+(?:\/[A-Za-z0-9_+\-]+)*$/.test(timezone))throw problem(400,"INVALID_TENANT_TIMEZONE");
+    if(currencyInput&&!/^[A-Z]{3}$/.test(currencyInput))throw problem(400,"INVALID_TENANT_CURRENCY");
+    if(localeInput&&!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(localeInput))throw problem(400,"INVALID_TENANT_LOCALE");
+    if(timezoneInput&&!/^[A-Za-z0-9_+\-/]+(?:\/[A-Za-z0-9_+\-]+)*$/.test(timezoneInput))throw problem(400,"INVALID_TENANT_TIMEZONE");
     const slugBase=displayName.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,48)||"client";
     const actorId=numericActor(actor);
     const result=await this.sql.begin(async tx=>{
+      const markets=await tx.unsafe("SELECT id,default_locale,default_currency,timezone,data_region FROM operating_markets WHERE country_code=$1 LIMIT 1",[country]);
+      const market=markets[0]||null;
+      const locale=localeInput||market?.default_locale||"en";
+      const currency=currencyInput||market?.default_currency||"EUR";
+      const timezone=timezoneInput||market?.timezone||"UTC";
       const rows=await tx.unsafe(
         "INSERT INTO tenants(slug,display_name,legal_name,tenant_type,status,country_code,billing_email,preferred_locale,default_currency,timezone)"+
         " VALUES($1||'-'||substr(replace(gen_random_uuid()::text,'-',''),1,8),$2,$3,$4,'pending',$5,$6,$7,$8,$9)"+
