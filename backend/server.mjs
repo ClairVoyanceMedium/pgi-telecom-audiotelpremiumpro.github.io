@@ -15,6 +15,12 @@ export async function createDefaultBackend(){
   if(config.mode==="production"){
     const {PostgresStore}=await import("./src/store-postgres.mjs");
     const store=await PostgresStore.connect(config,eventBus);
+    try{
+      await eventBus.attachPostgres(store.sql,{listen:config.processRole!=="worker"});
+    }catch(error){
+      await store.close();
+      throw error;
+    }
     return createBackend({config,eventBus,store,closeStore:true});
   }
   return createBackend({config,eventBus});
@@ -353,6 +359,7 @@ export function createBackend(options={}){
       }
       sseClients.clear();
       if(server.listening)await closeHttpServer(server,Number(config.shutdownGraceMs||10000));
+      if(options.closeStore&&typeof eventBus.close==="function")await eventBus.close();
       if(options.closeStore&&typeof store.close==="function")await store.close();
     }
   };
