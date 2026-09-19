@@ -17,6 +17,14 @@ Cockpit d’administration totale :
 - module dossier chargé à la demande, hors shell critique ;
 - budget lazy dédié de 20 KiB ;
 - cache PWA v25 ;
+- création d’un client externe directement depuis le cockpit, toujours en état `pending` et sans accès SVA automatique ;
+- initialisation KYC `pending`, placement data et profil marché onboarding lors de la création ;
+- administration plateforme accessible depuis Plateforme SVA, Opérateurs et la palette d’actions ;
+- publication d’un nouveau tarif d’abonnement par version immuable, avec confirmation ;
+- découverte des seules connexions SIP éligibles à une bascule ;
+- changement d’opérateur en deux temps : préparer puis activer explicitement ;
+- rollback explicite dans la fenêtre configurée ;
+- activation et rollback opérateur audités avec l’administrateur authentifié ;
 - version front, backend, Docker et manifests scale alignée sur 1.22.0.
 
 
