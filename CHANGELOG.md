@@ -4,7 +4,7 @@
 
 Customer Fleet & Headroom :
 
-- pilotage compact du parc clients depuis Plateforme SVA avec compteurs Clients, Actifs, KYC à traiter, Impayés, Accès SVA bloqués et Lignes actives ;
+- pilotage compact du parc clients depuis Plateforme SVA avec compteurs Clients, Actifs, KYC en attente, Impayés, Accès SVA bloqués et Lignes actives ;
 - filtres directs par pays, statut, KYC et abonnement, plus recherche nom, société et numéro SVA ;
 - filtre KYC exécuté côté PostgreSQL et index dédié `tenant_kyc_status_tenant_idx` pour rester sélectif à grande échelle ;
 - aucun index statut+pays dupliqué : réutilisation de l’index hyperscale déjà présent ;
