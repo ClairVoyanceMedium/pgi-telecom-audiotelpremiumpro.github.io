@@ -1,0 +1,15 @@
+const $=id=>document.getElementById(id);
+const n=v=>new Intl.NumberFormat("fr-FR",{maximumFractionDigits:0}).format(Number(v)||0);
+const money=(v,c)=>{try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:c||"EUR"}).format(Number(v)||0);}catch{return Number(v||0).toFixed(2)+" €";}};
+export function render(summary={},tenantCount=0){
+  const active=Number(summary.external_subscriptions_active||0);
+  const access=Number(summary.subscription_access_enabled||0);
+  const blocked=Number(summary.subscription_access_blocked||0);
+  const set=(id,value)=>{const e=$(id);if(e)e.textContent=value;};
+  set("wh-sub-price",money(Number(summary.subscription_price_minor||200)/100,summary.subscription_price_currency||"EUR")+"/mois");
+  set("wh-sub-active",n(active));
+  set("wh-sub-active-detail",n(tenantCount)+" client(s) externe(s)");
+  set("wh-sub-access",n(access)+" / "+n(tenantCount));
+  set("wh-sub-blocked",n(blocked)+" bloqué(s)");
+  set("wh-sub-internal",summary.internal_billing_exempt===false?"À CONFIGURER":"EXEMPTÉ");
+}
