@@ -85,6 +85,20 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(directoryActive.data[0].premium_call_access,true);
     assert.equal(directoryActive.data[0].active_assignments,1);
 
+    const directoryByNumber=await store.listTenants({number:"33890000001",limit:10});
+    assert.equal(directoryByNumber.data.length,1);
+    assert.equal(directoryByNumber.data[0].display_name,"External Test");
+
+    const controlDetail=await store.tenantControlDetail(externalIdentity[0].public_id);
+    assert.equal(controlDetail.tenant.display_name,"External Test");
+    assert.equal(controlDetail.tenant.premium_call_access,true);
+    assert.equal(controlDetail.subscriptions[0].status,"active");
+    assert.equal(controlDetail.lines.length,1);
+    assert.equal(controlDetail.experts.length,1);
+    assert.ok(Object.hasOwn(controlDetail,"activity"));
+    assert.ok(Array.isArray(controlDetail.audit));
+    assert.ok(Array.isArray(controlDetail.controls));
+
     let extAssignments=await store.listTenantAssignments({tenant_public_id:externalIdentity[0].public_id,limit:10});
     assert.equal(extAssignments.data.length,1);
     const assignmentId=Number(extAssignments.data[0].id);
