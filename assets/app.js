@@ -1118,7 +1118,7 @@ else if(!numberReady)priority={title:"Configurer le premier numéro de service",
 else if(!sipReady)priority={title:"Activer le trunk SIP et la route",detail:"Valider la connexion opérateur vers FreeSWITCH/SBC avant le premier appel.",go:"system"};
 else if(tenantCount>0&&kycPending>0)priority={title:"Traiter les KYC en attente",detail:"Aucun numéro client ne doit être activé tant que le dossier éditeur n’est pas vérifié.",go:"wholesale"};
 else if(tenantCount>0&&!paymentReady)priority={title:"Activer le cadre de paiement multi-clients",detail:"Le reversement de fonds tiers reste bloqué tant qu’aucun profil PSP/DSP2 actif n’est configuré.",go:"wholesale"};
-else if(tenantCount>0&&subBlocked>0)priority={title:"Activer les abonnements SVA externes",detail:nfmt(subBlocked)+" client(s) externe(s) n’ont pas d’abonnement payé actif et leur accès SVA reste bloqué.",go:"wholesale"};
+else if(tenantCount>0&&subBlocked>0)priority={title:"Activer les abonnements SVA externes",detail:nfmt(subBlocked)+" client(s) sans abonnement payé : accès SVA bloqué.",go:"wholesale"};
 setText("priority-action-title",priority.title);
 setText("priority-action-detail",priority.detail);
 var priorityButton=$("priority-action-btn");
