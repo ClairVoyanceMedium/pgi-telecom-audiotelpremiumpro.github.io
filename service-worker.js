@@ -10,7 +10,6 @@ const SHELL = [
 
 "./assets/command-palette-loader.js",
 "./assets/data-client.js",
-"./assets/demo-data.js",
 "./assets/app.js",
 "./assets/favicon.svg",
 "./manifest.webmanifest"
