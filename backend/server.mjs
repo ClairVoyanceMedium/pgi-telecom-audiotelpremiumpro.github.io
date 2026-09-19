@@ -274,6 +274,12 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.tenant_assignments",200,await store.listTenantAssignments(params));
       }
 
+      match=routeMatch(pathname,"/api/v1/platform/tenants/:id/control-center");
+      if(method==="GET"&&match){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.tenant_control_center",200,await store.tenantControlDetail(match.id));
+      }
+
       match=routeMatch(pathname,"/api/v1/platform/tenants/:id/status");
       if(method==="POST"&&match){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
