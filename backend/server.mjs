@@ -268,6 +268,18 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.tenants",200,await store.listTenants(params));
       }
 
+      if(method==="GET"&&pathname==="/api/v1/platform/subscription-billing"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.subscription_billing",200,await store.subscriptionBillingOverview());
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/platform/subscription-prices"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const result=await store.idempotent(req.headers["idempotency-key"],"subscription.price.publish",body,()=>store.createSubscriptionPrice(body,actor));
+        return done(res,metrics,started,"platform.subscription_price",201,{...result.value,replayed:result.replayed});
+      }
+
       if(method==="POST"&&pathname==="/api/v1/carrier-switches"){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
         const body=await readJson(req,config.bodyLimitBytes);
@@ -302,6 +314,14 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes);
         const result=await store.idempotent(req.headers["idempotency-key"],"baseline.create",body,()=>store.createBaseline(body,actor));
         return done(res,metrics,started,"baseline.create",201,{...result.value,replayed:result.replayed});
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/internal/billing/subscription-event"){
+        if(!config.externalBillingEnabled)return done(res,metrics,started,"billing.subscription_event",404,{error:{code:"EXTERNAL_BILLING_DISABLED"}});
+        authorizeBilling(req,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const result=await store.applySubscriptionBillingEvent(body);
+        return done(res,metrics,started,"billing.subscription_event",result.duplicate?200:201,result);
       }
 
       if(method==="POST"&&pathname==="/api/v1/ingest/cdr"){
@@ -484,6 +504,13 @@ function authorizeTelephony(req,config){
   const pass=i>=0?decoded.slice(i+1):"";
   if(!constantTimeTokenEqual(user,config.telephonyUser)||!constantTimeTokenEqual(pass,config.telephonyPassword)){
     const e=new Error("Invalid telephony credentials");e.status=401;e.code="TELEPHONY_AUTH_FAILED";throw e;
+  }
+}
+
+function authorizeBilling(req,config){
+  const token=String(req.headers["x-pgi-billing-token"]||"");
+  if(!config.externalBillingEnabled||!config.billingIngestToken||!constantTimeTokenEqual(token,config.billingIngestToken)){
+    const e=new Error("Invalid billing token");e.status=401;e.code="BILLING_AUTH_FAILED";throw e;
   }
 }
 
