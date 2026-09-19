@@ -339,3 +339,12 @@ Les opérations réglementaires qui nécessitent une autorité externe ne sont p
 Le cockpit peut aussi créer un nouveau client externe. La création est volontairement fail-closed : le tenant est `pending`, son KYC est `pending`, son profil de marché est `onboarding` lorsqu’un marché correspondant existe, et aucun accès SVA n’est accordé. Si langue, devise ou fuseau ne sont pas saisis, ils sont repris automatiquement depuis la configuration du marché du pays ; à défaut de marché configuré, des valeurs neutres permettent de conserver le client en attente sans bloquer l’onboarding.
 
 Le panneau Administration plateforme centralise les deux opérations transverses déjà protégées côté serveur : publication d’un nouveau tarif mensuel versionné et bascule de l’opérateur SVA. Une bascule est d’abord préparée vers une connexion SIP déjà `ready`, `active` ou `standby`, puis activée par une seconde confirmation. Le rollback reste disponible uniquement dans la fenêtre prévue et les actions d’activation/rollback sont auditées avec l’administrateur authentifié.
+
+
+## Discipline de performance 1.22
+
+Le cockpit conserve un plafond de shell critique à 260 KiB et la CI impose désormais une réserve minimale de 16 KiB sous ce plafond. Une évolution qui consommerait cette réserve doit être déplacée dans un module chargé à la demande plutôt que d’augmenter le budget.
+
+Les fonctions non indispensables au premier affichage sont donc séparées du shell : palette Actions / Ctrl K, analyse avancée, Performance Radar, administration clients, dossier client, administration plateforme, détails CDR et export CSV. Le service worker les met en cache au premier usage mais ne les impose pas au chargement initial.
+
+Après cette passe, le shell critique se situe autour de 241 Ko et `app.js` autour de 83,5 Ko. Ces valeurs sont surveillées automatiquement par la CI ; elles peuvent légèrement varier avec de futurs ajustements, mais les plafonds et la réserve obligatoire ne doivent pas être relevés pour ajouter des fonctions ordinaires.
