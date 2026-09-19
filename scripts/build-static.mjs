@@ -31,8 +31,8 @@ const files=[
   "assets/platform-admin-tools.js",
   "assets/call-tools.js",
   "assets/app.js",
-  "assets/audiotel-premium-pro-icon.png",
-  "assets/audiotel-premium-pro-logo.webp"
+  "assets/audiotel-brand-icon-v33.png",
+  "assets/audiotel-brand-logo-v33.png"
 ];
 
 for(const file of files){
