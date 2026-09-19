@@ -1420,6 +1420,56 @@ export class PostgresStore{
     return result;
   }
 
+  async createTenant(payload={},actor={}){
+    const displayName=String(payload.display_name||"").trim().slice(0,160);
+    const legalName=String(payload.legal_name||displayName).trim().slice(0,200);
+    const tenantType=String(payload.tenant_type||"customer").trim().toLowerCase();
+    const country=String(payload.country_code||"").trim().toUpperCase();
+    const billingEmail=String(payload.billing_email||"").trim().toLowerCase().slice(0,254);
+    const locale=String(payload.preferred_locale||"fr-FR").trim().slice(0,35);
+    const currency=String(payload.default_currency||"EUR").trim().toUpperCase();
+    const timezone=String(payload.timezone||"Europe/Paris").trim().slice(0,80);
+    if(displayName.length<2)throw problem(400,"TENANT_DISPLAY_NAME_REQUIRED");
+    if(!["customer","reseller"].includes(tenantType))throw problem(400,"INVALID_TENANT_TYPE");
+    if(!/^[A-Z]{2}$/.test(country))throw problem(400,"INVALID_COUNTRY_CODE");
+    if(billingEmail&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(billingEmail))throw problem(400,"INVALID_BILLING_EMAIL");
+    if(!/^[A-Z]{3}$/.test(currency))throw problem(400,"INVALID_TENANT_CURRENCY");
+    if(!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(locale))throw problem(400,"INVALID_TENANT_LOCALE");
+    if(!/^[A-Za-z0-9_+\-/]+(?:\/[A-Za-z0-9_+\-]+)*$/.test(timezone))throw problem(400,"INVALID_TENANT_TIMEZONE");
+    const slugBase=displayName.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,48)||"client";
+    const actorId=numericActor(actor);
+    const result=await this.sql.begin(async tx=>{
+      const rows=await tx.unsafe(
+        "INSERT INTO tenants(slug,display_name,legal_name,tenant_type,status,country_code,billing_email,preferred_locale,default_currency,timezone)"+
+        " VALUES($1||'-'||substr(replace(gen_random_uuid()::text,'-',''),1,8),$2,$3,$4,'pending',$5,$6,$7,$8,$9)"+
+        " RETURNING id,public_id,slug,display_name,legal_name,tenant_type,status,country_code,billing_email,preferred_locale,default_currency,timezone,home_region,capacity_tier,created_at",
+        [slugBase,displayName,legalName,tenantType,country,billingEmail||null,locale,currency,timezone]
+      );
+      const tenant=rows[0];
+      await tx.unsafe(
+        "INSERT INTO tenant_kyc_profiles(tenant_id,entity_type,registration_country,status) VALUES($1,'company',$2,'pending') ON CONFLICT(tenant_id) DO NOTHING",
+        [tenant.id,country]
+      );
+      await tx.unsafe(
+        "INSERT INTO tenant_market_profiles(tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region)"+
+        " SELECT $1,m.id,'onboarding',$2,$3,$4,'not_started',m.data_region FROM operating_markets m WHERE m.country_code=$5"+
+        " ON CONFLICT(tenant_id,market_id) DO NOTHING",
+        [tenant.id,locale,currency,timezone,country]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'tenant.create','tenant',$3,$4::jsonb)",
+        [tenant.id,actorId,String(tenant.id),JSON.stringify({public_id:tenant.public_id,country_code:country,tenant_type:tenantType,status:"pending"})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'tenant.created','tenant',$2,$3::jsonb)",
+        [tenant.id,String(tenant.id),JSON.stringify({public_id:tenant.public_id,display_name:displayName,country_code:country,status:"pending"})]
+      );
+      return tenant;
+    });
+    this.eventBus.publish("tenant.created",{public_id:result.public_id,display_name:result.display_name,country_code:result.country_code,status:result.status});
+    return result;
+  }
+
   async listTenants(params={}){
     const limit=clampInt(params.limit,50,1,250);
     const cursor=decodeNumericCursor(params.cursor);
