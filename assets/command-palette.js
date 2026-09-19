@@ -1,7 +1,7 @@
 (function(root){
   "use strict";
 
-  var selectedIndex=0;
+  var selectedIndex=0,adminModule=null,ADMIN_URL=new URL("platform-admin-tools.js",document.currentScript.src).href;
   var commands=[
     ["view-overview","Navigation","Ouvrir le Cockpit","Accueil et pilotage","dashboard accueil cockpit"],
     ["view-calls","Navigation","Ouvrir les Appels","CDR et détail","cdr telephone appels"],
@@ -11,6 +11,7 @@
     ["view-wholesale","Navigation","Ouvrir Plateforme SVA","Clients, numéros, KYC","sva wholesale clients numeros kyc"],
     ["view-system","Navigation","Ouvrir Supervision","NOC, API, CDR, résilience","systeme noc api supervision erreurs"],
     ["view-settings","Navigation","Ouvrir Paramètres","Configuration et audit","reglages parametres config"],
+    ["platform-admin","Administration","Administrer la plateforme","Tarif abonnement, opérateur, bascule et rollback","client sva tarif abonnement operateur carrier switch rollback"],
     ["period-today","Période","Afficher aujourd’hui","Période : aujourd’hui","jour today"],
     ["period-7d","Période","Afficher 7 jours","Période glissante","semaine sept jours"],
     ["period-week","Période","Afficher cette semaine","Lundi à aujourd’hui","semaine"],
@@ -63,6 +64,11 @@
   }
   function execute(id){
     close();
+    if(id==="platform-admin"){
+      if(!adminModule)adminModule=import(ADMIN_URL);
+      adminModule.then(function(m){m.open();}).catch(function(){});
+      return;
+    }
     root.dispatchEvent(new CustomEvent("pgi:command",{detail:{id:id}}));
   }
   function move(delta){
@@ -77,6 +83,7 @@
     if(button)button.addEventListener("click",function(){open();});
     if(fab)fab.addEventListener("click",function(){open();});
     if(closeButton)closeButton.addEventListener("click",close);
+    document.querySelectorAll("[data-platform-admin]").forEach(function(b){b.addEventListener("click",function(){execute("platform-admin");});});
     if(input){
       input.addEventListener("input",function(){selectedIndex=0;render();});
       input.addEventListener("keydown",function(e){
