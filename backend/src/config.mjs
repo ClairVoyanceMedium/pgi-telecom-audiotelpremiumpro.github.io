@@ -9,7 +9,9 @@ export function loadConfig(env=process.env){
   const port=integer(env.PGI_BACKEND_PORT,8080,1,65535,"PGI_BACKEND_PORT");
   const sessionSecret=env.PGI_SESSION_SECRET||"";
   const adminPasswordHash=env.PGI_ADMIN_PASSWORD_HASH||"";
-  const ingestToken=env.PGI_INGEST_TOKEN||"";\n  const externalBillingEnabled=booleanValue(env.PGI_EXTERNAL_BILLING_ENABLED,false,"PGI_EXTERNAL_BILLING_ENABLED");\n  const billingIngestToken=env.PGI_BILLING_INGEST_TOKEN||"";
+  const ingestToken=env.PGI_INGEST_TOKEN||"";
+  const externalBillingEnabled=booleanValue(env.PGI_EXTERNAL_BILLING_ENABLED,false,"PGI_EXTERNAL_BILLING_ENABLED");
+  const billingIngestToken=env.PGI_BILLING_INGEST_TOKEN||"";
   const telephonyUser=env.PGI_TELEPHONY_USER||"";
   const telephonyPassword=env.PGI_TELEPHONY_PASSWORD||"";
   const callerHashKey=env.PGI_CALLER_HASH_KEY||"";
@@ -23,7 +25,8 @@ export function loadConfig(env=process.env){
     if(authMode!=="session")throw new Error("production requires session authentication");
     if(sessionSecret.length<32)throw new Error("production requires PGI_SESSION_SECRET >= 32 characters");
     if(!adminPasswordHash)throw new Error("production requires PGI_ADMIN_PASSWORD_HASH");
-    if(ingestToken.length<24)throw new Error("production requires PGI_INGEST_TOKEN >= 24 characters");\n    if(externalBillingEnabled&&billingIngestToken.length<24)throw new Error("external billing requires PGI_BILLING_INGEST_TOKEN >= 24 characters");
+    if(ingestToken.length<24)throw new Error("production requires PGI_INGEST_TOKEN >= 24 characters");
+    if(externalBillingEnabled&&billingIngestToken.length<24)throw new Error("external billing requires PGI_BILLING_INGEST_TOKEN >= 24 characters");
     if(telephonyUser.length<3||telephonyPassword.length<24)throw new Error("production requires PGI_TELEPHONY_USER and PGI_TELEPHONY_PASSWORD >= 24 characters");
     if(callerHashKey.length<32)throw new Error("production requires PGI_CALLER_HASH_KEY >= 32 characters");
     if(!databaseUrl)throw new Error("production requires PGI_DATABASE_URL or POSTGRES_* variables");
