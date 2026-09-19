@@ -214,4 +214,4 @@ test("le cockpit analytique reste borné côté serveur",()=>{
 });
 
 
-test("B2B call destinations keep routing tenant-bound and expert-optional",()=>{for(const token of ["CREATE TABLE tenant_call_destinations","call_destination_id","tenant_scoped_call_destinations","max_concurrent_calls"])assert.ok(b2bDestinationMigration.includes(token),token);assert.ok(schema.includes("tenant_call_destinations"));assert.ok(store.includes("selectCallDestination"));assert.ok(store.includes("CALL_DESTINATION_TENANT_MISMATCH"));});
+test("B2B call destinations keep routing tenant-bound and expert-optional",()=>{for(const token of ["tenant_call_destinations","call_destination_id","tenant_scoped_call_destinations","max_concurrent_calls"])assert.ok(b2bDestinationMigration.includes(token),token);assert.ok(schema.includes("tenant_call_destinations"));assert.ok(store.includes("selectCallDestination"));assert.ok(store.includes("CALL_DESTINATION_TENANT_MISMATCH"));});
