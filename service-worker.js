@@ -7,7 +7,7 @@ const SHELL = [
 "./assets/core.js",
 "./assets/api-client.js",
 "./assets/workspace.js",
-"./assets/cockpit-pro.js",
+
 "./assets/command-palette-loader.js",
 "./assets/data-client.js",
 "./assets/demo-data.js",
