@@ -15,6 +15,7 @@ const performanceRadar=read("assets/performance-radar.js");
 const subscriptionBillingUi=read("assets/subscription-billing-ui.js");
 const customerAdmin=read("assets/customer-admin.js");
 const tenantControlDetail=read("assets/tenant-control-detail.js");
+const platformAdmin=read("assets/platform-admin-tools.js");
 const css=read("assets/styles.css");
 const sw=read("service-worker.js");
 const buildStatic=read("scripts/build-static.mjs");
@@ -251,6 +252,22 @@ test("le dossier client 1.22 centralise les opérations sans alourdir le shell",
   assert.match(tenantControlDetail,/data-expert-apply/);
   assert.match(tenantControlDetail,/data-alert-id/);
   assert.doesNotMatch(sw,/assets\/tenant-control-detail\.js/);
+});
+
+test("l’administration plateforme 1.22 pilote tarifs et bascules avec confirmations",()=>{
+  assert.match(commands,/platform-admin-tools\.js/);
+  assert.match(commands,/Administrer la plateforme/);
+  assert.match(index,/data-platform-admin/);
+  assert.match(api,/carrierSwitchOptions:function/);
+  assert.match(api,/planCarrierSwitch:function/);
+  assert.match(api,/activateCarrierSwitch:function/);
+  assert.match(api,/rollbackCarrierSwitch:function/);
+  assert.match(platformAdmin,/Publier une nouvelle version/);
+  assert.match(platformAdmin,/Préparer la bascule/);
+  assert.match(platformAdmin,/data-switch-activate/);
+  assert.match(platformAdmin,/data-switch-rollback/);
+  assert.match(platformAdmin,/confirm\(/);
+  assert.doesNotMatch(sw,/assets\/platform-admin-tools\.js/);
 });
 
 test("la PWA met en cache tous les modules du shell",()=>{
