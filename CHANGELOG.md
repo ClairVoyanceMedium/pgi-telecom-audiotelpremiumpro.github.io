@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.22.0 — 2026-09-19
+
+Cockpit d’administration totale :
+
+- dossier client centralisé ouvert directement depuis Plateforme SVA ;
+- recherche d’un client par nom, société, pays ou numéro SVA E.164 ;
+- vue unifiée identité, pays, abonnement, paiement, KYC et accès SVA ;
+- activité client agrégée sur 30 jours avec appels, durée, chiffre d’affaires et marge ;
+- administration des lignes SVA directement dans le dossier ;
+- administration du statut des experts du client ;
+- alertes impayés et acquittement depuis le dossier ;
+- reversements récents visibles sans changer d’écran ;
+- historique des actions de contrôle et audit technique regroupés ;
+- collections strictement bornées pour conserver une architecture compatible avec des millions de tenants ;
+- module dossier chargé à la demande, hors shell critique ;
+- budget lazy dédié de 20 KiB ;
+- cache PWA v25 ;
+- version front, backend, Docker et manifests scale alignée sur 1.22.0.
+
+
 ## 1.21.0 — 2026-09-19
 
 Customer Control Center :
