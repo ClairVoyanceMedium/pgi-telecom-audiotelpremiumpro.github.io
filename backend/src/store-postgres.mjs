@@ -1302,7 +1302,7 @@ export class PostgresStore{
     const lastPaymentStatus=payload.last_payment_status==null?null:String(payload.last_payment_status).trim().toLowerCase();
     if(!/^[a-z0-9_.-]{2,40}$/.test(provider))throw problem(400,"INVALID_BILLING_PROVIDER");
     if(!eventId||eventId.length>200)throw problem(400,"INVALID_BILLING_EVENT_ID");
-    if(!tenantPublicId||tenantPublicId.length>64)throw problem(400,"INVALID_BILLING_TENANT");
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantPublicId))throw problem(400,"INVALID_BILLING_TENANT");
     if(!providerSubscription||providerSubscription.length>200)throw problem(400,"INVALID_BILLING_SUBSCRIPTION_REFERENCE");
     if(!["active","past_due","suspended","cancelled","ended"].includes(status))throw problem(400,"INVALID_SUBSCRIPTION_STATUS");
     if(!Number.isInteger(priceVersionId)||priceVersionId<=0)throw problem(400,"INVALID_PRICE_VERSION");
