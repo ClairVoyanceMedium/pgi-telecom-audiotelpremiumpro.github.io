@@ -22,7 +22,9 @@ const dataClient=fs.readFileSync("assets/data-client.js","utf8");
 const commandPalette=fs.readFileSync("assets/command-palette.js","utf8");
 const commandPaletteLoader=fs.readFileSync("assets/command-palette-loader.js","utf8");
 const workspace=fs.readFileSync("assets/workspace.js","utf8");
+const indexSource=fs.readFileSync("index.html","utf8");
 const appSource=fs.readFileSync("assets/app.js","utf8");
+const customerAdmin=fs.readFileSync("assets/customer-admin.js","utf8");
 const serviceWorker=fs.readFileSync("service-worker.js","utf8");
 const buildStatic=fs.readFileSync("scripts/build-static.mjs","utf8");
 const security=fs.readFileSync("backend/src/security.mjs","utf8");
@@ -155,6 +157,8 @@ for(const file of ["assets/data-client.js","assets/command-palette-loader.js","a
 if(serviceWorker.includes("assets/demo-data.js"))failures.push("demo generator must remain outside the PWA shell precache");
 if(indexSource.includes('src="assets/demo-data.js"'))failures.push("demo generator must be loaded only on demand");
 if(!/loadDemoCalls/.test(appSource))failures.push("demo mode must lazy-load its generator");
+if(!/customer-admin\.css/.test(customerAdmin))failures.push("customer admin stylesheet must remain lazy-loaded");
+if(serviceWorker.includes("assets/customer-admin.css"))failures.push("customer admin stylesheet must stay outside the critical shell");
 if(!/quality_rollups_hourly_sharded/.test(qualityRollupMigration)||!/mos_sum/.test(qualityRollupMigration)||!/packet_loss_sum/.test(qualityRollupMigration))failures.push("quality analytics must retain bounded RTP rollups");
 if(!/writeQualityRollup/.test(postgresStore)||!/quality:quality\[0\]/.test(postgresStore))failures.push("backend must write and expose scalable voice-quality aggregates");
 for(const name of ["PGI_WORK_QUEUE_BATCH_SIZE","PGI_WORK_QUEUE_LEASE_SECONDS","PGI_WORK_QUEUE_RETRY_BASE_SECONDS","PGI_WORK_QUEUE_POLL_MS"]){
