@@ -79,6 +79,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const externalAccessAfterPriceChange=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access(t.id,NULL,now()) AS allowed FROM tenants t WHERE t.slug='integration-external'");
     assert.equal(externalAccessAfterPriceChange[0].allowed,true);
 
+    const internalExpertRows=await store.sql.unsafe("SELECT id FROM experts WHERE code='E1' LIMIT 1");
+    assert.equal(internalExpertRows.length,1);
+    const internalExpertId=Number(internalExpertRows[0].id);
+
     const envelope={
       source:"integration",
       source_event_id:"evt-1",
@@ -99,7 +103,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
         origin_carrier:"Orange",
         origin_type:"mobile",
         sva_number:"33890000000",
-        expert_id:1,
+        expert_id:internalExpertId,
         sip_final_code:200,
         quality:{mos:4.2,packet_loss_percent:0.1,jitter_ms:4,latency_ms:30,dtmf_errors:0}
       }
