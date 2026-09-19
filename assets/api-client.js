@@ -136,6 +136,10 @@
       var q=new URLSearchParams(params||{}).toString();
       return request("/platform/tenants"+(q?"?"+q:""));
     },
+    createTenant:function(payload,idempotencyKey){
+      if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");
+      return request("/platform/tenants",{method:"POST",body:payload,headers:{"Idempotency-Key":idempotencyKey}});
+    },
     tenantAssignments:function(params){
       var q=new URLSearchParams(params||{}).toString();
       return request("/platform/tenant-number-assignments"+(q?"?"+q:""));
