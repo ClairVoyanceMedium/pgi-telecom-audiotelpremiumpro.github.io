@@ -4,7 +4,7 @@ Cockpit Audiotel, financier et télécom de PGI Telecom.
 
 ## État actuel
 
-Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.21.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
+Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.22.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
 
 Fonctions déjà présentes :
 
@@ -324,3 +324,27 @@ La vue Plateforme SVA contient un centre d’administration clients chargé à l
 Un administrateur peut suspendre un client externe depuis le cockpit. La suspension bloque le tenant et suspend ses affectations SVA actives. La réactivation du tenant exige un abonnement SVA payé actif ; les lignes précédemment suspendues restent volontairement suspendues jusqu’à une réactivation explicite ligne par ligne.
 
 Le worker distribué détecte les abonnements échus ou en échec de paiement et crée une alerte persistante et dédupliquée. Une alerte peut être marquée comme vue, mais elle reste non résolue jusqu’à la réception d’un renouvellement payé valide. Le tenant interne PGI reste protégé et exempté de cette facturation.
+
+
+## Dossier client centralisé 1.22
+
+La vue Plateforme SVA dispose maintenant d’un dossier opérationnel unifié pour chaque client externe. Depuis une seule fiche, un administrateur peut voir le statut du client, son pays, son abonnement et son échéance, l’état de paiement, le KYC, l’accès SVA, l’activité des 30 derniers jours, les lignes, les experts, les alertes, les reversements récents et l’historique d’audit.
+
+Les actions disponibles depuis cette fiche réutilisent les contrôles de sécurité existants : suspension/réactivation du client, suspension/réactivation de chaque ligne, changement de présence des experts et acquittement des alertes. Les actions sensibles restent soumises aux rôles serveur et à la protection CSRF ; les mutations idempotentes conservent leur clé d’idempotence.
+
+L’annuaire reconnaît aussi un numéro SVA comme critère de recherche. La recherche ne charge jamais le parc complet : le client est retrouvé côté PostgreSQL via le préfixe E.164 indexé, puis la fiche détaillée ne charge que des collections bornées.
+
+Les opérations réglementaires qui nécessitent une autorité externe ne sont pas artificiellement automatisées : la validation KYC, l’attribution réglementaire initiale d’un numéro et les confirmations opérateur restent exposées comme états à contrôler jusqu’au branchement des fournisseurs compétents.
+
+Le cockpit peut aussi créer un nouveau client externe. La création est volontairement fail-closed : le tenant est `pending`, son KYC est `pending`, son profil de marché est `onboarding` lorsqu’un marché correspondant existe, et aucun accès SVA n’est accordé. Si langue, devise ou fuseau ne sont pas saisis, ils sont repris automatiquement depuis la configuration du marché du pays ; à défaut de marché configuré, des valeurs neutres permettent de conserver le client en attente sans bloquer l’onboarding.
+
+Le panneau Administration plateforme centralise les deux opérations transverses déjà protégées côté serveur : publication d’un nouveau tarif mensuel versionné et bascule de l’opérateur SVA. Une bascule est d’abord préparée vers une connexion SIP déjà `ready`, `active` ou `standby`, puis activée par une seconde confirmation. Le rollback reste disponible uniquement dans la fenêtre prévue et les actions d’activation/rollback sont auditées avec l’administrateur authentifié.
+
+
+## Discipline de performance 1.22
+
+Le cockpit conserve un plafond de shell critique à 260 KiB et la CI impose désormais une réserve minimale de 16 KiB sous ce plafond. Une évolution qui consommerait cette réserve doit être déplacée dans un module chargé à la demande plutôt que d’augmenter le budget.
+
+Les fonctions non indispensables au premier affichage sont donc séparées du shell : palette Actions / Ctrl K, analyse avancée, Performance Radar, administration clients, dossier client, administration plateforme, détails CDR et export CSV. Le service worker les met en cache au premier usage mais ne les impose pas au chargement initial.
+
+Après cette passe, le shell critique se situe autour de 241 Ko et `app.js` autour de 83,5 Ko. Ces valeurs sont surveillées automatiquement par la CI ; elles peuvent légèrement varier avec de futurs ajustements, mais les plafonds et la réserve obligatoire ne doivent pas être relevés pour ajouter des fonctions ordinaires.

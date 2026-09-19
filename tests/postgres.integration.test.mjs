@@ -27,6 +27,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     await store.sql.unsafe("INSERT INTO carrier_contracts(carrier_id,sva_number_id,valid_from,payout_rate_ht_per_min,mobile_deduction_ht_per_min,minimum_payable_seconds,billing_increment_seconds,payout_rounding) SELECT c.id,s.id,'2026-01-01',0.55,0.05,60,30,'floor' FROM carriers c CROSS JOIN sva_numbers s WHERE c.name='Host A' AND s.e164='33890000000'");
     await store.sql.unsafe("INSERT INTO experts(code,display_name,destination_uri,status,compensation_type,compensation_rate,tenant_id) SELECT 'E1','Expert 1','loopback/9101','available','per_minute',0.18,id FROM tenants WHERE slug='pgi-internal'");
     await store.sql.unsafe("INSERT INTO carrier_connections(carrier_id,connection_name,purpose,state,transport,endpoint_host,endpoint_port,auth_mode) SELECT id,'primary','sip_inbound','ready','udp','192.0.2.10',5060,'ip_acl' FROM carriers WHERE name='Host A'");
+    await store.sql.unsafe("INSERT INTO carrier_connections(carrier_id,connection_name,purpose,state,transport,endpoint_host,endpoint_port,auth_mode) SELECT id,'standby','sip_inbound','standby','udp','192.0.2.11',5060,'ip_acl' FROM carriers WHERE name='Host B'");
     await store.sql.unsafe("SELECT activate_logical_carrier_route('sva-primary',(SELECT id FROM carriers WHERE name='Host A'),(SELECT id FROM carrier_connections WHERE connection_name='primary'))");
 
     await store.sql.unsafe("INSERT INTO tenants(slug,display_name,legal_name,tenant_type,status,country_code,billing_email) VALUES('integration-external','External Test','External Test','customer','active','FR','billing@example.test')");
@@ -84,6 +85,20 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(directoryActive.data[0].display_name,"External Test");
     assert.equal(directoryActive.data[0].premium_call_access,true);
     assert.equal(directoryActive.data[0].active_assignments,1);
+
+    const directoryByNumber=await store.listTenants({number:"33890000001",limit:10});
+    assert.equal(directoryByNumber.data.length,1);
+    assert.equal(directoryByNumber.data[0].display_name,"External Test");
+
+    const controlDetail=await store.tenantControlDetail(externalIdentity[0].public_id);
+    assert.equal(controlDetail.tenant.display_name,"External Test");
+    assert.equal(controlDetail.tenant.premium_call_access,true);
+    assert.equal(controlDetail.subscriptions[0].status,"active");
+    assert.equal(controlDetail.lines.length,1);
+    assert.equal(controlDetail.experts.length,1);
+    assert.ok(Object.hasOwn(controlDetail,"activity"));
+    assert.ok(Array.isArray(controlDetail.audit));
+    assert.ok(Array.isArray(controlDetail.controls));
 
     let extAssignments=await store.listTenantAssignments({tenant_public_id:externalIdentity[0].public_id,limit:10});
     assert.equal(extAssignments.data.length,1);
@@ -220,6 +235,43 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
 
     const route=await store.carrierRouting();
     assert.equal(route.active_carrier,"Host A");
+
+    const carrierAdmin=await store.carrierAdminOverview();
+    assert.equal(carrierAdmin.route.active_carrier,"Host A");
+    assert.ok(carrierAdmin.targets.some(x=>x.carrier_name==="Host B"&&x.state==="standby"));
+    const target=carrierAdmin.targets.find(x=>x.carrier_name==="Host B");
+    const plannedSwitch=await store.planCarrierSwitch({route_key:"sva-primary",to_carrier_id:Number(target.carrier_id),connection_id:Number(target.connection_id),rollback_window_minutes:60,notes:"integration"},{sub:"admin"});
+    assert.equal(plannedSwitch.status,"ready");
+    const carrierAdminAfterPlan=await store.carrierAdminOverview();
+    assert.ok(carrierAdminAfterPlan.recent_switches.some(x=>Number(x.id)===Number(plannedSwitch.id)));
+
+    const activatedSwitch=await store.activateCarrierSwitch(plannedSwitch.id,{sub:"admin"});
+    assert.equal(activatedSwitch.route.active_carrier,"Host B");
+    const rolledBackSwitch=await store.rollbackCarrierSwitch(plannedSwitch.id,{sub:"admin"});
+    assert.equal(rolledBackSwitch.route.active_carrier,"Host A");
+    const switchAudit=await store.sql.unsafe("SELECT action FROM audit_log WHERE entity_type='carrier_switch' AND entity_id=$1 ORDER BY id",[String(plannedSwitch.id)]);
+    assert.deepEqual(switchAudit.map(x=>x.action),["carrier_switch.plan","carrier_switch.activate","carrier_switch.rollback"]);
+
+    const onboarded=await store.createTenant({
+      display_name:"International Onboarding Test",legal_name:"International Onboarding Test Ltd",
+      tenant_type:"customer",country_code:"FR",billing_email:"accounts@example.test",
+      preferred_locale:"",default_currency:"",timezone:""
+    },{sub:"admin"});
+    assert.equal(onboarded.status,"pending");
+    assert.equal(onboarded.country_code,"FR");
+    assert.equal(onboarded.preferred_locale,"fr-FR");
+    assert.equal(onboarded.default_currency,"EUR");
+    assert.equal(onboarded.timezone,"Europe/Paris");
+    const onboardKyc=await store.sql.unsafe("SELECT status,registration_country FROM tenant_kyc_profiles WHERE tenant_id=(SELECT id FROM tenants WHERE public_id=$1::uuid)",[onboarded.public_id]);
+    assert.equal(onboardKyc[0].status,"pending");
+    assert.equal(onboardKyc[0].registration_country,"FR");
+    const onboardPlacement=await store.sql.unsafe("SELECT state,cluster_key FROM tenant_data_placement WHERE tenant_id=(SELECT id FROM tenants WHERE public_id=$1::uuid)",[onboarded.public_id]);
+    assert.equal(onboardPlacement[0].state,"active");
+    const onboardMarket=await store.sql.unsafe("SELECT status,compliance_status FROM tenant_market_profiles WHERE tenant_id=(SELECT id FROM tenants WHERE public_id=$1::uuid)",[onboarded.public_id]);
+    assert.equal(onboardMarket[0].status,"onboarding");
+    assert.equal(onboardMarket[0].compliance_status,"not_started");
+    const onboardAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access((SELECT id FROM tenants WHERE public_id=$1::uuid),NULL,now()) AS allowed",[onboarded.public_id]);
+    assert.equal(onboardAccess[0].allowed,false);
 
     const metrics=await store.metrics();
     assert.equal(metrics.calls_total,1);

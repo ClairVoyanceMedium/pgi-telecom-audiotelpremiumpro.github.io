@@ -20,6 +20,7 @@ const migrationSafety=fs.readFileSync("scripts/check-migrations.mjs","utf8");
 const apiClient=fs.readFileSync("assets/api-client.js","utf8");
 const dataClient=fs.readFileSync("assets/data-client.js","utf8");
 const commandPalette=fs.readFileSync("assets/command-palette.js","utf8");
+const commandPaletteLoader=fs.readFileSync("assets/command-palette-loader.js","utf8");
 const workspace=fs.readFileSync("assets/workspace.js","utf8");
 const appSource=fs.readFileSync("assets/app.js","utf8");
 const serviceWorker=fs.readFileSync("service-worker.js","utf8");
@@ -144,8 +145,11 @@ if(!/maxPages=Math\.max\(1,Math\.min\(4/.test(dataClient))failures.push("CDR bro
 if(!/scheduleProductionSync\("incremental"\)/.test(appSource)||!/mode==="dashboard"/.test(appSource)||!/document\.hidden/.test(appSource)||!/scheduledSyncMode=mergeSyncMode/.test(appSource))failures.push("realtime sync must remain incremental, priority-preserving and visibility-aware");
 if(!/function renderActiveView/.test(appSource)||!/renderActiveView\(rows\)/.test(appSource))failures.push("dashboard must render only the active workspace");
 if(!/pgi:command/.test(commandPalette)||!/ctrlKey\|\|e\.metaKey/.test(commandPalette))failures.push("universal command palette must retain keyboard access");
+if(!/import\("\.\/command-palette\.js"\)/.test(commandPaletteLoader))failures.push("command palette must remain lazy-loaded through its shell loader");
+if(serviceWorker.includes("assets/command-palette.js"))failures.push("full command palette must remain outside the PWA shell precache");
+if(serviceWorker.includes("assets/cockpit-pro.js"))failures.push("advanced cockpit analytics must remain outside the PWA shell precache");
 if(!/pgi_ui_preferences/.test(workspace)||!/pgi_operating_market/.test(workspace))failures.push("workspace preferences must remain persistent");
-for(const file of ["assets/demo-data.js","assets/data-client.js","assets/command-palette.js","assets/workspace.js"]){
+for(const file of ["assets/demo-data.js","assets/data-client.js","assets/command-palette-loader.js","assets/workspace.js"]){
   if(!serviceWorker.includes(file))failures.push("PWA shell missing "+file);
 }
 if(!/quality_rollups_hourly_sharded/.test(qualityRollupMigration)||!/mos_sum/.test(qualityRollupMigration)||!/packet_loss_sum/.test(qualityRollupMigration))failures.push("quality analytics must retain bounded RTP rollups");

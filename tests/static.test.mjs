@@ -8,12 +8,16 @@ const app=read("assets/app.js");
 const api=read("assets/api-client.js");
 const dataClient=read("assets/data-client.js");
 const demoData=read("assets/demo-data.js");
+const commandLoader=read("assets/command-palette-loader.js");
 const commands=read("assets/command-palette.js");
 const workspace=read("assets/workspace.js");
 const cockpitPro=read("assets/cockpit-pro.js");
 const performanceRadar=read("assets/performance-radar.js");
 const subscriptionBillingUi=read("assets/subscription-billing-ui.js");
 const customerAdmin=read("assets/customer-admin.js");
+const tenantControlDetail=read("assets/tenant-control-detail.js");
+const platformAdmin=read("assets/platform-admin-tools.js");
+const callTools=read("assets/call-tools.js");
 const css=read("assets/styles.css");
 const sw=read("service-worker.js");
 const buildStatic=read("scripts/build-static.mjs");
@@ -146,6 +150,8 @@ test("la palette universelle accélère la navigation",()=>{
   assert.match(commands,/pgi:command/);
   assert.match(commands,/Ouvrir Finance/);
   assert.match(commands,/Exporter les appels en CSV/);
+  assert.match(commandLoader,/import\("\.\/command-palette\.js"\)/);
+  assert.doesNotMatch(index,/src="assets\/command-palette\.js"/);
   assert.match(css,/\.command-palette-btn\{/);
 });
 
@@ -188,6 +194,12 @@ test("experts opérateurs et réconciliation utilisent les agrégats serveur",()
   assert.match(app,/analytics\.carriers/);
   assert.match(app,/serverReconciliation/);
   assert.match(app,/dashboard\.reconciliation/);
+});
+
+test("le moteur analytique avancé est chargé à la demande",()=>{
+  assert.match(app,/import\("\.\/cockpit-pro\.js"\)/);
+  assert.doesNotMatch(index,/src="assets\/cockpit-pro\.js"/);
+  assert.doesNotMatch(sw,/assets\/cockpit-pro\.js/);
 });
 
 test("le Cockpit expose l'expérience appelant sans faux SLA",()=>{
@@ -238,12 +250,53 @@ test("le contrôle clients permet recherche pays impayés et suspension depuis l
   assert.doesNotMatch(sw,/assets\/customer-admin\.js/);
 });
 
+test("le dossier client 1.22 centralise les opérations sans alourdir le shell",()=>{
+  assert.match(customerAdmin,/tenant-control-detail\.js/);
+  assert.match(customerAdmin,/data-dossier/);
+  assert.match(customerAdmin,/p\.number=compact/);
+  assert.match(customerAdmin,/Nouveau client/);
+  assert.match(customerAdmin,/Créer en attente/);
+  assert.match(api,/createTenant:function/);
+  assert.match(api,/tenantControlDetail:function/);
+  assert.match(api,/setExpertStatus:function/);
+  for(const label of ["DOSSIER CLIENT CENTRALISÉ","Lignes SVA","Experts du client","Reversements récents","Historique & audit"])assert.ok(tenantControlDetail.includes(label));
+  assert.match(tenantControlDetail,/data-tenant-status/);
+  assert.match(tenantControlDetail,/data-line-status/);
+  assert.match(tenantControlDetail,/data-expert-apply/);
+  assert.match(tenantControlDetail,/data-alert-id/);
+  assert.doesNotMatch(sw,/assets\/tenant-control-detail\.js/);
+});
+
+test("les outils CDR sont chargés à la demande pour préserver app.js",()=>{
+  assert.match(app,/import\("\.\/call-tools\.js"\)/);
+  assert.match(callTools,/export function exportCsv/);
+  assert.match(callTools,/export function showDetail/);
+  assert.doesNotMatch(sw,/assets\/call-tools\.js/);
+});
+
+test("l’administration plateforme 1.22 pilote tarifs et bascules avec confirmations",()=>{
+  assert.match(commands,/platform-admin-tools\.js/);
+  assert.match(commands,/Administrer la plateforme/);
+  assert.match(index,/data-platform-admin/);
+  assert.match(api,/carrierSwitchOptions:function/);
+  assert.match(api,/planCarrierSwitch:function/);
+  assert.match(api,/activateCarrierSwitch:function/);
+  assert.match(api,/rollbackCarrierSwitch:function/);
+  assert.match(platformAdmin,/Publier une nouvelle version/);
+  assert.match(platformAdmin,/Préparer la bascule/);
+  assert.match(platformAdmin,/data-switch-activate/);
+  assert.match(platformAdmin,/data-switch-rollback/);
+  assert.match(platformAdmin,/confirm\(/);
+  assert.doesNotMatch(sw,/assets\/platform-admin-tools\.js/);
+});
+
 test("la PWA met en cache tous les modules du shell",()=>{
   for(const file of [
     "assets/demo-data.js","assets/api-client.js","assets/data-client.js",
-    "assets/command-palette.js","assets/workspace.js","assets/cockpit-pro.js","assets/app.js"
+    "assets/command-palette-loader.js","assets/workspace.js","assets/app.js"
   ])assert.ok(sw.includes(file),"service worker missing "+file);
-  assert.match(sw,/pgi-telecom-shell-v24/);
+  assert.doesNotMatch(sw,/assets\/command-palette\.js/);
+  assert.match(sw,/pgi-telecom-shell-v26/);
 });
 
 test("la release Git exacte reste visible et obligatoire",()=>{

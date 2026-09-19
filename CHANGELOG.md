@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.22.0 — 2026-09-19
+
+Cockpit d’administration totale :
+
+- dossier client centralisé ouvert directement depuis Plateforme SVA ;
+- recherche d’un client par nom, société, pays ou numéro SVA E.164 ;
+- vue unifiée identité, pays, abonnement, paiement, KYC et accès SVA ;
+- activité client agrégée sur 30 jours avec appels, durée, chiffre d’affaires et marge ;
+- administration des lignes SVA directement dans le dossier ;
+- administration du statut des experts du client ;
+- alertes impayés et acquittement depuis le dossier ;
+- reversements récents visibles sans changer d’écran ;
+- historique des actions de contrôle et audit technique regroupés ;
+- collections strictement bornées pour conserver une architecture compatible avec des millions de tenants ;
+- module dossier chargé à la demande, hors shell critique ;
+- budget lazy dédié de 20 KiB ;
+- palette Actions / Ctrl K chargée uniquement à la première utilisation ;
+- détail CDR et export CSV sortis du cœur `app.js` et chargés à la demande ;
+- moteur analytique avancé `cockpit-pro.js` chargé après le premier rendu ;
+- build statique complété pour embarquer explicitement tous les modules runtime ;
+- shell critique ramené à environ 241 Ko, avec près de 25 Ko de marge sous le plafond ;
+- `app.js` ramené à environ 83,5 Ko, avec plus de 8 Ko de marge ;
+- CI renforcée : réserve minimale de 16 KiB obligatoire sous le plafond shell de 260 KiB ;
+- cache PWA v26 ;
+- création d’un client externe directement depuis le cockpit, toujours en état `pending` et sans accès SVA automatique ;
+- initialisation KYC `pending`, placement data et profil marché onboarding lors de la création ;
+- langue, devise et fuseau résolus automatiquement depuis le marché du pays lorsqu’ils ne sont pas fournis ;
+- administration plateforme accessible depuis Plateforme SVA, Opérateurs et la palette d’actions ;
+- publication d’un nouveau tarif d’abonnement par version immuable, avec confirmation ;
+- découverte des seules connexions SIP éligibles à une bascule ;
+- changement d’opérateur en deux temps : préparer puis activer explicitement ;
+- rollback explicite dans la fenêtre configurée ;
+- activation et rollback opérateur audités avec l’administrateur authentifié ;
+- version front, backend, Docker et manifests scale alignée sur 1.22.0.
+
+
 ## 1.21.0 — 2026-09-19
 
 Customer Control Center :

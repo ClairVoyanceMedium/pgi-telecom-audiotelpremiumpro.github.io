@@ -17,10 +17,18 @@ const files=[
   "assets/styles.css",
   "assets/core.js",
   "assets/api-client.js",
+  "assets/data-client.js",
+  "assets/demo-data.js",
+  "assets/command-palette-loader.js",
+  "assets/command-palette.js",
+  "assets/workspace.js",
   "assets/cockpit-pro.js",
   "assets/performance-radar.js",
   "assets/subscription-billing-ui.js",
   "assets/customer-admin.js",
+  "assets/tenant-control-detail.js",
+  "assets/platform-admin-tools.js",
+  "assets/call-tools.js",
   "assets/app.js",
   "assets/favicon.svg"
 ];

@@ -418,6 +418,10 @@ export class MemoryStore{
     return {...this.route};
   }
 
+  async carrierAdminOverview(){
+    return {route:{...this.route},targets:[],recent_switches:this.switches.slice(-20).reverse().map(x=>({...x}))};
+  }
+
   async planCarrierSwitch(payload,actor){
     if(!payload.to_carrier_id)throw problem(400,"TO_CARRIER_REQUIRED");
     const sw={
@@ -621,6 +625,12 @@ export class MemoryStore{
     return {duplicate:false,subscription_id:1,tenant_id:null,status:String(payload.status||"active")};
   }
 
+  async createTenant(payload={}){
+    const name=String(payload.display_name||"").trim();
+    if(name.length<2)throw problem(400,"TENANT_DISPLAY_NAME_REQUIRED");
+    return {public_id:randomUUID(),slug:"demo-"+Date.now(),display_name:name,legal_name:String(payload.legal_name||name),tenant_type:String(payload.tenant_type||"customer"),status:"pending",country_code:String(payload.country_code||"FR").toUpperCase(),billing_email:payload.billing_email||null,preferred_locale:payload.preferred_locale||"fr-FR",default_currency:payload.default_currency||"EUR",timezone:payload.timezone||"Europe/Paris"};
+  }
+
   async listTenants(params={}){
     void params;
     return {data:[],next_cursor:null};
@@ -629,6 +639,11 @@ export class MemoryStore{
   async listTenantAssignments(params={}){
     void params;
     return {data:[],next_cursor:null};
+  }
+
+  async tenantControlDetail(publicId){
+    void publicId;
+    throw problem(404,"TENANT_NOT_FOUND");
   }
 
   async setTenantStatus(publicId,status){

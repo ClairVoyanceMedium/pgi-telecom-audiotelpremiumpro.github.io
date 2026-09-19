@@ -941,6 +941,31 @@ export class PostgresStore{
     return rows[0]||{route_key:"sva-primary",generation:1,active_carrier:null,standby_carrier:null};
   }
 
+  async carrierAdminOverview(){
+    const [routeRows,targets,switches]=await Promise.all([
+      this.readSql.unsafe(
+        "SELECT r.route_key,r.generation,r.active_carrier_id,r.active_connection_id,r.standby_carrier_id,r.standby_connection_id,r.updated_at,"+
+        " a.name AS active_carrier,s.name AS standby_carrier,ac.state AS active_connection_state,sc.state AS standby_connection_state"+
+        " FROM logical_carrier_routes r LEFT JOIN carriers a ON a.id=r.active_carrier_id LEFT JOIN carriers s ON s.id=r.standby_carrier_id"+
+        " LEFT JOIN carrier_connections ac ON ac.id=r.active_connection_id LEFT JOIN carrier_connections sc ON sc.id=r.standby_connection_id"+
+        " WHERE r.route_key='sva-primary'"
+      ),
+      this.readSql.unsafe(
+        "SELECT cc.id AS connection_id,cc.carrier_id,c.name AS carrier_name,cc.connection_name,cc.state,cc.transport,cc.last_health_at,cc.last_health_status"+
+        " FROM carrier_connections cc JOIN carriers c ON c.id=cc.carrier_id"+
+        " WHERE cc.purpose='sip_inbound' AND cc.state IN ('ready','active','standby') AND c.enabled"+
+        " ORDER BY CASE cc.state WHEN 'active' THEN 0 WHEN 'standby' THEN 1 ELSE 2 END,c.name,cc.id LIMIT 50"
+      ),
+      this.readSql.unsafe(
+        "SELECT sw.id,sw.route_key,sw.from_carrier_id,fc.name AS from_carrier,sw.to_carrier_id,tc.name AS to_carrier,"+
+        " sw.scheduled_for,sw.started_at,sw.completed_at,sw.rollback_deadline,sw.status,sw.validation,sw.notes,sw.requested_at AS created_at"+
+        " FROM carrier_switches sw LEFT JOIN carriers fc ON fc.id=sw.from_carrier_id LEFT JOIN carriers tc ON tc.id=sw.to_carrier_id"+
+        " WHERE sw.route_key='sva-primary' ORDER BY sw.id DESC LIMIT 20"
+      )
+    ]);
+    return {route:routeRows[0]||{route_key:"sva-primary",generation:1},targets,recent_switches:switches};
+  }
+
   async planCarrierSwitch(payload,actor){
     const connections=await this.sql.unsafe(
       "SELECT cc.id,cc.carrier_id,c.name AS carrier_name,cc.state FROM carrier_connections cc JOIN carriers c ON c.id=cc.carrier_id"+
@@ -958,17 +983,30 @@ export class PostgresStore{
       " VALUES($1,$2,$3,$4,$5::timestamptz,'ready',$6::jsonb,$7) RETURNING *",
       [payload.route_key||"sva-primary",route.active_carrier_id,connection.carrier_id,numericActor(actor),payload.scheduled_for||null,JSON.stringify({connection_id:connection.id,rollback_window_minutes:rollbackMinutes}),String(payload.notes||"")]
     );
+    await this.sql.unsafe(
+      "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'carrier_switch.plan','carrier_switch',$2,$3::jsonb)",
+      [numericActor(actor),String(rows[0].id),JSON.stringify({route_key:rows[0].route_key,to_carrier_id:Number(connection.carrier_id),connection_id:Number(connection.id),rollback_window_minutes:rollbackMinutes})]
+    );
     return rows[0];
   }
 
-  async activateCarrierSwitch(id){
+  async activateCarrierSwitch(id,actor={}){
     const result=await this.sql.begin(async tx=>{
       const switchRows=await tx.unsafe("SELECT * FROM carrier_switches WHERE id=$1 FOR UPDATE",[Number(id)]);
       const sw=switchRows[0];
       if(!sw)throw problem(404,"SWITCH_NOT_FOUND");
       if(!["ready","planned"].includes(sw.status))throw problem(409,"SWITCH_NOT_READY");
-      const connectionId=Number(sw.validation?.connection_id);
-      const rollbackMinutes=clampInt(sw.validation?.rollback_window_minutes,1440,5,10080);
+      let validation=sw.validation;
+      if(typeof validation==="string"){try{validation=JSON.parse(validation);}catch{validation={};}}
+      if(!validation||typeof validation!=="object")validation={};
+      const connectionId=Number(validation.connection_id);
+      if(!Number.isInteger(connectionId)||connectionId<=0)throw problem(409,"SWITCH_CONNECTION_MISSING");
+      const rollbackMinutes=clampInt(validation.rollback_window_minutes,1440,5,10080);
+      const connectionRows=await tx.unsafe(
+        "SELECT id,carrier_id,state FROM carrier_connections WHERE id=$1 AND carrier_id=$2 AND purpose='sip_inbound' AND state IN ('ready','active','standby') FOR UPDATE",
+        [connectionId,sw.to_carrier_id]
+      );
+      if(!connectionRows.length)throw problem(409,"TARGET_CONNECTION_NOT_READY");
       const gens=await tx.unsafe("SELECT activate_logical_carrier_route($1,$2,$3) AS generation",[sw.route_key,sw.to_carrier_id,connectionId]);
       const updated=await tx.unsafe(
         "UPDATE carrier_switches SET status='completed',started_at=COALESCE(started_at,now()),completed_at=now(),"+
@@ -981,8 +1019,8 @@ export class PostgresStore{
         [sw.from_carrier_id]
       );
       await tx.unsafe(
-        "INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('carrier_switch.activate','carrier_switch',$1,$2::jsonb)",
-        [String(sw.id),JSON.stringify({generation:gens[0].generation})]
+        "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'carrier_switch.activate','carrier_switch',$2,$3::jsonb)",
+        [numericActor(actor),String(sw.id),JSON.stringify({generation:gens[0].generation})]
       );
       return {switch:updated[0],route:await routeWith(tx,sw.route_key)};
     });
@@ -990,7 +1028,7 @@ export class PostgresStore{
     return result;
   }
 
-  async rollbackCarrierSwitch(id){
+  async rollbackCarrierSwitch(id,actor={}){
     const result=await this.sql.begin(async tx=>{
       const switchRows=await tx.unsafe("SELECT * FROM carrier_switches WHERE id=$1 FOR UPDATE",[Number(id)]);
       const sw=switchRows[0];
@@ -1003,8 +1041,8 @@ export class PostgresStore{
       await tx.unsafe("SELECT activate_logical_carrier_route($1,$2,$3)",[sw.route_key,route.standby_carrier_id,route.standby_connection_id]);
       const updated=await tx.unsafe("UPDATE carrier_switches SET status='rolled_back' WHERE id=$1 RETURNING *",[sw.id]);
       await tx.unsafe(
-        "INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('carrier_switch.rollback','carrier_switch',$1,'{}'::jsonb)",
-        [String(sw.id)]
+        "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'carrier_switch.rollback','carrier_switch',$2,'{}'::jsonb)",
+        [numericActor(actor),String(sw.id)]
       );
       return {switch:updated[0],route:await routeWith(tx,sw.route_key)};
     });
@@ -1395,6 +1433,61 @@ export class PostgresStore{
     return result;
   }
 
+  async createTenant(payload={},actor={}){
+    const displayName=String(payload.display_name||"").trim().slice(0,160);
+    const legalName=String(payload.legal_name||displayName).trim().slice(0,200);
+    const tenantType=String(payload.tenant_type||"customer").trim().toLowerCase();
+    const country=String(payload.country_code||"").trim().toUpperCase();
+    const billingEmail=String(payload.billing_email||"").trim().toLowerCase().slice(0,254);
+    const localeInput=payload.preferred_locale==null?"":String(payload.preferred_locale).trim().slice(0,35);
+    const currencyInput=payload.default_currency==null?"":String(payload.default_currency).trim().toUpperCase();
+    const timezoneInput=payload.timezone==null?"":String(payload.timezone).trim().slice(0,80);
+    if(displayName.length<2)throw problem(400,"TENANT_DISPLAY_NAME_REQUIRED");
+    if(!["customer","reseller"].includes(tenantType))throw problem(400,"INVALID_TENANT_TYPE");
+    if(!/^[A-Z]{2}$/.test(country))throw problem(400,"INVALID_COUNTRY_CODE");
+    if(billingEmail&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(billingEmail))throw problem(400,"INVALID_BILLING_EMAIL");
+    if(currencyInput&&!/^[A-Z]{3}$/.test(currencyInput))throw problem(400,"INVALID_TENANT_CURRENCY");
+    if(localeInput&&!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(localeInput))throw problem(400,"INVALID_TENANT_LOCALE");
+    if(timezoneInput&&!/^[A-Za-z0-9_+\-/]+(?:\/[A-Za-z0-9_+\-]+)*$/.test(timezoneInput))throw problem(400,"INVALID_TENANT_TIMEZONE");
+    const slugBase=displayName.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,48)||"client";
+    const actorId=numericActor(actor);
+    const result=await this.sql.begin(async tx=>{
+      const markets=await tx.unsafe("SELECT id,default_locale,default_currency,timezone,data_region FROM operating_markets WHERE country_code=$1 LIMIT 1",[country]);
+      const market=markets[0]||null;
+      const locale=localeInput||market?.default_locale||"en";
+      const currency=currencyInput||market?.default_currency||"EUR";
+      const timezone=timezoneInput||market?.timezone||"UTC";
+      const rows=await tx.unsafe(
+        "INSERT INTO tenants(slug,display_name,legal_name,tenant_type,status,country_code,billing_email,preferred_locale,default_currency,timezone)"+
+        " VALUES($1||'-'||substr(replace(gen_random_uuid()::text,'-',''),1,8),$2,$3,$4,'pending',$5,$6,$7,$8,$9)"+
+        " RETURNING id,public_id,slug,display_name,legal_name,tenant_type,status,country_code,billing_email,preferred_locale,default_currency,timezone,home_region,capacity_tier,created_at",
+        [slugBase,displayName,legalName,tenantType,country,billingEmail||null,locale,currency,timezone]
+      );
+      const tenant=rows[0];
+      await tx.unsafe(
+        "INSERT INTO tenant_kyc_profiles(tenant_id,entity_type,registration_country,status) VALUES($1,'company',$2,'pending') ON CONFLICT(tenant_id) DO NOTHING",
+        [tenant.id,country]
+      );
+      await tx.unsafe(
+        "INSERT INTO tenant_market_profiles(tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region)"+
+        " SELECT $1,m.id,'onboarding',$2,$3,$4,'not_started',m.data_region FROM operating_markets m WHERE m.country_code=$5"+
+        " ON CONFLICT(tenant_id,market_id) DO NOTHING",
+        [tenant.id,locale,currency,timezone,country]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'tenant.create','tenant',$3,$4::jsonb)",
+        [tenant.id,actorId,String(tenant.id),JSON.stringify({public_id:tenant.public_id,country_code:country,tenant_type:tenantType,status:"pending"})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'tenant.created','tenant',$2,$3::jsonb)",
+        [tenant.id,String(tenant.id),JSON.stringify({public_id:tenant.public_id,display_name:displayName,country_code:country,status:"pending"})]
+      );
+      return tenant;
+    });
+    this.eventBus.publish("tenant.created",{public_id:result.public_id,display_name:result.display_name,country_code:result.country_code,status:result.status});
+    return result;
+  }
+
   async listTenants(params={}){
     const limit=clampInt(params.limit,50,1,250);
     const cursor=decodeNumericCursor(params.cursor);
@@ -1404,6 +1497,7 @@ export class PostgresStore{
     if(status&&!["pending","active","suspended","closed"].includes(status))throw problem(400,"INVALID_TENANT_STATUS");
     const country=params.country?String(params.country).trim().toUpperCase():null;
     if(country&&!/^[A-Z]{2}$/.test(country))throw problem(400,"INVALID_COUNTRY_CODE");
+    const number=String(params.number||"").replace(/[^0-9+]/g,"").replace(/^\+/,"").slice(0,24);
     const billing=params.billing?String(params.billing).trim().toLowerCase():null;
     if(billing&&!["active","unpaid","blocked"].includes(billing))throw problem(400,"INVALID_BILLING_FILTER");
     const rows=await this.readSql.unsafe(
@@ -1416,7 +1510,8 @@ export class PostgresStore{
       " AND ($4::text IS NULL OR ($4='active' AND pgi_tenant_has_premium_call_access(t.id,NULL,now()))"+
       " OR ($4='unpaid' AND NOT EXISTS (SELECT 1 FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id WHERE s.tenant_id=t.id AND p.plan_key='external-sva-access' AND s.status='active' AND s.current_period_end>now()))"+
       " OR ($4='blocked' AND t.status='suspended'))"+
-      " AND ($5::bigint IS NULL OR t.id<$5) ORDER BY t.id DESC LIMIT $6"+
+      " AND ($5::text IS NULL OR EXISTS (SELECT 1 FROM tenant_number_assignments ta JOIN sva_numbers sn ON sn.id=ta.sva_number_id WHERE ta.tenant_id=t.id AND sn.e164 LIKE $5||'%'))"+
+      " AND ($6::bigint IS NULL OR t.id<$6) ORDER BY t.id DESC LIMIT $7"+
       ") SELECT page.id AS _cursor_id,page.public_id,page.slug,page.display_name,page.legal_name,page.tenant_type,page.status,page.country_code,"+
       " page.preferred_locale,page.default_currency,page.timezone,page.home_region,page.capacity_tier,COALESCE(k.status,'not_started') AS kyc_status,page.created_at,"+
       " COALESCE(a.assignment_count,0)::int AS number_assignments,COALESCE(a.active_assignments,0)::int AS active_assignments,"+
@@ -1426,7 +1521,7 @@ export class PostgresStore{
       " LEFT JOIN LATERAL (SELECT count(*) AS assignment_count,count(*) FILTER (WHERE status='active') AS active_assignments FROM tenant_number_assignments a WHERE a.tenant_id=page.id) a ON true"+
       " LEFT JOIN LATERAL (SELECT x.status,x.current_period_end,x.last_payment_status,x.cancel_at_period_end,x.billing_provider FROM tenant_subscriptions x JOIN service_plans sp ON sp.id=x.service_plan_id WHERE x.tenant_id=page.id AND sp.plan_key='external-sva-access' ORDER BY x.created_at DESC,x.id DESC LIMIT 1) s ON true"+
       " ORDER BY page.id DESC",
-      [q||null,status,country,billing,cursor,limit+1]
+      [q||null,status,country,billing,number||null,cursor,limit+1]
     );
     const hasMore=rows.length>limit;
     const page=hasMore?rows.slice(0,limit):rows;
@@ -1603,6 +1698,69 @@ export class PostgresStore{
     });
     this.eventBus.publish("billing.alert.acknowledged",{id,result:"acknowledged"});
     return result;
+  }
+
+  async tenantControlDetail(publicId){
+    publicId=String(publicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    const base=await this.readSql.unsafe(
+      "SELECT t.id,t.public_id,t.slug,t.display_name,t.legal_name,t.tenant_type,t.status,t.country_code,t.billing_email,"+
+      " t.preferred_locale,t.default_currency,t.timezone,t.home_region,t.capacity_tier,t.created_at,t.updated_at,"+
+      " COALESCE(k.status,'not_started') AS kyc_status,k.registration_country,k.registration_number,"+
+      " k.legal_representative_verified,k.bank_account_verified,k.reviewed_at,k.expires_at"+
+      " FROM tenants t LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id WHERE t.public_id=$1::uuid",
+      [publicId]
+    );
+    const tenant=base[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+    if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+    const id=Number(tenant.id);
+    const [subs,lines,experts,alerts,settlements,controls,audit,activity]=await Promise.all([
+      this.readSql.unsafe(
+        "SELECT s.id,s.status,s.billing_currency,s.starts_at,s.current_period_start,s.current_period_end,s.ends_at,"+
+        " s.billing_provider,s.provider_customer_reference,s.provider_subscription_reference,s.cancel_at_period_end,s.last_payment_status,s.last_event_at,"+
+        " p.plan_key,p.display_name AS plan_name,v.amount_minor,v.currency AS price_currency"+
+        " FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id"+
+        " LEFT JOIN service_plan_price_versions v ON v.id=s.price_version_id WHERE s.tenant_id=$1 ORDER BY s.created_at DESC,s.id DESC LIMIT 10",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT a.id,sn.display_number,sn.e164,sn.currency,sn.number_type,m.country_code AS market,a.tariff_code,a.assignment_type,a.status,a.kyc_status,"+
+        " c.name AS regulatory_assignor,a.valid_from,a.valid_to,pgi_tenant_has_premium_call_access($1,m.id,now()) AS premium_call_access"+
+        " FROM tenant_number_assignments a JOIN sva_numbers sn ON sn.id=a.sva_number_id LEFT JOIN operating_markets m ON m.id=sn.market_id"+
+        " LEFT JOIN carriers c ON c.id=a.regulatory_assignor_carrier_id WHERE a.tenant_id=$1 ORDER BY a.created_at DESC,a.id DESC LIMIT 100",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,code,display_name,destination_uri,status,active_calls,last_assigned_at,enabled,compensation_type,compensation_rate::float8"+
+        " FROM experts WHERE tenant_id=$1 ORDER BY display_name,id LIMIT 100",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,alert_type,severity,state,title,message,due_at,first_detected_at,last_detected_at,acknowledged_at,resolved_at"+
+        " FROM tenant_admin_alerts WHERE tenant_id=$1 ORDER BY id DESC LIMIT 50",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT s.id,m.country_code AS market,s.currency,s.period_start,s.period_end,s.upstream_payout_ht::float8,s.platform_fee_ht::float8,s.net_payout_ht::float8,"+
+        " s.status,s.payment_due_date,s.paid_at FROM tenant_settlements s LEFT JOIN operating_markets m ON m.id=s.market_id"+
+        " WHERE s.tenant_id=$1 ORDER BY s.period_end DESC,s.id DESC LIMIT 24",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,assignment_id,action,previous_status,new_status,reason,occurred_at,details FROM tenant_control_events"+
+        " WHERE tenant_id=$1 ORDER BY occurred_at DESC,id DESC LIMIT 50",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,action,entity_type,entity_id,occurred_at,details FROM audit_log WHERE tenant_id=$1 ORDER BY occurred_at DESC,id DESC LIMIT 50",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT count(*)::int AS calls_30d,count(*) FILTER (WHERE call_status='connected')::int AS connected_30d,"+
+        " COALESCE(sum(billable_seconds),0)::float8 AS billable_seconds_30d,COALESCE(sum(retail_service_amount_ttc),0)::float8 AS revenue_ttc_30d,"+
+        " COALESCE(sum(estimated_margin_ht),0)::float8 AS margin_ht_30d,max(started_at) AS last_call_at"+
+        " FROM calls WHERE tenant_id=$1 AND started_at>=now()-interval '30 days'",[id]
+      )
+    ]);
+    const access=await this.readSql.unsafe("SELECT pgi_tenant_has_premium_call_access($1,NULL,now()) AS allowed",[id]);
+    return {
+      tenant:{...tenant,premium_call_access:Boolean(access[0]?.allowed)},
+      subscriptions:subs,lines,experts,alerts,settlements,controls,audit,
+      activity:activity[0]||{calls_30d:0,connected_30d:0,billable_seconds_30d:0,revenue_ttc_30d:0,margin_ht_30d:0,last_call_at:null}
+    };
   }
 
   async wholesaleOverview(){

@@ -1,5 +1,5 @@
 (function(w){"use strict";
-var RU=new URL("performance-radar.js",document.currentScript.src).href,RL,RC;
+var RU=new URL("./performance-radar.js",import.meta.url).href,RL,RC;
 var $=id=>document.getElementById(id),C=(v,a,b)=>Math.max(a,Math.min(b,Number(v)||0)),P=(v,t)=>Number(t)>0?Number(v||0)/Number(t)*100:0,N=(v,d=1)=>new Intl.NumberFormat("fr-FR",{maximumFractionDigits:d,minimumFractionDigits:d?d:0}).format(Number(v)||0),E=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c])),L=(v,g)=>{var d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat("fr-FR",g==="hour"?{day:"2-digit",month:"2-digit",hour:"2-digit"}:{day:"2-digit",month:"2-digit"}).format(d):"—";},F=s=>{s=Math.max(0,Math.round(Number(s)||0));return s<60?s+" s":Math.floor(s/60)+"m "+String(s%60).padStart(2,"0")+"s";};
 function M(v,c){try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:c||"EUR"}).format(Number(v)||0);}catch{return N(v,2)+" €";}}
 function T(v,g,a,i){v=Number(v)||0;return i?(v<=g?"good":v<=a?"warn":"bad"):(v>=g?"good":v>=a?"warn":"bad");}

@@ -257,6 +257,11 @@ export function createBackend(options={}){
         return done(res,metrics,started,"carrier.routing",200,await store.carrierRouting());
       }
 
+      if(method==="GET"&&pathname==="/api/v1/carrier-switches/options"){
+        requireRole(actor,["admin","readonly"]);
+        return done(res,metrics,started,"carrier.switch_options",200,await store.carrierAdminOverview());
+      }
+
       if(method==="GET"&&pathname==="/api/v1/platform/overview"){
         requireRole(actor,["admin","finance","readonly"]);
         return done(res,metrics,started,"platform.overview",200,await store.wholesaleOverview());
@@ -268,10 +273,23 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.tenants",200,await store.listTenants(params));
       }
 
+      if(method==="POST"&&pathname==="/api/v1/platform/tenants"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const result=await store.idempotent(req.headers["idempotency-key"],"tenant.create",body,()=>store.createTenant(body,actor));
+        return done(res,metrics,started,"platform.tenant_create",201,{...result.value,replayed:result.replayed});
+      }
+
       if(method==="GET"&&pathname==="/api/v1/platform/tenant-number-assignments"){
         requireRole(actor,["admin","finance","readonly"]);
         const params=Object.fromEntries(url.searchParams.entries());
         return done(res,metrics,started,"platform.tenant_assignments",200,await store.listTenantAssignments(params));
+      }
+
+      match=routeMatch(pathname,"/api/v1/platform/tenants/:id/control-center");
+      if(method==="GET"&&match){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.tenant_control_center",200,await store.tenantControlDetail(match.id));
       }
 
       match=routeMatch(pathname,"/api/v1/platform/tenants/:id/status");
@@ -329,7 +347,7 @@ export function createBackend(options={}){
       if(method==="POST"&&match){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
         const body={id:match.id};
-        const result=await store.idempotent(req.headers["idempotency-key"],"carrier.switch.activate",body,()=>store.activateCarrierSwitch(match.id));
+        const result=await store.idempotent(req.headers["idempotency-key"],"carrier.switch.activate",body,()=>store.activateCarrierSwitch(match.id,actor));
         return done(res,metrics,started,"carrier.switch.activate",200,{...result.value,replayed:result.replayed});
       }
 
@@ -337,7 +355,7 @@ export function createBackend(options={}){
       if(method==="POST"&&match){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
         const body={id:match.id};
-        const result=await store.idempotent(req.headers["idempotency-key"],"carrier.switch.rollback",body,()=>store.rollbackCarrierSwitch(match.id));
+        const result=await store.idempotent(req.headers["idempotency-key"],"carrier.switch.rollback",body,()=>store.rollbackCarrierSwitch(match.id,actor));
         return done(res,metrics,started,"carrier.switch.rollback",200,{...result.value,replayed:result.replayed});
       }
 

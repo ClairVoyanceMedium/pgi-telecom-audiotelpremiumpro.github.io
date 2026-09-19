@@ -385,3 +385,12 @@ Le centre de contrôle permet deux niveaux de suspension indépendants :
 Toutes les mutations sont idempotentes au niveau API, journalisées dans `audit_log` et `tenant_control_events`, puis relayées par l’outbox. Les tenants internes sont explicitement protégés contre ces actions.
 
 Les impayés sont contrôlés par le worker distribué sous lease. La détection est bornée et s’appuie sur `tenant_subscriptions_due_idx`. Les alertes sont persistantes, dédupliquées par abonnement/période et ne sont résolues qu’après un événement de renouvellement payé correspondant.
+
+
+## Dossier client borné 1.22
+
+Le dossier client centralisé ne transforme pas le cockpit en requête globale coûteuse. L’annuaire sélectionne d’abord un tenant par curseur ou recherche indexée. Le détail est ensuite exécuté uniquement pour cet identifiant interne.
+
+Chaque sous-collection est bornée : 100 lignes, 100 experts, 50 alertes, 24 reversements, 50 événements de contrôle et 50 entrées d’audit. L’activité d’appels est agrégée sur 30 jours côté PostgreSQL. Cette stratégie rend la profondeur fonctionnelle indépendante de la taille totale du parc clients.
+
+La recherche par numéro réutilise l’index préfixe E.164 créé en 1.21. Les tables volumineuses ne sont jamais chargées intégralement dans le navigateur. Le module de fiche client est chargé à la demande et possède son propre budget, hors du shell critique initial.
