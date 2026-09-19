@@ -245,13 +245,23 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const carrierAdminAfterPlan=await store.carrierAdminOverview();
     assert.ok(carrierAdminAfterPlan.recent_switches.some(x=>Number(x.id)===Number(plannedSwitch.id)));
 
+    const activatedSwitch=await store.activateCarrierSwitch(plannedSwitch.id,{sub:"admin"});
+    assert.equal(activatedSwitch.route.active_carrier,"Host B");
+    const rolledBackSwitch=await store.rollbackCarrierSwitch(plannedSwitch.id,{sub:"admin"});
+    assert.equal(rolledBackSwitch.route.active_carrier,"Host A");
+    const switchAudit=await store.sql.unsafe("SELECT action FROM audit_log WHERE entity_type='carrier_switch' AND entity_id=$1 ORDER BY id",[String(plannedSwitch.id)]);
+    assert.deepEqual(switchAudit.map(x=>x.action),["carrier_switch.plan","carrier_switch.activate","carrier_switch.rollback"]);
+
     const onboarded=await store.createTenant({
       display_name:"International Onboarding Test",legal_name:"International Onboarding Test Ltd",
       tenant_type:"customer",country_code:"FR",billing_email:"accounts@example.test",
-      preferred_locale:"fr-FR",default_currency:"EUR",timezone:"Europe/Paris"
+      preferred_locale:"",default_currency:"",timezone:""
     },{sub:"admin"});
     assert.equal(onboarded.status,"pending");
     assert.equal(onboarded.country_code,"FR");
+    assert.equal(onboarded.preferred_locale,"fr-FR");
+    assert.equal(onboarded.default_currency,"EUR");
+    assert.equal(onboarded.timezone,"Europe/Paris");
     const onboardKyc=await store.sql.unsafe("SELECT status,registration_country FROM tenant_kyc_profiles WHERE tenant_id=(SELECT id FROM tenants WHERE public_id=$1::uuid)",[onboarded.public_id]);
     assert.equal(onboardKyc[0].status,"pending");
     assert.equal(onboardKyc[0].registration_country,"FR");
