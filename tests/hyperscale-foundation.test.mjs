@@ -16,6 +16,7 @@ const qualityRollupMigration=fs.readFileSync("database/migrations/017_quality_ro
 const experienceRollupMigration=fs.readFileSync("database/migrations/018_call_experience_rollups.sql","utf8");
 const subscriptionBillingMigration=fs.readFileSync("database/migrations/019_external_subscription_billing.sql","utf8");
 const customerControlMigration=fs.readFileSync("database/migrations/020_customer_control_center.sql","utf8");
+const customerAdminFiltersMigration=fs.readFileSync("database/migrations/021_customer_admin_filters.sql","utf8");
 const resilienceDocs=fs.readFileSync("docs/RESILIENCE.md","utf8");
 const alertRules=fs.readFileSync("infra/observability/prometheus-alerts.example.yml","utf8");
 const schema=fs.readFileSync("database/schema.sql","utf8");
@@ -102,6 +103,9 @@ test("l'annuaire client reste indexé et paginé à grande échelle",()=>{
   assert.ok(store.includes("async listTenants(params={})"));
   assert.ok(store.includes("decodeNumericCursor"));
   assert.ok(server.includes("/api/v1/platform/tenants"));
+  assert.ok(customerAdminFiltersMigration.includes("tenant_kyc_status_tenant_idx"));
+  assert.ok(store.includes("INVALID_KYC_FILTER"));
+  assert.ok(store.includes("params.kyc"));
 });
 
 
