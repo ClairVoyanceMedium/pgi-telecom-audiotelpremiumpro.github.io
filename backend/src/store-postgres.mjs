@@ -123,7 +123,8 @@ export class PostgresStore{
       " (SELECT id FROM operating_markets WHERE country_code=$3) AS market_id"+
       "), base AS ("+
       " SELECT r.bucket_start AS ts,r.currency,r.calls_total,r.calls_connected,r.calls_abandoned,r.calls_failed,"+
-      " r.conversation_seconds,r.billable_seconds,r.generated_revenue_ttc,r.expected_payout_ht,r.estimated_margin_ht"+
+      " r.conversation_seconds,r.billable_seconds,r.payout_eligible_seconds,r.generated_revenue_ttc,r.expected_payout_ht,"+
+      " r.confirmed_payout_ht,r.paid_payout_ht,r.expert_cost_ht,r.technical_cost_ht,r.estimated_margin_ht,r.reconciliation_variance_ht"+
       " FROM platform_rollups_hourly_sharded r CROSS JOIN bounds b"+
       " WHERE b.full_to>b.full_from AND r.bucket_start>=b.full_from AND r.bucket_start<b.full_to"+
       " AND ($3::text IS NULL OR r.market_id=b.market_id)"+
@@ -131,24 +132,31 @@ export class PostgresStore{
       " SELECT f.started_at AS ts,f.currency,1::bigint,"+
       " (f.call_status='connected')::int::bigint,(f.call_status='abandoned')::int::bigint,"+
       " (f.call_status NOT IN ('connected','abandoned'))::int::bigint,"+
-      " f.conversation_seconds::bigint,f.billable_seconds::bigint,"+
-      " f.retail_service_amount_ttc,f.expected_payout_ht,f.estimated_margin_ht"+
+      " f.conversation_seconds::bigint,f.billable_seconds::bigint,f.payout_eligible_seconds::bigint,"+
+      " f.retail_service_amount_ttc,f.expected_payout_ht,f.confirmed_payout_ht,f.paid_payout_ht,"+
+      " f.expert_cost_ht,f.technical_cost_ht,f.estimated_margin_ht,f.reconciliation_variance_ht"+
       " FROM call_facts f CROSS JOIN bounds b"+
       " WHERE f.started_at>=b.from_ts AND f.started_at<=b.to_ts"+
       " AND NOT (b.full_to>b.full_from AND f.started_at>=b.full_from AND f.started_at<b.full_to)"+
       " AND ($3::text IS NULL OR f.market_id=b.market_id)"+
       ") ";
 
-    const [series,hours,weekdays,heatmap,quality,dimensions]=await Promise.all([
+    const [series,hours,weekdays,heatmap,quality,qualitySeries,dimensions]=await Promise.all([
       this.readSql.unsafe(
         baseCte+
         "SELECT date_trunc($4::text,ts) AS bucket,min(currency) AS currency,count(DISTINCT currency)::int AS currency_count,"+
         " sum(calls_total)::bigint AS calls_total,sum(calls_connected)::bigint AS calls_connected,"+
         " sum(calls_abandoned)::bigint AS calls_abandoned,sum(calls_failed)::bigint AS calls_failed,"+
         " sum(conversation_seconds)::bigint AS conversation_seconds,sum(billable_seconds)::bigint AS billable_seconds,"+
+        " sum(payout_eligible_seconds)::bigint AS payout_eligible_seconds,"+
         " CASE WHEN count(DISTINCT currency)<=1 THEN sum(generated_revenue_ttc)::float8 ELSE NULL END AS revenue,"+
         " CASE WHEN count(DISTINCT currency)<=1 THEN sum(expected_payout_ht)::float8 ELSE NULL END AS expected_payout,"+
-        " CASE WHEN count(DISTINCT currency)<=1 THEN sum(estimated_margin_ht)::float8 ELSE NULL END AS margin"+
+        " CASE WHEN count(DISTINCT currency)<=1 THEN sum(confirmed_payout_ht)::float8 ELSE NULL END AS confirmed_payout,"+
+        " CASE WHEN count(DISTINCT currency)<=1 THEN sum(paid_payout_ht)::float8 ELSE NULL END AS paid_payout,"+
+        " CASE WHEN count(DISTINCT currency)<=1 THEN sum(expert_cost_ht)::float8 ELSE NULL END AS expert_cost,"+
+        " CASE WHEN count(DISTINCT currency)<=1 THEN sum(technical_cost_ht)::float8 ELSE NULL END AS technical_cost,"+
+        " CASE WHEN count(DISTINCT currency)<=1 THEN sum(estimated_margin_ht)::float8 ELSE NULL END AS margin,"+
+        " CASE WHEN count(DISTINCT currency)<=1 THEN sum(reconciliation_variance_ht)::float8 ELSE NULL END AS reconciliation_variance"+
         " FROM base GROUP BY date_trunc($4::text,ts) ORDER BY bucket",
         [from,to,market||null,granularity]
       ),
@@ -200,6 +208,34 @@ export class PostgresStore{
         [from,to,market||null]
       ),
       this.readSql.unsafe(
+        "WITH bounds AS ("+
+        " SELECT $1::timestamptz AS from_ts,$2::timestamptz AS to_ts,"+
+        " CASE WHEN $1::timestamptz=date_trunc('hour',$1::timestamptz) THEN $1::timestamptz"+
+        " ELSE date_trunc('hour',$1::timestamptz)+interval '1 hour' END AS full_from,"+
+        " date_trunc('hour',$2::timestamptz) AS full_to,"+
+        " (SELECT id FROM operating_markets WHERE country_code=$3) AS market_id"+
+        "), qbase AS ("+
+        " SELECT r.bucket_start AS ts,r.quality_samples,r.mos_sum,r.packet_loss_sum,r.jitter_ms_sum,r.latency_ms_sum,r.dtmf_errors"+
+        " FROM quality_rollups_hourly_sharded r CROSS JOIN bounds b"+
+        " WHERE b.full_to>b.full_from AND r.bucket_start>=b.full_from AND r.bucket_start<b.full_to"+
+        " AND ($3::text IS NULL OR r.market_id=b.market_id)"+
+        " UNION ALL"+
+        " SELECT c.started_at AS ts,1::bigint,COALESCE(q.mos,0),COALESCE(q.rtp_packet_loss_percent,0),"+
+        " COALESCE(q.jitter_ms,0),COALESCE(q.latency_ms,0),COALESCE(q.dtmf_errors,0)::bigint"+
+        " FROM calls c JOIN call_quality q ON q.call_id=c.id CROSS JOIN bounds b"+
+        " WHERE c.started_at>=b.from_ts AND c.started_at<=b.to_ts"+
+        " AND NOT (b.full_to>b.full_from AND c.started_at>=b.full_from AND c.started_at<b.full_to)"+
+        " AND ($3::text IS NULL OR c.market_id=b.market_id)"+
+        ") SELECT date_trunc($4::text,ts) AS bucket,COALESCE(sum(quality_samples),0)::bigint AS samples,"+
+        " CASE WHEN sum(quality_samples)>0 THEN (sum(mos_sum)/sum(quality_samples))::float8 ELSE NULL END AS mos,"+
+        " CASE WHEN sum(quality_samples)>0 THEN (sum(packet_loss_sum)/sum(quality_samples))::float8 ELSE NULL END AS packet_loss_percent,"+
+        " CASE WHEN sum(quality_samples)>0 THEN (sum(jitter_ms_sum)/sum(quality_samples))::float8 ELSE NULL END AS jitter_ms,"+
+        " CASE WHEN sum(quality_samples)>0 THEN (sum(latency_ms_sum)/sum(quality_samples))::float8 ELSE NULL END AS latency_ms,"+
+        " COALESCE(sum(dtmf_errors),0)::bigint AS dtmf_errors"+
+        " FROM qbase GROUP BY date_trunc($4::text,ts) ORDER BY bucket",
+        [from,to,market||null,granularity]
+      ),
+      this.readSql.unsafe(
         "SELECT d.dimension_type,d.dimension_key,max(d.dimension_label) AS dimension_label,"+
         " sum(d.calls_total)::bigint AS calls_total,sum(d.calls_connected)::bigint AS calls_connected,"+
         " sum(d.conversation_seconds)::bigint AS conversation_seconds,sum(d.billable_seconds)::bigint AS billable_seconds,"+
@@ -214,7 +250,7 @@ export class PostgresStore{
       )
     ]);
 
-    const countKeys=["calls_total","calls_connected","calls_abandoned","calls_failed","conversation_seconds","billable_seconds","currency_count"];
+    const countKeys=["calls_total","calls_connected","calls_abandoned","calls_failed","conversation_seconds","billable_seconds","payout_eligible_seconds","currency_count"];
     const dimensionKeys=["calls_total","calls_connected","conversation_seconds","billable_seconds"];
     const normalizedDimensions=dimensions.map(row=>numberFields(row,dimensionKeys));
     const byType={expert:[],carrier:[],duration:[]};
@@ -226,6 +262,7 @@ export class PostgresStore{
       weekdays:weekdays.map(row=>numberFields(row,["weekday","calls_total","calls_connected","billable_seconds"])),
       heatmap:heatmap.map(row=>numberFields(row,["weekday","hour","calls_total"])),
       quality:quality[0]?numberFields(quality[0],["samples","dtmf_errors"]):{samples:0,mos:null,packet_loss_percent:null,jitter_ms:null,latency_ms:null,dtmf_errors:0},
+      quality_series:qualitySeries.map(row=>numberFields(row,["samples","dtmf_errors"])),
       experts:byType.expert.slice(0,50),
       carriers:byType.carrier.slice(0,50),
       durations:byType.duration
