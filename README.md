@@ -341,10 +341,12 @@ Le cockpit peut aussi créer un nouveau client externe. La création est volonta
 Le panneau Administration plateforme centralise les deux opérations transverses déjà protégées côté serveur : publication d’un nouveau tarif mensuel versionné et bascule de l’opérateur SVA. Une bascule est d’abord préparée vers une connexion SIP déjà `ready`, `active` ou `standby`, puis activée par une seconde confirmation. Le rollback reste disponible uniquement dans la fenêtre prévue et les actions d’activation/rollback sont auditées avec l’administrateur authentifié.
 
 
-## Discipline de performance 1.22
+## Discipline de performance 1.23
 
-Le cockpit conserve un plafond de shell critique à 260 KiB et la CI impose désormais une réserve minimale de 16 KiB sous ce plafond. Une évolution qui consommerait cette réserve doit être déplacée dans un module chargé à la demande plutôt que d’augmenter le budget.
+Le cockpit conserve un plafond de shell critique à 260 KiB et la CI impose désormais une réserve minimale de 20 KiB sous ce plafond. Une évolution qui consommerait cette réserve doit être déplacée dans un module chargé à la demande plutôt que d’augmenter le budget.
 
-Les fonctions non indispensables au premier affichage sont donc séparées du shell : palette Actions / Ctrl K, analyse avancée, Performance Radar, administration clients, dossier client, administration plateforme, détails CDR et export CSV. Le service worker les met en cache au premier usage mais ne les impose pas au chargement initial.
+Les fonctions non indispensables au premier affichage sont séparées du shell : palette Actions / Ctrl K, analyse avancée, Performance Radar, administration clients, dossier client, administration plateforme, détails CDR, export CSV et générateur de données de démonstration. Les styles de l’administration clients sont eux aussi chargés uniquement à l’ouverture du module.
 
-Après cette passe, le shell critique se situe autour de 241 Ko et `app.js` autour de 83,5 Ko. Ces valeurs sont surveillées automatiquement par la CI ; elles peuvent légèrement varier avec de futurs ajustements, mais les plafonds et la réserve obligatoire ne doivent pas être relevés pour ajouter des fonctions ordinaires.
+Le centre clients reste borné et serveur-first : pagination par curseur, recherche indexée, filtres statut/pays/KYC/abonnement et endpoint de synthèse dédié. Le navigateur n’a jamais besoin de charger le parc complet, même lorsque le nombre de tenants devient très important.
+
+Après cette passe, le shell critique reste sous 238 Ko et conserve plus de 27 KiB de marge sous le plafond. Ces valeurs sont surveillées automatiquement par la CI ; les plafonds et la réserve obligatoire ne doivent pas être relevés pour ajouter des fonctions ordinaires.
