@@ -1429,22 +1429,6 @@ setInterval(function(){
 if(!document.hidden)probeApiHealth();
 },30000);
 }
-function repairBrandImages(){
-var icon=new URL("./assets/audiotel-premium-pro-icon.png?v=31",document.baseURI).href;
-var logo=new URL("./assets/audiotel-premium-pro-logo.webp?v=31",document.baseURI).href;
-qsa("img[data-brand-kind]").forEach(function(img){
-var kind=img.getAttribute("data-brand-kind"),primary=kind==="logo"?logo:icon;
-var fallback=kind==="logo"?icon:null;
-var current=img.getAttribute("src")||"";
-if(!current||current.indexOf("audiotel-premium-pro-")<0)img.src=primary;
-function failed(){
-if(fallback&&img.dataset.brandFallback!=="1"){img.dataset.brandFallback="1";img.src=fallback;return;}
-img.classList.add("brand-image-failed");
-}
-img.addEventListener("error",failed);
-if(img.complete&&img.naturalWidth===0)failed();
-});
-}
 function registerServiceWorker(){
 if(!("serviceWorker" in navigator))return;
 window.addEventListener("load",function(){
@@ -1461,7 +1445,6 @@ restoreUiPreferences();
 state.market=RUNTIME.mode==="production"&&window.PGIWorkspace?window.PGIWorkspace.readMarket():"FR";
 state.mobileOverviewExpanded=window.PGIWorkspace?window.PGIWorkspace.readMobileOverview():false;
 applyMobileOverviewMode();
-repairBrandImages();
 bind();
 switchView(state.activeView,{noScroll:true,noRender:true});
 applyRuntimeMode();
