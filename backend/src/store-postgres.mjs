@@ -986,7 +986,7 @@ export class PostgresStore{
     return rows[0];
   }
 
-  async activateCarrierSwitch(id){
+  async activateCarrierSwitch(id,actor={}){
     const result=await this.sql.begin(async tx=>{
       const switchRows=await tx.unsafe("SELECT * FROM carrier_switches WHERE id=$1 FOR UPDATE",[Number(id)]);
       const sw=switchRows[0];
@@ -1006,8 +1006,8 @@ export class PostgresStore{
         [sw.from_carrier_id]
       );
       await tx.unsafe(
-        "INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('carrier_switch.activate','carrier_switch',$1,$2::jsonb)",
-        [String(sw.id),JSON.stringify({generation:gens[0].generation})]
+        "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'carrier_switch.activate','carrier_switch',$2,$3::jsonb)",
+        [numericActor(actor),String(sw.id),JSON.stringify({generation:gens[0].generation})]
       );
       return {switch:updated[0],route:await routeWith(tx,sw.route_key)};
     });
@@ -1015,7 +1015,7 @@ export class PostgresStore{
     return result;
   }
 
-  async rollbackCarrierSwitch(id){
+  async rollbackCarrierSwitch(id,actor={}){
     const result=await this.sql.begin(async tx=>{
       const switchRows=await tx.unsafe("SELECT * FROM carrier_switches WHERE id=$1 FOR UPDATE",[Number(id)]);
       const sw=switchRows[0];
@@ -1028,8 +1028,8 @@ export class PostgresStore{
       await tx.unsafe("SELECT activate_logical_carrier_route($1,$2,$3)",[sw.route_key,route.standby_carrier_id,route.standby_connection_id]);
       const updated=await tx.unsafe("UPDATE carrier_switches SET status='rolled_back' WHERE id=$1 RETURNING *",[sw.id]);
       await tx.unsafe(
-        "INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('carrier_switch.rollback','carrier_switch',$1,'{}'::jsonb)",
-        [String(sw.id)]
+        "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'carrier_switch.rollback','carrier_switch',$2,'{}'::jsonb)",
+        [numericActor(actor),String(sw.id)]
       );
       return {switch:updated[0],route:await routeWith(tx,sw.route_key)};
     });
