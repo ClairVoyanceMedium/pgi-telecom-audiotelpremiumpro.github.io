@@ -99,3 +99,36 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     await store.close();
   }
 });
+
+
+test("PostgreSQL relay propagates realtime events across independent processes", {skip:!run}, async()=>{
+  const busA=new EventBus();
+  const busB=new EventBus();
+  const storeA=await PostgresStore.connect(config(),busA);
+  const storeB=await PostgresStore.connect(config(),busB);
+  const received=[];
+
+  try{
+    await busA.attachPostgres(storeA.sql);
+    await busB.attachPostgres(storeB.sql);
+    busB.subscribe(event=>received.push(event));
+
+    const sent=busA.publish("call.ingested",{id:987});
+    const deadline=Date.now()+2000;
+    while(received.length===0&&Date.now()<deadline){
+      await new Promise(resolve=>setTimeout(resolve,20));
+    }
+
+    assert.equal(received.length,1);
+    assert.equal(received[0].id,sent.id);
+    assert.equal(received[0].type,"call.ingested");
+    assert.deepEqual(received[0].payload,{id:987});
+    assert.equal(busA.relayStatus.received,0);
+    assert.equal(busB.relayStatus.received,1);
+  }finally{
+    await busA.close();
+    await busB.close();
+    await storeA.close();
+    await storeB.close();
+  }
+});
