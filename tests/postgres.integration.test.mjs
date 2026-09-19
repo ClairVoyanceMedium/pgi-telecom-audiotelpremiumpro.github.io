@@ -90,6 +90,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const assignmentId=Number(extAssignments.data[0].id);
     const suspendedLine=await store.setTenantAssignmentStatus(assignmentId,"suspended",{sub:"admin"},"integration");
     assert.equal(suspendedLine.status,"suspended");
+    await assert.rejects(
+      ()=>store.selectExpert({svaNumber:"33890000001"}),
+      error=>error.status===423&&error.code==="SVA_ASSIGNMENT_INACTIVE"
+    );
     const activeLine=await store.setTenantAssignmentStatus(assignmentId,"active",{sub:"admin"},"integration");
     assert.equal(activeLine.status,"active");
 
