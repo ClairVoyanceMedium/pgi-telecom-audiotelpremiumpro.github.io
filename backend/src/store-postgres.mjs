@@ -983,6 +983,10 @@ export class PostgresStore{
       " VALUES($1,$2,$3,$4,$5::timestamptz,'ready',$6::jsonb,$7) RETURNING *",
       [payload.route_key||"sva-primary",route.active_carrier_id,connection.carrier_id,numericActor(actor),payload.scheduled_for||null,JSON.stringify({connection_id:connection.id,rollback_window_minutes:rollbackMinutes}),String(payload.notes||"")]
     );
+    await this.sql.unsafe(
+      "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'carrier_switch.plan','carrier_switch',$2,$3::jsonb)",
+      [numericActor(actor),String(rows[0].id),JSON.stringify({route_key:rows[0].route_key,to_carrier_id:Number(connection.carrier_id),connection_id:Number(connection.id),rollback_window_minutes:rollbackMinutes})]
+    );
     return rows[0];
   }
 
