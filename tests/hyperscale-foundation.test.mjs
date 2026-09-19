@@ -14,6 +14,7 @@ const objectLifecycleMigration=fs.readFileSync("database/migrations/015_object_s
 const dashboardDimensionMigration=fs.readFileSync("database/migrations/016_dashboard_dimension_rollups.sql","utf8");
 const qualityRollupMigration=fs.readFileSync("database/migrations/017_quality_rollups.sql","utf8");
 const experienceRollupMigration=fs.readFileSync("database/migrations/018_call_experience_rollups.sql","utf8");
+const subscriptionBillingMigration=fs.readFileSync("database/migrations/019_external_subscription_billing.sql","utf8");
 const resilienceDocs=fs.readFileSync("docs/RESILIENCE.md","utf8");
 const alertRules=fs.readFileSync("infra/observability/prometheus-alerts.example.yml","utf8");
 const schema=fs.readFileSync("database/schema.sql","utf8");
@@ -142,6 +143,21 @@ test("les SLO sont mesurables et alertables",()=>{
   assert.ok(alertRules.includes("PGIWorkQueueDeadLetter"));
 });
 
+
+test("les clients externes ont un abonnement SVA payé versionné et PGI interne reste exempté",()=>{
+  assert.ok(subscriptionBillingMigration.includes("service_plan_price_versions"));
+  assert.ok(subscriptionBillingMigration.includes("'external-sva-access'"));
+  assert.ok(subscriptionBillingMigration.includes("200,'month'"));
+  assert.ok(subscriptionBillingMigration.includes("pgi_tenant_has_premium_call_access"));
+  assert.ok(subscriptionBillingMigration.includes("tenant_type='internal'"));
+  assert.ok(subscriptionBillingMigration.includes("tenant_number_assignments_subscription_gate"));
+  assert.ok(subscriptionBillingMigration.includes("subscription_billing_events"));
+  assert.ok(store.includes('problem(402,"SVA_SUBSCRIPTION_REQUIRED")'));
+  assert.ok(store.includes("async createSubscriptionPrice("));
+  assert.ok(store.includes("async applySubscriptionBillingEvent("));
+  assert.ok(server.includes("/api/v1/internal/billing/subscription-event"));
+  assert.ok(server.includes("/api/v1/platform/subscription-prices"));
+});
 
 test("le metered billing conserve un ledger append-only et idempotent",()=>{
   assert.ok(usageLedgerMigration.includes("CREATE TABLE tenant_usage_events"));

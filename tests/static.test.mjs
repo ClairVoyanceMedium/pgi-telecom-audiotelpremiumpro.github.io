@@ -12,6 +12,7 @@ const commands=read("assets/command-palette.js");
 const workspace=read("assets/workspace.js");
 const cockpitPro=read("assets/cockpit-pro.js");
 const performanceRadar=read("assets/performance-radar.js");
+const subscriptionBillingUi=read("assets/subscription-billing-ui.js");
 const css=read("assets/styles.css");
 const sw=read("service-worker.js");
 const buildStatic=read("scripts/build-static.mjs");
@@ -207,12 +208,23 @@ test("le Performance Radar est chargé à la demande et reste hors du shell crit
   assert.doesNotMatch(sw,/assets\/performance-radar\.js/);
 });
 
+test("la Plateforme SVA distingue abonnement externe et usage interne exempté",()=>{
+  for(const id of ["wh-sub-price","wh-sub-active","wh-sub-access","wh-sub-blocked","wh-sub-internal"])assert.ok(index.includes('id="'+id+'"'));
+  assert.match(app,/subscription_access_blocked/);
+  assert.match(app,/Activer les abonnements SVA externes/);
+  assert.match(api,/subscriptionBilling:function/);
+  assert.match(api,/createSubscriptionPrice:function/);
+  assert.match(app,/subscription-billing-ui\.js/);
+  assert.match(subscriptionBillingUi,/subscription_price_minor/);
+  assert.doesNotMatch(sw,/assets\/subscription-billing-ui\.js/);
+});
+
 test("la PWA met en cache tous les modules du shell",()=>{
   for(const file of [
     "assets/demo-data.js","assets/api-client.js","assets/data-client.js",
     "assets/command-palette.js","assets/workspace.js","assets/cockpit-pro.js","assets/app.js"
   ])assert.ok(sw.includes(file),"service worker missing "+file);
-  assert.match(sw,/pgi-telecom-shell-v22/);
+  assert.match(sw,/pgi-telecom-shell-v23/);
 });
 
 test("la release Git exacte reste visible et obligatoire",()=>{

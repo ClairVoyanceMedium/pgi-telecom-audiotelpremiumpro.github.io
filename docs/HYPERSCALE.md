@@ -358,3 +358,16 @@ Les pièces KYC, relevés opérateurs, factures, exports CDR, sauvegardes et gro
 `object_assets` conserve uniquement les références, checksum, taille, classification, région, chiffrement, rétention et legal hold.
 
 `data_retention_policies` et `data_subject_requests` préparent la gestion des durées de conservation et demandes de confidentialité par tenant et marché.
+
+
+## Abonnement mensuel des tenants externes
+
+La couche 1.20 ajoute un droit d'accès commercial distinct des reversements SVA. Elle s'applique uniquement aux tenants `customer` et `reseller`. Les tenants `internal` restent exemptés.
+
+Le plan `external-sva-access` contient l'entitlement `premium_rate_calls=true`. Son prix initial est de 200 unités mineures EUR, soit 2,00 EUR par mois. `service_plan_price_versions` conserve chaque version de prix et sa période d'effet. Un nouveau prix clôt la période de la version précédente et ajoute une nouvelle ligne ; il ne réécrit pas l'historique.
+
+L'autorisation SVA est fail-closed. `pgi_tenant_has_premium_call_access` exige, pour un tenant externe actif, un abonnement actif, une période payée non expirée, le plan SVA externe et une version tarifaire valide. Cette vérification est appliquée au routage du numéro et à l'activation d'une affectation SVA.
+
+Les notifications du futur prestataire de paiement sont normalisées dans `subscription_billing_events`, append-only et dédupliquées. Le backend n'impose pas Stripe ou un autre fournisseur : les références provider/customer/subscription sont abstraites. Cette séparation permet de changer de prestataire sans modifier les tables d'appels ou le routage télécom.
+
+Le billing externe est désactivé par défaut. Tant que `PGI_EXTERNAL_BILLING_ENABLED=false`, le déploiement compact actuel continue de fonctionner uniquement pour PGI sans nécessiter de prestataire de paiement ni de token supplémentaire.

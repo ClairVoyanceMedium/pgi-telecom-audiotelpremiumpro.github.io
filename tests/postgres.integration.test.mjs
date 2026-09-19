@@ -19,7 +19,8 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
   const bus=new EventBus();
   const store=await PostgresStore.connect(config(),bus);
   try{
-    await store.sql.unsafe("TRUNCATE TABLE settlement_call_matches,carrier_settlements,call_quality,financial_ledger,outbox_events,raw_cdr_events,calls,callers,expert_presence_events,metric_baselines,carrier_switches,number_carrier_assignments,carrier_connections,carrier_adapters,carrier_contracts,number_portability_events,experts,sva_numbers,carriers,audit_log,api_idempotency_keys RESTART IDENTITY CASCADE");
+    await store.sql.unsafe("TRUNCATE TABLE settlement_call_matches,carrier_settlements,call_quality,financial_ledger,outbox_events,raw_cdr_events,calls,callers,expert_presence_events,metric_baselines,carrier_switches,number_carrier_assignments,carrier_connections,carrier_adapters,carrier_contracts,number_portability_events,sva_numbers,carriers,audit_log,api_idempotency_keys RESTART IDENTITY CASCADE");
+    await store.sql.unsafe("UPDATE app_users SET expert_id=NULL; DELETE FROM experts");
     await store.sql.unsafe("INSERT INTO carriers(name,kind) VALUES('Host A','sva_host'),('Host B','sva_host')");
     await store.sql.unsafe("INSERT INTO logical_carrier_routes(route_key,description) VALUES('sva-primary','Integration test route')");
     await store.sql.unsafe("INSERT INTO sva_numbers(e164,display_number,tariff_code,service_rate_ttc_per_min,status,tenant_id,market_id,currency) SELECT '33890000000','0890 00 00 00','D080',0.8,'active',t.id,m.id,'EUR' FROM tenants t CROSS JOIN operating_markets m WHERE t.slug='pgi-internal' AND m.country_code='FR'");
@@ -27,6 +28,60 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     await store.sql.unsafe("INSERT INTO experts(code,display_name,destination_uri,status,compensation_type,compensation_rate,tenant_id) SELECT 'E1','Expert 1','loopback/9101','available','per_minute',0.18,id FROM tenants WHERE slug='pgi-internal'");
     await store.sql.unsafe("INSERT INTO carrier_connections(carrier_id,connection_name,purpose,state,transport,endpoint_host,endpoint_port,auth_mode) SELECT id,'primary','sip_inbound','ready','udp','192.0.2.10',5060,'ip_acl' FROM carriers WHERE name='Host A'");
     await store.sql.unsafe("SELECT activate_logical_carrier_route('sva-primary',(SELECT id FROM carriers WHERE name='Host A'),(SELECT id FROM carrier_connections WHERE connection_name='primary'))");
+
+    await store.sql.unsafe("INSERT INTO tenants(slug,display_name,legal_name,tenant_type,status,country_code,billing_email) VALUES('integration-external','External Test','External Test','customer','active','FR','billing@example.test')");
+    await store.sql.unsafe("INSERT INTO tenant_market_profiles(tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region) SELECT t.id,m.id,'active','fr-FR','EUR','Europe/Paris','verified','eu' FROM tenants t CROSS JOIN operating_markets m WHERE t.slug='integration-external' AND m.country_code='FR'");
+    await store.sql.unsafe("INSERT INTO sva_numbers(e164,display_number,tariff_code,service_rate_ttc_per_min,status,tenant_id,market_id,currency) SELECT '33890000001','0890 00 00 01','D080',0.8,'active',t.id,m.id,'EUR' FROM tenants t CROSS JOIN operating_markets m WHERE t.slug='integration-external' AND m.country_code='FR'");
+    await store.sql.unsafe("INSERT INTO experts(code,display_name,destination_uri,status,compensation_type,compensation_rate,tenant_id) SELECT 'EXT1','External Expert','loopback/9201','available','per_minute',0.18,id FROM tenants WHERE slug='integration-external'");
+
+    const internalAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access(t.id,m.id,now()) AS allowed FROM tenants t CROSS JOIN operating_markets m WHERE t.slug='pgi-internal' AND m.country_code='FR'");
+    assert.equal(internalAccess[0].allowed,true);
+
+    const billingBefore=await store.subscriptionBillingOverview();
+    assert.equal(Number(billingBefore.current_price.amount_minor),200);
+    assert.equal(billingBefore.current_price.currency,"EUR");
+    assert.equal(billingBefore.internal_usage_exempt,true);
+    assert.equal(billingBefore.summary.access_blocked,1);
+
+    await assert.rejects(
+      ()=>store.selectExpert({svaNumber:"33890000001"}),
+      error=>error.status===402&&error.code==="SVA_SUBSCRIPTION_REQUIRED"
+    );
+    await assert.rejects(
+      ()=>store.sql.unsafe("INSERT INTO tenant_number_assignments(tenant_id,sva_number_id,assignment_type,status,valid_from) SELECT t.id,s.id,'customer_service','active',now() FROM tenants t CROSS JOIN sva_numbers s WHERE t.slug='integration-external' AND s.e164='33890000001'"),
+      /active paid subscription required/
+    );
+
+    const externalIdentity=await store.sql.unsafe("SELECT public_id::text AS public_id FROM tenants WHERE slug='integration-external'");
+    const priceId=Number(billingBefore.current_price.id);
+    const now=new Date();
+    const periodEnd=new Date(now.getTime()+31*86400000);
+    const billingEvent={
+      provider:"testpay",provider_event_id:"sub-paid-1",tenant_public_id:externalIdentity[0].public_id,
+      provider_customer_reference:"cus-test-1",provider_subscription_reference:"sub-test-1",
+      event_type:"subscription.paid",status:"active",event_time:now.toISOString(),
+      current_period_start:now.toISOString(),current_period_end:periodEnd.toISOString(),
+      price_version_id:priceId,last_payment_status:"paid"
+    };
+    const applied=await store.applySubscriptionBillingEvent(billingEvent);
+    assert.equal(applied.duplicate,false);
+    assert.equal(applied.status,"active");
+    const duplicateBilling=await store.applySubscriptionBillingEvent(billingEvent);
+    assert.equal(duplicateBilling.duplicate,true);
+
+    const externalExpert=await store.selectExpert({svaNumber:"33890000001"});
+    assert.equal(externalExpert.display_name,"External Expert");
+    await store.releaseExpert(externalExpert.id);
+    await store.sql.unsafe("INSERT INTO tenant_number_assignments(tenant_id,sva_number_id,assignment_type,status,valid_from) SELECT t.id,s.id,'customer_service','active',now() FROM tenants t CROSS JOIN sva_numbers s WHERE t.slug='integration-external' AND s.e164='33890000001'");
+
+    const newPrice=await store.createSubscriptionPrice({amount_minor:350,currency:"EUR",effective_from:new Date(now.getTime()+60000).toISOString()},{sub:"admin"});
+    assert.equal(Number(newPrice.amount_minor),350);
+    const externalAccessAfterPriceChange=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access(t.id,NULL,now()) AS allowed FROM tenants t WHERE t.slug='integration-external'");
+    assert.equal(externalAccessAfterPriceChange[0].allowed,true);
+
+    const internalExpertRows=await store.sql.unsafe("SELECT id FROM experts WHERE code='E1' LIMIT 1");
+    assert.equal(internalExpertRows.length,1);
+    const internalExpertId=Number(internalExpertRows[0].id);
 
     const envelope={
       source:"integration",
@@ -48,7 +103,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
         origin_carrier:"Orange",
         origin_type:"mobile",
         sva_number:"33890000000",
-        expert_id:1,
+        expert_id:internalExpertId,
         sip_final_code:200,
         quality:{mos:4.2,packet_loss_percent:0.1,jitter_ms:4,latency_ms:30,dtmf_errors:0}
       }
@@ -105,7 +160,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(rawPayload[0].has_caller_id_number,false);
     assert.equal(rawPayload[0].has_secret_field,false);
 
-    const expert=await store.selectExpert();
+    const expert=await store.selectExpert({svaNumber:"33890000000"});
     assert.equal(expert.display_name,"Expert 1");
 
     const route=await store.carrierRouting();
@@ -114,10 +169,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const metrics=await store.metrics();
     assert.equal(metrics.calls_total,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
-    assert.equal(migrations.length,18);
+    assert.equal(migrations.length,19);
     assert.equal(new Set(migrations.map(x=>x.version)).size,migrations.length);
     assert.equal(migrations[0].version,"001_baseline");
-    assert.equal(migrations.at(-1).version,"018_call_experience_rollups");
+    assert.equal(migrations.at(-1).version,"019_external_subscription_billing");
     for(const migration of migrations)assert.match(migration.checksum,/^[a-f0-9]{64}$/);
   }finally{
     await store.close();

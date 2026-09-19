@@ -10,6 +10,8 @@ export function loadConfig(env=process.env){
   const sessionSecret=env.PGI_SESSION_SECRET||"";
   const adminPasswordHash=env.PGI_ADMIN_PASSWORD_HASH||"";
   const ingestToken=env.PGI_INGEST_TOKEN||"";
+  const externalBillingEnabled=booleanValue(env.PGI_EXTERNAL_BILLING_ENABLED,false,"PGI_EXTERNAL_BILLING_ENABLED");
+  const billingIngestToken=env.PGI_BILLING_INGEST_TOKEN||"";
   const telephonyUser=env.PGI_TELEPHONY_USER||"";
   const telephonyPassword=env.PGI_TELEPHONY_PASSWORD||"";
   const callerHashKey=env.PGI_CALLER_HASH_KEY||"";
@@ -24,6 +26,7 @@ export function loadConfig(env=process.env){
     if(sessionSecret.length<32)throw new Error("production requires PGI_SESSION_SECRET >= 32 characters");
     if(!adminPasswordHash)throw new Error("production requires PGI_ADMIN_PASSWORD_HASH");
     if(ingestToken.length<24)throw new Error("production requires PGI_INGEST_TOKEN >= 24 characters");
+    if(externalBillingEnabled&&billingIngestToken.length<24)throw new Error("external billing requires PGI_BILLING_INGEST_TOKEN >= 24 characters");
     if(telephonyUser.length<3||telephonyPassword.length<24)throw new Error("production requires PGI_TELEPHONY_USER and PGI_TELEPHONY_PASSWORD >= 24 characters");
     if(callerHashKey.length<32)throw new Error("production requires PGI_CALLER_HASH_KEY >= 32 characters");
     if(!databaseUrl)throw new Error("production requires PGI_DATABASE_URL or POSTGRES_* variables");
@@ -32,7 +35,7 @@ export function loadConfig(env=process.env){
 
   return Object.freeze({
     mode,authMode,host,port,releaseId,
-    sessionSecret,adminPasswordHash,ingestToken,telephonyUser,telephonyPassword,callerHashKey,databaseUrl,databaseReadUrl,databaseSsl,
+    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,telephonyUser,telephonyPassword,callerHashKey,databaseUrl,databaseReadUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),
     bodyLimitBytes:integer(env.PGI_BODY_LIMIT_BYTES,262144,4096,10485760,"PGI_BODY_LIMIT_BYTES"),
@@ -57,7 +60,7 @@ export function loadConfig(env=process.env){
     expertCostHtPerMin:number(env.PGI_EXPERT_COST_HT_PER_MIN,0.18,0,100,"PGI_EXPERT_COST_HT_PER_MIN"),
     technicalCostHtPerCall:number(env.PGI_TECHNICAL_COST_HT_PER_CALL,0,0,100,"PGI_TECHNICAL_COST_HT_PER_CALL"),
     reconciliationToleranceHt:number(env.PGI_RECONCILIATION_TOLERANCE_HT,0.01,0,100,"PGI_RECONCILIATION_TOLERANCE_HT"),
-    version:env.PGI_VERSION||"1.19.0"
+    version:env.PGI_VERSION||"1.20.0"
   });
 }
 
