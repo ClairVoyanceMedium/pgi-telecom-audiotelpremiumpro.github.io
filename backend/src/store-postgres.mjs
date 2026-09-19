@@ -958,7 +958,7 @@ export class PostgresStore{
       ),
       this.readSql.unsafe(
         "SELECT sw.id,sw.route_key,sw.from_carrier_id,fc.name AS from_carrier,sw.to_carrier_id,tc.name AS to_carrier,"+
-        " sw.scheduled_for,sw.started_at,sw.completed_at,sw.rollback_deadline,sw.status,sw.validation,sw.notes,sw.created_at"+
+        " sw.scheduled_for,sw.started_at,sw.completed_at,sw.rollback_deadline,sw.status,sw.validation,sw.notes,sw.requested_at AS created_at"+
         " FROM carrier_switches sw LEFT JOIN carriers fc ON fc.id=sw.from_carrier_id LEFT JOIN carriers tc ON tc.id=sw.to_carrier_id"+
         " WHERE sw.route_key='sva-primary' ORDER BY sw.id DESC LIMIT 20"
       )
