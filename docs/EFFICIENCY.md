@@ -112,15 +112,13 @@ Le runtime est séparé en modules cacheables :
 - `core.js` : logique métier pure ;
 - `api-client.js` : transport HTTP ;
 - `data-client.js` : bootstrap, pagination et normalisation CDR ;
-- `demo-data.js` : génération démo uniquement ;
-- `command-palette.js` : accès rapide ;
+- `demo-data.js` : génération démo uniquement, chargé à la demande et jamais dans le shell de production ;\n- `customer-admin.js` + `customer-admin.css` : administration clients chargée à la demande ;\n- `command-palette.js` : accès rapide ;
 - `workspace.js` : préférences locales ;
 - `app.js` : orchestration et rendu.
 
 Le fichier principal reste plafonné à 90 KiB.
 
-Le shell complet reste plafonné à 260 KiB.
-
+Le shell complet reste plafonné à 260 KiB, avec une réserve CI obligatoire d’au moins 20 KiB.\n\nLes compteurs du parc clients utilisent un endpoint de synthèse dédié ; les listes restent paginées par curseur et les filtres KYC/statut/pays sont exécutés côté PostgreSQL.\n
 ## Règles de performance
 
 1. Ne jamais recharger tout l'historique CDR pour un événement temps réel.
