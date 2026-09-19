@@ -27,6 +27,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     await store.sql.unsafe("INSERT INTO carrier_contracts(carrier_id,sva_number_id,valid_from,payout_rate_ht_per_min,mobile_deduction_ht_per_min,minimum_payable_seconds,billing_increment_seconds,payout_rounding) SELECT c.id,s.id,'2026-01-01',0.55,0.05,60,30,'floor' FROM carriers c CROSS JOIN sva_numbers s WHERE c.name='Host A' AND s.e164='33890000000'");
     await store.sql.unsafe("INSERT INTO experts(code,display_name,destination_uri,status,compensation_type,compensation_rate,tenant_id) SELECT 'E1','Expert 1','loopback/9101','available','per_minute',0.18,id FROM tenants WHERE slug='pgi-internal'");
     await store.sql.unsafe("INSERT INTO carrier_connections(carrier_id,connection_name,purpose,state,transport,endpoint_host,endpoint_port,auth_mode) SELECT id,'primary','sip_inbound','ready','udp','192.0.2.10',5060,'ip_acl' FROM carriers WHERE name='Host A'");
+    await store.sql.unsafe("INSERT INTO carrier_connections(carrier_id,connection_name,purpose,state,transport,endpoint_host,endpoint_port,auth_mode) SELECT id,'standby','sip_inbound','standby','udp','192.0.2.11',5060,'ip_acl' FROM carriers WHERE name='Host B'");
     await store.sql.unsafe("SELECT activate_logical_carrier_route('sva-primary',(SELECT id FROM carriers WHERE name='Host A'),(SELECT id FROM carrier_connections WHERE connection_name='primary'))");
 
     await store.sql.unsafe("INSERT INTO tenants(slug,display_name,legal_name,tenant_type,status,country_code,billing_email) VALUES('integration-external','External Test','External Test','customer','active','FR','billing@example.test')");
@@ -234,6 +235,15 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
 
     const route=await store.carrierRouting();
     assert.equal(route.active_carrier,"Host A");
+
+    const carrierAdmin=await store.carrierAdminOverview();
+    assert.equal(carrierAdmin.route.active_carrier,"Host A");
+    assert.ok(carrierAdmin.targets.some(x=>x.carrier_name==="Host B"&&x.state==="standby"));
+    const target=carrierAdmin.targets.find(x=>x.carrier_name==="Host B");
+    const plannedSwitch=await store.planCarrierSwitch({route_key:"sva-primary",to_carrier_id:Number(target.carrier_id),connection_id:Number(target.connection_id),rollback_window_minutes:60,notes:"integration"},{sub:"admin"});
+    assert.equal(plannedSwitch.status,"ready");
+    const carrierAdminAfterPlan=await store.carrierAdminOverview();
+    assert.ok(carrierAdminAfterPlan.recent_switches.some(x=>Number(x.id)===Number(plannedSwitch.id)));
 
     const metrics=await store.metrics();
     assert.equal(metrics.calls_total,1);
