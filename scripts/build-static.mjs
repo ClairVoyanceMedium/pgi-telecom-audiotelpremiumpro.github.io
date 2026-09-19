@@ -66,7 +66,7 @@ const config={
 
 fs.writeFileSync(
   path.join(dist,"assets","config.js"),
-  "window.PGI_CONFIG = Object.freeze("+JSON.stringify(config,null,2)+");\n",
+  "window.PGI_CONFIG = Object.freeze("+JSON.stringify(config)+");\n",
   "utf8"
 );
 
