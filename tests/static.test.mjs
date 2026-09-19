@@ -105,10 +105,12 @@ test("la production exige une authentification et peut se déconnecter",()=>{
   assert.match(app,/stopProductionEvents/);
 });
 
-test("la production ne fabrique aucun faux CDR local",()=>{
-  assert.match(app,/RUNTIME\.mode==="production"\?\[\]/);
-  assert.match(app,/PGIDemoData\.buildCalls/);
+test("la production ne charge aucun faux CDR local",()=>{
+  assert.match(app,/function loadDemoCalls/);
+  assert.match(app,/RUNTIME\.mode==="production"\)return Promise\.resolve/);
+  assert.match(app,/s\.src="assets\/demo-data\.js"/);
   assert.match(demoData,/function buildCalls/);
+  assert.doesNotMatch(index,/src="assets\/demo-data\.js"/);
   assert.doesNotMatch(dataClient,/computeCallFinancials|CONFIG\.serviceRate|CONFIG\.payoutRate/);
 });
 
