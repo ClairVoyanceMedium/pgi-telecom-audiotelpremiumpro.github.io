@@ -42,8 +42,9 @@ test("la remise à zéro reste non destructive",()=>{
 });
 
 test("le thème fonctionnel et le design mobile restent verrouillés",()=>{
-  for(const token of ["--cyan","--green","--amber","--red","--purple"])assert.ok(css.includes(token));
+  for(const token of ["--cyan","--green","--amber","--red","--purple","--bg:#17100c","--surface:#211711"])assert.ok(css.includes(token));
   assert.match(index,/viewport-fit=cover/);
+  assert.match(index,/theme-color" content="#17100c"/);
   assert.match(index,/mobile-web-app-capable/);
   assert.match(index,/apple-mobile-web-app-capable/);
   assert.match(css,/100dvh/);
@@ -311,7 +312,7 @@ test("la PWA met en cache uniquement le shell critique",()=>{
   assert.match(app,/loadDemoCalls/);
   assert.doesNotMatch(sw,/assets\/command-palette\.js/);
   assert.doesNotMatch(sw,/assets\/customer-admin\.css/);
-  assert.match(sw,/pgi-telecom-shell-v33/);
+  assert.match(sw,/pgi-telecom-shell-v34/);
 });
 
 test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiques",()=>{
@@ -323,7 +324,7 @@ test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiqu
   assert.match(css,/\.auth-brand-logo\{/);
   assert.match(sw,/audiotel-brand-icon-v33\.png/);
   assert.match(sw,/audiotel-brand-logo-v33\.png/);
-  assert.match(sw,/pgi-telecom-shell-v33/);
+  assert.match(sw,/pgi-telecom-shell-v34/);
   assert.match(buildStatic,/audiotel-brand-logo-v33\.png/);
   assert.doesNotMatch(css,/brand-mark|command-brand-emblem|auth-brand-lockup|auth-brand-emblem/);
   assert.doesNotMatch(sw,/favicon\.svg/);
