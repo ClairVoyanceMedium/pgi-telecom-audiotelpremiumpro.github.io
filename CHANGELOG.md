@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.21.0 — 2026-09-19
+
+Customer Control Center :
+
+- administration des clients externes directement depuis Plateforme SVA ;
+- recherche serveur indexée par nom, raison sociale, slug, pays, statut et état d’abonnement ;
+- pagination par curseur, 50 clients par page dans le cockpit, sans chargement massif côté navigateur ;
+- suspension/réactivation d’un client avec audit et idempotence ;
+- suspension automatique de ses affectations SVA actives lors d’une suspension client ;
+- réactivation client refusée sans abonnement SVA payé actif ;
+- réactivation des lignes volontairement explicite, ligne par ligne ;
+- suspension/réactivation d’une ligne SVA directement depuis le cockpit ;
+- routage téléphonique bloqué si l’affectation externe n’est pas active ;
+- détection distribuée des abonnements échus ou en échec de paiement ;
+- alertes impayés persistantes et dédupliquées, visibles dans le cockpit ;
+- une alerte marquée « vue » reste non résolue jusqu’au renouvellement payé correspondant ;
+- tenant interne PGI protégé contre les suspensions externes et toujours exempté d’abonnement ;
+- nom PGI • Telecom - Audiotel Premium Pro renforcé visuellement ;
+- accès Paramètres volontairement moins proéminent ;
+- module d’administration client chargé à la demande pour protéger le shell critique ;
+- migration 020 et cache PWA v24 ;
+- version front, backend, Docker et manifests scale alignée sur 1.21.0.
+
 ## 1.20.0 — 2026-09-19
 
 External Subscription Gate :
