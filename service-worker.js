@@ -1,4 +1,4 @@
-const CACHE_NAME = "pgi-telecom-shell-v28";
+const CACHE_NAME = "pgi-telecom-shell-v29";
 const SHELL = [
 "./",
 "./index.html",
@@ -13,6 +13,7 @@ const SHELL = [
 "./assets/app.js",
 "./assets/favicon.svg",
 "./assets/audiotel-premium-pro-icon.png",
+"./assets/audiotel-premium-pro-logo.webp",
 "./manifest.webmanifest"
 ];
 self.addEventListener("install", event => {

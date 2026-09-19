@@ -24,6 +24,7 @@ const required = [
   "assets/app.js",
   "assets/favicon.svg",
   "assets/audiotel-premium-pro-icon.png",
+  "assets/audiotel-premium-pro-logo.webp",
   "manifest.webmanifest",
   "service-worker.js",
   "README.md",
