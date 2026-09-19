@@ -28,6 +28,7 @@ const files=[
   "assets/customer-admin.js",
   "assets/tenant-control-detail.js",
   "assets/platform-admin-tools.js",
+  "assets/call-tools.js",
   "assets/app.js",
   "assets/favicon.svg"
 ];
