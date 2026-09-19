@@ -22,6 +22,7 @@ const files=[
   "assets/subscription-billing-ui.js",
   "assets/customer-admin.js",
   "assets/tenant-control-detail.js",
+  "assets/platform-admin-tools.js",
   "assets/app.js",
   "assets/favicon.svg"
 ];
