@@ -18,6 +18,7 @@ const files=[
   "assets/core.js",
   "assets/api-client.js",
   "assets/cockpit-pro.js",
+  "assets/performance-radar.js",
   "assets/app.js",
   "assets/favicon.svg"
 ];
