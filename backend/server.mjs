@@ -273,6 +273,13 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.tenants",200,await store.listTenants(params));
       }
 
+      if(method==="POST"&&pathname==="/api/v1/platform/tenants"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const result=await store.idempotent(req.headers["idempotency-key"],"tenant.create",body,()=>store.createTenant(body,actor));
+        return done(res,metrics,started,"platform.tenant_create",201,{...result.value,replayed:result.replayed});
+      }
+
       if(method==="GET"&&pathname==="/api/v1/platform/tenant-number-assignments"){
         requireRole(actor,["admin","finance","readonly"]);
         const params=Object.fromEntries(url.searchParams.entries());
