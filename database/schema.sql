@@ -1272,6 +1272,13 @@ CREATE INDEX capacity_snapshots_lookup_idx
 CREATE INDEX capacity_snapshots_cluster_idx
   ON capacity_snapshots(cluster_key,measured_at DESC);
 
+-- Customer-control indexes. Migration 021 keeps existing databases aligned.
+CREATE INDEX IF NOT EXISTS tenant_kyc_status_tenant_idx
+  ON tenant_kyc_profiles(status,tenant_id);
+CREATE INDEX IF NOT EXISTS tenants_admin_status_country_id_idx
+  ON tenants(status,country_code,id DESC)
+  WHERE tenant_type <> 'internal';
+
 -- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
 -- against the immutable migration files before seeding schema_migrations.
 CREATE TABLE schema_bootstrap_migrations (
