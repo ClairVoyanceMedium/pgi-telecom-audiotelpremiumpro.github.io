@@ -164,7 +164,7 @@ export function createBackend(options={}){
           previous_summary:previousSummary,
           analytics,
           experts:{data:experts},
-          system,
+          system:runtimeSystemSnapshot(system,eventBus,workers,config),
           route,
           reconciliation:{data:reconciliation},
           server_time:new Date().toISOString()
@@ -248,7 +248,8 @@ export function createBackend(options={}){
 
       if(method==="GET"&&pathname==="/api/v1/system/health"){
         requireRole(actor,["admin","readonly"]);
-        return done(res,metrics,started,"system.health",200,await store.systemSnapshot());
+        const system=await store.systemSnapshot();
+        return done(res,metrics,started,"system.health",200,runtimeSystemSnapshot(system,eventBus,workers,config));
       }
 
       if(method==="GET"&&pathname==="/api/v1/carrier-routing"){
@@ -398,6 +399,36 @@ export function evaluateReadiness(snapshot,workers,config,nowMs=Date.now()){
     }
   };
 }
+function runtimeSystemSnapshot(system,eventBus,workers,config){
+  const relay=eventBus?.relayStatus||{};
+  return {
+    ...(system||{}),
+    realtime:{
+      attached:Boolean(relay.attached),
+      listening:Boolean(relay.listening),
+      published:Number(relay.published||0),
+      received:Number(relay.received||0),
+      errors:Number(relay.errors||0),
+      subscribers:Number(eventBus?.size||0)
+    },
+    workers:{
+      process_role:config?.processRole||"all",
+      disabled:Boolean(workers?.stats?.disabled),
+      outbox_runs:Number(workers?.stats?.outboxRuns||0),
+      outbox_errors:Number(workers?.stats?.outboxErrors||0),
+      alerts_runs:Number(workers?.stats?.alertsRuns||0),
+      alerts_errors:Number(workers?.stats?.alertsErrors||0),
+      queue_runs:Number(workers?.stats?.queueRuns||0),
+      queue_errors:Number(workers?.stats?.queueErrors||0),
+      queue_processed:Number(workers?.stats?.queueProcessed||0),
+      queue_dead_letters:Number(workers?.stats?.queueDeadLetters||0),
+      last_outbox_success_at:workers?.stats?.lastOutboxSuccessAt||null,
+      last_alerts_success_at:workers?.stats?.lastAlertsSuccessAt||null,
+      last_queue_success_at:workers?.stats?.lastQueueSuccessAt||null
+    }
+  };
+}
+
 function disabledWorkers(){
   return {
     stats:{
