@@ -1296,9 +1296,7 @@ CREATE INDEX tenant_call_destinations_tenant_idx ON tenant_call_destinations(ten
 ALTER TABLE calls ADD COLUMN call_destination_id bigint REFERENCES tenant_call_destinations(id);
 ALTER TABLE calls ADD COLUMN call_destination_label text;
 CREATE INDEX calls_destination_started_idx ON calls(call_destination_id,started_at DESC) WHERE call_destination_id IS NOT NULL;
-CREATE VIEW tenant_scoped_call_destinations WITH (security_barrier=true) AS
-SELECT id,tenant_id,sva_number_id,label,destination_type,destination_uri,priority,status,failover_enabled,max_concurrent_calls,active_calls,last_assigned_at,last_health_at,last_health_status,created_at,updated_at
-FROM tenant_call_destinations WHERE tenant_id=pgi_require_tenant_context();
+-- La vue tenant_scoped_call_destinations est créée par la migration 022 après la frontière SQL tenant.
 
 -- Customer-control indexes. Migration 021 keeps existing databases aligned.
 CREATE INDEX IF NOT EXISTS tenant_kyc_status_tenant_idx
