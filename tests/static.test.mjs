@@ -290,11 +290,14 @@ test("l’administration plateforme 1.22 pilote tarifs et bascules avec confirma
   assert.doesNotMatch(sw,/assets\/platform-admin-tools\.js/);
 });
 
-test("la PWA met en cache tous les modules du shell",()=>{
+test("la PWA met en cache uniquement le shell critique",()=>{
   for(const file of [
-    "assets/demo-data.js","assets/api-client.js","assets/data-client.js",
+    "assets/api-client.js","assets/data-client.js",
     "assets/command-palette-loader.js","assets/workspace.js","assets/app.js"
   ])assert.ok(sw.includes(file),"service worker missing "+file);
+  assert.doesNotMatch(sw,/assets\/demo-data\.js/);
+  assert.doesNotMatch(index,/src="assets\/demo-data\.js"/);
+  assert.match(app,/loadDemoCalls/);
   assert.doesNotMatch(sw,/assets\/command-palette\.js/);
   assert.match(sw,/pgi-telecom-shell-v26/);
 });
