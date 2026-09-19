@@ -307,7 +307,7 @@ test("la PWA met en cache uniquement le shell critique",()=>{
   assert.match(app,/loadDemoCalls/);
   assert.doesNotMatch(sw,/assets\/command-palette\.js/);
   assert.doesNotMatch(sw,/assets\/customer-admin\.css/);
-  assert.match(sw,/pgi-telecom-shell-v29/);
+  assert.match(sw,/pgi-telecom-shell-v30/);
 });
 
 test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiques",()=>{
@@ -320,6 +320,9 @@ test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiqu
   assert.match(sw,/audiotel-premium-pro-icon\.png/);
   assert.match(sw,/audiotel-premium-pro-logo\.webp/);
   assert.match(buildStatic,/audiotel-premium-pro-logo\.webp/);
+  assert.doesNotMatch(css,/brand-mark|command-brand-emblem|auth-brand-lockup|auth-brand-emblem/);
+  assert.doesNotMatch(sw,/favicon\.svg/);
+  assert.doesNotMatch(buildStatic,/favicon\.svg/);
 });
 
 test("la release Git exacte reste visible et obligatoire",()=>{

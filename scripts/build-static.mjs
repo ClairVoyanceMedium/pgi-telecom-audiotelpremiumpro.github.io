@@ -31,7 +31,6 @@ const files=[
   "assets/platform-admin-tools.js",
   "assets/call-tools.js",
   "assets/app.js",
-  "assets/favicon.svg",
   "assets/audiotel-premium-pro-icon.png",
   "assets/audiotel-premium-pro-logo.webp"
 ];

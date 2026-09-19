@@ -1,4 +1,4 @@
-const CACHE_NAME = "pgi-telecom-shell-v29";
+const CACHE_NAME = "pgi-telecom-shell-v30";
 const SHELL = [
 "./",
 "./index.html",
@@ -11,7 +11,6 @@ const SHELL = [
 "./assets/command-palette-loader.js",
 "./assets/data-client.js",
 "./assets/app.js",
-"./assets/favicon.svg",
 "./assets/audiotel-premium-pro-icon.png",
 "./assets/audiotel-premium-pro-logo.webp",
 "./manifest.webmanifest"
