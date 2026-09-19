@@ -141,7 +141,7 @@ if(!/\/api\/v1\/app\/bootstrap/.test(backendServer)||!/\/api\/v1\/dashboard\/boo
 if(!/appBootstrap:function/.test(apiClient)||!/dashboardBootstrap:function/.test(apiClient))failures.push("frontend API client must retain bootstrap methods");
 if(!/loadAppBootstrap/.test(dataClient)||!/loadDashboardBootstrap/.test(dataClient)||!/appBootstrapCache/.test(dataClient))failures.push("data client must retain bootstrap fallback and metadata cache");
 if(!/maxPages=Math\.max\(1,Math\.min\(4/.test(dataClient))failures.push("CDR browser loading must remain hard-bounded");
-if(!/scheduleProductionSync\("incremental"\)/.test(appSource)||!/mode==="dashboard"/.test(appSource)||!/document\.hidden/.test(appSource))failures.push("realtime sync must remain incremental and visibility-aware");
+if(!/scheduleProductionSync\("incremental"\)/.test(appSource)||!/mode==="dashboard"/.test(appSource)||!/document\.hidden/.test(appSource)||!/scheduledSyncMode=mergeSyncMode/.test(appSource))failures.push("realtime sync must remain incremental, priority-preserving and visibility-aware");
 if(!/function renderActiveView/.test(appSource)||!/renderActiveView\(rows\)/.test(appSource))failures.push("dashboard must render only the active workspace");
 if(!/pgi:command/.test(commandPalette)||!/ctrlKey\|\|e\.metaKey/.test(commandPalette))failures.push("universal command palette must retain keyboard access");
 if(!/pgi_ui_preferences/.test(workspace)||!/pgi_operating_market/.test(workspace))failures.push("workspace preferences must remain persistent");
