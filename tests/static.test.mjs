@@ -244,6 +244,9 @@ test("le dossier client 1.22 centralise les opérations sans alourdir le shell",
   assert.match(customerAdmin,/tenant-control-detail\.js/);
   assert.match(customerAdmin,/data-dossier/);
   assert.match(customerAdmin,/p\.number=compact/);
+  assert.match(customerAdmin,/Nouveau client/);
+  assert.match(customerAdmin,/Créer en attente/);
+  assert.match(api,/createTenant:function/);
   assert.match(api,/tenantControlDetail:function/);
   assert.match(api,/setExpertStatus:function/);
   for(const label of ["DOSSIER CLIENT CENTRALISÉ","Lignes SVA","Experts du client","Reversements récents","Historique & audit"])assert.ok(tenantControlDetail.includes(label));
