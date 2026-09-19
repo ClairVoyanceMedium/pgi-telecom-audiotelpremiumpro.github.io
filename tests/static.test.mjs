@@ -69,7 +69,7 @@ test("le cockpit analytique 1.15 reste complet",()=>{
     "cockpit-peak-day","cockpit-value-call","cockpit-value-minute",
     "cockpit-margin-call","cockpit-average-duration"
   ])assert.ok(index.includes('id="'+id+'"'),"missing #"+id);
-  assert.match(css,/PGI 1\.15 — Cockpit Intelligence Layer/);
+  assert.match(css,/\.cockpit-intelligence\{/);
   assert.match(app,/renderCockpitIntelligence/);
   assert.match(app,/serverAnalytics/);
   assert.match(app,/AGRÉGATS SERVEUR/);
@@ -143,7 +143,7 @@ test("la palette universelle accélère la navigation",()=>{
   assert.match(commands,/pgi:command/);
   assert.match(commands,/Ouvrir Finance/);
   assert.match(commands,/Exporter les appels en CSV/);
-  assert.match(css,/PGI 1\.16 — Operator Efficiency Layer/);
+  assert.match(css,/\.command-palette-btn\{/);
 });
 
 test("le workspace mémorise la dernière vue et période",()=>{
