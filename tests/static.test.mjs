@@ -312,7 +312,7 @@ test("la PWA met en cache uniquement le shell critique",()=>{
   assert.match(app,/loadDemoCalls/);
   assert.doesNotMatch(sw,/assets\/command-palette\.js/);
   assert.doesNotMatch(sw,/assets\/customer-admin\.css/);
-  assert.match(sw,/pgi-telecom-shell-v35/);
+  assert.match(sw,/pgi-telecom-shell-v36/);
 });
 
 test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiques",()=>{
@@ -324,7 +324,7 @@ test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiqu
   assert.match(css,/\.auth-brand-logo\{/);
   assert.match(sw,/audiotel-brand-icon-v33\.png/);
   assert.match(sw,/audiotel-brand-logo-v33\.png/);
-  assert.match(sw,/pgi-telecom-shell-v35/);
+  assert.match(sw,/pgi-telecom-shell-v36/);
   assert.match(buildStatic,/audiotel-brand-logo-v33\.png/);
   assert.doesNotMatch(css,/brand-mark|command-brand-emblem|auth-brand-lockup|auth-brand-emblem/);
   assert.doesNotMatch(sw,/favicon\.svg/);
@@ -343,4 +343,13 @@ test("le produit garde son identité et ne contient pas l’ancien nom",()=>{
   assert.doesNotMatch(index,/PGI Telecom • Audiotel Premium Pro/);
   assert.match(index,/PLATEFORME/);
   assert.match(index,/CENTRE DE PILOTAGE PGI/);
+});
+
+test("final brown cockpit theme and installed app label are authoritative",()=>{
+  assert.match(css,/Final cockpit visual hierarchy/);
+  assert.match(css,/--bg:#2b1b15/);
+  assert.match(css,/\.product-name\{color:#f7e5d6;font-size:clamp\(24px,2\.3vw,32px\)/);
+  assert.match(css,/@media \(max-width:820px\)[\s\S]*\.product-name\{max-width:min\(76vw,430px\);font-size:clamp\(18px,5\.0vw,22px\)/);
+  assert.match(index,/apple-mobile-web-app-title" content="Audiotel Premium Pro"/);
+  assert.match(manifest,/Audiotel Premium Pro/);
 });
