@@ -1426,7 +1426,14 @@ export class PostgresStore{
         " (SELECT count(*)::int FROM sva_numbers WHERE tenant_id IS NULL AND status IN ('pending','active')) AS inventory_unassigned,"+
         " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal') AS assignments_total,"+
         " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.status='active') AS assignments_active,"+
-        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.regulatory_assignor_carrier_id IS NOT NULL) AS assignments_with_assignor"
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.regulatory_assignor_carrier_id IS NOT NULL) AS assignments_with_assignor,"+
+        " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND subscription_status='active' AND current_period_end>now()) AS external_subscriptions_active,"+
+        " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND premium_call_access) AS subscription_access_enabled,"+
+        " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND NOT premium_call_access) AS subscription_access_blocked,"+
+        " COALESCE((SELECT v.amount_minor::int FROM service_plan_price_versions v JOIN service_plans p ON p.id=v.service_plan_id"+
+        " WHERE p.plan_key='external-sva-access' AND v.market_id IS NULL AND v.currency='EUR' AND v.effective_from<=now()"+
+        " AND (v.effective_to IS NULL OR v.effective_to>now()) ORDER BY v.effective_from DESC LIMIT 1),0) AS subscription_price_minor,"+
+        " 'EUR'::text AS subscription_price_currency,true AS internal_billing_exempt"
       ),
       this.readSql.unsafe(
         "SELECT t.id,t.slug,t.display_name,t.tenant_type,t.status,t.country_code,t.preferred_locale,t.default_currency,t.timezone,"+
