@@ -1,6 +1,6 @@
 (function(root){
 "use strict";
-var selectedIndex=0,adminModule=null,ADMIN_URL=new URL("platform-admin-tools.js",document.currentScript.src).href;
+var selectedIndex=0,adminModule=null,ADMIN_URL=new URL("./platform-admin-tools.js",import.meta.url).href;
 var commands=[
 ["view-overview","Navigation","Ouvrir le Cockpit","Accueil et pilotage","dashboard accueil cockpit"],
 ["view-calls","Navigation","Ouvrir les Appels","CDR et détail","cdr telephone appels"],
