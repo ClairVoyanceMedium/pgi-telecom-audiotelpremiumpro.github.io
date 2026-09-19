@@ -1703,6 +1703,19 @@ export class PostgresStore{
     return result;
   }
 
+  async customerAdminSummary(){
+    const rows=await this.readSql.unsafe(
+      "SELECT"+
+      " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal') AS tenants_total,"+
+      " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal' AND status='active') AS tenants_active,"+
+      " (SELECT count(*)::int FROM tenant_kyc_profiles k JOIN tenants t ON t.id=k.tenant_id WHERE t.tenant_type<>'internal' AND k.status='pending') AS kyc_pending,"+
+      " (SELECT count(*)::int FROM tenant_admin_alerts a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.alert_type='subscription_unpaid' AND a.state<>'resolved') AS subscription_unpaid_alerts,"+
+      " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND NOT premium_call_access) AS subscription_access_blocked,"+
+      " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.status='active') AS assignments_active"
+    );
+    return rows[0]||{tenants_total:0,tenants_active:0,kyc_pending:0,subscription_unpaid_alerts:0,subscription_access_blocked:0,assignments_active:0};
+  }
+
   async tenantControlDetail(publicId){
     publicId=String(publicId||"").trim();
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
