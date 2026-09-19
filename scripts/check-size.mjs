@@ -16,7 +16,7 @@ const budgets = {
   "service-worker.js": 16 * 1024
 };
 
-const lazyBudgets = {"assets/performance-radar.js":16*1024,"assets/subscription-billing-ui.js":4*1024,"assets/customer-admin.js":24*1024};
+const lazyBudgets = {"assets/performance-radar.js":16*1024,"assets/subscription-billing-ui.js":4*1024,"assets/customer-admin.js":24*1024,"assets/tenant-control-detail.js":20*1024};
 
 let total = 0;
 const failures = [];
