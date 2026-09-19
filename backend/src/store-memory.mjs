@@ -673,6 +673,10 @@ export class MemoryStore{
     return structuredClone(row);
   }
 
+  async customerAdminSummary(){
+    return {tenants_total:0,tenants_active:0,kyc_pending:0,subscription_unpaid_alerts:0,subscription_access_blocked:0,assignments_active:0};
+  }
+
   async wholesaleOverview(){
     return {
       foundation_version:"1.16",
