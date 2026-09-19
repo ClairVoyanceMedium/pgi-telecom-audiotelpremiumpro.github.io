@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.19.0 — 2026-09-19
+
+Performance Radar & Benchmark Intelligence :
+
+- nouveau Radar de performance chargé à la demande ;
+- détection statistique des dérives trafic, ASR, abandons, attente, chiffre d’affaires et MOS ;
+- référence robuste basée sur la médiane des 12 périodes précédentes et dispersion MAD ;
+- états stable, amélioration, écart notable et anomalie forte ;
+- deux graphiques volume × ASR pour experts et opérateurs ;
+- matrices de benchmark avec part trafic, appels, ASR, ACD, CA/appel et marge ;
+- concentration Top 1 / Top 3 pour experts et réseaux ;
+- marge dimensionnelle exacte exposée par les agrégats PostgreSQL ;
+- module radar chargé paresseusement et exclu du shell critique initial ;
+- budget indépendant de 16 KiB pour le module paresseux, shell principal maintenu à 260 KiB ;
+- cache PWA v22 ;
+- versions front, backend, Docker et manifests scale alignées sur 1.19.0.
+
+
 ## 1.18.0 — 2026-09-19
 
 Caller Experience Intelligence :
