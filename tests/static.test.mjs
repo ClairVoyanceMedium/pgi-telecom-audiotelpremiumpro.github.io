@@ -238,7 +238,10 @@ test("le contrôle clients permet recherche pays impayés et suspension depuis l
   assert.match(customerAdmin,/ADMINISTRATION CLIENTS/);
   assert.match(customerAdmin,/ca-country/);
   assert.match(customerAdmin,/ca-billing/);
-  assert.match(customerAdmin,/ca-kyc/);\n  assert.match(customerAdmin,/ca-kpis/);\n  assert.match(customerAdmin,/customer-admin\\.css/);\n  assert.match(customerAdmin,/data-tenant-action/);
+  assert.match(customerAdmin,/ca-kyc/);
+  assert.match(customerAdmin,/ca-kpis/);
+  assert.match(customerAdmin,/customer-admin\\.css/);
+  assert.match(customerAdmin,/data-tenant-action/);
   assert.match(customerAdmin,/data-line-action/);
   assert.match(customerAdmin,/Alertes impayés/);
   assert.match(api,/setTenantStatus:function/);
@@ -257,7 +260,9 @@ test("le dossier client 1.22 centralise les opérations sans alourdir le shell",
   assert.match(customerAdmin,/Nouveau client/);
   assert.match(customerAdmin,/Créer en attente/);
   assert.match(api,/createTenant:function/);
-  assert.match(api,/customerAdminSummary:function/);\n  assert.match(customerAdmin,/customerAdminSummary/);\n  assert.match(api,/tenantControlDetail:function/);
+  assert.match(api,/customerAdminSummary:function/);
+  assert.match(customerAdmin,/customerAdminSummary/);
+  assert.match(api,/tenantControlDetail:function/);
   assert.match(api,/setExpertStatus:function/);
   for(const label of ["DOSSIER CLIENT CENTRALISÉ","Lignes SVA","Experts du client","Reversements récents","Historique & audit"])assert.ok(tenantControlDetail.includes(label));
   assert.match(tenantControlDetail,/data-tenant-status/);
@@ -299,7 +304,8 @@ test("la PWA met en cache uniquement le shell critique",()=>{
   assert.doesNotMatch(index,/src="assets\/demo-data\.js"/);
   assert.match(app,/loadDemoCalls/);
   assert.doesNotMatch(sw,/assets\/command-palette\.js/);
-  assert.doesNotMatch(sw,/assets\\/customer-admin\\.css/);\n  assert.match(sw,/pgi-telecom-shell-v27/);
+  assert.doesNotMatch(sw,/assets\\/customer-admin\\.css/);
+  assert.match(sw,/pgi-telecom-shell-v27/);
 });
 
 test("la release Git exacte reste visible et obligatoire",()=>{
