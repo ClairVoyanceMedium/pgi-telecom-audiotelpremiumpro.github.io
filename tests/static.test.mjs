@@ -44,7 +44,7 @@ test("la remise à zéro reste non destructive",()=>{
 test("le thème fonctionnel et le design mobile restent verrouillés",()=>{
   for(const token of ["--cyan","--green","--amber","--red","--purple","--bg:#241712","--surface:#302019"])assert.ok(css.includes(token));
   assert.match(index,/viewport-fit=cover/);
-  assert.match(index,/theme-color" content="#241712"/);
+  assert.match(index,/theme-color" content="#2b1b15"/);
   assert.match(index,/mobile-web-app-capable/);
   assert.match(index,/apple-mobile-web-app-capable/);
   assert.match(css,/100dvh/);
