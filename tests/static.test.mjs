@@ -238,7 +238,7 @@ test("le contrôle clients permet recherche pays impayés et suspension depuis l
   assert.match(customerAdmin,/ADMINISTRATION CLIENTS/);
   assert.match(customerAdmin,/ca-country/);
   assert.match(customerAdmin,/ca-billing/);
-  assert.match(customerAdmin,/data-tenant-action/);
+  assert.match(customerAdmin,/ca-kyc/);\n  assert.match(customerAdmin,/ca-kpis/);\n  assert.match(customerAdmin,/customer-admin\\.css/);\n  assert.match(customerAdmin,/data-tenant-action/);
   assert.match(customerAdmin,/data-line-action/);
   assert.match(customerAdmin,/Alertes impayés/);
   assert.match(api,/setTenantStatus:function/);
@@ -299,7 +299,7 @@ test("la PWA met en cache uniquement le shell critique",()=>{
   assert.doesNotMatch(index,/src="assets\/demo-data\.js"/);
   assert.match(app,/loadDemoCalls/);
   assert.doesNotMatch(sw,/assets\/command-palette\.js/);
-  assert.match(sw,/pgi-telecom-shell-v26/);
+  assert.doesNotMatch(sw,/assets\\/customer-admin\\.css/);\n  assert.match(sw,/pgi-telecom-shell-v27/);
 });
 
 test("la release Git exacte reste visible et obligatoire",()=>{
