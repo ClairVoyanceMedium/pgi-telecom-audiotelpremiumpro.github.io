@@ -76,6 +76,11 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(analytics.experience.avg_ivr_seconds,3);
     assert.equal(analytics.experience.avg_queue_seconds,5);
     assert.equal(analytics.experience_series.length,1);
+    assert.equal(analytics.experts.length,1);
+    assert.ok(Object.hasOwn(analytics.experts[0],"margin"));
+    assert.ok(Number.isFinite(Number(analytics.experts[0].margin)));
+    assert.equal(analytics.carriers.length,1);
+    assert.ok(Object.hasOwn(analytics.carriers[0],"margin"));
 
     const calls=await store.listCalls({limit:10});
     assert.equal(calls.data.length,1);
