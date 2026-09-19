@@ -193,3 +193,14 @@ Expose la justification appel par appel du reversement tenant.
 Toutes les routes `/platform/*` exigent un rôle plateforme PGI et ne sont jamais accessibles à un tenant ordinaire.
 
 Les futures routes tenant utilisent le contexte authentifié ; aucun `tenant_id` fourni par le navigateur ne doit suffire à élargir le périmètre d'accès.
+
+
+## GET /platform/tenants/:id/control-center
+
+Retourne un dossier opérationnel borné pour un tenant externe identifié par son UUID public. Accessible aux rôles plateforme admin, finance et readonly.
+
+Le dossier regroupe l’identité et le statut du tenant, l’état KYC sans document d’identité, l’accès SVA effectif, les abonnements et la dernière situation de paiement, jusqu’à 100 affectations SVA, jusqu’à 100 experts, jusqu’à 50 alertes, jusqu’à 24 reversements, jusqu’à 50 événements de contrôle, jusqu’à 50 entrées d’audit et l’activité agrégée sur les 30 derniers jours.
+
+GET /platform/tenants accepte aussi le filtre number, normalisé en E.164 sans signe +, afin de retrouver un client à partir d’un préfixe de numéro SVA. Cette recherche s’appuie sur l’index de préfixe du parc SVA.
+
+La fiche n’accorde aucun droit supplémentaire : les mutations restent protégées par les endpoints dédiés, les rôles, CSRF et, lorsqu’exigé, une clé d’idempotence.
