@@ -793,11 +793,7 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     var durationLabels={not_connected:"Non aboutis",lt_1m:"< 1 min","1_5m":"1–5 min","5_10m":"5–10 min","10_20m":"10–20 min","20_30m":"20–30 min",gte_30m:"30 min +"};
     var durationRows=dimension("duration",durationKey,function(c){return durationLabels[durationKey(c)]||"Autre";});
     var qualityRows=rows.filter(function(c){return c.status==="connected"&&Number.isFinite(c.mos)&&Number.isFinite(c.packetLoss)&&Number.isFinite(c.jitter)&&Number.isFinite(c.latency);});
-    var qualitySeries=[...grouped(function(c){return bucket(c);})].map(function(entry){
-      var items=entry[1].filter(function(c){return c.status==="connected"&&Number.isFinite(c.mos)&&Number.isFinite(c.packetLoss)&&Number.isFinite(c.jitter)&&Number.isFinite(c.latency);});
-      var avg=function(key){return items.length?items.reduce(function(a,x){return a+Number(x[key]||0);},0)/items.length:null;};
-      return {bucket:entry[0],samples:items.length,mos:avg("mos"),packet_loss_percent:avg("packetLoss"),jitter_ms:avg("jitter"),latency_ms:avg("latency"),dtmf_errors:items.reduce(function(a,x){return a+Number(x.dtmfErrors||0);},0)};
-    }).filter(function(x){return x.samples>0;}).sort(function(a,b){return Date.parse(a.bucket)-Date.parse(b.bucket);});
+    var qualitySeries=[...grouped(bucket)].map(function(e){var i=e[1].filter(function(x){return x.status==="connected"&&Number.isFinite(x.mos)&&Number.isFinite(x.packetLoss)&&Number.isFinite(x.jitter)&&Number.isFinite(x.latency);}),a=function(k){return i.length?i.reduce(function(s,x){return s+Number(x[k]||0);},0)/i.length:null;};return {bucket:e[0],samples:i.length,mos:a("mos"),packet_loss_percent:a("packetLoss"),jitter_ms:a("jitter"),latency_ms:a("latency"),dtmf_errors:i.reduce(function(s,x){return s+Number(x.dtmfErrors||0);},0)};}).filter(function(x){return x.samples>0;}).sort(function(a,b){return Date.parse(a.bucket)-Date.parse(b.bucket);});
     return {granularity:granularity,series:series,hours:hours,weekdays:weekdays,heatmap:heatmap,quality_series:qualitySeries,experts:expertRows,carriers:carrierRows,durations:durationRows};
   }
   function analyticsBucketLabel(value,granularity){
