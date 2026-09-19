@@ -97,11 +97,14 @@ export class PostgresStore{
       "SELECT count(*) FILTER (WHERE status='available' AND enabled)::int AS active_experts,"+
       " COALESCE(sum(active_calls),0)::int AS live_calls FROM experts"
     );
-    const r=rows[0],p=presence[0];
+    const r=numberFields(rows[0],[
+      "calls_total","calls_connected","calls_abandoned","calls_failed","currency_count"
+    ]);
+    const p=numberFields(presence[0],["active_experts","live_calls"]);
     return {
       ...r,
-      mixed_currency:Number(r.currency_count||0)>1,
-      asr_percent:Number(r.calls_total)?Number(r.calls_connected)/Number(r.calls_total)*100:0,
+      mixed_currency:r.currency_count>1,
+      asr_percent:r.calls_total?r.calls_connected/r.calls_total*100:0,
       active_experts:p.active_experts,
       live_calls:p.live_calls,
       queue_depth:0
@@ -211,15 +214,18 @@ export class PostgresStore{
       )
     ]);
 
+    const countKeys=["calls_total","calls_connected","calls_abandoned","calls_failed","conversation_seconds","billable_seconds","currency_count"];
+    const dimensionKeys=["calls_total","calls_connected","conversation_seconds","billable_seconds"];
+    const normalizedDimensions=dimensions.map(row=>numberFields(row,dimensionKeys));
     const byType={expert:[],carrier:[],duration:[]};
-    for(const row of dimensions)if(byType[row.dimension_type])byType[row.dimension_type].push(row);
+    for(const row of normalizedDimensions)if(byType[row.dimension_type])byType[row.dimension_type].push(row);
     return {
       granularity,
-      series,
-      hours,
-      weekdays,
-      heatmap,
-      quality:quality[0]||{samples:0,mos:null,packet_loss_percent:null,jitter_ms:null,latency_ms:null,dtmf_errors:0},
+      series:series.map(row=>numberFields(row,countKeys)),
+      hours:hours.map(row=>numberFields(row,["hour","calls_total","calls_connected","billable_seconds"])),
+      weekdays:weekdays.map(row=>numberFields(row,["weekday","calls_total","calls_connected","billable_seconds"])),
+      heatmap:heatmap.map(row=>numberFields(row,["weekday","hour","calls_total"])),
+      quality:quality[0]?numberFields(quality[0],["samples","dtmf_errors"]):{samples:0,mos:null,packet_loss_percent:null,jitter_ms:null,latency_ms:null,dtmf_errors:0},
       experts:byType.expert.slice(0,50),
       carriers:byType.carrier.slice(0,50),
       durations:byType.duration
@@ -1424,6 +1430,11 @@ async function routeWith(sql,key){
 }
 function roundFinanceNumber(value){
   return Math.round((Number(value)+Number.EPSILON)*1e6)/1e6;
+}
+function numberFields(row,keys){
+  const out={...row};
+  for(const key of keys)if(out[key]!=null)out[key]=Number(out[key]);
+  return out;
 }
 function numericActor(actor){
   const n=Number(actor?.sub);
