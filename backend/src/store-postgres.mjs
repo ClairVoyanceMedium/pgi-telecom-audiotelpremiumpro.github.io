@@ -433,8 +433,8 @@ export class PostgresStore{
       let tenantId=null,marketId=null;
       if(svaNumber){
         const svaRows=await tx.unsafe(
-          "SELECT sn.id,sn.tenant_id,sn.market_id FROM sva_numbers sn"+
-          " LEFT JOIN sva_number_aliases a ON a.sva_number_id=sn.id AND a.enabled"+
+          "SELECT sn.id,sn.tenant_id,sn.market_id,t.tenant_type FROM sva_numbers sn"+
+          " JOIN tenants t ON t.id=sn.tenant_id LEFT JOIN sva_number_aliases a ON a.sva_number_id=sn.id AND a.enabled"+
           " WHERE (sn.e164=$1 OR sn.display_number=$1 OR a.alias=$1) AND sn.status IN ('active','porting')"+
           " ORDER BY CASE WHEN sn.e164=$1 THEN 0 WHEN sn.display_number=$1 THEN 1 ELSE 2 END LIMIT 1",
           [svaNumber]
@@ -449,6 +449,14 @@ export class PostgresStore{
           [tenantId,marketId]
         );
         if(!accessRows[0]?.allowed)throw problem(402,"SVA_SUBSCRIPTION_REQUIRED");
+        if(sva.tenant_type!=="internal"){
+          const assignmentRows=await tx.unsafe(
+            "SELECT id FROM tenant_number_assignments WHERE tenant_id=$1 AND sva_number_id=$2 AND status='active'"+
+            " AND (valid_from IS NULL OR valid_from<=now()) AND (valid_to IS NULL OR valid_to>=now()) LIMIT 1",
+            [tenantId,sva.id]
+          );
+          if(!assignmentRows.length)throw problem(423,"SVA_ASSIGNMENT_INACTIVE");
+        }
       }
 
       const rows=tenantId==null
