@@ -631,6 +631,11 @@ export class MemoryStore{
     return {data:[],next_cursor:null};
   }
 
+  async tenantControlDetail(publicId){
+    void publicId;
+    throw problem(404,"TENANT_NOT_FOUND");
+  }
+
   async setTenantStatus(publicId,status){
     void publicId;void status;
     throw problem(404,"TENANT_NOT_FOUND");
