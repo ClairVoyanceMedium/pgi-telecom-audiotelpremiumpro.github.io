@@ -941,6 +941,31 @@ export class PostgresStore{
     return rows[0]||{route_key:"sva-primary",generation:1,active_carrier:null,standby_carrier:null};
   }
 
+  async carrierAdminOverview(){
+    const [routeRows,targets,switches]=await Promise.all([
+      this.readSql.unsafe(
+        "SELECT r.route_key,r.generation,r.active_carrier_id,r.active_connection_id,r.standby_carrier_id,r.standby_connection_id,r.updated_at,"+
+        " a.name AS active_carrier,s.name AS standby_carrier,ac.state AS active_connection_state,sc.state AS standby_connection_state"+
+        " FROM logical_carrier_routes r LEFT JOIN carriers a ON a.id=r.active_carrier_id LEFT JOIN carriers s ON s.id=r.standby_carrier_id"+
+        " LEFT JOIN carrier_connections ac ON ac.id=r.active_connection_id LEFT JOIN carrier_connections sc ON sc.id=r.standby_connection_id"+
+        " WHERE r.route_key='sva-primary'"
+      ),
+      this.readSql.unsafe(
+        "SELECT cc.id AS connection_id,cc.carrier_id,c.name AS carrier_name,cc.connection_name,cc.state,cc.transport,cc.last_health_at,cc.last_health_status"+
+        " FROM carrier_connections cc JOIN carriers c ON c.id=cc.carrier_id"+
+        " WHERE cc.purpose='sip_inbound' AND cc.state IN ('ready','active','standby') AND c.enabled"+
+        " ORDER BY CASE cc.state WHEN 'active' THEN 0 WHEN 'standby' THEN 1 ELSE 2 END,c.name,cc.id LIMIT 50"
+      ),
+      this.readSql.unsafe(
+        "SELECT sw.id,sw.route_key,sw.from_carrier_id,fc.name AS from_carrier,sw.to_carrier_id,tc.name AS to_carrier,"+
+        " sw.scheduled_for,sw.started_at,sw.completed_at,sw.rollback_deadline,sw.status,sw.validation,sw.notes,sw.created_at"+
+        " FROM carrier_switches sw LEFT JOIN carriers fc ON fc.id=sw.from_carrier_id LEFT JOIN carriers tc ON tc.id=sw.to_carrier_id"+
+        " WHERE sw.route_key='sva-primary' ORDER BY sw.id DESC LIMIT 20"
+      )
+    ]);
+    return {route:routeRows[0]||{route_key:"sva-primary",generation:1},targets,recent_switches:switches};
+  }
+
   async planCarrierSwitch(payload,actor){
     const connections=await this.sql.unsafe(
       "SELECT cc.id,cc.carrier_id,c.name AS carrier_name,cc.state FROM carrier_connections cc JOIN carriers c ON c.id=cc.carrier_id"+
