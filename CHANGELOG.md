@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.20.0 — 2026-09-19
+
+External Subscription Gate :
+
+- abonnement mensuel obligatoire pour l'accès SVA des tenants externes ;
+- tenant interne PGI automatiquement exempté de toute facturation d'abonnement ;
+- plan `external-sva-access` avec entitlement `premium_rate_calls` ;
+- tarif initial versionné à 2,00 EUR par mois ;
+- historique immuable des versions tarifaires pour permettre des hausses futures sans réécriture ;
+- changement de prix administratif idempotent, avec date d'effet ;
+- abonnements existants ancrés sur leur version de prix tant qu'une migration explicite n'est pas demandée ;
+- routage téléphonique fail-closed avec `402 SVA_SUBSCRIPTION_REQUIRED` pour un client externe non payé ;
+- activation des affectations SVA externes interdite sans abonnement payé actif ;
+- événements de facturation append-only et dédupliqués par fournisseur / event ID ;
+- endpoint machine-to-machine de synchronisation fournisseur protégé par token dédié ;
+- external billing désactivé par défaut pour conserver l'usage personnel actuel inchangé ;
+- nouveaux indicateurs Plateforme SVA : prix mensuel, abonnements actifs, accès autorisés/bloqués, exemption PGI ;
+- cache PWA v23 ;
+- version front, backend, Docker et manifests scale alignée sur 1.20.0.
+
 ## 1.19.0 — 2026-09-19
 
 Performance Radar & Benchmark Intelligence :
