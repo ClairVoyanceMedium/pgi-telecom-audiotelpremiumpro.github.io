@@ -67,11 +67,16 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(calls.data[0].retail_service_amount_ttc,8);
     assert.equal(calls.data[0].expert_cost_ht,1.8);
 
-    const rawPayload=await store.sql.unsafe("SELECT payload FROM raw_cdr_events WHERE source_event_id='evt-1'");
+    const rawPayload=await store.sql.unsafe(
+      "SELECT payload->>'caller_masked' AS caller_masked,"+
+      " payload ? 'caller_id_number' AS has_caller_id_number,"+
+      " payload ? 'secret_field' AS has_secret_field"+
+      " FROM raw_cdr_events WHERE source_event_id='evt-1'"
+    );
     assert.equal(rawPayload.length,1);
-    assert.equal(rawPayload[0].payload.caller_masked,"•• •• •• 56 78");
-    assert.equal("caller_id_number" in rawPayload[0].payload,false);
-    assert.equal("secret_field" in rawPayload[0].payload,false);
+    assert.equal(rawPayload[0].caller_masked,"•• •• •• 56 78");
+    assert.equal(rawPayload[0].has_caller_id_number,false);
+    assert.equal(rawPayload[0].has_secret_field,false);
 
     const expert=await store.selectExpert();
     assert.equal(expert.display_name,"Expert 1");
