@@ -8,6 +8,7 @@ const app=read("assets/app.js");
 const api=read("assets/api-client.js");
 const dataClient=read("assets/data-client.js");
 const demoData=read("assets/demo-data.js");
+const commandLoader=read("assets/command-palette-loader.js");
 const commands=read("assets/command-palette.js");
 const workspace=read("assets/workspace.js");
 const cockpitPro=read("assets/cockpit-pro.js");
@@ -16,6 +17,7 @@ const subscriptionBillingUi=read("assets/subscription-billing-ui.js");
 const customerAdmin=read("assets/customer-admin.js");
 const tenantControlDetail=read("assets/tenant-control-detail.js");
 const platformAdmin=read("assets/platform-admin-tools.js");
+const callTools=read("assets/call-tools.js");
 const css=read("assets/styles.css");
 const sw=read("service-worker.js");
 const buildStatic=read("scripts/build-static.mjs");
@@ -148,6 +150,8 @@ test("la palette universelle accélère la navigation",()=>{
   assert.match(commands,/pgi:command/);
   assert.match(commands,/Ouvrir Finance/);
   assert.match(commands,/Exporter les appels en CSV/);
+  assert.match(commandLoader,/import\("\.\/command-palette\.js"\)/);
+  assert.doesNotMatch(index,/src="assets\/command-palette\.js"/);
   assert.match(css,/\.command-palette-btn\{/);
 });
 
@@ -257,6 +261,13 @@ test("le dossier client 1.22 centralise les opérations sans alourdir le shell",
   assert.doesNotMatch(sw,/assets\/tenant-control-detail\.js/);
 });
 
+test("les outils CDR sont chargés à la demande pour préserver app.js",()=>{
+  assert.match(app,/import\("\.\/call-tools\.js"\)/);
+  assert.match(callTools,/export function exportCsv/);
+  assert.match(callTools,/export function showDetail/);
+  assert.doesNotMatch(sw,/assets\/call-tools\.js/);
+});
+
 test("l’administration plateforme 1.22 pilote tarifs et bascules avec confirmations",()=>{
   assert.match(commands,/platform-admin-tools\.js/);
   assert.match(commands,/Administrer la plateforme/);
@@ -276,9 +287,10 @@ test("l’administration plateforme 1.22 pilote tarifs et bascules avec confirma
 test("la PWA met en cache tous les modules du shell",()=>{
   for(const file of [
     "assets/demo-data.js","assets/api-client.js","assets/data-client.js",
-    "assets/command-palette.js","assets/workspace.js","assets/cockpit-pro.js","assets/app.js"
+    "assets/command-palette-loader.js","assets/workspace.js","assets/cockpit-pro.js","assets/app.js"
   ])assert.ok(sw.includes(file),"service worker missing "+file);
-  assert.match(sw,/pgi-telecom-shell-v25/);
+  assert.doesNotMatch(sw,/assets\/command-palette\.js/);
+  assert.match(sw,/pgi-telecom-shell-v26/);
 });
 
 test("la release Git exacte reste visible et obligatoire",()=>{
