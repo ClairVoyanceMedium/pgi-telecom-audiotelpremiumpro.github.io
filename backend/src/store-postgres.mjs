@@ -1377,8 +1377,8 @@ export class PostgresStore{
       );
       if(status==="active"&&periodEnd&&Date.parse(periodEnd)>Date.parse(eventTime)&&(!lastPaymentStatus||["paid","succeeded","success"].includes(lastPaymentStatus))){
         await tx.unsafe(
-          "UPDATE tenant_admin_alerts SET state='resolved',resolved_at=now(),updated_at=now() WHERE tenant_id=$1 AND alert_type='subscription_unpaid' AND state<>'resolved'",
-          [tenant.id]
+          "UPDATE tenant_admin_alerts SET state='resolved',resolved_at=now(),updated_at=now() WHERE tenant_id=$1 AND subscription_id=$2 AND alert_type='subscription_unpaid' AND state<>'resolved'",
+          [tenant.id,subscriptionId]
         );
       }
       return {duplicate:false,subscription_id:subscriptionId,tenant_id:Number(tenant.id),status};
@@ -1560,14 +1560,14 @@ export class PostgresStore{
   async listAdminAlerts(params={}){
     const limit=clampInt(params.limit,50,1,250),cursor=decodeNumericCursor(params.cursor);
     const state=params.state?String(params.state).trim().toLowerCase():"open";
-    if(!["open","acknowledged","resolved","all"].includes(state))throw problem(400,"INVALID_ALERT_STATE");
+    if(!["open","acknowledged","resolved","unresolved","all"].includes(state))throw problem(400,"INVALID_ALERT_STATE");
     const country=params.country?String(params.country).trim().toUpperCase():null;
     if(country&&!/^[A-Z]{2}$/.test(country))throw problem(400,"INVALID_COUNTRY_CODE");
     const rows=await this.readSql.unsafe(
       "SELECT a.id AS _cursor_id,a.id,a.alert_type,a.severity,a.state,a.title,a.message,a.due_at,a.first_detected_at,a.last_detected_at,a.acknowledged_at,a.resolved_at,"+
       " t.public_id AS tenant_public_id,t.display_name AS tenant,t.country_code,s.status AS subscription_status,s.last_payment_status,s.current_period_end"+
       " FROM tenant_admin_alerts a JOIN tenants t ON t.id=a.tenant_id LEFT JOIN tenant_subscriptions s ON s.id=a.subscription_id"+
-      " WHERE ($1='all' OR a.state=$1) AND ($2::text IS NULL OR t.country_code=$2) AND ($3::bigint IS NULL OR a.id<$3)"+
+      " WHERE ($1='all' OR ($1='unresolved' AND a.state<>'resolved') OR a.state=$1) AND ($2::text IS NULL OR t.country_code=$2) AND ($3::bigint IS NULL OR a.id<$3)"+
       " ORDER BY a.id DESC LIMIT $4",[state,country,cursor,limit+1]
     );
     const hasMore=rows.length>limit,page=hasMore?rows.slice(0,limit):rows;
