@@ -87,9 +87,11 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const metrics=await store.metrics();
     assert.equal(metrics.calls_total,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
-    assert.equal(migrations.length,1);
+    assert.equal(migrations.length,17);
+    assert.equal(new Set(migrations.map(x=>x.version)).size,migrations.length);
     assert.equal(migrations[0].version,"001_baseline");
-    assert.match(migrations[0].checksum,/^[a-f0-9]{64}$/);
+    assert.equal(migrations.at(-1).version,"017_quality_rollups");
+    for(const migration of migrations)assert.match(migration.checksum,/^[a-f0-9]{64}$/);
   }finally{
     await store.close();
   }
