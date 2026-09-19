@@ -1328,7 +1328,7 @@ import("./subscription-billing-ui.js").then(function(m){m.render(summary,tenantC
       state.period="custom";state.custom={from:fd,to:td};qsa(".period").forEach(function(x){x.classList.remove("active");});saveUiPreferences();refreshData();
     });
     $("refresh-btn").addEventListener("click",function(){refreshData({forceMeta:true});});
-    if(window.PGICommandPalette)window.PGICommandPalette.init();
+    
     window.addEventListener("pgi:command",function(e){executeCommand(e&&e.detail?e.detail.id:null);});
     var mobileOverviewToggle=$("mobile-overview-toggle");
     if(mobileOverviewToggle)mobileOverviewToggle.addEventListener("click",toggleMobileOverview);
