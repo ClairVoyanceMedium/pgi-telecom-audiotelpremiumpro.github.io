@@ -26,6 +26,7 @@ const files=[
   "assets/performance-radar.js",
   "assets/subscription-billing-ui.js",
   "assets/customer-admin.js",
+  "assets/customer-admin.css",
   "assets/tenant-control-detail.js",
   "assets/platform-admin-tools.js",
   "assets/call-tools.js",
