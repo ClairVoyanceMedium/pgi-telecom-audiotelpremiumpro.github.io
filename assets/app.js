@@ -140,9 +140,7 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       ["expert.status","expert.busy","expert.released","carrier.switched","carrier.rollback","alert"].forEach(function(name){
         es.addEventListener(name,function(){scheduleProductionSync("dashboard");});
       });
-      ["baseline.created","subscription.unpaid","subscription.changed","tenant.status","number.assignment.status"].forEach(function(name){es.addEventListener(name,function(){
-        window.PGIDataClient.invalidateAppBootstrap();scheduleProductionSync("full");
-      });});
+      ["baseline.created","subscription.unpaid"].forEach(function(n){es.addEventListener(n,function(){window.PGIDataClient.invalidateAppBootstrap();scheduleProductionSync("full");});});
       es.onerror=function(){
         if(es.readyState===EventSource.CLOSED){state.eventSource=null;}
       };
@@ -920,8 +918,6 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       items.push({type:"warn",title:"Qualité voix à contrôler",text:"Grade "+q.grade+" • MOS "+nfmt(q.mos,2)+" • perte "+nfmt(q.loss,2)+"%."});
     }
     if(RUNTIME.mode==="production"){
-      var unpaid=Number(state.wholesale&&state.wholesale.summary&&state.wholesale.summary.subscription_unpaid_alerts||0);
-      if(unpaid)items.unshift({type:"warn",title:"Abonnement client impayé",text:nfmt(unpaid)+" client(s) à traiter dans Plateforme SVA."});
       var system=state.system||{},queue=system.work_queue||{};
       var lag=Number(system.cdr_lag_seconds||0);
       if(state.diagnostics.apiStatus==="error"){
