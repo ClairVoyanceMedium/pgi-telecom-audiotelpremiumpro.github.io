@@ -161,3 +161,23 @@ Ce repli évite de rendre tout le dashboard indisponible pendant un rolling depl
 La couche 1.17 ajoute : taux de décroché, abandon et échec, part des appels de 10 minutes et plus, ratio minutes éligibles/facturables, taux de marge, couverture confirmé/attendu et encaissé/attendu, concordance financière, score de qualité voix, concentration du premier expert et du premier opérateur, tendances CA/marge, MOS/perte paquets, valeur/marge par appel et chaîne attendu → confirmé → encaissé.
 
 La vue Supervision affiche aussi l’état du relais PostgreSQL temps réel, les souscripteurs SSE, les événements publiés/reçus, les erreurs de relais et le rôle du processus. Les métriques nécessitant des données non collectées, comme un SLA historique ou un PDD exact, ne sont pas simulées.
+
+
+## Caller Experience 1.18
+
+La couche Expérience appelant exploite les données réellement présentes dans les CDR :
+
+- attente moyenne tous appels ;
+- attente moyenne des appels aboutis ;
+- attente moyenne avant abandon ;
+- part des appels aboutis en 20 secondes ou moins ;
+- part des abandons en 10 secondes ou moins ;
+- temps moyen passé dans le SVI avant mise en file ;
+- temps moyen passé en file jusqu'au pont ou au raccrochage ;
+- histogramme des attentes ≤10 s, 11–20 s, 21–30 s, 31–60 s, 61–120 s et >120 s ;
+- tendance attente moyenne / décroché rapide ;
+- part des échantillons RTP dégradés et part des MOS <3,5.
+
+Les seuils RTP utilisés pour le signal « dégradé » sont : perte de paquets ≥5 %, jitter >5 ms ou latence >150 ms. Ils servent au diagnostic technique du Cockpit et ne constituent pas un SLA client.
+
+Les métriques sont consolidées dans `experience_rollups_hourly_sharded` et dans les colonnes de dégradation de `quality_rollups_hourly_sharded`, avec lecture des bords de période dans les CDR bruts pour conserver l'exactitude des fenêtres personnalisées.
