@@ -61,6 +61,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const calls=await store.listCalls({limit:10});
     assert.equal(calls.data.length,1);
     assert.equal(calls.data[0].origin_carrier,"Orange");
+    assert.equal(calls.data[0].caller_masked,"•• •• •• 56 78");
     assert.equal(calls.data[0].service_rate_ttc_per_min,0.8);
     assert.equal(calls.data[0].carrier_rate_ht_per_min,0.55);
     assert.equal(calls.data[0].expected_payout_ht,5);
@@ -68,13 +69,15 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(calls.data[0].expert_cost_ht,1.8);
 
     const rawPayload=await store.sql.unsafe(
-      "SELECT payload->>'caller_masked' AS caller_masked,"+
+      "SELECT payload ? 'caller_masked' AS has_caller_masked,"+
+      " payload ? 'caller_hash' AS has_caller_hash,"+
       " payload ? 'caller_id_number' AS has_caller_id_number,"+
       " payload ? 'secret_field' AS has_secret_field"+
       " FROM raw_cdr_events WHERE source_event_id='evt-1'"
     );
     assert.equal(rawPayload.length,1);
-    assert.equal(rawPayload[0].caller_masked,"•• •• •• 56 78");
+    assert.equal(rawPayload[0].has_caller_masked,false);
+    assert.equal(rawPayload[0].has_caller_hash,false);
     assert.equal(rawPayload[0].has_caller_id_number,false);
     assert.equal(rawPayload[0].has_secret_field,false);
 
