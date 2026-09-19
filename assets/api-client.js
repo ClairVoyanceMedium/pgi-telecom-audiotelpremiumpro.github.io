@@ -124,7 +124,7 @@
     },
     systemHealth:function(){return request("/system/health");},
     carrierRouting:function(){return request("/carrier-routing");},
-    wholesaleOverview:function(){return request("/platform/overview");},
+    wholesaleOverview:function(){return request("/platform/overview");},\n    subscriptionBilling:function(){return request("/platform/subscription-billing");},\n    createSubscriptionPrice:function(payload,idempotencyKey){if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");return request("/platform/subscription-prices",{method:"POST",body:payload,headers:{"Idempotency-Key":idempotencyKey}});},
     tenants:function(params){
       var q=new URLSearchParams(params||{}).toString();
       return request("/platform/tenants"+(q?"?"+q:""));
