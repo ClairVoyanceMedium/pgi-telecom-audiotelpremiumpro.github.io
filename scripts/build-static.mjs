@@ -17,6 +17,7 @@ const files=[
   "assets/styles.css",
   "assets/core.js",
   "assets/api-client.js",
+  "assets/cockpit-pro.js",
   "assets/app.js",
   "assets/favicon.svg"
 ];

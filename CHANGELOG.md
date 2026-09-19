@@ -1,13 +1,21 @@
 # Changelog
 
 
-## Unreleased
+## 1.17.0 — 2026-09-19
 
-- relais temps réel inter-processus via PostgreSQL `LISTEN/NOTIFY` pour les déploiements API/workers séparés ou multi-instance ;
-- aucun Redis/Valkey requis pour ce fan-out ;
-- déduplication de l’écho local et limite stricte de taille des notifications ;
-- processus worker en publication seule afin d’éviter une connexion LISTEN inutile ;
-- tests unitaires dédiés au bus distribué et fermeture propre de la souscription au shutdown.
+Command Center et temps réel distribué :
+
+- Cockpit densifié avec 12 indicateurs de performance avancés ;
+- tendances volume, conversion, finance, qualité voix et économie unitaire ;
+- chaîne visuelle attendu → confirmé → encaissé ;
+- séries financières et RTP temporelles calculées côté serveur ;
+- indicateurs d’éligibilité reversement, marge, couverture et concordance financière ;
+- suivi de concentration experts et opérateurs ;
+- relais SSE multi-processus via PostgreSQL `LISTEN/NOTIFY`, sans Redis/Valkey ;
+- supervision du relais, des souscripteurs SSE et du rôle des workers ;
+- module graphique avancé séparé et cache PWA v20 ;
+- budgets stricts conservés : `app.js` 90 KiB et shell 260 KiB ;
+- versions front, backend, Docker et manifests scale alignées sur 1.17.0.
 
 ## 1.16.0 — 2026-09-19
 

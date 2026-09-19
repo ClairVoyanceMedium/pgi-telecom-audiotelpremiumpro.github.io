@@ -154,3 +154,10 @@ Ce repli évite de rendre tout le dashboard indisponible pendant un rolling depl
 6. Le mobile garde une vue essentielle rapide.
 7. Les données absentes sont affichées comme absentes, jamais inventées.
 8. Les états démo et production doivent rester visuellement distinguables.
+
+
+## Command Center 1.17
+
+La couche 1.17 ajoute : taux de décroché, abandon et échec, part des appels de 10 minutes et plus, ratio minutes éligibles/facturables, taux de marge, couverture confirmé/attendu et encaissé/attendu, concordance financière, score de qualité voix, concentration du premier expert et du premier opérateur, tendances CA/marge, MOS/perte paquets, valeur/marge par appel et chaîne attendu → confirmé → encaissé.
+
+La vue Supervision affiche aussi l’état du relais PostgreSQL temps réel, les souscripteurs SSE, les événements publiés/reçus, les erreurs de relais et le rôle du processus. Les métriques nécessitant des données non collectées, comme un SLA historique ou un PDD exact, ne sont pas simulées.

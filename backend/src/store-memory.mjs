@@ -156,9 +156,15 @@ export class MemoryStore{
       calls_failed:items.filter(x=>!["connected","abandoned"].includes(x.call_status)).length,
       conversation_seconds:sum(items,"conversation_seconds"),
       billable_seconds:sum(items,"billable_seconds"),
+      payout_eligible_seconds:sum(items,"payout_eligible_seconds"),
       revenue:sum(items,"retail_service_amount_ttc"),
       expected_payout:sum(items,"expected_payout_ht"),
+      confirmed_payout:sum(items,"confirmed_payout_ht"),
+      paid_payout:sum(items,"paid_payout_ht"),
+      expert_cost:sum(items,"expert_cost_ht"),
+      technical_cost:sum(items,"technical_cost_ht"),
       margin:sum(items,"estimated_margin_ht"),
+      reconciliation_variance:sum(items,"reconciliation_variance_ht"),
       currency:"EUR",currency_count:1
     });
     const bucketKey=x=>{
@@ -201,7 +207,15 @@ export class MemoryStore{
       latency_ms:qavg("latency_ms"),
       dtmf_errors:qualityRows.reduce((a,x)=>a+Number(x.quality.dtmf_errors||0),0)
     };
-    return {granularity,series,hours,weekdays,heatmap,quality,experts:expertsRows.slice(0,50),carriers:carriersRows.slice(0,50),durations};
+    const qualitySeries=[...group(qualityRows,bucketKey)].map(([bucket,items])=>{
+      const avg=key=>items.length?items.reduce((a,x)=>a+Number(x.quality[key]||0),0)/items.length:null;
+      return {
+        bucket,samples:items.length,mos:avg("mos"),packet_loss_percent:avg("packet_loss_percent"),
+        jitter_ms:avg("jitter_ms"),latency_ms:avg("latency_ms"),
+        dtmf_errors:items.reduce((a,x)=>a+Number(x.quality.dtmf_errors||0),0)
+      };
+    }).sort((a,b)=>Date.parse(a.bucket)-Date.parse(b.bucket));
+    return {granularity,series,hours,weekdays,heatmap,quality,quality_series:qualitySeries,experts:expertsRows.slice(0,50),carriers:carriersRows.slice(0,50),durations};
   }
 
   async listCalls(params={}){

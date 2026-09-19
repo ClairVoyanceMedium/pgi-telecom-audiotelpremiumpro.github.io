@@ -88,7 +88,7 @@
             <div>
               <p class="command-kicker">CENTRE DE PILOTAGE PGI</p>
               <h2>Pilotage Audiotel en temps réel</h2>
-              <p>Performance, finance, qualité télécom et exploitation réunies dans un seul cockpit.</p>
+              <p>Performance, finance, qualité et exploitation.</p>
             </div>
           </div>
           <div class="command-metrics">
@@ -254,6 +254,22 @@
             <div><span>Durée moyenne</span><strong id="cockpit-average-duration">—</strong><small>Appels aboutis</small></div>
           </div>
 
+
+          <section class="cockpit-pulse-grid" aria-label="Indicateurs de performance avancés">
+            <article class="pulse-card"><div><span>Décroché</span><strong id="pulse-asr">—</strong></div><small id="pulse-asr-note">Part des appels aboutis</small><i><b id="pulse-asr-bar"></b></i></article>
+            <article class="pulse-card"><div><span>Abandons</span><strong id="pulse-abandon">—</strong></div><small>Perte avant connexion</small><i><b id="pulse-abandon-bar"></b></i></article>
+            <article class="pulse-card"><div><span>Échecs</span><strong id="pulse-failed">—</strong></div><small>Échecs techniques / non aboutis</small><i><b id="pulse-failed-bar"></b></i></article>
+            <article class="pulse-card"><div><span>Appels 10 min +</span><strong id="pulse-long-calls">—</strong></div><small>Part des conversations longues</small><i><b id="pulse-long-calls-bar"></b></i></article>
+            <article class="pulse-card"><div><span>Éligibilité reversement</span><strong id="pulse-eligible">—</strong></div><small>Minutes éligibles / facturables</small><i><b id="pulse-eligible-bar"></b></i></article>
+            <article class="pulse-card"><div><span>Marge</span><strong id="pulse-margin-rate">—</strong></div><small>Marge estimée / CA</small><i><b id="pulse-margin-rate-bar"></b></i></article>
+            <article class="pulse-card"><div><span>Confirmé / attendu</span><strong id="pulse-confirmed">—</strong></div><small>Couverture opérateur</small><i><b id="pulse-confirmed-bar"></b></i></article>
+            <article class="pulse-card"><div><span>Encaissé / attendu</span><strong id="pulse-paid">—</strong></div><small>Couverture de paiement</small><i><b id="pulse-paid-bar"></b></i></article>
+            <article class="pulse-card"><div><span>Concordance financière</span><strong id="pulse-recon">—</strong></div><small>Écart de rapprochement</small><i><b id="pulse-recon-bar"></b></i></article>
+            <article class="pulse-card"><div><span>Qualité voix</span><strong id="pulse-quality">—</strong></div><small id="pulse-quality-note">MOS / réseau</small><i><b id="pulse-quality-bar"></b></i></article>
+            <article class="pulse-card"><div><span>Concentration expert</span><strong id="pulse-top-expert">—</strong></div><small>Part du premier expert</small><i><b id="pulse-top-expert-bar"></b></i></article>
+            <article class="pulse-card"><div><span>Concentration opérateur</span><strong id="pulse-top-carrier">—</strong></div><small>Part du premier réseau</small><i><b id="pulse-top-carrier-bar"></b></i></article>
+          </section>
+
           <div class="cockpit-chart-grid">
             <article class="panel cockpit-chart-panel wide-chart">
               <div class="panel-head"><div><p class="panel-kicker">VOLUME</p><h2>Appels & minutes</h2></div><span class="metric-badge" id="cockpit-volume-total">0 appels</span></div>
@@ -263,6 +279,26 @@
             <article class="panel cockpit-chart-panel wide-chart">
               <div class="panel-head"><div><p class="panel-kicker">CONVERSION</p><h2>ASR & abandons</h2></div><span class="metric-badge" id="cockpit-asr-average">ASR —</span></div>
               <div class="chart-wrap"><svg id="cockpit-conversion-chart" class="cockpit-svg-chart" viewBox="0 0 760 220" role="img" aria-label="Évolution du taux de décroché et des abandons"></svg></div>
+            </article>
+
+            <article class="panel cockpit-chart-panel wide-chart command-chart">
+              <div class="panel-head"><div><p class="panel-kicker">FINANCE</p><h2>CA, reversement & marge</h2></div><span class="metric-badge" id="cockpit-margin-badge">Marge —</span></div>
+              <div class="chart-wrap"><svg id="cockpit-finance-trend" class="cockpit-svg-chart" viewBox="0 0 760 220" role="img" aria-label="Évolution du chiffre d'affaires, du reversement attendu et de la marge"></svg></div>
+            </article>
+
+            <article class="panel cockpit-chart-panel wide-chart command-chart">
+              <div class="panel-head"><div><p class="panel-kicker">QUALITÉ</p><h2>MOS & perte paquets</h2></div><span class="metric-badge" id="cockpit-quality-samples">0 échantillon</span></div>
+              <div class="chart-wrap"><svg id="cockpit-quality-chart" class="cockpit-svg-chart" viewBox="0 0 760 220" role="img" aria-label="Évolution du MOS et de la perte de paquets"></svg></div>
+            </article>
+
+            <article class="panel cockpit-chart-panel wide-chart command-chart">
+              <div class="panel-head"><div><p class="panel-kicker">ÉCONOMIE UNITAIRE</p><h2>Valeur & marge par appel</h2></div><span class="metric-badge" id="cockpit-unit-badge">—</span></div>
+              <div class="chart-wrap"><svg id="cockpit-unit-chart" class="cockpit-svg-chart" viewBox="0 0 760 220" role="img" aria-label="Évolution de la valeur et de la marge par appel"></svg></div>
+            </article>
+
+            <article class="panel cockpit-chart-panel command-chart">
+              <div class="panel-head"><div><p class="panel-kicker">REVERSEMENTS</p><h2>Chaîne de paiement</h2></div><span class="metric-badge" id="cockpit-payment-gap">Écart —</span></div>
+              <div id="cockpit-payment-bars" class="payment-ladder"></div>
             </article>
 
             <article class="panel cockpit-chart-panel">
@@ -517,6 +553,7 @@
           <article class="panel"><p class="panel-kicker">DONNÉES</p><h2>Pipeline CDR</h2><div class="big-status warn" id="cdr-state">MODE DÉMO</div><div class="metric-row"><span>Dernière actualisation</span><strong id="last-sync">Maintenant</strong></div><div class="metric-row"><span>Fraîcheur</span><strong id="data-freshness">Locale</strong></div><div class="metric-row"><span>CDR en erreur</span><strong id="cdr-errors">0</strong></div></article>
           <article class="panel"><p class="panel-kicker">RUNTIME</p><h2>Autodiagnostic</h2><div class="big-status warn" id="api-health-state">API NON CONNECTÉE</div><div class="metric-row"><span>Version</span><strong id="runtime-version">—</strong></div><div class="metric-row"><span>Release</span><strong id="runtime-release">—</strong></div><div class="metric-row"><span>Temps de rendu</span><strong id="render-time">—</strong></div><div class="metric-row"><span>Erreurs JS</span><strong id="runtime-errors">0</strong></div><div class="metric-row"><span>Mode données</span><strong id="data-mode">Démo</strong></div><p class="muted">Aucun détail d’erreur potentiellement sensible n’est affiché dans le navigateur.</p></article>
           <article class="panel"><p class="panel-kicker">RÉSILIENCE</p><h2>Continuité & jobs</h2><div class="big-status warn" id="noc-resilience-state">MODE COMPACT</div><div class="metric-row"><span>Régions prêtes</span><strong id="noc-regions-ready">1 / 1</strong></div><div class="metric-row"><span>Jobs en attente</span><strong id="noc-work-pending">0</strong></div><div class="metric-row"><span>Plus vieux job</span><strong id="noc-work-oldest">0 s</strong></div><div class="metric-row"><span>Dead letters</span><strong id="noc-work-dead">0</strong></div><div class="metric-row"><span>Cibles DR</span><strong id="noc-dr-targets">4</strong></div><p class="muted">Les valeurs multi-région ne sont déclarées prêtes qu’après provisionnement et exercice réel.</p></article>
+          <article class="panel"><p class="panel-kicker">TEMPS RÉEL DISTRIBUÉ</p><h2>Bus événements</h2><div class="big-status warn" id="realtime-relay-state">NON ATTACHÉ</div><div class="metric-row"><span>Souscripteurs SSE</span><strong id="realtime-subscribers">0</strong></div><div class="metric-row"><span>Événements publiés</span><strong id="realtime-published">0</strong></div><div class="metric-row"><span>Événements reçus</span><strong id="realtime-received">0</strong></div><div class="metric-row"><span>Erreurs relais</span><strong id="realtime-errors">0</strong></div><div class="metric-row"><span>Rôle processus</span><strong id="runtime-process-role">—</strong></div><p class="muted">Relais PostgreSQL inter-processus utilisé pour garder plusieurs instances API et workers synchronisés.</p></article>
         </section>
       </div>
 
@@ -631,6 +668,7 @@
   <script src="assets/data-client.js"></script>
   <script src="assets/command-palette.js"></script>
   <script src="assets/workspace.js"></script>
+  <script src="assets/cockpit-pro.js"></script>
   <script src="assets/app.js"></script>
 </body>
 </html>
