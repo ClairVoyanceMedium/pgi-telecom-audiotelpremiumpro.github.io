@@ -267,6 +267,11 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.overview",200,await store.wholesaleOverview());
       }
 
+      if(method==="GET"&&pathname==="/api/v1/platform/tenants/summary"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.tenant_summary",200,await store.customerAdminSummary());
+      }
+
       if(method==="GET"&&pathname==="/api/v1/platform/tenants"){
         requireRole(actor,["admin","finance","readonly"]);
         const params=Object.fromEntries(url.searchParams.entries());
