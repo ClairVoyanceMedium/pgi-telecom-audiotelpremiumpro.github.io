@@ -148,7 +148,7 @@ CREATE TRIGGER subscription_billing_events_no_mutation
 BEFORE UPDATE OR DELETE ON subscription_billing_events
 FOR EACH ROW EXECUTE FUNCTION pgi_prevent_subscription_billing_event_mutation();
 
-CREATE OR REPLACE FUNCTION pgi_publish_service_plan_price(
+CREATE FUNCTION pgi_publish_service_plan_price(
   p_plan_key text,
   p_currency char(3),
   p_amount_minor bigint,
@@ -212,7 +212,7 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION pgi_tenant_has_premium_call_access(
+CREATE FUNCTION pgi_tenant_has_premium_call_access(
   p_tenant_id bigint,
   p_market_id bigint DEFAULT NULL,
   p_at timestamptz DEFAULT now()
