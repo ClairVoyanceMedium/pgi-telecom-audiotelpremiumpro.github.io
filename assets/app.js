@@ -325,11 +325,13 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       var x=window.PGICore.aggregateCalls(rows);
       return {
         calls:x.calls,connected:x.connected,abandoned:x.abandoned,failed:x.failed,
-        mins:x.billableSeconds/60,expected:x.expectedPayoutHt,confirmed:x.confirmedPayoutHt,paid:x.paidPayoutHt,
-        ca:x.generatedRevenueTtc,margin:x.estimatedMarginHt,acd:x.acdSeconds,asr:x.asrPercent,gap:x.reconciliationVarianceHt
+        mins:x.billableSeconds/60,payoutEligibleMins:x.payoutEligibleSeconds/60,
+        expected:x.expectedPayoutHt,confirmed:x.confirmedPayoutHt,paid:x.paidPayoutHt,
+        ca:x.generatedRevenueTtc,margin:x.estimatedMarginHt,expertCost:x.expertCostHt,technicalCost:x.technicalCostHt,
+        acd:x.acdSeconds,asr:x.asrPercent,gap:x.reconciliationVarianceHt
       };
     }
-    return {calls:0,connected:0,abandoned:0,failed:0,mins:0,expected:0,confirmed:0,paid:0,ca:0,margin:0,acd:0,asr:0,gap:0};
+    return {calls:0,connected:0,abandoned:0,failed:0,mins:0,payoutEligibleMins:0,expected:0,confirmed:0,paid:0,ca:0,margin:0,expertCost:0,technicalCost:0,acd:0,asr:0,gap:0};
   }
 
   function summaryAggregate(summary){
@@ -337,9 +339,10 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     return {
       calls:Number(s.calls_total||0),connected:Number(s.calls_connected||0),
       abandoned:Number(s.calls_abandoned||0),failed:Number(s.calls_failed||0),
-      mins:Number(s.billable_minutes||0),expected:mixed?NaN:Number(s.expected_payout_ht||0),
-      confirmed:mixed?NaN:Number(s.confirmed_payout_ht||0),paid:mixed?NaN:Number(s.paid_payout_ht||0),
+      mins:Number(s.billable_minutes||0),payoutEligibleMins:Number(s.payout_eligible_minutes||0),
+      expected:mixed?NaN:Number(s.expected_payout_ht||0),confirmed:mixed?NaN:Number(s.confirmed_payout_ht||0),paid:mixed?NaN:Number(s.paid_payout_ht||0),
       ca:mixed?NaN:Number(s.generated_revenue_ttc||0),margin:mixed?NaN:Number(s.estimated_margin_ht||0),
+      expertCost:mixed?NaN:Number(s.expert_cost_ht||0),technicalCost:mixed?NaN:Number(s.technical_cost_ht||0),
       acd:Number(s.acd_seconds||0),asr:Number(s.asr_percent||0),
       gap:mixed?NaN:Number(s.reconciliation_variance_ht||0),mixedCurrency:mixed
     };
@@ -747,6 +750,20 @@ var carriers=["Orange","SFR","Bouygues","Free"];
       resilienceState.textContent=degraded?"ATTENTION":(Number(resilience.regions_ready||0)>1?"MULTI-RÉGION PRÊT":"MODE COMPACT SAIN");
       resilienceState.className="big-status "+(degraded?"warn":"ok");
     }
+    var realtime=system.realtime||{},workerRuntime=system.workers||{};
+    setText("realtime-subscribers",nfmt(realtime.subscribers||0));
+    setText("realtime-published",nfmt(realtime.published||0));
+    setText("realtime-received",nfmt(realtime.received||0));
+    setText("realtime-errors",nfmt(realtime.errors||0));
+    setText("runtime-process-role",String(workerRuntime.process_role||"—").toUpperCase());
+    var relayState=$("realtime-relay-state");
+    if(relayState){
+      var relayErrors=Number(realtime.errors||0),attached=Boolean(realtime.attached),listening=Boolean(realtime.listening);
+      var role=String(workerRuntime.process_role||"");
+      var healthy=attached&&(listening||role==="worker")&&relayErrors===0;
+      relayState.textContent=RUNTIME.mode!=="production"?"MODE DÉMO":healthy?(listening?"DISTRIBUÉ ACTIF":"PUBLICATION ACTIVE"):(attached?"RELAIS DÉGRADÉ":"NON ATTACHÉ");
+      relayState.className="big-status "+(healthy?"ok":"warn");
+    }
   }
 
   function renderNoc(rows){
@@ -799,7 +816,10 @@ var carriers=["Orange","SFR","Bouygues","Free"];
         calls_total:m.calls,calls_connected:m.connected,calls_abandoned:m.abandoned,calls_failed:m.failed,
         conversation_seconds:items.reduce(function(a,x){return a+Number(x.conversation||0);},0),
         billable_seconds:items.reduce(function(a,x){return a+Number(x.billableSeconds||x.billable*60||0);},0),
-        revenue:m.ca,expected_payout:m.expected,margin:m.margin,currency:state.marketCurrency||"EUR",currency_count:1
+        payout_eligible_seconds:items.reduce(function(a,x){return a+Number(x.payoutEligibleSeconds||x.payoutEligible*60||0);},0),
+        revenue:m.ca,expected_payout:m.expected,confirmed_payout:m.confirmed,paid_payout:m.paid,
+        expert_cost:m.expertCost,technical_cost:m.technicalCost,margin:m.margin,reconciliation_variance:m.gap,
+        currency:state.marketCurrency||"EUR",currency_count:1
       };
     };
     var bucket=function(c){
@@ -830,7 +850,13 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     var durationKey=function(c){return c.status!=="connected"?"not_connected":c.conversation<60?"lt_1m":c.conversation<300?"1_5m":c.conversation<600?"5_10m":c.conversation<1200?"10_20m":c.conversation<1800?"20_30m":"gte_30m";};
     var durationLabels={not_connected:"Non aboutis",lt_1m:"< 1 min","1_5m":"1–5 min","5_10m":"5–10 min","10_20m":"10–20 min","20_30m":"20–30 min",gte_30m:"30 min +"};
     var durationRows=dimension("duration",durationKey,function(c){return durationLabels[durationKey(c)]||"Autre";});
-    return {granularity:granularity,series:series,hours:hours,weekdays:weekdays,heatmap:heatmap,experts:expertRows,carriers:carrierRows,durations:durationRows};
+    var qualityRows=rows.filter(function(c){return c.status==="connected"&&Number.isFinite(c.mos)&&Number.isFinite(c.packetLoss)&&Number.isFinite(c.jitter)&&Number.isFinite(c.latency);});
+    var qualitySeries=[...grouped(function(c){return bucket(c);})].map(function(entry){
+      var items=entry[1].filter(function(c){return c.status==="connected"&&Number.isFinite(c.mos)&&Number.isFinite(c.packetLoss)&&Number.isFinite(c.jitter)&&Number.isFinite(c.latency);});
+      var avg=function(key){return items.length?items.reduce(function(a,x){return a+Number(x[key]||0);},0)/items.length:null;};
+      return {bucket:entry[0],samples:items.length,mos:avg("mos"),packet_loss_percent:avg("packetLoss"),jitter_ms:avg("jitter"),latency_ms:avg("latency"),dtmf_errors:items.reduce(function(a,x){return a+Number(x.dtmfErrors||0);},0)};
+    }).filter(function(x){return x.samples>0;}).sort(function(a,b){return Date.parse(a.bucket)-Date.parse(b.bucket);});
+    return {granularity:granularity,series:series,hours:hours,weekdays:weekdays,heatmap:heatmap,quality_series:qualitySeries,experts:expertRows,carriers:carrierRows,durations:durationRows};
   }
 
   function analyticsBucketLabel(value,granularity){
@@ -871,6 +897,138 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     svg.innerHTML=grid+labels+
       '<text x="'+p.l+'" y="14" class="chart-legend-a">'+esc(aLabel)+'</text><text x="'+(p.l+105)+'" y="14" class="chart-legend-b">'+esc(bLabel)+'</text>'+
       '<path class="cockpit-line-a" d="'+path(aKey,maxA)+'"/><path class="cockpit-line-b" d="'+path(bKey,maxB)+'"/>';
+  }
+
+
+  function pct(value,total){
+    return total>0?Number(value||0)/Number(total)*100:0;
+  }
+
+  function pulseTone(value,good,warn,invert){
+    var v=Number(value||0);
+    if(invert)return v<=good?"good":v<=warn?"warn":"bad";
+    return v>=good?"good":v>=warn?"warn":"bad";
+  }
+
+  function setPulseMetric(id,value,barValue,tone,note){
+    setText(id,value);
+    if(note!=null)setText(id+"-note",note);
+    var bar=$(id+"-bar");
+    if(bar)bar.style.width=clamp(Number(barValue||0),0,100).toFixed(1)+"%";
+    var card=$(id);
+    if(card&&card.closest){
+      var root=card.closest(".pulse-card");
+      if(root){root.classList.remove("good","warn","bad");if(tone)root.classList.add(tone);}
+    }
+  }
+
+  function renderMultiTrend(svgId,seriesData,defs){
+    var svg=$(svgId);if(!svg)return;
+    var granularity=(state.serverAnalytics||{}).granularity||cockpitAnalytics([]).granularity;
+    var data=(seriesData||[]).map(function(x){
+      var row={label:analyticsBucketLabel(x.bucket,granularity)};
+      defs.forEach(function(d){row[d.key]=Number(d.value?d.value(x):x[d.key]||0);});
+      return row;
+    });
+    var w=760,h=220,p={l:42,r:16,t:32,b:28};
+    if(!data.length){svg.innerHTML='<text x="380" y="110" text-anchor="middle" fill="#6d829a" font-size="12">Aucune donnée</text>';return;}
+    var max=Math.max(1,...data.flatMap(function(x){return defs.map(function(d){return Number(x[d.key]||0);});}));
+    var sx=function(i){return p.l+(data.length===1?(w-p.l-p.r)/2:(w-p.l-p.r)*i/(data.length-1));};
+    var sy=function(v){return h-p.b-(h-p.t-p.b)*Number(v||0)/max;};
+    var path=function(key){return data.map(function(d,i){return (i?"L":"M")+sx(i).toFixed(1)+" "+sy(d[key]).toFixed(1);}).join(" ");};
+    var grid="";for(var g=0;g<=4;g++){var y=p.t+(h-p.t-p.b)*g/4;grid+='<line class="chart-grid" x1="'+p.l+'" x2="'+(w-p.r)+'" y1="'+y+'" y2="'+y+'"/>';}
+    var labels=data.map(function(d,i){if(data.length>10&&i%Math.ceil(data.length/8))return"";return '<text class="chart-axis" text-anchor="middle" x="'+sx(i)+'" y="'+(h-7)+'">'+esc(d.label)+'</text>';}).join("");
+    var legends=defs.map(function(d,i){return '<text x="'+(p.l+i*128)+'" y="14" class="chart-multi-legend c'+i+'">'+esc(d.label)+'</text>';}).join("");
+    var paths=defs.map(function(d,i){return '<path class="cockpit-line-multi c'+i+'" d="'+path(d.key)+'"/>';}).join("");
+    svg.innerHTML=grid+labels+legends+paths;
+  }
+
+  function renderOutcomeTrend(svgId,seriesData){
+    var svg=$(svgId);if(!svg)return;
+    var granularity=(state.serverAnalytics||{}).granularity||cockpitAnalytics([]).granularity;
+    var data=(seriesData||[]).map(function(x){return {
+      label:analyticsBucketLabel(x.bucket,granularity),
+      connected:Number(x.calls_connected||0),abandoned:Number(x.calls_abandoned||0),failed:Number(x.calls_failed||0)
+    };});
+    var w=760,h=220,p={l:38,r:14,t:30,b:28};
+    if(!data.length){svg.innerHTML='<text x="380" y="110" text-anchor="middle" fill="#6d829a" font-size="12">Aucune donnée</text>';return;}
+    var max=Math.max(1,...data.map(function(x){return x.connected+x.abandoned+x.failed;}));
+    var slot=(w-p.l-p.r)/data.length,bar=Math.max(4,Math.min(34,slot*.62));
+    var sy=function(v){return (h-p.t-p.b)*v/max;};
+    var bars=data.map(function(d,i){
+      var x=p.l+i*slot+(slot-bar)/2,y=h-p.b;
+      var hc=sy(d.connected),ha=sy(d.abandoned),hf=sy(d.failed);
+      var label=(data.length>10&&i%Math.ceil(data.length/8))?"":'<text class="chart-axis" text-anchor="middle" x="'+(x+bar/2)+'" y="'+(h-7)+'">'+esc(d.label)+'</text>';
+      return '<rect class="outcome-connected" x="'+x+'" y="'+(y-hc)+'" width="'+bar+'" height="'+hc+'"/>'+
+        '<rect class="outcome-abandoned" x="'+x+'" y="'+(y-hc-ha)+'" width="'+bar+'" height="'+ha+'"/>'+
+        '<rect class="outcome-failed" x="'+x+'" y="'+(y-hc-ha-hf)+'" width="'+bar+'" height="'+hf+'"/>'+label;
+    }).join("");
+    svg.innerHTML='<text x="'+p.l+'" y="14" class="chart-multi-legend c0">Aboutis</text><text x="'+(p.l+105)+'" y="14" class="chart-multi-legend c1">Abandons</text><text x="'+(p.l+220)+'" y="14" class="chart-multi-legend c2">Échecs</text>'+bars;
+  }
+
+  function renderPaymentLadder(m){
+    var el=$("cockpit-payment-bars");if(!el)return;
+    if(m.mixedCurrency){el.innerHTML='<p class="muted">Analyse financière désactivée sur une sélection multi-devises.</p>';return;}
+    var expected=Math.max(0,Number(m.expected||0));
+    var rows=[
+      ["Attendu",expected,100],
+      ["Confirmé",Math.max(0,Number(m.confirmed||0)),expected?pct(m.confirmed,expected):0],
+      ["Encaissé",Math.max(0,Number(m.paid||0)),expected?pct(m.paid,expected):0]
+    ];
+    el.innerHTML=rows.map(function(x){
+      return '<div class="payment-step"><div><span>'+x[0]+'</span><strong>'+money(x[1])+'</strong><small>'+nfmt(x[2],1)+'%</small></div><i><b style="width:'+clamp(x[2],0,100).toFixed(1)+'%"></b></i></div>';
+    }).join("");
+    setText("cockpit-payment-gap",expected?"Écart "+money(m.gap):"Écart —");
+  }
+
+  function renderAdvancedCommandCenter(rows,data,m){
+    var total=Math.max(0,Number(m.calls||0)),connected=Math.max(0,Number(m.connected||0));
+    var abandonRate=pct(m.abandoned,total),failedRate=pct(m.failed,total);
+    var durationMap={};(data.durations||[]).forEach(function(x){durationMap[x.dimension_key]=Number(x.calls_total||0);});
+    var longCalls=Number(durationMap["10_20m"]||0)+Number(durationMap["20_30m"]||0)+Number(durationMap.gte_30m||0);
+    var longRate=pct(longCalls,connected);
+    var eligibleRate=pct(m.payoutEligibleMins,m.mins);
+    var marginRate=(!m.mixedCurrency&&m.ca>0)?pct(m.margin,m.ca):0;
+    var confirmedRate=(!m.mixedCurrency&&m.expected>0)?pct(m.confirmed,m.expected):0;
+    var paidRate=(!m.mixedCurrency&&m.expected>0)?pct(m.paid,m.expected):0;
+    var recon=(!m.mixedCurrency&&m.expected>0)?clamp(100-Math.abs(m.gap)/m.expected*100,0,100):0;
+    var q=currentQuality(rows);
+    var topExpert=(data.experts||[])[0],topCarrier=(data.carriers||[])[0];
+    var topExpertShare=total&&topExpert?pct(topExpert.calls_total,total):0;
+    var topCarrierShare=total&&topCarrier?pct(topCarrier.calls_total,total):0;
+
+    setPulseMetric("pulse-asr",nfmt(m.asr,1)+"%",m.asr,pulseTone(m.asr,85,70,false));
+    setPulseMetric("pulse-abandon",nfmt(abandonRate,1)+"%",abandonRate,pulseTone(abandonRate,5,12,true));
+    setPulseMetric("pulse-failed",nfmt(failedRate,1)+"%",failedRate,pulseTone(failedRate,3,8,true));
+    setPulseMetric("pulse-long-calls",nfmt(longRate,1)+"%",longRate,pulseTone(longRate,45,25,false));
+    setPulseMetric("pulse-eligible",nfmt(eligibleRate,1)+"%",eligibleRate,pulseTone(eligibleRate,90,75,false));
+    setPulseMetric("pulse-margin-rate",m.mixedCurrency?"—":nfmt(marginRate,1)+"%",marginRate,pulseTone(marginRate,25,12,false));
+    setPulseMetric("pulse-confirmed",m.mixedCurrency?"—":nfmt(confirmedRate,1)+"%",confirmedRate,pulseTone(confirmedRate,98,90,false));
+    setPulseMetric("pulse-paid",m.mixedCurrency?"—":nfmt(paidRate,1)+"%",paidRate,pulseTone(paidRate,95,80,false));
+    setPulseMetric("pulse-recon",m.mixedCurrency?"—":nfmt(recon,1)+"%",recon,pulseTone(recon,99,96,false));
+    setPulseMetric("pulse-quality",q.count?nfmt(q.score,0)+"/100":"—",q.score,pulseTone(q.score,86,72,false),q.count?"MOS "+nfmt(q.mos,2)+" • "+nfmt(q.count)+" échant.":"Aucun échantillon RTP");
+    setPulseMetric("pulse-top-expert",topExpert?nfmt(topExpertShare,1)+"%":"—",topExpertShare,pulseTone(topExpertShare,35,55,true));
+    setPulseMetric("pulse-top-carrier",topCarrier?nfmt(topCarrierShare,1)+"%":"—",topCarrierShare,pulseTone(topCarrierShare,45,70,true));
+
+    var trend=data.series||[];
+    renderMultiTrend("cockpit-finance-trend",trend,[
+      {key:"revenue",label:"CA"},{key:"expected_payout",label:"Reversement"},{key:"margin",label:"Marge"}
+    ]);
+    renderOutcomeTrend("cockpit-outcome-chart",trend);
+    var qualitySeries=data.quality_series||[];
+    renderDualTrend("cockpit-quality-chart",qualitySeries,"mos","packet_loss_percent","MOS","Perte %",false);
+    var unitSeries=trend.map(function(x){
+      var calls=Number(x.calls_total||0);
+      return {...x,value_per_call:calls?Number(x.revenue||0)/calls:0,margin_per_call:calls?Number(x.margin||0)/calls:0};
+    });
+    renderMultiTrend("cockpit-unit-chart",unitSeries,[
+      {key:"value_per_call",label:"CA / appel"},{key:"margin_per_call",label:"Marge / appel"}
+    ]);
+    setText("cockpit-margin-badge",m.mixedCurrency?"Marge multi-devises":"Marge "+nfmt(marginRate,1)+"%");
+    setText("cockpit-loss-badge","Pertes "+nfmt(abandonRate+failedRate,1)+"%");
+    setText("cockpit-quality-samples",nfmt(q.count)+" échantillon"+(q.count>1?"s":""));
+    setText("cockpit-unit-badge",m.mixedCurrency?"Multi-devises":(m.calls?money(m.ca/m.calls)+"/appel":"—"));
+    renderPaymentLadder(m);
   }
 
   function renderCockpitIntelligence(rows){
@@ -918,12 +1076,13 @@ var carriers=["Orange","SFR","Bouygues","Free"];
     renderMetricBars("cockpit-duration-bars",data.durations||[],function(x){return x.calls_total;},function(x){return x.dimension_label;},function(x,v){return nfmt(v);});
     renderMetricBars("cockpit-expert-bars",(data.experts||[]).slice(0,7),function(x){return x.expected_payout==null?x.calls_total:x.expected_payout;},function(x){return x.dimension_label;},function(x,v){return x.expected_payout==null?nfmt(x.calls_total)+" appels":money(v);});
     renderMetricBars("cockpit-carrier-bars",(data.carriers||[]).slice(0,7),function(x){return x.calls_total;},function(x){return x.dimension_label;},function(x,v){return nfmt(v)+" appels";});
+    renderAdvancedCommandCenter(rows,data,m);
 
     var sampleNote=$("analytics-sample-note");
     if(sampleNote){
       sampleNote.hidden=!state.cdrSampleTruncated;
       sampleNote.textContent=state.cdrSampleTruncated
-        ?"Les graphiques du Tour de contrôle utilisent les agrégats serveur exacts. Seuls la qualité RTP, la qualité RTP et certains détails CDR restent limités aux 1 000 appels récents chargés dans le navigateur."
+        ?"Les graphiques du Tour de contrôle utilisent les agrégats serveur exacts. Seuls certains détails CDR restent limités aux 1 000 appels récents chargés dans le navigateur."
         :"Les analyses affichées couvrent toute la période sélectionnée.";
     }
   }
