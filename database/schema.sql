@@ -750,7 +750,544 @@ CREATE INDEX payment_compliance_status_idx
 CREATE TABLE operating_markets (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   country_code char(2) NOT NULL UNIQUE
-    CHECK (country_code ~ '^[A-Z]{2}),
+    CHECK (country_code ~ '^[A-Z]{2},
+  display_name text NOT NULL,
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  default_currency char(3) NOT NULL
+    CHECK (default_currency ~ '^[A-Z]{3},
+  default_locale text NOT NULL,
+  timezone text NOT NULL,
+  regulator_name text,
+  numbering_authority text,
+  data_region text NOT NULL DEFAULT 'eu',
+  privacy_retention_days integer CHECK (privacy_retention_days IS NULL OR privacy_retention_days > 0),
+  numbering_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  compliance_requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO operating_markets(
+  country_code,display_name,status,default_currency,default_locale,timezone,
+  regulator_name,numbering_authority,data_region,numbering_profile
+)
+VALUES (
+  'FR','France','active','EUR','fr-FR','Europe/Paris',
+  'ARCEP','ARCEP','eu',
+  '{"canonical_number_format":"E.164","service_family":"premium_rate","local_product":"SVA"}'::jsonb
+)
+ON CONFLICT (country_code) DO NOTHING;
+
+ALTER TABLE tenants
+  ADD COLUMN preferred_locale text NOT NULL DEFAULT 'fr-FR',
+  ADD COLUMN default_currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (default_currency ~ '^[A-Z]{3}),
+  ADD COLUMN timezone text NOT NULL DEFAULT 'Europe/Paris';
+
+CREATE TABLE tenant_market_profiles (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  preferred_locale text,
+  billing_currency char(3)
+    CHECK (billing_currency IS NULL OR billing_currency ~ '^[A-Z]{3}),
+  timezone text,
+  compliance_status text NOT NULL DEFAULT 'not_started'
+    CHECK (compliance_status IN ('not_started','pending','verified','blocked','expired')),
+  tax_registration_id text,
+  tax_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  commercial_terms jsonb NOT NULL DEFAULT '{}'::jsonb,
+  data_residency_region text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id,market_id)
+);
+
+INSERT INTO tenant_market_profiles(
+  tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region
+)
+SELECT t.id,m.id,'active','fr-FR','EUR','Europe/Paris','verified','eu'
+FROM tenants t
+JOIN operating_markets m ON m.country_code='FR'
+WHERE t.slug='pgi-internal'
+ON CONFLICT (tenant_id,market_id) DO NOTHING;
+
+ALTER TABLE sva_numbers
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN number_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (number_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','other')),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3}),
+  ADD COLUMN national_number text;
+
+UPDATE sva_numbers
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX sva_numbers_market_status_idx ON sva_numbers(market_id,status);
+
+CREATE TABLE sva_number_aliases (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  sva_number_id bigint NOT NULL REFERENCES sva_numbers(id) ON DELETE CASCADE,
+  market_id bigint REFERENCES operating_markets(id),
+  carrier_id bigint REFERENCES carriers(id),
+  alias text NOT NULL,
+  alias_type text NOT NULL DEFAULT 'carrier_dialed'
+    CHECK (alias_type IN ('national','international','display','carrier_dialed','portability','other')),
+  normalized_e164 text NOT NULL,
+  enabled boolean NOT NULL DEFAULT true,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX sva_number_aliases_carrier_alias_unique
+  ON sva_number_aliases(COALESCE(carrier_id,0),alias);
+CREATE INDEX sva_number_aliases_number_idx
+  ON sva_number_aliases(sva_number_id,enabled);
+
+INSERT INTO sva_number_aliases(sva_number_id,market_id,alias,alias_type,normalized_e164)
+SELECT id,market_id,display_number,'display',e164
+FROM sva_numbers
+WHERE display_number IS NOT NULL AND display_number<>''
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE carrier_market_capabilities (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  carrier_id bigint NOT NULL REFERENCES carriers(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  service_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (service_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','transit','other')),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','ready','active','standby','suspended','closed')),
+  capabilities jsonb NOT NULL DEFAULT '{}'::jsonb,
+  numbering_prefixes jsonb NOT NULL DEFAULT '[]'::jsonb,
+  settlement_currencies text[] NOT NULL DEFAULT ARRAY[]::text[],
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (carrier_id,market_id,service_type)
+);
+
+CREATE TABLE carrier_connection_markets (
+  carrier_connection_id bigint NOT NULL REFERENCES carrier_connections(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  priority integer NOT NULL DEFAULT 100 CHECK (priority > 0),
+  inbound_domain text,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  PRIMARY KEY (carrier_connection_id,market_id)
+);
+
+ALTER TABLE carrier_contracts
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_contracts cc
+SET market_id=COALESCE(
+  (SELECT sn.market_id FROM sva_numbers sn WHERE sn.id=cc.sva_number_id),
+  (SELECT id FROM operating_markets WHERE country_code='FR')
+)
+WHERE market_id IS NULL;
+
+ALTER TABLE carrier_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE tenant_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+),
   display_name text NOT NULL,
   status text NOT NULL DEFAULT 'planned'
     CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
@@ -915,6 +1452,11388 @@ ALTER TABLE calls
   ADD COLUMN market_id bigint REFERENCES operating_markets(id),
   ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
     CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+),
+  default_locale text NOT NULL,
+  timezone text NOT NULL,
+  regulator_name text,
+  numbering_authority text,
+  data_region text NOT NULL DEFAULT 'eu',
+  privacy_retention_days integer CHECK (privacy_retention_days IS NULL OR privacy_retention_days > 0),
+  numbering_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  compliance_requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO operating_markets(
+  country_code,display_name,status,default_currency,default_locale,timezone,
+  regulator_name,numbering_authority,data_region,numbering_profile
+)
+VALUES (
+  'FR','France','active','EUR','fr-FR','Europe/Paris',
+  'ARCEP','ARCEP','eu',
+  '{"canonical_number_format":"E.164","service_family":"premium_rate","local_product":"SVA"}'::jsonb
+)
+ON CONFLICT (country_code) DO NOTHING;
+
+ALTER TABLE tenants
+  ADD COLUMN preferred_locale text NOT NULL DEFAULT 'fr-FR',
+  ADD COLUMN default_currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (default_currency ~ '^[A-Z]{3},
+  ADD COLUMN timezone text NOT NULL DEFAULT 'Europe/Paris';
+
+CREATE TABLE tenant_market_profiles (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  preferred_locale text,
+  billing_currency char(3)
+    CHECK (billing_currency IS NULL OR billing_currency ~ '^[A-Z]{3}),
+  timezone text,
+  compliance_status text NOT NULL DEFAULT 'not_started'
+    CHECK (compliance_status IN ('not_started','pending','verified','blocked','expired')),
+  tax_registration_id text,
+  tax_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  commercial_terms jsonb NOT NULL DEFAULT '{}'::jsonb,
+  data_residency_region text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id,market_id)
+);
+
+INSERT INTO tenant_market_profiles(
+  tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region
+)
+SELECT t.id,m.id,'active','fr-FR','EUR','Europe/Paris','verified','eu'
+FROM tenants t
+JOIN operating_markets m ON m.country_code='FR'
+WHERE t.slug='pgi-internal'
+ON CONFLICT (tenant_id,market_id) DO NOTHING;
+
+ALTER TABLE sva_numbers
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN number_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (number_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','other')),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3}),
+  ADD COLUMN national_number text;
+
+UPDATE sva_numbers
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX sva_numbers_market_status_idx ON sva_numbers(market_id,status);
+
+CREATE TABLE sva_number_aliases (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  sva_number_id bigint NOT NULL REFERENCES sva_numbers(id) ON DELETE CASCADE,
+  market_id bigint REFERENCES operating_markets(id),
+  carrier_id bigint REFERENCES carriers(id),
+  alias text NOT NULL,
+  alias_type text NOT NULL DEFAULT 'carrier_dialed'
+    CHECK (alias_type IN ('national','international','display','carrier_dialed','portability','other')),
+  normalized_e164 text NOT NULL,
+  enabled boolean NOT NULL DEFAULT true,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX sva_number_aliases_carrier_alias_unique
+  ON sva_number_aliases(COALESCE(carrier_id,0),alias);
+CREATE INDEX sva_number_aliases_number_idx
+  ON sva_number_aliases(sva_number_id,enabled);
+
+INSERT INTO sva_number_aliases(sva_number_id,market_id,alias,alias_type,normalized_e164)
+SELECT id,market_id,display_number,'display',e164
+FROM sva_numbers
+WHERE display_number IS NOT NULL AND display_number<>''
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE carrier_market_capabilities (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  carrier_id bigint NOT NULL REFERENCES carriers(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  service_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (service_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','transit','other')),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','ready','active','standby','suspended','closed')),
+  capabilities jsonb NOT NULL DEFAULT '{}'::jsonb,
+  numbering_prefixes jsonb NOT NULL DEFAULT '[]'::jsonb,
+  settlement_currencies text[] NOT NULL DEFAULT ARRAY[]::text[],
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (carrier_id,market_id,service_type)
+);
+
+CREATE TABLE carrier_connection_markets (
+  carrier_connection_id bigint NOT NULL REFERENCES carrier_connections(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  priority integer NOT NULL DEFAULT 100 CHECK (priority > 0),
+  inbound_domain text,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  PRIMARY KEY (carrier_connection_id,market_id)
+);
+
+ALTER TABLE carrier_contracts
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_contracts cc
+SET market_id=COALESCE(
+  (SELECT sn.market_id FROM sva_numbers sn WHERE sn.id=cc.sva_number_id),
+  (SELECT id FROM operating_markets WHERE country_code='FR')
+)
+WHERE market_id IS NULL;
+
+ALTER TABLE carrier_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE tenant_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+),
+  display_name text NOT NULL,
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  default_currency char(3) NOT NULL
+    CHECK (default_currency ~ '^[A-Z]{3}),
+  default_locale text NOT NULL,
+  timezone text NOT NULL,
+  regulator_name text,
+  numbering_authority text,
+  data_region text NOT NULL DEFAULT 'eu',
+  privacy_retention_days integer CHECK (privacy_retention_days IS NULL OR privacy_retention_days > 0),
+  numbering_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  compliance_requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO operating_markets(
+  country_code,display_name,status,default_currency,default_locale,timezone,
+  regulator_name,numbering_authority,data_region,numbering_profile
+)
+VALUES (
+  'FR','France','active','EUR','fr-FR','Europe/Paris',
+  'ARCEP','ARCEP','eu',
+  '{"canonical_number_format":"E.164","service_family":"premium_rate","local_product":"SVA"}'::jsonb
+)
+ON CONFLICT (country_code) DO NOTHING;
+
+ALTER TABLE tenants
+  ADD COLUMN preferred_locale text NOT NULL DEFAULT 'fr-FR',
+  ADD COLUMN default_currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (default_currency ~ '^[A-Z]{3}),
+  ADD COLUMN timezone text NOT NULL DEFAULT 'Europe/Paris';
+
+CREATE TABLE tenant_market_profiles (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  preferred_locale text,
+  billing_currency char(3)
+    CHECK (billing_currency IS NULL OR billing_currency ~ '^[A-Z]{3}),
+  timezone text,
+  compliance_status text NOT NULL DEFAULT 'not_started'
+    CHECK (compliance_status IN ('not_started','pending','verified','blocked','expired')),
+  tax_registration_id text,
+  tax_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  commercial_terms jsonb NOT NULL DEFAULT '{}'::jsonb,
+  data_residency_region text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id,market_id)
+);
+
+INSERT INTO tenant_market_profiles(
+  tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region
+)
+SELECT t.id,m.id,'active','fr-FR','EUR','Europe/Paris','verified','eu'
+FROM tenants t
+JOIN operating_markets m ON m.country_code='FR'
+WHERE t.slug='pgi-internal'
+ON CONFLICT (tenant_id,market_id) DO NOTHING;
+
+ALTER TABLE sva_numbers
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN number_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (number_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','other')),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3}),
+  ADD COLUMN national_number text;
+
+UPDATE sva_numbers
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX sva_numbers_market_status_idx ON sva_numbers(market_id,status);
+
+CREATE TABLE sva_number_aliases (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  sva_number_id bigint NOT NULL REFERENCES sva_numbers(id) ON DELETE CASCADE,
+  market_id bigint REFERENCES operating_markets(id),
+  carrier_id bigint REFERENCES carriers(id),
+  alias text NOT NULL,
+  alias_type text NOT NULL DEFAULT 'carrier_dialed'
+    CHECK (alias_type IN ('national','international','display','carrier_dialed','portability','other')),
+  normalized_e164 text NOT NULL,
+  enabled boolean NOT NULL DEFAULT true,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX sva_number_aliases_carrier_alias_unique
+  ON sva_number_aliases(COALESCE(carrier_id,0),alias);
+CREATE INDEX sva_number_aliases_number_idx
+  ON sva_number_aliases(sva_number_id,enabled);
+
+INSERT INTO sva_number_aliases(sva_number_id,market_id,alias,alias_type,normalized_e164)
+SELECT id,market_id,display_number,'display',e164
+FROM sva_numbers
+WHERE display_number IS NOT NULL AND display_number<>''
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE carrier_market_capabilities (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  carrier_id bigint NOT NULL REFERENCES carriers(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  service_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (service_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','transit','other')),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','ready','active','standby','suspended','closed')),
+  capabilities jsonb NOT NULL DEFAULT '{}'::jsonb,
+  numbering_prefixes jsonb NOT NULL DEFAULT '[]'::jsonb,
+  settlement_currencies text[] NOT NULL DEFAULT ARRAY[]::text[],
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (carrier_id,market_id,service_type)
+);
+
+CREATE TABLE carrier_connection_markets (
+  carrier_connection_id bigint NOT NULL REFERENCES carrier_connections(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  priority integer NOT NULL DEFAULT 100 CHECK (priority > 0),
+  inbound_domain text,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  PRIMARY KEY (carrier_connection_id,market_id)
+);
+
+ALTER TABLE carrier_contracts
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_contracts cc
+SET market_id=COALESCE(
+  (SELECT sn.market_id FROM sva_numbers sn WHERE sn.id=cc.sva_number_id),
+  (SELECT id FROM operating_markets WHERE country_code='FR')
+)
+WHERE market_id IS NULL;
+
+ALTER TABLE carrier_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE tenant_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+),
+  ADD COLUMN timezone text NOT NULL DEFAULT 'Europe/Paris';
+
+CREATE TABLE tenant_market_profiles (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  preferred_locale text,
+  billing_currency char(3)
+    CHECK (billing_currency IS NULL OR billing_currency ~ '^[A-Z]{3},
+  timezone text,
+  compliance_status text NOT NULL DEFAULT 'not_started'
+    CHECK (compliance_status IN ('not_started','pending','verified','blocked','expired')),
+  tax_registration_id text,
+  tax_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  commercial_terms jsonb NOT NULL DEFAULT '{}'::jsonb,
+  data_residency_region text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id,market_id)
+);
+
+INSERT INTO tenant_market_profiles(
+  tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region
+)
+SELECT t.id,m.id,'active','fr-FR','EUR','Europe/Paris','verified','eu'
+FROM tenants t
+JOIN operating_markets m ON m.country_code='FR'
+WHERE t.slug='pgi-internal'
+ON CONFLICT (tenant_id,market_id) DO NOTHING;
+
+ALTER TABLE sva_numbers
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN number_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (number_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','other')),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3}),
+  ADD COLUMN national_number text;
+
+UPDATE sva_numbers
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX sva_numbers_market_status_idx ON sva_numbers(market_id,status);
+
+CREATE TABLE sva_number_aliases (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  sva_number_id bigint NOT NULL REFERENCES sva_numbers(id) ON DELETE CASCADE,
+  market_id bigint REFERENCES operating_markets(id),
+  carrier_id bigint REFERENCES carriers(id),
+  alias text NOT NULL,
+  alias_type text NOT NULL DEFAULT 'carrier_dialed'
+    CHECK (alias_type IN ('national','international','display','carrier_dialed','portability','other')),
+  normalized_e164 text NOT NULL,
+  enabled boolean NOT NULL DEFAULT true,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX sva_number_aliases_carrier_alias_unique
+  ON sva_number_aliases(COALESCE(carrier_id,0),alias);
+CREATE INDEX sva_number_aliases_number_idx
+  ON sva_number_aliases(sva_number_id,enabled);
+
+INSERT INTO sva_number_aliases(sva_number_id,market_id,alias,alias_type,normalized_e164)
+SELECT id,market_id,display_number,'display',e164
+FROM sva_numbers
+WHERE display_number IS NOT NULL AND display_number<>''
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE carrier_market_capabilities (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  carrier_id bigint NOT NULL REFERENCES carriers(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  service_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (service_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','transit','other')),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','ready','active','standby','suspended','closed')),
+  capabilities jsonb NOT NULL DEFAULT '{}'::jsonb,
+  numbering_prefixes jsonb NOT NULL DEFAULT '[]'::jsonb,
+  settlement_currencies text[] NOT NULL DEFAULT ARRAY[]::text[],
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (carrier_id,market_id,service_type)
+);
+
+CREATE TABLE carrier_connection_markets (
+  carrier_connection_id bigint NOT NULL REFERENCES carrier_connections(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  priority integer NOT NULL DEFAULT 100 CHECK (priority > 0),
+  inbound_domain text,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  PRIMARY KEY (carrier_connection_id,market_id)
+);
+
+ALTER TABLE carrier_contracts
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_contracts cc
+SET market_id=COALESCE(
+  (SELECT sn.market_id FROM sva_numbers sn WHERE sn.id=cc.sva_number_id),
+  (SELECT id FROM operating_markets WHERE country_code='FR')
+)
+WHERE market_id IS NULL;
+
+ALTER TABLE carrier_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE tenant_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+),
+  display_name text NOT NULL,
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  default_currency char(3) NOT NULL
+    CHECK (default_currency ~ '^[A-Z]{3}),
+  default_locale text NOT NULL,
+  timezone text NOT NULL,
+  regulator_name text,
+  numbering_authority text,
+  data_region text NOT NULL DEFAULT 'eu',
+  privacy_retention_days integer CHECK (privacy_retention_days IS NULL OR privacy_retention_days > 0),
+  numbering_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  compliance_requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO operating_markets(
+  country_code,display_name,status,default_currency,default_locale,timezone,
+  regulator_name,numbering_authority,data_region,numbering_profile
+)
+VALUES (
+  'FR','France','active','EUR','fr-FR','Europe/Paris',
+  'ARCEP','ARCEP','eu',
+  '{"canonical_number_format":"E.164","service_family":"premium_rate","local_product":"SVA"}'::jsonb
+)
+ON CONFLICT (country_code) DO NOTHING;
+
+ALTER TABLE tenants
+  ADD COLUMN preferred_locale text NOT NULL DEFAULT 'fr-FR',
+  ADD COLUMN default_currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (default_currency ~ '^[A-Z]{3}),
+  ADD COLUMN timezone text NOT NULL DEFAULT 'Europe/Paris';
+
+CREATE TABLE tenant_market_profiles (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  preferred_locale text,
+  billing_currency char(3)
+    CHECK (billing_currency IS NULL OR billing_currency ~ '^[A-Z]{3}),
+  timezone text,
+  compliance_status text NOT NULL DEFAULT 'not_started'
+    CHECK (compliance_status IN ('not_started','pending','verified','blocked','expired')),
+  tax_registration_id text,
+  tax_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  commercial_terms jsonb NOT NULL DEFAULT '{}'::jsonb,
+  data_residency_region text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id,market_id)
+);
+
+INSERT INTO tenant_market_profiles(
+  tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region
+)
+SELECT t.id,m.id,'active','fr-FR','EUR','Europe/Paris','verified','eu'
+FROM tenants t
+JOIN operating_markets m ON m.country_code='FR'
+WHERE t.slug='pgi-internal'
+ON CONFLICT (tenant_id,market_id) DO NOTHING;
+
+ALTER TABLE sva_numbers
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN number_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (number_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','other')),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3}),
+  ADD COLUMN national_number text;
+
+UPDATE sva_numbers
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX sva_numbers_market_status_idx ON sva_numbers(market_id,status);
+
+CREATE TABLE sva_number_aliases (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  sva_number_id bigint NOT NULL REFERENCES sva_numbers(id) ON DELETE CASCADE,
+  market_id bigint REFERENCES operating_markets(id),
+  carrier_id bigint REFERENCES carriers(id),
+  alias text NOT NULL,
+  alias_type text NOT NULL DEFAULT 'carrier_dialed'
+    CHECK (alias_type IN ('national','international','display','carrier_dialed','portability','other')),
+  normalized_e164 text NOT NULL,
+  enabled boolean NOT NULL DEFAULT true,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX sva_number_aliases_carrier_alias_unique
+  ON sva_number_aliases(COALESCE(carrier_id,0),alias);
+CREATE INDEX sva_number_aliases_number_idx
+  ON sva_number_aliases(sva_number_id,enabled);
+
+INSERT INTO sva_number_aliases(sva_number_id,market_id,alias,alias_type,normalized_e164)
+SELECT id,market_id,display_number,'display',e164
+FROM sva_numbers
+WHERE display_number IS NOT NULL AND display_number<>''
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE carrier_market_capabilities (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  carrier_id bigint NOT NULL REFERENCES carriers(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  service_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (service_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','transit','other')),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','ready','active','standby','suspended','closed')),
+  capabilities jsonb NOT NULL DEFAULT '{}'::jsonb,
+  numbering_prefixes jsonb NOT NULL DEFAULT '[]'::jsonb,
+  settlement_currencies text[] NOT NULL DEFAULT ARRAY[]::text[],
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (carrier_id,market_id,service_type)
+);
+
+CREATE TABLE carrier_connection_markets (
+  carrier_connection_id bigint NOT NULL REFERENCES carrier_connections(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  priority integer NOT NULL DEFAULT 100 CHECK (priority > 0),
+  inbound_domain text,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  PRIMARY KEY (carrier_connection_id,market_id)
+);
+
+ALTER TABLE carrier_contracts
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_contracts cc
+SET market_id=COALESCE(
+  (SELECT sn.market_id FROM sva_numbers sn WHERE sn.id=cc.sva_number_id),
+  (SELECT id FROM operating_markets WHERE country_code='FR')
+)
+WHERE market_id IS NULL;
+
+ALTER TABLE carrier_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE tenant_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+),
+  timezone text,
+  compliance_status text NOT NULL DEFAULT 'not_started'
+    CHECK (compliance_status IN ('not_started','pending','verified','blocked','expired')),
+  tax_registration_id text,
+  tax_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  commercial_terms jsonb NOT NULL DEFAULT '{}'::jsonb,
+  data_residency_region text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id,market_id)
+);
+
+INSERT INTO tenant_market_profiles(
+  tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region
+)
+SELECT t.id,m.id,'active','fr-FR','EUR','Europe/Paris','verified','eu'
+FROM tenants t
+JOIN operating_markets m ON m.country_code='FR'
+WHERE t.slug='pgi-internal'
+ON CONFLICT (tenant_id,market_id) DO NOTHING;
+
+ALTER TABLE sva_numbers
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN number_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (number_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','other')),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3},
+  ADD COLUMN national_number text;
+
+UPDATE sva_numbers
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX sva_numbers_market_status_idx ON sva_numbers(market_id,status);
+
+CREATE TABLE sva_number_aliases (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  sva_number_id bigint NOT NULL REFERENCES sva_numbers(id) ON DELETE CASCADE,
+  market_id bigint REFERENCES operating_markets(id),
+  carrier_id bigint REFERENCES carriers(id),
+  alias text NOT NULL,
+  alias_type text NOT NULL DEFAULT 'carrier_dialed'
+    CHECK (alias_type IN ('national','international','display','carrier_dialed','portability','other')),
+  normalized_e164 text NOT NULL,
+  enabled boolean NOT NULL DEFAULT true,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX sva_number_aliases_carrier_alias_unique
+  ON sva_number_aliases(COALESCE(carrier_id,0),alias);
+CREATE INDEX sva_number_aliases_number_idx
+  ON sva_number_aliases(sva_number_id,enabled);
+
+INSERT INTO sva_number_aliases(sva_number_id,market_id,alias,alias_type,normalized_e164)
+SELECT id,market_id,display_number,'display',e164
+FROM sva_numbers
+WHERE display_number IS NOT NULL AND display_number<>''
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE carrier_market_capabilities (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  carrier_id bigint NOT NULL REFERENCES carriers(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  service_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (service_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','transit','other')),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','ready','active','standby','suspended','closed')),
+  capabilities jsonb NOT NULL DEFAULT '{}'::jsonb,
+  numbering_prefixes jsonb NOT NULL DEFAULT '[]'::jsonb,
+  settlement_currencies text[] NOT NULL DEFAULT ARRAY[]::text[],
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (carrier_id,market_id,service_type)
+);
+
+CREATE TABLE carrier_connection_markets (
+  carrier_connection_id bigint NOT NULL REFERENCES carrier_connections(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  priority integer NOT NULL DEFAULT 100 CHECK (priority > 0),
+  inbound_domain text,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  PRIMARY KEY (carrier_connection_id,market_id)
+);
+
+ALTER TABLE carrier_contracts
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_contracts cc
+SET market_id=COALESCE(
+  (SELECT sn.market_id FROM sva_numbers sn WHERE sn.id=cc.sva_number_id),
+  (SELECT id FROM operating_markets WHERE country_code='FR')
+)
+WHERE market_id IS NULL;
+
+ALTER TABLE carrier_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE tenant_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+),
+  display_name text NOT NULL,
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  default_currency char(3) NOT NULL
+    CHECK (default_currency ~ '^[A-Z]{3}),
+  default_locale text NOT NULL,
+  timezone text NOT NULL,
+  regulator_name text,
+  numbering_authority text,
+  data_region text NOT NULL DEFAULT 'eu',
+  privacy_retention_days integer CHECK (privacy_retention_days IS NULL OR privacy_retention_days > 0),
+  numbering_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  compliance_requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO operating_markets(
+  country_code,display_name,status,default_currency,default_locale,timezone,
+  regulator_name,numbering_authority,data_region,numbering_profile
+)
+VALUES (
+  'FR','France','active','EUR','fr-FR','Europe/Paris',
+  'ARCEP','ARCEP','eu',
+  '{"canonical_number_format":"E.164","service_family":"premium_rate","local_product":"SVA"}'::jsonb
+)
+ON CONFLICT (country_code) DO NOTHING;
+
+ALTER TABLE tenants
+  ADD COLUMN preferred_locale text NOT NULL DEFAULT 'fr-FR',
+  ADD COLUMN default_currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (default_currency ~ '^[A-Z]{3}),
+  ADD COLUMN timezone text NOT NULL DEFAULT 'Europe/Paris';
+
+CREATE TABLE tenant_market_profiles (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  preferred_locale text,
+  billing_currency char(3)
+    CHECK (billing_currency IS NULL OR billing_currency ~ '^[A-Z]{3}),
+  timezone text,
+  compliance_status text NOT NULL DEFAULT 'not_started'
+    CHECK (compliance_status IN ('not_started','pending','verified','blocked','expired')),
+  tax_registration_id text,
+  tax_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  commercial_terms jsonb NOT NULL DEFAULT '{}'::jsonb,
+  data_residency_region text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id,market_id)
+);
+
+INSERT INTO tenant_market_profiles(
+  tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region
+)
+SELECT t.id,m.id,'active','fr-FR','EUR','Europe/Paris','verified','eu'
+FROM tenants t
+JOIN operating_markets m ON m.country_code='FR'
+WHERE t.slug='pgi-internal'
+ON CONFLICT (tenant_id,market_id) DO NOTHING;
+
+ALTER TABLE sva_numbers
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN number_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (number_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','other')),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3}),
+  ADD COLUMN national_number text;
+
+UPDATE sva_numbers
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX sva_numbers_market_status_idx ON sva_numbers(market_id,status);
+
+CREATE TABLE sva_number_aliases (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  sva_number_id bigint NOT NULL REFERENCES sva_numbers(id) ON DELETE CASCADE,
+  market_id bigint REFERENCES operating_markets(id),
+  carrier_id bigint REFERENCES carriers(id),
+  alias text NOT NULL,
+  alias_type text NOT NULL DEFAULT 'carrier_dialed'
+    CHECK (alias_type IN ('national','international','display','carrier_dialed','portability','other')),
+  normalized_e164 text NOT NULL,
+  enabled boolean NOT NULL DEFAULT true,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX sva_number_aliases_carrier_alias_unique
+  ON sva_number_aliases(COALESCE(carrier_id,0),alias);
+CREATE INDEX sva_number_aliases_number_idx
+  ON sva_number_aliases(sva_number_id,enabled);
+
+INSERT INTO sva_number_aliases(sva_number_id,market_id,alias,alias_type,normalized_e164)
+SELECT id,market_id,display_number,'display',e164
+FROM sva_numbers
+WHERE display_number IS NOT NULL AND display_number<>''
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE carrier_market_capabilities (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  carrier_id bigint NOT NULL REFERENCES carriers(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  service_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (service_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','transit','other')),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','ready','active','standby','suspended','closed')),
+  capabilities jsonb NOT NULL DEFAULT '{}'::jsonb,
+  numbering_prefixes jsonb NOT NULL DEFAULT '[]'::jsonb,
+  settlement_currencies text[] NOT NULL DEFAULT ARRAY[]::text[],
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (carrier_id,market_id,service_type)
+);
+
+CREATE TABLE carrier_connection_markets (
+  carrier_connection_id bigint NOT NULL REFERENCES carrier_connections(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  priority integer NOT NULL DEFAULT 100 CHECK (priority > 0),
+  inbound_domain text,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  PRIMARY KEY (carrier_connection_id,market_id)
+);
+
+ALTER TABLE carrier_contracts
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_contracts cc
+SET market_id=COALESCE(
+  (SELECT sn.market_id FROM sva_numbers sn WHERE sn.id=cc.sva_number_id),
+  (SELECT id FROM operating_markets WHERE country_code='FR')
+)
+WHERE market_id IS NULL;
+
+ALTER TABLE carrier_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE tenant_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+),
+  ADD COLUMN national_number text;
+
+UPDATE sva_numbers
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX sva_numbers_market_status_idx ON sva_numbers(market_id,status);
+
+CREATE TABLE sva_number_aliases (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  sva_number_id bigint NOT NULL REFERENCES sva_numbers(id) ON DELETE CASCADE,
+  market_id bigint REFERENCES operating_markets(id),
+  carrier_id bigint REFERENCES carriers(id),
+  alias text NOT NULL,
+  alias_type text NOT NULL DEFAULT 'carrier_dialed'
+    CHECK (alias_type IN ('national','international','display','carrier_dialed','portability','other')),
+  normalized_e164 text NOT NULL,
+  enabled boolean NOT NULL DEFAULT true,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX sva_number_aliases_carrier_alias_unique
+  ON sva_number_aliases(COALESCE(carrier_id,0),alias);
+CREATE INDEX sva_number_aliases_number_idx
+  ON sva_number_aliases(sva_number_id,enabled);
+
+INSERT INTO sva_number_aliases(sva_number_id,market_id,alias,alias_type,normalized_e164)
+SELECT id,market_id,display_number,'display',e164
+FROM sva_numbers
+WHERE display_number IS NOT NULL AND display_number<>''
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE carrier_market_capabilities (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  carrier_id bigint NOT NULL REFERENCES carriers(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  service_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (service_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','transit','other')),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','ready','active','standby','suspended','closed')),
+  capabilities jsonb NOT NULL DEFAULT '{}'::jsonb,
+  numbering_prefixes jsonb NOT NULL DEFAULT '[]'::jsonb,
+  settlement_currencies text[] NOT NULL DEFAULT ARRAY[]::text[],
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (carrier_id,market_id,service_type)
+);
+
+CREATE TABLE carrier_connection_markets (
+  carrier_connection_id bigint NOT NULL REFERENCES carrier_connections(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  priority integer NOT NULL DEFAULT 100 CHECK (priority > 0),
+  inbound_domain text,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  PRIMARY KEY (carrier_connection_id,market_id)
+);
+
+ALTER TABLE carrier_contracts
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3};
+
+UPDATE carrier_contracts cc
+SET market_id=COALESCE(
+  (SELECT sn.market_id FROM sva_numbers sn WHERE sn.id=cc.sva_number_id),
+  (SELECT id FROM operating_markets WHERE country_code='FR')
+)
+WHERE market_id IS NULL;
+
+ALTER TABLE carrier_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE tenant_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+),
+  display_name text NOT NULL,
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  default_currency char(3) NOT NULL
+    CHECK (default_currency ~ '^[A-Z]{3}),
+  default_locale text NOT NULL,
+  timezone text NOT NULL,
+  regulator_name text,
+  numbering_authority text,
+  data_region text NOT NULL DEFAULT 'eu',
+  privacy_retention_days integer CHECK (privacy_retention_days IS NULL OR privacy_retention_days > 0),
+  numbering_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  compliance_requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO operating_markets(
+  country_code,display_name,status,default_currency,default_locale,timezone,
+  regulator_name,numbering_authority,data_region,numbering_profile
+)
+VALUES (
+  'FR','France','active','EUR','fr-FR','Europe/Paris',
+  'ARCEP','ARCEP','eu',
+  '{"canonical_number_format":"E.164","service_family":"premium_rate","local_product":"SVA"}'::jsonb
+)
+ON CONFLICT (country_code) DO NOTHING;
+
+ALTER TABLE tenants
+  ADD COLUMN preferred_locale text NOT NULL DEFAULT 'fr-FR',
+  ADD COLUMN default_currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (default_currency ~ '^[A-Z]{3}),
+  ADD COLUMN timezone text NOT NULL DEFAULT 'Europe/Paris';
+
+CREATE TABLE tenant_market_profiles (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  preferred_locale text,
+  billing_currency char(3)
+    CHECK (billing_currency IS NULL OR billing_currency ~ '^[A-Z]{3}),
+  timezone text,
+  compliance_status text NOT NULL DEFAULT 'not_started'
+    CHECK (compliance_status IN ('not_started','pending','verified','blocked','expired')),
+  tax_registration_id text,
+  tax_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  commercial_terms jsonb NOT NULL DEFAULT '{}'::jsonb,
+  data_residency_region text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id,market_id)
+);
+
+INSERT INTO tenant_market_profiles(
+  tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region
+)
+SELECT t.id,m.id,'active','fr-FR','EUR','Europe/Paris','verified','eu'
+FROM tenants t
+JOIN operating_markets m ON m.country_code='FR'
+WHERE t.slug='pgi-internal'
+ON CONFLICT (tenant_id,market_id) DO NOTHING;
+
+ALTER TABLE sva_numbers
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN number_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (number_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','other')),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3}),
+  ADD COLUMN national_number text;
+
+UPDATE sva_numbers
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX sva_numbers_market_status_idx ON sva_numbers(market_id,status);
+
+CREATE TABLE sva_number_aliases (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  sva_number_id bigint NOT NULL REFERENCES sva_numbers(id) ON DELETE CASCADE,
+  market_id bigint REFERENCES operating_markets(id),
+  carrier_id bigint REFERENCES carriers(id),
+  alias text NOT NULL,
+  alias_type text NOT NULL DEFAULT 'carrier_dialed'
+    CHECK (alias_type IN ('national','international','display','carrier_dialed','portability','other')),
+  normalized_e164 text NOT NULL,
+  enabled boolean NOT NULL DEFAULT true,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX sva_number_aliases_carrier_alias_unique
+  ON sva_number_aliases(COALESCE(carrier_id,0),alias);
+CREATE INDEX sva_number_aliases_number_idx
+  ON sva_number_aliases(sva_number_id,enabled);
+
+INSERT INTO sva_number_aliases(sva_number_id,market_id,alias,alias_type,normalized_e164)
+SELECT id,market_id,display_number,'display',e164
+FROM sva_numbers
+WHERE display_number IS NOT NULL AND display_number<>''
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE carrier_market_capabilities (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  carrier_id bigint NOT NULL REFERENCES carriers(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  service_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (service_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','transit','other')),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','ready','active','standby','suspended','closed')),
+  capabilities jsonb NOT NULL DEFAULT '{}'::jsonb,
+  numbering_prefixes jsonb NOT NULL DEFAULT '[]'::jsonb,
+  settlement_currencies text[] NOT NULL DEFAULT ARRAY[]::text[],
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (carrier_id,market_id,service_type)
+);
+
+CREATE TABLE carrier_connection_markets (
+  carrier_connection_id bigint NOT NULL REFERENCES carrier_connections(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  priority integer NOT NULL DEFAULT 100 CHECK (priority > 0),
+  inbound_domain text,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  PRIMARY KEY (carrier_connection_id,market_id)
+);
+
+ALTER TABLE carrier_contracts
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_contracts cc
+SET market_id=COALESCE(
+  (SELECT sn.market_id FROM sva_numbers sn WHERE sn.id=cc.sva_number_id),
+  (SELECT id FROM operating_markets WHERE country_code='FR')
+)
+WHERE market_id IS NULL;
+
+ALTER TABLE carrier_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE tenant_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+);
+
+UPDATE carrier_contracts cc
+SET market_id=COALESCE(
+  (SELECT sn.market_id FROM sva_numbers sn WHERE sn.id=cc.sva_number_id),
+  (SELECT id FROM operating_markets WHERE country_code='FR')
+)
+WHERE market_id IS NULL;
+
+ALTER TABLE carrier_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3};
+
+UPDATE carrier_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE tenant_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+),
+  display_name text NOT NULL,
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  default_currency char(3) NOT NULL
+    CHECK (default_currency ~ '^[A-Z]{3}),
+  default_locale text NOT NULL,
+  timezone text NOT NULL,
+  regulator_name text,
+  numbering_authority text,
+  data_region text NOT NULL DEFAULT 'eu',
+  privacy_retention_days integer CHECK (privacy_retention_days IS NULL OR privacy_retention_days > 0),
+  numbering_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  compliance_requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO operating_markets(
+  country_code,display_name,status,default_currency,default_locale,timezone,
+  regulator_name,numbering_authority,data_region,numbering_profile
+)
+VALUES (
+  'FR','France','active','EUR','fr-FR','Europe/Paris',
+  'ARCEP','ARCEP','eu',
+  '{"canonical_number_format":"E.164","service_family":"premium_rate","local_product":"SVA"}'::jsonb
+)
+ON CONFLICT (country_code) DO NOTHING;
+
+ALTER TABLE tenants
+  ADD COLUMN preferred_locale text NOT NULL DEFAULT 'fr-FR',
+  ADD COLUMN default_currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (default_currency ~ '^[A-Z]{3}),
+  ADD COLUMN timezone text NOT NULL DEFAULT 'Europe/Paris';
+
+CREATE TABLE tenant_market_profiles (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  preferred_locale text,
+  billing_currency char(3)
+    CHECK (billing_currency IS NULL OR billing_currency ~ '^[A-Z]{3}),
+  timezone text,
+  compliance_status text NOT NULL DEFAULT 'not_started'
+    CHECK (compliance_status IN ('not_started','pending','verified','blocked','expired')),
+  tax_registration_id text,
+  tax_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  commercial_terms jsonb NOT NULL DEFAULT '{}'::jsonb,
+  data_residency_region text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id,market_id)
+);
+
+INSERT INTO tenant_market_profiles(
+  tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region
+)
+SELECT t.id,m.id,'active','fr-FR','EUR','Europe/Paris','verified','eu'
+FROM tenants t
+JOIN operating_markets m ON m.country_code='FR'
+WHERE t.slug='pgi-internal'
+ON CONFLICT (tenant_id,market_id) DO NOTHING;
+
+ALTER TABLE sva_numbers
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN number_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (number_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','other')),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3}),
+  ADD COLUMN national_number text;
+
+UPDATE sva_numbers
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX sva_numbers_market_status_idx ON sva_numbers(market_id,status);
+
+CREATE TABLE sva_number_aliases (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  sva_number_id bigint NOT NULL REFERENCES sva_numbers(id) ON DELETE CASCADE,
+  market_id bigint REFERENCES operating_markets(id),
+  carrier_id bigint REFERENCES carriers(id),
+  alias text NOT NULL,
+  alias_type text NOT NULL DEFAULT 'carrier_dialed'
+    CHECK (alias_type IN ('national','international','display','carrier_dialed','portability','other')),
+  normalized_e164 text NOT NULL,
+  enabled boolean NOT NULL DEFAULT true,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX sva_number_aliases_carrier_alias_unique
+  ON sva_number_aliases(COALESCE(carrier_id,0),alias);
+CREATE INDEX sva_number_aliases_number_idx
+  ON sva_number_aliases(sva_number_id,enabled);
+
+INSERT INTO sva_number_aliases(sva_number_id,market_id,alias,alias_type,normalized_e164)
+SELECT id,market_id,display_number,'display',e164
+FROM sva_numbers
+WHERE display_number IS NOT NULL AND display_number<>''
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE carrier_market_capabilities (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  carrier_id bigint NOT NULL REFERENCES carriers(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  service_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (service_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','transit','other')),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','ready','active','standby','suspended','closed')),
+  capabilities jsonb NOT NULL DEFAULT '{}'::jsonb,
+  numbering_prefixes jsonb NOT NULL DEFAULT '[]'::jsonb,
+  settlement_currencies text[] NOT NULL DEFAULT ARRAY[]::text[],
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (carrier_id,market_id,service_type)
+);
+
+CREATE TABLE carrier_connection_markets (
+  carrier_connection_id bigint NOT NULL REFERENCES carrier_connections(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  priority integer NOT NULL DEFAULT 100 CHECK (priority > 0),
+  inbound_domain text,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  PRIMARY KEY (carrier_connection_id,market_id)
+);
+
+ALTER TABLE carrier_contracts
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_contracts cc
+SET market_id=COALESCE(
+  (SELECT sn.market_id FROM sva_numbers sn WHERE sn.id=cc.sva_number_id),
+  (SELECT id FROM operating_markets WHERE country_code='FR')
+)
+WHERE market_id IS NULL;
+
+ALTER TABLE carrier_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE tenant_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+);
+
+UPDATE carrier_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE tenant_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3};
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+),
+  display_name text NOT NULL,
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  default_currency char(3) NOT NULL
+    CHECK (default_currency ~ '^[A-Z]{3}),
+  default_locale text NOT NULL,
+  timezone text NOT NULL,
+  regulator_name text,
+  numbering_authority text,
+  data_region text NOT NULL DEFAULT 'eu',
+  privacy_retention_days integer CHECK (privacy_retention_days IS NULL OR privacy_retention_days > 0),
+  numbering_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  compliance_requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO operating_markets(
+  country_code,display_name,status,default_currency,default_locale,timezone,
+  regulator_name,numbering_authority,data_region,numbering_profile
+)
+VALUES (
+  'FR','France','active','EUR','fr-FR','Europe/Paris',
+  'ARCEP','ARCEP','eu',
+  '{"canonical_number_format":"E.164","service_family":"premium_rate","local_product":"SVA"}'::jsonb
+)
+ON CONFLICT (country_code) DO NOTHING;
+
+ALTER TABLE tenants
+  ADD COLUMN preferred_locale text NOT NULL DEFAULT 'fr-FR',
+  ADD COLUMN default_currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (default_currency ~ '^[A-Z]{3}),
+  ADD COLUMN timezone text NOT NULL DEFAULT 'Europe/Paris';
+
+CREATE TABLE tenant_market_profiles (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  preferred_locale text,
+  billing_currency char(3)
+    CHECK (billing_currency IS NULL OR billing_currency ~ '^[A-Z]{3}),
+  timezone text,
+  compliance_status text NOT NULL DEFAULT 'not_started'
+    CHECK (compliance_status IN ('not_started','pending','verified','blocked','expired')),
+  tax_registration_id text,
+  tax_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  commercial_terms jsonb NOT NULL DEFAULT '{}'::jsonb,
+  data_residency_region text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id,market_id)
+);
+
+INSERT INTO tenant_market_profiles(
+  tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region
+)
+SELECT t.id,m.id,'active','fr-FR','EUR','Europe/Paris','verified','eu'
+FROM tenants t
+JOIN operating_markets m ON m.country_code='FR'
+WHERE t.slug='pgi-internal'
+ON CONFLICT (tenant_id,market_id) DO NOTHING;
+
+ALTER TABLE sva_numbers
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN number_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (number_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','other')),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3}),
+  ADD COLUMN national_number text;
+
+UPDATE sva_numbers
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX sva_numbers_market_status_idx ON sva_numbers(market_id,status);
+
+CREATE TABLE sva_number_aliases (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  sva_number_id bigint NOT NULL REFERENCES sva_numbers(id) ON DELETE CASCADE,
+  market_id bigint REFERENCES operating_markets(id),
+  carrier_id bigint REFERENCES carriers(id),
+  alias text NOT NULL,
+  alias_type text NOT NULL DEFAULT 'carrier_dialed'
+    CHECK (alias_type IN ('national','international','display','carrier_dialed','portability','other')),
+  normalized_e164 text NOT NULL,
+  enabled boolean NOT NULL DEFAULT true,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX sva_number_aliases_carrier_alias_unique
+  ON sva_number_aliases(COALESCE(carrier_id,0),alias);
+CREATE INDEX sva_number_aliases_number_idx
+  ON sva_number_aliases(sva_number_id,enabled);
+
+INSERT INTO sva_number_aliases(sva_number_id,market_id,alias,alias_type,normalized_e164)
+SELECT id,market_id,display_number,'display',e164
+FROM sva_numbers
+WHERE display_number IS NOT NULL AND display_number<>''
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE carrier_market_capabilities (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  carrier_id bigint NOT NULL REFERENCES carriers(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  service_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (service_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','transit','other')),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','ready','active','standby','suspended','closed')),
+  capabilities jsonb NOT NULL DEFAULT '{}'::jsonb,
+  numbering_prefixes jsonb NOT NULL DEFAULT '[]'::jsonb,
+  settlement_currencies text[] NOT NULL DEFAULT ARRAY[]::text[],
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (carrier_id,market_id,service_type)
+);
+
+CREATE TABLE carrier_connection_markets (
+  carrier_connection_id bigint NOT NULL REFERENCES carrier_connections(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  priority integer NOT NULL DEFAULT 100 CHECK (priority > 0),
+  inbound_domain text,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  PRIMARY KEY (carrier_connection_id,market_id)
+);
+
+ALTER TABLE carrier_contracts
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_contracts cc
+SET market_id=COALESCE(
+  (SELECT sn.market_id FROM sva_numbers sn WHERE sn.id=cc.sva_number_id),
+  (SELECT id FROM operating_markets WHERE country_code='FR')
+)
+WHERE market_id IS NULL;
+
+ALTER TABLE carrier_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE tenant_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+);
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3};
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+),
+  display_name text NOT NULL,
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  default_currency char(3) NOT NULL
+    CHECK (default_currency ~ '^[A-Z]{3}),
+  default_locale text NOT NULL,
+  timezone text NOT NULL,
+  regulator_name text,
+  numbering_authority text,
+  data_region text NOT NULL DEFAULT 'eu',
+  privacy_retention_days integer CHECK (privacy_retention_days IS NULL OR privacy_retention_days > 0),
+  numbering_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  compliance_requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO operating_markets(
+  country_code,display_name,status,default_currency,default_locale,timezone,
+  regulator_name,numbering_authority,data_region,numbering_profile
+)
+VALUES (
+  'FR','France','active','EUR','fr-FR','Europe/Paris',
+  'ARCEP','ARCEP','eu',
+  '{"canonical_number_format":"E.164","service_family":"premium_rate","local_product":"SVA"}'::jsonb
+)
+ON CONFLICT (country_code) DO NOTHING;
+
+ALTER TABLE tenants
+  ADD COLUMN preferred_locale text NOT NULL DEFAULT 'fr-FR',
+  ADD COLUMN default_currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (default_currency ~ '^[A-Z]{3}),
+  ADD COLUMN timezone text NOT NULL DEFAULT 'Europe/Paris';
+
+CREATE TABLE tenant_market_profiles (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  preferred_locale text,
+  billing_currency char(3)
+    CHECK (billing_currency IS NULL OR billing_currency ~ '^[A-Z]{3}),
+  timezone text,
+  compliance_status text NOT NULL DEFAULT 'not_started'
+    CHECK (compliance_status IN ('not_started','pending','verified','blocked','expired')),
+  tax_registration_id text,
+  tax_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  commercial_terms jsonb NOT NULL DEFAULT '{}'::jsonb,
+  data_residency_region text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id,market_id)
+);
+
+INSERT INTO tenant_market_profiles(
+  tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region
+)
+SELECT t.id,m.id,'active','fr-FR','EUR','Europe/Paris','verified','eu'
+FROM tenants t
+JOIN operating_markets m ON m.country_code='FR'
+WHERE t.slug='pgi-internal'
+ON CONFLICT (tenant_id,market_id) DO NOTHING;
+
+ALTER TABLE sva_numbers
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN number_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (number_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','other')),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3}),
+  ADD COLUMN national_number text;
+
+UPDATE sva_numbers
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX sva_numbers_market_status_idx ON sva_numbers(market_id,status);
+
+CREATE TABLE sva_number_aliases (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  sva_number_id bigint NOT NULL REFERENCES sva_numbers(id) ON DELETE CASCADE,
+  market_id bigint REFERENCES operating_markets(id),
+  carrier_id bigint REFERENCES carriers(id),
+  alias text NOT NULL,
+  alias_type text NOT NULL DEFAULT 'carrier_dialed'
+    CHECK (alias_type IN ('national','international','display','carrier_dialed','portability','other')),
+  normalized_e164 text NOT NULL,
+  enabled boolean NOT NULL DEFAULT true,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX sva_number_aliases_carrier_alias_unique
+  ON sva_number_aliases(COALESCE(carrier_id,0),alias);
+CREATE INDEX sva_number_aliases_number_idx
+  ON sva_number_aliases(sva_number_id,enabled);
+
+INSERT INTO sva_number_aliases(sva_number_id,market_id,alias,alias_type,normalized_e164)
+SELECT id,market_id,display_number,'display',e164
+FROM sva_numbers
+WHERE display_number IS NOT NULL AND display_number<>''
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE carrier_market_capabilities (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  carrier_id bigint NOT NULL REFERENCES carriers(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  service_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (service_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','transit','other')),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','ready','active','standby','suspended','closed')),
+  capabilities jsonb NOT NULL DEFAULT '{}'::jsonb,
+  numbering_prefixes jsonb NOT NULL DEFAULT '[]'::jsonb,
+  settlement_currencies text[] NOT NULL DEFAULT ARRAY[]::text[],
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (carrier_id,market_id,service_type)
+);
+
+CREATE TABLE carrier_connection_markets (
+  carrier_connection_id bigint NOT NULL REFERENCES carrier_connections(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  priority integer NOT NULL DEFAULT 100 CHECK (priority > 0),
+  inbound_domain text,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  PRIMARY KEY (carrier_connection_id,market_id)
+);
+
+ALTER TABLE carrier_contracts
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_contracts cc
+SET market_id=COALESCE(
+  (SELECT sn.market_id FROM sva_numbers sn WHERE sn.id=cc.sva_number_id),
+  (SELECT id FROM operating_markets WHERE country_code='FR')
+)
+WHERE market_id IS NULL;
+
+ALTER TABLE carrier_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE tenant_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+);
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+),
+  display_name text NOT NULL,
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  default_currency char(3) NOT NULL
+    CHECK (default_currency ~ '^[A-Z]{3},
+  default_locale text NOT NULL,
+  timezone text NOT NULL,
+  regulator_name text,
+  numbering_authority text,
+  data_region text NOT NULL DEFAULT 'eu',
+  privacy_retention_days integer CHECK (privacy_retention_days IS NULL OR privacy_retention_days > 0),
+  numbering_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  compliance_requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO operating_markets(
+  country_code,display_name,status,default_currency,default_locale,timezone,
+  regulator_name,numbering_authority,data_region,numbering_profile
+)
+VALUES (
+  'FR','France','active','EUR','fr-FR','Europe/Paris',
+  'ARCEP','ARCEP','eu',
+  '{"canonical_number_format":"E.164","service_family":"premium_rate","local_product":"SVA"}'::jsonb
+)
+ON CONFLICT (country_code) DO NOTHING;
+
+ALTER TABLE tenants
+  ADD COLUMN preferred_locale text NOT NULL DEFAULT 'fr-FR',
+  ADD COLUMN default_currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (default_currency ~ '^[A-Z]{3}),
+  ADD COLUMN timezone text NOT NULL DEFAULT 'Europe/Paris';
+
+CREATE TABLE tenant_market_profiles (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  preferred_locale text,
+  billing_currency char(3)
+    CHECK (billing_currency IS NULL OR billing_currency ~ '^[A-Z]{3}),
+  timezone text,
+  compliance_status text NOT NULL DEFAULT 'not_started'
+    CHECK (compliance_status IN ('not_started','pending','verified','blocked','expired')),
+  tax_registration_id text,
+  tax_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  commercial_terms jsonb NOT NULL DEFAULT '{}'::jsonb,
+  data_residency_region text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id,market_id)
+);
+
+INSERT INTO tenant_market_profiles(
+  tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region
+)
+SELECT t.id,m.id,'active','fr-FR','EUR','Europe/Paris','verified','eu'
+FROM tenants t
+JOIN operating_markets m ON m.country_code='FR'
+WHERE t.slug='pgi-internal'
+ON CONFLICT (tenant_id,market_id) DO NOTHING;
+
+ALTER TABLE sva_numbers
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN number_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (number_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','other')),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3}),
+  ADD COLUMN national_number text;
+
+UPDATE sva_numbers
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX sva_numbers_market_status_idx ON sva_numbers(market_id,status);
+
+CREATE TABLE sva_number_aliases (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  sva_number_id bigint NOT NULL REFERENCES sva_numbers(id) ON DELETE CASCADE,
+  market_id bigint REFERENCES operating_markets(id),
+  carrier_id bigint REFERENCES carriers(id),
+  alias text NOT NULL,
+  alias_type text NOT NULL DEFAULT 'carrier_dialed'
+    CHECK (alias_type IN ('national','international','display','carrier_dialed','portability','other')),
+  normalized_e164 text NOT NULL,
+  enabled boolean NOT NULL DEFAULT true,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX sva_number_aliases_carrier_alias_unique
+  ON sva_number_aliases(COALESCE(carrier_id,0),alias);
+CREATE INDEX sva_number_aliases_number_idx
+  ON sva_number_aliases(sva_number_id,enabled);
+
+INSERT INTO sva_number_aliases(sva_number_id,market_id,alias,alias_type,normalized_e164)
+SELECT id,market_id,display_number,'display',e164
+FROM sva_numbers
+WHERE display_number IS NOT NULL AND display_number<>''
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE carrier_market_capabilities (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  carrier_id bigint NOT NULL REFERENCES carriers(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  service_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (service_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','transit','other')),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','ready','active','standby','suspended','closed')),
+  capabilities jsonb NOT NULL DEFAULT '{}'::jsonb,
+  numbering_prefixes jsonb NOT NULL DEFAULT '[]'::jsonb,
+  settlement_currencies text[] NOT NULL DEFAULT ARRAY[]::text[],
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (carrier_id,market_id,service_type)
+);
+
+CREATE TABLE carrier_connection_markets (
+  carrier_connection_id bigint NOT NULL REFERENCES carrier_connections(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  priority integer NOT NULL DEFAULT 100 CHECK (priority > 0),
+  inbound_domain text,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  PRIMARY KEY (carrier_connection_id,market_id)
+);
+
+ALTER TABLE carrier_contracts
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_contracts cc
+SET market_id=COALESCE(
+  (SELECT sn.market_id FROM sva_numbers sn WHERE sn.id=cc.sva_number_id),
+  (SELECT id FROM operating_markets WHERE country_code='FR')
+)
+WHERE market_id IS NULL;
+
+ALTER TABLE carrier_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE tenant_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+),
+  default_locale text NOT NULL,
+  timezone text NOT NULL,
+  regulator_name text,
+  numbering_authority text,
+  data_region text NOT NULL DEFAULT 'eu',
+  privacy_retention_days integer CHECK (privacy_retention_days IS NULL OR privacy_retention_days > 0),
+  numbering_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  compliance_requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO operating_markets(
+  country_code,display_name,status,default_currency,default_locale,timezone,
+  regulator_name,numbering_authority,data_region,numbering_profile
+)
+VALUES (
+  'FR','France','active','EUR','fr-FR','Europe/Paris',
+  'ARCEP','ARCEP','eu',
+  '{"canonical_number_format":"E.164","service_family":"premium_rate","local_product":"SVA"}'::jsonb
+)
+ON CONFLICT (country_code) DO NOTHING;
+
+ALTER TABLE tenants
+  ADD COLUMN preferred_locale text NOT NULL DEFAULT 'fr-FR',
+  ADD COLUMN default_currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (default_currency ~ '^[A-Z]{3},
+  ADD COLUMN timezone text NOT NULL DEFAULT 'Europe/Paris';
+
+CREATE TABLE tenant_market_profiles (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  preferred_locale text,
+  billing_currency char(3)
+    CHECK (billing_currency IS NULL OR billing_currency ~ '^[A-Z]{3}),
+  timezone text,
+  compliance_status text NOT NULL DEFAULT 'not_started'
+    CHECK (compliance_status IN ('not_started','pending','verified','blocked','expired')),
+  tax_registration_id text,
+  tax_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  commercial_terms jsonb NOT NULL DEFAULT '{}'::jsonb,
+  data_residency_region text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id,market_id)
+);
+
+INSERT INTO tenant_market_profiles(
+  tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region
+)
+SELECT t.id,m.id,'active','fr-FR','EUR','Europe/Paris','verified','eu'
+FROM tenants t
+JOIN operating_markets m ON m.country_code='FR'
+WHERE t.slug='pgi-internal'
+ON CONFLICT (tenant_id,market_id) DO NOTHING;
+
+ALTER TABLE sva_numbers
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN number_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (number_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','other')),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3}),
+  ADD COLUMN national_number text;
+
+UPDATE sva_numbers
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX sva_numbers_market_status_idx ON sva_numbers(market_id,status);
+
+CREATE TABLE sva_number_aliases (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  sva_number_id bigint NOT NULL REFERENCES sva_numbers(id) ON DELETE CASCADE,
+  market_id bigint REFERENCES operating_markets(id),
+  carrier_id bigint REFERENCES carriers(id),
+  alias text NOT NULL,
+  alias_type text NOT NULL DEFAULT 'carrier_dialed'
+    CHECK (alias_type IN ('national','international','display','carrier_dialed','portability','other')),
+  normalized_e164 text NOT NULL,
+  enabled boolean NOT NULL DEFAULT true,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX sva_number_aliases_carrier_alias_unique
+  ON sva_number_aliases(COALESCE(carrier_id,0),alias);
+CREATE INDEX sva_number_aliases_number_idx
+  ON sva_number_aliases(sva_number_id,enabled);
+
+INSERT INTO sva_number_aliases(sva_number_id,market_id,alias,alias_type,normalized_e164)
+SELECT id,market_id,display_number,'display',e164
+FROM sva_numbers
+WHERE display_number IS NOT NULL AND display_number<>''
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE carrier_market_capabilities (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  carrier_id bigint NOT NULL REFERENCES carriers(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  service_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (service_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','transit','other')),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','ready','active','standby','suspended','closed')),
+  capabilities jsonb NOT NULL DEFAULT '{}'::jsonb,
+  numbering_prefixes jsonb NOT NULL DEFAULT '[]'::jsonb,
+  settlement_currencies text[] NOT NULL DEFAULT ARRAY[]::text[],
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (carrier_id,market_id,service_type)
+);
+
+CREATE TABLE carrier_connection_markets (
+  carrier_connection_id bigint NOT NULL REFERENCES carrier_connections(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  priority integer NOT NULL DEFAULT 100 CHECK (priority > 0),
+  inbound_domain text,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  PRIMARY KEY (carrier_connection_id,market_id)
+);
+
+ALTER TABLE carrier_contracts
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_contracts cc
+SET market_id=COALESCE(
+  (SELECT sn.market_id FROM sva_numbers sn WHERE sn.id=cc.sva_number_id),
+  (SELECT id FROM operating_markets WHERE country_code='FR')
+)
+WHERE market_id IS NULL;
+
+ALTER TABLE carrier_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE tenant_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+),
+  ADD COLUMN timezone text NOT NULL DEFAULT 'Europe/Paris';
+
+CREATE TABLE tenant_market_profiles (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','active','suspended','closed')),
+  preferred_locale text,
+  billing_currency char(3)
+    CHECK (billing_currency IS NULL OR billing_currency ~ '^[A-Z]{3},
+  timezone text,
+  compliance_status text NOT NULL DEFAULT 'not_started'
+    CHECK (compliance_status IN ('not_started','pending','verified','blocked','expired')),
+  tax_registration_id text,
+  tax_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  commercial_terms jsonb NOT NULL DEFAULT '{}'::jsonb,
+  data_residency_region text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id,market_id)
+);
+
+INSERT INTO tenant_market_profiles(
+  tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region
+)
+SELECT t.id,m.id,'active','fr-FR','EUR','Europe/Paris','verified','eu'
+FROM tenants t
+JOIN operating_markets m ON m.country_code='FR'
+WHERE t.slug='pgi-internal'
+ON CONFLICT (tenant_id,market_id) DO NOTHING;
+
+ALTER TABLE sva_numbers
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN number_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (number_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','other')),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3}),
+  ADD COLUMN national_number text;
+
+UPDATE sva_numbers
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX sva_numbers_market_status_idx ON sva_numbers(market_id,status);
+
+CREATE TABLE sva_number_aliases (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  sva_number_id bigint NOT NULL REFERENCES sva_numbers(id) ON DELETE CASCADE,
+  market_id bigint REFERENCES operating_markets(id),
+  carrier_id bigint REFERENCES carriers(id),
+  alias text NOT NULL,
+  alias_type text NOT NULL DEFAULT 'carrier_dialed'
+    CHECK (alias_type IN ('national','international','display','carrier_dialed','portability','other')),
+  normalized_e164 text NOT NULL,
+  enabled boolean NOT NULL DEFAULT true,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX sva_number_aliases_carrier_alias_unique
+  ON sva_number_aliases(COALESCE(carrier_id,0),alias);
+CREATE INDEX sva_number_aliases_number_idx
+  ON sva_number_aliases(sva_number_id,enabled);
+
+INSERT INTO sva_number_aliases(sva_number_id,market_id,alias,alias_type,normalized_e164)
+SELECT id,market_id,display_number,'display',e164
+FROM sva_numbers
+WHERE display_number IS NOT NULL AND display_number<>''
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE carrier_market_capabilities (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  carrier_id bigint NOT NULL REFERENCES carriers(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  service_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (service_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','transit','other')),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','ready','active','standby','suspended','closed')),
+  capabilities jsonb NOT NULL DEFAULT '{}'::jsonb,
+  numbering_prefixes jsonb NOT NULL DEFAULT '[]'::jsonb,
+  settlement_currencies text[] NOT NULL DEFAULT ARRAY[]::text[],
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (carrier_id,market_id,service_type)
+);
+
+CREATE TABLE carrier_connection_markets (
+  carrier_connection_id bigint NOT NULL REFERENCES carrier_connections(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  priority integer NOT NULL DEFAULT 100 CHECK (priority > 0),
+  inbound_domain text,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  PRIMARY KEY (carrier_connection_id,market_id)
+);
+
+ALTER TABLE carrier_contracts
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_contracts cc
+SET market_id=COALESCE(
+  (SELECT sn.market_id FROM sva_numbers sn WHERE sn.id=cc.sva_number_id),
+  (SELECT id FROM operating_markets WHERE country_code='FR')
+)
+WHERE market_id IS NULL;
+
+ALTER TABLE carrier_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE tenant_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+),
+  timezone text,
+  compliance_status text NOT NULL DEFAULT 'not_started'
+    CHECK (compliance_status IN ('not_started','pending','verified','blocked','expired')),
+  tax_registration_id text,
+  tax_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  commercial_terms jsonb NOT NULL DEFAULT '{}'::jsonb,
+  data_residency_region text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id,market_id)
+);
+
+INSERT INTO tenant_market_profiles(
+  tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region
+)
+SELECT t.id,m.id,'active','fr-FR','EUR','Europe/Paris','verified','eu'
+FROM tenants t
+JOIN operating_markets m ON m.country_code='FR'
+WHERE t.slug='pgi-internal'
+ON CONFLICT (tenant_id,market_id) DO NOTHING;
+
+ALTER TABLE sva_numbers
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN number_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (number_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','other')),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3},
+  ADD COLUMN national_number text;
+
+UPDATE sva_numbers
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX sva_numbers_market_status_idx ON sva_numbers(market_id,status);
+
+CREATE TABLE sva_number_aliases (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  sva_number_id bigint NOT NULL REFERENCES sva_numbers(id) ON DELETE CASCADE,
+  market_id bigint REFERENCES operating_markets(id),
+  carrier_id bigint REFERENCES carriers(id),
+  alias text NOT NULL,
+  alias_type text NOT NULL DEFAULT 'carrier_dialed'
+    CHECK (alias_type IN ('national','international','display','carrier_dialed','portability','other')),
+  normalized_e164 text NOT NULL,
+  enabled boolean NOT NULL DEFAULT true,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX sva_number_aliases_carrier_alias_unique
+  ON sva_number_aliases(COALESCE(carrier_id,0),alias);
+CREATE INDEX sva_number_aliases_number_idx
+  ON sva_number_aliases(sva_number_id,enabled);
+
+INSERT INTO sva_number_aliases(sva_number_id,market_id,alias,alias_type,normalized_e164)
+SELECT id,market_id,display_number,'display',e164
+FROM sva_numbers
+WHERE display_number IS NOT NULL AND display_number<>''
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE carrier_market_capabilities (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  carrier_id bigint NOT NULL REFERENCES carriers(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  service_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (service_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','transit','other')),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','ready','active','standby','suspended','closed')),
+  capabilities jsonb NOT NULL DEFAULT '{}'::jsonb,
+  numbering_prefixes jsonb NOT NULL DEFAULT '[]'::jsonb,
+  settlement_currencies text[] NOT NULL DEFAULT ARRAY[]::text[],
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (carrier_id,market_id,service_type)
+);
+
+CREATE TABLE carrier_connection_markets (
+  carrier_connection_id bigint NOT NULL REFERENCES carrier_connections(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  priority integer NOT NULL DEFAULT 100 CHECK (priority > 0),
+  inbound_domain text,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  PRIMARY KEY (carrier_connection_id,market_id)
+);
+
+ALTER TABLE carrier_contracts
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_contracts cc
+SET market_id=COALESCE(
+  (SELECT sn.market_id FROM sva_numbers sn WHERE sn.id=cc.sva_number_id),
+  (SELECT id FROM operating_markets WHERE country_code='FR')
+)
+WHERE market_id IS NULL;
+
+ALTER TABLE carrier_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE tenant_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+),
+  ADD COLUMN national_number text;
+
+UPDATE sva_numbers
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX sva_numbers_market_status_idx ON sva_numbers(market_id,status);
+
+CREATE TABLE sva_number_aliases (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  sva_number_id bigint NOT NULL REFERENCES sva_numbers(id) ON DELETE CASCADE,
+  market_id bigint REFERENCES operating_markets(id),
+  carrier_id bigint REFERENCES carriers(id),
+  alias text NOT NULL,
+  alias_type text NOT NULL DEFAULT 'carrier_dialed'
+    CHECK (alias_type IN ('national','international','display','carrier_dialed','portability','other')),
+  normalized_e164 text NOT NULL,
+  enabled boolean NOT NULL DEFAULT true,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX sva_number_aliases_carrier_alias_unique
+  ON sva_number_aliases(COALESCE(carrier_id,0),alias);
+CREATE INDEX sva_number_aliases_number_idx
+  ON sva_number_aliases(sva_number_id,enabled);
+
+INSERT INTO sva_number_aliases(sva_number_id,market_id,alias,alias_type,normalized_e164)
+SELECT id,market_id,display_number,'display',e164
+FROM sva_numbers
+WHERE display_number IS NOT NULL AND display_number<>''
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE carrier_market_capabilities (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  carrier_id bigint NOT NULL REFERENCES carriers(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  service_type text NOT NULL DEFAULT 'premium_rate'
+    CHECK (service_type IN ('premium_rate','shared_cost','freephone','geographic','mobile','transit','other')),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','testing','ready','active','standby','suspended','closed')),
+  capabilities jsonb NOT NULL DEFAULT '{}'::jsonb,
+  numbering_prefixes jsonb NOT NULL DEFAULT '[]'::jsonb,
+  settlement_currencies text[] NOT NULL DEFAULT ARRAY[]::text[],
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (carrier_id,market_id,service_type)
+);
+
+CREATE TABLE carrier_connection_markets (
+  carrier_connection_id bigint NOT NULL REFERENCES carrier_connections(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  priority integer NOT NULL DEFAULT 100 CHECK (priority > 0),
+  inbound_domain text,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  PRIMARY KEY (carrier_connection_id,market_id)
+);
+
+ALTER TABLE carrier_contracts
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3};
+
+UPDATE carrier_contracts cc
+SET market_id=COALESCE(
+  (SELECT sn.market_id FROM sva_numbers sn WHERE sn.id=cc.sva_number_id),
+  (SELECT id FROM operating_markets WHERE country_code='FR')
+)
+WHERE market_id IS NULL;
+
+ALTER TABLE carrier_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE carrier_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE tenant_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+);
+
+UPDATE carrier_contracts cc
+SET market_id=COALESCE(
+  (SELECT sn.market_id FROM sva_numbers sn WHERE sn.id=cc.sva_number_id),
+  (SELECT id FROM operating_markets WHERE country_code='FR')
+)
+WHERE market_id IS NULL;
+
+ALTER TABLE carrier_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3};
+
+UPDATE carrier_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE tenant_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+);
+
+UPDATE carrier_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE tenant_settlements
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3};
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3});
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+);
+
+UPDATE tenant_settlements
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+ALTER TABLE calls
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN currency char(3) NOT NULL DEFAULT 'EUR'
+    CHECK (currency ~ '^[A-Z]{3};
+
+UPDATE calls c
+SET market_id=sn.market_id,
+    currency=sn.currency
+FROM sva_numbers sn
+WHERE c.sva_number_id=sn.id AND c.market_id IS NULL;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE financial_ledger f
+SET market_id=c.market_id,
+    currency=c.currency
+FROM calls c
+WHERE f.call_id=c.id AND f.market_id IS NULL;
+
+ALTER TABLE logical_carrier_routes
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id);
+
+UPDATE logical_carrier_routes
+SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
+WHERE market_id IS NULL;
+
+CREATE INDEX logical_carrier_routes_market_idx
+  ON logical_carrier_routes(market_id,route_key);
+CREATE INDEX calls_market_started_idx
+  ON calls(market_id,started_at DESC);
+CREATE INDEX carrier_contracts_market_idx
+  ON carrier_contracts(market_id,carrier_id,valid_from DESC);
+CREATE INDEX carrier_settlements_market_period_idx
+  ON carrier_settlements(market_id,currency,period_end DESC);
+CREATE INDEX tenant_settlements_market_period_idx
+  ON tenant_settlements(market_id,currency,period_end DESC);
+CREATE INDEX financial_ledger_market_time_idx
+  ON financial_ledger(market_id,currency,occurred_at DESC);
+
+CREATE TABLE payment_compliance_market_profiles (
+  payment_compliance_profile_id bigint NOT NULL REFERENCES payment_compliance_profiles(id) ON DELETE CASCADE,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  status text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','onboarding','active','suspended','closed')),
+  local_registration_reference text,
+  requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (payment_compliance_profile_id,market_id)
+);
+
+-- Hyperscale / multi-cluster foundation.
+-- PGI Telecom — hyperscale foundation.
+-- Additive only. Prepares the control plane and data plane for millions of tenants.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE tenants
+  ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN placement_bucket smallint GENERATED ALWAYS AS ((id % 4096)::smallint) STORED,
+  ADD COLUMN home_region text NOT NULL DEFAULT 'eu-primary',
+  ADD COLUMN capacity_tier text NOT NULL DEFAULT 'standard'
+    CHECK (capacity_tier IN ('standard','high_volume','dedicated','strategic'));
+
+CREATE UNIQUE INDEX tenants_public_id_unique ON tenants(public_id);
+CREATE INDEX tenants_bucket_status_idx ON tenants(placement_bucket,status,id);
+CREATE INDEX tenants_region_status_idx ON tenants(home_region,status,id);
+
+CREATE TABLE data_clusters (
+  cluster_key text PRIMARY KEY,
+  region text NOT NULL,
+  cluster_role text NOT NULL DEFAULT 'primary'
+    CHECK (cluster_role IN ('primary','secondary','archive')),
+  state text NOT NULL DEFAULT 'ready'
+    CHECK (state IN ('planned','provisioning','ready','draining','offline')),
+  writer_endpoint_ref text,
+  reader_endpoint_ref text,
+  tenant_soft_limit bigint CHECK (tenant_soft_limit IS NULL OR tenant_soft_limit > 0),
+  weight integer NOT NULL DEFAULT 100 CHECK (weight > 0),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO data_clusters(cluster_key,region,cluster_role,state,tenant_soft_limit)
+VALUES ('primary-eu','eu-primary','primary','ready',2000000)
+ON CONFLICT (cluster_key) DO NOTHING;
+
+CREATE TABLE routing_buckets (
+  bucket smallint PRIMARY KEY CHECK (bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','disabled')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO routing_buckets(bucket,cluster_key)
+SELECT g::smallint,'primary-eu'
+FROM generate_series(0,4095) AS g
+ON CONFLICT (bucket) DO NOTHING;
+
+CREATE TABLE tenant_data_placement (
+  tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_public_id uuid NOT NULL,
+  placement_bucket smallint NOT NULL CHECK (placement_bucket BETWEEN 0 AND 4095),
+  cluster_key text NOT NULL REFERENCES data_clusters(cluster_key),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
+  state text NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active','moving','draining','frozen')),
+  home_region text NOT NULL,
+  assigned_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX tenant_data_placement_public_unique
+  ON tenant_data_placement(tenant_public_id);
+CREATE INDEX tenant_data_placement_cluster_idx
+  ON tenant_data_placement(cluster_key,placement_bucket,tenant_id);
+
+INSERT INTO tenant_data_placement(
+  tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+)
+SELECT t.id,t.public_id,t.placement_bucket,rb.cluster_key,t.home_region
+FROM tenants t
+JOIN routing_buckets rb ON rb.bucket=t.placement_bucket
+ON CONFLICT (tenant_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION pgi_assign_tenant_data_placement()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cluster text;
+BEGIN
+  SELECT cluster_key INTO v_cluster
+  FROM routing_buckets
+  WHERE bucket=NEW.placement_bucket
+    AND state IN ('active','moving')
+  LIMIT 1;
+
+  IF v_cluster IS NULL THEN
+    RAISE EXCEPTION 'no active data placement for tenant bucket %', NEW.placement_bucket;
+  END IF;
+
+  INSERT INTO tenant_data_placement(
+    tenant_id,tenant_public_id,placement_bucket,cluster_key,home_region
+  )
+  VALUES(
+    NEW.id,NEW.public_id,NEW.placement_bucket,v_cluster,NEW.home_region
+  )
+  ON CONFLICT (tenant_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_assign_data_placement
+AFTER INSERT ON tenants
+FOR EACH ROW EXECUTE FUNCTION pgi_assign_tenant_data_placement();
+
+ALTER TABLE calls
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE financial_ledger
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE audit_log
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED;
+
+ALTER TABLE outbox_events
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id),
+  ADD COLUMN market_id bigint REFERENCES operating_markets(id),
+  ADD COLUMN tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  ADD COLUMN event_key uuid NOT NULL DEFAULT gen_random_uuid();
+
+ALTER TABLE api_idempotency_keys
+  ADD COLUMN tenant_id bigint REFERENCES tenants(id);
+
+CREATE INDEX calls_bucket_tenant_started_idx
+  ON calls(tenant_bucket,tenant_id,started_at DESC,id DESC);
+CREATE INDEX financial_ledger_bucket_tenant_time_idx
+  ON financial_ledger(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE INDEX audit_log_bucket_tenant_time_idx
+  ON audit_log(tenant_bucket,tenant_id,occurred_at DESC,id DESC);
+CREATE UNIQUE INDEX outbox_events_event_key_unique
+  ON outbox_events(event_key);
+CREATE INDEX outbox_events_bucket_pending_idx
+  ON outbox_events(tenant_bucket,available_at,id)
+  WHERE published_at IS NULL;
+CREATE INDEX api_idempotency_tenant_expiry_idx
+  ON api_idempotency_keys(tenant_id,expires_at);
+
+CREATE TABLE worker_leases (
+  lease_key text PRIMARY KEY,
+  owner_id text NOT NULL,
+  acquired_at timestamptz NOT NULL DEFAULT now(),
+  heartbeat_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CHECK (expires_at > acquired_at)
+);
+
+CREATE INDEX worker_leases_expiry_idx ON worker_leases(expires_at);
+
+CREATE TABLE work_queue (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  queue_name text NOT NULL,
+  tenant_id bigint REFERENCES tenants(id),
+  tenant_bucket smallint GENERATED ALWAYS AS (((COALESCE(tenant_id,0)) % 4096)::smallint) STORED,
+  dedupe_key text,
+  priority smallint NOT NULL DEFAULT 100,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 10 CHECK (max_attempts > 0),
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX work_queue_dedupe_active_unique
+  ON work_queue(queue_name,dedupe_key)
+  WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_claim_idx
+  ON work_queue(queue_name,priority,available_at,id)
+  WHERE completed_at IS NULL AND failed_at IS NULL;
+CREATE INDEX work_queue_tenant_idx
+  ON work_queue(tenant_bucket,tenant_id,created_at DESC);
+
+CREATE TABLE call_facts (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  call_id bigint NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  sva_number_id bigint NOT NULL,
+  expert_id bigint,
+  origin_carrier_id bigint,
+  host_carrier_id bigint,
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz NOT NULL,
+  call_status text NOT NULL,
+  conversation_seconds integer NOT NULL DEFAULT 0,
+  billable_seconds integer NOT NULL DEFAULT 0,
+  payout_eligible_seconds integer NOT NULL DEFAULT 0,
+  retail_service_amount_ttc numeric(14,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(14,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(14,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(14,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(14,6) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,call_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE call_facts_p%s PARTITION OF call_facts FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX call_facts_tenant_time_idx
+  ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_market_time_idx
+  ON call_facts(market_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_time_idx
+  ON call_facts(started_at DESC,call_id DESC);
+CREATE INDEX call_facts_started_brin
+  ON call_facts USING brin(started_at);
+
+INSERT INTO call_facts(
+  tenant_bucket,call_id,tenant_id,market_id,currency,sva_number_id,expert_id,
+  origin_carrier_id,host_carrier_id,started_at,ended_at,call_status,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,created_at
+)
+SELECT
+  c.tenant_bucket,c.id,c.tenant_id,c.market_id,c.currency,c.sva_number_id,c.expert_id,
+  c.origin_carrier_id,c.host_carrier_id,c.started_at,c.ended_at,c.call_status,
+  c.conversation_seconds,c.billable_seconds,c.payout_eligible_seconds,
+  c.retail_service_amount_ttc,c.expected_payout_ht,COALESCE(c.confirmed_payout_ht,0),c.paid_payout_ht,
+  c.expert_cost_ht,c.technical_cost_ht,c.estimated_margin_ht,c.reconciliation_variance_ht,c.created_at
+FROM calls c
+ON CONFLICT (tenant_bucket,call_id) DO NOTHING;
+
+CREATE TABLE metric_rollups_daily_v2 (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint,
+  market_id bigint,
+  currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_abandoned bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  conversation_seconds bigint NOT NULL DEFAULT 0,
+  billable_seconds bigint NOT NULL DEFAULT 0,
+  payout_eligible_seconds bigint NOT NULL DEFAULT 0,
+  generated_revenue_ttc numeric(20,6) NOT NULL DEFAULT 0,
+  expected_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  confirmed_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  paid_payout_ht numeric(20,6) NOT NULL DEFAULT 0,
+  expert_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  technical_cost_ht numeric(20,6) NOT NULL DEFAULT 0,
+  estimated_margin_ht numeric(20,6) NOT NULL DEFAULT 0,
+  reconciliation_variance_ht numeric(20,6) NOT NULL DEFAULT 0,
+  source_generation bigint NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_bucket,bucket_date,tenant_id,market_id,currency)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $$
+DECLARE
+  i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE metric_rollups_daily_v2_p%s PARTITION OF metric_rollups_daily_v2 FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE INDEX metric_rollups_daily_v2_tenant_idx
+  ON metric_rollups_daily_v2(tenant_id,bucket_date DESC);
+CREATE INDEX metric_rollups_daily_v2_market_idx
+  ON metric_rollups_daily_v2(market_id,bucket_date DESC,currency);
+
+CREATE TABLE capacity_snapshots (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  measured_at timestamptz NOT NULL DEFAULT now(),
+  component text NOT NULL,
+  cluster_key text,
+  region text,
+  metric text NOT NULL,
+  value numeric(20,6) NOT NULL,
+  unit text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX capacity_snapshots_lookup_idx
+  ON capacity_snapshots(component,metric,measured_at DESC);
+CREATE INDEX capacity_snapshots_cluster_idx
+  ON capacity_snapshots(cluster_key,measured_at DESC);
+
+-- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
+-- against the immutable migration files before seeding schema_migrations.
+CREATE TABLE schema_bootstrap_migrations (
+  version text PRIMARY KEY,
+  checksum char(64) NOT NULL
+);
+
+INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
+  ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
+  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
+  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
+  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
+  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+
+COMMIT;
+);
 
 UPDATE calls c
 SET market_id=sn.market_id,
