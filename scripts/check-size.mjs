@@ -29,7 +29,9 @@ for (const [file,max] of Object.entries(lazyBudgets)) {
   if (size > max) failures.push(`${file}: ${size} bytes > lazy budget ${max}`);
 }
 const totalBudget = 260 * 1024;
+const reservedHeadroom = 16 * 1024;
 if (total > totalBudget) failures.push(`shell total: ${total} bytes > budget ${totalBudget}`);
+if (total > totalBudget-reservedHeadroom) failures.push(`shell reserve: ${totalBudget-total} bytes remaining < required ${reservedHeadroom}`);
 
 if (failures.length) {
   failures.forEach(x => console.error("FAIL:", x));
