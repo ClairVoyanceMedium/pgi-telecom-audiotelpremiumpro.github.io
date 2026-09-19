@@ -12,7 +12,8 @@ const multiRegionMigration=fs.readFileSync("database/migrations/013_multi_region
 const usageLedgerMigration=fs.readFileSync("database/migrations/014_metered_usage_ledger.sql","utf8");
 const objectLifecycleMigration=fs.readFileSync("database/migrations/015_object_storage_data_lifecycle.sql","utf8");
 const dashboardDimensionMigration=fs.readFileSync("database/migrations/016_dashboard_dimension_rollups.sql","utf8");
-const qualityRollupMigration=fs.readFileSync("database/migrations/017_quality_rollups.sql","utf8");\nconst experienceRollupMigration=fs.readFileSync("database/migrations/018_call_experience_rollups.sql","utf8");
+const qualityRollupMigration=fs.readFileSync("database/migrations/017_quality_rollups.sql","utf8");
+const experienceRollupMigration=fs.readFileSync("database/migrations/018_call_experience_rollups.sql","utf8");
 const resilienceDocs=fs.readFileSync("docs/RESILIENCE.md","utf8");
 const alertRules=fs.readFileSync("infra/observability/prometheus-alerts.example.yml","utf8");
 const schema=fs.readFileSync("database/schema.sql","utf8");
