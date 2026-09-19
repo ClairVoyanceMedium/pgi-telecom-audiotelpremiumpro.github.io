@@ -418,6 +418,10 @@ export class MemoryStore{
     return {...this.route};
   }
 
+  async carrierAdminOverview(){
+    return {route:{...this.route},targets:[],recent_switches:this.switches.slice(-20).reverse().map(x=>({...x}))};
+  }
+
   async planCarrierSwitch(payload,actor){
     if(!payload.to_carrier_id)throw problem(400,"TO_CARRIER_REQUIRED");
     const sw={
