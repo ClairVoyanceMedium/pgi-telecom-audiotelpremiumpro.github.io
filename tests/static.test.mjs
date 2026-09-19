@@ -189,9 +189,9 @@ test("experts opérateurs et réconciliation utilisent les agrégats serveur",()
 test("la PWA met en cache tous les modules du shell",()=>{
   for(const file of [
     "assets/demo-data.js","assets/api-client.js","assets/data-client.js",
-    "assets/command-palette.js","assets/workspace.js","assets/app.js"
+    "assets/command-palette.js","assets/workspace.js","assets/cockpit-pro.js","assets/app.js"
   ])assert.ok(sw.includes(file),"service worker missing "+file);
-  assert.match(sw,/pgi-telecom-shell-v19/);
+  assert.match(sw,/pgi-telecom-shell-v20/);
 });
 
 test("la release Git exacte reste visible et obligatoire",()=>{
