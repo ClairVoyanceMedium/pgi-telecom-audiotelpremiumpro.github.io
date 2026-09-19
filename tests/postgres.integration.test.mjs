@@ -46,7 +46,8 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
         origin_type:"mobile",
         sva_number:"33890000000",
         expert_id:1,
-        sip_final_code:200
+        sip_final_code:200,
+        quality:{mos:4.2,packet_loss_percent:0.1,jitter_ms:4,latency_ms:30,dtmf_errors:0}
       }
     };
     const first=await store.ingestCdr(envelope);
@@ -57,6 +58,14 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const summary=await store.summary("2026-09-18T00:00:00Z","2026-09-19T00:00:00Z");
     assert.equal(summary.calls_total,1);
     assert.ok(summary.expected_payout_ht>0);
+
+    const analytics=await store.dashboardAnalytics("2026-09-18T00:00:00Z","2026-09-19T00:00:00Z","FR");
+    assert.equal(analytics.series.length,1);
+    assert.equal(analytics.series[0].payout_eligible_seconds,600);
+    assert.equal(analytics.series[0].confirmed_payout,0);
+    assert.equal(analytics.quality_series.length,1);
+    assert.equal(analytics.quality_series[0].samples,1);
+    assert.equal(analytics.quality_series[0].mos,4.2);
 
     const calls=await store.listCalls({limit:10});
     assert.equal(calls.data.length,1);
