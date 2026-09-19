@@ -39,7 +39,7 @@ const releaseId=process.env.PGI_RELEASE_ID||"";
 const production=mode==="production";
 if(production&&!/^[0-9a-f]{40}$/.test(releaseId))throw new Error("PGI_RELEASE_ID must be the 40-character Git SHA in production");
 const config={
-  appName:"PGI Telecom • Audiotel Premium Pro",
+  appName:"PGI • Telecom - Audiotel Premium Pro",
   version:pkg.version,
   releaseId,
   schemaVersion:1,
