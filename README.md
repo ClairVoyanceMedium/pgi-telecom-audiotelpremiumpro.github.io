@@ -4,7 +4,7 @@ Cockpit Audiotel, financier et télécom de PGI Telecom.
 
 ## État actuel
 
-Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.19.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
+Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.20.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
 
 Fonctions déjà présentes :
 
@@ -304,3 +304,14 @@ La qualité RTP ajoute deux indicateurs de dégradation : sessions affectées lo
 Le Cockpit ajoute un radar de dérive adaptatif et des benchmarks experts/opérateurs. Les signaux comparent la dernière période à la médiane des périodes précédentes avec une dispersion robuste basée sur la MAD, afin de limiter les alertes provoquées par quelques valeurs extrêmes. Les signaux sont descriptifs et ne constituent ni prévision ni SLA.
 
 Le radar est chargé à la demande. Il reste donc hors du shell critique initial, possède son propre budget de taille et bénéficie ensuite du cache runtime du service worker. Les matrices utilisent les agrégats PostgreSQL existants et n’exigent pas de télécharger l’historique complet des CDR.
+
+
+## Abonnements externes 1.20
+
+PGI peut rester aujourd'hui un outil strictement interne tout en ayant un modèle d'abonnement prêt pour les futurs clients externes. Le tenant `pgi-internal` et, plus généralement, tout tenant de type `internal`, sont exemptés de l'abonnement.
+
+Le plan `external-sva-access` est initialisé à 2,00 EUR par mois. Pour un tenant externe, l'accès aux appels premium n'est autorisé que si un abonnement `active` possède une période payée dont la date de fin est encore future. Les statuts `past_due`, `suspended`, `cancelled` et `ended` ne donnent pas accès au routage SVA.
+
+Le prix est versionné : une hausse future crée une nouvelle version avec sa date d'effet. Les abonnements existants restent reliés à leur version de prix jusqu'à une migration explicite, ce qui évite de modifier silencieusement un contrat en cours.
+
+Le fournisseur de paiement reste volontairement découplé. `PGI_EXTERNAL_BILLING_ENABLED=false` est la valeur par défaut. Lors d'une ouverture commerciale, un adaptateur de paiement peut envoyer des événements normalisés vers l'endpoint interne protégé par `PGI_BILLING_INGEST_TOKEN` sans modifier le modèle télécom.
