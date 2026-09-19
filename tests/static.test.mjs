@@ -10,7 +10,7 @@ const dataClient=read("assets/data-client.js");
 const demoData=read("assets/demo-data.js");
 const commands=read("assets/command-palette.js");
 const workspace=read("assets/workspace.js");
-const cockpitPro=read("assets/cockpit-pro.js");
+const cockpitPro=read("assets/cockpit-pro.js");\nconst performanceRadar=read("assets/performance-radar.js");
 const css=read("assets/styles.css");
 const sw=read("service-worker.js");
 const buildStatic=read("scripts/build-static.mjs");
@@ -195,12 +195,23 @@ test("le Cockpit expose l'expérience appelant sans faux SLA",()=>{
   assert.doesNotMatch(index,/SLA garanti/i);
 });
 
+test("le Performance Radar est chargé à la demande et reste hors du shell critique",()=>{
+  assert.ok(index.includes('id="performance-radar"'));
+  assert.match(cockpitPro,/performance-radar\.js/);
+  assert.match(cockpitPro,/import\(RU\)/);
+  assert.match(performanceRadar,/DÉTECTION STATISTIQUE/);
+  assert.match(performanceRadar,/MATRICE VOLUME × ASR/);
+  assert.match(performanceRadar,/Performance experts/);
+  assert.match(performanceRadar,/Performance opérateurs/);
+  assert.doesNotMatch(sw,/assets\/performance-radar\.js/);
+});
+
 test("la PWA met en cache tous les modules du shell",()=>{
   for(const file of [
     "assets/demo-data.js","assets/api-client.js","assets/data-client.js",
     "assets/command-palette.js","assets/workspace.js","assets/cockpit-pro.js","assets/app.js"
   ])assert.ok(sw.includes(file),"service worker missing "+file);
-  assert.match(sw,/pgi-telecom-shell-v21/);
+  assert.match(sw,/pgi-telecom-shell-v22/);
 });
 
 test("la release Git exacte reste visible et obligatoire",()=>{
