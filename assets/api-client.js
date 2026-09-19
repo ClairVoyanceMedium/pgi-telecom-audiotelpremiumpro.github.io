@@ -121,6 +121,7 @@ rollbackCarrierSwitch:function(id,idempotencyKey){if(!idempotencyKey)throw new E
 wholesaleOverview:function(){return request("/platform/overview");},
 subscriptionBilling:function(){return request("/platform/subscription-billing");},
 createSubscriptionPrice:function(payload,idempotencyKey){if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");return request("/platform/subscription-prices",{method:"POST",body:payload,headers:{"Idempotency-Key":idempotencyKey}});},
+customerAdminSummary:function(){return request("/platform/tenants/summary");},
 tenants:function(params){
 var q=new URLSearchParams(params||{}).toString();
 return request("/platform/tenants"+(q?"?"+q:""));
