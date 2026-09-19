@@ -19,6 +19,7 @@ Cockpit d’administration totale :
 - cache PWA v25 ;
 - création d’un client externe directement depuis le cockpit, toujours en état `pending` et sans accès SVA automatique ;
 - initialisation KYC `pending`, placement data et profil marché onboarding lors de la création ;
+- langue, devise et fuseau résolus automatiquement depuis le marché du pays lorsqu’ils ne sont pas fournis ;
 - administration plateforme accessible depuis Plateforme SVA, Opérateurs et la palette d’actions ;
 - publication d’un nouveau tarif d’abonnement par version immuable, avec confirmation ;
 - découverte des seules connexions SIP éligibles à une bascule ;
