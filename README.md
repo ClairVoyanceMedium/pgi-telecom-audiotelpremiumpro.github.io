@@ -4,7 +4,7 @@ Cockpit Audiotel, financier et télécom de PGI Telecom.
 
 ## État actuel
 
-Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.16.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
+Le dépôt contient deux surfaces strictement séparées : une démonstration statique GitHub Pages sans données réelles, et une architecture de production 1.17.0 same-origin prête à être déployée sur un serveur privé 24/7 avant même le choix de l’opérateur SVA.
 
 Fonctions déjà présentes :
 
@@ -283,3 +283,10 @@ Voir `docs/EFFICIENCY.md`.
 ### Temps réel distribué
 
 Le bus SSE de production peut maintenant être relayé entre plusieurs processus Node via PostgreSQL `LISTEN/NOTIFY`, sans dépendance Redis/Valkey supplémentaire. Les événements restent volontairement petits et servent à déclencher la resynchronisation du cockpit. Un processus worker publie sans ouvrir de connexion LISTEN inutile ; les processus API écoutent le canal partagé et ignorent leur propre écho.
+
+
+## Command Center 1.17
+
+Le Cockpit devient une tour de contrôle métier et télécom dense : 12 indicateurs avancés, tendances finance/volume/conversion/qualité, économie unitaire, chaîne de paiement, concentration experts/opérateurs et supervision du bus temps réel distribué. Les graphiques de production utilisent des agrégats PostgreSQL exacts et n’inventent jamais les métriques absentes.
+
+Le temps réel multi-processus s’appuie sur PostgreSQL `LISTEN/NOTIFY`, sans Redis/Valkey supplémentaire. Le moteur graphique avancé est séparé du runtime principal afin de conserver les budgets de performance du shell.
