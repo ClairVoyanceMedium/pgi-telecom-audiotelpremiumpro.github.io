@@ -16,7 +16,14 @@ Cockpit d’administration totale :
 - collections strictement bornées pour conserver une architecture compatible avec des millions de tenants ;
 - module dossier chargé à la demande, hors shell critique ;
 - budget lazy dédié de 20 KiB ;
-- cache PWA v25 ;
+- palette Actions / Ctrl K chargée uniquement à la première utilisation ;
+- détail CDR et export CSV sortis du cœur `app.js` et chargés à la demande ;
+- moteur analytique avancé `cockpit-pro.js` chargé après le premier rendu ;
+- build statique complété pour embarquer explicitement tous les modules runtime ;
+- shell critique ramené à environ 241 Ko, avec près de 25 Ko de marge sous le plafond ;
+- `app.js` ramené à environ 83,5 Ko, avec plus de 8 Ko de marge ;
+- CI renforcée : réserve minimale de 16 KiB obligatoire sous le plafond shell de 260 KiB ;
+- cache PWA v26 ;
 - création d’un client externe directement depuis le cockpit, toujours en état `pending` et sans accès SVA automatique ;
 - initialisation KYC `pending`, placement data et profil marché onboarding lors de la création ;
 - langue, devise et fuseau résolus automatiquement depuis le marché du pays lorsqu’ils ne sont pas fournis ;
