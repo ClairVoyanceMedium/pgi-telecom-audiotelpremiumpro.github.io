@@ -123,6 +123,7 @@ test("la synchronisation temps réel est incrémentale et économe",()=>{
   assert.match(app,/handleVisibilityChange/);
   assert.match(app,/hiddenFor>30000\?"full"/);
   assert.match(app,/pendingSyncMode/);
+  assert.match(app,/scheduledSyncMode=mergeSyncMode/);
 });
 
 test("seule la vue active est recalculée",()=>{
