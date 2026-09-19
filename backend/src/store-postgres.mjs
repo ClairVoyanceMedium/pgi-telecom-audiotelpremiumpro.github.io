@@ -1264,11 +1264,15 @@ export class PostgresStore{
     if(marketId!=null&&(!Number.isInteger(marketId)||marketId<=0))throw problem(400,"INVALID_MARKET_ID");
     const effectiveFrom=payload.effective_from||new Date().toISOString();
     if(!Number.isFinite(Date.parse(effectiveFrom)))throw problem(400,"INVALID_EFFECTIVE_FROM");
+    const provider=payload.provider==null||payload.provider===""?null:String(payload.provider).trim().toLowerCase();
+    const providerPriceReference=payload.provider_price_reference==null||payload.provider_price_reference===""?null:String(payload.provider_price_reference).trim();
+    if(provider&&!/^[a-z0-9_.-]{2,40}$/.test(provider))throw problem(400,"INVALID_BILLING_PROVIDER");
+    if(providerPriceReference&&(!provider||providerPriceReference.length>200))throw problem(400,"INVALID_PROVIDER_PRICE_REFERENCE");
     const actorId=numericActor(actor);
     const rows=await this.sql.begin(async tx=>{
       const created=await tx.unsafe(
-        "SELECT pgi_publish_service_plan_price('external-sva-access',$1::char(3),$2,$3::timestamptz,$4,$5) AS id",
-        [currency,amountMinor,effectiveFrom,marketId,actorId]
+        "SELECT pgi_publish_service_plan_price('external-sva-access',$1::char(3),$2,$3::timestamptz,$4,$5,$6,$7) AS id",
+        [currency,amountMinor,effectiveFrom,marketId,actorId,provider,providerPriceReference]
       );
       const id=Number(created[0]?.id);
       const price=await tx.unsafe(
