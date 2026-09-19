@@ -243,7 +243,7 @@ test("la PWA met en cache tous les modules du shell",()=>{
     "assets/demo-data.js","assets/api-client.js","assets/data-client.js",
     "assets/command-palette.js","assets/workspace.js","assets/cockpit-pro.js","assets/app.js"
   ])assert.ok(sw.includes(file),"service worker missing "+file);
-  assert.match(sw,/pgi-telecom-shell-v23/);
+  assert.match(sw,/pgi-telecom-shell-v24/);
 });
 
 test("la release Git exacte reste visible et obligatoire",()=>{
