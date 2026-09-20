@@ -174,8 +174,8 @@ test("les clients externes ont un abonnement SVA payé versionné et PGI interne
   assert.ok(server.includes("/api/v1/customer/billing/status"));
   assert.ok(server.includes("/api/v1/customer/billing/checkout-session"));
   assert.ok(server.includes("/api/v1/customer/billing/portal-session"));
-  assert.ok(server.includes('sva_payout_flow:"carrier_to_customer"'));
-  assert.ok(server.includes("funds_held_by_pgi:false"));
+  assert.ok(server.includes('sva_payout_flow:"carrier_to_pgi_to_customer"'));
+  assert.ok(server.includes("pgi_margin_retained:true"));
 });
 
 test("la devise de paiement est résolue par pays sans activer le marché SVA",()=>{
