@@ -27,6 +27,11 @@ DECLARE
   v_principal_id uuid;
 BEGIN
   v_principal_id=COALESCE(NEW.customer_principal_id,OLD.customer_principal_id);
+  IF TG_OP='UPDATE'
+     AND NEW.password_hash IS NOT DISTINCT FROM OLD.password_hash
+     AND NEW.status IS NOT DISTINCT FROM OLD.status THEN
+    RETURN NEW;
+  END IF;
   UPDATE customer_principals
   SET session_version=session_version+1,updated_at=now()
   WHERE id=v_principal_id;
