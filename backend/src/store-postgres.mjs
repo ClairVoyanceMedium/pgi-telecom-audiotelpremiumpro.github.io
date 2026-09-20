@@ -727,6 +727,7 @@ export class PostgresStore{
         await writeQualityRollup(tx,call.id);
       }
       await writeVoiceCarrierHealthRollup(tx,call.id);
+      await writeSipCodeRollup(tx,call.id);
       if(financial.expectedPayoutHt!==0)await ledger(tx,call.id,sva.tenant_id,sva.market_id,sva.currency,"expected",financial.expectedPayoutHt,envelope);
       if(confirmed!=null&&confirmed!==0)await ledger(tx,call.id,sva.tenant_id,sva.market_id,sva.currency,"confirmed",confirmed,envelope);
       if(paid!==0)await ledger(tx,call.id,sva.tenant_id,sva.market_id,sva.currency,"paid",paid,envelope);
@@ -2492,6 +2493,17 @@ async function writeVoiceCarrierHealthRollup(tx,callId){
     " caller_hangups=voice_carrier_health_hourly_sharded.caller_hangups+EXCLUDED.caller_hangups,"+
     " callee_hangups=voice_carrier_health_hourly_sharded.callee_hangups+EXCLUDED.callee_hangups,"+
     " network_hangups=voice_carrier_health_hourly_sharded.network_hangups+EXCLUDED.network_hangups,updated_at=now()",
+    [callId]
+  );
+}
+
+async function writeSipCodeRollup(tx,callId){
+  await tx.unsafe(
+    "INSERT INTO voice_sip_code_hourly_sharded(bucket_start,market_id,host_carrier_id,sip_final_code,rollup_shard,calls_total)"+
+    " SELECT date_trunc('hour',started_at),market_id,host_carrier_id,sip_final_code,(tenant_bucket%64)::smallint,1"+
+    " FROM calls WHERE id=$1 AND market_id IS NOT NULL AND host_carrier_id IS NOT NULL AND sip_final_code BETWEEN 100 AND 699"+
+    " ON CONFLICT(bucket_start,market_id,host_carrier_id,sip_final_code,rollup_shard) DO UPDATE SET"+
+    " calls_total=voice_sip_code_hourly_sharded.calls_total+1,updated_at=now()",
     [callId]
   );
 }
