@@ -1826,11 +1826,21 @@ export class PostgresStore{
       let principal=(await tx.unsafe("SELECT p.id,p.email,p.display_name,p.status,p.session_version FROM customer_federated_identities f JOIN customer_principals p ON p.id=f.customer_principal_id WHERE f.provider='google' AND f.provider_subject=$1 FOR UPDATE",[identity.subject]))[0]||null;
       if(!principal){
         principal=(await tx.unsafe("SELECT id,email,display_name,status,session_version FROM customer_principals WHERE email_normalized=$1 FOR UPDATE",[identity.email]))[0]||null;
-        if(!principal&&!invitation)throw problem(403,"GOOGLE_INVITATION_REQUIRED");
+        if(!principal&&!invitation){
+          principal=(await tx.unsafe(
+            "INSERT INTO customer_principals(email,display_name,status,email_verified) VALUES($1,$2,'pending',true) RETURNING id,email,display_name,status,session_version",
+            [identity.email,identity.display_name||identity.email]
+          ))[0];
+        }
         if(principal&&!invitation&&!identity.authoritative_email)throw problem(409,"GOOGLE_LINK_REQUIRES_INVITATION");
         if(principal&&!["active","pending"].includes(principal.status))throw problem(409,"CUSTOMER_ACCOUNT_DISABLED");
-        if(!principal)principal=(await tx.unsafe("INSERT INTO customer_principals(email,display_name,status,email_verified) VALUES($1,$2,'active',true) RETURNING id,email,display_name,status,session_version",[identity.email,identity.display_name||identity.email]))[0];
-        else await tx.unsafe("UPDATE customer_principals SET email_verified=true,status='active',updated_at=now() WHERE id=$1::uuid",[principal.id]);
+        if(!principal){
+          principal=(await tx.unsafe("INSERT INTO customer_principals(email,display_name,status,email_verified) VALUES($1,$2,'active',true) RETURNING id,email,display_name,status,session_version",[identity.email,identity.display_name||identity.email]))[0];
+        }else if(invitation){
+          await tx.unsafe("UPDATE customer_principals SET email_verified=true,status='active',updated_at=now() WHERE id=$1::uuid",[principal.id]);
+        }else{
+          await tx.unsafe("UPDATE customer_principals SET email_verified=true,updated_at=now() WHERE id=$1::uuid",[principal.id]);
+        }
         const linked=await tx.unsafe("INSERT INTO customer_federated_identities(provider,provider_subject,customer_principal_id,email_at_link,email_verified,hosted_domain,picture_url,last_authenticated_at) VALUES('google',$1,$2::uuid,$3,true,$4,$5,now()) ON CONFLICT DO NOTHING RETURNING customer_principal_id",[identity.subject,principal.id,identity.email,identity.hosted_domain,identity.picture_url]);
         if(!linked.length){
           const collision=(await tx.unsafe("SELECT customer_principal_id FROM customer_federated_identities WHERE provider='google' AND provider_subject=$1",[identity.subject]))[0];
@@ -1838,6 +1848,7 @@ export class PostgresStore{
         }
       }
       if(invitation){
+        await tx.unsafe("UPDATE customer_principals SET status='active',email_verified=true,updated_at=now() WHERE id=$1::uuid",[principal.id]);
         await tx.unsafe("INSERT INTO customer_tenant_memberships(tenant_id,customer_principal_id,role,status) VALUES($1,$2::uuid,$3,'active') ON CONFLICT(tenant_id,customer_principal_id) DO UPDATE SET role=EXCLUDED.role,status='active',updated_at=now()",[invitation.tenant_id,principal.id,invitation.role]);
         await tx.unsafe("UPDATE customer_tenant_invitations SET status='accepted',accepted_by_customer_principal_id=$1::uuid,accepted_at=now() WHERE id=$2::uuid",[principal.id,invitation.id]);
       }
@@ -1845,8 +1856,7 @@ export class PostgresStore{
       await tx.unsafe("UPDATE customer_federated_identities SET email_at_link=$2,email_verified=true,hosted_domain=$3,picture_url=$4,last_authenticated_at=now(),updated_at=now() WHERE provider='google' AND provider_subject=$1",[identity.subject,identity.email,identity.hosted_domain,identity.picture_url]);
       const refreshed=(await tx.unsafe("SELECT id,email,display_name,status,session_version FROM customer_principals WHERE id=$1::uuid",[principal.id]))[0];
       const memberships=await tx.unsafe("SELECT m.tenant_id,m.role,m.status,t.public_id,t.slug,t.display_name,t.status AS tenant_status,t.authorization_version FROM customer_tenant_memberships m JOIN tenants t ON t.id=m.tenant_id WHERE m.customer_principal_id=$1::uuid AND m.status='active' AND t.status='active' ORDER BY t.display_name,t.id",[principal.id]);
-      if(!memberships.length)throw problem(403,"GOOGLE_INVITATION_REQUIRED");
-      return {...refreshed,memberships};
+      return {...refreshed,memberships,account_pending:memberships.length===0};
     });
   }
 

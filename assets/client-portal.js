@@ -143,8 +143,12 @@ async function handleGoogleCredential(response,tenantOverride){
   var invite=new URLSearchParams(location.search).get("invite")||"";
   var tenant=tenantOverride||$("customer-tenant").value||"";
   try{
-    var result=await window.PGICustomerApi.google(credential,tenant,invite);state.user=result.user;state.googleCredential=null;
-    if(invite)history.replaceState(null,"",location.pathname);showApp();
+    var result=await window.PGICustomerApi.google(credential,tenant,invite);state.googleCredential=null;
+    if(result&&result.pending_contract){
+      setAuthMessage(tr("Compte Google créé. Votre accès sera activé dès que votre contrat sera rattaché."),false);
+      return;
+    }
+    state.user=result.user;if(invite)history.replaceState(null,"",location.pathname);showApp();
   }catch(err){
     if(err.code==="CUSTOMER_TENANT_REQUIRED"&&err.payload&&Array.isArray(err.payload.tenants)&&err.payload.tenants.length){
       var sel=$("customer-tenant");sel.innerHTML=err.payload.tenants.map(function(x){return '<option value="'+esc(x.id)+'">'+esc(x.name+" · "+x.role)+'</option>';}).join("");$("tenant-choice-wrap").hidden=false;$("google-tenant-continue").hidden=false;setAuthMessage(tr("Société")+" : "+tr("Confirmer"),false);return;

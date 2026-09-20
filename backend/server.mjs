@@ -126,6 +126,10 @@ export function createBackend(options={}){
         const inviteHash=rawInvite?createHash("sha256").update(rawInvite).digest("hex"):null;
         const auth=await store.customerGoogleSignIn(identity,inviteHash);
         const memberships=(auth.memberships||[]).filter(x=>x.status==="active"&&x.tenant_status==="active");
+        if(!memberships.length&&auth.account_pending){
+          authBuckets.delete(authKey);
+          return done(res,metrics,started,"customer.auth.google",202,{account_created:true,pending_contract:true,user:{id:auth.id,name:auth.display_name||auth.email,email:auth.email}});
+        }
         let membership=null;
         const requested=String(body.tenant||"").trim();
         if(requested)membership=memberships.find(x=>String(x.public_id)===requested||String(x.slug)===requested)||null;
