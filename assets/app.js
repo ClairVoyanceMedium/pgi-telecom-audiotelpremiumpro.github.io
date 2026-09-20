@@ -1328,7 +1328,7 @@ try{
 if(RUNTIME.mode==="production"&&window.PGIApi){
 await window.PGIApi.createBaseline({scope:"global",reason:"Remise à zéro depuis le cockpit"},window.PGIApi.newIdempotencyKey());
 }
-state.baseline=at;state.resets.push({at:at.toISOString(),scope:"global"});saveState();refreshData();
+state.baseline=at;state.resets.push({at:at.toISOString(),scope:"global"});saveState();if(window.PGIDataClient)window.PGIDataClient.invalidateAppBootstrap();refreshData({forceMeta:true});
 }catch(e){recordRuntimeError();}
 });
 var authForm=$("auth-form");
