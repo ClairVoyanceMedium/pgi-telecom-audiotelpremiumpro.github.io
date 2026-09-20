@@ -131,8 +131,13 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.match(evidencePack.integrity.pack_sha256,/^[0-9a-f]{64}$/);
     assert.match(evidencePack.integrity.evidence_chain_head,/^[0-9a-f]{64}$/);
     assert.equal(evidencePack.privacy.raw_rio_included,false);
-    const packAudit=await store.sql.unsafe("SELECT details->>'pack_sha256' AS pack_sha256 FROM audit_log WHERE action='regulatory.evidence_pack.export' AND entity_id=$1 ORDER BY id DESC LIMIT 1",[String(extAssignmentForRoute[0].id)]);
-    assert.equal(packAudit[0].pack_sha256,evidencePack.integrity.pack_sha256);
+    const packRegister=await store.sql.unsafe("SELECT public_id::text AS public_id,pack_sha256,evidence_links_valid,evidence_events FROM sva_regulatory_evidence_pack_exports WHERE assignment_id=$1 ORDER BY id DESC LIMIT 1",[Number(extAssignmentForRoute[0].id)]);
+    assert.equal(packRegister[0].public_id,evidencePack.integrity.export_id);
+    assert.equal(packRegister[0].pack_sha256,evidencePack.integrity.pack_sha256);
+    assert.equal(packRegister[0].evidence_links_valid,true);
+    assert.equal(Number(packRegister[0].evidence_events),7);
+    const packAudit=await store.sql.unsafe("SELECT details->>'export_public_id' AS export_public_id FROM audit_log WHERE action='regulatory.evidence_pack.export' AND entity_id=$1 ORDER BY id DESC LIMIT 1",[String(extAssignmentForRoute[0].id)]);
+    assert.equal(packAudit[0].export_public_id,evidencePack.integrity.export_id);
     const createdDestination=await store.createCallDestination(externalIdentity[0].public_id,{assignment_id:Number(extAssignmentForRoute[0].id),label:"Standard principal",destination_type:"pstn",destination_uri:"tel:+33123456789",priority:10,max_concurrent_calls:25},{sub:"admin"});
     assert.equal(createdDestination.status,"testing");
     await store.setCallDestinationStatus(createdDestination.id,"active",{sub:"admin"},"integration");
@@ -465,10 +470,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const rawCalls=await store.sql.unsafe("SELECT count(*)::int AS count FROM calls");
     assert.equal(rawCalls[0].count,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
-    assert.equal(migrations.length,38);
+    assert.equal(migrations.length,39);
     assert.equal(new Set(migrations.map(x=>x.version)).size,migrations.length);
     assert.equal(migrations[0].version,"001_baseline");
-    assert.equal(migrations.at(-1).version,"038_subscription_price_300");
+    assert.equal(migrations.at(-1).version,"039_regulatory_evidence_pack_exports");
     for(const migration of migrations)assert.match(migration.checksum,/^[a-f0-9]{64}$/);
   }finally{
     await store.close();
