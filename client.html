@@ -15,6 +15,7 @@
 <script src="assets/client-google.js" defer></script>
 <script src="assets/client-portal-api.js" defer></script>
 <script src="assets/client-portal.js" defer></script>
+<script src="assets/client-search.js" defer></script>
 </head>
 <body>
 <a class="cp-skip" href="#client-main">Aller au contenu</a>
@@ -22,8 +23,8 @@
 <section class="cp-auth" id="customer-auth">
   <div class="cp-auth-card">
     <div class="cp-auth-brand">
-      <img src="assets/audiotel-brand-icon-v33.png" width="58" height="58" alt="">
-      <div><strong>Audiotel Premium Pro</strong><span>Espace client sécurisé</span></div>
+      <img class="cp-logo-full cp-logo-auth" src="assets/audiotel-brand-logo-v33.png" width="220" height="64" alt="Audiotel Premium Pro">
+      <div><span>Espace client sécurisé</span></div>
     </div>
 
     <div id="login-panel">
@@ -37,7 +38,8 @@
         <button class="cp-primary" type="submit">Se connecter</button>
       </form>
       <div class="cp-auth-divider"><span>ou</span></div>
-      <div id="google-login" class="cp-google" hidden></div>
+      <div id="google-login" class="cp-google" hidden aria-label="Créer ou ouvrir mon compte avec Google"></div>
+      <p class="cp-google-note">Connexion ou création de compte sécurisée avec Google.</p>
       <button id="google-tenant-continue" class="cp-ghost cp-google-continue" type="button" hidden>Continuer avec Google</button>
     </div>
 
@@ -61,8 +63,8 @@
 <div class="cp-app" id="customer-app" hidden>
   <header class="cp-header">
     <div class="cp-brand">
-      <img src="assets/audiotel-brand-icon-v33.png" width="46" height="46" alt="">
-      <div class="cp-company-title"><span>Audiotel Premium Pro · Espace client</span><strong id="tenant-name">—</strong><small id="tenant-meta">—</small></div>
+      <img class="cp-logo-full cp-logo-header" src="assets/audiotel-brand-logo-v33.png" width="178" height="48" alt="Audiotel Premium Pro">
+      <div class="cp-company-title"><span>Espace client</span><strong id="tenant-name">—</strong><small id="tenant-meta">—</small></div>
     </div>
     <div class="cp-account">
       <div><strong id="customer-user-name">—</strong><span id="customer-user-role">—</span></div>
@@ -85,6 +87,15 @@
         <button type="button" data-range="month">Mois</button>
         <button type="button" data-range="year">Année</button>
       </div>
+    </section>
+
+    <section class="cp-search-panel" role="search" aria-label="Rechercher dans mon tableau de bord">
+      <label class="cp-search-box" for="client-search">
+        <span>Rechercher</span>
+        <input id="client-search" type="search" inputmode="search" autocomplete="off" spellcheck="false" placeholder="Numéro, appel, statut, reversement, abonnement…">
+      </label>
+      <button id="client-search-clear" class="cp-ghost cp-search-clear" type="button" hidden>Effacer</button>
+      <span id="client-search-count" class="cp-search-count" aria-live="polite"></span>
     </section>
 
     <section class="cp-kpis" aria-label="Indicateurs">
