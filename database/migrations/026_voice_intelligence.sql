@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS tenant_voice_daily_sharded (
   PRIMARY KEY(tenant_bucket,bucket_date,tenant_id,market_id)
 ) PARTITION BY HASH (tenant_bucket);
 
-DO $
+DO $pgi$
 DECLARE i integer;
 BEGIN
   FOR i IN 0..63 LOOP
@@ -98,7 +98,7 @@ BEGIN
     );
   END LOOP;
 END;
-$;
+$pgi$;
 
 CREATE INDEX IF NOT EXISTS tenant_voice_daily_tenant_date_idx
   ON tenant_voice_daily_sharded(tenant_id,bucket_date DESC);
