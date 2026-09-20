@@ -15,7 +15,13 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
     let dn=null;try{dn=new Intl.DisplayNames([locale||"fr-FR"],{type:"region"});}catch{}
     const rows=(countryCodes||["FR"]).map(code=>({code,label:dn?dn.of(code):code})).filter(x=>x.label).sort((a,b)=>a.label.localeCompare(b.label,undefined,{sensitivity:"base"}));
     select.innerHTML=rows.map(x=>'<option value="'+x.code+'">'+esc(x.label)+'</option>').join("");
-    select.value=(countryCodes||[]).includes(current)?current:"FR";countriesReady=true;
+    select.value=(countryCodes||[]).includes(current)?current:"FR";countriesReady=true;syncRioRequirement();
+  }
+  function syncRioRequirement(){
+    const country=$("portability-country"),rio=$("portability-rio"),hint=$("portability-rio-required");if(!rio)return;
+    const fr=String(country?.value||"FR").toUpperCase()==="FR";rio.required=fr;
+    rio.placeholder=fr?"12 caractères":"Selon les règles du pays";
+    if(hint)hint.textContent=fr?"(obligatoire en France)":"(si requis par l’opérateur)";
   }
   function render(data){
     const rows=data.portability_requests||[],el=$("portability-list"),count=$("portability-count");
@@ -26,6 +32,8 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
       if(x.scheduled_at)meta.push("Prévue : "+dt(x.scheduled_at,locale));
       if(x.service_rate_ttc_per_min!=null)meta.push("Tarif déclaré : "+money(x.service_rate_ttc_per_min,x.currency,locale)+"/min");
       if(x.tariff_verification_status==="verified")meta.push("Tarif vérifié");
+      if(x.rio_validation_status==="verified")meta.push("RIO vérifié");
+      if(x.source_contract_transfer_mode==="none")meta.push("Ancien contrat non repris");
       if(x.operator_portability_reference)meta.push("Réf. opérateur : "+x.operator_portability_reference);
       if(x.rejection_reason)meta.push("Motif : "+x.rejection_reason);
       const cancellable=["submitted","awaiting_documents","eligibility_check","operator_pending"].includes(status);
@@ -42,12 +50,13 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
   async function submit(e){
     e.preventDefault();if(busy)return;const msg=$("portability-message"),submit=$("portability-submit");
     msg.textContent="";msg.classList.remove("bad");
-    if(!$("portability-owner-confirmed").checked||!$("portability-authority-confirmed").checked){msg.classList.add("bad");msg.textContent="Les deux confirmations sont nécessaires pour ouvrir le dossier.";return;}
-    const payload={country_code:$("portability-country").value,number:$("portability-number").value.trim(),current_operator_name:$("portability-operator").value.trim(),current_operator_reference:$("portability-reference").value.trim(),account_holder_name:$("portability-holder").value.trim(),desired_port_date:$("portability-date").value||null,service_rate_ttc_per_min:Number(String($("portability-rate").value||"").replace(",",".")),tariff_code:$("portability-tariff-code").value.trim(),service_family:$("portability-service-family").value,number_owner_confirmed:true,authorization_confirmed:true};
+    if(!$("portability-owner-confirmed").checked||!$("portability-authority-confirmed").checked||!$("portability-source-contract").checked){msg.classList.add("bad");msg.textContent="Les trois confirmations sont nécessaires pour ouvrir le dossier.";return;}
+    const rateRaw=String($("portability-rate").value||"").trim();
+    const payload={country_code:$("portability-country").value,number:$("portability-number").value.trim(),rio:$("portability-rio").value.trim(),current_operator_name:$("portability-operator").value.trim(),current_operator_reference:$("portability-reference").value.trim(),account_holder_name:$("portability-holder").value.trim(),desired_port_date:$("portability-date").value||null,service_rate_ttc_per_min:rateRaw===""?null:Number(rateRaw.replace(",",".")),tariff_code:$("portability-tariff-code").value.trim(),service_family:$("portability-service-family").value,number_owner_confirmed:true,authorization_confirmed:true,source_contract_liability_acknowledged:true};
     if(getDemo()){msg.textContent="Le parcours est prêt. La demande réelle sera envoyée lorsque le backend privé sera connecté.";return;}
     busy=true;submit.disabled=true;const previous=submit.textContent;submit.textContent="Envoi en cours…";
     try{await window.PGICustomerApi.createPortability(payload,window.PGICustomerApi.newIdempotencyKey());$("client-portability-form").reset();countriesReady=false;close();await reload();toast("Demande de portabilité enregistrée.");}
-    catch(err){const m={INVALID_PORTABILITY_NUMBER:"Le numéro saisi n’est pas valide.",INVALID_PORTABILITY_TARIFF:"Le tarif saisi n’est pas valide.",PORTABILITY_ALREADY_REQUESTED:"Une demande est déjà ouverte pour ce numéro.",NUMBER_ALREADY_MANAGED:"Ce numéro est déjà géré dans votre espace.",PORTABILITY_NUMBER_UNAVAILABLE:"Ce numéro est déjà rattaché à un autre dossier.",PORTABILITY_AUTHORIZATION_REQUIRED:"Les autorisations doivent être confirmées.",TENANT_CLOSED:"Ce compte ne peut plus ouvrir de portabilité."};msg.classList.add("bad");msg.textContent=m[err&&err.code]||"La demande de portabilité n’a pas pu être enregistrée.";}
+    catch(err){const m={INVALID_PORTABILITY_NUMBER:"Le numéro saisi n’est pas valide.",INVALID_PORTABILITY_RIO:"Le RIO saisi ne correspond pas à ce numéro.",PORTABILITY_RIO_REQUIRED:"Le RIO est obligatoire pour porter ce numéro en France.",PORTABILITY_SOURCE_CONTRACT_ACK_REQUIRED:"Confirmez que les obligations de votre ancien contrat restent à votre charge.",INVALID_PORTABILITY_TARIFF:"Le tarif saisi n’est pas valide.",PORTABILITY_ALREADY_REQUESTED:"Une demande est déjà ouverte pour ce numéro.",NUMBER_ALREADY_MANAGED:"Ce numéro est déjà géré dans votre espace.",PORTABILITY_NUMBER_UNAVAILABLE:"Ce numéro est déjà rattaché à un autre dossier.",PORTABILITY_AUTHORIZATION_REQUIRED:"Les autorisations doivent être confirmées.",TENANT_CLOSED:"Ce compte ne peut plus ouvrir de portabilité."};msg.classList.add("bad");msg.textContent=m[err&&err.code]||"La demande de portabilité n’a pas pu être enregistrée.";}
     finally{busy=false;submit.disabled=false;submit.textContent=previous;}
   }
   async function cancel(id){
@@ -58,6 +67,7 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
   function bind(){
     if(bound)return;bound=true;
     $("portability-close")?.addEventListener("click",close);
+    $("portability-country")?.addEventListener("change",syncRioRequirement);
     $("client-portability-form")?.addEventListener("submit",submit);
     $("portability-list")?.addEventListener("click",e=>{const b=e.target.closest("[data-portability-cancel]");if(b)cancel(b.dataset.portabilityCancel);});
   }
