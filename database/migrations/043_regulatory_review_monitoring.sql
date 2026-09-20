@@ -12,7 +12,7 @@ CREATE TABLE regulatory_review_alerts (
   framework text NOT NULL
     CHECK (framework IN ('regulatory_trust','arcep_2026','platform')),
   alert_kind text NOT NULL
-    CHECK (alert_kind IN ('review_due_soon','review_due_today','review_overdue','control_blocking','control_expiring')),
+    CHECK (alert_kind IN ('review_schedule_missing','review_due_soon','review_due_today','review_overdue','control_blocking','control_expiring')),
   severity text NOT NULL
     CHECK (severity IN ('info','warning','critical')),
   state text NOT NULL DEFAULT 'open'
@@ -55,7 +55,7 @@ COMMENT ON TABLE regulatory_review_alerts IS
 'Persistent admin attention queue for upcoming/overdue SVA regulatory reviews and expiring/blocking platform controls. It does not itself suspend service or certify compliance.';
 
 COMMENT ON COLUMN regulatory_review_alerts.alert_kind IS
-'Operational urgency bucket: soon (<=30d), today (<=24h), overdue, blocking status, or expiring platform evidence.';
+'Operational urgency bucket: missing schedule, soon (<=30d), today (<=24h), overdue, blocking status, or expiring platform evidence.';
 
 COMMENT ON COLUMN regulatory_review_alerts.details IS
 'Privacy-minimised diagnostics only. Must not contain raw RIO, caller identity, call content, payment-card data or credentials.';
