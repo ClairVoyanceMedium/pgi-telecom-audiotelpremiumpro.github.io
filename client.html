@@ -360,22 +360,6 @@
   </form>
 </dialog>
 
-<dialog id="client-incident-dialog" class="cp-export-dialog">
-  <form id="client-incident-form" class="cp-export-card cp-form">
-    <div class="cp-export-head"><div><p class="cp-kicker">CENTRE DE SERVICE</p><h2>Signaler un problème</h2></div><button id="incident-close" class="cp-close" type="button" aria-label="Fermer">×</button></div>
-    <p class="cp-export-note">PGI joint automatiquement au dossier un diagnostic technique non sensible pour éviter de vous redemander les mêmes informations.</p>
-    <div class="cp-form-grid">
-      <label>Catégorie<select id="incident-category"><option value="telephony">Téléphonie</option><option value="quality">Qualité d’appel</option><option value="routing">Routage</option><option value="portability">Portabilité</option><option value="billing">Facturation</option><option value="payout">Reversement</option><option value="account">Compte</option><option value="other">Autre</option></select></label>
-      <label>Priorité<select id="incident-severity"><option value="normal">Normale</option><option value="high">Haute</option><option value="critical">Critique</option><option value="low">Faible</option></select></label>
-    </div>
-    <label>Ligne concernée <span class="cp-optional">(facultatif)</span><select id="incident-number"><option value="">Toutes mes lignes</option></select></label>
-    <label>Titre<input id="incident-title" maxlength="180" required placeholder="Ex. appels qui n’aboutissent plus"></label>
-    <label>Description<textarea id="incident-description" maxlength="5000" rows="6" required placeholder="Décrivez ce que vous constatez."></textarea></label>
-    <p id="incident-message" class="cp-form-message" role="status"></p>
-    <button class="cp-primary" type="submit">Créer le dossier</button>
-  </form>
-</dialog>
-
 <dialog id="client-security-dialog" class="cp-export-dialog">
   <form id="client-password-form" class="cp-export-card">
     <div class="cp-export-head"><div><p class="cp-kicker">SÉCURITÉ</p><h2>Changer mon mot de passe</h2></div><button id="client-security-close" class="cp-close" type="button" aria-label="Fermer">×</button></div>
