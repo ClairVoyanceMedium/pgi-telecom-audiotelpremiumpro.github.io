@@ -1,6 +1,6 @@
 import {createHash} from "node:crypto";
 
-const TYPES=new Set(["announcement","tts","menu","schedule","route","queue","weighted_split","recording_consent","access_control","language","voicemail","terminate"]);
+const TYPES=new Set(["announcement","tts","menu","direct_dial","schedule","route","queue","weighted_split","recording_consent","access_control","language","voicemail","terminate"]);
 const NEXT_FIELDS=["next","open_next","closed_next","timeout_next","invalid_next","overflow_next","blocked_next","allowed_next","fallback_next","failover_next","consent_next","decline_next"];
 const URI=/^(?:tel:\+[1-9][0-9]{6,14}|sips?:[^\s@]+@[^\s@]+)$/i;
 const NODE_ID=/^[a-z][a-z0-9_-]{0,63}$/i;
@@ -59,6 +59,10 @@ export function normalizeVoiceFlow(value={}){
     if(n.locale!=null)n.locale=text(n.locale,20);
     if(n.destination_uri!=null)n.destination_uri=text(n.destination_uri,512);
     if(Array.isArray(n.destination_uris))n.destination_uris=uniqueStrings(n.destination_uris,50,512);
+    if(n.type==="direct_dial"){
+      n.min_digits=integer(n.min_digits,1,1,6);n.max_digits=integer(n.max_digits,6,1,6);n.timeout_seconds=integer(n.timeout_seconds,6,1,30);
+      n.codes=(Array.isArray(n.codes)?n.codes:[]).slice(0,100).map(raw=>({code:text(raw?.code,6),label:text(raw?.label,120),destination_uri:text(raw?.destination_uri,512),next:text(raw?.next,64)}));
+    }
     if(Array.isArray(n.blacklist))n.blacklist=uniqueStrings(n.blacklist,500,80);
     if(Array.isArray(n.whitelist))n.whitelist=uniqueStrings(n.whitelist,500,80);
     return n;
@@ -88,6 +92,20 @@ export function validateVoiceFlow(input={}){
         if(!/^[0-9*#]$/.test(digit))errors.push({code:"VOICE_DTMF_INVALID",node:n.id,message:"Touche de menu invalide."});
         if(digits.has(digit))errors.push({code:"VOICE_DTMF_DUPLICATE",node:n.id,message:"Une touche est utilisée plusieurs fois."});
         digits.add(digit);if(ch.next)refs.push([n.id,"choice:"+digit,String(ch.next)]);
+      }
+    }
+    if(n.type==="direct_dial"){
+      const codes=Array.isArray(n.codes)?n.codes:[],seen=new Set();
+      if(!text(n.prompt))errors.push({code:"VOICE_DIRECT_PROMPT_REQUIRED",node:n.id,message:"Une annonce de saisie du code est requise."});
+      if(!codes.length)errors.push({code:"VOICE_DIRECT_CODES_EMPTY",node:n.id,message:"Ajoutez au moins un code direct."});
+      if(Number(n.min_digits)>Number(n.max_digits))errors.push({code:"VOICE_DIRECT_DIGIT_RANGE_INVALID",node:n.id,message:"La longueur minimale du code dépasse la longueur maximale."});
+      for(const item of codes){
+        const code=String(item.code||"");
+        if(!/^[0-9]{1,6}$/.test(code))errors.push({code:"VOICE_DIRECT_CODE_INVALID",node:n.id,message:"Un code direct doit contenir de 1 à 6 chiffres."});
+        if(seen.has(code))errors.push({code:"VOICE_DIRECT_CODE_DUPLICATE",node:n.id,message:"Un code direct est utilisé plusieurs fois."});
+        seen.add(code);
+        if(item.destination_uri&&!URI.test(String(item.destination_uri)))errors.push({code:"VOICE_DIRECT_URI_INVALID",node:n.id,message:"Destination d’un code direct invalide."});
+        if(item.next)refs.push([n.id,"code:"+code,String(item.next)]);else errors.push({code:"VOICE_DIRECT_TARGET_REQUIRED",node:n.id,message:"Chaque code direct doit cibler une étape."});
       }
     }
     if(n.type==="route"&& !URI.test(String(n.destination_uri||"")))errors.push({code:"VOICE_ROUTE_URI_INVALID",node:n.id,message:"Destination de routage invalide."});
@@ -149,6 +167,10 @@ export function simulateVoiceFlow(input={},simulation={}){
     if(n.type==="menu"){
       const digit=digits.shift()||"",choice=(n.choices||[]).find(x=>String(x.digit)===digit);
       id=choice?.next||n.timeout_next||n.invalid_next||n.next;continue;
+    }
+    if(n.type==="direct_dial"){
+      const maxDigits=integer(n.max_digits,6,1,6),entered=digits.splice(0,maxDigits).join("").split("#")[0],selected=(n.codes||[]).find(x=>String(x.code)===entered);
+      id=selected?.next||n.fallback_next||n.timeout_next||n.invalid_next||n.next;continue;
     }
     if(n.type==="weighted_split"){
       let acc=0,selected=null;for(const b of n.branches||[]){acc+=Number(b.weight||0);if(bucket<acc){selected=b;break;}}id=selected?.next||n.fallback_next;continue;
