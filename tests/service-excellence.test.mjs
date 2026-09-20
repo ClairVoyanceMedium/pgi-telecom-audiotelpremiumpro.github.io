@@ -2,8 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-const [migration,store,workers,server,clientApi,adminApi,clientPortal,clientService,tenantDetail,tenantService,buildStatic,checkStatic,sizeCheck]=await Promise.all([
+const [migration,opsMigration,integrityMigration,store,workers,server,clientApi,adminApi,clientPortal,clientService,tenantDetail,tenantService,buildStatic,checkStatic,sizeCheck]=await Promise.all([
   readFile(new URL("../database/migrations/032_service_excellence.sql",import.meta.url),"utf8"),
+  readFile(new URL("../database/migrations/033_service_operations_queue.sql",import.meta.url),"utf8"),
+  readFile(new URL("../database/migrations/034_service_incident_tenant_integrity.sql",import.meta.url),"utf8"),
   readFile(new URL("../backend/src/store-postgres.mjs",import.meta.url),"utf8"),
   readFile(new URL("../backend/src/workers.mjs",import.meta.url),"utf8"),
   readFile(new URL("../backend/server.mjs",import.meta.url),"utf8"),
@@ -84,6 +86,45 @@ test("automatic diagnostic snapshot excludes sensitive raw credentials",()=>{
   assert.match(source,/destinations/);
   assert.match(source,/automation_state/);
   assert.doesNotMatch(source,/rio_ciphertext|rio_fingerprint|caller_masked|caller_hash|authorization|password|token|secret/i);
+});
+
+test("service operations queue and hard tenant integrity are preserved",()=>{
+  assert.match(opsMigration,/tenant_service_incidents_ops_queue_idx/);
+  assert.match(opsMigration,/tenant_service_incident_attachments/);
+  assert.match(opsMigration,/tenant_scoped_service_incident_attachments/);
+  assert.match(integrityMigration,/tenant_service_incident_events_tenant_fk/);
+  assert.match(integrityMigration,/tenant_service_incident_notes_tenant_fk/);
+  assert.match(integrityMigration,/tenant_service_incident_attachment_tenant_guard/);
+  assert.match(integrityMigration,/service incident attachment tenant mismatch/);
+  assert.doesNotMatch(opsMigration,/^\s*(DROP|TRUNCATE|DELETE)\b/im);
+  assert.doesNotMatch(integrityMigration,/CREATE\s+OR\s+REPLACE|^\s*(DROP|TRUNCATE|DELETE)\b/im);
+  assert.match(store,/async listServiceIncidents/);
+  assert.match(server,/\/api\/v1\/platform\/service-incidents/);
+  assert.match(adminApi,/serviceIncidents:function/);
+});
+
+test("service notifications are durable but do not copy note bodies into outbox",()=>{
+  assert.match(store,/serviceIncidentOutbox/);
+  assert.match(store,/service\.incident\.created/);
+  assert.match(store,/service\.incident\.changed/);
+  assert.match(store,/service\.incident\.note/);
+  const start=store.indexOf("async function serviceIncidentOutbox");
+  const end=store.indexOf("function serviceIncidentSla",start);
+  const source=store.slice(start,end);
+  assert.match(source,/INSERT INTO outbox_events/);
+  assert.doesNotMatch(source,/description|diagnostic_snapshot|body/);
+});
+
+test("proactive operations detect routing outage and portability attention",()=>{
+  assert.match(store,/routing_unavailable/);
+  assert.match(store,/Routage client indisponible/);
+  assert.match(store,/Routage de nouveau disponible/);
+  assert.match(store,/portability_attention/);
+  assert.match(store,/automation_state IN \('action_required','failed'\)/);
+  assert.match(store,/service_incidents_open/);
+  assert.match(store,/service_sla_attention/);
+  assert.match(store,/routing_attention/);
+  assert.match(store,/portability_attention/);
 });
 
 test("service center remains lazy and outside the critical PWA shell",()=>{
