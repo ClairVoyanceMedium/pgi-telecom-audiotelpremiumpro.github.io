@@ -4,6 +4,10 @@ import fs from "node:fs";
 
 const read=file=>fs.readFileSync(file,"utf8");
 const index=read("index.html");
+const clientPortal=read("client.html");
+const clientPortalApi=read("assets/client-portal-api.js");
+const clientPortalJs=read("assets/client-portal.js");
+const clientPortalCss=read("assets/client-portal.css");
 const app=read("assets/app.js");
 const api=read("assets/api-client.js");
 const dataClient=read("assets/data-client.js");
@@ -363,3 +367,6 @@ test("brand header polish keeps split colors, larger icon and dark period contra
   assert.match(css,/\.periods\{[\s\S]*rgba\(31,22,18,.96\)/);
   assert.match(sw,/pgi-telecom-shell-v38/);
 });
+
+
+test("customer portal stays separate, tenant-facing and outside the critical shell",()=>{assert.match(clientPortal,/Audiotel Premium Pro/);assert.match(clientPortal,/Espace client/);assert.match(clientPortal,/noindex,nofollow,noarchive/);for(const token of ["kpi-calls","kpi-minutes","kpi-revenue","kpi-payout","numbers-list","settlements-list","destinations-list"])assert.ok(clientPortal.includes(token),token);for(const path of ["/customer/auth/login","/customer/auth/activate","/customer/portal","/customer/calls"])assert.ok(clientPortalApi.includes(path),path);assert.match(clientPortalJs,/Exporter CSV|exportCalls/);assert.match(clientPortalCss,/--gold:#dda968/);assert.doesNotMatch(sw,/client\.html|client-portal/);});

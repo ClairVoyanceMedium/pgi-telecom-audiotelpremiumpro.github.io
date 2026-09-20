@@ -236,3 +236,32 @@ Publie une nouvelle version tarifaire de l’abonnement SVA externe. Les version
 `POST /platform/tenants/:id/call-destinations` crée une destination en état `testing`. Types : `pstn`, `sip`, `pbx`, `contact_center`.
 
 `POST /platform/call-destinations/:id/status` active, remet en test ou désactive une destination.
+
+
+## Espace client Audiotel Premium Pro
+
+Les routes client utilisent une session distincte de la session administrateur PGI. La session est liée à un tenant et son autorisation est revérifiée côté base.
+
+### POST /customer/auth/login
+Connexion d'un utilisateur externe par e-mail et mot de passe. Si un même utilisateur appartient à plusieurs sociétés, la réponse demande explicitement de sélectionner le tenant.
+
+### POST /customer/auth/activate
+Activation à partir d'un lien d'invitation à usage unique. Le client choisit lui-même son mot de passe ; PGI ne conserve jamais le mot de passe en clair.
+
+### GET /customer/auth/me
+Retourne uniquement l'identité externe et la société de la session client.
+
+### POST /customer/auth/logout
+Ferme uniquement la session client, sans toucher à une éventuelle session administrateur PGI ouverte dans le même navigateur.
+
+### GET /customer/portal?from=...&to=...
+Appel consolidé du portail client : trafic, séries journalières, numéros, reversements, abonnement, destinations de routage et derniers appels. Les données sont lues dans le contexte SQL du tenant et peuvent utiliser la réplique de lecture.
+
+### GET /customer/calls?from=...&to=...&cursor=...&limit=...
+Historique paginé des appels du tenant. Le curseur évite les offsets coûteux.
+
+### GET /platform/tenants/:id/customer-users
+Lecture administrateur des utilisateurs externes d'une société.
+
+### POST /platform/tenants/:id/customer-invitations
+Crée une invitation à usage unique. Le backend ne stocke que le hash du jeton ; le jeton brut n'est renvoyé qu'une fois dans `activation_path`.

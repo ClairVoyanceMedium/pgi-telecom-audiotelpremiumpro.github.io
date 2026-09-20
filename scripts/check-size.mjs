@@ -14,6 +14,7 @@ const budgets = {
   "service-worker.js": 16 * 1024
 };
 
+const portalBudgets = {"client.html":16*1024,"assets/client-portal.css":24*1024,"assets/client-portal-api.js":6*1024,"assets/client-portal.js":28*1024};
 const lazyBudgets = {"assets/demo-data.js":8*1024,"assets/customer-admin.css":10*1024,"assets/cockpit-pro.js":12*1024,"assets/command-palette.js":8*1024,"assets/performance-radar.js":16*1024,"assets/subscription-billing-ui.js":4*1024,"assets/customer-admin.js":24*1024,"assets/tenant-control-detail.js":20*1024,"assets/platform-admin-tools.js":18*1024,"assets/call-tools.js":6*1024};
 
 let total = 0;
@@ -22,6 +23,10 @@ for (const [file,max] of Object.entries(budgets)) {
   const size = fs.statSync(path.resolve(file)).size;
   total += size;
   if (size > max) failures.push(`${file}: ${size} bytes > budget ${max}`);
+}
+for (const [file,max] of Object.entries(portalBudgets)) {
+  const bytes = fs.statSync(path.resolve(file)).size;
+  if (bytes > max) failures.push(`${file}: ${bytes} bytes > portal budget ${max}`);
 }
 for (const [file,max] of Object.entries(lazyBudgets)) {
   const size = fs.statSync(path.resolve(file)).size;

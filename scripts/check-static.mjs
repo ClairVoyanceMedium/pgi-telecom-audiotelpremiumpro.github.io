@@ -4,7 +4,11 @@ import path from "node:path";
 const root = process.cwd();
 const required = [
   "index.html",
+  "client.html",
   "assets/styles.css",
+  "assets/client-portal.css",
+  "assets/client-portal-api.js",
+  "assets/client-portal.js",
   "assets/config.js",
   "assets/core.js",
   "assets/api-client.js",
@@ -39,9 +43,10 @@ if (missing.length) {
 }
 
 const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
+const clientPortal = fs.readFileSync(path.join(root, "client.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "assets/app.js"), "utf8");
 const frontRuntime = [
-  "index.html","assets/config.js","assets/core.js","assets/api-client.js",
+  "index.html","client.html","assets/config.js","assets/core.js","assets/api-client.js","assets/client-portal-api.js","assets/client-portal.js",
   "assets/data-client.js","assets/demo-data.js","assets/command-palette-loader.js","assets/command-palette.js",
   "assets/workspace.js","assets/cockpit-pro.js","assets/performance-radar.js","assets/subscription-billing-ui.js","assets/customer-admin.js","assets/customer-admin.css","assets/tenant-control-detail.js","assets/platform-admin-tools.js","assets/call-tools.js","assets/app.js","service-worker.js"
 ].map(file=>fs.readFileSync(path.join(root,file),"utf8")).join("\n");
@@ -49,6 +54,8 @@ const frontRuntime = [
 const failures = [];
 if (!index.includes("PGI • Telecom - Audiotel Premium Pro")) failures.push("Nom officiel absent de index.html");
 if (!index.includes('name="viewport"')) failures.push("Viewport mobile absent");
+if (!clientPortal.includes('name="robots" content="noindex,nofollow,noarchive"')) failures.push("Customer portal must be noindex");
+if (!clientPortal.includes("Audiotel Premium Pro")) failures.push("Customer portal branding missing");
 if (/http:\/\//i.test(frontRuntime)) failures.push("Référence HTTP non chiffrée détectée");
 if (/localhost|127\.0\.0\.1/i.test(frontRuntime)) failures.push("Endpoint local détecté dans le front");
 if (!app.includes("baseline")) failures.push("Logique de baseline absente");

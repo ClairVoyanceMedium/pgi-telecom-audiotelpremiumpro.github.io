@@ -204,3 +204,18 @@ Voir `docs/RESILIENCE.md`.
 ## Routage B2B des appels
 
 Le routage nominal n'impose plus un expert PGI. Le backend résout le tenant propriétaire du numéro puis sélectionne une `tenant_call_destination` active : d'abord une destination liée au numéro, puis une destination générale, ensuite la priorité, la capacité disponible et la charge active. Le module `experts` reste optionnel pour les clients qui veulent gérer des agents individuels.
+
+
+## Portail client Audiotel
+
+Le cockpit PGI et l'espace client sont deux plans d'interface distincts.
+
+- le cockpit PGI conserve l'administration globale, la marge interne, les opérateurs et les fonctions de contrôle ;
+- `client.html` expose uniquement les données de la société authentifiée ;
+- les utilisateurs externes utilisent `customer_principals` et `customer_tenant_memberships`, jamais `app_users` ;
+- les cookies client sont distincts des cookies administrateur ;
+- les lectures client passent par des vues SQL `tenant_scoped_*` et un contexte de transaction obligatoire ;
+- le portail privilégie la réplique PostgreSQL de lecture lorsque `PGI_DATABASE_READ_URL` est configurée ;
+- l'interface client est hors du cache critique PWA du cockpit et ne consomme donc pas sa réserve de shell.
+
+La première version est volontairement en lecture seule pour le routage. Une saturation, une erreur JavaScript ou une utilisation intensive du portail client ne participe pas au chemin média SIP/RTP.

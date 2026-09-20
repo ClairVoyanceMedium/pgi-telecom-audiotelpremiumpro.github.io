@@ -1,3 +1,13 @@
+## Portail client Audiotel — 2026-09-20
+
+- nouvel espace client séparé du cockpit PGI ;
+- trafic, minutes, numéros, appels, reversements, abonnement et routage en lecture seule ;
+- activation par invitation à usage unique et mot de passe choisi par le client ;
+- sessions client isolées des sessions administrateur ;
+- lectures SQL strictement bornées au tenant et compatibles réplique de lecture ;
+- historique paginé et export CSV borné ;
+- fichiers du portail hors shell PWA critique du cockpit.
+
 # Changelog
 
 ## 1.23.0 — 2026-09-19

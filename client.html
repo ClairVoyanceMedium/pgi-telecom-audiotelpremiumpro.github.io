@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#2b1b15">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<meta name="referrer" content="no-referrer">
+<title>Audiotel Premium Pro — Espace client</title>
+<link rel="icon" type="image/png" href="assets/audiotel-brand-icon-v33.png">
+<link rel="stylesheet" href="assets/client-portal.css">
+<script src="assets/config.js" defer></script>
+<script src="assets/client-portal-api.js" defer></script>
+<script src="assets/client-portal.js" defer></script>
+</head>
+<body>
+<a class="cp-skip" href="#client-main">Aller au contenu</a>
+
+<section class="cp-auth" id="customer-auth">
+  <div class="cp-auth-card">
+    <div class="cp-auth-brand">
+      <img src="assets/audiotel-brand-icon-v33.png" width="58" height="58" alt="">
+      <div><strong>Audiotel Premium Pro</strong><span>Espace client sécurisé</span></div>
+    </div>
+
+    <div id="login-panel">
+      <p class="cp-kicker">ACCÈS CLIENT</p>
+      <h1>Suivez votre activité Audiotel</h1>
+      <p class="cp-muted">Vos numéros, appels, consommation et reversements dans un espace réservé à votre société.</p>
+      <form id="customer-login-form" class="cp-form">
+        <label>Adresse e-mail<input id="customer-email" name="email" type="email" autocomplete="username" required maxlength="320"></label>
+        <label>Mot de passe<input id="customer-password" name="password" type="password" autocomplete="current-password" required minlength="12"></label>
+        <label id="tenant-choice-wrap" hidden>Société<select id="customer-tenant" name="tenant"></select></label>
+        <button class="cp-primary" type="submit">Se connecter</button>
+      </form>
+    </div>
+
+    <div id="activation-panel" hidden>
+      <p class="cp-kicker">ACTIVATION</p>
+      <h1>Activez votre espace client</h1>
+      <p class="cp-muted">Choisissez votre nom d’affichage et un mot de passe personnel. Le lien d’invitation ne sera plus utilisable après activation.</p>
+      <form id="customer-activation-form" class="cp-form">
+        <label>Votre nom<input id="activation-name" type="text" autocomplete="name" required maxlength="160"></label>
+        <label>Mot de passe<input id="activation-password" type="password" autocomplete="new-password" required minlength="12"></label>
+        <label>Confirmer<input id="activation-password-confirm" type="password" autocomplete="new-password" required minlength="12"></label>
+        <button class="cp-primary" type="submit">Activer mon espace</button>
+      </form>
+    </div>
+    <p class="cp-form-message" id="auth-message" role="status"></p>
+  </div>
+</section>
+
+<div class="cp-app" id="customer-app" hidden>
+  <header class="cp-header">
+    <div class="cp-brand">
+      <img src="assets/audiotel-brand-icon-v33.png" width="42" height="42" alt="">
+      <div><strong>Audiotel Premium Pro</strong><span>Espace client</span></div>
+    </div>
+    <div class="cp-account">
+      <div><strong id="tenant-name">—</strong><span id="tenant-meta">—</span></div>
+      <button id="customer-logout" class="cp-ghost" type="button">Déconnexion</button>
+    </div>
+  </header>
+
+  <main id="client-main" class="cp-main">
+    <section class="cp-intro">
+      <div>
+        <p class="cp-kicker">TABLEAU DE BORD CLIENT</p>
+        <h1>Activité Audiotel</h1>
+        <p id="portal-sync">Dernière consolidation : —</p>
+      </div>
+      <div class="cp-periods" aria-label="Période">
+        <button type="button" data-range="7">7 jours</button>
+        <button type="button" class="active" data-range="30">30 jours</button>
+        <button type="button" data-range="month">Mois</button>
+        <button type="button" data-range="year">Année</button>
+      </div>
+    </section>
+
+    <section class="cp-kpis" aria-label="Indicateurs">
+      <article><span>Appels</span><strong id="kpi-calls">0</strong><small id="kpi-answer-rate">0 % décrochés</small></article>
+      <article><span>Minutes facturables</span><strong id="kpi-minutes">0</strong><small>Sur la période</small></article>
+      <article><span>Montant service TTC</span><strong id="kpi-revenue">0</strong><small>Volume généré par les appels</small></article>
+      <article class="cp-kpi-accent"><span>Reversement net validé</span><strong id="kpi-payout">0</strong><small>Après validation des relevés</small></article>
+    </section>
+
+    <section class="cp-grid cp-grid-top">
+      <article class="cp-panel cp-traffic">
+        <div class="cp-panel-head"><div><p class="cp-kicker">TRAFIC</p><h2>Évolution des appels</h2></div><span id="traffic-total">0 appels</span></div>
+        <div class="cp-chart" id="traffic-bars" aria-label="Graphique des appels"></div>
+      </article>
+      <article class="cp-panel">
+        <div class="cp-panel-head"><div><p class="cp-kicker">NUMÉROS</p><h2>Mes lignes Audiotel</h2></div><span id="numbers-count">0</span></div>
+        <div id="numbers-list" class="cp-stack"></div>
+      </article>
+    </section>
+
+    <section class="cp-panel">
+      <div class="cp-panel-head">
+        <div><p class="cp-kicker">CONSOMMATION</p><h2>Derniers appels</h2></div>
+        <button id="export-calls" class="cp-ghost" type="button">Exporter CSV</button>
+      </div>
+      <div class="cp-table-wrap">
+        <table class="cp-table">
+          <thead><tr><th>Date</th><th>Numéro</th><th>État</th><th>Durée</th><th>Montant TTC</th></tr></thead>
+          <tbody id="calls-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="cp-grid">
+      <article class="cp-panel">
+        <div class="cp-panel-head"><div><p class="cp-kicker">REVERSEMENTS</p><h2>Mes règlements</h2></div></div>
+        <div id="settlements-list" class="cp-stack"></div>
+      </article>
+      <article class="cp-panel">
+        <div class="cp-panel-head"><div><p class="cp-kicker">CONTRAT</p><h2>Abonnement & accès</h2></div></div>
+        <div id="subscription-list" class="cp-stack"></div>
+      </article>
+    </section>
+
+    <section class="cp-panel">
+      <div class="cp-panel-head"><div><p class="cp-kicker">ROUTAGE</p><h2>Destinations de mes appels</h2></div><span>Lecture seule</span></div>
+      <div id="destinations-list" class="cp-stack cp-destinations"></div>
+    </section>
+
+    <footer class="cp-footer">
+      <span>Audiotel Premium Pro</span>
+      <span>Les montants de reversement affichés comme validés proviennent des relevés rapprochés. Les données de trafic peuvent évoluer jusqu’à consolidation.</span>
+    </footer>
+  </main>
+</div>
+
+<div id="client-toast" class="cp-toast" role="status" hidden></div>
+</body>
+</html>

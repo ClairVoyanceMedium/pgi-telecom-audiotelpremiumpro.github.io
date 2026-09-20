@@ -394,3 +394,10 @@ Le dossier client centralisé ne transforme pas le cockpit en requête globale c
 Chaque sous-collection est bornée : 100 lignes, 100 experts, 50 alertes, 24 reversements, 50 événements de contrôle et 50 entrées d’audit. L’activité d’appels est agrégée sur 30 jours côté PostgreSQL. Cette stratégie rend la profondeur fonctionnelle indépendante de la taille totale du parc clients.
 
 La recherche par numéro réutilise l’index préfixe E.164 créé en 1.21. Les tables volumineuses ne sont jamais chargées intégralement dans le navigateur. Le module de fiche client est chargé à la demande et possède son propre budget, hors du shell critique initial.
+
+
+## Portail client à grande échelle
+
+Le portail client utilise un bootstrap HTTP consolidé et des agrégats journaliers tenant-scoped. Il évite de recalculer un historique complet d'appels à chaque affichage.
+
+L'historique détaillé est paginé par curseur et l'export navigateur est borné. Les fichiers statiques du portail ne sont pas précachés dans le shell administrateur. En production, les lectures peuvent être dirigées vers `PGI_DATABASE_READ_URL`, tandis que l'authentification et les changements d'autorisation restent fortement cohérents sur la base principale.
