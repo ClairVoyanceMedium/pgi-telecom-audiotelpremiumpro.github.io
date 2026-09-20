@@ -2108,6 +2108,7 @@ export class PostgresStore{
         "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'regulatory.profile.update','sva_regulatory_profile',$3,$4::jsonb)",
         [assignment.tenant_id,actorId,String(assignment.sva_number_id),JSON.stringify({assignment_id:id,e164:assignment.e164,actor_subject:actorSubject})]
       );
+      await tx.unsafe("UPDATE regulatory_review_alerts SET state='resolved',resolved_at=now(),updated_at=now() WHERE assignment_id=$1 AND framework='regulatory_trust' AND state<>'resolved'",[id]);
       return {...rows[0],regulatory_ready:Boolean((await tx.unsafe("SELECT pgi_sva_regulatory_ready($1,$2) AS ready",[assignment.tenant_id,assignment.sva_number_id]))[0]?.ready)};
     });
   }
@@ -2127,6 +2128,8 @@ export class PostgresStore{
     if(arcep2026Controls.has(control)&&source==="33700")throw problem(400,"INVALID_REGULATORY_SOURCE");
     const reference=optionalText(input.evidence_reference,500);
     if(status==="verified"&&!reference)throw problem(400,"REGULATORY_EVIDENCE_REFERENCE_REQUIRED");
+    let nextReview=null;
+    if(input.next_review_at){const d=new Date(input.next_review_at);if(!Number.isFinite(d.getTime())||d.getTime()<=Date.now())throw problem(400,"INVALID_REGULATORY_REVIEW_DATE");nextReview=d.toISOString();}
     const metadata=input.metadata&&typeof input.metadata==="object"&&!Array.isArray(input.metadata)?input.metadata:{};
     const actorId=numericActor(actor),actorSubject=String(actor?.sub||actor?.username||"").slice(0,200);
     return this.sql.begin(async tx=>{
@@ -2142,9 +2145,14 @@ export class PostgresStore{
         "INSERT INTO "+table+"(tenant_id,sva_number_id,control_key,status,source,evidence_reference,metadata,actor_subject) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8) RETURNING id,control_key,status,source,evidence_reference,previous_hash,event_hash,occurred_at",
         [assignment.tenant_id,assignment.sva_number_id,control,status,source,reference,JSON.stringify(metadata),actorSubject||null]
       ))[0];
+      if(nextReview){
+        const profileTable=isArcep2026?"sva_arcep_2026_profiles":"sva_regulatory_profiles";
+        await tx.unsafe("UPDATE "+profileTable+" SET next_review_at=$3::timestamptz,updated_at=now() WHERE tenant_id=$1 AND sva_number_id=$2",[assignment.tenant_id,assignment.sva_number_id,nextReview]);
+      }
       const profile=isArcep2026
         ?(await tx.unsafe("SELECT *,pgi_arcep_2026_number_ready(tenant_id,sva_number_id) AS arcep_2026_ready FROM sva_arcep_2026_profiles WHERE tenant_id=$1 AND sva_number_id=$2",[assignment.tenant_id,assignment.sva_number_id]))[0]
         :(await tx.unsafe("SELECT *,pgi_sva_regulatory_ready(tenant_id,sva_number_id) AS regulatory_ready FROM sva_regulatory_profiles WHERE tenant_id=$1 AND sva_number_id=$2",[assignment.tenant_id,assignment.sva_number_id]))[0];
+      await tx.unsafe("UPDATE regulatory_review_alerts SET state='resolved',resolved_at=now(),updated_at=now() WHERE assignment_id=$1 AND framework=$2 AND state<>'resolved'",[id,isArcep2026?"arcep_2026":"regulatory_trust"]);
       await tx.unsafe(
         "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'regulatory.evidence.append',$3,$4,$5::jsonb)",
         [assignment.tenant_id,actorId,isArcep2026?"sva_arcep_2026_evidence":"sva_regulatory_evidence",String(event.id),JSON.stringify({assignment_id:id,e164:assignment.e164,framework:isArcep2026?"arcep_2026":"regulatory_trust",control_key:control,status,source,event_hash:event.event_hash})]
@@ -2228,6 +2236,153 @@ export class PostgresStore{
       return {...updated[0],tenant_public_id:row.public_id,previous_status:previous,changed:true};
     });
     if(result.changed)this.eventBus.publish("call_destination.status",{id,status:result.status,tenant_public_id:result.tenant_public_id});return result;
+  }
+
+
+  async scanRegulatoryReviews(limit=500){
+    limit=clampInt(limit,500,1,5000);
+    const rows=await this.sql.begin(async tx=>{
+      await tx.unsafe(
+        "WITH candidates AS ("+
+        " SELECT 'regulatory:trust:control:'||a.id::text AS alert_key,a.tenant_id,a.id AS assignment_id,a.sva_number_id,NULL::bigint AS platform_control_id,"+
+        " 'regulatory_trust'::text AS framework,'control_blocking'::text AS alert_kind,'critical'::text AS severity,"+
+        " 'Trust Center bloquant'::text AS title,('Le numéro '||COALESCE(sn.display_number,sn.e164)||' est actif mais son profil réglementaire n’est plus prêt.')::text AS message,"+
+        " NULL::timestamptz AS due_at,jsonb_build_object('display_number',COALESCE(sn.display_number,sn.e164),'assignment_status',a.status) AS details"+
+        " FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id"+
+        " JOIN sva_regulatory_profiles p ON p.tenant_id=a.tenant_id AND p.sva_number_id=a.sva_number_id"+
+        " WHERE t.tenant_type<>'internal' AND a.status='active' AND (p.next_review_at IS NULL OR p.next_review_at>now())"+
+        " AND NOT pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id)"+
+        " UNION ALL"+
+        " SELECT 'regulatory:trust:review:'||a.id::text,a.tenant_id,a.id,a.sva_number_id,NULL::bigint,'regulatory_trust',"+
+        " CASE WHEN p.next_review_at IS NULL THEN 'review_schedule_missing' WHEN p.next_review_at<=now() THEN 'review_overdue' WHEN p.next_review_at<=now()+interval '24 hours' THEN 'review_due_today' ELSE 'review_due_soon' END,"+
+        " CASE WHEN p.next_review_at<=now() THEN 'critical' WHEN p.next_review_at<=now()+interval '24 hours' THEN 'warning' ELSE 'info' END,"+
+        " 'Revue Trust Center'::text,"+
+        " CASE WHEN p.next_review_at IS NULL THEN ('Le numéro '||COALESCE(sn.display_number,sn.e164)||' est prêt mais aucune prochaine revue n’est planifiée.')"+
+        " WHEN p.next_review_at<=now() THEN ('La revue Trust Center du numéro '||COALESCE(sn.display_number,sn.e164)||' est dépassée.')"+
+        " ELSE ('La revue Trust Center du numéro '||COALESCE(sn.display_number,sn.e164)||' approche.') END,"+
+        " p.next_review_at,jsonb_build_object('display_number',COALESCE(sn.display_number,sn.e164),'next_review_at',p.next_review_at)"+
+        " FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id"+
+        " JOIN sva_regulatory_profiles p ON p.tenant_id=a.tenant_id AND p.sva_number_id=a.sva_number_id"+
+        " WHERE t.tenant_type<>'internal' AND a.status<>'ended' AND ("+
+        " (p.next_review_at IS NULL AND pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id)) OR"+
+        " (p.next_review_at IS NOT NULL AND p.next_review_at<=now()+interval '30 days'))"+
+        " UNION ALL"+
+        " SELECT 'regulatory:arcep2026:control:'||a.id::text,a.tenant_id,a.id,a.sva_number_id,NULL::bigint,'arcep_2026','control_blocking','critical',"+
+        " 'ARCEP 2026 bloquant',('Le numéro '||COALESCE(sn.display_number,sn.e164)||' est actif mais un garde-fou ARCEP 2026 n’est plus prêt.'),NULL::timestamptz,"+
+        " jsonb_build_object('display_number',COALESCE(sn.display_number,sn.e164),'assignment_status',a.status)"+
+        " FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id"+
+        " JOIN sva_arcep_2026_profiles p ON p.tenant_id=a.tenant_id AND p.sva_number_id=a.sva_number_id"+
+        " WHERE t.tenant_type<>'internal' AND a.status='active' AND (p.next_review_at IS NULL OR p.next_review_at>now())"+
+        " AND NOT pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id)"+
+        " UNION ALL"+
+        " SELECT 'regulatory:arcep2026:review:'||a.id::text,a.tenant_id,a.id,a.sva_number_id,NULL::bigint,'arcep_2026',"+
+        " CASE WHEN p.next_review_at IS NULL THEN 'review_schedule_missing' WHEN p.next_review_at<=now() THEN 'review_overdue' WHEN p.next_review_at<=now()+interval '24 hours' THEN 'review_due_today' ELSE 'review_due_soon' END,"+
+        " CASE WHEN p.next_review_at<=now() THEN 'critical' WHEN p.next_review_at<=now()+interval '24 hours' THEN 'warning' ELSE 'info' END,"+
+        " 'Revue ARCEP 2026'::text,"+
+        " CASE WHEN p.next_review_at IS NULL THEN ('Le numéro '||COALESCE(sn.display_number,sn.e164)||' est prêt mais aucune prochaine revue ARCEP 2026 n’est planifiée.')"+
+        " WHEN p.next_review_at<=now() THEN ('La revue ARCEP 2026 du numéro '||COALESCE(sn.display_number,sn.e164)||' est dépassée.')"+
+        " ELSE ('La revue ARCEP 2026 du numéro '||COALESCE(sn.display_number,sn.e164)||' approche.') END,"+
+        " p.next_review_at,jsonb_build_object('display_number',COALESCE(sn.display_number,sn.e164),'next_review_at',p.next_review_at)"+
+        " FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id"+
+        " JOIN sva_arcep_2026_profiles p ON p.tenant_id=a.tenant_id AND p.sva_number_id=a.sva_number_id"+
+        " WHERE t.tenant_type<>'internal' AND a.status<>'ended' AND ("+
+        " (p.next_review_at IS NULL AND pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id)) OR"+
+        " (p.next_review_at IS NOT NULL AND p.next_review_at<=now()+interval '30 days'))"+
+        " UNION ALL"+
+        " SELECT 'regulatory:platform:'||c.id::text,NULL::bigint,NULL::bigint,NULL::bigint,c.id,'platform',"+
+        " CASE WHEN c.status IN ('failed','expired') OR (c.valid_until IS NOT NULL AND c.valid_until<=now()) THEN 'control_blocking' ELSE 'control_expiring' END,"+
+        " CASE WHEN c.status IN ('failed','expired') OR (c.valid_until IS NOT NULL AND c.valid_until<=now()) THEN 'critical' WHEN c.valid_until<=now()+interval '24 hours' THEN 'warning' ELSE 'info' END,"+
+        " ('Contrôle plateforme : '||replace(c.control_key,'_',' ')),"+
+        " CASE WHEN c.status IN ('failed','expired') OR (c.valid_until IS NOT NULL AND c.valid_until<=now()) THEN 'Ce contrôle plateforme exige une action avant toute nouvelle activation concernée.' ELSE 'La preuve de ce contrôle plateforme approche de son échéance.' END,"+
+        " c.valid_until,jsonb_build_object('control_key',c.control_key,'market',m.country_code,'status',c.status,'valid_until',c.valid_until)"+
+        " FROM platform_regulatory_controls c LEFT JOIN operating_markets m ON m.id=c.market_id"+
+        " WHERE c.status IN ('failed','expired') OR (c.status='verified' AND c.valid_until IS NOT NULL AND c.valid_until<=now()+interval '30 days')"+
+        "), limited AS ("+
+        " SELECT * FROM candidates ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,due_at NULLS LAST,alert_key LIMIT $1"+
+        ")"+
+        " INSERT INTO regulatory_review_alerts(alert_key,tenant_id,assignment_id,sva_number_id,platform_control_id,framework,alert_kind,severity,title,message,due_at,details)"+
+        " SELECT alert_key,tenant_id,assignment_id,sva_number_id,platform_control_id,framework,alert_kind,severity,title,message,due_at,details FROM limited"+
+        " ON CONFLICT(alert_key) DO UPDATE SET"+
+        " alert_kind=EXCLUDED.alert_kind,severity=EXCLUDED.severity,title=EXCLUDED.title,message=EXCLUDED.message,due_at=EXCLUDED.due_at,details=EXCLUDED.details,last_detected_at=now(),updated_at=now(),resolved_at=NULL,"+
+        " state=CASE WHEN regulatory_review_alerts.state='resolved' OR regulatory_review_alerts.alert_kind IS DISTINCT FROM EXCLUDED.alert_kind OR regulatory_review_alerts.severity IS DISTINCT FROM EXCLUDED.severity THEN 'open' ELSE regulatory_review_alerts.state END,"+
+        " acknowledged_at=CASE WHEN regulatory_review_alerts.state='resolved' OR regulatory_review_alerts.alert_kind IS DISTINCT FROM EXCLUDED.alert_kind OR regulatory_review_alerts.severity IS DISTINCT FROM EXCLUDED.severity THEN NULL ELSE regulatory_review_alerts.acknowledged_at END,"+
+        " acknowledged_by=CASE WHEN regulatory_review_alerts.state='resolved' OR regulatory_review_alerts.alert_kind IS DISTINCT FROM EXCLUDED.alert_kind OR regulatory_review_alerts.severity IS DISTINCT FROM EXCLUDED.severity THEN NULL ELSE regulatory_review_alerts.acknowledged_by END",
+        [limit]
+      );
+
+      await tx.unsafe(
+        "UPDATE regulatory_review_alerts r SET state='resolved',resolved_at=now(),updated_at=now()"+
+        " WHERE r.state<>'resolved' AND r.alert_key LIKE 'regulatory:trust:control:%' AND NOT EXISTS ("+
+        " SELECT 1 FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_regulatory_profiles p ON p.tenant_id=a.tenant_id AND p.sva_number_id=a.sva_number_id"+
+        " WHERE a.id=r.assignment_id AND t.tenant_type<>'internal' AND a.status='active' AND (p.next_review_at IS NULL OR p.next_review_at>now()) AND NOT pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id))"
+      );
+      await tx.unsafe(
+        "UPDATE regulatory_review_alerts r SET state='resolved',resolved_at=now(),updated_at=now()"+
+        " WHERE r.state<>'resolved' AND r.alert_key LIKE 'regulatory:trust:review:%' AND NOT EXISTS ("+
+        " SELECT 1 FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_regulatory_profiles p ON p.tenant_id=a.tenant_id AND p.sva_number_id=a.sva_number_id"+
+        " WHERE a.id=r.assignment_id AND t.tenant_type<>'internal' AND a.status<>'ended' AND ((p.next_review_at IS NULL AND pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id)) OR (p.next_review_at IS NOT NULL AND p.next_review_at<=now()+interval '30 days')))"
+      );
+      await tx.unsafe(
+        "UPDATE regulatory_review_alerts r SET state='resolved',resolved_at=now(),updated_at=now()"+
+        " WHERE r.state<>'resolved' AND r.alert_key LIKE 'regulatory:arcep2026:control:%' AND NOT EXISTS ("+
+        " SELECT 1 FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_arcep_2026_profiles p ON p.tenant_id=a.tenant_id AND p.sva_number_id=a.sva_number_id"+
+        " WHERE a.id=r.assignment_id AND t.tenant_type<>'internal' AND a.status='active' AND (p.next_review_at IS NULL OR p.next_review_at>now()) AND NOT pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id))"
+      );
+      await tx.unsafe(
+        "UPDATE regulatory_review_alerts r SET state='resolved',resolved_at=now(),updated_at=now()"+
+        " WHERE r.state<>'resolved' AND r.alert_key LIKE 'regulatory:arcep2026:review:%' AND NOT EXISTS ("+
+        " SELECT 1 FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_arcep_2026_profiles p ON p.tenant_id=a.tenant_id AND p.sva_number_id=a.sva_number_id"+
+        " WHERE a.id=r.assignment_id AND t.tenant_type<>'internal' AND a.status<>'ended' AND ((p.next_review_at IS NULL AND pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id)) OR (p.next_review_at IS NOT NULL AND p.next_review_at<=now()+interval '30 days')))"
+      );
+      await tx.unsafe(
+        "UPDATE regulatory_review_alerts r SET state='resolved',resolved_at=now(),updated_at=now()"+
+        " WHERE r.state<>'resolved' AND r.framework='platform' AND NOT EXISTS ("+
+        " SELECT 1 FROM platform_regulatory_controls c WHERE c.id=r.platform_control_id AND (c.status IN ('failed','expired') OR (c.status='verified' AND c.valid_until IS NOT NULL AND c.valid_until<=now()+interval '30 days')))"
+      );
+      return tx.unsafe(
+        "SELECT r.id,r.alert_key,r.framework,r.alert_kind,r.severity,r.state,r.title,r.message,r.due_at,r.details,r.first_detected_at,r.last_detected_at,"+
+        " t.public_id AS tenant_public_id,t.display_name AS tenant,t.country_code,sn.display_number,sn.e164,m.country_code AS market"+
+        " FROM regulatory_review_alerts r LEFT JOIN tenants t ON t.id=r.tenant_id LEFT JOIN sva_numbers sn ON sn.id=r.sva_number_id"+
+        " LEFT JOIN platform_regulatory_controls pc ON pc.id=r.platform_control_id LEFT JOIN operating_markets m ON m.id=COALESCE(sn.market_id,pc.market_id)"+
+        " WHERE r.state<>'resolved' ORDER BY CASE r.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,r.due_at NULLS LAST,r.id DESC LIMIT $1",
+        [limit]
+      );
+    });
+    return rows;
+  }
+
+  async listRegulatoryReviewAlerts(params={}){
+    const limit=clampInt(params.limit,50,1,250),cursor=decodeNumericCursor(params.cursor);
+    const state=params.state?String(params.state).trim().toLowerCase():"unresolved";
+    if(!["open","acknowledged","resolved","unresolved","all"].includes(state))throw problem(400,"INVALID_ALERT_STATE");
+    const rows=await this.readSql.unsafe(
+      "SELECT r.id AS _cursor_id,r.id,r.alert_key,r.framework,r.alert_kind,r.severity,r.state,r.title,r.message,r.due_at,r.details,r.first_detected_at,r.last_detected_at,r.acknowledged_at,r.resolved_at,"+
+      " CASE WHEN r.severity='critical' THEN 'blocking' WHEN r.due_at IS NOT NULL AND r.due_at<=now()+interval '24 hours' THEN 'today' ELSE 'soon' END AS attention_bucket,"+
+      " t.public_id AS tenant_public_id,t.display_name AS tenant,t.country_code,sn.display_number,sn.e164,m.country_code AS market"+
+      " FROM regulatory_review_alerts r LEFT JOIN tenants t ON t.id=r.tenant_id LEFT JOIN sva_numbers sn ON sn.id=r.sva_number_id"+
+      " LEFT JOIN platform_regulatory_controls pc ON pc.id=r.platform_control_id LEFT JOIN operating_markets m ON m.id=COALESCE(sn.market_id,pc.market_id)"+
+      " WHERE ($1='all' OR ($1='unresolved' AND r.state<>'resolved') OR r.state=$1) AND ($2::bigint IS NULL OR r.id<$2)"+
+      " ORDER BY r.id DESC LIMIT $3",
+      [state,cursor,limit+1]
+    );
+    const hasMore=rows.length>limit,page=hasMore?rows.slice(0,limit):rows;
+    return {data:page.map(row=>{const {_cursor_id,...publicRow}=row;return publicRow;}),next_cursor:hasMore&&page.length?encodeNumericCursor(Number(page.at(-1)._cursor_id)):null};
+  }
+
+  async acknowledgeRegulatoryReviewAlert(id,actor={}){
+    id=Number(id);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_ALERT_ID");
+    const actorId=numericActor(actor);
+    const row=(await this.sql.unsafe(
+      "UPDATE regulatory_review_alerts SET state='acknowledged',acknowledged_at=now(),acknowledged_by=$2,updated_at=now() WHERE id=$1 AND state='open'"+
+      " RETURNING id,tenant_id,assignment_id,framework,alert_kind,severity,state,title,message,due_at",
+      [id,actorId]
+    ))[0];
+    if(!row)throw problem(409,"ALERT_NOT_OPEN");
+    await this.sql.unsafe(
+      "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'regulatory.review_alert.acknowledge','regulatory_review_alert',$3,$4::jsonb)",
+      [row.tenant_id||null,actorId,String(id),JSON.stringify({framework:row.framework,alert_kind:row.alert_kind,severity:row.severity,state:"acknowledged"})]
+    );
+    return row;
   }
 
   async scanUnpaidSubscriptions(limit=500){
