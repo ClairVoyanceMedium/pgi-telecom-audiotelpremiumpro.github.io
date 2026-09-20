@@ -2096,7 +2096,7 @@ export class PostgresStore{
       await tx.unsafe("UPDATE customer_principals SET email_verified=true,last_authenticated_at=now(),updated_at=now() WHERE id=$1::uuid",[principal.id]);
       await tx.unsafe("UPDATE customer_federated_identities SET email_at_link=$2,email_verified=true,hosted_domain=$3,picture_url=$4,last_authenticated_at=now(),updated_at=now() WHERE provider='google' AND provider_subject=$1",[identity.subject,identity.email,identity.hosted_domain,identity.picture_url]);
       const refreshed=(await tx.unsafe("SELECT id,email,display_name,status,session_version FROM customer_principals WHERE id=$1::uuid",[principal.id]))[0];
-      const memberships=await tx.unsafe("SELECT m.tenant_id,m.role,m.status,t.public_id,t.slug,t.display_name,t.status AS tenant_status,t.authorization_version FROM customer_tenant_memberships m JOIN tenants t ON t.id=m.tenant_id WHERE m.customer_principal_id=$1::uuid AND m.status='active' AND t.status='active' ORDER BY t.display_name,t.id",[principal.id]);
+      const memberships=await tx.unsafe("SELECT m.tenant_id,m.role,m.status,t.public_id,t.slug,t.display_name,t.status AS tenant_status,t.authorization_version FROM customer_tenant_memberships m JOIN tenants t ON t.id=m.tenant_id WHERE m.customer_principal_id=$1::uuid AND m.status='active' AND t.status IN ('active','pending') ORDER BY t.display_name,t.id",[principal.id]);
       return {...refreshed,memberships,account_pending:memberships.length===0};
     });
   }
@@ -2156,7 +2156,7 @@ export class PostgresStore{
   async customerSessionContext(actor){
     if(!actor?.sub||!actor?.tenant_id)throw problem(401,"CUSTOMER_AUTH_REQUIRED");
     const rows=await this.sql.unsafe(
-      "SELECT p.id,p.email,p.display_name,p.status,p.preferred_locale,p.timezone,p.session_version,"+
+      "SELECT p.id,p.email,p.display_name,p.status,p.preferred_locale,p.timezone,p.email_verified,p.session_version,"+
       " m.tenant_id,m.role AS customer_role,m.status AS membership_status,t.public_id AS tenant_public_id,t.slug,t.display_name AS tenant_name,"+
       " t.status AS tenant_status,t.authorization_version,t.default_currency,t.country_code"+
       " FROM customer_principals p JOIN customer_tenant_memberships m ON m.customer_principal_id=p.id"+
