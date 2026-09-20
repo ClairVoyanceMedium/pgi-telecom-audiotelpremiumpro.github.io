@@ -1,7 +1,7 @@
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
 const date=v=>{if(!v)return"—";const d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium"}).format(d):"—";};
-const statusLabel=v=>({active:"Actif",suspended:"Suspendu",pending:"En attente",closed:"Fermé",past_due:"Impayé",cancelled:"Annulé",ended:"Terminé",planned:"Planifié",testing:"Test",pending_kyc:"KYC",acknowledged:"Vu",verified:"Vérifié",rejected:"Rejeté",expired:"Expiré",not_started:"Non démarré",open:"Ouvert",investigating:"Pris en charge",waiting_customer:"Client attendu",monitoring:"Surveillance",resolved:"Résolu",critical:"Critique",high:"Haute",normal:"Normale",low:"Faible"}[v]||v||"—");
+const statusLabel=v=>({active:"Actif",suspended:"Suspendu",pending:"En attente",closed:"Fermé",past_due:"Impayé",cancelled:"Annulé",ended:"Terminé",planned:"Planifié",testing:"Test",pending_kyc:"KYC",acknowledged:"Vu",verified:"Vérifié",rejected:"Rejeté",expired:"Expiré",not_started:"Non démarré",open:"Ouvert",investigating:"Pris en charge",waiting_customer:"Client attendu",monitoring:"Surveillance",resolved:"Résolu",critical:"Critique",high:"Haute",normal:"Normale",low:"Faible",telephony:"Téléphonie",portability:"Portabilité",billing:"Facturation",payout:"Reversement",account:"Compte",routing:"Routage",quality:"Qualité",other:"Autre"}[v]||v||"—");
 const chip=(v,type="")=>'<span class="ca-chip '+esc(type||v||"neutral")+'">'+esc(statusLabel(v))+"</span>";
 let initialized=false,tenantCursor=null,lineCursor=null,selectedTenant=null,busy=false,timer=null,detailModule=null;
 
