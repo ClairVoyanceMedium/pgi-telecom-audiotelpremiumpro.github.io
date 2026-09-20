@@ -668,9 +668,10 @@ export class PostgresStore{
 
       const callValues=[
         String(p.external_call_id),envelope.source,caller.id,sva.id,expert?.id||null,callDestination?.id||null,callDestination?.label||p.destination_label||null,origin.id,host.id,
-        p.started_at,p.ivr_started_at||null,p.queued_at||null,p.bridged_at||null,p.ended_at,
+        p.started_at,p.ivr_started_at||null,p.queued_at||null,p.ringing_at||null,p.bridged_at||null,p.ended_at,
+        p.post_dial_delay_ms==null?null:Math.max(0,Math.round(Number(p.post_dial_delay_ms))),
         Math.max(0,Number(p.wait_seconds||0)),conversation,totalSeconds,financial.billableSeconds,financial.payoutEligibleSeconds,
-        status,p.sip_final_code==null?null:Number(p.sip_final_code),String(p.hangup_cause||""),String(p.codec||""),
+        status,p.sip_final_code==null?null:Number(p.sip_final_code),String(p.hangup_cause||""),p.hangup_party||null,String(p.codec||""),
         serviceRate,payoutRate,mobileDeduction,
         financial.serviceAmountTtc,financial.expectedPayoutHt,confirmed,paid,expertCost,technicalCost,
         Math.max(0,(confirmed||0)-expertCost-technicalCost),recon?recon.status:"pending",recon?recon.varianceHt:0,
@@ -678,12 +679,12 @@ export class PostgresStore{
       ];
       const callRows=await tx.unsafe(
         "INSERT INTO calls(external_call_id,cdr_source,caller_id,sva_number_id,expert_id,call_destination_id,call_destination_label,origin_carrier_id,host_carrier_id,"+
-        " started_at,ivr_started_at,queued_at,bridged_at,ended_at,wait_seconds,conversation_seconds,total_seconds,billable_seconds,"+
-        " payout_eligible_seconds,call_status,sip_final_code,hangup_cause,codec,service_rate_ttc_per_min,carrier_rate_ht_per_min,"+
+        " started_at,ivr_started_at,queued_at,ringing_at,bridged_at,ended_at,post_dial_delay_ms,wait_seconds,conversation_seconds,total_seconds,billable_seconds,"+
+        " payout_eligible_seconds,call_status,sip_final_code,hangup_cause,hangup_party,codec,service_rate_ttc_per_min,carrier_rate_ht_per_min,"+
         " mobile_deduction_ht_per_min,retail_service_amount_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,"+
         " expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_status,reconciliation_variance_ht,tenant_id,market_id,currency)"+
-        " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz,$11::timestamptz,$12::timestamptz,$13::timestamptz,$14::timestamptz,"+
-        " $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38)"+
+        " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz,$11::timestamptz,$12::timestamptz,$13::timestamptz,$14::timestamptz,$15::timestamptz,"+
+        " $16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41)"+
         " ON CONFLICT(host_carrier_id,external_call_id) WHERE host_carrier_id IS NOT NULL AND external_call_id IS NOT NULL"+
         " DO NOTHING RETURNING id,tenant_bucket",
         callValues
@@ -709,16 +710,23 @@ export class PostgresStore{
       );
 
       await writeHourlyRollup(tx,call.id);
+      await writeTenantDailyRollup(tx,call.id);
       await writeDashboardDimensionRollups(tx,call.id);
       await writeExperienceRollup(tx,call.id);
 
       if(p.quality){
         await tx.unsafe(
-          "INSERT INTO call_quality(call_id,rtp_packet_loss_percent,jitter_ms,latency_ms,mos,dtmf_errors) VALUES($1,$2,$3,$4,$5,$6)",
-          [call.id,nullableNumber(p.quality.packet_loss_percent),nullableNumber(p.quality.jitter_ms),nullableNumber(p.quality.latency_ms),nullableNumber(p.quality.mos),Number(p.quality.dtmf_errors||0)]
+          "INSERT INTO call_quality(call_id,rtp_packet_loss_percent,jitter_ms,latency_ms,rtt_ms,mos,packets_in,packets_out,packets_lost,bytes_in,bytes_out,dtmf_errors)"+
+          " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+          [
+            call.id,nullableNumber(p.quality.packet_loss_percent),nullableNumber(p.quality.jitter_ms),nullableNumber(p.quality.latency_ms),
+            nullableNumber(p.quality.rtt_ms),nullableNumber(p.quality.mos),nullableNumber(p.quality.packets_in),nullableNumber(p.quality.packets_out),
+            nullableNumber(p.quality.packets_lost),nullableNumber(p.quality.bytes_in),nullableNumber(p.quality.bytes_out),Number(p.quality.dtmf_errors||0)
+          ]
         );
         await writeQualityRollup(tx,call.id);
       }
+      await writeVoiceCarrierHealthRollup(tx,call.id);
       if(financial.expectedPayoutHt!==0)await ledger(tx,call.id,sva.tenant_id,sva.market_id,sva.currency,"expected",financial.expectedPayoutHt,envelope);
       if(confirmed!=null&&confirmed!==0)await ledger(tx,call.id,sva.tenant_id,sva.market_id,sva.currency,"confirmed",confirmed,envelope);
       if(paid!==0)await ledger(tx,call.id,sva.tenant_id,sva.market_id,sva.currency,"paid",paid,envelope);
