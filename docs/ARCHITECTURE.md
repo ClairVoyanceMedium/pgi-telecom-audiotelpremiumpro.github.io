@@ -1,17 +1,17 @@
-# Architecture — PGI Telecom • Audiotel Premium Pro
+# Architecture — Audiotel Premium Pro
 
 
 
-## Abonnement PGI et reversements SVA
+## Abonnement Audiotel Premium Pro et reversements SVA
 
 La plateforme traite deux flux financiers indépendants.
 
-- Abonnement PGI : le client paie son abonnement mensuel au prestataire de paiement, qui reverse ensuite le revenu de plateforme à PGI.
-- Reversement SVA : l’opérateur SVA verse directement les sommes dues au client. PGI calcule, rapproche et affiche ces montants, sans encaisser les fonds pour le compte du client.
+- Abonnement Audiotel Premium Pro : le client paie son abonnement mensuel au prestataire de paiement, qui reverse ensuite le revenu de plateforme à Audiotel Premium Pro.
+- Reversement SVA : l’opérateur SVA règle Audiotel Premium Pro. La plateforme rapproche le règlement, conserve sa marge ou ses frais contractuels, puis matérialise et reverse le montant net dû au client conformément aux conditions applicables.
 
 La frontière de sécurité est volontairement en deux étages : un futur adaptateur public du prestataire devra d’abord vérifier cryptographiquement la signature native du webhook, puis seulement transmettre un événement normalisé vers l’ingress privé PGI. La route interne `/internal/billing/subscription-event` n’est donc pas destinée à être exposée directement comme webhook public. Les événements normalisés sont dédupliqués, protégés contre les collisions d’identifiant, liés strictement au tenant et conservés dans un journal append-only.
 
-Le parcours client est préparé pour un paiement hébergé par le prestataire : e-mail, langue, pays, devise, version tarifaire et chemins de retour sont calculés côté serveur avant l’ouverture du paiement. PGI ne stocke pas de numéro de carte. Le retour navigateur après paiement n’accorde jamais l’accès SVA à lui seul : seul l’état d’abonnement confirmé par l’événement serveur peut ouvrir l’accès.
+Le parcours client est préparé pour un paiement hébergé par le prestataire : e-mail, langue, pays, devise, version tarifaire et chemins de retour sont calculés côté serveur avant l’ouverture du paiement. Audiotel Premium Pro ne stocke pas de numéro de carte. Le retour navigateur après paiement n’accorde jamais l’accès SVA à lui seul : seul l’état d’abonnement confirmé par l’événement serveur peut ouvrir l’accès.
 
 L’architecture de paiement est pré-câblée mais inactive. Les routes `/customer/billing/status`, `/customer/billing/checkout-session` et `/customer/billing/portal-session` sont présentes, protégées par la session client et le CSRF. Tant qu’aucun adaptateur de paiement n’est volontairement connecté, les actions financières répondent `PAYMENT_PROVIDER_NOT_CONNECTED`.
 
@@ -54,7 +54,7 @@ GitHub Pages héberge uniquement :
 - graphiques et navigation ;
 - vues financières ;
 - vues CDR ;
-- vues expert/opérateur ;
+- vues intervenant/service et opérateur ;
 - configuration publique non sensible.
 
 ## Backend privé
@@ -104,7 +104,7 @@ Les agrégats visibles filtrent les données antérieures à la baseline. Les do
 
 ## Abstraction opérateur
 
-Le cœur PGI utilise une route logique `sva-primary` et ne dépend d'aucun nom de fournisseur.
+Le cœur Audiotel Premium Pro utilise une route logique `sva-primary` et ne dépend d'aucun nom de fournisseur.
 
 ```
 Même 089
@@ -125,9 +125,15 @@ adaptateur normalisé
 Un changement d'opérateur ne modifie ni le numéro, ni les destinations des sociétés clientes, ni le modèle d'appel, ni le dashboard. L'ancien opérateur reste identifiable sur les appels historiques via `host_carrier_id`.
 
 
+## Positionnement multisectoriel
+
+Un numéro Audiotel Premium Pro peut représenter une entreprise entière et non une personne unique. Le routage doit accepter plusieurs services, équipes, intervenants ou postes derrière le même numéro. La voyance n’est qu’un cas d’usage possible parmi d’autres.
+
+La terminologie technique historique `experts` est conservée dans la base et les API pour compatibilité, mais l’interface générale utilise « intervenants / services / postes ».
+
 ## Architecture multi-tenant / wholesale
 
-PGI est désormais conçu pour pouvoir évoluer d'un éditeur unique vers une plateforme multi-clients.
+Audiotel Premium Pro est conçu pour évoluer d’un client unique vers une plateforme multi-clients.
 
 ```
 Opérateurs SVA / collecteurs
@@ -176,7 +182,7 @@ PGI peut orchestrer l'onboarding, le routage, le reporting et la facturation de 
 
 La circulation des fonds SVA est indépendante du routage télécom.
 
-Le modèle métier nominal est `opérateur SVA → PGI → marge PGI → net client`. Aucun net client ne doit toutefois devenir payable sans un `payment_compliance_profile` actif correspondant au montage juridique et bancaire validé pour le marché concerné.
+Le modèle métier nominal est `opérateur SVA → Audiotel Premium Pro → marge/frais plateforme → net client`. Aucun net client ne doit toutefois devenir payable sans un `payment_compliance_profile` actif correspondant au montage juridique et bancaire validé pour le marché concerné.
 
 Voir `docs/WHOLESALE-SVA.md` pour la trajectoire complète.
 
@@ -220,7 +226,7 @@ Voir `docs/RESILIENCE.md`.
 
 ## Routage B2B des appels
 
-Le routage nominal n'impose plus un expert PGI. Le backend résout le tenant propriétaire du numéro puis sélectionne une `tenant_call_destination` active : d'abord une destination liée au numéro, puis une destination générale, ensuite la priorité, la capacité disponible et la charge active. Le module `experts` reste optionnel pour les clients qui veulent gérer des agents individuels.
+Le routage nominal n’impose aucune personne ni aucun métier particulier. Le backend résout le tenant propriétaire du numéro puis sélectionne une `tenant_call_destination` active : d'abord une destination liée au numéro, puis une destination générale, ensuite la priorité, la capacité disponible et la charge active. Le module technique historique `experts` reste optionnel pour les clients qui veulent gérer des intervenants ou postes individuels ; les destinations de service restent le mécanisme générique.
 
 
 ## Portail client Audiotel
