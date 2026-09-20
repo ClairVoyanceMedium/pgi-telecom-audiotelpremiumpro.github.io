@@ -1123,6 +1123,23 @@ export class PostgresStore{
     );
   }
 
+  async effectiveMetricRange(from,to){
+    const fromMs=Date.parse(from),toMs=Date.parse(to);
+    if(!Number.isFinite(fromMs)||!Number.isFinite(toMs))throw problem(400,"INVALID_RANGE");
+    const rows=await this.readSql.unsafe(
+      "SELECT effective_from FROM metric_baselines WHERE scope='global' AND scope_id IS NULL ORDER BY effective_from DESC,id DESC LIMIT 1"
+    );
+    const baseline=rows[0]?.effective_from?new Date(rows[0].effective_from):null;
+    const effectiveFrom=baseline&&baseline.getTime()>fromMs?baseline:new Date(fromMs);
+    return {
+      from:effectiveFrom.toISOString(),
+      to:new Date(toMs).toISOString(),
+      baseline:baseline?baseline.toISOString():null,
+      reset_applied:Boolean(baseline&&baseline.getTime()>fromMs),
+      empty:effectiveFrom.getTime()>toMs
+    };
+  }
+
   async listBaselines(params={}){
     const scope=params.scope||"global";
     if(!["global","expert","sva_number"].includes(scope))throw problem(400,"INVALID_SCOPE");
