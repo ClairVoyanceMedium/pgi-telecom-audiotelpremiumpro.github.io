@@ -5,6 +5,26 @@ var portalData=null,previousData=null,calls=[],nextCursor=null,requestSeq=0;
 var I=window.PGIClientI18n||{locale:"fr-FR",t:function(x){return x;}};
 function t(x){return I.t?I.t(x):x;}
 function $(id){return document.getElementById(id);}
+function ensureVoiceUi(){
+  if(!document.getElementById("client-voice-styles")){
+    var style=document.createElement("style");style.id="client-voice-styles";style.textContent=`
+.cp-intelligence-mount{grid-column:1/-1}.cp-client-voice-panel{margin:0}.cp-client-voice-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.cp-client-voice-metric{min-width:0;padding:11px;border:1px solid rgba(255,255,255,.065);border-radius:11px;background:rgba(255,255,255,.018)}
+.cp-client-voice-metric>span,.cp-client-voice-metric>small{display:block}.cp-client-voice-metric>span{color:#858e97;font-size:7.5px;font-weight:850;text-transform:uppercase;letter-spacing:.045em}.cp-client-voice-metric>strong{display:block;margin:7px 0 4px;font-size:18px;letter-spacing:-.03em}.cp-client-voice-metric>small{color:#737c85;font-size:7.5px;line-height:1.4}
+.cp-client-voice-metric.good{border-color:rgba(104,198,154,.18)}.cp-client-voice-metric.warn{border-color:rgba(215,168,92,.25)}.cp-client-voice-metric.bad{border-color:rgba(217,110,104,.3)}.cp-voice-note{margin:9px 2px 0;color:#6f7881;font-size:7.5px;line-height:1.5}
+.cp-diagnostic-btn{min-height:30px;padding:0 9px;border:1px solid var(--line);border-radius:8px;background:#171a1d;color:#d6dadd;font-size:8px;font-weight:800;cursor:pointer}.cp-diagnostic-btn:hover{background:#24292e;color:#fff}.cp-diagnostic-card{width:min(760px,calc(100vw - 28px))}
+.cp-diagnostic-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.cp-diagnostic-grid>div{min-width:0;padding:10px;border:1px solid var(--line);border-radius:10px;background:#101316}.cp-diagnostic-grid span,.cp-diagnostic-grid strong{display:block}.cp-diagnostic-grid span{color:#78818a;font-size:7.5px;font-weight:800;text-transform:uppercase}.cp-diagnostic-grid strong{margin-top:6px;font-size:10px;overflow-wrap:anywhere}
+@media(max-width:820px){.cp-client-voice-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cp-diagnostic-grid{grid-template-columns:1fr 1fr}}@media(max-width:680px){.cp-table td:nth-child(6):before{content:"Diagnostic"}.cp-diagnostic-btn{min-height:40px}.cp-diagnostic-grid{grid-template-columns:1fr}}@media(max-width:380px){.cp-client-voice-grid{grid-template-columns:1fr}}
+`;document.head.appendChild(style);
+  }
+  var mount=$("client-voice-mount");
+  if(mount&&!$("client-voice-quality")){
+    mount.innerHTML='<article class="cp-panel cp-client-voice-panel"><div class="cp-panel-head"><div><p class="cp-kicker">'+t("QUALITÉ & CONNECTIVITÉ")+'</p><h2>'+t("Expérience de mes appels")+'</h2></div><span id="client-voice-samples">'+t("Données techniques")+'</span></div><div id="client-voice-quality" class="cp-client-voice-grid"></div><p class="cp-voice-note">'+t("Ces indicateurs sont des diagnostics techniques de vos appels. Ils ne constituent pas un engagement contractuel de niveau de service.")+'</p></article>';
+  }
+  var dmount=$("client-call-diagnostic-mount");
+  if(dmount&&!$("client-call-diagnostic-dialog")){
+    dmount.innerHTML='<dialog id="client-call-diagnostic-dialog" class="cp-export-dialog"><form method="dialog" class="cp-export-card cp-diagnostic-card"><div class="cp-export-head"><div><p class="cp-kicker">'+t("DIAGNOSTIC D’APPEL")+'</p><h2 id="client-call-diagnostic-title">'+t("Détail technique")+'</h2></div><button class="cp-close" value="cancel" aria-label="'+t("Fermer")+'">×</button></div><p class="cp-export-note">'+t("Les informations ci-dessous concernent uniquement cet appel et votre ligne Audiotel.")+'</p><div id="client-call-diagnostic-grid" class="cp-diagnostic-grid"></div></form></dialog>';
+  }
+}
 function n(v){var x=Number(v);return Number.isFinite(x)?x:0;}
 function nf(v,d){return new Intl.NumberFormat(I.locale||"fr-FR",{maximumFractionDigits:d==null?0:d}).format(n(v));}
 function money(v,c){try{return new Intl.NumberFormat(I.locale||"fr-FR",{style:"currency",currency:c||"EUR",maximumFractionDigits:2}).format(n(v));}catch(_e){return nf(v,2)+" "+(c||"");}}
@@ -269,6 +289,7 @@ function onPortalLoaded(event){
   loadCalls(false);
 }
 function init(){
+  ensureVoiceUi();
   bindFilters();
   document.addEventListener("pgi:portal-loaded",onPortalLoaded);
 }
