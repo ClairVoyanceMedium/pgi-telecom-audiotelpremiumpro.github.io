@@ -25,7 +25,10 @@ test("new voice service fails closed until a real destination is supplied",()=>{
 test("voice studio validates advanced flows and simulates without mutation",()=>{
   const flow=defaultVoiceFlow({destination_uri:"tel:+33123456789",overflow_uri:"tel:+33987654321"});
   flow.entry="access";
-  flow.recording={policy:"always",consent_required:true,retention_days:30};
+  flow.recording={policy:"always",purpose:"quality",consent_required:true,retention_days:30};
+  const menu=flow.nodes.find(x=>x.id==="menu");
+  menu.choices.find(x=>x.digit==="1").next="recording";menu.timeout_next="recording";
+  flow.nodes.push({id:"recording",type:"recording_consent",text:"Cet appel peut être enregistré à des fins de qualité.",consent_next:"queue",decline_next:"queue"});
   flow.nodes.unshift({id:"access",type:"access_control",blacklist:["+33600"],whitelist:["+336001"],blocked_next:"blocked",allowed_next:"welcome"});
   flow.nodes.push({id:"blocked",type:"terminate",reason:"blocked"});
   const checked=validateVoiceFlow(flow);
