@@ -2979,7 +2979,7 @@ export class PostgresStore{
       ))[0];
       await tx.unsafe(
         "INSERT INTO tenant_service_incident_events(incident_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible,details)"+
-        " VALUES($1,$2,'created','staff',$3,'Incident ouvert par PGI',true,$4::jsonb)",
+        " VALUES($1,$2,'created','staff',$3,'Incident ouvert par Audiotel Premium Pro',true,$4::jsonb)",
         [incident.id,tenant.id,actorId,JSON.stringify({category,severity})]
       );
       await tx.unsafe(
@@ -3087,7 +3087,7 @@ export class PostgresStore{
       ))[0];
       await tx.unsafe(
         "INSERT INTO tenant_service_incident_events(incident_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible)"+
-        " VALUES($1,$2,'note','staff',$3,'Nouveau message PGI',$4)",
+        " VALUES($1,$2,'note','staff',$3,'Nouveau message Audiotel Premium Pro',$4)",
         [incident.id,incident.tenant_id,actorId,customerVisible]
       );
       await tx.unsafe(
@@ -3171,7 +3171,7 @@ export class PostgresStore{
             " ON CONFLICT(incident_key) DO UPDATE SET severity=EXCLUDED.severity,status=CASE WHEN tenant_service_incidents.status IN ('resolved','closed') THEN 'investigating' ELSE tenant_service_incidents.status END,"+
             " last_pgi_update_at=now(),diagnostic_snapshot=EXCLUDED.diagnostic_snapshot,updated_at=now()"+
             " RETURNING id,public_id,tenant_id,(xmax=0) AS created",
-            [key,t.tenant_id,source.id,sev,source.title,"Incident réseau détecté automatiquement par PGI.",sla.response,sla.resolution,JSON.stringify({carrier:source.carrier,market_id:source.market_id,source_details:source.details||{}})]
+            [key,t.tenant_id,source.id,sev,source.title,"Incident réseau détecté automatiquement par Audiotel Premium Pro.",sla.response,sla.resolution,JSON.stringify({carrier:source.carrier,market_id:source.market_id,source_details:source.details||{}})]
           );
           const incident=rows[0];
           if(incident.created){
@@ -3187,7 +3187,7 @@ export class PostgresStore{
             "INSERT INTO tenant_operational_alerts(alert_key,tenant_id,incident_id,alert_type,severity,state,title,message,customer_visible,details)"+
             " VALUES($1,$2,$3,'carrier_incident',$4,'open',$5,$6,true,$7::jsonb)"+
             " ON CONFLICT(alert_key) DO UPDATE SET severity=EXCLUDED.severity,state='open',title=EXCLUDED.title,message=EXCLUDED.message,last_detected_at=now(),resolved_at=NULL,updated_at=now()",
-            ["carrier:"+source.id+":tenant:"+t.tenant_id,t.tenant_id,incident.id,source.severity==="critical"?"critical":"warning",source.title,"PGI a détecté un incident opérateur susceptible d’affecter votre service.",JSON.stringify({carrier:source.carrier,source_telecom_incident_id:source.id})]
+            ["carrier:"+source.id+":tenant:"+t.tenant_id,t.tenant_id,incident.id,source.severity==="critical"?"critical":"warning",source.title,"Audiotel Premium Pro a détecté un incident opérateur susceptible d’affecter votre service.",JSON.stringify({carrier:source.carrier,source_telecom_incident_id:source.id})]
           );
         }
       }
@@ -3225,7 +3225,7 @@ export class PostgresStore{
         const key="routing:tenant:"+t.tenant_id,sla=serviceIncidentSla("high");
         const incident=(await tx.unsafe(
           "INSERT INTO tenant_service_incidents(incident_key,tenant_id,category,severity,status,source,title,description,first_response_due_at,target_resolution_at,first_responded_at,last_pgi_update_at,diagnostic_snapshot)"+
-          " VALUES($1,$2,'routing','high','investigating','system','Routage client indisponible','PGI ne détecte aucune destination ni expert actuellement disponible pour les lignes actives de ce client.',now()+make_interval(mins=>$3),now()+make_interval(mins=>$4),now(),now(),$5::jsonb)"+
+          " VALUES($1,$2,'routing','high','investigating','system','Routage client indisponible','Audiotel Premium Pro ne détecte aucune destination, aucun service ni intervenant actuellement disponible pour les lignes actives de ce client.',now()+make_interval(mins=>$3),now()+make_interval(mins=>$4),now(),now(),$5::jsonb)"+
           " ON CONFLICT(incident_key) DO UPDATE SET status=CASE WHEN tenant_service_incidents.status IN ('resolved','closed') THEN 'investigating' ELSE tenant_service_incidents.status END,last_pgi_update_at=now(),diagnostic_snapshot=EXCLUDED.diagnostic_snapshot,updated_at=now()"+
           " RETURNING id,public_id,tenant_id,(xmax=0) AS created",
           [key,t.tenant_id,sla.response,sla.resolution,JSON.stringify({reason:"no_available_destination_or_expert"})]
@@ -3240,7 +3240,7 @@ export class PostgresStore{
         }
         await tx.unsafe(
           "INSERT INTO tenant_operational_alerts(alert_key,tenant_id,incident_id,alert_type,severity,state,title,message,customer_visible,details)"+
-          " VALUES($1,$2,$3,'routing_unavailable','critical','open','Routage indisponible','Aucune destination ni expert n’est actuellement disponible pour vos lignes actives.',true,$4::jsonb)"+
+          " VALUES($1,$2,$3,'routing_unavailable','critical','open','Routage indisponible','Aucune destination, aucun service ni intervenant n’est actuellement disponible pour vos lignes actives.',true,$4::jsonb)"+
           " ON CONFLICT(alert_key) DO UPDATE SET incident_id=EXCLUDED.incident_id,state='open',last_detected_at=now(),resolved_at=NULL,updated_at=now()",
           ["routing:tenant:"+t.tenant_id,t.tenant_id,incident.id,JSON.stringify({auto_detected:true})]
         );
@@ -3270,7 +3270,7 @@ export class PostgresStore{
       await tx.unsafe(
         "INSERT INTO tenant_operational_alerts(alert_key,tenant_id,alert_type,severity,state,title,message,customer_visible,due_at,details)"+
         " SELECT 'portability:'||p.id,p.tenant_id,'portability_attention',CASE WHEN p.automation_state='failed' THEN 'critical' ELSE 'warning' END,'open',"+
-        " 'Portabilité à traiter','Une portabilité automatique nécessite une intervention PGI.',false,p.automation_next_at,"+
+        " 'Portabilité à traiter','Une portabilité automatique nécessite une intervention Audiotel Premium Pro.',false,p.automation_next_at,"+
         " jsonb_build_object('request_id',p.id,'number',p.requested_e164,'automation_state',p.automation_state,'last_error',p.automation_last_error)"+
         " FROM tenant_portability_requests p WHERE p.status NOT IN ('ported','cancelled','rejected') AND p.automation_state IN ('action_required','failed')"+
         " ON CONFLICT(alert_key) DO UPDATE SET severity=EXCLUDED.severity,state='open',message=EXCLUDED.message,due_at=EXCLUDED.due_at,details=EXCLUDED.details,last_detected_at=now(),resolved_at=NULL,updated_at=now()"
