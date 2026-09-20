@@ -9,6 +9,7 @@ import {parseCookies,hashPassword,verifyPassword,issueSession,verifySession,cons
 import {securityHeaders,readJson,json,text,problemJson,routeMatch,clientIp} from "./src/http.mjs";
 import {normalizeFreeSwitchCdr} from "./src/cdr-freeswitch.mjs";
 import {startWorkers} from "./src/workers.mjs";
+import {createPortabilityQueueHandlers} from "./src/portability-automation.mjs";
 
 export async function createDefaultBackend(){
   const config=loadConfig();
@@ -689,9 +690,13 @@ export function createBackend(options={}){
   server.keepAliveTimeout=5000;
   server.maxRequestsPerSocket=1000;
 
+  const queueHandlers={
+    ...createPortabilityQueueHandlers({store,config}),
+    ...(options.queueHandlers||{})
+  };
   const workers=config.processRole==="api"
     ?disabledWorkers()
-    :startWorkers({store,eventBus,config,queueHandlers:options.queueHandlers||{}});
+    :startWorkers({store,eventBus,config,queueHandlers});
 
   return {
     server,store,eventBus,config,metrics,
