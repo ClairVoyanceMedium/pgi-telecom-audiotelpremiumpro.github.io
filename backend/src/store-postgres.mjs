@@ -1969,6 +1969,89 @@ export class PostgresStore{
     return result;
   }
 
+  async selfServiceRegister(input={},passwordHash){
+    const firstName=String(input.first_name||"").trim().slice(0,80);
+    const lastName=String(input.last_name||"").trim().slice(0,80);
+    const email=String(input.email||"").trim().toLowerCase().slice(0,320);
+    const companyName=String(input.company_name||"").trim().slice(0,200);
+    const country=String(input.country_code||"").trim().toUpperCase();
+    const registrationRaw=String(input.registration_number||"").trim().slice(0,64);
+    const phone=String(input.phone||"").trim().slice(0,40);
+    const localeInput=String(input.preferred_locale||"").trim().slice(0,35);
+    const timezoneInput=String(input.timezone||"").trim().slice(0,80);
+    const authorityConfirmed=input.authority_confirmed===true;
+    if(firstName.length<1||lastName.length<1)throw problem(400,"CUSTOMER_NAME_REQUIRED");
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw problem(400,"INVALID_CUSTOMER_EMAIL");
+    if(!/^[A-Z]{2}$/.test(country))throw problem(400,"INVALID_COUNTRY_CODE");
+    if(String(passwordHash||"").length<20)throw problem(400,"INVALID_PASSWORD_HASH");
+    if(!authorityConfirmed)throw problem(400,"REGISTRATION_AUTHORITY_REQUIRED");
+    if(localeInput&&!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(localeInput))throw problem(400,"INVALID_TENANT_LOCALE");
+    if(timezoneInput&&!/^[A-Za-z0-9_+\-/]+(?:\/[A-Za-z0-9_+\-]+)*$/.test(timezoneInput))throw problem(400,"INVALID_TENANT_TIMEZONE");
+    let registrationNumber=registrationRaw.replace(/\s+/g,"");
+    if(country==="FR"&&registrationNumber){
+      registrationNumber=registrationNumber.replace(/\D/g,"");
+      if(!/^\d{14}$/.test(registrationNumber))throw problem(400,"INVALID_SIRET");
+    }else if(registrationNumber&&!/^[A-Za-z0-9._\-/]{2,64}$/.test(registrationNumber)){
+      throw problem(400,"INVALID_REGISTRATION_NUMBER");
+    }
+    if(phone&&!/^[+0-9 ()\.\-]{6,40}$/.test(phone))throw problem(400,"INVALID_PHONE");
+    const displayName=(firstName+" "+lastName).trim();
+    const tenantName=companyName||displayName;
+    const slugBase=tenantName.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,48)||"client";
+    const result=await this.sql.begin(async tx=>{
+      await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",[email]);
+      const existing=(await tx.unsafe("SELECT id FROM customer_principals WHERE email_normalized=$1 LIMIT 1",[email]))[0];
+      if(existing)throw problem(409,"CUSTOMER_ACCOUNT_EXISTS");
+      const market=(await tx.unsafe("SELECT id,default_locale,default_currency,timezone,data_region FROM operating_markets WHERE country_code=$1 LIMIT 1",[country]))[0]||null;
+      const locale=localeInput||market?.default_locale||"en";
+      const currency=market?.default_currency||"EUR";
+      const timezone=timezoneInput||market?.timezone||"UTC";
+      const tenant=(await tx.unsafe(
+        "INSERT INTO tenants(slug,display_name,legal_name,tenant_type,status,country_code,billing_email,preferred_locale,default_currency,timezone)"+
+        " VALUES($1||'-'||substr(replace(gen_random_uuid()::text,'-',''),1,8),$2,$3,'customer','pending',$4,$5,$6,$7,$8)"+
+        " RETURNING id,public_id,display_name,status,authorization_version",
+        [slugBase,tenantName,companyName||tenantName,country,email,locale,currency,timezone]
+      ))[0];
+      await tx.unsafe(
+        "INSERT INTO tenant_kyc_profiles(tenant_id,entity_type,registration_country,registration_number,status,metadata)"+
+        " VALUES($1,$2,$3,$4,'pending',$5::jsonb) ON CONFLICT(tenant_id) DO NOTHING",
+        [tenant.id,companyName||registrationNumber?"company":"individual",country,registrationNumber||null,JSON.stringify({source:"self_service",registration_optional:true})]
+      );
+      await tx.unsafe(
+        "INSERT INTO tenant_market_profiles(tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region)"+
+        " SELECT $1,m.id,'onboarding',$2,$3,$4,'not_started',m.data_region FROM operating_markets m WHERE m.country_code=$5"+
+        " ON CONFLICT(tenant_id,market_id) DO NOTHING",
+        [tenant.id,locale,currency,timezone,country]
+      );
+      let principal=(await tx.unsafe(
+        "INSERT INTO customer_principals(email,display_name,status,preferred_locale,timezone,email_verified,metadata)"+
+        " VALUES($1,$2,'active',$3,$4,false,$5::jsonb) RETURNING id,email,display_name,status,email_verified,session_version",
+        [email,displayName,locale,timezone,JSON.stringify({first_name:firstName,last_name:lastName,phone:phone||null,signup_source:"self_service_email",authority_confirmed:true})]
+      ))[0];
+      await tx.unsafe(
+        "INSERT INTO customer_password_credentials(customer_principal_id,password_hash,status) VALUES($1::uuid,$2,'active')",
+        [principal.id,String(passwordHash)]
+      );
+      await tx.unsafe(
+        "INSERT INTO customer_tenant_memberships(tenant_id,customer_principal_id,role,status) VALUES($1,$2::uuid,'owner','active')",
+        [tenant.id,principal.id]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'customer.self_register','tenant',$2,$3::jsonb)",
+        [tenant.id,String(tenant.id),JSON.stringify({customer_principal_id:principal.id,country_code:country,registration_number_supplied:Boolean(registrationNumber),authority_confirmed:true})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'customer.self_registered','tenant',$2,$3::jsonb)",
+        [tenant.id,String(tenant.id),JSON.stringify({tenant_public_id:tenant.public_id,customer_principal_id:principal.id,email,country_code:country})]
+      );
+      principal=(await tx.unsafe("SELECT id,email,display_name,status,email_verified,session_version FROM customer_principals WHERE id=$1::uuid",[principal.id]))[0];
+      const refreshedTenant=(await tx.unsafe("SELECT id,public_id,display_name,status,authorization_version FROM tenants WHERE id=$1",[tenant.id]))[0];
+      return {...principal,tenant_id:refreshedTenant.id,tenant_public_id:refreshedTenant.public_id,tenant_name:refreshedTenant.display_name,tenant_status:refreshedTenant.status,customer_role:"owner",authorization_version:refreshedTenant.authorization_version};
+    });
+    this.eventBus.publish("customer.self_registered",{tenant_public_id:result.tenant_public_id,email:result.email,country_code:country});
+    return result;
+  }
+
   async customerGoogleSignIn(identity,invitationHash=null){
     if(!identity||identity.provider!=="google"||!identity.subject||!identity.email||identity.email_verified!==true)throw problem(400,"INVALID_GOOGLE_IDENTITY");
     return this.sql.begin(async tx=>{
@@ -2022,7 +2105,7 @@ export class PostgresStore{
     email=String(email||"").trim().toLowerCase();
     if(!email||email.length>320)return null;
     const principals=await this.sql.unsafe(
-      "SELECT p.id,p.email,p.display_name,p.status,p.preferred_locale,p.timezone,p.session_version,"+
+      "SELECT p.id,p.email,p.display_name,p.status,p.preferred_locale,p.timezone,p.email_verified,p.session_version,"+
       " c.password_hash,c.status AS credential_status,c.failed_attempts,c.locked_until"+
       " FROM customer_principals p LEFT JOIN customer_password_credentials c ON c.customer_principal_id=p.id"+
       " WHERE p.email_normalized=$1 LIMIT 1",[email]
@@ -2031,7 +2114,7 @@ export class PostgresStore{
     const memberships=await this.sql.unsafe(
       "SELECT m.tenant_id,m.role,m.status,t.public_id,t.slug,t.display_name,t.status AS tenant_status,t.authorization_version"+
       " FROM customer_tenant_memberships m JOIN tenants t ON t.id=m.tenant_id"+
-      " WHERE m.customer_principal_id=$1::uuid AND m.status='active' AND t.status='active'"+
+      " WHERE m.customer_principal_id=$1::uuid AND m.status='active' AND t.status IN ('active','pending')"+
       " ORDER BY t.display_name,t.id",[principal.id]
     );
     return {...principal,memberships};
@@ -2081,7 +2164,7 @@ export class PostgresStore{
       [String(actor.sub),Number(actor.tenant_id)]
     );
     const row=rows[0];
-    if(!row||row.status!=="active"||row.membership_status!=="active"||row.tenant_status!=="active")throw problem(401,"CUSTOMER_SESSION_REVOKED");
+    if(!row||row.status!=="active"||row.membership_status!=="active"||!["active","pending"].includes(row.tenant_status))throw problem(401,"CUSTOMER_SESSION_REVOKED");
     if(Number(row.session_version)!==Number(actor.session_version)||Number(row.authorization_version)!==Number(actor.authorization_version))throw problem(401,"CUSTOMER_SESSION_STALE");
     if(String(row.customer_role)!==String(actor.customer_role))throw problem(401,"CUSTOMER_SESSION_STALE");
     return row;
