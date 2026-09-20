@@ -141,6 +141,10 @@ var q=new URLSearchParams(params||{}).toString();
 return request("/platform/tenant-number-assignments"+(q?"?"+q:""));
 },
 tenantControlDetail:function(id){return request("/platform/tenants/"+encodeURIComponent(id)+"/control-center",{timeoutMs:10000});},
+createServiceIncident:function(id,p,k){return idem("/platform/tenants/"+encodeURIComponent(id)+"/incidents",p,k);},
+updateServiceIncident:function(id,p,k){return idem("/platform/incidents/"+encodeURIComponent(id)+"/status",p,k);},
+addServiceIncidentNote:function(id,p,k){return idem("/platform/incidents/"+encodeURIComponent(id)+"/notes",p,k);},
+simulateTenantRouting:function(id,p){return request("/platform/tenants/"+encodeURIComponent(id)+"/routing/simulate",{method:"POST",body:p||{}});},
 createTenantPayoutTerms:function(id,p,k){return idem("/platform/tenants/"+encodeURIComponent(id)+"/payout-terms",p,k);},
 createCallDestination:function(id,p,k){return idem("/platform/tenants/"+encodeURIComponent(id)+"/call-destinations",p,k);},
 setCallDestinationStatus:function(id,status,reason,k){return idem("/platform/call-destinations/"+encodeURIComponent(id)+"/status",{status:status,reason:reason||""},k);},
