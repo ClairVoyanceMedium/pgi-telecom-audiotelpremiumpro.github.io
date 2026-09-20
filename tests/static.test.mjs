@@ -515,4 +515,15 @@ test("cockpit and client expose carrier-grade voice intelligence without bloatin
 });
 
 
-test("PWA cockpit uses the exact install label",()=>{const m=JSON.parse(manifest);assert.equal(m.name,"Audiotel Premium Pro");assert.equal(m.short_name,"Audiotel Premium Pro");assert.match(index,/apple-mobile-web-app-title" content="Audiotel Premium Pro"/);});
+test("PWA cockpit uses the exact install label",()=>{const m=JSON.parse(manifest);const label="Cockpit / PGI Telecom • Audiotel Premium Pro";assert.equal(m.name,label);assert.equal(m.short_name,label);assert.ok(index.includes('<title>'+label+'</title>'));assert.ok(index.includes('apple-mobile-web-app-title" content="'+label+'"'));});
+
+test("advanced admin centers are visible without Ctrl K",()=>{
+  for(const token of ["data-control-tower","data-sva-compliance","data-platform-admin"])assert.ok(index.includes(token),token);
+  assert.ok(index.includes(">Control Tower</button>"));
+  assert.ok(index.includes(">Conformité SVA</button>"));
+  assert.ok(index.includes(">Administration</button>"));
+  assert.match(commandLoader,/\[data-control-tower\]/);
+  assert.match(commandLoader,/\[data-sva-compliance\]/);
+  assert.match(commandLoader,/\.\/control-tower\.js/);
+  assert.match(commandLoader,/\.\/sva-compliance-center\.js/);
+});
