@@ -56,6 +56,7 @@ jobs:
           PGI_RUNTIME_MODE: production
           PGI_API_BASE_URL: /api/v1
           PGI_RELEASE_ID: ${{ github.sha }}
+          PGI_GOOGLE_CLIENT_ID: ${{ vars.PGI_GOOGLE_CLIENT_ID }}
         run: npm run build:static
 
       - name: Verify production artifact

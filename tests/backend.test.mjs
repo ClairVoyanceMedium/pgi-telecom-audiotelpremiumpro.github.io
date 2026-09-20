@@ -594,3 +594,6 @@ test("customer sessions carry tenant claims and use isolated Host cookies",()=>{
 
 
 test("customer password changes require the authenticated customer flow",()=>{assert.match(backendServer,/\/api\/v1\/customer\/auth\/change-password/);assert.match(backendServer,/INVALID_CURRENT_PASSWORD/);assert.match(backendServer,/PASSWORD_UNCHANGED/);assert.match(backendServer,/clearCustomerSessionCookies/);});
+
+
+test("Google customer auth validates on the backend and keeps tenant selection",()=>{assert.match(backendServer,/verifyGoogleIdToken/);assert.match(backendServer,/\/api\/v1\/customer\/auth\/google/);assert.match(backendServer,/CUSTOMER_TENANT_REQUIRED/);});
