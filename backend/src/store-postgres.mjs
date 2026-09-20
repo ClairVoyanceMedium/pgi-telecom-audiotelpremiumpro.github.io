@@ -2338,7 +2338,8 @@ export class PostgresStore{
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     return this.withTenantReadContext(id,async tx=>tx.unsafe(
       "SELECT id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,"+
-      " account_holder_name,desired_port_date,status,ownership_status,operator_portability_reference,scheduled_at,completed_at,rejection_reason,created_at,updated_at"+
+      " account_holder_name,desired_port_date,status,ownership_status,operator_portability_reference,scheduled_at,completed_at,rejection_reason,"+
+      " tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,tariff_verified_at,created_at,updated_at"+
       " FROM tenant_scoped_portability_requests ORDER BY created_at DESC,id DESC LIMIT 50"
     ));
   }
@@ -2352,15 +2353,20 @@ export class PostgresStore{
     const operatorName=optionalText(input.current_operator_name,160);
     const operatorReference=optionalText(input.current_operator_reference,200);
     const holderName=optionalText(input.account_holder_name,200);
+    const tariffCode=optionalText(input.tariff_code,80);
+    const rate=input.service_rate_ttc_per_min==null||input.service_rate_ttc_per_min===""?null:Number(input.service_rate_ttc_per_min);
+    if(rate!=null&&(!Number.isFinite(rate)||rate<0||rate>10000))throw problem(400,"INVALID_PORTABILITY_TARIFF");
     const serviceFamily=String(input.service_family||"premium_rate").trim().toLowerCase();
     const desiredDate=input.desired_port_date?dateOnlyValue(input.desired_port_date,"desired_port_date"):null;
     if(!["premium_rate","shared_cost","freephone","other"].includes(serviceFamily))throw problem(400,"INVALID_SERVICE_FAMILY");
     if(input.authorization_confirmed!==true||input.number_owner_confirmed!==true)throw problem(400,"PORTABILITY_AUTHORIZATION_REQUIRED");
     const result=await this.sql.begin(async tx=>{
       await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",["portability:"+e164]);
-      const tenant=(await tx.unsafe("SELECT id,status,country_code FROM tenants WHERE id=$1 AND tenant_type<>'internal' LIMIT 1",[id]))[0];
+      const tenant=(await tx.unsafe("SELECT id,status,country_code,default_currency FROM tenants WHERE id=$1 AND tenant_type<>'internal' LIMIT 1",[id]))[0];
       if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
       if(tenant.status==="closed")throw problem(409,"TENANT_CLOSED");
+      const market=(await tx.unsafe("SELECT id,default_currency FROM operating_markets WHERE country_code=$1 LIMIT 1",[country]))[0]||null;
+      const currency=String(market?.default_currency||tenant.default_currency||"EUR").toUpperCase();
       const existingNumber=(await tx.unsafe("SELECT id,tenant_id FROM sva_numbers WHERE e164=$1 LIMIT 1",[e164]))[0]||null;
       if(existingNumber)throw problem(409,Number(existingNumber.tenant_id)===id?"NUMBER_ALREADY_MANAGED":"PORTABILITY_NUMBER_UNAVAILABLE");
       const existing=(await tx.unsafe(
@@ -2369,16 +2375,16 @@ export class PostgresStore{
       ))[0];
       if(existing)throw problem(409,"PORTABILITY_ALREADY_REQUESTED");
       const rows=await tx.unsafe(
-        "INSERT INTO tenant_portability_requests(tenant_id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,account_holder_name,desired_port_date,authorization_confirmed,number_owner_confirmed,metadata)"+
-        " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::date,true,true,$10::jsonb)"+
-        " RETURNING id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,account_holder_name,desired_port_date,status,ownership_status,created_at",
-        [id,country,e164,String(input.number||"").trim().slice(0,40)||e164,serviceFamily,operatorName,operatorReference,holderName,desiredDate,
+        "INSERT INTO tenant_portability_requests(tenant_id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,account_holder_name,desired_port_date,authorization_confirmed,number_owner_confirmed,tariff_code,service_rate_ttc_per_min,currency,metadata)"+
+        " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::date,true,true,$10,$11,$12,$13::jsonb)"+
+        " RETURNING id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,account_holder_name,desired_port_date,status,ownership_status,tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,created_at",
+        [id,country,e164,String(input.number||"").trim().slice(0,40)||e164,serviceFamily,operatorName,operatorReference,holderName,desiredDate,tariffCode,rate,currency,
          JSON.stringify({source:"customer_portal",original_number:String(input.number||"").trim().slice(0,40)})]
       );
       const request=rows[0];
       await tx.unsafe(
         "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'portability.request','tenant_portability_request',$2,$3::jsonb)",
-        [id,String(request.id),JSON.stringify({requested_e164:e164,country_code:country,service_family:serviceFamily})]
+        [id,String(request.id),JSON.stringify({requested_e164:e164,country_code:country,service_family:serviceFamily,declared_rate_ttc_per_min:rate,currency})]
       );
       await tx.unsafe(
         "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'portability.requested','tenant_portability_request',$2,$3::jsonb)",
@@ -2419,40 +2425,173 @@ export class PostgresStore{
     const operatorRef=optionalText(input.operator_portability_reference,200);
     const rejection=optionalText(input.rejection_reason,500);
     const scheduledAt=input.scheduled_at||null;
-    const svaNumberId=input.sva_number_id==null||input.sva_number_id===""?null:Number(input.sva_number_id);
-    if(!["submitted","awaiting_documents","eligibility_check","operator_pending","scheduled","ported","rejected","cancelled"].includes(status))throw problem(400,"INVALID_PORTABILITY_STATUS");
+    const targetCarrierId=input.target_carrier_id==null||input.target_carrier_id===""?null:Number(input.target_carrier_id);
+    const tariffCode=optionalText(input.tariff_code,80);
+    const rate=input.service_rate_ttc_per_min==null||input.service_rate_ttc_per_min===""?null:Number(input.service_rate_ttc_per_min);
+    const requestedTariffStatus=String(input.tariff_verification_status||"").trim().toLowerCase()||null;
+    if(!["submitted","awaiting_documents","eligibility_check","operator_pending","scheduled","rejected","cancelled"].includes(status)){
+      if(status==="ported")throw problem(409,"PORTABILITY_USE_COMPLETION_ENDPOINT");
+      throw problem(400,"INVALID_PORTABILITY_STATUS");
+    }
     if(!["pending","verified","rejected"].includes(ownership))throw problem(400,"INVALID_OWNERSHIP_STATUS");
+    if(requestedTariffStatus&&!["pending","verified","rejected"].includes(requestedTariffStatus))throw problem(400,"INVALID_TARIFF_VERIFICATION_STATUS");
     if(scheduledAt&&!Number.isFinite(Date.parse(scheduledAt)))throw problem(400,"INVALID_PORTABILITY_SCHEDULE");
-    if(svaNumberId!=null&&(!Number.isInteger(svaNumberId)||svaNumberId<=0))throw problem(400,"INVALID_SVA_NUMBER_ID");
-    if(status==="ported"&&(ownership!=="verified"||svaNumberId==null))throw problem(409,"PORTABILITY_COMPLETION_REQUIRES_VERIFIED_NUMBER");
+    if(targetCarrierId!=null&&(!Number.isInteger(targetCarrierId)||targetCarrierId<=0))throw problem(400,"INVALID_TARGET_CARRIER");
+    if(rate!=null&&(!Number.isFinite(rate)||rate<0||rate>10000))throw problem(400,"INVALID_PORTABILITY_TARIFF");
     const actorId=numericActor(actor);
     const result=await this.sql.begin(async tx=>{
       const current=(await tx.unsafe("SELECT * FROM tenant_portability_requests WHERE id=$1 FOR UPDATE",[id]))[0];
       if(!current)throw problem(404,"PORTABILITY_REQUEST_NOT_FOUND");
       if(["ported","cancelled"].includes(current.status)&&current.status!==status)throw problem(409,"PORTABILITY_REQUEST_FINAL");
-      if(svaNumberId!=null){
-        const number=(await tx.unsafe("SELECT id,e164,tenant_id FROM sva_numbers WHERE id=$1 LIMIT 1",[svaNumberId]))[0];
-        if(!number||String(number.e164)!==String(current.requested_e164)||Number(number.tenant_id)!==Number(current.tenant_id))throw problem(409,"PORTABILITY_NUMBER_BINDING_MISMATCH");
+      if(targetCarrierId!=null){
+        const carrier=(await tx.unsafe("SELECT id FROM carriers WHERE id=$1 AND kind='sva_host' AND enabled LIMIT 1",[targetCarrierId]))[0];
+        if(!carrier)throw problem(409,"PORTABILITY_TARGET_CARRIER_UNAVAILABLE");
       }
-      const completed=status==="ported"?"now()":"NULL";
+      const tariffStatus=requestedTariffStatus||current.tariff_verification_status||"pending";
+      const effectiveRate=rate==null?(current.service_rate_ttc_per_min==null?null:Number(current.service_rate_ttc_per_min)):rate;
+      const effectiveTariffCode=tariffCode||current.tariff_code||null;
+      const effectiveCarrierId=targetCarrierId==null?(current.target_carrier_id==null?null:Number(current.target_carrier_id)):targetCarrierId;
+      const effectiveOperatorRef=operatorRef||current.operator_portability_reference||null;
+      if(tariffStatus==="verified"&&(effectiveRate==null||!Number.isFinite(effectiveRate)||!current.currency))throw problem(409,"PORTABILITY_TARIFF_DETAILS_REQUIRED");
+      if(tariffStatus==="verified"&&!effectiveTariffCode)throw problem(409,"PORTABILITY_TARIFF_CODE_REQUIRED");
+      if(["operator_pending","scheduled"].includes(status)&&ownership!=="verified")throw problem(409,"PORTABILITY_OWNERSHIP_VERIFICATION_REQUIRED");
+      if(status==="scheduled"){
+        if(!scheduledAt)throw problem(409,"PORTABILITY_SCHEDULE_REQUIRED");
+        if(!effectiveCarrierId)throw problem(409,"PORTABILITY_TARGET_CARRIER_REQUIRED");
+        if(!effectiveOperatorRef)throw problem(409,"PORTABILITY_OPERATOR_REFERENCE_REQUIRED");
+        if(tariffStatus!=="verified")throw problem(409,"PORTABILITY_TARIFF_VERIFICATION_REQUIRED");
+      }
       const rows=await tx.unsafe(
         "UPDATE tenant_portability_requests SET status=$2,ownership_status=$3,operator_portability_reference=COALESCE($4,operator_portability_reference),"+
-        " scheduled_at=$5::timestamptz,sva_number_id=COALESCE($6,sva_number_id),rejection_reason=$7,completed_at="+completed+",updated_at=now()"+
+        " scheduled_at=$5::timestamptz,rejection_reason=$6,target_carrier_id=COALESCE($7,target_carrier_id),tariff_code=COALESCE($8,tariff_code),"+
+        " service_rate_ttc_per_min=COALESCE($9,service_rate_ttc_per_min),tariff_verification_status=$10,"+
+        " tariff_verified_at=CASE WHEN $10='verified' THEN COALESCE(tariff_verified_at,now()) ELSE NULL END,"+
+        " tariff_verified_by=CASE WHEN $10='verified' THEN COALESCE(tariff_verified_by,$11) ELSE NULL END,completed_at=NULL,updated_at=now()"+
         " WHERE id=$1 RETURNING *",
-        [id,status,ownership,operatorRef,scheduledAt,svaNumberId,rejection]
+        [id,status,ownership,operatorRef,scheduledAt,rejection,targetCarrierId,tariffCode,rate,tariffStatus,actorId]
       );
       await tx.unsafe(
         "INSERT INTO tenant_control_events(tenant_id,actor_user_id,action,previous_status,new_status,reason,details)"+
         " VALUES($1,$2,'portability.status',$3,$4,$5,$6::jsonb)",
-        [current.tenant_id,actorId,current.status,status,rejection,JSON.stringify({request_id:id,requested_e164:current.requested_e164,ownership_status:ownership,operator_reference:operatorRef})]
+        [current.tenant_id,actorId,current.status,status,rejection,JSON.stringify({request_id:id,requested_e164:current.requested_e164,ownership_status:ownership,tariff_verification_status:tariffStatus,target_carrier_id:effectiveCarrierId,operator_reference:effectiveOperatorRef})]
       );
       await tx.unsafe(
         "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'portability.status','tenant_portability_request',$3,$4::jsonb)",
-        [current.tenant_id,actorId,String(id),JSON.stringify({previous_status:current.status,status,ownership_status:ownership})]
+        [current.tenant_id,actorId,String(id),JSON.stringify({previous_status:current.status,status,ownership_status:ownership,tariff_verification_status:tariffStatus,service_rate_ttc_per_min:effectiveRate,currency:current.currency})]
       );
       return rows[0];
     });
     this.eventBus.publish("portability.changed",{tenant_id:Number(result.tenant_id),request_id:id,status:result.status,requested_e164:result.requested_e164});
+    return result;
+  }
+
+  async completePortabilityRequest(requestId,input={},actor={}){
+    const id=Number(requestId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_PORTABILITY_REQUEST");
+    const actorId=numericActor(actor);
+    const confirmationReference=optionalText(input.operator_portability_reference,200);
+    const result=await this.sql.begin(async tx=>{
+      const current=(await tx.unsafe("SELECT * FROM tenant_portability_requests WHERE id=$1 FOR UPDATE",[id]))[0];
+      if(!current)throw problem(404,"PORTABILITY_REQUEST_NOT_FOUND");
+      if(current.status==="ported"){
+        const existing=(await tx.unsafe("SELECT id,e164,display_number,tariff_code,service_rate_ttc_per_min::float8,currency,status FROM sva_numbers WHERE id=$1",[current.sva_number_id]))[0]||null;
+        return {request:current,number:existing,already_completed:true};
+      }
+      if(current.status!=="scheduled")throw problem(409,"PORTABILITY_NOT_SCHEDULED");
+      if(current.ownership_status!=="verified")throw problem(409,"PORTABILITY_OWNERSHIP_VERIFICATION_REQUIRED");
+      if(current.tariff_verification_status!=="verified")throw problem(409,"PORTABILITY_TARIFF_VERIFICATION_REQUIRED");
+      const rate=current.service_rate_ttc_per_min==null?null:Number(current.service_rate_ttc_per_min);
+      if(rate==null||!Number.isFinite(rate)||rate<0)throw problem(409,"PORTABILITY_TARIFF_DETAILS_REQUIRED");
+      if(current.service_family==="premium_rate"&&rate<=0)throw problem(409,"PORTABILITY_TARIFF_DETAILS_REQUIRED");
+      if(!current.tariff_code)throw problem(409,"PORTABILITY_TARIFF_CODE_REQUIRED");
+      if(!current.currency)throw problem(409,"PORTABILITY_TARIFF_DETAILS_REQUIRED");
+      const targetCarrierId=Number(current.target_carrier_id);
+      if(!Number.isInteger(targetCarrierId)||targetCarrierId<=0)throw problem(409,"PORTABILITY_TARGET_CARRIER_REQUIRED");
+      const operatorRef=confirmationReference||current.operator_portability_reference;
+      if(!operatorRef)throw problem(409,"PORTABILITY_OPERATOR_REFERENCE_REQUIRED");
+
+      const tenant=(await tx.unsafe("SELECT id,display_name,status,tenant_type FROM tenants WHERE id=$1 FOR UPDATE",[current.tenant_id]))[0];
+      if(!tenant||tenant.tenant_type==="internal")throw problem(409,"PORTABILITY_TENANT_INVALID");
+      if(tenant.status!=="active")throw problem(409,"PORTABILITY_TENANT_NOT_ACTIVE");
+      const market=(await tx.unsafe("SELECT id,country_code,status,default_currency FROM operating_markets WHERE country_code=$1 LIMIT 1",[current.country_code]))[0];
+      if(!market||market.status!=="active")throw problem(409,"PORTABILITY_MARKET_NOT_ACTIVE");
+      const kyc=(await tx.unsafe("SELECT status FROM tenant_kyc_profiles WHERE tenant_id=$1 LIMIT 1",[current.tenant_id]))[0];
+      if(!kyc||kyc.status!=="verified")throw problem(409,"PORTABILITY_KYC_REQUIRED");
+      const access=(await tx.unsafe("SELECT pgi_tenant_has_premium_call_access($1,$2,now()) AS allowed",[current.tenant_id,market.id]))[0];
+      if(!access?.allowed)throw problem(402,"SVA_SUBSCRIPTION_REQUIRED");
+
+      const carrier=(await tx.unsafe("SELECT id,name FROM carriers WHERE id=$1 AND kind='sva_host' AND enabled LIMIT 1",[targetCarrierId]))[0];
+      if(!carrier)throw problem(409,"PORTABILITY_TARGET_CARRIER_UNAVAILABLE");
+      const route=(await tx.unsafe(
+        "SELECT r.active_carrier_id,r.active_connection_id,cc.state AS connection_state FROM logical_carrier_routes r"+
+        " LEFT JOIN carrier_connections cc ON cc.id=r.active_connection_id WHERE r.route_key='sva-primary' FOR UPDATE",
+        []
+      ))[0];
+      if(!route||Number(route.active_carrier_id)!==targetCarrierId)throw problem(409,"PORTABILITY_TARGET_ROUTE_NOT_ACTIVE");
+      if(!["ready","active","standby"].includes(String(route.connection_state||"")))throw problem(409,"PORTABILITY_TARGET_ROUTE_NOT_READY");
+
+      await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",["portability-complete:"+current.requested_e164]);
+      let number=(await tx.unsafe("SELECT id,e164,tenant_id FROM sva_numbers WHERE e164=$1 FOR UPDATE",[current.requested_e164]))[0]||null;
+      if(number&&Number(number.tenant_id)!==Number(current.tenant_id))throw problem(409,"PORTABILITY_NUMBER_UNAVAILABLE");
+      if(!number){
+        number=(await tx.unsafe(
+          "INSERT INTO sva_numbers(e164,display_number,tariff_code,service_rate_ttc_per_min,status,assigned_to_label,portability_status,activated_at,tenant_id,market_id,number_type,currency)"+
+          " VALUES($1,$2,$3,$4,'active',$5,'completed',now(),$6,$7,$8,$9)"+
+          " RETURNING id,e164,display_number,tariff_code,service_rate_ttc_per_min::float8,currency,status,tenant_id,market_id,number_type,activated_at",
+          [current.requested_e164,current.display_number||current.requested_e164,current.tariff_code,rate,tenant.display_name,current.tenant_id,market.id,current.service_family,current.currency]
+        ))[0];
+      }else{
+        number=(await tx.unsafe(
+          "UPDATE sva_numbers SET display_number=COALESCE(NULLIF($2,''),display_number),tariff_code=$3,service_rate_ttc_per_min=$4,status='active',assigned_to_label=$5,portability_status='completed',activated_at=COALESCE(activated_at,now()),tenant_id=$6,market_id=$7,number_type=$8,currency=$9 WHERE id=$1"+
+          " RETURNING id,e164,display_number,tariff_code,service_rate_ttc_per_min::float8,currency,status,tenant_id,market_id,number_type,activated_at",
+          [number.id,current.display_number||current.requested_e164,current.tariff_code,rate,tenant.display_name,current.tenant_id,market.id,current.service_family,current.currency]
+        ))[0];
+      }
+
+      let assignment=(await tx.unsafe("SELECT id,status FROM tenant_number_assignments WHERE tenant_id=$1 AND sva_number_id=$2 AND status<>'ended' ORDER BY id DESC LIMIT 1 FOR UPDATE",[current.tenant_id,number.id]))[0]||null;
+      if(!assignment){
+        assignment=(await tx.unsafe(
+          "INSERT INTO tenant_number_assignments(tenant_id,sva_number_id,assignment_type,status,valid_from,tariff_code,commercial_terms,regulatory_assignor_carrier_id,upstream_assignment_reference,kyc_status)"+
+          " VALUES($1,$2,'customer_service','active',now(),$3,$4::jsonb,$5,$6,'verified') RETURNING id,status,valid_from",
+          [current.tenant_id,number.id,current.tariff_code,JSON.stringify({source:"portability",public_tariff_locked:true,service_rate_ttc_per_min:rate,currency:current.currency,portability_request_id:id}),targetCarrierId,operatorRef]
+        ))[0];
+      }else if(assignment.status!=="active"){
+        assignment=(await tx.unsafe(
+          "UPDATE tenant_number_assignments SET status='active',valid_from=COALESCE(valid_from,now()),tariff_code=$3,regulatory_assignor_carrier_id=$4,upstream_assignment_reference=$5,kyc_status='verified' WHERE id=$1 AND tenant_id=$2 RETURNING id,status,valid_from",
+          [assignment.id,current.tenant_id,current.tariff_code,targetCarrierId,operatorRef]
+        ))[0];
+      }
+
+      await tx.unsafe(
+        "INSERT INTO number_carrier_assignments(sva_number_id,carrier_id,valid_from,assignment_status,portability_reference,portability_status,notes)"+
+        " VALUES($1,$2,now(),'active',$3,'completed',$4)",
+        [number.id,targetCarrierId,operatorRef,"Customer port-in request #"+id]
+      );
+      await tx.unsafe(
+        "INSERT INTO number_portability_events(sva_number_id,from_carrier_id,to_carrier_id,portability_reference,requested_at,scheduled_at,activated_at,completed_at,status,validation,notes)"+
+        " VALUES($1,NULL,$2,$3,$4,$5,now(),now(),'completed',$6::jsonb,$7)",
+        [number.id,targetCarrierId,operatorRef,current.created_at,current.scheduled_at,JSON.stringify({ownership_verified:true,tariff_verified:true,tariff_code:current.tariff_code,service_rate_ttc_per_min:rate,currency:current.currency,route_key:"sva-primary",route_carrier_id:targetCarrierId}),"Atomic customer port-in completion"]
+      );
+      const request=(await tx.unsafe(
+        "UPDATE tenant_portability_requests SET status='ported',sva_number_id=$2,operator_portability_reference=$3,completed_at=now(),updated_at=now() WHERE id=$1 RETURNING *",
+        [id,number.id,operatorRef]
+      ))[0];
+      await tx.unsafe(
+        "INSERT INTO tenant_control_events(tenant_id,assignment_id,actor_user_id,action,previous_status,new_status,reason,details)"+
+        " VALUES($1,$2,$3,'portability.complete',$4,'ported','Operator cutover confirmed',$5::jsonb)",
+        [current.tenant_id,assignment.id,actorId,current.status,JSON.stringify({request_id:id,e164:current.requested_e164,target_carrier_id:targetCarrierId,operator_reference:operatorRef,tariff_code:current.tariff_code,service_rate_ttc_per_min:rate,currency:current.currency})]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'portability.complete','tenant_portability_request',$3,$4::jsonb)",
+        [current.tenant_id,actorId,String(id),JSON.stringify({sva_number_id:number.id,assignment_id:assignment.id,e164:current.requested_e164,target_carrier_id:targetCarrierId,operator_reference:operatorRef,tariff_preserved:true,service_rate_ttc_per_min:rate,currency:current.currency})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'portability.completed','tenant_portability_request',$2,$3::jsonb)",
+        [current.tenant_id,String(id),JSON.stringify({sva_number_id:number.id,assignment_id:assignment.id,e164:current.requested_e164,target_carrier_id:targetCarrierId})]
+      );
+      return {request,number,assignment,carrier:{id:carrier.id,name:carrier.name},already_completed:false};
+    });
+    this.eventBus.publish("portability.completed",{tenant_id:Number(result.request.tenant_id),request_id:id,sva_number_id:Number(result.number?.id),requested_e164:result.request.requested_e164});
     return result;
   }
 
@@ -2516,7 +2655,7 @@ export class PostgresStore{
       );
       const portabilityRequests=await tx.unsafe(
         "SELECT id,country_code,requested_e164,display_number,service_family,current_operator_name,desired_port_date,status,ownership_status,"+
-        " operator_portability_reference,scheduled_at,completed_at,rejection_reason,created_at,updated_at"+
+        " operator_portability_reference,scheduled_at,completed_at,rejection_reason,tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,tariff_verified_at,created_at,updated_at"+
         " FROM tenant_scoped_portability_requests ORDER BY created_at DESC,id DESC LIMIT 20"
       );
       const recentCalls=await tx.unsafe(
@@ -2641,8 +2780,9 @@ export class PostgresStore{
         " LEFT JOIN carriers c ON c.id=a.regulatory_assignor_carrier_id WHERE a.tenant_id=$1 ORDER BY a.created_at DESC,a.id DESC LIMIT 100",[id]
       ),
       this.readSql.unsafe(
-        "SELECT id,country_code,requested_e164,display_number,current_operator_name,desired_port_date,status,ownership_status,operator_portability_reference,scheduled_at,completed_at,rejection_reason,created_at,updated_at"+
-        " FROM tenant_portability_requests WHERE tenant_id=$1 ORDER BY created_at DESC,id DESC LIMIT 50",[id]
+        "SELECT p.id,p.country_code,p.requested_e164,p.display_number,p.service_family,p.current_operator_name,p.current_operator_reference,p.account_holder_name,p.desired_port_date,p.status,p.ownership_status,p.operator_portability_reference,p.scheduled_at,p.completed_at,p.rejection_reason,"+
+        " p.target_carrier_id,c.name AS target_carrier,p.tariff_code,p.service_rate_ttc_per_min::float8,p.currency,p.tariff_verification_status,p.tariff_verified_at,p.created_at,p.updated_at"+
+        " FROM tenant_portability_requests p LEFT JOIN carriers c ON c.id=p.target_carrier_id WHERE p.tenant_id=$1 ORDER BY p.created_at DESC,p.id DESC LIMIT 50",[id]
       ),
       this.readSql.unsafe(
         "SELECT d.id,d.label,d.destination_type,d.destination_uri,d.priority,d.status,d.failover_enabled,d.max_concurrent_calls,d.active_calls,d.last_assigned_at,d.sva_number_id,sn.display_number,sn.e164"+
