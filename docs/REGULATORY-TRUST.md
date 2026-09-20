@@ -52,6 +52,8 @@ Avant activation externe, le dossier doit désormais établir :
 
 Une seconde chaîne de preuves, `sva_arcep_2026_evidence_events`, est append-only et protégée par SHA-256. Une activation concurrente du même numéro par deux clients est aussi refusée sous verrou transactionnel par numéro.
 
+Dans le cockpit administrateur, chaque numéro externe dispose maintenant d'une fiche « Conformité ARCEP 2026 ». Elle présente séparément les huit contrôles, leur statut courant et permet d'ajouter un nouvel événement de preuve avec source et référence. Aucun bouton ni automatisme ne transforme un contrôle en `verified` sans action explicite ; le backend exige en plus une référence de preuve pour tout statut `verified`.
+
 ## Contrôles plateforme France
 
 Le registre `platform_regulatory_controls` prépare les preuves pour :
