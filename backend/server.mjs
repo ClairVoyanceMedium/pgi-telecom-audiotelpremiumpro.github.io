@@ -231,7 +231,24 @@ export function createBackend(options={}){
         const context=await store.customerSessionContext(customerActor);
         const range=rangeParams(url);
         const data=await store.customerPortalOverview(context.tenant_id,range.from,range.to);
-        return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,server_time:new Date().toISOString()});
+        return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,billing_provider:billingProviderStatus(config),server_time:new Date().toISOString()});
+      }
+      if(method==="GET"&&pathname==="/api/v1/customer/billing/status"){
+        requireActor(customerActor);
+        await store.customerSessionContext(customerActor);
+        return done(res,metrics,started,"customer.billing.status",200,billingProviderStatus(config));
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/billing/checkout-session"){
+        requireCustomerCsrf(req,customerActor,config);
+        await store.customerSessionContext(customerActor);
+        const provider=billingProviderStatus(config);
+        return done(res,metrics,started,"customer.billing.checkout",503,{error:{code:"PAYMENT_PROVIDER_NOT_CONNECTED"},billing_provider:provider});
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/billing/portal-session"){
+        requireCustomerCsrf(req,customerActor,config);
+        await store.customerSessionContext(customerActor);
+        const provider=billingProviderStatus(config);
+        return done(res,metrics,started,"customer.billing.portal",503,{error:{code:"PAYMENT_PROVIDER_NOT_CONNECTED"},billing_provider:provider});
       }
       if(method==="GET"&&pathname==="/api/v1/customer/comparison"){
         requireActor(customerActor);
@@ -266,7 +283,7 @@ export function createBackend(options={}){
         return done(res,metrics,started,"app.bootstrap",200,{
           user:publicActor(actor),
           baselines:{data:baselines},
-          wholesale,
+          wholesale:{...wholesale,billing_provider:billingProviderStatus(config)},
           server_time:new Date().toISOString()
         });
       }
@@ -504,7 +521,8 @@ export function createBackend(options={}){
 
       if(method==="GET"&&pathname==="/api/v1/platform/subscription-billing"){
         requireRole(actor,["admin","finance","readonly"]);
-        return done(res,metrics,started,"platform.subscription_billing",200,await store.subscriptionBillingOverview());
+        const overview=await store.subscriptionBillingOverview();
+        return done(res,metrics,started,"platform.subscription_billing",200,{...overview,billing_provider:billingProviderStatus(config)});
       }
 
       if(method==="POST"&&pathname==="/api/v1/platform/subscription-prices"){
@@ -629,6 +647,22 @@ export function resolveTelephonyRoutingContext(url,config){
     const e=new Error("SVA number is required for production telephony routing");e.status=400;e.code="SVA_ROUTING_CONTEXT_REQUIRED";throw e;
   }
   return {svaNumber:svaNumber||null};
+}
+
+export function billingProviderStatus(config){
+  const ingestion=Boolean(config?.externalBillingEnabled);
+  return Object.freeze({
+    architecture_ready:true,
+    target_provider:"stripe",
+    connection_state:ingestion?"event_ingest_enabled":"not_connected",
+    external_billing_enabled:ingestion,
+    checkout_available:false,
+    customer_portal_available:false,
+    webhook_ingest_enabled:ingestion,
+    subscription_funds_flow:"customer_to_pgi",
+    sva_payout_flow:"carrier_to_customer",
+    funds_held_by_pgi:false
+  });
 }
 
 export function evaluateReadiness(snapshot,workers,config,nowMs=Date.now()){
