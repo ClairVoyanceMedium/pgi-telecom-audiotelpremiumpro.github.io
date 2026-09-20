@@ -2,10 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-const [migration,store,memory,adminUi,productionCheck]=await Promise.all([
+const [migration,store,memory,server,adminUi,productionCheck]=await Promise.all([
   readFile(new URL("../database/migrations/037_regulatory_trust_center.sql",import.meta.url),"utf8"),
   readFile(new URL("../backend/src/store-postgres.mjs",import.meta.url),"utf8"),
   readFile(new URL("../backend/src/store-memory.mjs",import.meta.url),"utf8"),
+  readFile(new URL("../backend/server.mjs",import.meta.url),"utf8"),
   readFile(new URL("../assets/platform-admin-tools.js",import.meta.url),"utf8"),
   readFile(new URL("../scripts/check-production-contract.mjs",import.meta.url),"utf8")
 ]);
@@ -43,6 +44,20 @@ test("cockpit exposes regulatory trust evidence and abuse state",()=>{
   assert.ok(adminUi.includes("Regulatory Trust Center"));
   assert.ok(adminUi.includes("Preuves chaînées"));
   assert.ok(adminUi.includes("Activation externe fail-closed"));
+});
+
+
+test("private regulatory operations are authenticated, idempotent and audited",()=>{
+  for(const token of ["upsertSvaRegulatoryProfile","recordSvaRegulatoryEvidence","createSvaAbuseCase","regulatory.profile.update","regulatory.evidence.append","regulatory.abuse.open"])assert.ok(store.includes(token),token);
+  for(const path of [
+    "/api/v1/platform/tenant-number-assignments/:id/regulatory-profile",
+    "/api/v1/platform/tenant-number-assignments/:id/regulatory-evidence",
+    "/api/v1/platform/tenant-number-assignments/:id/abuse-cases"
+  ])assert.ok(server.includes(path),path);
+  assert.match(server,/requireRole\(actor,\["admin"\]\);requireCsrf/);
+  assert.ok(store.includes("REGULATORY_EVIDENCE_REFERENCE_REQUIRED"));
+  assert.ok(store.includes("INSERT INTO audit_log"));
+  assert.ok(store.includes("INSERT INTO outbox_events"));
 });
 
 test("production verification protects regulatory trust center",()=>{
