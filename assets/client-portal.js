@@ -126,7 +126,7 @@ function renderSettlements(data){
   el.innerHTML=rows.length?rows.slice(0,6).map(function(x){var note=x.paid_at?"Payé le "+dateOnly(x.paid_at):x.payment_due_date?"Échéance "+dateOnly(x.payment_due_date):"Période clôturée";return '<div class="cp-row"><div><strong>'+esc(money(x.net_payout_ht,x.currency))+'</strong><span>'+esc(dateOnly(x.period_start)+" → "+dateOnly(x.period_end))+' · '+esc(note)+'</span></div>'+chip(x.status)+'</div>';}).join(""):'<p class="cp-empty">Aucun reversement disponible.</p>';
 }
 function renderSubscriptions(data){
-  var rows=data.subscriptions||[],el=$("subscription-list"),provider=data.billing_provider||{},offer=data.billing_offer||null;
+  var rows=data.subscriptions||[],el=$("subscription-list"),provider=data.billing_provider||{},offer=data.billing_offer||null,billingSummary=data.billing_summary||{},currencyInfo=billingSummary.billing_currency||{};
   el.innerHTML=rows.length?rows.slice(0,3).map(function(x){var price=x.amount_minor!=null?money(n(x.amount_minor)/100,x.price_currency||x.billing_currency)+" / "+(x.billing_interval==="year"?"an":"mois"):"Tarif contractuel";return '<div class="cp-row"><div><strong>'+esc(x.plan_name||"Abonnement Audiotel")+'</strong><span>'+esc(price+" · période jusqu’au "+dateOnly(x.current_period_end))+'</span></div>'+chip(x.status)+'</div>';}).join(""):'<p class="cp-empty">Aucun abonnement actif pour le moment.</p>';
   var stateEl=$("client-billing-provider-state"),chipEl=$("client-billing-provider-chip"),start=$("client-billing-start"),manage=$("client-billing-manage"),offerDetail=$("client-billing-offer-detail"),offerChip=$("client-billing-offer-chip");
   var connected=provider.connection_state&&provider.connection_state!=="not_connected";
@@ -136,8 +136,9 @@ function renderSubscriptions(data){
     if(offerChip){offerChip.textContent=money(n(offer.amount_minor)/100,offer.currency);offerChip.className="cp-chip ok";}
     if(start)start.textContent=tr("Activer mon abonnement")+" — "+offerPrice;
   }else{
-    if(offerDetail)offerDetail.textContent=tr("Aucun tarif disponible pour votre pays et votre devise.");
-    if(offerChip){offerChip.textContent=tr("INDISPONIBLE");offerChip.className="cp-chip warn";}
+    var resolvedCurrency=currencyInfo.currency||((data.tenant||{}).default_currency)||"EUR";
+    if(offerDetail)offerDetail.textContent=tr("Devise automatique")+" : "+resolvedCurrency+" · "+tr("tarif local à configurer");
+    if(offerChip){offerChip.textContent=resolvedCurrency;offerChip.className="cp-chip warn";}
   }
   if(stateEl)stateEl.textContent=connected?tr("Prestataire de paiement configuré."):tr("Architecture de paiement prête, prestataire non connecté.");
   if(chipEl){chipEl.textContent=connected?tr("PRÊT"):tr("NON CONNECTÉ");chipEl.className="cp-chip "+(connected?"ok":"neutral");}
