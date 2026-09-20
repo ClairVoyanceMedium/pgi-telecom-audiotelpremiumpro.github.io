@@ -2072,6 +2072,22 @@ export class PostgresStore{
     });
   }
 
+  async customerPortalComparison(tenantId,from,to){
+    const id=Number(tenantId);
+    if(!Number.isFinite(Date.parse(from))||!Number.isFinite(Date.parse(to))||Date.parse(to)<Date.parse(from))throw problem(400,"INVALID_RANGE");
+    return this.withTenantReadContext(id,async tx=>{
+      const financial=await tx.unsafe(
+        "SELECT currency,COALESCE(sum(calls_total),0)::bigint AS calls_total,COALESCE(sum(calls_connected),0)::bigint AS calls_connected,"+
+        " COALESCE(sum(calls_abandoned),0)::bigint AS calls_abandoned,COALESCE(sum(calls_failed),0)::bigint AS calls_failed,"+
+        " COALESCE(sum(conversation_seconds),0)::float8 AS conversation_seconds,COALESCE(sum(billable_seconds),0)::float8 AS billable_seconds,"+
+        " COALESCE(sum(generated_revenue_ttc),0)::float8 AS generated_revenue_ttc,max(updated_at) AS updated_at"+
+        " FROM tenant_scoped_metric_rollups_daily WHERE bucket_date BETWEEN $1::timestamptz::date AND $2::timestamptz::date"+
+        " GROUP BY currency ORDER BY currency",[from,to]
+      );
+      return {financial_by_currency:financial,range:{from,to}};
+    });
+  }
+
   async customerPortalCalls(tenantId,params={}){
     const id=Number(tenantId);
     const from=String(params.from||"");
@@ -2080,17 +2096,44 @@ export class PostgresStore{
     const limit=clampInt(params.limit,50,1,100);
     const cursor=params.cursor?decodeCursor(params.cursor):null;
     if(params.cursor&&!cursor)throw problem(400,"INVALID_CURSOR");
+
+    const allowedStatuses=new Set(["connected","abandoned","failed","busy","no_answer"]);
+    const status=params.status?String(params.status).trim().toLowerCase():null;
+    if(status&&!allowedStatuses.has(status))throw problem(400,"INVALID_CALL_STATUS");
+
+    const number=params.number?String(params.number).trim():null;
+    if(number&&(number.length>40||!/^[0-9+ ().-]+$/.test(number)))throw problem(400,"INVALID_CALL_NUMBER_FILTER");
+
+    function optionalNumber(value,code,max){
+      if(value==null||value==="")return null;
+      const parsed=Number(value);
+      if(!Number.isFinite(parsed)||parsed<0||parsed>max)throw problem(400,code);
+      return parsed;
+    }
+    const minDuration=optionalNumber(params.min_duration,"INVALID_MIN_DURATION",86400);
+    const maxDuration=optionalNumber(params.max_duration,"INVALID_MAX_DURATION",86400);
+    const minAmount=optionalNumber(params.min_amount,"INVALID_MIN_AMOUNT",100000);
+    const maxAmount=optionalNumber(params.max_amount,"INVALID_MAX_AMOUNT",100000);
+    if(minDuration!=null&&maxDuration!=null&&maxDuration<minDuration)throw problem(400,"INVALID_DURATION_RANGE");
+    if(minAmount!=null&&maxAmount!=null&&maxAmount<minAmount)throw problem(400,"INVALID_AMOUNT_RANGE");
+
     return this.withTenantReadContext(id,async tx=>{
       const rows=await tx.unsafe(
         "SELECT call_id,market,currency,display_number,e164,started_at,ended_at,call_status,conversation_seconds,billable_seconds,retail_service_amount_ttc::float8"+
         " FROM tenant_scoped_portal_calls WHERE started_at>=$1::timestamptz AND started_at<=$2::timestamptz"+
         " AND ($3::timestamptz IS NULL OR (started_at,call_id)<($3::timestamptz,$4::bigint))"+
-        " ORDER BY started_at DESC,call_id DESC LIMIT $5",
-        [from,to,cursor?.started_at||null,cursor?.id||null,limit+1]
+        " AND ($5::text IS NULL OR call_status=$5)"+
+        " AND ($6::text IS NULL OR display_number ILIKE '%'||$6||'%' OR e164 ILIKE '%'||$6||'%')"+
+        " AND ($7::float8 IS NULL OR COALESCE(billable_seconds,conversation_seconds,0)>=$7)"+
+        " AND ($8::float8 IS NULL OR COALESCE(billable_seconds,conversation_seconds,0)<=$8)"+
+        " AND ($9::numeric IS NULL OR COALESCE(retail_service_amount_ttc,0)>=$9)"+
+        " AND ($10::numeric IS NULL OR COALESCE(retail_service_amount_ttc,0)<=$10)"+
+        " ORDER BY started_at DESC,call_id DESC LIMIT $11",
+        [from,to,cursor?.started_at||null,cursor?.id||null,status,number,minDuration,maxDuration,minAmount,maxAmount,limit+1]
       );
       const more=rows.length>limit;const data=more?rows.slice(0,limit):rows;
       const last=data.at(-1);
-      return {data,next_cursor:more&&last?encodeCursor({started_at:last.started_at,id:Number(last.call_id)}):null};
+      return {data,next_cursor:more&&last?encodeCursor({started_at:last.started_at,id:Number(last.call_id)}):null,filters:{status,number,min_duration:minDuration,max_duration:maxDuration,min_amount:minAmount,max_amount:maxAmount}};
     });
   }
 
