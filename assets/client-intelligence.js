@@ -80,6 +80,9 @@ function insight(tone,title,message){
 function renderInsights(){
   var el=$("client-insights");if(!el||!portalData)return;
   var rows=(portalData.series||[]).filter(function(x){return n(x.calls_total)>0;});
+  var serverDate=new Date(portalData.server_time||Date.now()).toISOString().slice(0,10);
+  var completed=rows.filter(function(x){return String(x.bucket_date||"").slice(0,10)<serverDate;});
+  if(completed.length>=5)rows=completed;
   var insights=[],currency=portalData.tenant&&portalData.tenant.default_currency||"EUR";
   if(rows.length>=5){
     var volumes=rows.map(function(x){return n(x.calls_total);}),base=median(volumes),mad=median(volumes.map(function(v){return Math.abs(v-base);}));
