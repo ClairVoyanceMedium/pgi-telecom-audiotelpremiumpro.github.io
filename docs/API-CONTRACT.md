@@ -268,6 +268,10 @@ Ferme uniquement la session client, sans toucher à une éventuelle session admi
 ### GET /dashboard/voice-intelligence?from=...&to=...&market=...
 Diagnostic voix agrégé et borné pour le cockpit administrateur : taux de connexion, PDD, MOS, perte de paquets, jitter, latence, RTT, réponses SIP, origine des raccrochages, santé par opérateur et historique d'incidents. Les périodes complètes utilisent des agrégats pré-calculés et seules les bordures de période relisent les appels bruts.
 
+Le contexte de facturation calculé côté serveur comprend l’offre tarifaire active applicable au pays et à la devise du tenant, les données de préremplissage non sensibles et les chemins de retour. Il sert de contrat stable au futur adaptateur de paiement sans exposer ni stocker de données de carte.
+
+La future intégration publique du prestataire ne devra jamais appeler directement l’ingress normalisé interne. L’adaptateur devra d’abord valider la signature native du prestataire, normaliser l’événement, puis l’envoyer au backend PGI avec son authentification interne. Les doublons identiques sont acceptés de manière idempotente ; une réutilisation du même identifiant avec un contenu différent est rejetée.
+
 ### GET /customer/billing/status
 Retourne l’état de préparation du prestataire de paiement pour le tenant authentifié. Tant que le prestataire n’est pas connecté, `connection_state=not_connected` et les actions de paiement restent indisponibles.
 
