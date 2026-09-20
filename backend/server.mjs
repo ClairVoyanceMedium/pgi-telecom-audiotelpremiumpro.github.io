@@ -100,21 +100,26 @@ export function createBackend(options={}){
         requireSameOriginBrowser(req);
         const authKey=enforceAuthLoginRate(req,config,authBuckets,metrics);
         const body=await readJson(req,config.bodyLimitBytes);
-        const usernameOk=constantTimeTokenEqual(String(body.username||""),config.adminUsername);
-        const passwordOk=verifyPassword(String(body.password||""),config.adminPasswordHash);
-        const ok=usernameOk&&passwordOk;
-        if(!ok){
+        const username=String(body.username||"").trim(),password=String(body.password||"");
+        const staff=typeof store.staffLoginIdentity==="function"?await store.staffLoginIdentity(username):null;
+        const staffLocked=Boolean(staff?.locked_until&&Date.now()<Date.parse(staff.locked_until));
+        const staffOk=Boolean(staff&&!staffLocked&&staff.enabled!==false&&verifyPassword(password,staff.password_hash));
+        const legacyOk=constantTimeTokenEqual(username,config.adminUsername)&&verifyPassword(password,config.adminPasswordHash);
+        let user=null;
+        if(staffOk)user=staff;
+        else if(legacyOk&&typeof store.ensureLegacyStaffIdentity==="function")user=await store.ensureLegacyStaffIdentity(config.adminUsername);
+        else if(legacyOk)user={id:"admin",role:"admin",display_name:"Administrator"};
+        if(!user){
+          if(staff?.id&&typeof store.recordStaffAuthFailure==="function")await store.recordStaffAuthFailure(staff.id,config.authMaxFailures,config.authFailureWindowSeconds);
           metrics.authFailures++;
           recordAuthFailure(authKey,config,authBuckets);
           const e=new Error("Invalid credentials");e.status=401;e.code="INVALID_CREDENTIALS";throw e;
         }
         authBuckets.delete(authKey);
-        const issued=issueSession({
-          secret:config.sessionSecret,
-          user:{id:"admin",role:"admin",name:"Administrator"},
-          ttlSeconds:config.sessionTtlSeconds
-        });
-        return done(res,metrics,started,"auth.login",200,{user:{id:"admin",role:"admin",name:"Administrator"}},{
+        if(staffOk&&typeof store.recordStaffAuthSuccess==="function")await store.recordStaffAuthSuccess(staff.id);
+        const sessionUser={id:String(user.id),role:user.role||"admin",name:user.display_name||"Administrator",session_version:Number(user.session_version||1)};
+        const issued=issueSession({secret:config.sessionSecret,user:sessionUser,ttlSeconds:config.sessionTtlSeconds});
+        return done(res,metrics,started,"auth.login",200,{user:{id:sessionUser.id,role:sessionUser.role,name:sessionUser.name}},{
           "Set-Cookie":[sessionCookie(issued.token,config.sessionTtlSeconds),csrfCookie(issued.csrf,config.sessionTtlSeconds)]
         });
       }
@@ -595,6 +600,20 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/platform/control-tower"){
         requireRole(actor,["admin","finance","readonly"]);
         return done(res,metrics,started,"platform.control_tower",200,await store.controlTowerOverview());
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/platform/staff-users"){
+        requireRole(actor,["admin"]);
+        return done(res,metrics,started,"platform.staff_users",200,{data:await store.listStaffUsers()});
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/platform/staff-users"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes),password=String(body.password||"");
+        if(password.length<12||password.length>256){const e=new Error("Invalid staff password");e.status=400;e.code="INVALID_STAFF_PASSWORD";throw e;}
+        const payload={login_name:body.login_name,email:body.email,display_name:body.display_name,role:body.role||"readonly"};
+        const result=await store.idempotent(req.headers["idempotency-key"],"staff_user.create",{...payload,password_sha256:createHash("sha256").update(password).digest("hex")},()=>store.createStaffUser(payload,hashPassword(password),actor));
+        return done(res,metrics,started,"platform.staff_user_create",201,{...result.value,replayed:result.replayed});
       }
 
       if(method==="GET"&&pathname==="/api/v1/platform/change-requests"){
