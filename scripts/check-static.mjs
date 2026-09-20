@@ -12,6 +12,7 @@ const required = [
   "assets/client-google.js",
   "assets/client-portal-api.js",
   "assets/client-portal.js",
+  "assets/client-search.js",
   "assets/config.js",
   "assets/core.js",
   "assets/api-client.js",
@@ -49,7 +50,7 @@ const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const clientPortal = fs.readFileSync(path.join(root, "client.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "assets/app.js"), "utf8");
 const frontRuntime = [
-  "index.html","client.html","assets/config.js","assets/core.js","assets/api-client.js","assets/client-portal-api.js","assets/client-portal.js",
+  "index.html","client.html","assets/config.js","assets/core.js","assets/api-client.js","assets/client-portal-api.js","assets/client-portal.js","assets/client-search.js",
   "assets/data-client.js","assets/demo-data.js","assets/command-palette-loader.js","assets/command-palette.js",
   "assets/workspace.js","assets/cockpit-pro.js","assets/performance-radar.js","assets/subscription-billing-ui.js","assets/customer-admin.js","assets/customer-admin.css","assets/tenant-control-detail.js","assets/platform-admin-tools.js","assets/call-tools.js","assets/app.js","service-worker.js"
 ].map(file=>fs.readFileSync(path.join(root,file),"utf8")).join("\n");
