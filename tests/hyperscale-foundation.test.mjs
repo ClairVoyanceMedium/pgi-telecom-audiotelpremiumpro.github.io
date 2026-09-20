@@ -234,6 +234,7 @@ test("self-service onboarding creates a pending tenant while SVA stays fail-clos
   assert.ok(store.includes("'customer.self_register'"));
   assert.ok(store.includes("registration_number"));
   assert.ok(store.includes("customer_role:\"owner\""));
+  assert.ok(store.includes("cp.email_normalized=$1"));
   assert.ok(server.includes("/api/v1/customer/auth/register"));
   assert.ok(server.includes("email_verification_required"));
   assert.ok(subscriptionBillingMigration.includes("t.status='active' AND EXISTS"));
