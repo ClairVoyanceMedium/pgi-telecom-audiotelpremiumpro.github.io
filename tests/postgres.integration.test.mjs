@@ -170,7 +170,9 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
         started_at:"2026-09-18T12:00:00Z",
         ivr_started_at:"2026-09-18T12:00:02Z",
         queued_at:"2026-09-18T12:00:05Z",
+        ringing_at:"2026-09-18T12:00:03Z",
         bridged_at:"2026-09-18T12:00:10Z",
+        post_dial_delay_ms:3000,
         ended_at:"2026-09-18T12:10:10Z",
         wait_seconds:10,
         conversation_seconds:600,
@@ -184,7 +186,8 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
         sva_number:"33890000000",
         expert_id:internalExpertId,
         sip_final_code:200,
-        quality:{mos:4.2,packet_loss_percent:0.1,jitter_ms:4,latency_ms:30,dtmf_errors:0}
+        hangup_party:"caller",
+        quality:{mos:4.2,packet_loss_percent:0.1,jitter_ms:4,latency_ms:30,rtt_ms:60,packets_in:1000,packets_out:980,packets_lost:1,bytes_in:160000,bytes_out:156800,dtmf_errors:0}
       }
     };
     const first=await store.ingestCdr(envelope);
@@ -216,6 +219,18 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(analytics.carriers.length,1);
     assert.ok(Object.hasOwn(analytics.carriers[0],"margin"));
 
+    const voice=await store.voiceIntelligence("2026-09-18T00:00:00Z","2026-09-19T00:00:00Z","FR");
+    assert.equal(voice.summary.calls_total,1);
+    assert.equal(voice.summary.avg_pdd_ms,3000);
+    assert.equal(voice.summary.mos,4.2);
+    assert.equal(voice.summary.rtt_ms,60);
+    assert.equal(voice.summary.caller_hangups,1);
+    assert.ok(voice.sip_codes.some(x=>x.sip_final_code===200&&x.calls_total===1));
+    assert.ok(voice.carriers.some(x=>x.carrier_role==="host"&&x.carrier==="Host A"));
+
+    const tenantDaily=await store.sql.unsafe("SELECT calls_total,quality_samples FROM tenant_voice_daily_sharded WHERE bucket_date='2026-09-18'::date");
+    assert.ok(tenantDaily.some(x=>Number(x.calls_total)===1&&Number(x.quality_samples)===1));
+
     const calls=await store.listCalls({limit:10});
     assert.equal(calls.data.length,1);
     assert.equal(calls.data[0].origin_carrier,"Orange");
@@ -225,6 +240,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(calls.data[0].expected_payout_ht,5);
     assert.equal(calls.data[0].retail_service_amount_ttc,8);
     assert.equal(calls.data[0].expert_cost_ht,1.8);
+    assert.equal(calls.data[0].post_dial_delay_ms,3000);
+    assert.equal(calls.data[0].hangup_party,"caller");
+    assert.equal(calls.data[0].quality.rtt_ms,60);
+    assert.equal(Number(calls.data[0].quality.packets_lost),1);
 
     const rawPayload=await store.sql.unsafe(
       "SELECT payload ? 'caller_masked' AS has_caller_masked,"+
@@ -288,10 +307,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const metrics=await store.metrics();
     assert.equal(metrics.calls_total,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
-    assert.equal(migrations.length,25);
+    assert.equal(migrations.length,26);
     assert.equal(new Set(migrations.map(x=>x.version)).size,migrations.length);
     assert.equal(migrations[0].version,"001_baseline");
-    assert.equal(migrations.at(-1).version,"025_customer_portal_call_filter_indexes");
+    assert.equal(migrations.at(-1).version,"026_voice_intelligence");
     for(const migration of migrations)assert.match(migration.checksum,/^[a-f0-9]{64}$/);
   }finally{
     await store.close();
