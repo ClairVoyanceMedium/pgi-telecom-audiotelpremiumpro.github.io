@@ -24,6 +24,7 @@ const required = [
   "assets/data-client.js",
   "assets/demo-data.js",
   "assets/cockpit-pro.js",
+  "assets/cockpit-pro.css",
   "assets/performance-radar.js",
   "assets/voice-intelligence.js",
   "assets/subscription-billing-ui.js",
