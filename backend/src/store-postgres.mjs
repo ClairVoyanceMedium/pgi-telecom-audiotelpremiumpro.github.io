@@ -2753,8 +2753,11 @@ export class PostgresStore{
     return result;
   }
 
-  async customerPortalOverview(tenantId,from,to){
+  async customerPortalOverview(tenantId,from,to,metricRanges=null){
     const id=Number(tenantId);
+    const mr=metricRanges||Object.fromEntries(["calls","minutes","revenue","payout","quality"].map(k=>[k,{from,to,baseline:null}]));
+    const callsFrom=mr.calls.from,minutesFrom=mr.minutes.from,revenueFrom=mr.revenue.from,payoutFrom=mr.payout.from,qualityFrom=mr.quality.from;
+    const earliestFrom=[callsFrom,minutesFrom,revenueFrom].sort((a,b)=>Date.parse(a)-Date.parse(b))[0];
     return this.withTenantReadContext(id,async tx=>{
       const tenantRows=await tx.unsafe(
         "SELECT t.id,t.public_id,t.display_name,t.legal_name,t.status,t.country_code,t.preferred_locale,t.default_currency,t.timezone,"+
@@ -2762,23 +2765,27 @@ export class PostgresStore{
       );
       const tenant=tenantRows[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
       const financial=await tx.unsafe(
-        "SELECT currency,count(*)::bigint AS calls_total,"+
-        " count(*) FILTER(WHERE call_status='connected')::bigint AS calls_connected,"+
-        " count(*) FILTER(WHERE call_status='abandoned')::bigint AS calls_abandoned,"+
-        " count(*) FILTER(WHERE call_status NOT IN ('connected','abandoned'))::bigint AS calls_failed,"+
-        " COALESCE(sum(conversation_seconds),0)::float8 AS conversation_seconds,COALESCE(sum(billable_seconds),0)::float8 AS billable_seconds,"+
-        " COALESCE(sum(retail_service_amount_ttc),0)::float8 AS generated_revenue_ttc,max(ended_at) AS updated_at"+
-        " FROM tenant_scoped_call_facts WHERE started_at >= $1::timestamptz AND started_at <= $2::timestamptz"+
-        " GROUP BY currency ORDER BY currency",[from,to]
+        "SELECT currency,"+
+        " count(*) FILTER(WHERE started_at >= $2::timestamptz)::bigint AS calls_total,"+
+        " count(*) FILTER(WHERE started_at >= $2::timestamptz AND call_status='connected')::bigint AS calls_connected,"+
+        " count(*) FILTER(WHERE started_at >= $2::timestamptz AND call_status='abandoned')::bigint AS calls_abandoned,"+
+        " count(*) FILTER(WHERE started_at >= $2::timestamptz AND call_status NOT IN ('connected','abandoned'))::bigint AS calls_failed,"+
+        " COALESCE(sum(conversation_seconds) FILTER(WHERE started_at >= $3::timestamptz),0)::float8 AS conversation_seconds,"+
+        " COALESCE(sum(billable_seconds) FILTER(WHERE started_at >= $3::timestamptz),0)::float8 AS billable_seconds,"+
+        " COALESCE(sum(retail_service_amount_ttc) FILTER(WHERE started_at >= $4::timestamptz),0)::float8 AS generated_revenue_ttc,max(ended_at) AS updated_at"+
+        " FROM tenant_scoped_call_facts WHERE started_at >= $1::timestamptz AND started_at <= $5::timestamptz"+
+        " GROUP BY currency ORDER BY currency",[earliestFrom,callsFrom,minutesFrom,revenueFrom,to]
       );
       const series=await tx.unsafe(
-        "SELECT started_at::date AS bucket_date,count(*)::bigint AS calls_total,"+
-        " count(*) FILTER(WHERE call_status='connected')::bigint AS calls_connected,"+
-        " count(*) FILTER(WHERE call_status='abandoned')::bigint AS calls_abandoned,"+
-        " count(*) FILTER(WHERE call_status NOT IN ('connected','abandoned'))::bigint AS calls_failed,"+
-        " COALESCE(sum(billable_seconds),0)::float8 AS billable_seconds,COALESCE(sum(retail_service_amount_ttc),0)::float8 AS generated_revenue_ttc,max(ended_at) AS updated_at"+
-        " FROM tenant_scoped_call_facts WHERE started_at >= $1::timestamptz AND started_at <= $2::timestamptz"+
-        " GROUP BY started_at::date ORDER BY bucket_date",[from,to]
+        "SELECT started_at::date AS bucket_date,"+
+        " count(*) FILTER(WHERE started_at >= $2::timestamptz)::bigint AS calls_total,"+
+        " count(*) FILTER(WHERE started_at >= $2::timestamptz AND call_status='connected')::bigint AS calls_connected,"+
+        " count(*) FILTER(WHERE started_at >= $2::timestamptz AND call_status='abandoned')::bigint AS calls_abandoned,"+
+        " count(*) FILTER(WHERE started_at >= $2::timestamptz AND call_status NOT IN ('connected','abandoned'))::bigint AS calls_failed,"+
+        " COALESCE(sum(billable_seconds) FILTER(WHERE started_at >= $3::timestamptz),0)::float8 AS billable_seconds,"+
+        " COALESCE(sum(retail_service_amount_ttc) FILTER(WHERE started_at >= $4::timestamptz),0)::float8 AS generated_revenue_ttc,max(ended_at) AS updated_at"+
+        " FROM tenant_scoped_call_facts WHERE started_at >= $1::timestamptz AND started_at <= $5::timestamptz"+
+        " GROUP BY started_at::date ORDER BY bucket_date",[earliestFrom,callsFrom,minutesFrom,revenueFrom,to]
       );
       const voiceQuality=await tx.unsafe(
         "SELECT count(*)::bigint AS calls_total,count(*) FILTER(WHERE call_status='connected')::bigint AS calls_connected,"+
@@ -2791,7 +2798,7 @@ export class PostgresStore{
         " count(*) FILTER(WHERE hangup_party='caller')::bigint AS caller_hangups,count(*) FILTER(WHERE hangup_party='callee')::bigint AS callee_hangups,"+
         " count(*) FILTER(WHERE hangup_party='network')::bigint AS network_hangups"+
         " FROM tenant_scoped_portal_call_details WHERE started_at >= $1::timestamptz AND started_at <= $2::timestamptz",
-        [from,to]
+        [qualityFrom,to]
       );
       const metricPayout=await tx.unsafe(
         "SELECT d.currency,COALESCE(sum(dc.net_payout_ht),0)::float8 AS net_payout_ht"+
@@ -2800,7 +2807,7 @@ export class PostgresStore{
         " JOIN calls c ON c.id=dc.call_id AND c.tenant_id=$3"+
         " WHERE c.started_at >= $1::timestamptz AND c.started_at <= $2::timestamptz"+
         " AND d.status IN ('reconciled','payable','paid') GROUP BY d.currency ORDER BY d.currency",
-        [from,to,id]
+        [payoutFrom,to,id]
       );
       const numbers=await tx.unsafe(
         "SELECT n.id,n.display_number,n.e164,n.tariff_code,n.currency,n.number_type,n.service_rate_ttc_per_min::float8,n.status,n.activated_at,"+
@@ -2843,26 +2850,32 @@ export class PostgresStore{
         " rtp_packet_loss_percent::float8 AS packet_loss_percent,jitter_ms::float8,latency_ms::float8,rtt_ms::float8,mos::float8,"+
         " packets_in,packets_out,packets_lost,bytes_in,bytes_out,dtmf_errors"+
         " FROM tenant_scoped_portal_call_details WHERE started_at>=$1::timestamptz AND started_at<=$2::timestamptz"+
-        " ORDER BY started_at DESC,call_id DESC LIMIT 20",[from,to]
+        " ORDER BY started_at DESC,call_id DESC LIMIT 20",[callsFrom,to]
       );
-      return {tenant,financial_by_currency:financial,metric_net_payout_by_currency:metricPayout,series,numbers,settlements,subscriptions,portability_requests:portabilityRequests,destinations,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,recent_calls:recentCalls,voice_quality:voiceQuality[0]||null,range:{from,to}};
+      return {tenant,financial_by_currency:financial,metric_net_payout_by_currency:metricPayout,series,numbers,settlements,subscriptions,portability_requests:portabilityRequests,destinations,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,recent_calls:recentCalls,voice_quality:voiceQuality[0]||null,range:{from,to},metric_ranges:mr};
     });
   }
 
-  async customerPortalComparison(tenantId,from,to){
+  async customerPortalComparison(tenantId,from,to,metricRanges=null){
     const id=Number(tenantId);
     if(!Number.isFinite(Date.parse(from))||!Number.isFinite(Date.parse(to)))throw problem(400,"INVALID_RANGE");
-    if(Date.parse(to)<Date.parse(from))return {financial_by_currency:[],range:{from,to}};
+    const mr=metricRanges||Object.fromEntries(["calls","minutes","revenue","payout","quality"].map(k=>[k,{from,to,baseline:null}]));
+    const callsFrom=mr.calls.from,minutesFrom=mr.minutes.from,revenueFrom=mr.revenue.from;
+    const earliestFrom=[callsFrom,minutesFrom,revenueFrom].sort((a,b)=>Date.parse(a)-Date.parse(b))[0];
     return this.withTenantReadContext(id,async tx=>{
       const financial=await tx.unsafe(
-        "SELECT currency,count(*)::bigint AS calls_total,count(*) FILTER(WHERE call_status='connected')::bigint AS calls_connected,"+
-        " count(*) FILTER(WHERE call_status='abandoned')::bigint AS calls_abandoned,count(*) FILTER(WHERE call_status NOT IN ('connected','abandoned'))::bigint AS calls_failed,"+
-        " COALESCE(sum(conversation_seconds),0)::float8 AS conversation_seconds,COALESCE(sum(billable_seconds),0)::float8 AS billable_seconds,"+
-        " COALESCE(sum(retail_service_amount_ttc),0)::float8 AS generated_revenue_ttc,max(ended_at) AS updated_at"+
-        " FROM tenant_scoped_call_facts WHERE started_at >= $1::timestamptz AND started_at <= $2::timestamptz GROUP BY currency ORDER BY currency",
-        [from,to]
+        "SELECT currency,"+
+        " count(*) FILTER(WHERE started_at >= $2::timestamptz)::bigint AS calls_total,"+
+        " count(*) FILTER(WHERE started_at >= $2::timestamptz AND call_status='connected')::bigint AS calls_connected,"+
+        " count(*) FILTER(WHERE started_at >= $2::timestamptz AND call_status='abandoned')::bigint AS calls_abandoned,"+
+        " count(*) FILTER(WHERE started_at >= $2::timestamptz AND call_status NOT IN ('connected','abandoned'))::bigint AS calls_failed,"+
+        " COALESCE(sum(conversation_seconds) FILTER(WHERE started_at >= $3::timestamptz),0)::float8 AS conversation_seconds,"+
+        " COALESCE(sum(billable_seconds) FILTER(WHERE started_at >= $3::timestamptz),0)::float8 AS billable_seconds,"+
+        " COALESCE(sum(retail_service_amount_ttc) FILTER(WHERE started_at >= $4::timestamptz),0)::float8 AS generated_revenue_ttc,max(ended_at) AS updated_at"+
+        " FROM tenant_scoped_call_facts WHERE started_at >= $1::timestamptz AND started_at <= $5::timestamptz GROUP BY currency ORDER BY currency",
+        [earliestFrom,callsFrom,minutesFrom,revenueFrom,to]
       );
-      return {financial_by_currency:financial,range:{from,to}};
+      return {financial_by_currency:financial,range:{from,to},metric_ranges:mr};
     });
   }
 
