@@ -392,6 +392,22 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const onboardAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access((SELECT id FROM tenants WHERE public_id=$1::uuid),NULL,now()) AS allowed",[onboarded.public_id]);
     assert.equal(onboardAccess[0].allowed,false);
 
+    const internalTenant=(await store.sql.unsafe("SELECT id FROM tenants WHERE slug='pgi-internal'"))[0];
+    const portalBeforeReset=await store.customerPortalOverview(Number(internalTenant.id),"2026-09-18T00:00:00Z","2026-09-19T00:00:00Z");
+    assert.equal(Number(portalBeforeReset.financial_by_currency[0].calls_total),1);
+    assert.equal(portalBeforeReset.recent_calls.length,1);
+
+    const globalReset=await store.createBaseline({scope:"global",reason:"integration global reset"},{});
+    const resetRange=await store.effectiveMetricRange("2026-09-18T00:00:00Z","2026-09-19T00:00:00Z");
+    assert.equal(resetRange.baseline,new Date(globalReset.effective_from).toISOString());
+    assert.equal(resetRange.empty,true);
+    const portalAfterReset=await store.customerPortalOverview(Number(internalTenant.id),resetRange.from,resetRange.to);
+    assert.equal(portalAfterReset.financial_by_currency.length,0);
+    assert.equal(portalAfterReset.recent_calls.length,0);
+    assert.equal(portalAfterReset.metric_net_payout_by_currency.length,0);
+    const visibleSystemAfterReset=await store.systemSnapshot();
+    assert.equal(Number(visibleSystemAfterReset.calls_total),0);
+
     const metrics=await store.metrics();
     assert.equal(metrics.calls_total,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
