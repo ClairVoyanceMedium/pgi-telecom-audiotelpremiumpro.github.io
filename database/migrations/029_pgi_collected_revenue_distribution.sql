@@ -157,7 +157,7 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER tenant_number_assignments_payout_terms_gate
+CREATE TRIGGER zz_tenant_number_assignments_payout_terms_gate
 BEFORE INSERT OR UPDATE OF status,tenant_id,sva_number_id ON tenant_number_assignments
 FOR EACH ROW
 WHEN (NEW.status='active')
