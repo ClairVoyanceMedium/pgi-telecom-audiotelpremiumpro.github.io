@@ -21,6 +21,7 @@ const commands=read("assets/command-palette.js");
 const workspace=read("assets/workspace.js");
 const cockpitPro=read("assets/cockpit-pro.js");
 const performanceRadar=read("assets/performance-radar.js");
+const voiceIntelligence=read("assets/voice-intelligence.js");
 const subscriptionBillingUi=read("assets/subscription-billing-ui.js");
 const customerAdmin=read("assets/customer-admin.js");
 const tenantControlDetail=read("assets/tenant-control-detail.js");
@@ -399,4 +400,20 @@ test("client portal intelligence compares periods, detects anomalies and filters
   assert.match(clientPortalApi,/min_duration/);
   assert.match(clientPortalApi,/min_amount/);
   assert.match(buildStatic,/client-intelligence\.js/);
+});
+
+
+test("cockpit and client expose carrier-grade voice intelligence without bloating the PWA shell",()=>{
+  for(const id of ["voice-intelligence-overview","voice-intelligence-system","carrier-health-center"])assert.ok(index.includes('id="'+id+'"'),id);
+  for(const token of ["Qualité, signalisation & incidents","SANTÉ OPÉRATEURS","Bascule à évaluer après confirmation technique","Aucune bascule automatique"])assert.ok(voiceIntelligence.includes(token),token);
+  assert.match(app,/voice\.incident/);
+  assert.match(app,/voice_intelligence/);
+  assert.match(api,/voiceIntelligence:function/);
+  assert.match(dataClient,/rtt_ms/);
+  assert.match(callTools,/Qui a raccroché/);
+  assert.doesNotMatch(sw,/voice-intelligence\.js/);
+  assert.match(buildStatic,/voice-intelligence\.js/);
+  for(const id of ["client-voice-quality","client-call-diagnostic-dialog","client-call-diagnostic-grid"])assert.ok(clientPortal.includes('id="'+id+'"'),id);
+  assert.match(clientIntelligence,/function renderVoiceQuality/);
+  assert.match(clientIntelligence,/function showCallDiagnostic/);
 });
