@@ -253,12 +253,12 @@ export function createBackend(options={}){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
         const requestedRange=rangeParams(url);
-        const range=await store.effectiveMetricRange(requestedRange.from,requestedRange.to);
+        const metricRanges=await store.effectiveMetricRanges(requestedRange.from,requestedRange.to,context.tenant_id);
         const [data,billing]=await Promise.all([
-          store.customerPortalOverview(context.tenant_id,range.from,range.to),
+          store.customerPortalOverview(context.tenant_id,requestedRange.from,requestedRange.to,metricRanges),
           store.customerBillingPreparation(context.tenant_id)
         ]);
-        return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,metrics_reset_at:range.baseline,billing_offer:billing.offer,billing_summary:{subscription:billing.subscription,premium_call_access:billing.premium_call_access,billing_currency:billing.billing_currency,pricing_state:billing.pricing_state,reference_offer:billing.reference_offer,checkout_prefill:billing.checkout_prefill,return_paths:billing.return_paths},billing_provider:billingProviderStatus(config),server_time:new Date().toISOString()});
+        return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,metric_resets:Object.fromEntries(Object.entries(metricRanges).map(([k,v])=>[k,v.baseline])),billing_offer:billing.offer,billing_summary:{subscription:billing.subscription,premium_call_access:billing.premium_call_access,billing_currency:billing.billing_currency,pricing_state:billing.pricing_state,reference_offer:billing.reference_offer,checkout_prefill:billing.checkout_prefill,return_paths:billing.return_paths},billing_provider:billingProviderStatus(config),server_time:new Date().toISOString()});
       }
       if(method==="GET"&&pathname==="/api/v1/customer/billing/status"){
         requireActor(customerActor);
@@ -334,22 +334,31 @@ export function createBackend(options={}){
         return done(res,metrics,started,"customer.routing.simulate",200,await store.simulateTenantRoutingById(context.tenant_id,body));
       }
 
+      if(method==="POST"&&pathname==="/api/v1/customer/metrics/reset"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        if(!["owner","admin"].includes(context.customer_role)){const e=new Error("Customer role cannot reset shared metrics");e.status=403;e.code="CUSTOMER_METRIC_RESET_FORBIDDEN";throw e;}
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={tenant_id:context.tenant_id,metric_keys:body.metric_keys};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer.metrics.reset",payload,()=>store.createCustomerMetricReset(context.tenant_id,body.metric_keys,customerActor.sub));
+        return done(res,metrics,started,"customer.metrics.reset",201,{...result.value,replayed:result.replayed});
+      }
+
       if(method==="GET"&&pathname==="/api/v1/customer/comparison"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
         const requestedRange=rangeParams(url);
-        const range=await store.effectiveMetricRange(requestedRange.from,requestedRange.to);
-        if(range.empty)return done(res,metrics,started,"customer.comparison",200,{financial_by_currency:[],range:{from:range.from,to:range.to},metrics_reset_at:range.baseline});
-        return done(res,metrics,started,"customer.comparison",200,{...await store.customerPortalComparison(context.tenant_id,range.from,range.to),metrics_reset_at:range.baseline});
+        const metricRanges=await store.effectiveMetricRanges(requestedRange.from,requestedRange.to,context.tenant_id);
+        return done(res,metrics,started,"customer.comparison",200,{...await store.customerPortalComparison(context.tenant_id,requestedRange.from,requestedRange.to,metricRanges),metric_resets:Object.fromEntries(Object.entries(metricRanges).map(([k,v])=>[k,v.baseline]))});
       }
       if(method==="GET"&&pathname==="/api/v1/customer/calls"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
         const requestedRange=rangeParams(url);
-        const range=await store.effectiveMetricRange(requestedRange.from,requestedRange.to);
-        if(range.empty)return done(res,metrics,started,"customer.calls",200,{data:[],next_cursor:null,metrics_reset_at:range.baseline});
+        const range=(await store.effectiveMetricRanges(requestedRange.from,requestedRange.to,context.tenant_id)).calls;
+        if(range.empty)return done(res,metrics,started,"customer.calls",200,{data:[],next_cursor:null,metric_reset_at:range.baseline});
         const params={...Object.fromEntries(url.searchParams.entries()),from:range.from,to:range.to};
-        return done(res,metrics,started,"customer.calls",200,{...await store.customerPortalCalls(context.tenant_id,params),metrics_reset_at:range.baseline});
+        return done(res,metrics,started,"customer.calls",200,{...await store.customerPortalCalls(context.tenant_id,params),metric_reset_at:range.baseline});
       }
 
       if(method==="POST"&&pathname==="/api/v1/auth/logout"){
