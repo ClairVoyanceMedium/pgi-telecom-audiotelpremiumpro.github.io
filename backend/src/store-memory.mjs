@@ -722,6 +722,7 @@ export class MemoryStore{
   async setCallDestinationStatus(id,status){const row=this.callDestinations.find(x=>x.id===Number(id));if(!row)throw problem(404,"CALL_DESTINATION_NOT_FOUND");if(!["active","testing","disabled"].includes(status))throw problem(400,"INVALID_CALL_DESTINATION_STATUS");row.status=status;if(status==="disabled")row.active_calls=0;return structuredClone(row);}
 
   async createTenantServiceIncident(publicId,input={}){void publicId;void input;throw problem(404,"TENANT_NOT_FOUND");}
+  async serviceIncidentDetail(id){void id;throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");}
   async updateServiceIncident(id,input={}){void id;void input;throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");}
   async addServiceIncidentNote(id,input={}){void id;void input;throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");}
   async simulateTenantRouting(publicId,input={}){void publicId;return this.simulateTenantRoutingById(1,input);}
