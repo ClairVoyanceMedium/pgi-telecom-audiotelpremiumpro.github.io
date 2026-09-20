@@ -2915,6 +2915,7 @@ export class PostgresStore{
         "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'service_incident.create','tenant_service_incident',$2,$3::jsonb)",
         [id,String(incident.id),JSON.stringify({source:"customer",category,severity,public_id:incident.public_id})]
       );
+      await serviceIncidentOutbox(tx,id,"service.incident.created",incident.id,incident.public_id,{source:"customer",category,severity});
       return incident;
     });
     this.eventBus.publish("service.incident.created",{tenant_id:id,incident_id:String(result.public_id),severity:result.severity,source:"customer"});
@@ -2949,6 +2950,7 @@ export class PostgresStore{
         "UPDATE tenant_service_incidents SET last_customer_update_at=now(),status=CASE WHEN status='waiting_customer' THEN 'investigating' ELSE status END,updated_at=now() WHERE id=$1",
         [incident.id]
       );
+      await serviceIncidentOutbox(tx,id,"service.incident.note",incident.id,publicId,{source:"customer",note_id:Number(rows[0].id)});
       return rows[0];
     });
     this.eventBus.publish("service.incident.customer_note",{tenant_id:id,incident_id:publicId});
@@ -2984,6 +2986,7 @@ export class PostgresStore{
         "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'service_incident.create','tenant_service_incident',$3,$4::jsonb)",
         [tenant.id,actorId,String(incident.id),JSON.stringify({source:"admin",category,severity,public_id:incident.public_id})]
       );
+      await serviceIncidentOutbox(tx,Number(tenant.id),"service.incident.created",incident.id,incident.public_id,{source:"admin",category,severity});
       return incident;
     });
     this.eventBus.publish("service.incident.created",{tenant_public_id:tenantPublicId,incident_id:String(result.public_id),severity:result.severity,source:"admin"});
@@ -3032,6 +3035,7 @@ export class PostgresStore{
         "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'service_incident.update','tenant_service_incident',$3,$4::jsonb)",
         [current.tenant_id,actorId,String(current.id),JSON.stringify({previous_status:current.status,status:nextStatus,previous_severity:current.severity,severity:nextSeverity})]
       );
+      await serviceIncidentOutbox(tx,Number(current.tenant_id),"service.incident.changed",current.id,publicId,{previous_status:current.status,status:nextStatus,previous_severity:current.severity,severity:nextSeverity});
       return rows[0];
     });
     this.eventBus.publish("service.incident.changed",{tenant_id:Number(result.tenant_id),incident_id:publicId,status:result.status,severity:result.severity});
@@ -3061,6 +3065,7 @@ export class PostgresStore{
         "UPDATE tenant_service_incidents SET first_responded_at=COALESCE(first_responded_at,now()),last_pgi_update_at=now(),updated_at=now() WHERE id=$1",
         [incident.id]
       );
+      await serviceIncidentOutbox(tx,Number(incident.tenant_id),"service.incident.note",incident.id,publicId,{source:"staff",note_id:Number(row.id),customer_visible:customerVisible});
       return row;
     });
     this.eventBus.publish("service.incident.staff_note",{incident_id:publicId});
@@ -3146,6 +3151,7 @@ export class PostgresStore{
               " VALUES($1,$2,'created','system','Incident réseau détecté automatiquement',true,$3::jsonb)",
               [incident.id,incident.tenant_id,JSON.stringify({source_telecom_incident_id:source.id,carrier:source.carrier})]
             );
+            await serviceIncidentOutbox(tx,Number(incident.tenant_id),"service.incident.created",incident.id,incident.public_id,{source:"system",source_telecom_incident_id:Number(source.id)});
             changes.push({event:"service.incident.created",tenant_id:Number(incident.tenant_id),incident_id:String(incident.public_id),source:"system"});
           }
           await tx.unsafe(
@@ -3168,6 +3174,7 @@ export class PostgresStore{
           " VALUES($1,$2,'resolved','system','Incident réseau résolu automatiquement',true)",
           [incident.id,incident.tenant_id]
         );
+        await serviceIncidentOutbox(tx,Number(incident.tenant_id),"service.incident.resolved",incident.id,incident.public_id,{source:"system"});
         changes.push({event:"service.incident.resolved",tenant_id:Number(incident.tenant_id),incident_id:String(incident.public_id)});
       }
       await tx.unsafe(
@@ -3199,6 +3206,7 @@ export class PostgresStore{
             "INSERT INTO tenant_service_incident_events(incident_id,tenant_id,event_type,actor_type,message,customer_visible) VALUES($1,$2,'created','system','Routage indisponible détecté automatiquement',true)",
             [incident.id,incident.tenant_id]
           );
+          await serviceIncidentOutbox(tx,Number(incident.tenant_id),"service.incident.created",incident.id,incident.public_id,{source:"routing"});
           changes.push({event:"service.incident.created",tenant_id:Number(incident.tenant_id),incident_id:String(incident.public_id),source:"routing"});
         }
         await tx.unsafe(
@@ -3220,6 +3228,7 @@ export class PostgresStore{
           "INSERT INTO tenant_service_incident_events(incident_id,tenant_id,event_type,actor_type,message,customer_visible) VALUES($1,$2,'resolved','system','Routage de nouveau disponible',true)",
           [incident.id,incident.tenant_id]
         );
+        await serviceIncidentOutbox(tx,Number(incident.tenant_id),"service.incident.resolved",incident.id,incident.public_id,{source:"routing"});
         changes.push({event:"service.incident.resolved",tenant_id:Number(incident.tenant_id),incident_id:String(incident.public_id),source:"routing"});
       }
       await tx.unsafe(
@@ -4130,6 +4139,16 @@ function dateOnlyValue(value,field){
   return valueText;
 }
 
+async function serviceIncidentOutbox(tx,tenantId,eventType,incidentId,publicId,payload={}){
+  const safe={
+    incident_public_id:String(publicId||""),
+    ...payload
+  };
+  await tx.unsafe(
+    "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,$2,'tenant_service_incident',$3,$4::jsonb)",
+    [Number(tenantId),String(eventType),String(incidentId),JSON.stringify(safe)]
+  );
+}
 function serviceIncidentSla(severity){
   const map={
     critical:{response:15,resolution:120},
