@@ -5,6 +5,7 @@ export function computeTenantCallDistribution(upstreamAmountHt,billableSeconds,t
   if(!terms)return {upstream_amount_ht:round6(upstream),platform_fee_ht:0,net_payout_ht:0,unallocated_amount_ht:round6(upstream),payout_terms_id:null};
   const bps=Math.min(10000,Math.max(0,Number(terms.platform_fee_bps)||0));
   const perMinute=Math.max(0,Number(terms.platform_fee_ht_per_min)||0);
+  if(bps===0&&perMinute===0)return {upstream_amount_ht:round6(upstream),platform_fee_ht:0,net_payout_ht:0,unallocated_amount_ht:round6(upstream),payout_terms_id:Number(terms.id)||null};
   const minutes=Math.max(0,Number(billableSeconds)||0)/60;
   const fee=Math.min(upstream,round6(upstream*bps/10000+perMinute*minutes));
   return {
