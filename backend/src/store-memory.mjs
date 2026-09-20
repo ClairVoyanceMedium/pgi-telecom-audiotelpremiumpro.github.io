@@ -5,6 +5,9 @@ import {selectExpert} from "./expert-router.mjs";
 import {normalizeVoiceServiceInput,validateVoiceFlow,simulateVoiceFlow,voiceFlowChecksum} from "./voice-studio-domain.mjs";
 import {evaluateOperationalPolicy} from "./operational-policy.mjs";
 import {simulateDigitalTwin} from "./digital-twin.mjs";
+import {assessShadowBilling} from "./shadow-billing.mjs";
+import {assessOperationalRisk} from "./risk-engine.mjs";
+import {assessOperationalSlo} from "./slo-assurance.mjs";
 
 const require=createRequire(import.meta.url);
 const core=require("../../assets/core.js");
@@ -36,6 +39,8 @@ export class MemoryStore{
       generation:1,updated_at:new Date().toISOString()
     };
     this.switches=[];
+    this.changeRequests=[];
+    this.nextChangeRequestId=1;
     this.nextCallId=1;
     this.nextBaselineId=1;
     this.nextSwitchId=1;
@@ -526,34 +531,74 @@ export class MemoryStore{
 
   async planCarrierSwitch(payload,actor){
     if(!payload.to_carrier_id)throw problem(400,"TO_CARRIER_REQUIRED");
+    const requester=String(actor?.sub||"admin");
     const sw={
       id:this.nextSwitchId++,route_key:payload.route_key||"sva-primary",
       from_carrier:this.route.active_carrier,to_carrier:String(payload.to_carrier_id),
       connection_id:payload.connection_id??null,status:"ready",
-      requested_at:new Date().toISOString(),requested_by:actor?.sub||null,
+      requested_at:new Date().toISOString(),requested_by:requester,
       scheduled_for:payload.scheduled_for||null,
       rollback_window_minutes:clampInt(payload.rollback_window_minutes,1440,5,10080)
     };
     this.switches.push(sw);
-    this.#audit("carrier_switch.plan",String(sw.id),sw);
-    return {...sw};
+    const approvalPayload={route_key:sw.route_key,to_carrier:sw.to_carrier,connection_id:sw.connection_id,rollback_window_minutes:sw.rollback_window_minutes,scheduled_for:sw.scheduled_for};
+    const cr={
+      id:this.nextChangeRequestId++,public_id:randomUUID(),change_type:"carrier_switch_activation",entity_type:"carrier_switch",entity_id:String(sw.id),
+      risk_level:"critical",status:"pending",payload_sha256:createHash("sha256").update(JSON.stringify(approvalPayload)).digest("hex"),
+      request_reason:String(payload.notes||"Bascule opérateur"),requested_by:requester,requested_by_name:requester,requested_at:new Date().toISOString(),
+      expires_at:new Date(Date.now()+86400000).toISOString(),approved_by:null,approved_by_name:null,approved_at:null,decision_reason:null
+    };
+    this.changeRequests.push(cr);
+    this.#audit("carrier_switch.plan",String(sw.id),{...sw,change_request_id:cr.id,dual_control_required:true});
+    return {...sw,change_request_id:cr.id,change_request_public_id:cr.public_id,change_request_status:cr.status,change_request_expires_at:cr.expires_at};
   }
 
-  async activateCarrierSwitch(id){
+  async listPlatformChangeRequests(params={}){
+    const status=String(params.status||"active"),limit=clampInt(params.limit,30,1,100),now=Date.now();
+    let rows=this.changeRequests.slice();
+    if(status==="pending")rows=rows.filter(x=>x.status==="pending"&&Date.parse(x.expires_at)>now);
+    else if(status==="approved")rows=rows.filter(x=>x.status==="approved"&&Date.parse(x.expires_at)>now);
+    else if(status!=="history")rows=rows.filter(x=>["pending","approved"].includes(x.status)&&Date.parse(x.expires_at)>now);
+    return {data:rows.slice(-limit).reverse().map(x=>structuredClone(x)),dual_control:true};
+  }
+
+  async approvePlatformChangeRequest(id,actor={},input={}){
+    const row=this.changeRequests.find(x=>String(x.id)===String(id));
+    if(!row)throw problem(404,"CHANGE_REQUEST_NOT_FOUND");
+    if(row.status!=="pending")throw problem(409,"CHANGE_REQUEST_NOT_PENDING");
+    if(Date.now()>=Date.parse(row.expires_at))throw problem(409,"CHANGE_REQUEST_EXPIRED");
+    const approver=String(actor?.sub||"admin-2");
+    if(approver===String(row.requested_by))throw problem(409,"FOUR_EYES_SECOND_APPROVER_REQUIRED");
+    row.status="approved";row.approved_by=approver;row.approved_by_name=approver;row.approved_at=new Date().toISOString();row.decision_reason=String(input.reason||"").slice(0,500)||null;
+    this.#audit("platform_change.approve",String(row.id),{change_type:row.change_type,target_id:row.entity_id});
+    return structuredClone(row);
+  }
+
+  async rejectPlatformChangeRequest(id,actor={},input={}){
+    const row=this.changeRequests.find(x=>String(x.id)===String(id));
+    if(!row)throw problem(404,"CHANGE_REQUEST_NOT_FOUND");
+    if(row.status!=="pending")throw problem(409,"CHANGE_REQUEST_NOT_PENDING");
+    const rejector=String(actor?.sub||"admin-2"),reason=String(input.reason||"").trim();
+    if(rejector===String(row.requested_by))throw problem(409,"FOUR_EYES_SECOND_APPROVER_REQUIRED");
+    if(!reason)throw problem(400,"CHANGE_REJECTION_REASON_REQUIRED");
+    row.status="rejected";row.rejected_by=rejector;row.rejected_at=new Date().toISOString();row.decision_reason=reason.slice(0,500);
+    this.#audit("platform_change.reject",String(row.id),{change_type:row.change_type,target_id:row.entity_id,reason:row.decision_reason});
+    return structuredClone(row);
+  }
+
+  async activateCarrierSwitch(id,actor={}){
     const sw=this.switches.find(x=>String(x.id)===String(id));
     if(!sw)throw problem(404,"SWITCH_NOT_FOUND");
     if(!["ready","planned"].includes(sw.status))throw problem(409,"SWITCH_NOT_READY");
+    const approval=this.changeRequests.slice().reverse().find(x=>x.change_type==="carrier_switch_activation"&&x.entity_id===String(sw.id)&&x.status==="approved"&&Date.parse(x.expires_at)>Date.now());
+    if(!approval)throw problem(409,"DUAL_CONTROL_APPROVAL_REQUIRED");
     const previous=this.route.active_carrier;
-    this.route.standby_carrier=previous;
-    this.route.active_carrier=sw.to_carrier;
-    this.route.generation++;
-    this.route.updated_at=new Date().toISOString();
-    sw.status="completed";
-    sw.completed_at=new Date().toISOString();
-    sw.rollback_deadline=new Date(Date.now()+sw.rollback_window_minutes*60000).toISOString();
-    this.#audit("carrier_switch.activate",String(sw.id),{from:previous,to:sw.to_carrier});
+    this.route.standby_carrier=previous;this.route.active_carrier=sw.to_carrier;this.route.generation++;this.route.updated_at=new Date().toISOString();
+    sw.status="completed";sw.completed_at=new Date().toISOString();sw.rollback_deadline=new Date(Date.now()+sw.rollback_window_minutes*60000).toISOString();
+    approval.status="executed";approval.executed_at=new Date().toISOString();
+    this.#audit("carrier_switch.activate",String(sw.id),{from:previous,to:sw.to_carrier,change_request_id:approval.id,approved_by:approval.approved_by,executed_by:actor?.sub||null});
     this.eventBus.publish("carrier.switched",{from:previous,to:sw.to_carrier,generation:this.route.generation});
-    return {switch:{...sw},route:{...this.route}};
+    return {switch:{...sw},route:{...this.route},change_request_id:approval.id};
   }
 
   async rollbackCarrierSwitch(id){
@@ -561,13 +606,8 @@ export class MemoryStore{
     if(!sw)throw problem(404,"SWITCH_NOT_FOUND");
     if(sw.status!=="completed")throw problem(409,"SWITCH_NOT_COMPLETED");
     if(sw.rollback_deadline&&Date.now()>Date.parse(sw.rollback_deadline))throw problem(409,"ROLLBACK_WINDOW_EXPIRED");
-    const current=this.route.active_carrier;
-    this.route.active_carrier=this.route.standby_carrier;
-    this.route.standby_carrier=current;
-    this.route.generation++;
-    this.route.updated_at=new Date().toISOString();
-    sw.status="rolled_back";
-    this.#audit("carrier_switch.rollback",String(sw.id),{active:this.route.active_carrier});
+    const current=this.route.active_carrier;this.route.active_carrier=this.route.standby_carrier;this.route.standby_carrier=current;this.route.generation++;this.route.updated_at=new Date().toISOString();
+    sw.status="rolled_back";this.#audit("carrier_switch.rollback",String(sw.id),{active:this.route.active_carrier});
     this.eventBus.publish("carrier.rollback",{active:this.route.active_carrier,generation:this.route.generation});
     return {switch:{...sw},route:{...this.route}};
   }
@@ -918,14 +958,20 @@ export class MemoryStore{
   }
 
   async controlTowerOverview(){
+    const queue=await this.workQueueHealth(),service=await this.serviceOperationsHealth();
+    const risk=assessOperationalRisk({calls_7d:this.calls.length,failed_7d:this.calls.filter(x=>!["connected","abandoned"].includes(x.call_status)).length,expected_7d:this.calls.reduce((a,x)=>a+Number(x.expected_payout_ht||0),0),variance_7d:this.calls.reduce((a,x)=>a+Math.abs(Number(x.reconciliation_variance_ht||0)),0),calls_last_hour:this.calls.filter(x=>Date.parse(x.started_at)>=Date.now()-3600000).length,avg_hourly_7d:this.calls.length/168,service_critical:0,regulatory_blocking:0,queue_dead_lettered:queue.dead_lettered});
+    const shadowBilling=assessShadowBilling([]);
+    const slo=assessOperationalSlo({cdr_lag_seconds:0,queue_oldest_seconds:queue.oldest_pending_seconds,queue_dead_lettered:queue.dead_lettered,service_critical:0,resolution_overdue:0,regions_total:2,regions_ready:2});
+    const changes=(await this.listPlatformChangeRequests({status:"active",limit:20})).data,pending=changes.filter(x=>x.status==="pending").length;
+    const priorities=pending?[{severity:"warning",code:"FOUR_EYES_PENDING",title:"Validations 4 yeux",detail:pending+" changement(s) critique(s) attendent un second administrateur."}]:[{severity:"info",code:"DEMO_MODE",title:"Mode démonstration",detail:"Aucune connexion opérateur, Stripe, APNF/RSVA ou PSP réelle n’est active."}];
     return {
-      schema_version:"audiotel-control-tower/1",generated_at:new Date().toISOString(),status:"healthy",readiness_score:96,
-      kpis:{customers_active:0,customers_total:0,assignments_active:0,numbers_ready:0,subscription_blocked:0,regulatory_blocking:0,service_critical:0,portability_attention:0,queue_dead_lettered:0,destination_capacity:120,concurrent_in_use:18,regions_ready:2,regions_total:2},
-      priorities:[{severity:"info",code:"DEMO_MODE",title:"Mode démonstration",detail:"Aucune connexion opérateur, Stripe, APNF/RSVA ou PSP réelle n’est active."}],
-      carrier_route:await this.carrierRouting(),queue:await this.workQueueHealth(),service_operations:await this.serviceOperationsHealth(),
+      schema_version:"audiotel-control-tower/2",generated_at:new Date().toISOString(),status:pending?"attention":"healthy",readiness_score:96,
+      kpis:{customers_active:0,customers_total:0,assignments_active:0,numbers_ready:0,subscription_blocked:0,regulatory_blocking:0,service_critical:0,portability_attention:0,queue_dead_lettered:queue.dead_lettered,destination_capacity:120,concurrent_in_use:18,regions_ready:2,regions_total:2,risk_score:risk.score,slo_score:slo.score,approvals_pending:pending,shadow_billing_status:shadowBilling.status},
+      priorities,assurance:{risk,slo,shadow_billing:shadowBilling,change_requests:changes,dual_control_required:true},
+      carrier_route:await this.carrierRouting(),queue,service_operations:service,
       regulatory:{numbers_total:0,numbers_ready:0,review_blocking:0,review_today:0,review_soon:0},
       scale:{regions_total:2,regions_ready:2,dr_targets_total:2,bucket_capacity:4096},
-      capabilities:{policy_intents:["activate_number","port_in","payout_customer","carrier_switch","customer_access"],digital_twin_scenarios:["carrier_outage","traffic_spike","mass_portability","regulatory_expiry","billing_failure","region_failure"],external_connections_active:false}
+      capabilities:{policy_intents:["activate_number","port_in","payout_customer","carrier_switch","customer_access"],digital_twin_scenarios:["carrier_outage","traffic_spike","mass_portability","regulatory_expiry","billing_failure","region_failure"],external_connections_active:false,dual_control:true,shadow_billing:true,risk_engine:true,slo_snapshot:true}
     };
   }
 
