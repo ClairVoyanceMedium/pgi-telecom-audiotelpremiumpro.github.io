@@ -8,12 +8,12 @@
 - activation concurrente du même numéro bloquée sous verrou transactionnel ;
 - seconde chaîne de preuves SHA-256 append-only et intégration complète à l’Evidence Pack ;
 - cockpit aligné sur la readiness combinée Trust Center + ARCEP 2026 ;
-- abonnement externe maintenu à 3,00 EUR/mois ;
+- abonnement externe fixé à 3,00 EUR TTC/mois, montant final client avec fiscalité incluse lorsqu’elle s’applique ;
 - aucune connexion Stripe, opérateur, APNF ou PSP activée par cette version.
 
 ## Regulatory Trust & abonnement 3 EUR — 2026-09-20
 
-- prix courant de l'abonnement externe porté à 3,00 EUR/mois par nouvelle version tarifaire, sans réécriture de l'historique à 2,00 EUR ;
+- prix courant de l'abonnement externe porté à 3,00 EUR TTC/mois par nouvelle version tarifaire, avec `tax_behavior=inclusive` ;
 - Regulatory Evidence Pack exportable par numéro depuis le cockpit ;
 - pack horodaté avec KYC, profil réglementaire, preuves chaînées, portabilité, opérateurs, incidents, fraude et historique de routage ;
 - empreinte SHA-256 du pack et contrôle de continuité de la chaîne de preuves ;
