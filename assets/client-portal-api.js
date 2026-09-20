@@ -54,6 +54,16 @@ root.PGICustomerApi=Object.freeze({
   logout:function(){return request("/customer/auth/logout",{method:"POST",body:{}});},
   changePassword:function(currentPassword,newPassword){return request("/customer/auth/change-password",{method:"POST",body:{current_password:currentPassword,new_password:newPassword}});},
   portal:function(from,to){var q=new URLSearchParams({from:from,to:to});return request("/customer/portal?"+q.toString(),{timeoutMs:12000});},
-  calls:function(from,to,cursor,limit){var q=new URLSearchParams({from:from,to:to,limit:String(limit||100)});if(cursor)q.set("cursor",cursor);return request("/customer/calls?"+q.toString(),{timeoutMs:12000});}
+  comparison:function(from,to){var q=new URLSearchParams({from:from,to:to});return request("/customer/comparison?"+q.toString(),{timeoutMs:10000});},
+  calls:function(from,to,cursor,limit,filters){
+    var q=new URLSearchParams({from:from,to:to,limit:String(limit||100)});
+    if(cursor)q.set("cursor",cursor);
+    filters=filters||{};
+    [["status","status"],["number","number"],["min_duration","minDuration"],["max_duration","maxDuration"],["min_amount","minAmount"],["max_amount","maxAmount"]].forEach(function(pair){
+      var value=filters[pair[1]];
+      if(value!=null&&value!=="")q.set(pair[0],String(value));
+    });
+    return request("/customer/calls?"+q.toString(),{timeoutMs:12000});
+  }
 });
 })(window);
