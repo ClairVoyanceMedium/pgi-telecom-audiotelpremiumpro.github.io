@@ -2333,6 +2333,129 @@ export class PostgresStore{
     });
   }
 
+  async customerPortabilityRequests(tenantId){
+    const id=Number(tenantId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    return this.withTenantReadContext(id,async tx=>tx.unsafe(
+      "SELECT id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,"+
+      " account_holder_name,desired_port_date,status,ownership_status,operator_portability_reference,scheduled_at,completed_at,rejection_reason,created_at,updated_at"+
+      " FROM tenant_scoped_portability_requests ORDER BY created_at DESC,id DESC LIMIT 50"
+    ));
+  }
+
+  async createCustomerPortabilityRequest(tenantId,input={}){
+    const id=Number(tenantId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    const country=String(input.country_code||"").trim().toUpperCase();
+    if(!/^[A-Z]{2}$/.test(country))throw problem(400,"INVALID_COUNTRY_CODE");
+    const e164=normalizePortabilityNumber(input.number,country);
+    const operatorName=optionalText(input.current_operator_name,160);
+    const operatorReference=optionalText(input.current_operator_reference,200);
+    const holderName=optionalText(input.account_holder_name,200);
+    const serviceFamily=String(input.service_family||"premium_rate").trim().toLowerCase();
+    const desiredDate=input.desired_port_date?dateOnlyValue(input.desired_port_date,"desired_port_date"):null;
+    if(!["premium_rate","shared_cost","freephone","other"].includes(serviceFamily))throw problem(400,"INVALID_SERVICE_FAMILY");
+    if(input.authorization_confirmed!==true||input.number_owner_confirmed!==true)throw problem(400,"PORTABILITY_AUTHORIZATION_REQUIRED");
+    const result=await this.sql.begin(async tx=>{
+      await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",["portability:"+e164]);
+      const tenant=(await tx.unsafe("SELECT id,status,country_code FROM tenants WHERE id=$1 AND tenant_type<>'internal' LIMIT 1",[id]))[0];
+      if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+      if(tenant.status==="closed")throw problem(409,"TENANT_CLOSED");
+      const existingNumber=(await tx.unsafe("SELECT id,tenant_id FROM sva_numbers WHERE e164=$1 LIMIT 1",[e164]))[0]||null;
+      if(existingNumber)throw problem(409,Number(existingNumber.tenant_id)===id?"NUMBER_ALREADY_MANAGED":"PORTABILITY_NUMBER_UNAVAILABLE");
+      const existing=(await tx.unsafe(
+        "SELECT id FROM tenant_portability_requests WHERE requested_e164=$1 AND status IN ('submitted','awaiting_documents','eligibility_check','operator_pending','scheduled') LIMIT 1",
+        [e164]
+      ))[0];
+      if(existing)throw problem(409,"PORTABILITY_ALREADY_REQUESTED");
+      const rows=await tx.unsafe(
+        "INSERT INTO tenant_portability_requests(tenant_id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,account_holder_name,desired_port_date,authorization_confirmed,number_owner_confirmed,metadata)"+
+        " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::date,true,true,$10::jsonb)"+
+        " RETURNING id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,account_holder_name,desired_port_date,status,ownership_status,created_at",
+        [id,country,e164,String(input.number||"").trim().slice(0,40)||e164,serviceFamily,operatorName,operatorReference,holderName,desiredDate,
+         JSON.stringify({source:"customer_portal",original_number:String(input.number||"").trim().slice(0,40)})]
+      );
+      const request=rows[0];
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'portability.request','tenant_portability_request',$2,$3::jsonb)",
+        [id,String(request.id),JSON.stringify({requested_e164:e164,country_code:country,service_family:serviceFamily})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'portability.requested','tenant_portability_request',$2,$3::jsonb)",
+        [id,String(request.id),JSON.stringify({requested_e164:e164,country_code:country})]
+      );
+      return request;
+    });
+    this.eventBus.publish("portability.requested",{tenant_id:id,request_id:Number(result.id),requested_e164:e164,country_code:country});
+    return result;
+  }
+
+  async cancelCustomerPortabilityRequest(tenantId,requestId){
+    const tenant=Number(tenantId),id=Number(requestId);
+    if(!Number.isInteger(tenant)||tenant<=0||!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_PORTABILITY_REQUEST");
+    const result=await this.sql.begin(async tx=>{
+      const rows=await tx.unsafe(
+        "UPDATE tenant_portability_requests SET status='cancelled',updated_at=now()"+
+        " WHERE id=$1 AND tenant_id=$2 AND status IN ('submitted','awaiting_documents','eligibility_check','operator_pending')"+
+        " RETURNING id,tenant_id,requested_e164,status,updated_at",
+        [id,tenant]
+      );
+      const request=rows[0];if(!request)throw problem(409,"PORTABILITY_NOT_CANCELLABLE");
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'portability.cancel','tenant_portability_request',$2,$3::jsonb)",
+        [tenant,String(id),JSON.stringify({requested_e164:request.requested_e164})]
+      );
+      return request;
+    });
+    this.eventBus.publish("portability.cancelled",{tenant_id:tenant,request_id:id,requested_e164:result.requested_e164});
+    return result;
+  }
+
+  async updatePortabilityRequest(requestId,input={},actor={}){
+    const id=Number(requestId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_PORTABILITY_REQUEST");
+    const status=String(input.status||"").trim().toLowerCase();
+    const ownership=String(input.ownership_status||"").trim().toLowerCase();
+    const operatorRef=optionalText(input.operator_portability_reference,200);
+    const rejection=optionalText(input.rejection_reason,500);
+    const scheduledAt=input.scheduled_at||null;
+    const svaNumberId=input.sva_number_id==null||input.sva_number_id===""?null:Number(input.sva_number_id);
+    if(!["submitted","awaiting_documents","eligibility_check","operator_pending","scheduled","ported","rejected","cancelled"].includes(status))throw problem(400,"INVALID_PORTABILITY_STATUS");
+    if(!["pending","verified","rejected"].includes(ownership))throw problem(400,"INVALID_OWNERSHIP_STATUS");
+    if(scheduledAt&&!Number.isFinite(Date.parse(scheduledAt)))throw problem(400,"INVALID_PORTABILITY_SCHEDULE");
+    if(svaNumberId!=null&&(!Number.isInteger(svaNumberId)||svaNumberId<=0))throw problem(400,"INVALID_SVA_NUMBER_ID");
+    if(status==="ported"&&(ownership!=="verified"||svaNumberId==null))throw problem(409,"PORTABILITY_COMPLETION_REQUIRES_VERIFIED_NUMBER");
+    const actorId=numericActor(actor);
+    const result=await this.sql.begin(async tx=>{
+      const current=(await tx.unsafe("SELECT * FROM tenant_portability_requests WHERE id=$1 FOR UPDATE",[id]))[0];
+      if(!current)throw problem(404,"PORTABILITY_REQUEST_NOT_FOUND");
+      if(["ported","cancelled"].includes(current.status)&&current.status!==status)throw problem(409,"PORTABILITY_REQUEST_FINAL");
+      if(svaNumberId!=null){
+        const number=(await tx.unsafe("SELECT id,e164,tenant_id FROM sva_numbers WHERE id=$1 LIMIT 1",[svaNumberId]))[0];
+        if(!number||String(number.e164)!==String(current.requested_e164)||Number(number.tenant_id)!==Number(current.tenant_id))throw problem(409,"PORTABILITY_NUMBER_BINDING_MISMATCH");
+      }
+      const completed=status==="ported"?"now()":"NULL";
+      const rows=await tx.unsafe(
+        "UPDATE tenant_portability_requests SET status=$2,ownership_status=$3,operator_portability_reference=COALESCE($4,operator_portability_reference),"+
+        " scheduled_at=$5::timestamptz,sva_number_id=COALESCE($6,sva_number_id),rejection_reason=$7,completed_at="+completed+",updated_at=now()"+
+        " WHERE id=$1 RETURNING *",
+        [id,status,ownership,operatorRef,scheduledAt,svaNumberId,rejection]
+      );
+      await tx.unsafe(
+        "INSERT INTO tenant_control_events(tenant_id,actor_user_id,action,previous_status,new_status,reason,details)"+
+        " VALUES($1,$2,'portability.status',$3,$4,$5,$6::jsonb)",
+        [current.tenant_id,actorId,current.status,status,rejection,JSON.stringify({request_id:id,requested_e164:current.requested_e164,ownership_status:ownership,operator_reference:operatorRef})]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'portability.status','tenant_portability_request',$3,$4::jsonb)",
+        [current.tenant_id,actorId,String(id),JSON.stringify({previous_status:current.status,status,ownership_status:ownership})]
+      );
+      return rows[0];
+    });
+    this.eventBus.publish("portability.changed",{tenant_id:Number(result.tenant_id),request_id:id,status:result.status,requested_e164:result.requested_e164});
+    return result;
+  }
+
   async customerPortalOverview(tenantId,from,to){
     const id=Number(tenantId);
     return this.withTenantReadContext(id,async tx=>{
@@ -2391,6 +2514,11 @@ export class PostgresStore{
         "SELECT id,sva_number_id,label,destination_type,destination_uri,priority,status,failover_enabled,max_concurrent_calls,active_calls,last_assigned_at"+
         " FROM tenant_scoped_call_destinations ORDER BY priority,id LIMIT 100"
       );
+      const portabilityRequests=await tx.unsafe(
+        "SELECT id,country_code,requested_e164,display_number,service_family,current_operator_name,desired_port_date,status,ownership_status,"+
+        " operator_portability_reference,scheduled_at,completed_at,rejection_reason,created_at,updated_at"+
+        " FROM tenant_scoped_portability_requests ORDER BY created_at DESC,id DESC LIMIT 20"
+      );
       const recentCalls=await tx.unsafe(
         "SELECT call_id,market,currency,sva_number_id,display_number,e164,started_at,ringing_at,bridged_at,ended_at,call_status,wait_seconds,conversation_seconds,billable_seconds,"+
         " retail_service_amount_ttc::float8,sip_final_code,hangup_cause,hangup_party,codec,post_dial_delay_ms,origin_carrier,host_carrier,"+
@@ -2399,7 +2527,7 @@ export class PostgresStore{
         " FROM tenant_scoped_portal_call_details WHERE started_at>=$1::timestamptz AND started_at<=$2::timestamptz"+
         " ORDER BY started_at DESC,call_id DESC LIMIT 20",[from,to]
       );
-      return {tenant,financial_by_currency:financial,series,numbers,settlements,subscriptions,destinations,recent_calls:recentCalls,voice_quality:voiceQuality[0]||null,range:{from,to}};
+      return {tenant,financial_by_currency:financial,series,numbers,settlements,subscriptions,portability_requests:portabilityRequests,destinations,recent_calls:recentCalls,voice_quality:voiceQuality[0]||null,range:{from,to}};
     });
   }
 
@@ -2498,7 +2626,7 @@ export class PostgresStore{
     const tenant=base[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
     if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
     const id=Number(tenant.id);
-    const [subs,lines,destinations,experts,alerts,settlements,controls,audit,activity]=await Promise.all([
+    const [subs,lines,portability,destinations,experts,alerts,settlements,controls,audit,activity]=await Promise.all([
       this.readSql.unsafe(
         "SELECT s.id,s.status,s.billing_currency,s.starts_at,s.current_period_start,s.current_period_end,s.ends_at,"+
         " s.billing_provider,s.provider_customer_reference,s.provider_subscription_reference,s.cancel_at_period_end,s.last_payment_status,s.last_event_at,"+
@@ -2511,6 +2639,10 @@ export class PostgresStore{
         " c.name AS regulatory_assignor,a.valid_from,a.valid_to,pgi_tenant_has_premium_call_access($1,m.id,now()) AS premium_call_access"+
         " FROM tenant_number_assignments a JOIN sva_numbers sn ON sn.id=a.sva_number_id LEFT JOIN operating_markets m ON m.id=sn.market_id"+
         " LEFT JOIN carriers c ON c.id=a.regulatory_assignor_carrier_id WHERE a.tenant_id=$1 ORDER BY a.created_at DESC,a.id DESC LIMIT 100",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,country_code,requested_e164,display_number,current_operator_name,desired_port_date,status,ownership_status,operator_portability_reference,scheduled_at,completed_at,rejection_reason,created_at,updated_at"+
+        " FROM tenant_portability_requests WHERE tenant_id=$1 ORDER BY created_at DESC,id DESC LIMIT 50",[id]
       ),
       this.readSql.unsafe(
         "SELECT d.id,d.label,d.destination_type,d.destination_uri,d.priority,d.status,d.failover_enabled,d.max_concurrent_calls,d.active_calls,d.last_assigned_at,d.sva_number_id,sn.display_number,sn.e164"+
@@ -2546,7 +2678,7 @@ export class PostgresStore{
     const access=await this.readSql.unsafe("SELECT pgi_tenant_has_premium_call_access($1,NULL,now()) AS allowed",[id]);
     return {
       tenant:{...tenant,premium_call_access:Boolean(access[0]?.allowed)},
-      subscriptions:subs,lines,destinations,experts,alerts,settlements,controls,audit,
+      subscriptions:subs,lines,portability,destinations,experts,alerts,settlements,controls,audit,
       activity:activity[0]||{calls_30d:0,connected_30d:0,billable_seconds_30d:0,revenue_ttc_30d:0,margin_ht_30d:0,last_call_at:null}
     };
   }
@@ -3089,6 +3221,23 @@ function validateEnvelope(x){
   x.source_event_id=eventId;
   if(x.event_time!=null)x.event_time=new Date(String(x.event_time)).toISOString();
 }
+function normalizePortabilityNumber(value,countryCode){
+  let raw=String(value||"").trim().replace(/[\s().-]/g,"");
+  if(String(countryCode||"").toUpperCase()==="FR"&&/^0\d{9}$/.test(raw))raw="+33"+raw.slice(1);
+  if(/^00\d{8,15}$/.test(raw))raw="+"+raw.slice(2);
+  if(!/^\+[1-9]\d{7,14}$/.test(raw))throw problem(400,"INVALID_PORTABILITY_NUMBER");
+  return raw;
+}
+function optionalText(value,max){
+  const valueText=String(value==null?"":value).trim();
+  return valueText?valueText.slice(0,max):null;
+}
+function dateOnlyValue(value,field){
+  const valueText=String(value||"").trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(valueText)||!Number.isFinite(Date.parse(valueText+"T00:00:00Z")))throw problem(400,"INVALID_"+String(field||"DATE").toUpperCase());
+  return valueText;
+}
+
 function problem(status,code,message=code){
   const e=new Error(message);e.status=status;e.code=code;return e;
 }
