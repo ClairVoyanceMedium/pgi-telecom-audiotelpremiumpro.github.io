@@ -32,3 +32,61 @@
   .cp-search-panel{display:none!important}
   .cp-logo-full{filter:none}
 }
+
+/* premium-client-experience-v35 */
+html{scroll-padding-top:150px}
+.cp-visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;white-space:nowrap!important;border:0!important}
+:where(a,button,input,select,[tabindex]):focus-visible{outline:2px solid #f3f5f7;outline-offset:2px}
+.cp-anchor-section{scroll-margin-top:150px}
+.cp-section-nav{position:sticky;top:73px;z-index:14;display:flex;gap:5px;margin:-3px 0 12px;padding:5px;border:1px solid var(--line);border-radius:12px;background:rgba(12,14,16,.92);backdrop-filter:blur(16px);overflow:auto;-webkit-overflow-scrolling:touch}
+.cp-section-nav a{flex:0 0 auto;min-height:36px;display:inline-flex;align-items:center;padding:0 12px;border:1px solid transparent;border-radius:8px;color:#8f979f;text-decoration:none;font-size:8px;font-weight:850;letter-spacing:.02em}
+.cp-section-nav a:hover,.cp-section-nav a[aria-current="location"]{background:#24292e;border-color:var(--line);color:#fff}
+.cp-command-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:13px;background:linear-gradient(145deg,#171a1d,#111315)}
+.cp-live-state{display:flex;align-items:center;gap:10px;min-width:0}
+.cp-live-state>div{min-width:0}
+.cp-live-state strong,.cp-live-state span{display:block}
+.cp-live-state strong{font-size:9px}
+.cp-live-state span{margin-top:3px;color:#7f8790;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cp-live-dot{width:9px;height:9px;flex:0 0 auto;border-radius:50%;background:#68c69a;box-shadow:0 0 0 4px rgba(104,198,154,.08)}
+.cp-command-bar[data-state="loading"] .cp-live-dot{background:#d7a85c;animation:cpPulse 1s ease-in-out infinite}
+.cp-command-bar[data-state="offline"] .cp-live-dot,.cp-command-bar[data-state="error"] .cp-live-dot{background:#d96e68}
+.cp-refresh{min-height:40px}
+.cp-refresh:disabled{opacity:.55;cursor:default}
+.cp-search-scopes{grid-column:1/-1;display:flex;gap:5px;overflow:auto;padding-top:2px;-webkit-overflow-scrolling:touch}
+.cp-search-scopes button{flex:0 0 auto;min-height:32px;padding:0 10px;border:1px solid var(--line);border-radius:999px;background:#111417;color:#858d95;cursor:pointer;font-size:8px;font-weight:800}
+.cp-search-scopes button.active{background:#2a2f34;border-color:var(--line2);color:#fff}
+@keyframes cpPulse{50%{opacity:.45;transform:scale(.86)}}
+@media(max-width:680px){
+  html{scroll-padding-top:132px}
+  .cp-anchor-section{scroll-margin-top:132px}
+  .cp-section-nav{top:61px;margin-inline:-2px}
+  .cp-section-nav a{min-height:38px;padding-inline:11px}
+  .cp-command-bar{padding:9px 10px}
+  .cp-refresh{min-height:44px}
+  .cp-search-scopes button{min-height:36px}
+  .cp-table{min-width:0;display:block}
+  .cp-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  .cp-table tbody,.cp-table tr{display:block}
+  .cp-table tr{margin-bottom:8px;padding:7px 10px;border:1px solid var(--line);border-radius:11px;background:rgba(255,255,255,.018)}
+  .cp-table td{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:10px;text-align:right}
+  .cp-table td:last-child{border-bottom:0}
+  .cp-table td:before{flex:0 0 38%;color:#737b84;font-size:8px;font-weight:850;text-align:left;text-transform:uppercase;letter-spacing:.05em}
+  .cp-table td:nth-child(1):before{content:"Date"}
+  .cp-table td:nth-child(2):before{content:"Numéro"}
+  .cp-table td:nth-child(3):before{content:"État"}
+  .cp-table td:nth-child(4):before{content:"Durée"}
+  .cp-table td:nth-child(5):before{content:"Montant TTC"}
+  .cp-table .cp-empty-cell{display:block!important;text-align:center!important}
+  .cp-table .cp-empty-cell:before{display:none}
+  .cp-account .cp-ghost,.cp-primary,.cp-close{min-height:44px}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*:before,*:after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
+@media(prefers-contrast:more){
+  :root{--line:rgba(255,255,255,.20);--line2:rgba(255,255,255,.34);--muted:#b7bdc3}
+  .cp-panel,.cp-kpis article,.cp-search-panel,.cp-command-bar,.cp-section-nav{border-width:2px}
+}
+@media print{
+  .cp-section-nav,.cp-command-bar,.cp-search-scopes{display:none!important}
+}
