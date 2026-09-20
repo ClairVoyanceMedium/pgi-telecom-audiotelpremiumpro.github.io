@@ -1852,6 +1852,17 @@ export class PostgresStore{
     });
   }
 
+  async updateCustomerPassword(principalId,passwordHash){
+    if(!principalId||String(passwordHash||"").length<20)throw problem(400,"INVALID_PASSWORD_HASH");
+    const rows=await this.sql.unsafe(
+      "UPDATE customer_password_credentials SET password_hash=$2,status='active',failed_attempts=0,locked_until=NULL,last_failed_at=NULL,password_changed_at=now(),updated_at=now()"+
+      " WHERE customer_principal_id=$1::uuid RETURNING customer_principal_id",
+      [String(principalId),String(passwordHash)]
+    );
+    if(!rows[0])throw problem(404,"CUSTOMER_CREDENTIAL_NOT_FOUND");
+    return {ok:true};
+  }
+
   async customerSessionContext(actor){
     if(!actor?.sub||!actor?.tenant_id)throw problem(401,"CUSTOMER_AUTH_REQUIRED");
     const rows=await this.sql.unsafe(

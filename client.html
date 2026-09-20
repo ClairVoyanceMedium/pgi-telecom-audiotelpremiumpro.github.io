@@ -59,6 +59,7 @@
     <div class="cp-account">
       <div><strong id="customer-user-name">—</strong><span id="customer-user-role">—</span></div>
       <button id="client-export" class="cp-ghost" type="button">Exporter</button>
+      <button id="client-security" class="cp-ghost" type="button">Sécurité</button>
       <button id="customer-logout" class="cp-ghost" type="button">Déconnexion</button>
     </div>
   </header>
@@ -97,6 +98,18 @@
       <article class="cp-panel cp-chart-card">
         <div class="cp-panel-head"><div><p class="cp-kicker">CHIFFRE GÉNÉRÉ</p><h2>Montant service TTC</h2></div><span id="revenue-chart-total">0</span></div>
         <svg id="revenue-chart" class="cp-svg" viewBox="0 0 720 220" role="img" aria-label="Évolution du montant service généré"></svg>
+      </article>
+      <article class="cp-panel cp-chart-card">
+        <div class="cp-panel-head"><div><p class="cp-kicker">DÉCROCHÉ</p><h2>ASR & abandons</h2></div><span id="asr-chart-total">0 %</span></div>
+        <svg id="asr-chart" class="cp-svg" viewBox="0 0 720 220" role="img" aria-label="Évolution du taux de décroché et des abandons"></svg>
+      </article>
+      <article class="cp-panel cp-chart-card">
+        <div class="cp-panel-head"><div><p class="cp-kicker">VALEUR</p><h2>Montant moyen par appel</h2></div><span id="value-chart-total">0</span></div>
+        <svg id="value-chart" class="cp-svg" viewBox="0 0 720 220" role="img" aria-label="Évolution du montant moyen généré par appel"></svg>
+      </article>
+      <article class="cp-panel cp-chart-card">
+        <div class="cp-panel-head"><div><p class="cp-kicker">DURÉE MOYENNE</p><h2>Minutes par appel décroché</h2></div><span id="duration-chart-total">0 min</span></div>
+        <svg id="duration-chart" class="cp-svg" viewBox="0 0 720 220" role="img" aria-label="Évolution de la durée moyenne des appels décrochés"></svg>
       </article>
       <article class="cp-panel cp-chart-card">
         <div class="cp-panel-head"><div><p class="cp-kicker">QUALITÉ DE TRAFIC</p><h2>Issue des appels</h2></div></div>
@@ -148,6 +161,19 @@
   </main>
 </div>
 
+<dialog id="client-security-dialog" class="cp-export-dialog">
+  <form id="client-password-form" class="cp-export-card">
+    <div class="cp-export-head"><div><p class="cp-kicker">SÉCURITÉ</p><h2>Changer mon mot de passe</h2></div><button id="client-security-close" class="cp-close" type="button" aria-label="Fermer">×</button></div>
+    <p class="cp-export-note">Le nouveau mot de passe doit contenir au moins 12 caractères. Après modification, une nouvelle connexion sera obligatoire.</p>
+    <div class="cp-form">
+      <label>Mot de passe actuel<input id="current-password" type="password" autocomplete="current-password" required></label>
+      <label>Nouveau mot de passe<input id="new-password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></label>
+      <label>Confirmer le nouveau mot de passe<input id="new-password-confirm" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></label>
+      <button class="cp-primary" type="submit">Modifier le mot de passe</button>
+    </div>
+    <p id="password-message" class="cp-form-message" role="status"></p>
+  </form>
+</dialog>
 <dialog id="client-export-dialog" class="cp-export-dialog">
   <form method="dialog" class="cp-export-card">
     <div class="cp-export-head"><div><p class="cp-kicker">EXPORTS</p><h2>Exporter mes données</h2></div><button class="cp-close" value="cancel" aria-label="Fermer">×</button></div>

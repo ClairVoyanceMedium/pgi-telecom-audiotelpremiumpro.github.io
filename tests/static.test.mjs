@@ -374,3 +374,6 @@ test("customer portal stays separate, tenant-facing and outside the critical she
 
 test("customer portal has professional analytics and multi-export center",()=>{for(const id of ["calls-chart","minutes-chart","revenue-chart","status-donut","payout-bars","client-export-dialog"])assert.ok(clientPortal.includes('id="'+id+'"'),id);assert.match(clientPortalJs,/function renderAnalytics/);assert.match(clientPortalJs,/function exportClient/);for(const kind of ["report","calls","settlements","numbers","print"])assert.ok(clientPortal.includes('data-client-export="'+kind+'"'),kind);assert.match(clientPortalCss,/--panel:#181b1f/);});
 test("admin export center stays lazy and exposes calls, summary, finance and PDF",()=>{assert.match(callTools,/export function openExports/);assert.match(callTools,/Centre d’export PGI/);assert.match(commands,/Ouvrir le centre d’export/);assert.match(app,/m\.openExports/);assert.doesNotMatch(sw,/call-tools\.js/);});
+
+
+test("customer portal exposes extended analytics and password management",()=>{for(const id of ["asr-chart","value-chart","duration-chart","client-security-dialog","client-password-form"])assert.ok(clientPortal.includes('id="'+id+'"'),id);assert.match(clientPortalApi,/changePassword/);assert.match(clientPortalJs,/function changePassword/);assert.match(clientPortalJs,/svgLine\("asr-chart"/);});

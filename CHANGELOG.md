@@ -1,3 +1,11 @@
+## Sécurité client & graphiques avancés — 2026-09-20
+
+- changement de mot de passe depuis l'espace client avec vérification de l'ancien mot de passe ;
+- hachage scrypt conservé, nouveau sel et invalidation de session après changement ;
+- trois graphiques clients supplémentaires : ASR/abandons, valeur moyenne par appel et durée moyenne ;
+- portail client à huit visualisations principales sans requêtes API supplémentaires ;
+- cockpit administrateur vérifié : graphiques avancés déjà présents, aucun doublon inutile ajouté.
+
 ## Analytique & exports — 2026-09-20
 
 - portail client passé en noir et gris anthracite ;

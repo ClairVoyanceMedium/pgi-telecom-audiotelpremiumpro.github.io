@@ -265,3 +265,7 @@ Lecture administrateur des utilisateurs externes d'une société.
 
 ### POST /platform/tenants/:id/customer-invitations
 Crée une invitation à usage unique. Le backend ne stocke que le hash du jeton ; le jeton brut n'est renvoyé qu'une fois dans `activation_path`.
+
+
+### POST /customer/auth/change-password
+Permet au client authentifié de remplacer son mot de passe. L'ancien mot de passe est vérifié côté serveur, le nouveau est haché avec scrypt et un nouveau sel aléatoire, puis toutes les sessions client existantes sont invalidées par changement de version. Une reconnexion est obligatoire.

@@ -51,6 +51,7 @@ root.PGICustomerApi=Object.freeze({
   activate:function(token,displayName,password){return request("/customer/auth/activate",{method:"POST",body:{token:token,display_name:displayName,password:password}});},
   me:function(){return request("/customer/auth/me",{timeoutMs:5000});},
   logout:function(){return request("/customer/auth/logout",{method:"POST",body:{}});},
+  changePassword:function(currentPassword,newPassword){return request("/customer/auth/change-password",{method:"POST",body:{current_password:currentPassword,new_password:newPassword}});},
   portal:function(from,to){var q=new URLSearchParams({from:from,to:to});return request("/customer/portal?"+q.toString(),{timeoutMs:12000});},
   calls:function(from,to,cursor,limit){var q=new URLSearchParams({from:from,to:to,limit:String(limit||100)});if(cursor)q.set("cursor",cursor);return request("/customer/calls?"+q.toString(),{timeoutMs:12000});}
 });

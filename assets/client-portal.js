@@ -48,10 +48,10 @@ function aggregate(data){
   var payout=(data.settlements||[]).filter(function(x){return x.currency===currency&&valid.includes(String(x.status));}).reduce(function(a,x){return a+n(x.net_payout_ht);},0);
   return {calls:calls,connected:connected,billable:billable,currency:currency,revenue:revenue,payout:payout,updated:updated};
 }
-function svgLine(id,rows,series){
+function svgLine(id,rows,series,options){
   var el=$(id);if(!el)return;rows=(rows||[]).slice(-62);if(!rows.length){el.innerHTML='<text x="360" y="110" text-anchor="middle" class="axis-label">Aucune donnée</text>';return;}
   var W=720,H=220,L=34,R=12,T=15,B=25,plotW=W-L-R,plotH=H-T-B;
-  var max=1;series.forEach(function(s){rows.forEach(function(x){max=Math.max(max,n(s.value(x)));});});
+  options=options||{};var max=options.max||1;series.forEach(function(s){rows.forEach(function(x){max=Math.max(max,n(s.value(x)));});});
   function px(i){return L+(rows.length===1?plotW/2:i*plotW/Math.max(1,rows.length-1));}
   function py(v){return T+plotH-(n(v)/max*plotH);}
   var grid="";for(var g=0;g<=4;g++){var y=T+plotH*g/4;grid+='<line class="grid" x1="'+L+'" y1="'+y+'" x2="'+(W-R)+'" y2="'+y+'"/>';}
@@ -76,8 +76,14 @@ function renderAnalytics(data){
   svgLine("calls-chart",rows,[{value:function(x){return x.calls_total;}},{value:function(x){return x.calls_connected;}}]);
   svgLine("minutes-chart",rows,[{value:function(x){return n(x.billable_seconds)/60;}}]);
   svgLine("revenue-chart",rows,[{value:function(x){return x.generated_revenue_ttc;}}]);
+  svgLine("asr-chart",rows,[{value:function(x){return n(x.calls_total)?n(x.calls_connected)/n(x.calls_total)*100:0;}},{value:function(x){return n(x.calls_total)?n(x.calls_abandoned)/n(x.calls_total)*100:0;}}],{max:100});
+  svgLine("value-chart",rows,[{value:function(x){return n(x.calls_total)?n(x.generated_revenue_ttc)/n(x.calls_total):0;}}]);
+  svgLine("duration-chart",rows,[{value:function(x){return n(x.calls_connected)?n(x.billable_seconds)/60/n(x.calls_connected):0;}}]);
   $("minutes-chart-total").textContent=nf(a.billable/60,1)+" min";
   $("revenue-chart-total").textContent=money(a.revenue,a.currency);
+  $("asr-chart-total").textContent=nf(a.calls?a.connected/a.calls*100:0,1)+" %";
+  $("value-chart-total").textContent=money(a.calls?a.revenue/a.calls:0,a.currency);
+  $("duration-chart-total").textContent=nf(a.connected?a.billable/60/a.connected:0,1)+" min";
   renderStatus(data);renderPayoutChart(data);
 }
 function renderNumbers(data){
@@ -179,12 +185,31 @@ async function exportClient(kind){
     }
   }catch(err){toast("Export impossible");}
 }
+async function changePassword(e){
+  e.preventDefault();
+  var current=$("current-password").value,newPassword=$("new-password").value,confirm=$("new-password-confirm").value,msg=$("password-message");
+  msg.classList.remove("bad");msg.textContent="";
+  if(newPassword!==confirm){msg.classList.add("bad");msg.textContent="Les deux nouveaux mots de passe sont différents.";return;}
+  if(newPassword.length<12){msg.classList.add("bad");msg.textContent="Le nouveau mot de passe doit contenir au moins 12 caractères.";return;}
+  try{
+    await window.PGICustomerApi.changePassword(current,newPassword);
+    var d=$("client-security-dialog");if(d&&d.open)d.close();
+    state.user=null;showLogin();setAuthMessage("Mot de passe modifié. Reconnectez-vous avec votre nouveau mot de passe.",false);
+    $("client-password-form").reset();
+  }catch(err){
+    msg.classList.add("bad");
+    msg.textContent=err.code==="INVALID_CURRENT_PASSWORD"?"Le mot de passe actuel est incorrect.":err.code==="PASSWORD_UNCHANGED"?"Choisissez un nouveau mot de passe différent.":"Modification impossible.";
+  }
+}
 function bind(){
   $("customer-login-form").addEventListener("submit",submitLogin);
   $("customer-activation-form").addEventListener("submit",submitActivation);
   $("customer-logout").addEventListener("click",async function(){try{await window.PGICustomerApi.logout();}catch(_e){}state.user=null;showLogin();});
   $("export-calls").addEventListener("click",function(){exportClient("calls");});
   $("client-export").addEventListener("click",function(){var d=$("client-export-dialog");if(d&&typeof d.showModal==="function")d.showModal();});
+  $("client-security").addEventListener("click",function(){var d=$("client-security-dialog");if(d&&typeof d.showModal==="function")d.showModal();});
+  $("client-security-close").addEventListener("click",function(){var d=$("client-security-dialog");if(d&&d.open)d.close();});
+  $("client-password-form").addEventListener("submit",changePassword);
   qsa("[data-client-export]").forEach(function(b){b.addEventListener("click",function(){var d=$("client-export-dialog");if(d&&d.open)d.close();exportClient(b.dataset.clientExport);});});
   qsa("[data-range]").forEach(function(btn){btn.addEventListener("click",function(){state.range=btn.dataset.range;qsa("[data-range]").forEach(function(x){x.classList.toggle("active",x===btn);});loadPortal().catch(function(){toast("Actualisation impossible");});});});
 }

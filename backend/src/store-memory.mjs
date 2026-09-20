@@ -690,6 +690,7 @@ export class MemoryStore{
   async customerAuthLookup(){return null;}
   async recordCustomerAuthFailure(){return;}
   async recordCustomerAuthSuccess(){return;}
+  async updateCustomerPassword(){return {ok:true};}
   async customerSessionContext(actor){
     if(!actor?.tenant_id)throw problem(401,"CUSTOMER_AUTH_REQUIRED");
     return {id:actor.sub,email:"demo@example.test",display_name:actor.name||"Client Démo",status:"active",session_version:actor.session_version||1,tenant_id:Number(actor.tenant_id),customer_role:actor.customer_role||"readonly",tenant_public_id:actor.tenant_public_id||"00000000-0000-4000-8000-000000000001",tenant_name:"Société Démo",authorization_version:actor.authorization_version||1,default_currency:"EUR",country_code:"FR"};
