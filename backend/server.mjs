@@ -533,6 +533,14 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.tenant_control_center",200,await store.tenantControlDetail(match.id));
       }
 
+      match=routeMatch(pathname,"/api/v1/platform/tenants/:id/payout-terms");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const result=await store.idempotent(req.headers["idempotency-key"],"tenant.payout_terms.create",{tenant:match.id,...body},()=>store.createTenantPayoutTerms(match.id,body,actor));
+        return done(res,metrics,started,"platform.tenant_payout_terms",201,{...result.value,replayed:result.replayed});
+      }
+
       match=routeMatch(pathname,"/api/v1/platform/tenants/:id/status");
       if(method==="POST"&&match){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
