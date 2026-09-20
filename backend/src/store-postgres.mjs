@@ -3,6 +3,7 @@ import {createHash} from "node:crypto";
 import {sanitizeCdrPayload,deriveCallerHash} from "./cdr-privacy.mjs";
 import {computeExpertCost} from "./expert-finance.mjs";
 import {normalizeSettlementPayload} from "./settlement-finance.mjs";
+import {resolveBillingCurrency} from "./billing-country-currency.mjs";
 import {createRequire} from "node:module";
 
 const require=createRequire(import.meta.url);
@@ -1692,8 +1693,9 @@ export class PostgresStore{
     const result=await this.sql.begin(async tx=>{
       const markets=await tx.unsafe("SELECT id,default_locale,default_currency,timezone,data_region FROM operating_markets WHERE country_code=$1 LIMIT 1",[country]);
       const market=markets[0]||null;
+      const billingDefault=resolveBillingCurrency(country);
       const locale=localeInput||market?.default_locale||"en";
-      const currency=currencyInput||market?.default_currency||"EUR";
+      const currency=currencyInput||billingDefault?.currency||market?.default_currency||"EUR";
       const timezone=timezoneInput||market?.timezone||"UTC";
       const rows=await tx.unsafe(
         "INSERT INTO tenants(slug,display_name,legal_name,tenant_type,status,country_code,billing_email,preferred_locale,default_currency,timezone)"+
@@ -2021,8 +2023,10 @@ export class PostgresStore{
       const existing=(await tx.unsafe("SELECT id FROM customer_principals WHERE email_normalized=$1 LIMIT 1",[email]))[0];
       if(existing)throw problem(409,"CUSTOMER_ACCOUNT_EXISTS");
       const market=(await tx.unsafe("SELECT id,default_locale,default_currency,timezone,data_region FROM operating_markets WHERE country_code=$1 LIMIT 1",[country]))[0]||null;
+      const billingDefault=resolveBillingCurrency(country);
+      if(!billingDefault)throw problem(400,"BILLING_CURRENCY_NOT_CONFIGURED");
       const locale=localeInput||market?.default_locale||"en";
-      const currency=market?.default_currency||"EUR";
+      const currency=billingDefault.currency;
       const timezone=timezoneInput||market?.timezone||"UTC";
       const tenant=(await tx.unsafe(
         "INSERT INTO tenants(slug,display_name,legal_name,tenant_type,status,country_code,billing_email,preferred_locale,default_currency,timezone)"+
@@ -2056,7 +2060,7 @@ export class PostgresStore{
       );
       await tx.unsafe(
         "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'customer.self_register','tenant',$2,$3::jsonb)",
-        [tenant.id,String(tenant.id),JSON.stringify({customer_principal_id:principal.id,country_code:country,registration_number_supplied:Boolean(registrationNumber),authority_confirmed:true})]
+        [tenant.id,String(tenant.id),JSON.stringify({customer_principal_id:principal.id,country_code:country,billing_currency:currency,billing_currency_source:"country_default",registration_number_supplied:Boolean(registrationNumber),authority_confirmed:true})]
       );
       await tx.unsafe(
         "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'customer.self_registered','tenant',$2,$3::jsonb)",
@@ -2290,6 +2294,8 @@ export class PostgresStore{
       ))[0];
       if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
       if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_BILLING_EXEMPT");
+      const billingDefault=resolveBillingCurrency(tenant.country_code);
+      const billingCurrency=billingDefault?.currency||tenant.default_currency;
       const offer=(await tx.unsafe(
         "SELECT v.id AS price_version_id,p.plan_key,p.display_name AS plan_name,v.market_id,m.country_code AS market,v.currency,v.amount_minor,"+
         " v.billing_interval,v.interval_count,v.effective_from,v.effective_to FROM service_plan_price_versions v"+
@@ -2297,7 +2303,7 @@ export class PostgresStore{
         " WHERE p.plan_key='external-sva-access' AND p.status='active' AND v.currency=$1"+
         " AND (v.market_id IS NULL OR m.country_code=$2) AND v.effective_from<=now() AND (v.effective_to IS NULL OR v.effective_to>now())"+
         " ORDER BY (v.market_id IS NOT NULL) DESC,v.effective_from DESC LIMIT 1",
-        [tenant.default_currency,tenant.country_code]
+        [billingCurrency,tenant.country_code]
       ))[0]||null;
       const subscription=(await tx.unsafe(
         "SELECT s.id,s.status,s.billing_currency,s.current_period_start,s.current_period_end,s.cancel_at_period_end,s.last_payment_status,"+
@@ -2308,11 +2314,12 @@ export class PostgresStore{
       ))[0]||null;
       const access=(await tx.unsafe("SELECT pgi_tenant_has_premium_call_access($1,NULL,now()) AS allowed",[id]))[0];
       return {
-        tenant:{id:tenant.public_id,name:tenant.display_name,billing_email:tenant.billing_email,country_code:tenant.country_code,locale:tenant.preferred_locale,currency:tenant.default_currency,timezone:tenant.timezone,status:tenant.status},
+        tenant:{id:tenant.public_id,name:tenant.display_name,billing_email:tenant.billing_email,country_code:tenant.country_code,locale:tenant.preferred_locale,currency:billingCurrency,timezone:tenant.timezone,status:tenant.status},
         offer,
         subscription,
         premium_call_access:Boolean(access?.allowed),
-        checkout_prefill:{email:tenant.billing_email||null,locale:tenant.preferred_locale,country_code:tenant.country_code,currency:tenant.default_currency},
+        billing_currency:{currency:billingCurrency,source:billingDefault?.source||"tenant_default",catalog_version:billingDefault?.catalog_version||null,accepted_currencies:billingDefault?.accepted_currencies||[billingCurrency],local_price_configured:Boolean(offer)},
+        checkout_prefill:{email:tenant.billing_email||null,locale:tenant.preferred_locale,country_code:tenant.country_code,currency:billingCurrency},
         return_paths:{success:"client.html?billing=success",cancel:"client.html?billing=cancelled"}
       };
     });
