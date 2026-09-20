@@ -2356,7 +2356,7 @@ export class PostgresStore{
     const state=params.state?String(params.state).trim().toLowerCase():"unresolved";
     if(!["open","acknowledged","resolved","unresolved","all"].includes(state))throw problem(400,"INVALID_ALERT_STATE");
     const rows=await this.readSql.unsafe(
-      "SELECT r.id AS _cursor_id,r.id,r.alert_key,r.framework,r.alert_kind,r.severity,r.state,r.title,r.message,r.due_at,r.details,r.first_detected_at,r.last_detected_at,r.acknowledged_at,r.resolved_at,"+
+      "SELECT r.id AS _cursor_id,r.id,r.assignment_id,r.sva_number_id,r.platform_control_id,r.alert_key,r.framework,r.alert_kind,r.severity,r.state,r.title,r.message,r.due_at,r.details,r.first_detected_at,r.last_detected_at,r.acknowledged_at,r.resolved_at,"+
       " CASE WHEN r.severity='critical' THEN 'blocking' WHEN r.due_at IS NOT NULL AND r.due_at<=now()+interval '24 hours' THEN 'today' ELSE 'soon' END AS attention_bucket,"+
       " t.public_id AS tenant_public_id,t.display_name AS tenant,t.country_code,sn.display_number,sn.e164,m.country_code AS market"+
       " FROM regulatory_review_alerts r LEFT JOIN tenants t ON t.id=r.tenant_id LEFT JOIN sva_numbers sn ON sn.id=r.sva_number_id"+
