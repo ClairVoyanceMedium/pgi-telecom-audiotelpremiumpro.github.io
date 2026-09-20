@@ -279,6 +279,28 @@ export function createBackend(options={}){
         const provider=billingProviderStatus(config);
         return done(res,metrics,started,"customer.billing.portal",503,{error:{code:"PAYMENT_PROVIDER_NOT_CONNECTED"},billing_provider:provider});
       }
+      if(method==="GET"&&pathname==="/api/v1/customer/portability"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        return done(res,metrics,started,"customer.portability.list",200,{data:await store.customerPortabilityRequests(context.tenant_id)});
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/portability"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={tenant_id:context.tenant_id,...body};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer.portability.create",payload,()=>store.createCustomerPortabilityRequest(context.tenant_id,body));
+        return done(res,metrics,started,"customer.portability.create",201,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/customer/portability/:id/cancel");
+      if(method==="POST"&&match){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        const payload={tenant_id:context.tenant_id,request_id:match.id};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer.portability.cancel",payload,()=>store.cancelCustomerPortabilityRequest(context.tenant_id,match.id));
+        return done(res,metrics,started,"customer.portability.cancel",200,{...result.value,replayed:result.replayed});
+      }
+
       if(method==="GET"&&pathname==="/api/v1/customer/comparison"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
@@ -533,6 +555,15 @@ export function createBackend(options={}){
       if(method==="POST"&&match){requireRole(actor,["admin"]);requireCsrf(req,actor,config);const body=await readJson(req,config.bodyLimitBytes);const result=await store.idempotent(req.headers["idempotency-key"],"call_destination.create",{tenant:match.id,...body},()=>store.createCallDestination(match.id,body,actor));return done(res,metrics,started,"platform.call_destination_create",201,{...result.value,replayed:result.replayed});}
       match=routeMatch(pathname,"/api/v1/platform/call-destinations/:id/status");
       if(method==="POST"&&match){requireRole(actor,["admin"]);requireCsrf(req,actor,config);const body=await readJson(req,config.bodyLimitBytes);const payload={id:match.id,status:body.status,reason:body.reason||""};const result=await store.idempotent(req.headers["idempotency-key"],"call_destination.status",payload,()=>store.setCallDestinationStatus(match.id,body.status,actor,body.reason||""));return done(res,metrics,started,"platform.call_destination_status",200,{...result.value,replayed:result.replayed});}
+
+      match=routeMatch(pathname,"/api/v1/platform/portability/:id/status");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={id:match.id,...body};
+        const result=await store.idempotent(req.headers["idempotency-key"],"portability.status",payload,()=>store.updatePortabilityRequest(match.id,body,actor));
+        return done(res,metrics,started,"platform.portability_status",200,{...result.value,replayed:result.replayed});
+      }
 
       if(method==="GET"&&pathname==="/api/v1/platform/billing-alerts"){
         requireRole(actor,["admin","finance","readonly"]);
