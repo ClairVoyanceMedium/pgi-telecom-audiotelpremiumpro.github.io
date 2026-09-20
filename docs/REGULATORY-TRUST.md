@@ -62,6 +62,23 @@ Ces lignes sont initialisées en `not_started`. Aucune migration ne les marque a
 
 Une correction ne modifie donc pas une ancienne preuve : elle ajoute un nouvel événement.
 
+## Evidence Pack automatique
+
+Chaque affectation SVA peut générer un dossier d'audit JSON horodaté depuis le cockpit. Le pack consolide dans une transaction cohérente :
+
+- identité du client et du numéro ;
+- état KYC ;
+- profil réglementaire et état de préparation ;
+- chaîne complète des preuves réglementaires et son hash de tête ;
+- historique de portabilité et événements opérateur assainis ;
+- affectations successives aux opérateurs ;
+- historique d'activation / suspension de la ligne ;
+- incidents de service et dossiers fraude ;
+- contrôles réglementaires de la plateforme pour le marché concerné ;
+- route opérateur courante et dernières bascules.
+
+Le pack contient sa propre empreinte SHA-256 et un indicateur de continuité des liens de la chaîne de preuves. Chaque export est lui-même journalisé dans `audit_log` avec l'empreinte produite. Pour limiter l'exposition de données sensibles, le pack exclut volontairement le RIO brut, les secrets de portabilité, les numéros d'appelants et le contenu des appels.
+
 ## Signalements et fraude
 
 `sva_abuse_cases` accepte notamment les origines 33700, Arcep, DGCCRF, opérateur, consommateur et détection interne.
