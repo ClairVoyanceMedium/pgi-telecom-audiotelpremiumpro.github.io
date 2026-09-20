@@ -1083,7 +1083,11 @@ function mergeMetricRows(callRows,minuteRows,revenueRows,payoutRows,keyFn){
   const map=new Map();
   function take(rows,kind){
     for(const row of rows||[]){
-      const key=keyFn(row),dst=map.get(key)||{...row};
+      const key=keyFn(row),dst=map.get(key)||{
+        bucket:row.bucket,hour:row.hour,weekday:row.weekday,
+        dimension_type:row.dimension_type,dimension_key:row.dimension_key,dimension_label:row.dimension_label,
+        currency:row.currency,currency_count:row.currency_count
+      };
       if(kind==="calls"){
         for(const k of ["calls_total","calls_connected","calls_abandoned","calls_failed"])if(k in row)dst[k]=row[k];
       }else if(kind==="minutes"){
