@@ -29,6 +29,7 @@ const clientServiceCenter=read("assets/client-service-center.js");
 const tenantServiceAdmin=read("assets/tenant-service-admin.js");
 const platformAdmin=read("assets/platform-admin-tools.js");
 const callTools=read("assets/call-tools.js");
+const callList=read("assets/call-list.js");
 const css=read("assets/styles.css");
 const sw=read("service-worker.js");
 const manifest=read("manifest.webmanifest");
@@ -54,12 +55,13 @@ test("le cockpit garde une liste d'appels compacte et une remise à zéro sûre"
   assert.ok(index.includes('id="calls-table"'));
   assert.match(index,/Les CDR et l’historique resteront intacts/);
   assert.match(app,/renderCallTable\(tableRows,state\.marketCurrency/);
-  assert.match(callTools,/callRows\.slice\(0,8\)/);
-  assert.match(callTools,/Afficher les /);
-  assert.match(callTools,/Réduire la liste/);
+  assert.match(callTools,/import\("\.\/call-list\.js"\)/);
+  assert.match(callList,/rows\.slice\(0,8\)/);
+  assert.match(callList,/Afficher les /);
+  assert.match(callList,/Réduire la liste/);
   assert.match(app,/createBaseline\(\{scope:"global",reason:"Remise à zéro depuis le cockpit"\}/);
   assert.doesNotMatch(app,/DELETE\s+FROM\s+calls/i);
-}
+});
 
 test("le nom officiel et les vues principales sont présents",()=>{
   assert.match(index,/PGI • Telecom - Audiotel Premium Pro/);
