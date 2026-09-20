@@ -1044,6 +1044,84 @@ function recordAuthFailure(key,config,buckets){
     for(const [k,v] of buckets)if(now-v.startedAt>=windowMs)buckets.delete(k);
   }
 }
+
+async function selectiveSummary(store,ranges,market){
+  const cache=new Map();
+  const get=async range=>{
+    const key=range.from+"|"+range.to;
+    if(!cache.has(key))cache.set(key,store.summary(range.from,range.to,market));
+    return cache.get(key);
+  };
+  const [calls,minutes,revenue,payout]=await Promise.all([get(ranges.calls),get(ranges.minutes),get(ranges.revenue),get(ranges.payout)]);
+  return {
+    ...calls,
+    billable_minutes:minutes.billable_minutes,
+    acd_seconds:minutes.acd_seconds,
+    generated_revenue_ttc:revenue.generated_revenue_ttc,
+    payout_eligible_minutes:payout.payout_eligible_minutes,
+    expected_payout_ht:payout.expected_payout_ht,
+    confirmed_payout_ht:payout.confirmed_payout_ht,
+    paid_payout_ht:payout.paid_payout_ht,
+    expert_cost_ht:payout.expert_cost_ht,
+    technical_cost_ht:payout.technical_cost_ht,
+    estimated_margin_ht:payout.estimated_margin_ht,
+    reconciliation_variance_ht:payout.reconciliation_variance_ht,
+    currency:revenue.currency||payout.currency||calls.currency,
+    currency_count:Math.max(Number(calls.currency_count||0),Number(revenue.currency_count||0),Number(payout.currency_count||0)),
+    mixed_currency:Boolean(calls.mixed_currency||revenue.mixed_currency||payout.mixed_currency)
+  };
+}
+function mergeMetricRows(callRows,minuteRows,revenueRows,payoutRows,keyFn){
+  const map=new Map();
+  function take(rows,kind){
+    for(const row of rows||[]){
+      const key=keyFn(row),dst=map.get(key)||{...row};
+      if(kind==="calls"){
+        for(const k of ["calls_total","calls_connected","calls_abandoned","calls_failed"])if(k in row)dst[k]=row[k];
+      }else if(kind==="minutes"){
+        for(const k of ["conversation_seconds","billable_seconds"])if(k in row)dst[k]=row[k];
+      }else if(kind==="revenue"){
+        if("revenue" in row)dst.revenue=row.revenue;
+      }else if(kind==="payout"){
+        for(const k of ["payout_eligible_seconds","expected_payout","confirmed_payout","paid_payout","expert_cost","technical_cost","margin","reconciliation_variance"])if(k in row)dst[k]=row[k];
+      }
+      map.set(key,dst);
+    }
+  }
+  take(callRows,"calls");take(minuteRows,"minutes");take(revenueRows,"revenue");take(payoutRows,"payout");
+  return [...map.values()];
+}
+async function selectiveAnalytics(store,ranges,market){
+  const cache=new Map();
+  const get=async range=>{
+    const key=range.from+"|"+range.to;
+    if(!cache.has(key))cache.set(key,store.dashboardAnalytics(range.from,range.to,market));
+    return cache.get(key);
+  };
+  const [calls,minutes,revenue,payout,quality]=await Promise.all([get(ranges.calls),get(ranges.minutes),get(ranges.revenue),get(ranges.payout),get(ranges.quality)]);
+  const series=mergeMetricRows(calls.series,minutes.series,revenue.series,payout.series,x=>String(x.bucket));
+  const hours=mergeMetricRows(calls.hours,minutes.hours,[],[],x=>String(x.hour));
+  const weekdays=mergeMetricRows(calls.weekdays,minutes.weekdays,[],[],x=>String(x.weekday));
+  const dimensions=mergeMetricRows(
+    [...(calls.experts||[]),...(calls.carriers||[]),...(calls.durations||[])],
+    [...(minutes.experts||[]),...(minutes.carriers||[]),...(minutes.durations||[])],
+    [...(revenue.experts||[]),...(revenue.carriers||[]),...(revenue.durations||[])],
+    [...(payout.experts||[]),...(payout.carriers||[]),...(payout.durations||[])],
+    x=>String(x.dimension_type)+"|"+String(x.dimension_key)
+  );
+  const byType={expert:[],carrier:[],duration:[]};
+  for(const row of dimensions)if(byType[row.dimension_type])byType[row.dimension_type].push(row);
+  return {
+    ...calls,
+    series:series.sort((a,b)=>Date.parse(a.bucket)-Date.parse(b.bucket)),
+    hours:hours.sort((a,b)=>Number(a.hour)-Number(b.hour)),
+    weekdays:weekdays.sort((a,b)=>Number(a.weekday)-Number(b.weekday)),
+    quality:quality.quality,quality_series:quality.quality_series,
+    experience:quality.experience,experience_series:quality.experience_series,
+    experts:byType.expert.slice(0,50),carriers:byType.carrier.slice(0,50),durations:byType.duration
+  };
+}
+
 function rangeParams(url){
   const now=new Date();
   const from=url.searchParams.get("from")||new Date(now.getTime()-24*3600000).toISOString();
