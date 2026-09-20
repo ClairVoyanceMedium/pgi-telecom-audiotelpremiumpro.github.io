@@ -2048,11 +2048,16 @@ export class PostgresStore{
       };
       const packHash=createHash("sha256").update(JSON.stringify(body)).digest("hex");
       const chainHead=evidence.length?evidence.at(-1).event_hash:null;
+      const exportRow=(await tx.unsafe(
+        "INSERT INTO sva_regulatory_evidence_pack_exports(tenant_id,assignment_id,sva_number_id,generated_at,pack_sha256,evidence_chain_head,evidence_links_valid,evidence_events,actor_subject)"+
+        " VALUES($1,$2,$3,$4::timestamptz,$5,$6,$7,$8,$9) RETURNING public_id::text AS public_id,created_at",
+        [assignment.tenant_id,id,assignment.sva_number_id,generatedAt,packHash,chainHead,chainLinksValid,evidence.length,actorSubject||null]
+      ))[0];
       await tx.unsafe(
-        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'regulatory.evidence_pack.export','tenant_number_assignment',$3,$4::jsonb)",
-        [assignment.tenant_id,actorId,String(id),JSON.stringify({actor_subject:actorSubject||null,generated_at:generatedAt,pack_sha256:packHash,evidence_chain_head:chainHead,evidence_links_valid:chainLinksValid})]
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'regulatory.evidence_pack.export','tenant_number_assignment',$3,jsonb_build_object('export_public_id',$4,'generated_at',$5,'pack_sha256',$6,'evidence_chain_head',$7,'evidence_links_valid',$8))",
+        [assignment.tenant_id,actorId,String(id),exportRow.public_id,generatedAt,packHash,chainHead,chainLinksValid]
       );
-      return {...body,integrity:{algorithm:"sha256",pack_sha256:packHash,evidence_chain_head:chainHead,evidence_links_valid:chainLinksValid,evidence_events:evidence.length}};
+      return {...body,integrity:{algorithm:"sha256",export_id:exportRow.public_id,pack_sha256:packHash,evidence_chain_head:chainHead,evidence_links_valid:chainLinksValid,evidence_events:evidence.length}};
     });
   }
 
