@@ -39,7 +39,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(internalAccess[0].allowed,true);
 
     const billingBefore=await store.subscriptionBillingOverview();
-    assert.equal(Number(billingBefore.current_price.amount_minor),200);
+    assert.equal(Number(billingBefore.current_price.amount_minor),300);
     assert.equal(billingBefore.current_price.currency,"EUR");
     assert.equal(billingBefore.internal_usage_exempt,true);
     assert.equal(billingBefore.summary.access_blocked,1);
@@ -91,7 +91,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
       error=>error.status===409&&error.code==="BILLING_SUBSCRIPTION_TENANT_MISMATCH"
     );
     const billingPrep=await store.customerBillingPreparation((await store.sql.unsafe("SELECT id FROM tenants WHERE slug='integration-external'"))[0].id);
-    assert.equal(Number(billingPrep.offer.amount_minor),200);
+    assert.equal(Number(billingPrep.offer.amount_minor),300);
     assert.equal(billingPrep.checkout_prefill.email,"billing@example.test");
     assert.equal(billingPrep.return_paths.success,"client.html?billing=success");
 
@@ -124,6 +124,15 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
 
     await store.sql.unsafe("INSERT INTO tenant_number_assignments(tenant_id,sva_number_id,assignment_type,status,valid_from,regulatory_assignor_carrier_id,upstream_assignment_reference) SELECT t.id,s.id,'customer_service','active',now(),c.id,'integration-upstream-001' FROM tenants t CROSS JOIN sva_numbers s CROSS JOIN carriers c WHERE t.slug='integration-external' AND s.e164='33890000001' AND c.name='Host A'");
     const extAssignmentForRoute=await store.sql.unsafe("SELECT id FROM tenant_number_assignments WHERE tenant_id=(SELECT id FROM tenants WHERE slug='integration-external') AND sva_number_id=(SELECT id FROM sva_numbers WHERE e164='33890000001') LIMIT 1");
+    const evidencePack=await store.regulatoryEvidencePack(Number(extAssignmentForRoute[0].id),{sub:"admin"});
+    assert.equal(evidencePack.assignment.regulatory_ready,true);
+    assert.equal(evidencePack.evidence_ledger.length,7);
+    assert.equal(evidencePack.integrity.evidence_links_valid,true);
+    assert.match(evidencePack.integrity.pack_sha256,/^[0-9a-f]{64}$/);
+    assert.match(evidencePack.integrity.evidence_chain_head,/^[0-9a-f]{64}$/);
+    assert.equal(evidencePack.privacy.raw_rio_included,false);
+    const packAudit=await store.sql.unsafe("SELECT details FROM audit_log WHERE action='regulatory.evidence_pack.export' AND entity_id=$1 ORDER BY id DESC LIMIT 1",[String(extAssignmentForRoute[0].id)]);
+    assert.equal(packAudit[0].details.pack_sha256,evidencePack.integrity.pack_sha256);
     const createdDestination=await store.createCallDestination(externalIdentity[0].public_id,{assignment_id:Number(extAssignmentForRoute[0].id),label:"Standard principal",destination_type:"pstn",destination_uri:"tel:+33123456789",priority:10,max_concurrent_calls:25},{sub:"admin"});
     assert.equal(createdDestination.status,"testing");
     await store.setCallDestinationStatus(createdDestination.id,"active",{sub:"admin"},"integration");
@@ -456,10 +465,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const rawCalls=await store.sql.unsafe("SELECT count(*)::int AS count FROM calls");
     assert.equal(rawCalls[0].count,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
-    assert.equal(migrations.length,37);
+    assert.equal(migrations.length,38);
     assert.equal(new Set(migrations.map(x=>x.version)).size,migrations.length);
     assert.equal(migrations[0].version,"001_baseline");
-    assert.equal(migrations.at(-1).version,"037_regulatory_trust_center");
+    assert.equal(migrations.at(-1).version,"038_subscription_price_300");
     for(const migration of migrations)assert.match(migration.checksum,/^[a-f0-9]{64}$/);
   }finally{
     await store.close();
