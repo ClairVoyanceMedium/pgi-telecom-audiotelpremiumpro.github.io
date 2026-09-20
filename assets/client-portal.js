@@ -148,10 +148,12 @@ async function loadPortal(){
   var range=rangeFor(state.range),data;
   document.dispatchEvent(new CustomEvent("pgi:portal-loading",{detail:{range:state.range}}));
   try{
-    if(state.demo)data=demoData(range);
-    else data=await window.PGICustomerApi.portal(range.from,range.to);
+    if(state.demo){
+      data=demoData(range);
+      data.comparison_previous=demoData(previousRangeFor(range)).financial_by_currency;
+    }else data=await window.PGICustomerApi.portal(range.from,range.to);
     render(data);
-    document.dispatchEvent(new CustomEvent("pgi:portal-loaded",{detail:{range:state.range,serverTime:data&&data.server_time||null}}));
+    document.dispatchEvent(new CustomEvent("pgi:portal-loaded",{detail:{range:state.range,serverTime:data&&data.server_time||null,data:data}}));
     return data;
   }catch(error){
     document.dispatchEvent(new CustomEvent("pgi:portal-error",{detail:{range:state.range,code:error&&error.code||"LOAD_FAILED"}}));
