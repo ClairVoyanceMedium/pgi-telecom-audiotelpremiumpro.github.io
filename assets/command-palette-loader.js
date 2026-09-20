@@ -23,7 +23,15 @@ var b=button(),f=fab();
 if(b)b.addEventListener("click",onOpen);
 if(f)f.addEventListener("click",onOpen);
 document.addEventListener("keydown",onKey);
-document.querySelectorAll("[data-platform-admin]").forEach(function(el){
-el.addEventListener("click",function(){import("./platform-admin-tools.js").then(function(m){m.open();}).catch(function(){});});
+function bindLazy(selector,path){
+document.querySelectorAll(selector).forEach(function(el){
+el.addEventListener("click",function(){
+var dlg=document.getElementById("mobile-menu-dialog");if(dlg&&dlg.open)dlg.close();
+import(path).then(function(m){m.open();}).catch(function(){});
 });
+});
+}
+bindLazy("[data-platform-admin]","./platform-admin-tools.js");
+bindLazy("[data-control-tower]","./control-tower.js");
+bindLazy("[data-sva-compliance]","./sva-compliance-center.js");
 })();
