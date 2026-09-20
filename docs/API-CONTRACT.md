@@ -340,3 +340,22 @@ Acquitte une alerte réglementaire ouverte. L'opération exige le rôle administ
 ### POST /platform/tenant-number-assignments/:id/regulatory-evidence — next_review_at
 
 Le payload de preuve accepte désormais un `next_review_at` futur. Lorsqu'il est fourni, la prochaine revue du profil concerné est mise à jour dans la même transaction que l'ajout de preuve, puis les anciennes alertes de ce framework sont résolues avant le prochain recalcul.
+
+
+## Control Tower 1.28
+
+### GET /platform/control-tower
+
+Lecture privée agrégée pour `admin`, `finance` et `readonly`. Retourne le statut opérationnel, le score interne de readiness, les KPI critiques, les priorités, le routage opérateur, la work queue, la conformité et la résilience.
+
+### POST /platform/policy/evaluate
+
+Évalue une intention opérationnelle sans mutation. Les intentions prises en charge sont `activate_number`, `port_in`, `payout_customer`, `carrier_switch` et `customer_access`.
+
+La réponse vaut `ALLOWED`, `BLOCKED` ou `ACTION_REQUIRED` et expose les raisons. Cette route n'active aucun numéro, ne paie aucun client et ne bascule aucun opérateur.
+
+### POST /platform/digital-twin/simulate
+
+Exécute un scénario `carrier_outage`, `traffic_spike`, `mass_portability`, `regulatory_expiry`, `billing_failure` ou `region_failure`.
+
+La réponse contient l'impact projeté, la sévérité, des recommandations et les hypothèses de base. `dry_run=true` et `mutates_state=false` sont contractuels.
