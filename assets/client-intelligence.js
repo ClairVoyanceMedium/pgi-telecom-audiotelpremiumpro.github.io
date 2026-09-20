@@ -128,16 +128,20 @@ async function loadPrevious(){
 function callFilters(){
   return {
     status:$("call-filter-status").value||"",
-    number:$("call-filter-number").value||"",
+    numberId:$("call-filter-number").value||"",
     minDuration:$("call-filter-min-duration").value?Math.round(Number($("call-filter-min-duration").value)*60):"",
     minAmount:$("call-filter-min-amount").value||""
   };
 }
-function filtersActive(f){return Boolean(f.status||f.number||f.minDuration!==""||f.minAmount!=="");}
+function filtersActive(f){return Boolean(f.status||f.numberId||f.minDuration!==""||f.minAmount!=="");}
 function filterDemo(rows,f){
   return (rows||[]).filter(function(x){
     if(f.status&&String(x.call_status)!==f.status)return false;
-    if(f.number&&String(x.display_number||x.e164||"").indexOf(f.number)<0)return false;
+    if(f.numberId){
+      var assigned=(portalData.numbers||[]).find(function(v){return String(v.id)===String(f.numberId);});
+      var display=assigned&&(assigned.display_number||assigned.e164)||"";
+      if(display&&String(x.display_number||x.e164||"")!==String(display))return false;
+    }
     if(f.minDuration!==""&&n(x.billable_seconds||x.conversation_seconds)<n(f.minDuration))return false;
     if(f.minAmount!==""&&n(x.retail_service_amount_ttc)<n(f.minAmount))return false;
     return true;
@@ -184,8 +188,8 @@ function populateNumbers(){
   var select=$("call-filter-number");if(!select||!portalData)return;
   var selected=select.value;
   select.innerHTML='<option value="">'+esc(t("Tous les numéros"))+"</option>"+(portalData.numbers||[]).map(function(x){
-    var value=x.display_number||x.e164||"";
-    return '<option value="'+esc(value)+'">'+esc(value)+"</option>";
+    var label=x.display_number||x.e164||"";
+    return '<option value="'+esc(x.id)+'">'+esc(label)+"</option>";
   }).join("");
   select.value=selected;
 }
