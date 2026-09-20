@@ -26,13 +26,12 @@ export async function processPortabilityWork(item,{store,config,env=process.env,
     return;
   }
 
-  const readiness=validateAutomationReadiness(task,config);
+  const action=chooseAction(task);
+  const readiness=validateAutomationReadiness(task,config,action);
   if(!readiness.ok){
     await markAutomation(store,requestId,{state:"action_required",nextSeconds:readiness.retrySeconds,error:readiness.code});
     return;
   }
-
-  const action=chooseAction(task);
   if(action==="complete"){
     await markAutomation(store,requestId,{state:"completing",nextSeconds:300,error:null});
     await store.completePortabilityRequest(requestId,{operator_portability_reference:task.operator_portability_reference},{});
@@ -50,9 +49,10 @@ export async function processPortabilityWork(item,{store,config,env=process.env,
   const state=action==="eligibility"?"checking":action==="submit"?"submitting":task.status==="scheduled"?"scheduled":"operator_pending";
   await markAutomation(store,requestId,{state,nextSeconds:300,error:null,incrementAttempts:true});
 
+  await recordOperatorEvent(store,task,action,{status:null,body:request},"outbound");
   let response;
   try{
-    response=await callOperator({task,action,request,endpoint,env,fetchImpl});
+    response=await callOperator({task,action,request,endpoint,env,fetchImpl,config});
   }catch(error){
     if(error?.actionRequired){
       await markAutomation(store,requestId,{state:"action_required",nextSeconds:900,error:error.code||error.message});
@@ -96,6 +96,7 @@ async function loadTask(store,requestId,config){
     "   SELECT a.adapter_key,a.adapter_version,a.capabilities"+
     "   FROM carrier_adapters a"+
     "   WHERE a.carrier_id=r.active_carrier_id AND a.enabled"+
+    "   AND (a.capabilities ? 'portability' OR lower(a.adapter_key) LIKE '%portability%')"+
     "   ORDER BY a.id DESC LIMIT 1"+
     " ) ca ON true"+
     " WHERE p.id=$1 LIMIT 1",
@@ -112,7 +113,7 @@ async function loadTask(store,requestId,config){
   return {...task,rio};
 }
 
-function validateAutomationReadiness(task,config){
+function validateAutomationReadiness(task,config,action){
   if(task.tenant_status==="closed")return fail("PORTABILITY_TENANT_CLOSED",3600);
   if(!task.market_id||task.market_status!=="active")return fail("PORTABILITY_MARKET_NOT_ACTIVE",3600);
   if(!task.active_carrier_id)return fail("PORTABILITY_OPERATOR_NOT_SELECTED",900);
@@ -122,19 +123,22 @@ function validateAutomationReadiness(task,config){
   if(task.country_code==="FR"&&task.rio_validation_status!=="verified")return fail("PORTABILITY_RIO_VERIFICATION_REQUIRED",3600);
   if(task.source_contract_liability_acknowledged!==true)return fail("PORTABILITY_SOURCE_CONTRACT_ACK_REQUIRED",3600);
   if(!task.authorization_confirmed||!task.number_owner_confirmed)return fail("PORTABILITY_AUTHORIZATION_REQUIRED",3600);
-  if(!task.kyc_ready)return fail("PORTABILITY_KYC_REQUIRED",1800);
-  if(!task.access_ready)return fail("SVA_SUBSCRIPTION_REQUIRED",1800);
-  if(!task.payout_ready)return fail("PORTABILITY_PAYOUT_TERMS_REQUIRED",1800);
+  if(action!=="eligibility"){
+    if(!task.kyc_ready)return fail("PORTABILITY_KYC_REQUIRED",1800);
+    if(!task.access_ready)return fail("SVA_SUBSCRIPTION_REQUIRED",1800);
+    if(!task.payout_ready)return fail("PORTABILITY_PAYOUT_TERMS_REQUIRED",1800);
+  }
   return {ok:true};
 }
 
 function chooseAction(task){
   const operatorStatus=String(task.operator_status||"").toLowerCase();
   if(task.status==="scheduled"&&["completed","ported","activated"].includes(operatorStatus))return "complete";
-  if(task.status==="scheduled"||task.status==="operator_pending")return "status";
-  if(task.ownership_status!=="verified"||task.tariff_verification_status!=="verified")return "eligibility";
-  if(!task.operator_portability_reference)return "submit";
-  return "status";
+  if(task.operator_portability_reference||task.status==="scheduled"||task.status==="operator_pending")return "status";
+  if(task.ownership_status!=="verified"||task.tariff_verification_status!=="verified"){
+    return resolveEndpoint(task,"eligibility")?"eligibility":"submit";
+  }
+  return "submit";
 }
 
 function buildOperatorRequest(task,action){
@@ -175,8 +179,11 @@ function resolveEndpoint(task,action){
   return url.replaceAll("{reference}",ref).replaceAll("{number}",number);
 }
 
-async function callOperator({task,action,request,endpoint,env,fetchImpl}){
+async function callOperator({task,action,request,endpoint,env,fetchImpl,config}){
   const settings=objectValue(task.api_settings);
+  let endpointUrl;
+  try{endpointUrl=new URL(endpoint);}catch{throw codedError("PORTABILITY_OPERATOR_ENDPOINT_INVALID",true);}
+  if(config?.mode==="production"&&endpointUrl.protocol!=="https:")throw codedError("PORTABILITY_OPERATOR_HTTPS_REQUIRED",true);
   const secretRef=String(task.api_secret_ref||"").trim();
   const secret=secretRef?String(env?.[secretRef]||""):"";
   const authMode=String(task.api_auth_mode||"none").toLowerCase();
@@ -262,17 +269,27 @@ async function applySubmission(store,task,body){
     await markAutomation(store,task.id,{state:"action_required",nextSeconds:900,error:"PORTABILITY_OPERATOR_REFERENCE_MISSING",operatorStatus:state});
     return;
   }
-  const scheduledAt=parseDateTime(body.scheduled_at||body.port_date||body.activation_at);
-  const canSchedule=Boolean(scheduledAt)&&task.ownership_status==="verified"&&task.tariff_verification_status==="verified";
-  const nextStatus=canSchedule?"scheduled":"operator_pending";
+  const ownershipVerified=task.ownership_status==="verified"||body.ownership_verified===true||["scheduled","completed","ported","activated"].includes(state);
+  const tariffCode=textValue(body.tariff_code)||task.tariff_code||null;
+  const rate=finiteNumber(body.service_rate_ttc_per_min);
+  const effectiveRate=rate==null?(task.service_rate_ttc_per_min==null?null:Number(task.service_rate_ttc_per_min)):rate;
+  const tariffVerified=task.tariff_verification_status==="verified"||(body.tariff_verified===true&&Boolean(tariffCode)&&effectiveRate!=null);
+  const currency=textValue(body.currency)||task.currency||null;
+  const scheduledAt=parseDateTime(body.scheduled_at||body.port_date||body.activation_at||body.completed_at);
+  const canSchedule=Boolean(scheduledAt)&&ownershipVerified&&tariffVerified;
+  const nextStatus=canSchedule?"scheduled":ownershipVerified?"operator_pending":"eligibility_check";
   await store.sql.unsafe(
     "UPDATE tenant_portability_requests SET status=$2,operator_portability_reference=$3,target_carrier_id=$4,target_api_connection_id=$5,"+
-    " scheduled_at=CASE WHEN $2='scheduled' THEN $6::timestamptz ELSE scheduled_at END,"+
-    " operator_status=$7,automation_state=CASE WHEN $2='scheduled' THEN 'scheduled' ELSE 'operator_pending' END,"+
+    " ownership_status=CASE WHEN $6 THEN 'verified' ELSE ownership_status END,"+
+    " tariff_code=COALESCE($7,tariff_code),service_rate_ttc_per_min=COALESCE($8,service_rate_ttc_per_min),currency=COALESCE($9,currency),"+
+    " tariff_verification_status=CASE WHEN $10 THEN 'verified' ELSE tariff_verification_status END,"+
+    " tariff_verified_at=CASE WHEN $10 THEN COALESCE(tariff_verified_at,now()) ELSE tariff_verified_at END,"+
+    " scheduled_at=CASE WHEN $2='scheduled' THEN $11::timestamptz ELSE scheduled_at END,"+
+    " operator_status=$12,automation_state=CASE WHEN $2='scheduled' THEN 'scheduled' ELSE 'operator_pending' END,"+
     " automation_last_error=NULL,automation_last_sync_at=now(),automation_next_at=now()+interval '5 minutes',updated_at=now() WHERE id=$1",
-    [Number(task.id),nextStatus,operatorRef,Number(task.active_carrier_id),Number(task.api_connection_id),scheduledAt,state||"submitted"]
+    [Number(task.id),nextStatus,operatorRef,Number(task.active_carrier_id),Number(task.api_connection_id),ownershipVerified,tariffCode,effectiveRate,currency,tariffVerified,scheduledAt,state||"submitted"]
   );
-  await auditAutomation(store,task,"portability.automation.submitted",{operator_reference:operatorRef,operator_status:state||null,scheduled_at:scheduledAt});
+  await auditAutomation(store,task,"portability.automation.submitted",{operator_reference:operatorRef,operator_status:state||null,scheduled_at:scheduledAt,ownership_verified:ownershipVerified,tariff_verified:tariffVerified});
   if(["completed","ported","activated"].includes(state)&&canSchedule){
     await store.completePortabilityRequest(task.id,{operator_portability_reference:operatorRef},{});
     await markAutomation(store,task.id,{state:"completed",nextSeconds:86400,error:null,operatorStatus:"completed"});
@@ -287,19 +304,29 @@ async function applyStatus(store,task,body){
     return;
   }
   const operatorRef=textValue(body.portability_reference)||textValue(body.operator_reference)||task.operator_portability_reference;
-  const scheduledAt=parseDateTime(body.scheduled_at||body.port_date||body.activation_at)||task.scheduled_at||null;
+  const ownershipVerified=task.ownership_status==="verified"||body.ownership_verified===true||["scheduled","completed","ported","activated"].includes(state);
+  const tariffCode=textValue(body.tariff_code)||task.tariff_code||null;
+  const rate=finiteNumber(body.service_rate_ttc_per_min);
+  const effectiveRate=rate==null?(task.service_rate_ttc_per_min==null?null:Number(task.service_rate_ttc_per_min)):rate;
+  const tariffVerified=task.tariff_verification_status==="verified"||(body.tariff_verified===true&&Boolean(tariffCode)&&effectiveRate!=null);
+  const currency=textValue(body.currency)||task.currency||null;
+  const scheduledAt=parseDateTime(body.scheduled_at||body.port_date||body.activation_at||body.completed_at)||task.scheduled_at||null;
   const completed=["completed","ported","activated"].includes(state);
-  const canSchedule=Boolean(operatorRef&&scheduledAt&&task.ownership_status==="verified"&&task.tariff_verification_status==="verified");
-  const nextStatus=canSchedule?"scheduled":task.status==="operator_pending"?"operator_pending":"eligibility_check";
+  const canSchedule=Boolean(operatorRef&&scheduledAt&&ownershipVerified&&tariffVerified);
+  const nextStatus=canSchedule?"scheduled":ownershipVerified?"operator_pending":"eligibility_check";
 
   await store.sql.unsafe(
     "UPDATE tenant_portability_requests SET status=$2,operator_portability_reference=COALESCE($3,operator_portability_reference),"+
-    " scheduled_at=CASE WHEN $2='scheduled' THEN COALESCE($4::timestamptz,scheduled_at) ELSE scheduled_at END,"+
-    " operator_status=$5,automation_state=CASE WHEN $2='scheduled' THEN 'scheduled' ELSE 'operator_pending' END,"+
+    " ownership_status=CASE WHEN $4 THEN 'verified' ELSE ownership_status END,"+
+    " tariff_code=COALESCE($5,tariff_code),service_rate_ttc_per_min=COALESCE($6,service_rate_ttc_per_min),currency=COALESCE($7,currency),"+
+    " tariff_verification_status=CASE WHEN $8 THEN 'verified' ELSE tariff_verification_status END,"+
+    " tariff_verified_at=CASE WHEN $8 THEN COALESCE(tariff_verified_at,now()) ELSE tariff_verified_at END,"+
+    " scheduled_at=CASE WHEN $2='scheduled' THEN COALESCE($9::timestamptz,scheduled_at) ELSE scheduled_at END,"+
+    " operator_status=$10,automation_state=CASE WHEN $2='scheduled' THEN 'scheduled' ELSE 'operator_pending' END,"+
     " automation_last_error=NULL,automation_last_sync_at=now(),automation_next_at=now()+interval '5 minutes',updated_at=now() WHERE id=$1",
-    [Number(task.id),nextStatus,operatorRef,scheduledAt,state||"pending"]
+    [Number(task.id),nextStatus,operatorRef,ownershipVerified,tariffCode,effectiveRate,currency,tariffVerified,scheduledAt,state||"pending"]
   );
-  await auditAutomation(store,task,"portability.automation.status",{operator_reference:operatorRef||null,operator_status:state||null,scheduled_at:scheduledAt});
+  await auditAutomation(store,task,"portability.automation.status",{operator_reference:operatorRef||null,operator_status:state||null,scheduled_at:scheduledAt,ownership_verified:ownershipVerified,tariff_verified:tariffVerified});
   if(completed&&canSchedule){
     await store.completePortabilityRequest(task.id,{operator_portability_reference:operatorRef},{});
     await markAutomation(store,task.id,{state:"completed",nextSeconds:86400,error:null,operatorStatus:"completed"});
@@ -356,15 +383,15 @@ async function markAutomation(store,requestId,{state,nextSeconds=300,error=null,
   );
 }
 
-async function recordOperatorEvent(store,task,action,response){
+async function recordOperatorEvent(store,task,action,response,direction="inbound"){
   const sanitized=sanitizePayload(response?.body);
   const providerEventId=textValue(response?.body?.event_id)||textValue(response?.body?.provider_event_id);
   const operatorRef=textValue(response?.body?.portability_reference)||textValue(response?.body?.operator_reference)||task.operator_portability_reference||null;
   await store.sql.unsafe(
     "INSERT INTO portability_operator_events(portability_request_id,tenant_id,carrier_id,carrier_connection_id,direction,event_type,provider_event_id,operator_reference,http_status,sanitized_payload)"+
-    " VALUES($1,$2,$3,$4,'inbound',$5,$6,$7,$8,$9::jsonb)"+
+    " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)"+
     " ON CONFLICT(carrier_id,provider_event_id) WHERE provider_event_id IS NOT NULL DO NOTHING",
-    [Number(task.id),Number(task.tenant_id),Number(task.active_carrier_id)||null,Number(task.api_connection_id)||null,"portability."+action,providerEventId,operatorRef,response?.status||null,JSON.stringify(sanitized)]
+    [Number(task.id),Number(task.tenant_id),Number(task.active_carrier_id)||null,Number(task.api_connection_id)||null,direction,"portability."+action,providerEventId,operatorRef,response?.status||null,JSON.stringify(sanitized)]
   );
 }
 
