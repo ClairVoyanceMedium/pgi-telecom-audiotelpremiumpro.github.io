@@ -257,6 +257,17 @@ Ferme uniquement la session client, sans toucher à une éventuelle session admi
 ### GET /dashboard/voice-intelligence?from=...&to=...&market=...
 Diagnostic voix agrégé et borné pour le cockpit administrateur : taux de connexion, PDD, MOS, perte de paquets, jitter, latence, RTT, réponses SIP, origine des raccrochages, santé par opérateur et historique d'incidents. Les périodes complètes utilisent des agrégats pré-calculés et seules les bordures de période relisent les appels bruts.
 
+### GET /customer/billing/status
+Retourne l’état de préparation du prestataire de paiement pour le tenant authentifié. Tant que le prestataire n’est pas connecté, `connection_state=not_connected` et les actions de paiement restent indisponibles.
+
+### POST /customer/billing/checkout-session
+Point d’orchestration réservé à la future création d’une session de souscription. Le contrat HTTP et la protection CSRF sont déjà en place. Sans prestataire connecté, la route répond `503 PAYMENT_PROVIDER_NOT_CONNECTED` et aucune opération financière n’est effectuée.
+
+### POST /customer/billing/portal-session
+Point d’orchestration réservé au futur portail de gestion de facturation. Sans prestataire connecté, la route répond `503 PAYMENT_PROVIDER_NOT_CONNECTED`.
+
+La facturation PGI et les reversements SVA restent deux flux séparés. L’abonnement suit `client → prestataire de paiement → PGI`. Les reversements SVA suivent `opérateur SVA → client` et ne transitent pas par PGI.
+
 ### GET /customer/portal?from=...&to=...
 Appel consolidé du portail client : trafic, séries journalières, numéros, reversements, abonnement, destinations de routage, qualité voix agrégée et derniers appels avec diagnostic technique. Les données sont lues dans le contexte SQL du tenant et peuvent utiliser la réplique de lecture.
 
