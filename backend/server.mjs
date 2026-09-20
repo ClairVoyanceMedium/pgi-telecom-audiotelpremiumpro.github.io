@@ -613,6 +613,12 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.portability_complete",200,{...result.value,replayed:result.replayed});
       }
 
+      if(method==="GET"&&pathname==="/api/v1/platform/service-incidents"){
+        requireRole(actor,["admin","finance","readonly"]);
+        const params=Object.fromEntries(url.searchParams.entries());
+        return done(res,metrics,started,"platform.service_incidents.list",200,await store.listServiceIncidents(params));
+      }
+
       match=routeMatch(pathname,"/api/v1/platform/tenants/:id/incidents");
       if(method==="POST"&&match){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
