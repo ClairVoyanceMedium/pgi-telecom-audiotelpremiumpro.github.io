@@ -1978,6 +1978,84 @@ export class PostgresStore{
     return result;
   }
 
+  async regulatoryEvidencePack(id,actor={}){
+    id=Number(id);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_ASSIGNMENT_ID");
+    const actorId=numericActor(actor),actorSubject=String(actor?.sub||actor?.username||"").slice(0,200);
+    return this.sql.begin(async tx=>{
+      await tx.unsafe("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
+      const assignment=(await tx.unsafe(
+        "SELECT a.id,a.tenant_id,a.sva_number_id,a.assignment_type,a.status AS assignment_status,a.valid_from,a.valid_to,a.tariff_code AS assignment_tariff_code,a.upstream_assignment_reference,"+
+        " t.public_id::text AS tenant_public_id,t.display_name AS tenant_name,t.legal_name,t.status AS tenant_status,t.country_code AS tenant_country,"+
+        " sn.e164,sn.display_number,sn.number_type,sn.currency,sn.tariff_code AS number_tariff_code,sn.service_rate_ttc_per_min::float8,sn.status AS number_status,sn.market_id,"+
+        " m.country_code AS market,m.regulator_name,m.numbering_authority,c.name AS regulatory_assignor,"+
+        " pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AS regulatory_ready"+
+        " FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id"+
+        " LEFT JOIN operating_markets m ON m.id=sn.market_id LEFT JOIN carriers c ON c.id=a.regulatory_assignor_carrier_id"+
+        " WHERE a.id=$1 FOR SHARE OF a,t,sn",
+        [id]
+      ))[0];
+      if(!assignment)throw problem(404,"ASSIGNMENT_NOT_FOUND");
+      if(assignment.tenant_status==="closed")throw problem(409,"TENANT_CLOSED");
+      const e164Plus=String(assignment.e164||"").startsWith("+")?String(assignment.e164):"+"+String(assignment.e164||"");
+      const [kycRows,profileRows,evidence,portability,operatorEvents,carrierAssignments,controlEvents,incidents,abuseCases,platformControls,routeRows,switches]=await Promise.all([
+        tx.unsafe("SELECT entity_type,registration_country,registration_number,legal_representative_verified,bank_account_verified,status,reviewed_at,expires_at,updated_at FROM tenant_kyc_profiles WHERE tenant_id=$1",[assignment.tenant_id]),
+        tx.unsafe("SELECT regulatory_role,service_name,service_description,provider_name,provider_website,provider_address,complaint_contact,signaletic_model,numbering_rights_status,editor_identity_status,rsva_status,tariff_transparency_status,mgit_status,complaint_process_status,fraud_monitoring_status,last_reviewed_at,next_review_at,created_at,updated_at FROM sva_regulatory_profiles WHERE tenant_id=$1 AND sva_number_id=$2",[assignment.tenant_id,assignment.sva_number_id]),
+        tx.unsafe("SELECT id,control_key,status,source,evidence_reference,previous_hash,event_hash,actor_subject,occurred_at FROM sva_regulatory_evidence_events WHERE tenant_id=$1 AND sva_number_id=$2 ORDER BY id",[assignment.tenant_id,assignment.sva_number_id]),
+        tx.unsafe(
+          "SELECT p.id,p.country_code,p.requested_e164,p.display_number,p.service_family,p.current_operator_name,p.current_operator_reference,p.desired_port_date,p.status,p.ownership_status,p.authorization_confirmed,p.number_owner_confirmed,"+
+          " c.name AS target_carrier,p.operator_portability_reference,p.scheduled_at,p.completed_at,p.rejection_reason,p.tariff_code,p.service_rate_ttc_per_min::float8,p.currency,p.tariff_verification_status,p.tariff_verified_at,"+
+          " p.rio_validation_status,p.rio_validated_at,p.source_contract_transfer_mode,p.source_contract_liability_acknowledged,p.automation_state,p.automation_last_error,p.automation_last_sync_at,p.operator_status,p.created_at,p.updated_at"+
+          " FROM tenant_portability_requests p LEFT JOIN carriers c ON c.id=p.target_carrier_id"+
+          " WHERE p.tenant_id=$1 AND (p.sva_number_id=$2 OR p.requested_e164=$3) ORDER BY p.created_at,p.id",
+          [assignment.tenant_id,assignment.sva_number_id,e164Plus]
+        ),
+        tx.unsafe(
+          "SELECT e.id,e.portability_request_id,c.name AS carrier,e.direction,e.event_type,e.provider_event_id,e.operator_reference,e.http_status,e.occurred_at"+
+          " FROM portability_operator_events e JOIN tenant_portability_requests p ON p.id=e.portability_request_id LEFT JOIN carriers c ON c.id=e.carrier_id"+
+          " WHERE e.tenant_id=$1 AND (p.sva_number_id=$2 OR p.requested_e164=$3) ORDER BY e.occurred_at,e.id",
+          [assignment.tenant_id,assignment.sva_number_id,e164Plus]
+        ),
+        tx.unsafe(
+          "SELECT n.id,c.name AS carrier,n.valid_from,n.valid_to,n.assignment_status,n.portability_reference,n.portability_status,n.created_at"+
+          " FROM number_carrier_assignments n JOIN carriers c ON c.id=n.carrier_id WHERE n.sva_number_id=$1 ORDER BY n.valid_from,n.id",
+          [assignment.sva_number_id]
+        ),
+        tx.unsafe("SELECT id,action,previous_status,new_status,reason,created_at FROM tenant_control_events WHERE tenant_id=$1 AND assignment_id=$2 ORDER BY created_at,id",[assignment.tenant_id,id]),
+        tx.unsafe("SELECT public_id::text AS public_id,category,severity,status,source,title,assigned_team,first_response_due_at,target_resolution_at,first_responded_at,resolved_at,closed_at,created_at,updated_at FROM tenant_service_incidents WHERE tenant_id=$1 AND sva_number_id=$2 ORDER BY created_at,id",[assignment.tenant_id,assignment.sva_number_id]),
+        tx.unsafe("SELECT public_id::text AS public_id,source,external_reference,category,severity,status,suspension_required,first_response_due_at,resolution_due_at,summary,opened_at,resolved_at,created_at,updated_at FROM sva_abuse_cases WHERE tenant_id=$1 AND sva_number_id=$2 ORDER BY opened_at,id",[assignment.tenant_id,assignment.sva_number_id]),
+        tx.unsafe("SELECT m.country_code AS market,c.control_key,c.status,c.evidence_reference,c.evidence_sha256,c.verified_at,c.valid_until,c.updated_at FROM platform_regulatory_controls c LEFT JOIN operating_markets m ON m.id=c.market_id WHERE c.market_id IS NULL OR c.market_id=$1 ORDER BY c.control_key",[assignment.market_id]),
+        tx.unsafe("SELECT r.route_key,r.generation,r.updated_at,ac.name AS active_carrier,sc.name AS standby_carrier,cc.state AS active_connection_state FROM logical_carrier_routes r LEFT JOIN carriers ac ON ac.id=r.active_carrier_id LEFT JOIN carriers sc ON sc.id=r.standby_carrier_id LEFT JOIN carrier_connections cc ON cc.id=r.active_connection_id WHERE r.route_key='sva-primary'"),
+        tx.unsafe("SELECT s.id,s.status,s.requested_at,s.started_at,s.completed_at,s.rollback_deadline,fc.name AS from_carrier,tc.name AS to_carrier FROM carrier_switches s LEFT JOIN carriers fc ON fc.id=s.from_carrier_id LEFT JOIN carriers tc ON tc.id=s.to_carrier_id WHERE s.route_key='sva-primary' ORDER BY s.requested_at DESC,s.id DESC LIMIT 50")
+      ]);
+      const chainLinksValid=evidence.every((event,index)=>index===0?!event.previous_hash:event.previous_hash===evidence[index-1].event_hash);
+      const generatedAt=new Date().toISOString();
+      const body={
+        schema:"audiotel-regulatory-evidence-pack/1",
+        generated_at:generatedAt,
+        assignment,
+        kyc:kycRows[0]||null,
+        regulatory_profile:profileRows[0]||null,
+        evidence_ledger:evidence,
+        portability,
+        portability_operator_events:operatorEvents,
+        carrier_assignments:carrierAssignments,
+        assignment_control_history:controlEvents,
+        service_incidents:incidents,
+        abuse_cases:abuseCases,
+        platform_regulatory_controls:platformControls,
+        routing:{current:routeRows[0]||null,recent_switches:switches},
+        privacy:{raw_rio_included:false,portability_credentials_included:false,caller_numbers_included:false,call_content_included:false}
+      };
+      const packHash=createHash("sha256").update(JSON.stringify(body)).digest("hex");
+      const chainHead=evidence.length?evidence.at(-1).event_hash:null;
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'regulatory.evidence_pack.export','tenant_number_assignment',$3,$4::jsonb)",
+        [assignment.tenant_id,actorId,String(id),JSON.stringify({actor_subject:actorSubject||null,generated_at:generatedAt,pack_sha256:packHash,evidence_chain_head:chainHead,evidence_links_valid:chainLinksValid})]
+      );
+      return {...body,integrity:{algorithm:"sha256",pack_sha256:packHash,evidence_chain_head:chainHead,evidence_links_valid:chainLinksValid,evidence_events:evidence.length}};
+    });
+  }
+
   async upsertSvaRegulatoryProfile(id,input={},actor={}){
     id=Number(id);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_ASSIGNMENT_ID");
     const signaletic=input.signaletic_model==null||input.signaletic_model===""?null:String(input.signaletic_model).trim().toLowerCase();
