@@ -1,5 +1,18 @@
 # Architecture — PGI Telecom • Audiotel Premium Pro
 
+
+
+## Abonnement PGI et reversements SVA
+
+La plateforme traite deux flux financiers indépendants.
+
+- Abonnement PGI : le client paie son abonnement mensuel au prestataire de paiement, qui reverse ensuite le revenu de plateforme à PGI.
+- Reversement SVA : l’opérateur SVA verse directement les sommes dues au client. PGI calcule, rapproche et affiche ces montants, sans encaisser les fonds pour le compte du client.
+
+L’architecture de paiement est pré-câblée mais inactive. Les routes `/customer/billing/status`, `/customer/billing/checkout-session` et `/customer/billing/portal-session` sont présentes, protégées par la session client et le CSRF. Tant qu’aucun adaptateur de paiement n’est volontairement connecté, les actions financières répondent `PAYMENT_PROVIDER_NOT_CONNECTED`.
+
+Le prestataire cible prévu est Stripe, mais aucun secret, appel API, compte ou webhook Stripe n’est nécessaire pour faire fonctionner l’application actuelle. Le branchement futur doit rester derrière ce contrat afin de ne pas coupler les appels, le routage SVA ou les reversements à un prestataire de paiement.
+
 ## Objectif
 
 Séparer strictement le front public/versionné et les composants télécom/données privés.
