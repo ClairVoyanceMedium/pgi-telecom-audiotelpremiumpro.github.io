@@ -50,6 +50,7 @@ const files=[
   "assets/platform-admin-tools.js",
   "assets/control-tower.js",
   "assets/control-tower-assurance.js",
+  "assets/sva-compliance-center.js",
   "assets/call-tools.js",
   "assets/call-list.js",
   "assets/metric-reset.js",
