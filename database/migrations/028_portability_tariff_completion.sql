@@ -40,7 +40,7 @@ ALTER TABLE tenant_portability_requests
 CREATE INDEX tenant_portability_requests_carrier_status_idx
   ON tenant_portability_requests(target_carrier_id,status,scheduled_at);
 
-CREATE OR REPLACE VIEW tenant_scoped_portability_requests
+CREATE VIEW tenant_scoped_portability_requests_v2
 WITH (security_barrier=true)
 AS
 SELECT
