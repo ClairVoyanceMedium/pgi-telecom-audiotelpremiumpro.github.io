@@ -1,3 +1,15 @@
+## 1.27.0 — Surveillance réglementaire proactive — 2026-09-20
+
+- file persistante `regulatory_review_alerts` pour les échéances et contrôles réglementaires à traiter ;
+- classification cockpit : bloquant, aujourd'hui, bientôt et revue non planifiée ;
+- anticipation automatique à 30 jours, avec priorité 24 heures et criticité après dépassement ;
+- surveillance des profils Trust Center, des garde-fous ARCEP 2026 et des contrôles plateforme arrivant à expiration ;
+- alertes dédupliquées, acquittables et réouvertes automatiquement lorsque la gravité augmente ;
+- prochaine revue ARCEP programmable directement lors de l'ajout d'une preuve ;
+- aucune suspension automatique d'une ligne déjà active par le moteur d'échéances ;
+- worker distribué et API privée dédiés ;
+- version portée à 1.27.0, sans connexion Stripe, opérateur, APNF ou PSP supplémentaire.
+
 ## 1.26.0 — Cockpit conformité ARCEP — 2026-09-20
 
 - fiche « Conformité ARCEP 2026 » directement accessible pour chaque numéro externe ;
