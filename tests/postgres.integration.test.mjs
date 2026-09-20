@@ -95,6 +95,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(billingPrep.checkout_prefill.email,"billing@example.test");
     assert.equal(billingPrep.return_paths.success,"client.html?billing=success");
 
+    const payoutTerms=await store.createTenantPayoutTerms(externalIdentity[0].public_id,{platform_fee_percent:20,payout_delay_days:7},{sub:"admin"});
+    assert.equal(Number(payoutTerms.platform_fee_bps),2000);
+    assert.equal(payoutTerms.collection_model,"pgi_collects");
+
     await store.sql.unsafe("INSERT INTO tenant_number_assignments(tenant_id,sva_number_id,assignment_type,status,valid_from) SELECT t.id,s.id,'customer_service','active',now() FROM tenants t CROSS JOIN sva_numbers s WHERE t.slug='integration-external' AND s.e164='33890000001'");
     const extAssignmentForRoute=await store.sql.unsafe("SELECT id FROM tenant_number_assignments WHERE tenant_id=(SELECT id FROM tenants WHERE slug='integration-external') AND sva_number_id=(SELECT id FROM sva_numbers WHERE e164='33890000001') LIMIT 1");
     const createdDestination=await store.createCallDestination(externalIdentity[0].public_id,{assignment_id:Number(extAssignmentForRoute[0].id),label:"Standard principal",destination_type:"pstn",destination_uri:"tel:+33123456789",priority:10,max_concurrent_calls:25},{sub:"admin"});
