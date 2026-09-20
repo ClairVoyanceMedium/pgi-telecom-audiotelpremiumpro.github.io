@@ -37,9 +37,9 @@ test("Digital Twin stays dry-run and detects capacity overload",()=>{
   assert.deepEqual(baseline,before);
 });
 
-test("Digital Twin covers carrier, portability, regulatory, billing and DR scenarios",()=>{
+test("Digital Twin covers operational and advanced chaos scenarios",()=>{
   const baseline={active_assignments:50,active_subscriptions:40,ready_numbers:45,total_numbers:50,route_standby_ready:false,destination_capacity:100,current_concurrent:10,regions_ready:1,regions_total:2,dr_targets:0};
-  for(const scenario of ["carrier_outage","mass_portability","regulatory_expiry","billing_failure","region_failure"]){
+  for(const scenario of ["carrier_outage","mass_portability","regulatory_expiry","billing_failure","region_failure","database_failure","worker_backlog","settlement_mismatch","hyperscale_growth"]){
     const r=simulateDigitalTwin(scenario,baseline,{count:6000,percent:25});
     assert.equal(r.scenario,scenario);
     assert.ok(Array.isArray(r.impacts)&&r.impacts.length>0);
@@ -48,12 +48,13 @@ test("Digital Twin covers carrier, portability, regulatory, billing and DR scena
 });
 
 test("Control Tower is private, lazy-loaded and wired to both engines",async()=>{
-  const [server,store,memory,commands,ui,build,size]=await Promise.all([
+  const [server,store,memory,commands,ui,assuranceUi,build,size]=await Promise.all([
     readFile(new URL("../backend/server.mjs",import.meta.url),"utf8"),
     readFile(new URL("../backend/src/store-postgres.mjs",import.meta.url),"utf8"),
     readFile(new URL("../backend/src/store-memory.mjs",import.meta.url),"utf8"),
     readFile(new URL("../assets/command-palette.js",import.meta.url),"utf8"),
     readFile(new URL("../assets/control-tower.js",import.meta.url),"utf8"),
+    readFile(new URL("../assets/control-tower-assurance.js",import.meta.url),"utf8"),
     readFile(new URL("../scripts/build-static.mjs",import.meta.url),"utf8"),
     readFile(new URL("../scripts/check-size.mjs",import.meta.url),"utf8")
   ]);
@@ -64,6 +65,9 @@ test("Control Tower is private, lazy-loaded and wired to both engines",async()=>
   assert.ok(commands.includes("control-tower"));
   assert.ok(commands.includes('import(TOWER_URL)'));
   for(const token of ["Control Tower","Policy Engine","Digital Twin","AUCUN BRANCHEMENT EXTERNE","AUCUNE MUTATION"])assert.ok(ui.includes(token),token);
+  for(const token of ["Risk Engine","Shadow billing","Validations 4 yeux"])assert.ok(assuranceUi.includes(token),token);
   assert.ok(build.includes("assets/control-tower.js"));
+  assert.ok(build.includes("assets/control-tower-assurance.js"));
   assert.ok(size.includes('"assets/control-tower.js":16*1024'));
+  assert.ok(size.includes('"assets/control-tower-assurance.js":8*1024'));
 });
