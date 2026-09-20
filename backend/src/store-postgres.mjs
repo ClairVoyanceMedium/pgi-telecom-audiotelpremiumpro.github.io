@@ -4089,7 +4089,7 @@ export class PostgresStore{
   }
 
   async wholesaleOverview(){
-    const [summaryRows,tenants,numbers,settlements,payments,markets,currencyTotals,scaleRows,regulatorySummary,regulatoryNumbers,platformRegulatoryControls]=await Promise.all([
+    const [summaryRows,tenants,numbers,settlements,payments,markets,currencyTotals,scaleRows,regulatorySummary,regulatoryNumbers,platformRegulatoryControls,regulatoryReviewAlerts]=await Promise.all([
       this.readSql.unsafe(
         "SELECT"+
         " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal') AS tenants_total,"+
@@ -4190,7 +4190,11 @@ export class PostgresStore{
         " (SELECT count(*)::int FROM sva_abuse_cases WHERE status NOT IN ('resolved','closed')) AS abuse_open,"+
         " (SELECT count(*)::int FROM sva_abuse_cases WHERE status NOT IN ('resolved','closed') AND severity='critical') AS abuse_critical,"+
         " (SELECT count(*)::int FROM platform_regulatory_controls WHERE status='verified' AND (valid_until IS NULL OR valid_until>now())) AS platform_controls_verified,"+
-        " (SELECT count(*)::int FROM platform_regulatory_controls WHERE status IN ('failed','expired')) AS platform_controls_attention"
+        " (SELECT count(*)::int FROM platform_regulatory_controls WHERE status IN ('failed','expired')) AS platform_controls_attention,"+
+        " (SELECT count(*)::int FROM regulatory_review_alerts WHERE state<>'resolved') AS review_attention_total,"+
+        " (SELECT count(*)::int FROM regulatory_review_alerts WHERE state<>'resolved' AND severity='critical') AS review_blocking,"+
+        " (SELECT count(*)::int FROM regulatory_review_alerts WHERE state<>'resolved' AND severity<>'critical' AND due_at IS NOT NULL AND due_at<=now()+interval '24 hours') AS review_today,"+
+        " (SELECT count(*)::int FROM regulatory_review_alerts WHERE state<>'resolved' AND severity<>'critical' AND (due_at IS NULL OR due_at>now()+interval '24 hours')) AS review_soon"
       ),
       this.readSql.unsafe(
         "SELECT a.id AS assignment_id,t.display_name AS tenant,sn.id AS sva_number_id,sn.display_number,sn.e164,m.country_code AS market,a.status AS assignment_status,"+
@@ -4210,6 +4214,14 @@ export class PostgresStore{
         "SELECT c.id,m.country_code AS market,c.control_key,c.status,c.evidence_reference,c.evidence_sha256,c.verified_at,c.valid_until,c.updated_at"+
         " FROM platform_regulatory_controls c LEFT JOIN operating_markets m ON m.id=c.market_id"+
         " ORDER BY COALESCE(m.country_code,'ZZ'),c.control_key"
+      ),
+      this.readSql.unsafe(
+        "SELECT r.id,r.framework,r.alert_kind,r.severity,r.state,r.title,r.message,r.due_at,r.first_detected_at,r.last_detected_at,"+
+        " CASE WHEN r.severity='critical' THEN 'blocking' WHEN r.due_at IS NOT NULL AND r.due_at<=now()+interval '24 hours' THEN 'today' ELSE 'soon' END AS attention_bucket,"+
+        " t.display_name AS tenant,sn.display_number,sn.e164,m.country_code AS market"+
+        " FROM regulatory_review_alerts r LEFT JOIN tenants t ON t.id=r.tenant_id LEFT JOIN sva_numbers sn ON sn.id=r.sva_number_id"+
+        " LEFT JOIN platform_regulatory_controls pc ON pc.id=r.platform_control_id LEFT JOIN operating_markets m ON m.id=COALESCE(sn.market_id,pc.market_id)"+
+        " WHERE r.state<>'resolved' ORDER BY CASE r.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,r.due_at NULLS LAST,r.id DESC LIMIT 30"
       )
     ]);
     const singleCurrency=currencyTotals.length===1?currencyTotals[0]:null;
@@ -4238,9 +4250,10 @@ export class PostgresStore{
         process_role:this.config.processRole||"all"
       },
       regulatory_trust:{
-        summary:regulatorySummary[0]||{numbers_total:0,numbers_ready:0,arcep_2026_ready:0,evidence_events:0,arcep_2026_evidence_events:0,abuse_open:0,abuse_critical:0,platform_controls_verified:0,platform_controls_attention:0},
+        summary:regulatorySummary[0]||{numbers_total:0,numbers_ready:0,arcep_2026_ready:0,evidence_events:0,arcep_2026_evidence_events:0,abuse_open:0,abuse_critical:0,platform_controls_verified:0,platform_controls_attention:0,review_attention_total:0,review_blocking:0,review_today:0,review_soon:0},
         numbers:regulatoryNumbers,
-        platform_controls:platformRegulatoryControls
+        platform_controls:platformRegulatoryControls,
+        review_alerts:regulatoryReviewAlerts
       }
     };
   }
@@ -4253,10 +4266,12 @@ export class PostgresStore{
       " count(*) FILTER(WHERE status NOT IN ('resolved','closed') AND first_responded_at IS NULL AND first_response_due_at<now())::int AS service_first_response_overdue,"+
       " count(*) FILTER(WHERE status NOT IN ('resolved','closed') AND target_resolution_at<now())::int AS service_resolution_overdue,"+
       " (SELECT count(*)::int FROM tenant_operational_alerts WHERE state<>'resolved' AND alert_type='routing_unavailable') AS routing_unavailable,"+
-      " (SELECT count(*)::int FROM tenant_operational_alerts WHERE state<>'resolved' AND alert_type='portability_attention') AS portability_attention"+
+      " (SELECT count(*)::int FROM tenant_operational_alerts WHERE state<>'resolved' AND alert_type='portability_attention') AS portability_attention,"+
+      " (SELECT count(*)::int FROM regulatory_review_alerts WHERE state<>'resolved') AS regulatory_attention,"+
+      " (SELECT count(*)::int FROM regulatory_review_alerts WHERE state<>'resolved' AND severity='critical') AS regulatory_blocking"+
       " FROM tenant_service_incidents"
     );
-    return rows[0]||{service_incidents_open:0,service_incidents_critical:0,service_first_response_overdue:0,service_resolution_overdue:0,routing_unavailable:0,portability_attention:0};
+    return rows[0]||{service_incidents_open:0,service_incidents_critical:0,service_first_response_overdue:0,service_resolution_overdue:0,routing_unavailable:0,portability_attention:0,regulatory_attention:0,regulatory_blocking:0};
   }
 
   async systemSnapshot(){
