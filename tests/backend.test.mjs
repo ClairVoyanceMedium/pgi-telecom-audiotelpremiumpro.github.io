@@ -630,8 +630,16 @@ test("billing orchestration is ready without connecting a payment provider",()=>
   assert.match(backendServer,/\/api\/v1\/customer\/billing\/status/);
   assert.match(backendServer,/\/api\/v1\/customer\/billing\/checkout-session/);
   assert.match(backendServer,/\/api\/v1\/customer\/billing\/portal-session/);
+  assert.match(backendServer,/customerBillingPreparation/);
   assert.match(backendServer,/PAYMENT_PROVIDER_NOT_CONNECTED/);
+  assert.match(backendServer,/NO_ACTIVE_BILLING_OFFER/);
   assert.match(backendServer,/target_provider:"stripe"/);
+  assert.match(backendServer,/checkout_mode:"provider_hosted"/);
+  assert.match(backendServer,/payment_data_storage:"provider_only"/);
+  assert.match(backendServer,/pgi_stores_card_data:false/);
+  assert.match(backendServer,/event_collision_detection:true/);
+  assert.match(backendServer,/tenant_binding_validation:true/);
+  assert.match(backendServer,/automatic_access_recovery:true/);
   assert.match(backendServer,/sva_payout_flow:"carrier_to_customer"/);
   assert.match(backendServer,/funds_held_by_pgi:false/);
 });
