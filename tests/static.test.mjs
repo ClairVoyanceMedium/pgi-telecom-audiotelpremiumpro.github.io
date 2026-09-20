@@ -405,7 +405,7 @@ test("la PWA met en cache uniquement le shell critique",()=>{
   assert.match(app,/loadDemoCalls/);
   assert.doesNotMatch(sw,/assets\/command-palette\.js/);
   assert.doesNotMatch(sw,/assets\/customer-admin\.css/);
-  assert.match(sw,/pgi-telecom-shell-v40/);
+  assert.match(sw,/pgi-telecom-shell-v41/);
 });
 
 test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiques",()=>{
@@ -417,7 +417,7 @@ test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiqu
   assert.match(css,/\.auth-brand-logo\{/);
   assert.match(sw,/audiotel-brand-icon-v33\.png/);
   assert.match(sw,/audiotel-brand-logo-v33\.png/);
-  assert.match(sw,/pgi-telecom-shell-v40/);
+  assert.match(sw,/pgi-telecom-shell-v41/);
   assert.match(buildStatic,/audiotel-brand-logo-v33\.png/);
   assert.doesNotMatch(css,/brand-mark|command-brand-emblem|auth-brand-lockup|auth-brand-emblem/);
   assert.doesNotMatch(sw,/favicon\.svg/);
@@ -453,7 +453,7 @@ test("brand header polish keeps split colors, larger icon and dark period contra
   assert.match(css,/\.product-name-pgi\{color:#f4e8dc\}/);
   assert.match(css,/\.product-name-audiotel\{color:#e0ad6d\}/);
   assert.match(css,/\.periods\{[\s\S]*rgba\(31,22,18,.96\)/);
-  assert.match(sw,/pgi-telecom-shell-v40/);
+  assert.match(sw,/pgi-telecom-shell-v41/);
 });
 
 
