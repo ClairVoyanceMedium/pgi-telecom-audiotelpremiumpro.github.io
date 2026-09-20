@@ -44,6 +44,7 @@ export function createBackend(options={}){
   };
   const rateBuckets=new Map();
   const authBuckets=new Map();
+  const registrationBuckets=new Map();
   const sseClients=new Set();
 
   const server=http.createServer(async(req,res)=>{
@@ -116,6 +117,26 @@ export function createBackend(options={}){
         });
       }
 
+      if(method==="POST"&&pathname==="/api/v1/customer/auth/register"){
+        if(config.authMode!=="session")return done(res,metrics,started,"customer.auth.register",404,{error:{code:"AUTH_DISABLED"}});
+        requireSameOriginBrowser(req);
+        enforceRegistrationRate(req,config,registrationBuckets);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const password=String(body.password||"");
+        if(password.length<12||password.length>256){const e=new Error("Invalid password");e.status=400;e.code="INVALID_NEW_PASSWORD";throw e;}
+        if(String(body.website||"").trim()){const e=new Error("Invalid registration");e.status=400;e.code="REGISTRATION_REJECTED";throw e;}
+        const registered=await store.selfServiceRegister(body,hashPassword(password));
+        const issued=issueSession({
+          secret:config.sessionSecret,
+          user:{id:registered.id,role:"customer",name:registered.display_name||registered.email,actor_type:"customer",tenant_id:Number(registered.tenant_id),tenant_public_id:registered.tenant_public_id,customer_role:registered.customer_role,authorization_version:Number(registered.authorization_version),session_version:Number(registered.session_version)},
+          ttlSeconds:config.sessionTtlSeconds
+        });
+        return done(res,metrics,started,"customer.auth.register",201,{
+          account_created:true,onboarding:true,email_verification_required:registered.email_verified!==true,
+          user:{id:registered.id,name:registered.display_name,email:registered.email,role:registered.customer_role,tenant:{id:registered.tenant_public_id,name:registered.tenant_name,status:registered.tenant_status}}
+        },{"Set-Cookie":[customerSessionCookie(issued.token,config.sessionTtlSeconds),customerCsrfCookie(issued.csrf,config.sessionTtlSeconds)]});
+      }
+
       if(method==="POST"&&pathname==="/api/v1/customer/auth/google"){
         if(config.authMode!=="session")return done(res,metrics,started,"customer.auth.google",404,{error:{code:"AUTH_DISABLED"}});
         requireSameOriginBrowser(req);
@@ -125,7 +146,7 @@ export function createBackend(options={}){
         const rawInvite=String(body.invite||"").trim();
         const inviteHash=rawInvite?createHash("sha256").update(rawInvite).digest("hex"):null;
         const auth=await store.customerGoogleSignIn(identity,inviteHash);
-        const memberships=(auth.memberships||[]).filter(x=>x.status==="active"&&x.tenant_status==="active");
+        const memberships=(auth.memberships||[]).filter(x=>x.status==="active"&&["active","pending"].includes(x.tenant_status));
         if(!memberships.length&&auth.account_pending){
           authBuckets.delete(authKey);
           return done(res,metrics,started,"customer.auth.google",202,{account_created:true,pending_contract:true,user:{id:auth.id,name:auth.display_name||auth.email,email:auth.email}});
@@ -159,7 +180,7 @@ export function createBackend(options={}){
           if(auth?.id)await store.recordCustomerAuthFailure(auth.id);
           const e=new Error("Invalid credentials");e.status=401;e.code="INVALID_CREDENTIALS";throw e;
         }
-        const memberships=(auth.memberships||[]).filter(x=>x.status==="active"&&x.tenant_status==="active");
+        const memberships=(auth.memberships||[]).filter(x=>x.status==="active"&&["active","pending"].includes(x.tenant_status));
         let membership=null;
         const requested=String(body.tenant||"").trim();
         if(requested)membership=memberships.find(x=>String(x.public_id)===requested||String(x.slug)===requested)||null;
@@ -839,6 +860,14 @@ function enforceAuthLoginRate(req,config,buckets,metrics){
   }
   return key;
 }
+function enforceRegistrationRate(req,config,buckets){
+  const key=clientIp(req),now=Date.now(),windowMs=Math.max(300000,Number(config.authFailureWindowSeconds||900)*1000);
+  let current=buckets.get(key);
+  if(!current||now-current.startedAt>=windowMs){current={startedAt:now,count:0};buckets.set(key,current);}
+  current.count++;
+  if(current.count>5){const e=new Error("Too many registrations");e.status=429;e.code="REGISTRATION_RATE_LIMITED";throw e;}
+  if(buckets.size>5000){for(const [k,v] of buckets)if(now-v.startedAt>=windowMs)buckets.delete(k);}
+}
 function recordAuthFailure(key,config,buckets){
   const now=Date.now();
   const windowMs=Number(config.authFailureWindowSeconds||900)*1000;
@@ -860,7 +889,7 @@ function rangeParams(url){
 }
 function publicActor(a){return {id:a.sub,role:a.role,name:a.name,expert_id:a.expert_id||null};}
 function publicCustomerActor(a,context){
-  return {id:a.sub,role:context.customer_role,name:context.display_name||a.name,email:context.email,tenant:{id:context.tenant_public_id,name:context.tenant_name,currency:context.default_currency,country_code:context.country_code}};
+  return {id:a.sub,role:context.customer_role,name:context.display_name||a.name,email:context.email,email_verified:context.email_verified===true,tenant:{id:context.tenant_public_id,name:context.tenant_name,status:context.tenant_status,currency:context.default_currency,country_code:context.country_code}};
 }
 function rateLimit(req,config,buckets,metrics){
   const key=clientIp(req);
