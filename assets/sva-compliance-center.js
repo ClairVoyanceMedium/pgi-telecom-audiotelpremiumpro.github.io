@@ -49,7 +49,8 @@ function editor(n){
   '<label class="scf">Médiation / référence<input id="sc-mediation" value="'+esc(n.mediation_reference||"")+'"></label>'+
   '<label class="scf">Prochaine revue<input id="sc-review" type="date" value="'+esc(n.next_review_at?String(n.next_review_at).slice(0,10):"")+'"></label></div>'+
   '<div class="scactions"><label class="scbadge"><input id="sc-tariff-first" type="checkbox" '+(n.mgit_tariff_first?'checked':'')+'> tarif en premier</label><label class="scbadge"><input id="sc-optout" type="checkbox" '+(n.mgit_optout_instruction?'checked':'')+'> renoncement</label><label class="scbadge"><input id="sc-no-music" type="checkbox" '+(n.mgit_no_background_music?'checked':'')+'> sans musique</label><label class="scbadge"><input id="sc-beep" type="checkbox" '+(n.mgit_beep_before_billing?'checked':'')+'> bip avant facturation</label><button class="scbtn" data-sc-save-profile>Enregistrer le profil</button></div>'+
-  '<h3 style="margin-top:18px">Contrôles multi-organismes</h3><div class="sclist">'+controls.map(x=>{const st=by[x.control_key];return '<div class="scrow"><div><strong>'+esc(x.label)+'</strong><small>'+esc(x.framework_key)+' • '+esc(x.description)+'</small></div><div class="scactions">'+badge(st?.status||"not_started")+'<button class="scbtn" data-sc-evidence="'+esc(x.control_key)+'">Preuve</button></div></div>';}).join("")+'</div>'+
+  '<h3 style="margin-top:18px">Contrôles multi-organismes</h3><div class="sclist">'+controls.map(x=>{const st=by[x.control_key];return '<div class="scrow"><div><strong>'+esc(x.label)+'</strong><small>'+esc(x.framework_key)+' • '+esc(x.description)+'</small></div><div class="scactions">'+badge(st?.status||"not_started")+'<button class="scbtn" data-sc-evidence="'+esc(x.control_key)+'">Documenter</button></div></div>';}).join("")+'</div>'+
+  '<h3 id="sc-evidence-title" style="margin-top:18px">Ajouter une preuve</h3><div class="scform"><label class="scf">Contrôle<select id="sc-evidence-control">'+controls.map(x=>'<option value="'+esc(x.control_key)+'">'+esc(x.label)+'</option>').join("")+'</select></label><label class="scf">Statut<select id="sc-evidence-status"><option value="verified">Vérifié</option><option value="pending">En cours</option><option value="failed">Échec</option><option value="expired">Expiré</option><option value="not_applicable">Non applicable</option></select></label><label class="scf">Source<select id="sc-evidence-source"><option value="internal">Interne</option><option value="customer">Client</option><option value="operator">Opérateur</option><option value="apnf_rsva">APNF / RSVA</option><option value="af2m">AF2M</option><option value="arcep">ARCEP</option><option value="dgccrf">DGCCRF</option><option value="cnil">CNIL</option><option value="33700">33700</option><option value="mediator">Médiateur</option><option value="acpr">ACPR</option><option value="other">Autre</option></select></label><label class="scf">Référence / justification<input id="sc-evidence-reference" maxlength="500" placeholder="Référence de document, dossier ou justification"></label><label class="scf">Valable jusqu’au<input id="sc-evidence-valid" type="date"></label></div><div class="scactions"><button class="scbtn" data-sc-evidence-save>Ajouter à la chaîne SHA-256</button></div>'+
   '<h3 style="margin-top:18px">Planifier un changement tarifaire RSVA</h3><div class="scform"><label class="scf">Nouveau code tarif<input id="sc-tariff-code"></label><label class="scf">Nouveau €/min TTC<input id="sc-tariff-minute" type="number" min="0" step=".01"></label><label class="scf">Nouveau €/appel TTC<input id="sc-tariff-call" type="number" min="0" max="24" step=".01"></label><label class="scf">Date d’effet (1er du mois)<input id="sc-tariff-date" type="date"></label></div><div class="scactions"><button class="scbtn" data-sc-tariff>Planifier sans déclarer au RSVA</button></div></section>';
 }
 function feedback(t){const x=$("#sc-feedback");if(x)x.textContent=t||"";}
@@ -62,18 +63,27 @@ async function saveProfile(n){
     await req("/platform/tenant-number-assignments/"+n.assignment_id+"/sva-compliance-profile",body);busy=false;feedback("Profil SVA enregistré.");await reload();
   }catch(e){busy=false;feedback(e.code||e.message);}
 }
-async function evidence(n,key){
-  const cat=(data.catalog||[]).find(x=>x.control_key===key);if(!cat)return;
-  const status=prompt("Statut pour « "+cat.label+" » : verified / pending / failed / expired / not_applicable","verified");if(!status)return;
-  const ref=prompt("Référence de preuve ou justification (obligatoire si verified)","");if(status==="verified"&&!String(ref||"").trim())return feedback("Référence de preuve obligatoire.");
+function selectEvidence(key){
+  const el=$("#sc-evidence-control");if(el)el.value=key;
+  $("#sc-evidence-title")?.scrollIntoView({behavior:"smooth",block:"nearest"});
+  $("#sc-evidence-reference")?.focus();
+}
+async function evidence(n){
+  const key=$("#sc-evidence-control")?.value,status=$("#sc-evidence-status")?.value,source=$("#sc-evidence-source")?.value;
+  const ref=String($("#sc-evidence-reference")?.value||"").trim(),cat=(data.catalog||[]).find(x=>x.control_key===key);
+  if(!cat)return feedback("Contrôle SVA invalide.");
+  if(status==="verified"&&!ref)return feedback("Référence de preuve obligatoire pour un statut vérifié.");
   if(status==="not_applicable"&&!cat.allow_not_applicable)return feedback("Ce contrôle ne peut pas être marqué non applicable.");
+  if(status==="not_applicable"&&!ref)return feedback("Une justification est obligatoire pour un contrôle non applicable.");
+  const body={control_key:key,status,source,evidence_reference:ref||null,metadata:{reason:status==="not_applicable"?ref:null,recorded_from:"sva_compliance_center"}};
+  const valid=$("#sc-evidence-valid")?.value;if(valid)body.valid_until=new Date(valid+"T23:59:59").toISOString();
   busy=true;feedback("Ajout de la preuve…");
-  try{await req("/platform/tenant-number-assignments/"+n.assignment_id+"/sva-compliance-evidence",{control_key:key,status,source:"internal",evidence_reference:String(ref||"").trim()||null,metadata:{reason:status==="not_applicable"?String(ref||"").trim():null,recorded_from:"sva_compliance_center"}});busy=false;feedback("Preuve ajoutée à la chaîne SHA-256.");await reload();}catch(e){busy=false;feedback(e.code||e.message);}
+  try{await req("/platform/tenant-number-assignments/"+n.assignment_id+"/sva-compliance-evidence",body);busy=false;feedback("Preuve ajoutée à la chaîne SHA-256.");await reload();}catch(e){busy=false;feedback(e.code||e.message);}
 }
 async function tariff(n){
   const code=$("#sc-tariff-code").value.trim(),date=$("#sc-tariff-date").value;if(!code||!date)return feedback("Code tarif et date requis.");
   busy=true;feedback("Planification tarifaire…");
   try{await req("/platform/tenant-number-assignments/"+n.assignment_id+"/sva-tariff-change",{proposed_tariff_code:code,effective_on:date,proposed_service_rate_ttc_per_min:$("#sc-tariff-minute").value||null,proposed_service_price_ttc_per_call:$("#sc-tariff-call").value||null,notes:"Planifié depuis SVA Compliance Center"});busy=false;feedback("Changement planifié localement. Aucune déclaration RSVA envoyée.");await reload();}catch(e){busy=false;feedback(e.code||e.message);}
 }
-function bind(n){if(!n)return;$("#sva-compliance-body [data-sc-save-profile]")?.addEventListener("click",()=>saveProfile(n));$("#sva-compliance-body [data-sc-tariff]")?.addEventListener("click",()=>tariff(n));document.querySelectorAll("#sva-compliance-body [data-sc-evidence]").forEach(x=>x.addEventListener("click",()=>evidence(n,x.dataset.scEvidence)));}
+function bind(n){if(!n)return;$("#sva-compliance-body [data-sc-save-profile]")?.addEventListener("click",()=>saveProfile(n));$("#sva-compliance-body [data-sc-tariff]")?.addEventListener("click",()=>tariff(n));$("#sva-compliance-body [data-sc-evidence-save]")?.addEventListener("click",()=>evidence(n));document.querySelectorAll("#sva-compliance-body [data-sc-evidence]").forEach(x=>x.addEventListener("click",()=>selectEvidence(x.dataset.scEvidence)));}
 export async function open(){const d=ensure();if(!d.open)d.showModal();const b=$("#sva-compliance-body");b.innerHTML='<p class="scnote">Chargement du SVA Compliance Center…</p>';try{await reload();}catch(e){b.innerHTML='<p class="scnote">Centre SVA indisponible : '+esc(e.code||e.message)+'</p>';}}
