@@ -7,7 +7,7 @@ import {simulateDigitalTwin} from "../backend/src/digital-twin.mjs";
 test("Policy Engine blocks unsafe activation and explains every blocker",()=>{
   const r=evaluateOperationalPolicy("activate_number",{
     tenant_active:true,assignment_exists:true,subscription_active:false,payout_terms_ready:true,kyc_verified:true,
-    regulatory_ready:true,arcep_2026_ready:true,destination_ready:true,operator_adapter_connected:false
+    regulatory_ready:true,arcep_2026_ready:true,ecosystem_ready:true,destination_ready:true,operator_adapter_connected:false
   });
   assert.equal(r.decision,"BLOCKED");
   assert.equal(r.dry_run,true);
@@ -19,7 +19,7 @@ test("Policy Engine blocks unsafe activation and explains every blocker",()=>{
 test("Policy Engine distinguishes action required from blocking",()=>{
   const r=evaluateOperationalPolicy("activate_number",{
     tenant_active:true,assignment_exists:true,subscription_active:true,payout_terms_ready:true,kyc_verified:true,
-    regulatory_ready:true,arcep_2026_ready:true,destination_ready:true,operator_adapter_connected:false
+    regulatory_ready:true,arcep_2026_ready:true,ecosystem_ready:true,destination_ready:true,operator_adapter_connected:false
   });
   assert.equal(r.decision,"ACTION_REQUIRED");
   assert.equal(r.blockers.length,0);
