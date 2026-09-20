@@ -1188,6 +1188,10 @@ $$;
 
 CREATE INDEX call_facts_tenant_time_idx
   ON call_facts(tenant_id,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_tenant_status_time_idx
+  ON call_facts(tenant_id,call_status,started_at DESC,call_id DESC);
+CREATE INDEX call_facts_tenant_number_time_idx
+  ON call_facts(tenant_id,sva_number_id,started_at DESC,call_id DESC);
 CREATE INDEX call_facts_market_time_idx
   ON call_facts(market_id,started_at DESC,call_id DESC);
 CREATE INDEX call_facts_time_idx
