@@ -1149,7 +1149,7 @@ var period=(x.period_start||"—")+" → "+(x.period_end||"—");
 var currency=x.currency||"EUR";
 return "<tr><td><strong>"+esc(x.tenant||"—")+"</strong></td><td>"+esc(x.market||"—")+"</td><td>"+esc(currency)+"</td><td>"+esc(period)+"</td><td>"+moneyIn(x.upstream_payout_ht||0,currency)+"</td><td>"+moneyIn(x.platform_fee_ht||0,currency)+"</td><td><strong>"+moneyIn(x.net_payout_ht||0,currency)+"</strong></td><td>"+platformChip(x.status)+"</td></tr>";
 }).join(""):'<tr><td colspan="8">Aucun reversement client réel.</td></tr>';
-import("./subscription-billing-ui.js").then(function(m){m.render(summary,tenantCount);}).catch(function(){});
+import("./subscription-billing-ui.js").then(function(m){m.render(summary,tenantCount,data&&data.billing_provider||{});}).catch(function(){});
 }
 function saveUiPreferences(){if(window.PGIWorkspace)window.PGIWorkspace.save(state.activeView,state.period,state.custom);}
 function restoreUiPreferences(){if(window.PGIWorkspace)window.PGIWorkspace.restoreInto(state,titles);}
