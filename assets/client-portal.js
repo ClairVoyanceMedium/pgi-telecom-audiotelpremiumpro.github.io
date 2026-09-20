@@ -60,7 +60,7 @@ function demoData(range){
     destinations:[{id:1,sva_number_id:1,label:"Standard principal",destination_type:"pstn",destination_uri:"tel:+33123456789",priority:10,status:"active",active_calls:1,max_concurrent_calls:25}],
     recent_calls:recent,
     voice_quality:{calls_total:sums.calls_total,calls_connected:sums.calls_connected,pdd_samples:sums.calls_total,avg_pdd_ms:2380,high_pdd_calls:Math.round(sums.calls_total*.025),quality_samples:sums.calls_total,network_affected_calls:Math.round(sums.calls_total*.018),low_mos_calls:Math.round(sums.calls_total*.012),mos:4.26,packet_loss_percent:.34,jitter_ms:3.4,latency_ms:44,rtt_ms:78,sip_5xx_calls:Math.round(sums.calls_total*.008),caller_hangups:Math.round(sums.calls_connected*.52),callee_hangups:Math.round(sums.calls_connected*.43),network_hangups:Math.round(sums.calls_total*.05)},
-    billing_provider:{architecture_ready:true,target_provider:"stripe",connection_state:"not_connected",external_billing_enabled:false,checkout_available:false,customer_portal_available:false,webhook_ingest_enabled:false,subscription_funds_flow:"customer_to_pgi",sva_payout_flow:"carrier_to_customer",funds_held_by_pgi:false},
+    billing_provider:{architecture_ready:true,target_provider:"stripe",connection_state:"not_connected",external_billing_enabled:false,checkout_available:false,customer_portal_available:false,webhook_ingest_enabled:false,subscription_funds_flow:"customer_to_pgi",sva_payout_flow:"carrier_to_pgi_to_customer",pgi_margin_retained:true,client_payout_compliance_gated:true,funds_custody_mode:"payment_compliance_profile"},
     range:range,server_time:new Date().toISOString()
   };
 }
