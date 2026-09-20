@@ -43,6 +43,35 @@
       <div id="google-login" class="cp-google" hidden aria-label="Créer ou ouvrir mon compte avec Google"></div>
       <p class="cp-google-note" data-google-note hidden>Connexion ou création de compte sécurisée avec Google.</p>
       <button id="google-tenant-continue" class="cp-ghost cp-google-continue" type="button" hidden>Continuer avec Google</button>
+      <div class="cp-auth-divider"><span>nouveau client</span></div>
+      <button id="show-register" class="cp-ghost cp-register-open" type="button">Créer mon compte professionnel</button>
+    </div>
+
+    <div id="register-panel" hidden>
+      <p class="cp-kicker">INSCRIPTION</p>
+      <h1>Créez votre espace professionnel</h1>
+      <p class="cp-muted">L’ouverture du compte est autonome. Le SIRET est facultatif et l’accès SVA reste protégé jusqu’aux validations nécessaires.</p>
+      <form id="customer-register-form" class="cp-form">
+        <div class="cp-form-grid">
+          <label>Prénom<input id="register-first-name" name="first_name" type="text" autocomplete="given-name" required maxlength="80"></label>
+          <label>Nom<input id="register-last-name" name="last_name" type="text" autocomplete="family-name" required maxlength="80"></label>
+        </div>
+        <label>Société ou activité <span class="cp-optional">(facultatif)</span><input id="register-company" name="company_name" type="text" autocomplete="organization" maxlength="200"></label>
+        <div class="cp-form-grid">
+          <label>Pays<select id="register-country" name="country_code" autocomplete="country" required><option value="FR">France</option></select></label>
+          <label><span id="register-number-label">SIRET</span> <span class="cp-optional">(facultatif)</span><input id="register-number" name="registration_number" type="text" inputmode="numeric" autocomplete="off" maxlength="64" placeholder="14 chiffres"></label>
+        </div>
+        <label>Téléphone <span class="cp-optional">(facultatif)</span><input id="register-phone" name="phone" type="tel" autocomplete="tel" maxlength="40"></label>
+        <label>Adresse e-mail<input id="register-email" name="email" type="email" autocomplete="email" required maxlength="320"></label>
+        <div class="cp-form-grid">
+          <label>Mot de passe<input id="register-password" name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="256"></label>
+          <label>Confirmer<input id="register-password-confirm" type="password" autocomplete="new-password" required minlength="12" maxlength="256"></label>
+        </div>
+        <label class="cp-check"><input id="register-authority" type="checkbox" required><span>Je confirme être autorisé à créer ce compte pour cette activité.</span></label>
+        <label class="cp-honeypot" aria-hidden="true">Site web<input id="register-website" type="text" tabindex="-1" autocomplete="off"></label>
+        <button class="cp-primary" type="submit">Créer mon compte</button>
+      </form>
+      <button id="show-login" class="cp-ghost cp-register-back" type="button">J’ai déjà un compte</button>
     </div>
 
     <div id="activation-panel" hidden>
@@ -100,6 +129,20 @@
       <a href="#client-finance">Reversements</a>
       <a href="#client-routing">Routage</a>
     </nav>
+
+    <section id="client-onboarding" class="cp-onboarding" hidden aria-live="polite">
+      <div>
+        <p class="cp-kicker">ACTIVATION DU COMPTE</p>
+        <h2>Votre espace est créé</h2>
+        <p id="client-onboarding-text">Vous pouvez compléter votre dossier. L’accès aux services SVA reste verrouillé jusqu’aux validations nécessaires.</p>
+      </div>
+      <div class="cp-onboarding-steps">
+        <span id="onboarding-account">Compte créé</span>
+        <span id="onboarding-email">E-mail à vérifier</span>
+        <span id="onboarding-kyc">KYC en attente</span>
+        <span id="onboarding-subscription">Abonnement à activer</span>
+      </div>
+    </section>
 
     <section class="cp-command-bar" aria-label="État et actions">
       <div class="cp-live-state">
