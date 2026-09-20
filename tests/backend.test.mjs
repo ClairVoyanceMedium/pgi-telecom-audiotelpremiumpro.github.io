@@ -597,3 +597,10 @@ test("customer password changes require the authenticated customer flow",()=>{as
 
 
 test("Google customer auth validates on the backend and keeps tenant selection",()=>{assert.match(backendServer,/verifyGoogleIdToken/);assert.match(backendServer,/\/api\/v1\/customer\/auth\/google/);assert.match(backendServer,/CUSTOMER_TENANT_REQUIRED/);});
+
+
+test("customer comparison route is tenant-scoped and filtered call parameters are forwarded",()=>{
+  assert.match(backendServer,/\/api\/v1\/customer\/comparison/);
+  assert.match(backendServer,/customerPortalComparison/);
+  assert.match(backendServer,/customerPortalCalls\(context\.tenant_id,params\)/);
+});
