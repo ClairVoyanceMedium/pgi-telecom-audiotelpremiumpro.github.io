@@ -780,8 +780,10 @@ export class MemoryStore{
   async customerPortalComparison(_tenantId,from,to){return {financial_by_currency:[],range:{from,to}};}
   async customerPortalCalls(){return {data:[],next_cursor:null};}
 
+  async listServiceIncidents(){return {data:[],next_cursor:null};}
+
   async customerAdminSummary(){
-    return {tenants_total:0,tenants_active:0,kyc_pending:0,subscription_unpaid_alerts:0,subscription_access_blocked:0,assignments_active:0};
+    return {tenants_total:0,tenants_active:0,kyc_pending:0,subscription_unpaid_alerts:0,subscription_access_blocked:0,assignments_active:0,service_incidents_open:0,service_incidents_critical:0,service_sla_attention:0,routing_attention:0,portability_attention:0};
   }
 
   async wholesaleOverview(){
