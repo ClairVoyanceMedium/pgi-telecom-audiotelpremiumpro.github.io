@@ -128,6 +128,8 @@ function renderPortability(data){
     var meta=[x.country_code||"",statusLabel(status)];
     if(x.desired_port_date)meta.push("Souhaitée : "+dateOnly(x.desired_port_date));
     if(x.scheduled_at)meta.push("Prévue : "+dt(x.scheduled_at));
+    if(x.service_rate_ttc_per_min!=null)meta.push("Tarif déclaré : "+money(x.service_rate_ttc_per_min,x.currency)+"/min");
+    if(x.tariff_verification_status==="verified")meta.push("Tarif vérifié");
     if(x.operator_portability_reference)meta.push("Réf. opérateur : "+x.operator_portability_reference);
     if(x.rejection_reason)meta.push("Motif : "+x.rejection_reason);
     var cancellable=["submitted","awaiting_documents","eligibility_check","operator_pending"].includes(status);
@@ -290,6 +292,8 @@ async function submitPortability(e){
     current_operator_reference:$("portability-reference").value.trim(),
     account_holder_name:$("portability-holder").value.trim(),
     desired_port_date:$("portability-date").value||null,
+    service_rate_ttc_per_min:Number(String($("portability-rate").value||"").replace(",",".")),
+    tariff_code:$("portability-tariff-code").value.trim(),
     service_family:$("portability-service-family").value,
     number_owner_confirmed:true,
     authorization_confirmed:true
