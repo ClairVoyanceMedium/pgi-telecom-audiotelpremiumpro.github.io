@@ -57,6 +57,7 @@ export function startWorkers({store,eventBus,config,queueHandlers={}}){
       for(const a of alerts)eventBus.publish("alert",a);
       if(typeof store.scanUnpaidSubscriptions==="function")await store.scanUnpaidSubscriptions(500);
       if(typeof store.scanVoiceIncidents==="function")await store.scanVoiceIncidents();
+      if(typeof store.scanTenantServiceIncidents==="function")await store.scanTenantServiceIncidents(250);
       if(typeof store.scanPortabilityAutomation==="function")await store.scanPortabilityAutomation(100);
       stats.lastAlertsSuccessAt=new Date().toISOString();
     }catch{
