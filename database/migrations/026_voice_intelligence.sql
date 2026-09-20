@@ -12,6 +12,56 @@ CREATE INDEX IF NOT EXISTS calls_host_carrier_started_idx ON calls(host_carrier_
 CREATE INDEX IF NOT EXISTS calls_sip_final_started_idx ON calls(sip_final_code,started_at DESC);
 CREATE INDEX IF NOT EXISTS calls_pdd_started_idx ON calls(post_dial_delay_ms,started_at DESC) WHERE post_dial_delay_ms IS NOT NULL;
 
+-- Backfill tenant daily rollups so production client dashboards become immediately useful
+-- even when the hyperscale foundation predates runtime incremental writes.
+INSERT INTO metric_rollups_daily_v2(
+  tenant_bucket,bucket_date,tenant_id,market_id,currency,
+  calls_total,calls_connected,calls_abandoned,calls_failed,
+  conversation_seconds,billable_seconds,payout_eligible_seconds,
+  generated_revenue_ttc,expected_payout_ht,confirmed_payout_ht,paid_payout_ht,
+  expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,
+  source_generation,updated_at
+)
+SELECT
+  tenant_bucket,started_at::date,tenant_id,market_id,currency,
+  count(*)::bigint,
+  count(*) FILTER(WHERE call_status='connected')::bigint,
+  count(*) FILTER(WHERE call_status='abandoned')::bigint,
+  count(*) FILTER(WHERE call_status NOT IN ('connected','abandoned'))::bigint,
+  COALESCE(sum(conversation_seconds),0)::bigint,
+  COALESCE(sum(billable_seconds),0)::bigint,
+  COALESCE(sum(payout_eligible_seconds),0)::bigint,
+  COALESCE(sum(retail_service_amount_ttc),0),
+  COALESCE(sum(expected_payout_ht),0),
+  COALESCE(sum(confirmed_payout_ht),0),
+  COALESCE(sum(paid_payout_ht),0),
+  COALESCE(sum(expert_cost_ht),0),
+  COALESCE(sum(technical_cost_ht),0),
+  COALESCE(sum(estimated_margin_ht),0),
+  COALESCE(sum(reconciliation_variance_ht),0),
+  1,now()
+FROM call_facts
+WHERE tenant_id IS NOT NULL AND market_id IS NOT NULL
+GROUP BY tenant_bucket,started_at::date,tenant_id,market_id,currency
+ON CONFLICT(tenant_bucket,bucket_date,tenant_id,market_id,currency) DO UPDATE SET
+  calls_total=EXCLUDED.calls_total,
+  calls_connected=EXCLUDED.calls_connected,
+  calls_abandoned=EXCLUDED.calls_abandoned,
+  calls_failed=EXCLUDED.calls_failed,
+  conversation_seconds=EXCLUDED.conversation_seconds,
+  billable_seconds=EXCLUDED.billable_seconds,
+  payout_eligible_seconds=EXCLUDED.payout_eligible_seconds,
+  generated_revenue_ttc=EXCLUDED.generated_revenue_ttc,
+  expected_payout_ht=EXCLUDED.expected_payout_ht,
+  confirmed_payout_ht=EXCLUDED.confirmed_payout_ht,
+  paid_payout_ht=EXCLUDED.paid_payout_ht,
+  expert_cost_ht=EXCLUDED.expert_cost_ht,
+  technical_cost_ht=EXCLUDED.technical_cost_ht,
+  estimated_margin_ht=EXCLUDED.estimated_margin_ht,
+  reconciliation_variance_ht=EXCLUDED.reconciliation_variance_ht,
+  source_generation=metric_rollups_daily_v2.source_generation+1,
+  updated_at=now();
+
 CREATE TABLE IF NOT EXISTS voice_carrier_health_hourly_sharded (
   bucket_start timestamptz NOT NULL,
   market_id bigint NOT NULL REFERENCES operating_markets(id),
