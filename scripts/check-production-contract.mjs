@@ -55,6 +55,8 @@ const serviceIntegrityMigration=fs.readFileSync("database/migrations/034_service
 const regulatoryTrustMigration=fs.readFileSync("database/migrations/037_regulatory_trust_center.sql","utf8");
 const subscriptionPrice300Migration=fs.readFileSync("database/migrations/038_subscription_price_300.sql","utf8");
 const regulatoryEvidencePackExportMigration=fs.readFileSync("database/migrations/039_regulatory_evidence_pack_exports.sql","utf8");
+const arcep2026Migration=fs.readFileSync("database/migrations/040_arcep_2026_number_guardrails.sql","utf8");
+const arcep2026EvidencePackMigration=fs.readFileSync("database/migrations/041_arcep_2026_evidence_pack.sql","utf8");
 const clientServiceCenter=fs.readFileSync("assets/client-service-center.js","utf8");
 const tenantServiceAdmin=fs.readFileSync("assets/tenant-service-admin.js","utf8");
 const googleIdSource=fs.readFileSync("backend/src/google-id.mjs","utf8");
@@ -152,6 +154,12 @@ if(!/man_caller_authentication/.test(regulatoryTrustMigration)||!/fraud_route_tr
 if(!/upsertSvaRegulatoryProfile/.test(postgresStore)||!/recordSvaRegulatoryEvidence/.test(postgresStore)||!/createSvaAbuseCase/.test(postgresStore)||!/regulatory-evidence/.test(backendServer))failures.push("regulatory trust center must retain private evidence and abuse operations");
 if(!/regulatoryEvidencePack/.test(postgresStore)||!/regulatory-evidence-pack/.test(backendServer)||!/pack_sha256/.test(postgresStore)||!/raw_rio_included:false/.test(postgresStore))failures.push("regulatory trust center must retain privacy-minimised hashed evidence pack export");
 if(!/sva_regulatory_evidence_pack_exports/.test(regulatoryEvidencePackExportMigration)||!/sva_regulatory_evidence_pack_exports_no_mutation/.test(regulatoryEvidencePackExportMigration)||!/append-only/.test(regulatoryEvidencePackExportMigration))failures.push("regulatory Evidence Pack exports must retain an immutable dedicated register");
+if(!/ARCEP 2025-2215/.test(arcep2026Migration)||!/exclusive_stable_assignee/.test(arcep2026Migration)||!/single_service/.test(arcep2026Migration)||!/portability_offered/.test(arcep2026Migration)||!/tariff_ceiling/.test(arcep2026Migration))failures.push("ARCEP 2026 premium-number core guardrails must remain explicit");
+if(!/caller_id_block/.test(arcep2026Migration)||!/parental_control_classification/.test(arcep2026Migration)||!/no_temporary_contact_use/.test(arcep2026Migration)||!/public_body_eligibility/.test(arcep2026Migration))failures.push("ARCEP 2026 misuse and 089/0895 controls must remain explicit");
+if(!/pgi_arcep_2026_number_ready/.test(arcep2026Migration)||!/zzzz_tenant_number_assignments_arcep_2026_gate/.test(arcep2026Migration)||!/pg_advisory_xact_lock/.test(arcep2026Migration))failures.push("ARCEP 2026 activation gate must remain fail closed and concurrency safe");
+if(!/sva_arcep_2026_evidence_events/.test(arcep2026Migration)||!/sva_arcep_2026_evidence_no_mutation/.test(arcep2026Migration)||!/digest\(/.test(arcep2026Migration))failures.push("ARCEP 2026 evidence must remain append-only and cryptographically chained");
+if(!/arcep_2026_chain_head/.test(arcep2026EvidencePackMigration)||!/arcep_2026_links_valid/.test(arcep2026EvidencePackMigration)||!/arcep_2026_evidence_events/.test(arcep2026EvidencePackMigration))failures.push("Evidence Pack registry must retain ARCEP 2026 chain metadata");
+if(!/arcep_2026_evidence_ledger/.test(postgresStore)||!/pgi_arcep_2026_number_ready/.test(postgresStore)||!/activation_ready/.test(postgresStore))failures.push("runtime and cockpit data must include ARCEP 2026 readiness and evidence");
 if(!/pgi_publish_service_plan_price/.test(subscriptionPrice300Migration)||!/300/.test(subscriptionPrice300Migration)||!/3\.00 EUR\/month/.test(subscriptionPrice300Migration))failures.push("current external subscription reference price must remain versioned at 3 EUR/month");
 if(!/tenant_payout_terms/.test(pgiRevenueMigration)||!/tenant_revenue_distributions/.test(pgiRevenueMigration)||!/pgi_collects/.test(pgiRevenueMigration))failures.push("production must retain PGI-collected SVA revenue distribution");
 if(!/tenant_number_assignments_payout_terms_gate/.test(pgiRevenueMigration)||!/pgi_tenant_has_payout_terms/.test(pgiRevenueMigration))failures.push("external SVA activation must require PGI payout terms");
