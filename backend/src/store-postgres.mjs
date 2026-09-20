@@ -2020,7 +2020,7 @@ export class PostgresStore{
           " FROM number_carrier_assignments n JOIN carriers c ON c.id=n.carrier_id WHERE n.sva_number_id=$1 ORDER BY n.valid_from,n.id",
           [assignment.sva_number_id]
         ),
-        tx.unsafe("SELECT id,action,previous_status,new_status,reason,created_at FROM tenant_control_events WHERE tenant_id=$1 AND assignment_id=$2 ORDER BY created_at,id",[assignment.tenant_id,id]),
+        tx.unsafe("SELECT id,action,previous_status,new_status,reason,occurred_at FROM tenant_control_events WHERE tenant_id=$1 AND assignment_id=$2 ORDER BY occurred_at,id",[assignment.tenant_id,id]),
         tx.unsafe("SELECT public_id::text AS public_id,category,severity,status,source,title,assigned_team,first_response_due_at,target_resolution_at,first_responded_at,resolved_at,closed_at,created_at,updated_at FROM tenant_service_incidents WHERE tenant_id=$1 AND sva_number_id=$2 ORDER BY created_at,id",[assignment.tenant_id,assignment.sva_number_id]),
         tx.unsafe("SELECT public_id::text AS public_id,source,external_reference,category,severity,status,suspension_required,first_response_due_at,resolution_due_at,summary,opened_at,resolved_at,created_at,updated_at FROM sva_abuse_cases WHERE tenant_id=$1 AND sva_number_id=$2 ORDER BY opened_at,id",[assignment.tenant_id,assignment.sva_number_id]),
         tx.unsafe("SELECT m.country_code AS market,c.control_key,c.status,c.evidence_reference,c.evidence_sha256,c.verified_at,c.valid_until,c.updated_at FROM platform_regulatory_controls c LEFT JOIN operating_markets m ON m.id=c.market_id WHERE c.market_id IS NULL OR c.market_id=$1 ORDER BY c.control_key",[assignment.market_id]),
