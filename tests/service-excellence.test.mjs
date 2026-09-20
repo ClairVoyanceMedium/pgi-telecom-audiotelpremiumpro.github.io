@@ -57,7 +57,7 @@ test("NOC incidents automatically create and resolve customer service cases",()=
   assert.match(workers,/scanTenantServiceIncidents/);
   assert.match(store,/async scanTenantServiceIncidents/);
   assert.match(store,/source_telecom_incident_id/);
-  assert.match(store,/Incident réseau détecté automatiquement par PGI/);
+  assert.match(store,/Incident réseau détecté automatiquement par Audiotel Premium Pro/);
   assert.match(store,/Incident réseau résolu automatiquement/);
   assert.match(store,/first_response_due/);
   assert.match(store,/resolution_due/);
