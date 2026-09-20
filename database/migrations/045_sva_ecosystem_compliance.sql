@@ -5,6 +5,11 @@
 
 BEGIN;
 
+ALTER TABLE sva_regulatory_evidence_pack_exports
+  ADD COLUMN ecosystem_chain_head char(64),
+  ADD COLUMN ecosystem_links_valid boolean,
+  ADD COLUMN ecosystem_evidence_events integer NOT NULL DEFAULT 0 CHECK (ecosystem_evidence_events>=0);
+
 CREATE TABLE regulatory_framework_registry (
   framework_key text PRIMARY KEY,
   authority_name text NOT NULL,
