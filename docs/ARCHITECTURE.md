@@ -176,7 +176,7 @@ PGI peut orchestrer l'onboarding, le routage, le reporting et la facturation de 
 
 La circulation des fonds SVA est indépendante du routage télécom.
 
-Aucun reversement tiers ne doit passer en mode production sans un `payment_compliance_profile` actif correspondant au montage validé : paiement direct amont→éditeur, agent PSP ou autre rôle réglementaire approprié.
+Le modèle métier nominal est `opérateur SVA → PGI → marge PGI → net client`. Aucun net client ne doit toutefois devenir payable sans un `payment_compliance_profile` actif correspondant au montage juridique et bancaire validé pour le marché concerné.
 
 Voir `docs/WHOLESALE-SVA.md` pour la trajectoire complète.
 
@@ -266,3 +266,7 @@ La portabilité est un workflow du control plane, distinct du routage média. Un
 La finalisation n'est autorisée qu'après confirmation opérateur et réunit dans une seule transaction PostgreSQL le numéro, l'affectation tenant, le rattachement opérateur, l'événement de portabilité et les journaux d'audit. Le backend vérifie aussi la route SVA réellement active avant de passer le dossier à `ported`.
 
 Les interfaces de portabilité sont chargées à la demande afin de préserver le budget du shell critique. Détails : `docs/PORTABILITY.md`.
+
+### Distribution des revenus SVA collectés par PGI
+
+`tenant_payout_terms` versionne les conditions commerciales de chaque client. `tenant_revenue_distributions` constitue le relevé de distribution faisant foi : reversement opérateur attribué à PGI, marge PGI, net client, montants bloqués et statut de paiement. `tenant_revenue_distribution_calls` fournit la justification appel par appel. Les mêmes règles s’appliquent aux numéros nouvellement affectés et aux numéros entrés par portabilité.
