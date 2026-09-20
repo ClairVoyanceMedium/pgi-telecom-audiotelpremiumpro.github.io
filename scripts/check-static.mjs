@@ -34,6 +34,7 @@ const required = [
   "assets/tenant-control-detail.js",
   "assets/tenant-control-utils.js",
   "assets/tenant-portability-admin.js",
+  "assets/tenant-payout-admin.js",
   "assets/platform-admin-tools.js",
   "assets/call-tools.js",
   "assets/app.js",
@@ -59,7 +60,7 @@ const app = fs.readFileSync(path.join(root, "assets/app.js"), "utf8");
 const frontRuntime = [
   "index.html","client.html","assets/config.js","assets/core.js","assets/api-client.js","assets/client-portal-api.js","assets/client-portal.js","assets/client-portability.js","assets/client-search.js","assets/client-premium.js","assets/client-intelligence.js",
   "assets/data-client.js","assets/demo-data.js","assets/command-palette-loader.js","assets/command-palette.js",
-  "assets/workspace.js","assets/cockpit-pro.js","assets/performance-radar.js","assets/voice-intelligence.js","assets/subscription-billing-ui.js","assets/customer-admin.js","assets/customer-admin.css","assets/tenant-control-detail.js","assets/tenant-control-utils.js","assets/tenant-portability-admin.js","assets/platform-admin-tools.js","assets/call-tools.js","assets/app.js","service-worker.js"
+  "assets/workspace.js","assets/cockpit-pro.js","assets/performance-radar.js","assets/voice-intelligence.js","assets/subscription-billing-ui.js","assets/customer-admin.js","assets/customer-admin.css","assets/tenant-control-detail.js","assets/tenant-control-utils.js","assets/tenant-portability-admin.js","assets/tenant-payout-admin.js","assets/platform-admin-tools.js","assets/call-tools.js","assets/app.js","service-worker.js"
 ].map(file=>fs.readFileSync(path.join(root,file),"utf8")).join("\n");
 
 const failures = [];
