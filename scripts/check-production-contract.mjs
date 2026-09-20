@@ -47,6 +47,8 @@ const customerPortalMigration=fs.readFileSync("database/migrations/023_customer_
 const customerGoogleMigration=fs.readFileSync("database/migrations/024_customer_google_identity.sql","utf8");
 const voiceIntelligenceMigration=fs.readFileSync("database/migrations/026_voice_intelligence.sql","utf8");
 const pgiRevenueMigration=fs.readFileSync("database/migrations/029_pgi_collected_revenue_distribution.sql","utf8");
+const portabilityAutomationMigration=fs.readFileSync("database/migrations/031_automatic_portability_orchestration.sql","utf8");
+const portabilityAutomationSource=fs.readFileSync("backend/src/portability-automation.mjs","utf8");
 const googleIdSource=fs.readFileSync("backend/src/google-id.mjs","utf8");
 const workersSource=fs.readFileSync("backend/src/workers.mjs","utf8");
 const resilienceDoc=fs.readFileSync("docs/RESILIENCE.md","utf8");
@@ -154,6 +156,9 @@ if(!/security_barrier=true/.test(tenantBoundaryMigration)||!/tenant_scoped_call_
 if(!/set_config\('pgi\.tenant_id'/.test(postgresStore)||!/withTenantContext/.test(postgresStore))failures.push("backend must set tenant SQL context transactionally");
 if(!/work_queue_dead_letters/.test(resilientQueueMigration)||!/lease_expires_at/.test(resilientQueueMigration))failures.push("work queue must retain lease recovery and dead-letter storage");
 if(!/claimWork/.test(postgresStore)||!/extendWorkLease/.test(postgresStore)||!/failWork/.test(postgresStore)||!/queueHandlers/.test(workersSource)||!/heartbeatTimer/.test(workersSource))failures.push("distributed queue runtime must retain explicit handlers, leases, heartbeats, retries and claims");
+if(!/automation_state/.test(portabilityAutomationMigration)||!/portability_operator_events/.test(portabilityAutomationMigration)||!/tenant_scoped_portability_requests_v4/.test(portabilityAutomationMigration))failures.push("portability automation migration must retain orchestration state, sanitized operator events and safe tenant view");
+if(!/createPortabilityQueueHandlers/.test(portabilityAutomationSource)||!/scanPortabilityAutomation/.test(postgresStore)||!/createPortabilityQueueHandlers/.test(backendServer)||!/scanPortabilityAutomation/.test(workersSource))failures.push("portability must remain automatic through the distributed work queue");
+if(!/sanitizePayload/.test(portabilityAutomationSource)||!/decryptPortabilityCredential/.test(portabilityAutomationSource)||!/PORTABILITY_OPERATOR_HTTPS_REQUIRED/.test(portabilityAutomationSource))failures.push("portability automation must protect RIO and operator credentials in production");
 if(!/platform_regions/.test(multiRegionMigration)||!/tenant_residency_policies/.test(multiRegionMigration)||!/disaster_recovery_targets/.test(multiRegionMigration)||!/region_failover_events/.test(multiRegionMigration))failures.push("multi-region DR foundation must retain region, residency and failover controls");
 if(!/traceparent/.test(backendServer)||!/pgi_http_request_duration_ms_bucket/.test(backendServer)||!/pgi_work_queue_dead_lettered/.test(backendServer))failures.push("backend must retain trace correlation, latency histograms and queue metrics");
 if(!/PGIApiFastErrorBudgetBurn/.test(prometheusAlerts)||!/PGIWorkQueueDeadLetter/.test(prometheusAlerts))failures.push("Prometheus SLO rules must retain burn-rate and dead-letter alerts");
