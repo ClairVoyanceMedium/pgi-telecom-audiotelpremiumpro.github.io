@@ -90,3 +90,8 @@ html{scroll-padding-top:150px}
 @media print{
   .cp-section-nav,.cp-command-bar,.cp-search-scopes{display:none!important}
 }
+
+.cp-svg .chart-legend{fill:#aab0b6;font-size:8px;font-weight:750}
+.cp-svg .cp-chart-hit{fill:transparent;stroke:transparent;pointer-events:all;cursor:crosshair}
+.cp-svg .cp-chart-hit:hover{fill:#eef1f3;stroke:#15181b;stroke-width:2}
+.cp-svg .cp-chart-hit.secondary:hover{fill:#969ea6}
