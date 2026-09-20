@@ -1,5 +1,6 @@
 
 import {createHash} from "node:crypto";
+import {normalizeFrenchSvaRio,rioFingerprint,encryptPortabilityCredential} from "./portability-identity.mjs";
 import {sanitizeCdrPayload,deriveCallerHash} from "./cdr-privacy.mjs";
 import {computeExpertCost} from "./expert-finance.mjs";
 import {normalizeSettlementPayload} from "./settlement-finance.mjs";
@@ -2350,8 +2351,9 @@ export class PostgresStore{
     return this.withTenantReadContext(id,async tx=>tx.unsafe(
       "SELECT id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,"+
       " account_holder_name,desired_port_date,status,ownership_status,operator_portability_reference,scheduled_at,completed_at,rejection_reason,"+
-      " tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,tariff_verified_at,created_at,updated_at"+
-      " FROM tenant_scoped_portability_requests_v2 ORDER BY created_at DESC,id DESC LIMIT 50"
+      " tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,tariff_verified_at,"+
+      " rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,created_at,updated_at"+
+      " FROM tenant_scoped_portability_requests_v3 ORDER BY created_at DESC,id DESC LIMIT 50"
     ));
   }
 
@@ -2361,6 +2363,18 @@ export class PostgresStore{
     const country=String(input.country_code||"").trim().toUpperCase();
     if(!/^[A-Z]{2}$/.test(country))throw problem(400,"INVALID_COUNTRY_CODE");
     const e164=normalizePortabilityNumber(input.number,country);
+    if(input.source_contract_liability_acknowledged!==true)throw problem(400,"PORTABILITY_SOURCE_CONTRACT_ACK_REQUIRED");
+    const portabilitySecret=String(this.config.portabilitySecretKey||this.config.callerHashKey||this.config.sessionSecret||"");
+    let rio=null,rioCiphertext=null,rioHash=null,rioLast4=null,rioStatus="pending";
+    if(country==="FR"){
+      if(!String(input.rio||"").trim())throw problem(400,"PORTABILITY_RIO_REQUIRED");
+      if(portabilitySecret.length<32)throw problem(503,"PORTABILITY_SECRET_UNAVAILABLE");
+      try{rio=normalizeFrenchSvaRio(input.rio,e164);}catch{throw problem(400,"INVALID_PORTABILITY_RIO");}
+      rioCiphertext=encryptPortabilityCredential(rio,portabilitySecret);
+      rioHash=rioFingerprint(rio,e164,portabilitySecret);
+      rioLast4=rio.slice(-4);
+      rioStatus="verified";
+    }
     const operatorName=optionalText(input.current_operator_name,160);
     const operatorReference=optionalText(input.current_operator_reference,200);
     const holderName=optionalText(input.account_holder_name,200);
@@ -2386,20 +2400,20 @@ export class PostgresStore{
       ))[0];
       if(existing)throw problem(409,"PORTABILITY_ALREADY_REQUESTED");
       const rows=await tx.unsafe(
-        "INSERT INTO tenant_portability_requests(tenant_id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,account_holder_name,desired_port_date,authorization_confirmed,number_owner_confirmed,tariff_code,service_rate_ttc_per_min,currency,metadata)"+
-        " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::date,true,true,$10,$11,$12,$13::jsonb)"+
-        " RETURNING id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,account_holder_name,desired_port_date,status,ownership_status,tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,created_at",
-        [id,country,e164,String(input.number||"").trim().slice(0,40)||e164,serviceFamily,operatorName,operatorReference,holderName,desiredDate,tariffCode,rate,currency,
-         JSON.stringify({source:"customer_portal",original_number:String(input.number||"").trim().slice(0,40)})]
+        "INSERT INTO tenant_portability_requests(tenant_id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,account_holder_name,desired_port_date,authorization_confirmed,number_owner_confirmed,rio_ciphertext,rio_fingerprint,rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,tariff_code,service_rate_ttc_per_min,currency,metadata)"+
+        " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::date,true,true,$10,$11,$12,$13,CASE WHEN $13=\'verified\' THEN now() ELSE NULL END,\'none\',true,$14,$15,$16,$17::jsonb)"+
+        " RETURNING id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,account_holder_name,desired_port_date,status,ownership_status,tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,created_at",
+        [id,country,e164,String(input.number||"").trim().slice(0,40)||e164,serviceFamily,operatorName,operatorReference,holderName,desiredDate,rioCiphertext,rioHash,rioLast4,rioStatus,tariffCode,rate,currency,
+         JSON.stringify({source:"customer_portal",original_number:String(input.number||"").trim().slice(0,40),source_contract_transfer_mode:"none"})]
       );
       const request=rows[0];
       await tx.unsafe(
         "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'portability.request','tenant_portability_request',$2,$3::jsonb)",
-        [id,String(request.id),JSON.stringify({requested_e164:e164,country_code:country,service_family:serviceFamily,declared_rate_ttc_per_min:rate,currency})]
+        [id,String(request.id),JSON.stringify({requested_e164:e164,country_code:country,service_family:serviceFamily,declared_rate_ttc_per_min:rate,currency,rio_verified:rioStatus==="verified",source_contract_transfer_mode:"none"})]
       );
       await tx.unsafe(
         "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'portability.requested','tenant_portability_request',$2,$3::jsonb)",
-        [id,String(request.id),JSON.stringify({requested_e164:e164,country_code:country})]
+        [id,String(request.id),JSON.stringify({requested_e164:e164,country_code:country,rio_verified:rioStatus==="verified",source_contract_transfer_mode:"none"})]
       );
       return request;
     });
@@ -2466,6 +2480,8 @@ export class PostgresStore{
       if(tariffStatus==="verified"&&(effectiveRate==null||!Number.isFinite(effectiveRate)||!current.currency))throw problem(409,"PORTABILITY_TARIFF_DETAILS_REQUIRED");
       if(tariffStatus==="verified"&&!effectiveTariffCode)throw problem(409,"PORTABILITY_TARIFF_CODE_REQUIRED");
       if(["operator_pending","scheduled"].includes(status)&&ownership!=="verified")throw problem(409,"PORTABILITY_OWNERSHIP_VERIFICATION_REQUIRED");
+      if(["operator_pending","scheduled"].includes(status)&&current.source_contract_liability_acknowledged!==true)throw problem(409,"PORTABILITY_SOURCE_CONTRACT_ACK_REQUIRED");
+      if(["operator_pending","scheduled"].includes(status)&&current.country_code==="FR"&&current.rio_validation_status!=="verified")throw problem(409,"PORTABILITY_RIO_VERIFICATION_REQUIRED");
       if(status==="scheduled"){
         if(!scheduledAt)throw problem(409,"PORTABILITY_SCHEDULE_REQUIRED");
         if(!effectiveCarrierId)throw problem(409,"PORTABILITY_TARGET_CARRIER_REQUIRED");
@@ -2510,6 +2526,8 @@ export class PostgresStore{
       }
       if(current.status!=="scheduled")throw problem(409,"PORTABILITY_NOT_SCHEDULED");
       if(current.ownership_status!=="verified")throw problem(409,"PORTABILITY_OWNERSHIP_VERIFICATION_REQUIRED");
+      if(current.source_contract_liability_acknowledged!==true)throw problem(409,"PORTABILITY_SOURCE_CONTRACT_ACK_REQUIRED");
+      if(current.country_code==="FR"&&current.rio_validation_status!=="verified")throw problem(409,"PORTABILITY_RIO_VERIFICATION_REQUIRED");
       if(current.tariff_verification_status!=="verified")throw problem(409,"PORTABILITY_TARIFF_VERIFICATION_REQUIRED");
       const rate=current.service_rate_ttc_per_min==null?null:Number(current.service_rate_ttc_per_min);
       if(rate==null||!Number.isFinite(rate)||rate<0)throw problem(409,"PORTABILITY_TARIFF_DETAILS_REQUIRED");
@@ -2583,7 +2601,7 @@ export class PostgresStore{
       await tx.unsafe(
         "INSERT INTO number_portability_events(sva_number_id,from_carrier_id,to_carrier_id,portability_reference,requested_at,scheduled_at,activated_at,completed_at,status,validation,notes)"+
         " VALUES($1,NULL,$2,$3,$4,$5,now(),now(),'completed',$6::jsonb,$7)",
-        [number.id,targetCarrierId,operatorRef,current.created_at,current.scheduled_at,JSON.stringify({ownership_verified:true,tariff_verified:true,tariff_code:current.tariff_code,service_rate_ttc_per_min:rate,currency:current.currency,route_key:"sva-primary",route_carrier_id:targetCarrierId}),"Atomic customer port-in completion"]
+        [number.id,targetCarrierId,operatorRef,current.created_at,current.scheduled_at,JSON.stringify({ownership_verified:true,rio_verified:current.country_code!=="FR"||current.rio_validation_status==="verified",source_contract_transfer_mode:"none",tariff_verified:true,tariff_code:current.tariff_code,service_rate_ttc_per_min:rate,currency:current.currency,route_key:"sva-primary",route_carrier_id:targetCarrierId}),"Atomic customer port-in completion"]
       );
       const request=(await tx.unsafe(
         "UPDATE tenant_portability_requests SET status='ported',sva_number_id=$2,operator_portability_reference=$3,completed_at=now(),updated_at=now() WHERE id=$1 RETURNING *",
@@ -2855,7 +2873,8 @@ export class PostgresStore{
       ),
       this.readSql.unsafe(
         "SELECT p.id,p.country_code,p.requested_e164,p.display_number,p.service_family,p.current_operator_name,p.current_operator_reference,p.account_holder_name,p.desired_port_date,p.status,p.ownership_status,p.operator_portability_reference,p.scheduled_at,p.completed_at,p.rejection_reason,"+
-        " p.target_carrier_id,c.name AS target_carrier,p.tariff_code,p.service_rate_ttc_per_min::float8,p.currency,p.tariff_verification_status,p.tariff_verified_at,p.created_at,p.updated_at"+
+        " p.target_carrier_id,c.name AS target_carrier,p.tariff_code,p.service_rate_ttc_per_min::float8,p.currency,p.tariff_verification_status,p.tariff_verified_at,"+
+        " p.rio_last4,p.rio_validation_status,p.rio_validated_at,p.source_contract_transfer_mode,p.source_contract_liability_acknowledged,p.created_at,p.updated_at"+
         " FROM tenant_portability_requests p LEFT JOIN carriers c ON c.id=p.target_carrier_id WHERE p.tenant_id=$1 ORDER BY p.created_at DESC,p.id DESC LIMIT 50",[id]
       ),
       this.readSql.unsafe(
