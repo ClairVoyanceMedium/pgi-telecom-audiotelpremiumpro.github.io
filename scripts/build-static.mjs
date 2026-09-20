@@ -43,6 +43,7 @@ const files=[
   "assets/tenant-control-detail.js",
   "assets/tenant-control-utils.js",
   "assets/tenant-portability-admin.js",
+  "assets/tenant-payout-admin.js",
   "assets/platform-admin-tools.js",
   "assets/call-tools.js",
   "assets/app.js",
