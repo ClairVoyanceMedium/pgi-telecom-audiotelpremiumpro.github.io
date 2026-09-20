@@ -49,6 +49,9 @@ const voiceIntelligenceMigration=fs.readFileSync("database/migrations/026_voice_
 const pgiRevenueMigration=fs.readFileSync("database/migrations/029_pgi_collected_revenue_distribution.sql","utf8");
 const portabilityAutomationMigration=fs.readFileSync("database/migrations/031_automatic_portability_orchestration.sql","utf8");
 const portabilityAutomationSource=fs.readFileSync("backend/src/portability-automation.mjs","utf8");
+const serviceExcellenceMigration=fs.readFileSync("database/migrations/032_service_excellence.sql","utf8");
+const clientServiceCenter=fs.readFileSync("assets/client-service-center.js","utf8");
+const tenantServiceAdmin=fs.readFileSync("assets/tenant-service-admin.js","utf8");
 const googleIdSource=fs.readFileSync("backend/src/google-id.mjs","utf8");
 const workersSource=fs.readFileSync("backend/src/workers.mjs","utf8");
 const resilienceDoc=fs.readFileSync("docs/RESILIENCE.md","utf8");
@@ -159,6 +162,11 @@ if(!/claimWork/.test(postgresStore)||!/extendWorkLease/.test(postgresStore)||!/f
 if(!/automation_state/.test(portabilityAutomationMigration)||!/portability_operator_events/.test(portabilityAutomationMigration)||!/tenant_scoped_portability_requests_v4/.test(portabilityAutomationMigration))failures.push("portability automation migration must retain orchestration state, sanitized operator events and safe tenant view");
 if(!/createPortabilityQueueHandlers/.test(portabilityAutomationSource)||!/scanPortabilityAutomation/.test(postgresStore)||!/createPortabilityQueueHandlers/.test(backendServer)||!/scanPortabilityAutomation/.test(workersSource))failures.push("portability must remain automatic through the distributed work queue");
 if(!/sanitizePayload/.test(portabilityAutomationSource)||!/decryptPortabilityCredential/.test(portabilityAutomationSource)||!/PORTABILITY_OPERATOR_HTTPS_REQUIRED/.test(portabilityAutomationSource))failures.push("portability automation must protect RIO and operator credentials in production");
+if(!/tenant_service_incidents/.test(serviceExcellenceMigration)||!/tenant_service_incident_events/.test(serviceExcellenceMigration)||!/tenant_service_incident_notes/.test(serviceExcellenceMigration)||!/tenant_operational_alerts/.test(serviceExcellenceMigration))failures.push("service excellence must retain one traceable customer incident lifecycle");
+if(!/security_barrier=true/.test(serviceExcellenceMigration)||!/tenant_scoped_service_incidents/.test(serviceExcellenceMigration)||!/tenant_scoped_operational_alerts/.test(serviceExcellenceMigration))failures.push("service excellence views must remain tenant scoped");
+if(!/scanTenantServiceIncidents/.test(postgresStore)||!/scanTenantServiceIncidents/.test(workersSource)||!/source_telecom_incident_id/.test(postgresStore))failures.push("NOC incidents must remain automatically correlated to customer service cases");
+if(!/simulateTenantRoutingById/.test(postgresStore)||!/dry_run:true/.test(postgresStore)||!/routing\/simulate/.test(backendServer))failures.push("routing preview must remain a dry-run before real activation");
+if(!/client-service-center\.js/.test(clientServiceCenter)||!/Centre de service/.test(clientServiceCenter)||!/Centre de service & incidents/.test(tenantServiceAdmin))failures.push("customer and admin service-center interfaces must remain available");
 if(!/platform_regions/.test(multiRegionMigration)||!/tenant_residency_policies/.test(multiRegionMigration)||!/disaster_recovery_targets/.test(multiRegionMigration)||!/region_failover_events/.test(multiRegionMigration))failures.push("multi-region DR foundation must retain region, residency and failover controls");
 if(!/traceparent/.test(backendServer)||!/pgi_http_request_duration_ms_bucket/.test(backendServer)||!/pgi_work_queue_dead_lettered/.test(backendServer))failures.push("backend must retain trace correlation, latency histograms and queue metrics");
 if(!/PGIApiFastErrorBudgetBurn/.test(prometheusAlerts)||!/PGIWorkQueueDeadLetter/.test(prometheusAlerts))failures.push("Prometheus SLO rules must retain burn-rate and dead-letter alerts");
