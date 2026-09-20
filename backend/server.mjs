@@ -663,6 +663,30 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.assignment_status",200,{...result.value,replayed:result.replayed});
       }
 
+      match=routeMatch(pathname,"/api/v1/platform/tenant-number-assignments/:id/regulatory-profile");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const result=await store.idempotent(req.headers["idempotency-key"],"regulatory.profile.update",{id:match.id,...body},()=>store.upsertSvaRegulatoryProfile(match.id,body,actor));
+        return done(res,metrics,started,"platform.regulatory_profile",200,{...result.value,replayed:result.replayed});
+      }
+
+      match=routeMatch(pathname,"/api/v1/platform/tenant-number-assignments/:id/regulatory-evidence");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const result=await store.idempotent(req.headers["idempotency-key"],"regulatory.evidence.append",{id:match.id,...body},()=>store.recordSvaRegulatoryEvidence(match.id,body,actor));
+        return done(res,metrics,started,"platform.regulatory_evidence",201,{...result.value,replayed:result.replayed});
+      }
+
+      match=routeMatch(pathname,"/api/v1/platform/tenant-number-assignments/:id/abuse-cases");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const result=await store.idempotent(req.headers["idempotency-key"],"regulatory.abuse.open",{id:match.id,...body},()=>store.createSvaAbuseCase(match.id,body,actor));
+        return done(res,metrics,started,"platform.regulatory_abuse",201,{...result.value,replayed:result.replayed});
+      }
+
       match=routeMatch(pathname,"/api/v1/platform/tenants/:id/call-destinations");
       if(method==="POST"&&match){requireRole(actor,["admin"]);requireCsrf(req,actor,config);const body=await readJson(req,config.bodyLimitBytes);const result=await store.idempotent(req.headers["idempotency-key"],"call_destination.create",{tenant:match.id,...body},()=>store.createCallDestination(match.id,body,actor));return done(res,metrics,started,"platform.call_destination_create",201,{...result.value,replayed:result.replayed});}
       match=routeMatch(pathname,"/api/v1/platform/call-destinations/:id/status");
