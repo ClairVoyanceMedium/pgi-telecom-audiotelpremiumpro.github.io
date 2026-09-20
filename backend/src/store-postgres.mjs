@@ -2744,6 +2744,14 @@ export class PostgresStore{
         " automation_state,automation_last_error,automation_last_sync_at,operator_status,created_at,updated_at"+
         " FROM tenant_scoped_portability_requests_v4 ORDER BY created_at DESC,id DESC LIMIT 20"
       );
+      const serviceIncidents=await tx.unsafe(
+        "SELECT id,public_id,category,severity,status,source,title,description,assigned_team,first_response_due_at,target_resolution_at,first_responded_at,last_customer_update_at,last_pgi_update_at,resolved_at,created_at,updated_at"+
+        " FROM tenant_scoped_service_incidents WHERE customer_visible=true ORDER BY (status IN ('resolved','closed')) ASC,updated_at DESC,id DESC LIMIT 10"
+      );
+      const operationalAlerts=await tx.unsafe(
+        "SELECT id,incident_id,alert_type,severity,state,title,message,due_at,details,last_detected_at"+
+        " FROM tenant_scoped_operational_alerts WHERE customer_visible=true AND state<>'resolved' ORDER BY last_detected_at DESC,id DESC LIMIT 20"
+      );
       const recentCalls=await tx.unsafe(
         "SELECT call_id,market,currency,sva_number_id,display_number,e164,started_at,ringing_at,bridged_at,ended_at,call_status,wait_seconds,conversation_seconds,billable_seconds,"+
         " retail_service_amount_ttc::float8,sip_final_code,hangup_cause,hangup_party,codec,post_dial_delay_ms,origin_carrier,host_carrier,"+
@@ -2752,7 +2760,7 @@ export class PostgresStore{
         " FROM tenant_scoped_portal_call_details WHERE started_at>=$1::timestamptz AND started_at<=$2::timestamptz"+
         " ORDER BY started_at DESC,call_id DESC LIMIT 20",[from,to]
       );
-      return {tenant,financial_by_currency:financial,series,numbers,settlements,subscriptions,portability_requests:portabilityRequests,destinations,recent_calls:recentCalls,voice_quality:voiceQuality[0]||null,range:{from,to}};
+      return {tenant,financial_by_currency:financial,series,numbers,settlements,subscriptions,portability_requests:portabilityRequests,destinations,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,recent_calls:recentCalls,voice_quality:voiceQuality[0]||null,range:{from,to}};
     });
   }
 
@@ -2822,6 +2830,378 @@ export class PostgresStore{
       const last=data.at(-1);
       return {data,next_cursor:more&&last?encodeCursor({started_at:last.started_at,id:Number(last.call_id)}):null,filters:{status,number_id:numberId,min_duration:minDuration,max_duration:maxDuration,min_amount:minAmount,max_amount:maxAmount}};
     });
+  }
+
+  async customerServiceIncidents(tenantId,params={}){
+    const id=Number(tenantId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    const publicId=String(params.incident_id||"").trim();
+    const limit=clampInt(params.limit,30,1,100);
+    return this.withTenantReadContext(id,async tx=>{
+      if(publicId){
+        if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_INCIDENT_ID");
+        const rows=await tx.unsafe(
+          "SELECT * FROM tenant_scoped_service_incidents WHERE public_id=$1::uuid AND customer_visible=true LIMIT 1",
+          [publicId]
+        );
+        const incident=rows[0];if(!incident)throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");
+        const [events,notes]=await Promise.all([
+          tx.unsafe(
+            "SELECT id,event_type,actor_type,previous_value,new_value,message,details,occurred_at"+
+            " FROM tenant_scoped_service_incident_events WHERE incident_id=$1 AND customer_visible=true ORDER BY occurred_at,id LIMIT 250",
+            [incident.id]
+          ),
+          tx.unsafe(
+            "SELECT id,author_type,body,created_at FROM tenant_scoped_service_incident_notes"+
+            " WHERE incident_id=$1 AND customer_visible=true ORDER BY created_at,id LIMIT 250",
+            [incident.id]
+          )
+        ]);
+        return {incident,events,notes};
+      }
+      const incidents=await tx.unsafe(
+        "SELECT id,public_id,category,severity,status,source,title,description,assigned_team,first_response_due_at,target_resolution_at,"+
+        " first_responded_at,last_customer_update_at,last_pgi_update_at,resolved_at,closed_at,diagnostic_snapshot,created_at,updated_at"+
+        " FROM tenant_scoped_service_incidents WHERE customer_visible=true ORDER BY (status IN ('resolved','closed')) ASC,updated_at DESC,id DESC LIMIT $1",
+        [limit]
+      );
+      const alerts=await tx.unsafe(
+        "SELECT id,alert_type,severity,state,title,message,due_at,details,last_detected_at"+
+        " FROM tenant_scoped_operational_alerts WHERE customer_visible=true AND state<>'resolved' ORDER BY last_detected_at DESC,id DESC LIMIT 50"
+      );
+      return {data:incidents,alerts};
+    });
+  }
+
+  async createCustomerServiceIncident(tenantId,input={},principalId){
+    const id=Number(tenantId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    const principal=String(principalId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(principal))throw problem(401,"CUSTOMER_AUTH_REQUIRED");
+    const category=String(input.category||"other").trim().toLowerCase();
+    const severity=String(input.severity||"normal").trim().toLowerCase();
+    const title=String(input.title||"").trim();
+    const description=String(input.description||"").trim();
+    const svaNumberId=input.sva_number_id==null||input.sva_number_id===""?null:Number(input.sva_number_id);
+    if(!["telephony","portability","billing","payout","account","routing","quality","other"].includes(category))throw problem(400,"INVALID_INCIDENT_CATEGORY");
+    if(!["low","normal","high","critical"].includes(severity))throw problem(400,"INVALID_INCIDENT_SEVERITY");
+    if(title.length<3||title.length>180)throw problem(400,"INVALID_INCIDENT_TITLE");
+    if(description.length<3||description.length>5000)throw problem(400,"INVALID_INCIDENT_DESCRIPTION");
+    if(svaNumberId!=null&&(!Number.isInteger(svaNumberId)||svaNumberId<=0))throw problem(400,"INVALID_INCIDENT_NUMBER");
+    const sla=serviceIncidentSla(severity);
+    const result=await this.sql.begin(async tx=>{
+      const tenant=(await tx.unsafe("SELECT id,status,tenant_type FROM tenants WHERE id=$1 FOR UPDATE",[id]))[0];
+      if(!tenant||tenant.tenant_type==="internal")throw problem(404,"TENANT_NOT_FOUND");
+      if(tenant.status==="closed")throw problem(409,"TENANT_CLOSED");
+      if(svaNumberId!=null){
+        const number=(await tx.unsafe("SELECT id FROM sva_numbers WHERE id=$1 AND tenant_id=$2 LIMIT 1",[svaNumberId,id]))[0];
+        if(!number)throw problem(404,"INCIDENT_NUMBER_NOT_FOUND");
+      }
+      const diagnostic=await tenantDiagnosticSnapshot(tx,id,svaNumberId);
+      const rows=await tx.unsafe(
+        "INSERT INTO tenant_service_incidents(tenant_id,sva_number_id,category,severity,status,source,title,description,created_by_customer_principal_id,"+
+        " first_response_due_at,target_resolution_at,last_customer_update_at,diagnostic_snapshot)"+
+        " VALUES($1,$2,$3,$4,'open','customer',$5,$6,$7::uuid,now()+make_interval(mins=>$8),now()+make_interval(mins=>$9),now(),$10::jsonb)"+
+        " RETURNING id,public_id,tenant_id,sva_number_id,category,severity,status,source,title,description,assigned_team,first_response_due_at,target_resolution_at,created_at,updated_at",
+        [id,svaNumberId,category,severity,title,description,principal,sla.response,sla.resolution,JSON.stringify(diagnostic)]
+      );
+      const incident=rows[0];
+      await tx.unsafe(
+        "INSERT INTO tenant_service_incident_events(incident_id,tenant_id,event_type,actor_type,actor_customer_principal_id,message,customer_visible,details)"+
+        " VALUES($1,$2,'created','customer',$3::uuid,$4,true,$5::jsonb)",
+        [incident.id,id,principal,"Incident signalé par le client",JSON.stringify({category,severity})]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'service_incident.create','tenant_service_incident',$2,$3::jsonb)",
+        [id,String(incident.id),JSON.stringify({source:"customer",category,severity,public_id:incident.public_id})]
+      );
+      return incident;
+    });
+    this.eventBus.publish("service.incident.created",{tenant_id:id,incident_id:String(result.public_id),severity:result.severity,source:"customer"});
+    return result;
+  }
+
+  async addCustomerServiceIncidentNote(tenantId,incidentPublicId,body,principalId){
+    const id=Number(tenantId),publicId=String(incidentPublicId||"").trim(),principal=String(principalId||"").trim();
+    const note=String(body||"").trim();
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_INCIDENT_ID");
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(principal))throw problem(401,"CUSTOMER_AUTH_REQUIRED");
+    if(!note||note.length>5000)throw problem(400,"INVALID_INCIDENT_NOTE");
+    const result=await this.sql.begin(async tx=>{
+      const incident=(await tx.unsafe(
+        "SELECT id,status FROM tenant_service_incidents WHERE public_id=$1::uuid AND tenant_id=$2 AND customer_visible=true FOR UPDATE",
+        [publicId,id]
+      ))[0];
+      if(!incident)throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");
+      if(incident.status==="closed")throw problem(409,"SERVICE_INCIDENT_CLOSED");
+      const rows=await tx.unsafe(
+        "INSERT INTO tenant_service_incident_notes(incident_id,tenant_id,author_type,author_customer_principal_id,body,customer_visible)"+
+        " VALUES($1,$2,'customer',$3::uuid,$4,true) RETURNING id,incident_id,author_type,body,created_at",
+        [incident.id,id,principal,note]
+      );
+      await tx.unsafe(
+        "INSERT INTO tenant_service_incident_events(incident_id,tenant_id,event_type,actor_type,actor_customer_principal_id,message,customer_visible)"+
+        " VALUES($1,$2,'note','customer',$3::uuid,'Nouveau message client',true)",
+        [incident.id,id,principal]
+      );
+      await tx.unsafe(
+        "UPDATE tenant_service_incidents SET last_customer_update_at=now(),status=CASE WHEN status='waiting_customer' THEN 'investigating' ELSE status END,updated_at=now() WHERE id=$1",
+        [incident.id]
+      );
+      return rows[0];
+    });
+    this.eventBus.publish("service.incident.customer_note",{tenant_id:id,incident_id:publicId});
+    return result;
+  }
+
+  async createTenantServiceIncident(publicTenantId,input={},actor={}){
+    const tenantPublicId=String(publicTenantId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantPublicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    const category=String(input.category||"other").trim().toLowerCase();
+    const severity=String(input.severity||"normal").trim().toLowerCase();
+    const title=String(input.title||"").trim(),description=String(input.description||"").trim();
+    if(!["telephony","portability","billing","payout","account","routing","quality","other"].includes(category))throw problem(400,"INVALID_INCIDENT_CATEGORY");
+    if(!["low","normal","high","critical"].includes(severity))throw problem(400,"INVALID_INCIDENT_SEVERITY");
+    if(title.length<3||title.length>180||description.length<3||description.length>5000)throw problem(400,"INVALID_INCIDENT_CONTENT");
+    const actorId=numericActor(actor),sla=serviceIncidentSla(severity);
+    const result=await this.sql.begin(async tx=>{
+      const tenant=(await tx.unsafe("SELECT id,tenant_type,status FROM tenants WHERE public_id=$1::uuid FOR UPDATE",[tenantPublicId]))[0];
+      if(!tenant||tenant.tenant_type==="internal")throw problem(404,"TENANT_NOT_FOUND");
+      const diagnostic=await tenantDiagnosticSnapshot(tx,Number(tenant.id),null);
+      const incident=(await tx.unsafe(
+        "INSERT INTO tenant_service_incidents(tenant_id,category,severity,status,source,title,description,owner_user_id,first_response_due_at,target_resolution_at,first_responded_at,last_pgi_update_at,diagnostic_snapshot)"+
+        " VALUES($1,$2,$3,'investigating','admin',$4,$5,$6,now()+make_interval(mins=>$7),now()+make_interval(mins=>$8),now(),now(),$9::jsonb)"+
+        " RETURNING id,public_id,tenant_id,category,severity,status,title,description,assigned_team,first_response_due_at,target_resolution_at,created_at",
+        [tenant.id,category,severity,title,description,actorId,sla.response,sla.resolution,JSON.stringify(diagnostic)]
+      ))[0];
+      await tx.unsafe(
+        "INSERT INTO tenant_service_incident_events(incident_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible,details)"+
+        " VALUES($1,$2,'created','staff',$3,'Incident ouvert par PGI',true,$4::jsonb)",
+        [incident.id,tenant.id,actorId,JSON.stringify({category,severity})]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'service_incident.create','tenant_service_incident',$3,$4::jsonb)",
+        [tenant.id,actorId,String(incident.id),JSON.stringify({source:"admin",category,severity,public_id:incident.public_id})]
+      );
+      return incident;
+    });
+    this.eventBus.publish("service.incident.created",{tenant_public_id:tenantPublicId,incident_id:String(result.public_id),severity:result.severity,source:"admin"});
+    return result;
+  }
+
+  async updateServiceIncident(incidentPublicId,input={},actor={}){
+    const publicId=String(incidentPublicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_INCIDENT_ID");
+    const status=input.status==null?null:String(input.status).trim().toLowerCase();
+    const severity=input.severity==null?null:String(input.severity).trim().toLowerCase();
+    if(status&&!["open","investigating","waiting_customer","monitoring","resolved","closed"].includes(status))throw problem(400,"INVALID_INCIDENT_STATUS");
+    if(severity&&!["low","normal","high","critical"].includes(severity))throw problem(400,"INVALID_INCIDENT_SEVERITY");
+    if(!status&&!severity)throw problem(400,"INCIDENT_UPDATE_REQUIRED");
+    const actorId=numericActor(actor);
+    const result=await this.sql.begin(async tx=>{
+      const current=(await tx.unsafe("SELECT * FROM tenant_service_incidents WHERE public_id=$1::uuid FOR UPDATE",[publicId]))[0];
+      if(!current)throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");
+      const nextStatus=status||current.status,nextSeverity=severity||current.severity;
+      const sla=serviceIncidentSla(nextSeverity);
+      const rows=await tx.unsafe(
+        "UPDATE tenant_service_incidents SET status=$2,severity=$3,owner_user_id=COALESCE(owner_user_id,$4),"+
+        " first_responded_at=COALESCE(first_responded_at,now()),last_pgi_update_at=now(),"+
+        " first_response_due_at=CASE WHEN $3<>severity THEN created_at+make_interval(mins=>$5) ELSE first_response_due_at END,"+
+        " target_resolution_at=CASE WHEN $3<>severity THEN created_at+make_interval(mins=>$6) ELSE target_resolution_at END,"+
+        " resolved_at=CASE WHEN $2='resolved' THEN COALESCE(resolved_at,now()) WHEN $2 NOT IN ('resolved','closed') THEN NULL ELSE resolved_at END,"+
+        " closed_at=CASE WHEN $2='closed' THEN COALESCE(closed_at,now()) WHEN $2<>'closed' THEN NULL ELSE closed_at END,updated_at=now()"+
+        " WHERE id=$1 RETURNING id,public_id,tenant_id,category,severity,status,title,assigned_team,first_response_due_at,target_resolution_at,first_responded_at,resolved_at,closed_at,updated_at",
+        [current.id,nextStatus,nextSeverity,actorId,sla.response,sla.resolution]
+      );
+      if(nextStatus!==current.status){
+        await tx.unsafe(
+          "INSERT INTO tenant_service_incident_events(incident_id,tenant_id,event_type,actor_type,actor_user_id,previous_value,new_value,message,customer_visible)"+
+          " VALUES($1,$2,$3,'staff',$4,$5,$6,$7,true)",
+          [current.id,current.tenant_id,nextStatus==="resolved"?"resolved":nextStatus==="closed"?"closed":"status_changed",actorId,current.status,nextStatus,"État du dossier mis à jour"]
+        );
+      }
+      if(nextSeverity!==current.severity){
+        await tx.unsafe(
+          "INSERT INTO tenant_service_incident_events(incident_id,tenant_id,event_type,actor_type,actor_user_id,previous_value,new_value,message,customer_visible)"+
+          " VALUES($1,$2,'severity_changed','staff',$3,$4,$5,'Priorité du dossier mise à jour',true)",
+          [current.id,current.tenant_id,actorId,current.severity,nextSeverity]
+        );
+      }
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'service_incident.update','tenant_service_incident',$3,$4::jsonb)",
+        [current.tenant_id,actorId,String(current.id),JSON.stringify({previous_status:current.status,status:nextStatus,previous_severity:current.severity,severity:nextSeverity})]
+      );
+      return rows[0];
+    });
+    this.eventBus.publish("service.incident.changed",{tenant_id:Number(result.tenant_id),incident_id:publicId,status:result.status,severity:result.severity});
+    return result;
+  }
+
+  async addServiceIncidentNote(incidentPublicId,input={},actor={}){
+    const publicId=String(incidentPublicId||"").trim(),body=String(input.body||"").trim();
+    const customerVisible=input.customer_visible!==false;
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_INCIDENT_ID");
+    if(!body||body.length>5000)throw problem(400,"INVALID_INCIDENT_NOTE");
+    const actorId=numericActor(actor);
+    const result=await this.sql.begin(async tx=>{
+      const incident=(await tx.unsafe("SELECT id,tenant_id,status FROM tenant_service_incidents WHERE public_id=$1::uuid FOR UPDATE",[publicId]))[0];
+      if(!incident)throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");
+      const row=(await tx.unsafe(
+        "INSERT INTO tenant_service_incident_notes(incident_id,tenant_id,author_type,author_user_id,body,customer_visible)"+
+        " VALUES($1,$2,'staff',$3,$4,$5) RETURNING id,incident_id,author_type,body,customer_visible,created_at",
+        [incident.id,incident.tenant_id,actorId,body,customerVisible]
+      ))[0];
+      await tx.unsafe(
+        "INSERT INTO tenant_service_incident_events(incident_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible)"+
+        " VALUES($1,$2,'note','staff',$3,'Nouveau message PGI',$4)",
+        [incident.id,incident.tenant_id,actorId,customerVisible]
+      );
+      await tx.unsafe(
+        "UPDATE tenant_service_incidents SET first_responded_at=COALESCE(first_responded_at,now()),last_pgi_update_at=now(),updated_at=now() WHERE id=$1",
+        [incident.id]
+      );
+      return row;
+    });
+    this.eventBus.publish("service.incident.staff_note",{incident_id:publicId});
+    return result;
+  }
+
+  async simulateTenantRouting(publicTenantId,input={}){
+    const publicId=String(publicTenantId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    const tenant=(await this.readSql.unsafe("SELECT id FROM tenants WHERE public_id=$1::uuid AND tenant_type<>'internal' LIMIT 1",[publicId]))[0];
+    if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+    return this.simulateTenantRoutingById(Number(tenant.id),input);
+  }
+
+  async simulateTenantRoutingById(tenantId,input={}){
+    const id=Number(tenantId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    let svaId=input.sva_number_id==null||input.sva_number_id===""?null:Number(input.sva_number_id);
+    const assignmentId=input.assignment_id==null||input.assignment_id===""?null:Number(input.assignment_id);
+    if(assignmentId!=null){
+      if(!Number.isInteger(assignmentId)||assignmentId<=0)throw problem(400,"INVALID_ASSIGNMENT_ID");
+      const assignment=(await this.readSql.unsafe("SELECT sva_number_id FROM tenant_number_assignments WHERE id=$1 AND tenant_id=$2 LIMIT 1",[assignmentId,id]))[0];
+      if(!assignment)throw problem(404,"ASSIGNMENT_NOT_FOUND");
+      svaId=Number(assignment.sva_number_id);
+    }
+    if(svaId!=null&&(!Number.isInteger(svaId)||svaId<=0))throw problem(400,"INVALID_SVA_NUMBER_ID");
+    if(svaId!=null){
+      const number=(await this.readSql.unsafe("SELECT id FROM sva_numbers WHERE id=$1 AND tenant_id=$2 LIMIT 1",[svaId,id]))[0];
+      if(!number)throw problem(404,"SVA_NUMBER_NOT_FOUND");
+    }
+    const rows=await this.readSql.unsafe(
+      "SELECT id,sva_number_id,label,destination_type,destination_uri,priority,status,failover_enabled,max_concurrent_calls,active_calls,last_assigned_at,"+
+      " (status='active' AND (max_concurrent_calls IS NULL OR active_calls<max_concurrent_calls)) AS eligible"+
+      " FROM tenant_call_destinations WHERE tenant_id=$1 AND ($2::bigint IS NULL OR sva_number_id=$2 OR sva_number_id IS NULL)"+
+      " ORDER BY CASE WHEN $2::bigint IS NOT NULL AND sva_number_id=$2 THEN 0 ELSE 1 END,priority ASC,active_calls ASC,last_assigned_at NULLS FIRST,id ASC LIMIT 100",
+      [id,svaId]
+    );
+    const eligible=rows.filter(x=>x.eligible===true);
+    const chosen=eligible[0]||null;
+    const warnings=[];
+    if(!rows.length)warnings.push("Aucune destination configurée");
+    else if(!eligible.length)warnings.push("Aucune destination actuellement disponible");
+    if(rows.some(x=>x.status==="active"&&x.max_concurrent_calls!=null&&Number(x.active_calls)>=Number(x.max_concurrent_calls)))warnings.push("Une ou plusieurs destinations ont atteint leur capacité");
+    if(chosen&&chosen.failover_enabled!==true&&eligible.length===1)warnings.push("La destination sélectionnée ne possède pas de secours actif");
+    return {
+      tenant_id:id,sva_number_id:svaId,dry_run:true,safe_to_activate:Boolean(chosen),
+      selected:chosen?{id:Number(chosen.id),label:chosen.label,destination_type:chosen.destination_type,destination_uri:chosen.destination_uri,priority:Number(chosen.priority),active_calls:Number(chosen.active_calls||0),max_concurrent_calls:chosen.max_concurrent_calls==null?null:Number(chosen.max_concurrent_calls)}:null,
+      candidates:rows.map(x=>({id:Number(x.id),label:x.label,destination_type:x.destination_type,destination_uri:x.destination_uri,priority:Number(x.priority),status:x.status,eligible:Boolean(x.eligible),failover_enabled:Boolean(x.failover_enabled),active_calls:Number(x.active_calls||0),max_concurrent_calls:x.max_concurrent_calls==null?null:Number(x.max_concurrent_calls)})),
+      warnings
+    };
+  }
+
+  async scanTenantServiceIncidents(limit=250){
+    const take=clampInt(limit,250,1,1000),changes=[];
+    await this.sql.begin(async tx=>{
+      const active=await tx.unsafe(
+        "SELECT i.id,i.severity,i.title,i.carrier_id,i.market_id,i.details,c.name AS carrier"+
+        " FROM telecom_incidents i LEFT JOIN carriers c ON c.id=i.carrier_id"+
+        " WHERE i.state='open' AND i.carrier_role='host' ORDER BY i.last_detected_at DESC LIMIT 50"
+      );
+      for(const source of active){
+        const tenants=await tx.unsafe(
+          "SELECT DISTINCT sn.tenant_id FROM number_carrier_assignments nca JOIN sva_numbers sn ON sn.id=nca.sva_number_id"+
+          " JOIN tenants t ON t.id=sn.tenant_id WHERE nca.carrier_id=$1 AND nca.assignment_status='active'"+
+          " AND (nca.valid_to IS NULL OR nca.valid_to>=now()) AND sn.tenant_id IS NOT NULL AND t.tenant_type<>'internal' LIMIT $2",
+          [source.carrier_id,take]
+        );
+        for(const t of tenants){
+          const key="telecom:"+source.id+":tenant:"+t.tenant_id;
+          const sev=source.severity==="critical"?"critical":"high",sla=serviceIncidentSla(sev);
+          const rows=await tx.unsafe(
+            "INSERT INTO tenant_service_incidents(incident_key,tenant_id,source_telecom_incident_id,category,severity,status,source,title,description,first_response_due_at,target_resolution_at,first_responded_at,last_pgi_update_at,diagnostic_snapshot)"+
+            " VALUES($1,$2,$3,'telephony',$4,'investigating','system',$5,$6,now()+make_interval(mins=>$7),now()+make_interval(mins=>$8),now(),now(),$9::jsonb)"+
+            " ON CONFLICT(incident_key) DO UPDATE SET severity=EXCLUDED.severity,status=CASE WHEN tenant_service_incidents.status IN ('resolved','closed') THEN 'investigating' ELSE tenant_service_incidents.status END,"+
+            " last_pgi_update_at=now(),diagnostic_snapshot=EXCLUDED.diagnostic_snapshot,updated_at=now()"+
+            " RETURNING id,public_id,tenant_id,(xmax=0) AS created",
+            [key,t.tenant_id,source.id,sev,source.title,"Incident réseau détecté automatiquement par PGI.",sla.response,sla.resolution,JSON.stringify({carrier:source.carrier,market_id:source.market_id,source_details:source.details||{}})]
+          );
+          const incident=rows[0];
+          if(incident.created){
+            await tx.unsafe(
+              "INSERT INTO tenant_service_incident_events(incident_id,tenant_id,event_type,actor_type,message,customer_visible,details)"+
+              " VALUES($1,$2,'created','system','Incident réseau détecté automatiquement',true,$3::jsonb)",
+              [incident.id,incident.tenant_id,JSON.stringify({source_telecom_incident_id:source.id,carrier:source.carrier})]
+            );
+            changes.push({event:"service.incident.created",tenant_id:Number(incident.tenant_id),incident_id:String(incident.public_id),source:"system"});
+          }
+          await tx.unsafe(
+            "INSERT INTO tenant_operational_alerts(alert_key,tenant_id,incident_id,alert_type,severity,state,title,message,customer_visible,details)"+
+            " VALUES($1,$2,$3,'carrier_incident',$4,'open',$5,$6,true,$7::jsonb)"+
+            " ON CONFLICT(alert_key) DO UPDATE SET severity=EXCLUDED.severity,state='open',title=EXCLUDED.title,message=EXCLUDED.message,last_detected_at=now(),resolved_at=NULL,updated_at=now()",
+            ["carrier:"+source.id+":tenant:"+t.tenant_id,t.tenant_id,incident.id,source.severity==="critical"?"critical":"warning",source.title,"PGI a détecté un incident opérateur susceptible d’affecter votre service.",JSON.stringify({carrier:source.carrier,source_telecom_incident_id:source.id})]
+          );
+        }
+      }
+
+      const resolved=await tx.unsafe(
+        "UPDATE tenant_service_incidents si SET status='resolved',resolved_at=COALESCE(si.resolved_at,now()),last_pgi_update_at=now(),updated_at=now()"+
+        " FROM telecom_incidents ti WHERE si.source_telecom_incident_id=ti.id AND ti.state='resolved' AND si.status NOT IN ('resolved','closed')"+
+        " RETURNING si.id,si.public_id,si.tenant_id"
+      );
+      for(const incident of resolved){
+        await tx.unsafe(
+          "INSERT INTO tenant_service_incident_events(incident_id,tenant_id,event_type,actor_type,message,customer_visible)"+
+          " VALUES($1,$2,'resolved','system','Incident réseau résolu automatiquement',true)",
+          [incident.id,incident.tenant_id]
+        );
+        changes.push({event:"service.incident.resolved",tenant_id:Number(incident.tenant_id),incident_id:String(incident.public_id)});
+      }
+      await tx.unsafe(
+        "UPDATE tenant_operational_alerts a SET state='resolved',resolved_at=now(),updated_at=now()"+
+        " WHERE a.alert_type='carrier_incident' AND a.state<>'resolved' AND a.incident_id IN ("+
+        " SELECT si.id FROM tenant_service_incidents si WHERE si.status IN ('resolved','closed'))"
+      );
+
+      const responseAlerts=await tx.unsafe(
+        "INSERT INTO tenant_operational_alerts(alert_key,tenant_id,incident_id,alert_type,severity,state,title,message,customer_visible,due_at,details)"+
+        " SELECT 'sla:first:'||i.id,i.tenant_id,i.id,'first_response_due',CASE WHEN i.severity='critical' THEN 'critical' ELSE 'warning' END,'open',"+
+        " 'Prise en charge à effectuer','Le délai cible de première réponse du dossier approche ou est dépassé.',false,i.first_response_due_at,jsonb_build_object('incident_public_id',i.public_id)"+
+        " FROM tenant_service_incidents i WHERE i.status NOT IN ('resolved','closed') AND i.first_responded_at IS NULL AND i.first_response_due_at<=now()+interval '15 minutes'"+
+        " ON CONFLICT(alert_key) DO UPDATE SET state='open',last_detected_at=now(),resolved_at=NULL,updated_at=now() RETURNING id"
+      );
+      const resolutionAlerts=await tx.unsafe(
+        "INSERT INTO tenant_operational_alerts(alert_key,tenant_id,incident_id,alert_type,severity,state,title,message,customer_visible,due_at,details)"+
+        " SELECT 'sla:resolve:'||i.id,i.tenant_id,i.id,'resolution_due',CASE WHEN i.severity IN ('critical','high') THEN 'critical' ELSE 'warning' END,'open',"+
+        " 'Résolution à accélérer','Le délai cible de résolution du dossier approche ou est dépassé.',false,i.target_resolution_at,jsonb_build_object('incident_public_id',i.public_id)"+
+        " FROM tenant_service_incidents i WHERE i.status NOT IN ('resolved','closed') AND i.target_resolution_at<=now()+interval '30 minutes'"+
+        " ON CONFLICT(alert_key) DO UPDATE SET state='open',last_detected_at=now(),resolved_at=NULL,updated_at=now() RETURNING id"
+      );
+      await tx.unsafe(
+        "UPDATE tenant_operational_alerts a SET state='resolved',resolved_at=now(),updated_at=now()"+
+        " WHERE a.alert_type='first_response_due' AND a.state<>'resolved' AND EXISTS(SELECT 1 FROM tenant_service_incidents i WHERE i.id=a.incident_id AND (i.first_responded_at IS NOT NULL OR i.status IN ('resolved','closed')))"
+      );
+      await tx.unsafe(
+        "UPDATE tenant_operational_alerts a SET state='resolved',resolved_at=now(),updated_at=now()"+
+        " WHERE a.alert_type='resolution_due' AND a.state<>'resolved' AND EXISTS(SELECT 1 FROM tenant_service_incidents i WHERE i.id=a.incident_id AND i.status IN ('resolved','closed'))"
+      );
+      if(responseAlerts.length||resolutionAlerts.length)changes.push({event:"service.sla.attention",response_alerts:responseAlerts.length,resolution_alerts:resolutionAlerts.length});
+    });
+    for(const change of changes)this.eventBus.publish(change.event,change);
+    return changes;
   }
 
   async customerAdminSummary(){
@@ -2912,7 +3292,7 @@ export class PostgresStore{
     const tenant=base[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
     if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
     const id=Number(tenant.id);
-    const [subs,lines,portability,destinations,experts,alerts,settlements,payoutTerms,controls,audit,activity]=await Promise.all([
+    const [subs,lines,portability,destinations,experts,alerts,settlements,payoutTerms,controls,audit,activity,serviceIncidents,operationalAlerts]=await Promise.all([
       this.readSql.unsafe(
         "SELECT s.id,s.status,s.billing_currency,s.starts_at,s.current_period_start,s.current_period_end,s.ends_at,"+
         " s.billing_provider,s.provider_customer_reference,s.provider_subscription_reference,s.cancel_at_period_end,s.last_payment_status,s.last_event_at,"+
@@ -2929,7 +3309,8 @@ export class PostgresStore{
       this.readSql.unsafe(
         "SELECT p.id,p.country_code,p.requested_e164,p.display_number,p.service_family,p.current_operator_name,p.current_operator_reference,p.account_holder_name,p.desired_port_date,p.status,p.ownership_status,p.operator_portability_reference,p.scheduled_at,p.completed_at,p.rejection_reason,"+
         " p.target_carrier_id,c.name AS target_carrier,p.tariff_code,p.service_rate_ttc_per_min::float8,p.currency,p.tariff_verification_status,p.tariff_verified_at,"+
-        " p.rio_last4,p.rio_validation_status,p.rio_validated_at,p.source_contract_transfer_mode,p.source_contract_liability_acknowledged,p.created_at,p.updated_at"+
+        " p.rio_last4,p.rio_validation_status,p.rio_validated_at,p.source_contract_transfer_mode,p.source_contract_liability_acknowledged,"+
+        " p.automation_state,p.automation_last_error,p.automation_last_sync_at,p.operator_status,p.created_at,p.updated_at"+
         " FROM tenant_portability_requests p LEFT JOIN carriers c ON c.id=p.target_carrier_id WHERE p.tenant_id=$1 ORDER BY p.created_at DESC,p.id DESC LIMIT 50",[id]
       ),
       this.readSql.unsafe(
@@ -2968,12 +3349,20 @@ export class PostgresStore{
         " COALESCE(sum(billable_seconds),0)::float8 AS billable_seconds_30d,COALESCE(sum(retail_service_amount_ttc),0)::float8 AS revenue_ttc_30d,"+
         " COALESCE(sum(estimated_margin_ht),0)::float8 AS margin_ht_30d,max(started_at) AS last_call_at"+
         " FROM calls WHERE tenant_id=$1 AND started_at>=now()-interval '30 days'",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,public_id,category,severity,status,source,title,description,assigned_team,first_response_due_at,target_resolution_at,first_responded_at,last_customer_update_at,last_pgi_update_at,resolved_at,created_at,updated_at"+
+        " FROM tenant_service_incidents WHERE tenant_id=$1 ORDER BY (status IN ('resolved','closed')) ASC,updated_at DESC,id DESC LIMIT 30",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,incident_id,alert_type,severity,state,title,message,due_at,customer_visible,last_detected_at"+
+        " FROM tenant_operational_alerts WHERE tenant_id=$1 AND state<>'resolved' ORDER BY last_detected_at DESC,id DESC LIMIT 50",[id]
       )
     ]);
     const access=await this.readSql.unsafe("SELECT pgi_tenant_has_premium_call_access($1,NULL,now()) AS allowed",[id]);
     return {
       tenant:{...tenant,premium_call_access:Boolean(access[0]?.allowed)},
-      subscriptions:subs,lines,portability,destinations,experts,alerts,settlements,payout_terms:payoutTerms,controls,audit,
+      subscriptions:subs,lines,portability,destinations,experts,alerts,settlements,payout_terms:payoutTerms,controls,audit,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,
       activity:activity[0]||{calls_30d:0,connected_30d:0,billable_seconds_30d:0,revenue_ttc_30d:0,margin_ht_30d:0,last_call_at:null}
     };
   }
@@ -3637,6 +4026,42 @@ function dateOnlyValue(value,field){
   return valueText;
 }
 
+function serviceIncidentSla(severity){
+  const map={
+    critical:{response:15,resolution:120},
+    high:{response:30,resolution:240},
+    normal:{response:120,resolution:1440},
+    low:{response:240,resolution:2880}
+  };
+  return map[String(severity||"normal")]||map.normal;
+}
+async function tenantDiagnosticSnapshot(tx,tenantId,svaNumberId=null){
+  const [activity,destinations,portability]=await Promise.all([
+    tx.unsafe(
+      "SELECT count(*) FILTER(WHERE started_at>=now()-interval '1 hour')::int AS calls_1h,"+
+      " count(*) FILTER(WHERE started_at>=now()-interval '1 hour' AND call_status='connected')::int AS connected_1h,"+
+      " max(started_at) AS last_call_at FROM calls WHERE tenant_id=$1 AND ($2::bigint IS NULL OR sva_number_id=$2)",
+      [tenantId,svaNumberId]
+    ),
+    tx.unsafe(
+      "SELECT count(*)::int AS total,count(*) FILTER(WHERE status='active')::int AS active,"+
+      " count(*) FILTER(WHERE status='active' AND (max_concurrent_calls IS NULL OR active_calls<max_concurrent_calls))::int AS available"+
+      " FROM tenant_call_destinations WHERE tenant_id=$1 AND ($2::bigint IS NULL OR sva_number_id=$2 OR sva_number_id IS NULL)",
+      [tenantId,svaNumberId]
+    ),
+    tx.unsafe(
+      "SELECT status,automation_state,operator_status,updated_at FROM tenant_portability_requests"+
+      " WHERE tenant_id=$1 AND status NOT IN ('ported','cancelled','rejected') ORDER BY updated_at DESC LIMIT 1",
+      [tenantId]
+    )
+  ]);
+  return {
+    captured_at:new Date().toISOString(),
+    activity:activity[0]||{calls_1h:0,connected_1h:0,last_call_at:null},
+    destinations:destinations[0]||{total:0,active:0,available:0},
+    portability:portability[0]||null
+  };
+}
 function problem(status,code,message=code){
   const e=new Error(message);e.status=status;e.code=code;return e;
 }
