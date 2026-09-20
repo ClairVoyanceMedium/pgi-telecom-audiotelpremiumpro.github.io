@@ -830,6 +830,10 @@ export class MemoryStore{
   }
   async scanTenantServiceIncidents(){return [];}
 
+  async scanRegulatoryReviews(){return [];}
+  async listRegulatoryReviewAlerts(){return {data:[],next_cursor:null};}
+  async acknowledgeRegulatoryReviewAlert(){throw problem(409,"ALERT_NOT_OPEN");}
+
   async scanUnpaidSubscriptions(){
     return [];
   }
@@ -908,8 +912,8 @@ export class MemoryStore{
         read_replica_enabled:false,process_role:this.config.processRole||"all"
       },
       regulatory_trust:{
-        summary:{numbers_total:0,numbers_ready:0,arcep_2026_ready:0,evidence_events:0,arcep_2026_evidence_events:0,abuse_open:0,abuse_critical:0,platform_controls_verified:0,platform_controls_attention:0},
-        numbers:[],platform_controls:[]
+        summary:{numbers_total:0,numbers_ready:0,arcep_2026_ready:0,evidence_events:0,arcep_2026_evidence_events:0,abuse_open:0,abuse_critical:0,platform_controls_verified:0,platform_controls_attention:0,review_attention_total:0,review_blocking:0,review_today:0,review_soon:0},
+        numbers:[],platform_controls:[],review_alerts:[]
       }
     };
   }
