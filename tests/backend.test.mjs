@@ -557,15 +557,27 @@ test("baseline mutations replay safely with same idempotency key",async()=>{
     assert.ok(history.data[0].effective_from);
   });
 });
-test("global baseline defines a reporting epoch for every dashboard",async()=>{
+test("selective baselines isolate metric categories and tenant dashboards",async()=>{
   const app=createBackend({config:config()});
-  const before=await app.store.effectiveMetricRange("2026-01-01T00:00:00.000Z","2026-01-02T00:00:00.000Z");
-  assert.equal(before.baseline,null);
-  const baseline=await app.store.createBaseline({scope:"global",reason:"global reset"},{sub:"admin"});
-  const after=await app.store.effectiveMetricRange("2026-01-01T00:00:00.000Z","2026-01-02T00:00:00.000Z");
-  assert.equal(after.baseline,baseline.effective_from);
-  assert.equal(after.reset_applied,true);
-  assert.equal(after.empty,true);
+  const from="2026-01-01T00:00:00.000Z",to="2026-01-02T00:00:00.000Z";
+  let global=await app.store.effectiveMetricRanges(from,to);
+  assert.equal(global.calls.baseline,null);
+  assert.equal(global.revenue.baseline,null);
+
+  const revenue=await app.store.createBaseline({scope:"global",metric_key:"revenue",reason:"reset revenue"},{sub:"admin"});
+  global=await app.store.effectiveMetricRanges(from,to);
+  assert.equal(global.calls.baseline,null);
+  assert.equal(global.revenue.baseline,revenue.effective_from);
+  assert.equal(global.revenue.empty,true);
+
+  const tenantCalls=await app.store.createBaseline({scope:"tenant",tenant_id:77,metric_key:"calls",reason:"tenant calls reset"},{sub:"admin"});
+  const tenant=await app.store.effectiveMetricRanges(from,to,77);
+  assert.equal(tenant.calls.baseline,tenantCalls.effective_from);
+  assert.equal(tenant.revenue.baseline,null);
+
+  const otherTenant=await app.store.effectiveMetricRanges(from,to,78);
+  assert.equal(otherTenant.calls.baseline,null);
+  assert.equal(otherTenant.revenue.baseline,null);
 });
 
 
