@@ -160,6 +160,8 @@ var q=new URLSearchParams(params||{}).toString();
 return request("/platform/billing-alerts"+(q?"?"+q:""));
 },
 acknowledgeBillingAlert:function(id,k){return idem("/platform/billing-alerts/"+encodeURIComponent(id)+"/acknowledge",{},k);},
+regulatoryReviewAlerts:function(params){var q=new URLSearchParams(params||{}).toString();return request("/platform/regulatory-review-alerts"+(q?"?"+q:""));},
+acknowledgeRegulatoryReviewAlert:function(id,k){return idem("/platform/regulatory-review-alerts/"+encodeURIComponent(id)+"/acknowledge",{},k);},
 events:events,
 baselines:function(params){
 var q=new URLSearchParams(params||{}).toString();
