@@ -317,7 +317,7 @@ test("la PWA met en cache uniquement le shell critique",()=>{
   assert.match(app,/loadDemoCalls/);
   assert.doesNotMatch(sw,/assets\/command-palette\.js/);
   assert.doesNotMatch(sw,/assets\/customer-admin\.css/);
-  assert.match(sw,/pgi-telecom-shell-v38/);
+  assert.match(sw,/pgi-telecom-shell-v39/);
 });
 
 test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiques",()=>{
@@ -329,7 +329,7 @@ test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiqu
   assert.match(css,/\.auth-brand-logo\{/);
   assert.match(sw,/audiotel-brand-icon-v33\.png/);
   assert.match(sw,/audiotel-brand-logo-v33\.png/);
-  assert.match(sw,/pgi-telecom-shell-v38/);
+  assert.match(sw,/pgi-telecom-shell-v39/);
   assert.match(buildStatic,/audiotel-brand-logo-v33\.png/);
   assert.doesNotMatch(css,/brand-mark|command-brand-emblem|auth-brand-lockup|auth-brand-emblem/);
   assert.doesNotMatch(sw,/favicon\.svg/);
@@ -365,8 +365,12 @@ test("brand header polish keeps split colors, larger icon and dark period contra
   assert.match(css,/\.product-name-pgi\{color:#f4e8dc\}/);
   assert.match(css,/\.product-name-audiotel\{color:#e0ad6d\}/);
   assert.match(css,/\.periods\{[\s\S]*rgba\(31,22,18,.96\)/);
-  assert.match(sw,/pgi-telecom-shell-v38/);
+  assert.match(sw,/pgi-telecom-shell-v39/);
 });
 
 
-test("customer portal stays separate, tenant-facing and outside the critical shell",()=>{assert.match(clientPortal,/Audiotel Premium Pro/);assert.match(clientPortal,/Espace client/);assert.match(clientPortal,/noindex,nofollow,noarchive/);for(const token of ["kpi-calls","kpi-minutes","kpi-revenue","kpi-payout","numbers-list","settlements-list","destinations-list"])assert.ok(clientPortal.includes(token),token);for(const path of ["/customer/auth/login","/customer/auth/activate","/customer/portal","/customer/calls"])assert.ok(clientPortalApi.includes(path),path);assert.match(clientPortalJs,/Exporter CSV|exportCalls/);assert.match(clientPortalCss,/--gold:#dda968/);assert.doesNotMatch(sw,/client\.html|client-portal/);});
+test("customer portal stays separate, tenant-facing and outside the critical shell",()=>{assert.match(clientPortal,/Audiotel Premium Pro/);assert.match(clientPortal,/Espace client/);assert.match(clientPortal,/noindex,nofollow,noarchive/);for(const token of ["kpi-calls","kpi-minutes","kpi-revenue","kpi-payout","numbers-list","settlements-list","destinations-list"])assert.ok(clientPortal.includes(token),token);for(const path of ["/customer/auth/login","/customer/auth/activate","/customer/portal","/customer/calls"])assert.ok(clientPortalApi.includes(path),path);assert.match(clientPortalJs,/Exporter CSV|exportCalls/);assert.match(clientPortalCss,/--bg:#0d0f11/);assert.doesNotMatch(sw,/client\.html|client-portal/);});
+
+
+test("customer portal has professional analytics and multi-export center",()=>{for(const id of ["calls-chart","minutes-chart","revenue-chart","status-donut","payout-bars","client-export-dialog"])assert.ok(clientPortal.includes('id="'+id+'"'),id);assert.match(clientPortalJs,/function renderAnalytics/);assert.match(clientPortalJs,/function exportClient/);for(const kind of ["report","calls","settlements","numbers","print"])assert.ok(clientPortal.includes('data-client-export="'+kind+'"'),kind);assert.match(clientPortalCss,/--panel:#181b1f/);});
+test("admin export center stays lazy and exposes calls, summary, finance and PDF",()=>{assert.match(callTools,/export function openExports/);assert.match(callTools,/Centre d’export PGI/);assert.match(commands,/Ouvrir le centre d’export/);assert.match(app,/m\.openExports/);assert.doesNotMatch(sw,/call-tools\.js/);});

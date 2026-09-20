@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#2b1b15">
+<meta name="theme-color" content="#121416">
 <meta name="robots" content="noindex,nofollow,noarchive">
 <meta name="referrer" content="no-referrer">
 <title>Audiotel Premium Pro — Espace client</title>
@@ -53,11 +53,12 @@
 <div class="cp-app" id="customer-app" hidden>
   <header class="cp-header">
     <div class="cp-brand">
-      <img src="assets/audiotel-brand-icon-v33.png" width="42" height="42" alt="">
-      <div><strong>Audiotel Premium Pro</strong><span>Espace client</span></div>
+      <img src="assets/audiotel-brand-icon-v33.png" width="46" height="46" alt="">
+      <div class="cp-company-title"><span>Audiotel Premium Pro · Espace client</span><strong id="tenant-name">—</strong><small id="tenant-meta">—</small></div>
     </div>
     <div class="cp-account">
-      <div><strong id="tenant-name">—</strong><span id="tenant-meta">—</span></div>
+      <div><strong id="customer-user-name">—</strong><span id="customer-user-role">—</span></div>
+      <button id="client-export" class="cp-ghost" type="button">Exporter</button>
       <button id="customer-logout" class="cp-ghost" type="button">Déconnexion</button>
     </div>
   </header>
@@ -84,12 +85,28 @@
       <article class="cp-kpi-accent"><span>Reversement net validé</span><strong id="kpi-payout">0</strong><small>Après validation des relevés</small></article>
     </section>
 
-    <section class="cp-grid cp-grid-top">
-      <article class="cp-panel cp-traffic">
-        <div class="cp-panel-head"><div><p class="cp-kicker">TRAFIC</p><h2>Évolution des appels</h2></div><span id="traffic-total">0 appels</span></div>
-        <div class="cp-chart" id="traffic-bars" aria-label="Graphique des appels"></div>
+    <section class="cp-chart-grid" aria-label="Analyses graphiques">
+      <article class="cp-panel cp-chart-card">
+        <div class="cp-panel-head"><div><p class="cp-kicker">APPELS</p><h2>Volume & décroché</h2></div><span id="traffic-total">0 appels</span></div>
+        <svg id="calls-chart" class="cp-svg" viewBox="0 0 720 220" role="img" aria-label="Évolution des appels et appels décrochés"></svg>
       </article>
-      <article class="cp-panel">
+      <article class="cp-panel cp-chart-card">
+        <div class="cp-panel-head"><div><p class="cp-kicker">MINUTES</p><h2>Consommation facturable</h2></div><span id="minutes-chart-total">0 min</span></div>
+        <svg id="minutes-chart" class="cp-svg" viewBox="0 0 720 220" role="img" aria-label="Évolution des minutes facturables"></svg>
+      </article>
+      <article class="cp-panel cp-chart-card">
+        <div class="cp-panel-head"><div><p class="cp-kicker">CHIFFRE GÉNÉRÉ</p><h2>Montant service TTC</h2></div><span id="revenue-chart-total">0</span></div>
+        <svg id="revenue-chart" class="cp-svg" viewBox="0 0 720 220" role="img" aria-label="Évolution du montant service généré"></svg>
+      </article>
+      <article class="cp-panel cp-chart-card">
+        <div class="cp-panel-head"><div><p class="cp-kicker">QUALITÉ DE TRAFIC</p><h2>Issue des appels</h2></div></div>
+        <div class="cp-status-wrap"><div id="status-donut" class="cp-donut"><div><strong id="status-total">0</strong><small>appels</small></div></div><div id="status-legend" class="cp-legend"></div></div>
+      </article>
+      <article class="cp-panel cp-chart-card cp-chart-wide">
+        <div class="cp-panel-head"><div><p class="cp-kicker">REVERSEMENTS</p><h2>Historique des montants nets</h2></div><span>Dernières périodes</span></div>
+        <div id="payout-bars" class="cp-hbars"></div>
+      </article>
+      <article class="cp-panel cp-chart-card">
         <div class="cp-panel-head"><div><p class="cp-kicker">NUMÉROS</p><h2>Mes lignes Audiotel</h2></div><span id="numbers-count">0</span></div>
         <div id="numbers-list" class="cp-stack"></div>
       </article>
@@ -131,6 +148,19 @@
   </main>
 </div>
 
+<dialog id="client-export-dialog" class="cp-export-dialog">
+  <form method="dialog" class="cp-export-card">
+    <div class="cp-export-head"><div><p class="cp-kicker">EXPORTS</p><h2>Exporter mes données</h2></div><button class="cp-close" value="cancel" aria-label="Fermer">×</button></div>
+    <p class="cp-export-note">Les exports utilisent uniquement les données de votre société et de la période sélectionnée.</p>
+    <div class="cp-export-grid">
+      <button type="button" data-client-export="report"><strong>Rapport complet CSV</strong><span>Synthèse, numéros, reversements et appels</span></button>
+      <button type="button" data-client-export="calls"><strong>Appels CSV</strong><span>Historique détaillé, jusqu’à 1 000 appels</span></button>
+      <button type="button" data-client-export="settlements"><strong>Reversements CSV</strong><span>Périodes, statut et net client</span></button>
+      <button type="button" data-client-export="numbers"><strong>Numéros CSV</strong><span>Lignes, tarif et état</span></button>
+      <button type="button" data-client-export="print"><strong>Imprimer / PDF</strong><span>Rapport visuel du tableau de bord</span></button>
+    </div>
+  </form>
+</dialog>
 <div id="client-toast" class="cp-toast" role="status" hidden></div>
 </body>
 </html>

@@ -19,7 +19,7 @@ var commands=[
 ["refresh","Action","Actualiser maintenant","Synchroniser les données","refresh synchro actualiser mise a jour"],
 ["priority","Action","Ouvrir l’action prioritaire","Prochaine étape recommandée","priorite prochaine action"],
 ["analysis","Action","Basculer analyse / vue essentielle","Cockpit mobile","mobile graphiques analyse essentiel"],
-["export","Action","Exporter les appels en CSV","Période et filtres actuels","csv export appels fichier"],
+["export","Action","Ouvrir le centre d’export","Appels, synthèse, finance et PDF","csv export appels finance rapport fichier"],
 ["print-calls","Action","Imprimer les appels / PDF","Vue appels","pdf impression appels"],
 ["print-finance","Action","Imprimer Finance / PDF","Vue finance","pdf impression finance"]
 ].map(function(x){return {id:x[0],group:x[1],label:x[2],hint:x[3],keywords:x[4]};});

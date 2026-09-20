@@ -219,3 +219,12 @@ Le cockpit PGI et l'espace client sont deux plans d'interface distincts.
 - l'interface client est hors du cache critique PWA du cockpit et ne consomme donc pas sa réserve de shell.
 
 La première version est volontairement en lecture seule pour le routage. Une saturation, une erreur JavaScript ou une utilisation intensive du portail client ne participe pas au chemin média SIP/RTP.
+
+
+### Analytique et exports du portail client
+
+Le portail client reste noir/anthracite et indépendant du thème administrateur. Ses graphiques réutilisent le même bootstrap consolidé : appels/décrochés, minutes facturables, montant service TTC, issue des appels et reversements. Aucun appel API supplémentaire n'est nécessaire pour les graphiques.
+
+Les exports client sont générés à la demande dans le navigateur à partir de données déjà autorisées pour le tenant. L'export détaillé des appels est borné à 1 000 CDR par action dans cette version. Pour des volumes supérieurs, la stratégie cible reste un export backend asynchrone vers stockage objet.
+
+Le cockpit administrateur conserve son shell critique : le centre d'export PGI est ajouté dans `call-tools.js`, déjà chargé à la demande.

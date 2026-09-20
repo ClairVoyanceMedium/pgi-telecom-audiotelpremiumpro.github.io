@@ -1,3 +1,12 @@
+## Analytique & exports — 2026-09-20
+
+- portail client passé en noir et gris anthracite ;
+- nom de la société mis au premier plan dans le bandeau ;
+- graphiques appels/décrochés, minutes, montant TTC, statuts et reversements ;
+- centre d’export client : rapport complet, appels, reversements, numéros, impression/PDF ;
+- centre d’export administrateur chargé à la demande : appels, synthèse, finance et PDF ;
+- aucune dépendance graphique externe et aucun ajout au cache critique du portail client.
+
 ## Portail client Audiotel — 2026-09-20
 
 - nouvel espace client séparé du cockpit PGI ;

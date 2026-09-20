@@ -1280,7 +1280,7 @@ if(id==="priority"||id==="analysis"){
 switchView("overview");
 return id==="analysis"?toggleMobileOverview():setTimeout(function(){var b=$("priority-action-btn");if(b)b.focus();},250);
 }
-if(id==="export"){switchView("calls");return setTimeout(function(){callTools().then(function(m){m.exportCsv(applyCallFilters(filteredCalls()),$("export-csv"));});},80);}
+if(id==="export")return callTools().then(function(m){m.openExports(applyCallFilters(filteredCalls()));});
 if(id&&id.indexOf("print-")===0){switchView(id.slice(6));setTimeout(function(){window.print();},120);}
 }
 function bind(){

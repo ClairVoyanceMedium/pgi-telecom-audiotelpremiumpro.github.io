@@ -1978,7 +1978,8 @@ export class PostgresStore{
       );
       const series=await tx.unsafe(
         "SELECT bucket_date,COALESCE(sum(calls_total),0)::bigint AS calls_total,COALESCE(sum(calls_connected),0)::bigint AS calls_connected,"+
-        " COALESCE(sum(billable_seconds),0)::float8 AS billable_seconds,max(updated_at) AS updated_at"+
+        " COALESCE(sum(calls_abandoned),0)::bigint AS calls_abandoned,COALESCE(sum(calls_failed),0)::bigint AS calls_failed,"+
+        " COALESCE(sum(billable_seconds),0)::float8 AS billable_seconds,COALESCE(sum(generated_revenue_ttc),0)::float8 AS generated_revenue_ttc,max(updated_at) AS updated_at"+
         " FROM tenant_scoped_metric_rollups_daily WHERE bucket_date BETWEEN $1::timestamptz::date AND $2::timestamptz::date"+
         " GROUP BY bucket_date ORDER BY bucket_date",[from,to]
       );

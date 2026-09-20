@@ -15,7 +15,7 @@ const budgets = {
 };
 
 const portalBudgets = {"client.html":16*1024,"assets/client-portal.css":24*1024,"assets/client-portal-api.js":6*1024,"assets/client-portal.js":28*1024};
-const lazyBudgets = {"assets/demo-data.js":8*1024,"assets/customer-admin.css":10*1024,"assets/cockpit-pro.js":12*1024,"assets/command-palette.js":8*1024,"assets/performance-radar.js":16*1024,"assets/subscription-billing-ui.js":4*1024,"assets/customer-admin.js":24*1024,"assets/tenant-control-detail.js":20*1024,"assets/platform-admin-tools.js":18*1024,"assets/call-tools.js":6*1024};
+const lazyBudgets = {"assets/demo-data.js":8*1024,"assets/customer-admin.css":10*1024,"assets/cockpit-pro.js":12*1024,"assets/command-palette.js":8*1024,"assets/performance-radar.js":16*1024,"assets/subscription-billing-ui.js":4*1024,"assets/customer-admin.js":24*1024,"assets/tenant-control-detail.js":20*1024,"assets/platform-admin-tools.js":18*1024,"assets/call-tools.js":10*1024};
 
 let total = 0;
 const failures = [];
