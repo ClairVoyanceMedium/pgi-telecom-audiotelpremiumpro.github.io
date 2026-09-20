@@ -513,7 +513,7 @@ export class PostgresStore{
       cursor?.started_at||null,cursor?.id||null,limit+1
     ];
     const rows=await this.sql.unsafe(
-      "SELECT c.id,c.external_call_id,c.started_at,c.ivr_started_at,c.queued_at,c.bridged_at,c.ended_at,"+
+      "SELECT c.id,c.external_call_id,c.started_at,c.ivr_started_at,c.queued_at,c.ringing_at,c.bridged_at,c.ended_at,c.post_dial_delay_ms,c.hangup_party,"+
       " ca.caller_masked,oc.name AS origin_carrier,hc.name AS host_carrier,sn.display_number AS sva_number,"+
       " c.currency,m.country_code AS market,e.id AS expert_id,e.display_name AS expert_name,c.call_destination_id,c.call_destination_label,d.destination_type,d.destination_uri,c.wait_seconds,c.conversation_seconds,c.total_seconds,"+
       " c.billable_seconds,c.payout_eligible_seconds,c.call_status,c.sip_final_code,c.hangup_cause,c.codec,"+
@@ -521,7 +521,7 @@ export class PostgresStore{
       " c.expected_payout_ht::float8,COALESCE(c.confirmed_payout_ht,0)::float8 AS confirmed_payout_ht,"+
       " c.paid_payout_ht::float8,c.expert_cost_ht::float8,c.technical_cost_ht::float8,c.estimated_margin_ht::float8,"+
       " c.reconciliation_variance_ht::float8,c.reconciliation_status,q.rtp_packet_loss_percent::float8 AS packet_loss_percent,"+
-      " q.jitter_ms::float8,q.latency_ms::float8,q.mos::float8"+
+      " q.jitter_ms::float8,q.latency_ms::float8,q.rtt_ms::float8,q.mos::float8,q.packets_in,q.packets_out,q.packets_lost,q.bytes_in,q.bytes_out,q.dtmf_errors"+
       " FROM call_facts f JOIN calls c ON c.id=f.call_id AND c.tenant_bucket=f.tenant_bucket"+
       " LEFT JOIN callers ca ON ca.id=c.caller_id LEFT JOIN carriers oc ON oc.id=c.origin_carrier_id"+
       " LEFT JOIN carriers hc ON hc.id=c.host_carrier_id LEFT JOIN sva_numbers sn ON sn.id=c.sva_number_id"+
@@ -542,7 +542,7 @@ export class PostgresStore{
     const last=page.at(-1);
     return {
       data:page.map(x=>({...x,quality:x.packet_loss_percent==null?null:{
-        packet_loss_percent:x.packet_loss_percent,jitter_ms:x.jitter_ms,latency_ms:x.latency_ms,mos:x.mos
+        packet_loss_percent:x.packet_loss_percent,jitter_ms:x.jitter_ms,latency_ms:x.latency_ms,rtt_ms:x.rtt_ms,mos:x.mos,packets_in:x.packets_in,packets_out:x.packets_out,packets_lost:x.packets_lost,bytes_in:x.bytes_in,bytes_out:x.bytes_out,dtmf_errors:x.dtmf_errors
       }})),
       next_cursor:hasMore&&last?encodeCursor({started_at:last.started_at,id:Number(last.id)}):null
     };
@@ -2201,6 +2201,21 @@ export class PostgresStore{
         " FROM tenant_scoped_metric_rollups_daily WHERE bucket_date BETWEEN $1::timestamptz::date AND $2::timestamptz::date"+
         " GROUP BY bucket_date ORDER BY bucket_date",[from,to]
       );
+      const voiceQuality=await tx.unsafe(
+        "SELECT COALESCE(sum(calls_total),0)::bigint AS calls_total,COALESCE(sum(calls_connected),0)::bigint AS calls_connected,"+
+        " COALESCE(sum(pdd_samples),0)::bigint AS pdd_samples,CASE WHEN sum(pdd_samples)>0 THEN sum(pdd_ms_sum)::float8/sum(pdd_samples) ELSE NULL END AS avg_pdd_ms,"+
+        " COALESCE(sum(high_pdd_calls),0)::bigint AS high_pdd_calls,COALESCE(sum(quality_samples),0)::bigint AS quality_samples,"+
+        " COALESCE(sum(network_affected_calls),0)::bigint AS network_affected_calls,COALESCE(sum(low_mos_calls),0)::bigint AS low_mos_calls,"+
+        " CASE WHEN sum(quality_samples)>0 THEN sum(mos_sum)::float8/sum(quality_samples) ELSE NULL END AS mos,"+
+        " CASE WHEN sum(quality_samples)>0 THEN sum(packet_loss_sum)::float8/sum(quality_samples) ELSE NULL END AS packet_loss_percent,"+
+        " CASE WHEN sum(quality_samples)>0 THEN sum(jitter_ms_sum)::float8/sum(quality_samples) ELSE NULL END AS jitter_ms,"+
+        " CASE WHEN sum(quality_samples)>0 THEN sum(latency_ms_sum)::float8/sum(quality_samples) ELSE NULL END AS latency_ms,"+
+        " CASE WHEN sum(quality_samples)>0 THEN sum(rtt_ms_sum)::float8/sum(quality_samples) ELSE NULL END AS rtt_ms,"+
+        " COALESCE(sum(sip_5xx_calls),0)::bigint AS sip_5xx_calls,COALESCE(sum(caller_hangups),0)::bigint AS caller_hangups,"+
+        " COALESCE(sum(callee_hangups),0)::bigint AS callee_hangups,COALESCE(sum(network_hangups),0)::bigint AS network_hangups"+
+        " FROM tenant_scoped_voice_daily WHERE bucket_date BETWEEN $1::timestamptz::date AND $2::timestamptz::date",
+        [from,to]
+      );
       const numbers=await tx.unsafe(
         "SELECT n.id,n.display_number,n.e164,n.tariff_code,n.currency,n.number_type,n.service_rate_ttc_per_min::float8,n.status,n.activated_at,"+
         " a.assignment_type,a.status AS assignment_status,a.kyc_status,a.valid_from,a.valid_to"+
@@ -2222,11 +2237,14 @@ export class PostgresStore{
         " FROM tenant_scoped_call_destinations ORDER BY priority,id LIMIT 100"
       );
       const recentCalls=await tx.unsafe(
-        "SELECT call_id,market,currency,display_number,e164,started_at,ended_at,call_status,conversation_seconds,billable_seconds,retail_service_amount_ttc::float8"+
-        " FROM tenant_scoped_portal_calls WHERE started_at>=$1::timestamptz AND started_at<=$2::timestamptz"+
+        "SELECT call_id,market,currency,sva_number_id,display_number,e164,started_at,ringing_at,bridged_at,ended_at,call_status,wait_seconds,conversation_seconds,billable_seconds,"+
+        " retail_service_amount_ttc::float8,sip_final_code,hangup_cause,hangup_party,codec,post_dial_delay_ms,origin_carrier,host_carrier,"+
+        " rtp_packet_loss_percent::float8 AS packet_loss_percent,jitter_ms::float8,latency_ms::float8,rtt_ms::float8,mos::float8,"+
+        " packets_in,packets_out,packets_lost,bytes_in,bytes_out,dtmf_errors"+
+        " FROM tenant_scoped_portal_call_details WHERE started_at>=$1::timestamptz AND started_at<=$2::timestamptz"+
         " ORDER BY started_at DESC,call_id DESC LIMIT 20",[from,to]
       );
-      return {tenant,financial_by_currency:financial,series,numbers,settlements,subscriptions,destinations,recent_calls:recentCalls,range:{from,to}};
+      return {tenant,financial_by_currency:financial,series,numbers,settlements,subscriptions,destinations,recent_calls:recentCalls,voice_quality:voiceQuality[0]||null,range:{from,to}};
     });
   }
 
@@ -2277,8 +2295,11 @@ export class PostgresStore{
 
     return this.withTenantReadContext(id,async tx=>{
       const rows=await tx.unsafe(
-        "SELECT call_id,market,currency,display_number,e164,started_at,ended_at,call_status,conversation_seconds,billable_seconds,retail_service_amount_ttc::float8"+
-        " FROM tenant_scoped_portal_calls WHERE started_at>=$1::timestamptz AND started_at<=$2::timestamptz"+
+        "SELECT call_id,market,currency,sva_number_id,display_number,e164,started_at,ringing_at,bridged_at,ended_at,call_status,wait_seconds,conversation_seconds,billable_seconds,"+
+        " retail_service_amount_ttc::float8,sip_final_code,hangup_cause,hangup_party,codec,post_dial_delay_ms,origin_carrier,host_carrier,"+
+        " rtp_packet_loss_percent::float8 AS packet_loss_percent,jitter_ms::float8,latency_ms::float8,rtt_ms::float8,mos::float8,"+
+        " packets_in,packets_out,packets_lost,bytes_in,bytes_out,dtmf_errors"+
+        " FROM tenant_scoped_portal_call_details WHERE started_at>=$1::timestamptz AND started_at<=$2::timestamptz"+
         " AND ($3::timestamptz IS NULL OR (started_at,call_id)<($3::timestamptz,$4::bigint))"+
         " AND ($5::text IS NULL OR call_status=$5)"+
         " AND ($6::bigint IS NULL OR sva_number_id=$6)"+
