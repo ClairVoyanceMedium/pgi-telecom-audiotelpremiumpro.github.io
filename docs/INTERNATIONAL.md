@@ -30,6 +30,14 @@ La couche internationale utilise des identifiants standards plutôt que des vale
 
 Ces standards servent d’identifiants techniques. Ils ne remplacent jamais la validation réglementaire propre à chaque pays.
 
+## Devise de facturation automatique
+
+La devise de facturation client est résolue à partir du code pays indépendamment de l’activation d’un marché SVA. Le catalogue `backend/src/billing-country-currency.mjs` couvre 249 codes pays/territoires et porte une version datée. Cela évite qu’un client d’un pays non encore ouvert commercialement en SVA soit automatiquement facturé en EUR par simple repli technique.
+
+Exemples : France `EUR`, Royaume-Uni `GBP`, États-Unis `USD`, Suisse `CHF`, Brésil `BRL`, Suède `SEK`. Pour les territoires où plusieurs monnaies ont cours, le catalogue conserve aussi les monnaies alternatives acceptées.
+
+Le paiement reste fail-closed : si aucun prix actif n’existe dans la devise résolue, PGI retourne `local_conversion_required` ou `unavailable` et ne doit pas ouvrir une session dans une autre devise. Un prix local fixe ou une conversion du prix de référence devra être fourni par le futur adaptateur de paiement.
+
 ## Marchés
 
 La table `operating_markets` décrit un pays exploitable par PGI. France est le seul marché activé par défaut. Ajouter un autre pays doit commencer avec le statut `planned` ou `onboarding`.
