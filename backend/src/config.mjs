@@ -15,6 +15,7 @@ export function loadConfig(env=process.env){
   const telephonyUser=env.PGI_TELEPHONY_USER||"";
   const telephonyPassword=env.PGI_TELEPHONY_PASSWORD||"";
   const callerHashKey=env.PGI_CALLER_HASH_KEY||"";
+  const portabilitySecretKey=env.PGI_PORTABILITY_SECRET_KEY||"";
   const databaseUrl=env.PGI_DATABASE_URL||buildDatabaseUrl(env);
   const databaseReadUrl=env.PGI_DATABASE_READ_URL||"";
   const databaseSsl=(env.PGI_DATABASE_SSL||"disable").toLowerCase();
@@ -30,13 +31,14 @@ export function loadConfig(env=process.env){
     if(externalBillingEnabled&&billingIngestToken.length<24)throw new Error("external billing requires PGI_BILLING_INGEST_TOKEN >= 24 characters");
     if(telephonyUser.length<3||telephonyPassword.length<24)throw new Error("production requires PGI_TELEPHONY_USER and PGI_TELEPHONY_PASSWORD >= 24 characters");
     if(callerHashKey.length<32)throw new Error("production requires PGI_CALLER_HASH_KEY >= 32 characters");
+    if(portabilitySecretKey.length<32)throw new Error("production requires PGI_PORTABILITY_SECRET_KEY >= 32 characters");
     if(!databaseUrl)throw new Error("production requires PGI_DATABASE_URL or POSTGRES_* variables");
     if(!/^[0-9a-f]{40}$/.test(releaseId))throw new Error("production requires PGI_RELEASE_ID as a 40-character Git SHA");
   }
 
   return Object.freeze({
     mode,authMode,host,port,releaseId,googleClientId,
-    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,telephonyUser,telephonyPassword,callerHashKey,databaseUrl,databaseReadUrl,databaseSsl,
+    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),
     bodyLimitBytes:integer(env.PGI_BODY_LIMIT_BYTES,262144,4096,10485760,"PGI_BODY_LIMIT_BYTES"),
@@ -55,9 +57,9 @@ export function loadConfig(env=process.env){
     workQueueLeaseSeconds:integer(env.PGI_WORK_QUEUE_LEASE_SECONDS,60,15,900,"PGI_WORK_QUEUE_LEASE_SECONDS"),
     workQueueRetryBaseSeconds:integer(env.PGI_WORK_QUEUE_RETRY_BASE_SECONDS,15,1,3600,"PGI_WORK_QUEUE_RETRY_BASE_SECONDS"),
     workQueuePollMs:integer(env.PGI_WORK_QUEUE_POLL_MS,1000,100,60000,"PGI_WORK_QUEUE_POLL_MS"),
-    requireCarrierContract:booleanValue(env.PGI_REQUIRE_CARRIER_CONTRACT,false,"PGI_REQUIRE_CARRIER_CONTRACT"),
+    requireCarrierContract:booleanValue(env.PGI_REQUIRE_CARRIER_CONTRACT,mode==="production","PGI_REQUIRE_CARRIER_CONTRACT"),
     serviceRateTtcPerMin:number(env.PGI_SERVICE_RATE_TTC_PER_MIN,0.80,0,100,"PGI_SERVICE_RATE_TTC_PER_MIN"),
-    payoutRateHtPerMin:number(env.PGI_PAYOUT_RATE_HT_PER_MIN,0.46,0,100,"PGI_PAYOUT_RATE_HT_PER_MIN"),
+    payoutRateHtPerMin:number(env.PGI_PAYOUT_RATE_HT_PER_MIN,mode==="production"?0:0.46,0,100,"PGI_PAYOUT_RATE_HT_PER_MIN"),
     expertCostHtPerMin:number(env.PGI_EXPERT_COST_HT_PER_MIN,0.18,0,100,"PGI_EXPERT_COST_HT_PER_MIN"),
     technicalCostHtPerCall:number(env.PGI_TECHNICAL_COST_HT_PER_CALL,0,0,100,"PGI_TECHNICAL_COST_HT_PER_CALL"),
     reconciliationToleranceHt:number(env.PGI_RECONCILIATION_TOLERANCE_HT,0.01,0,100,"PGI_RECONCILIATION_TOLERANCE_HT"),
