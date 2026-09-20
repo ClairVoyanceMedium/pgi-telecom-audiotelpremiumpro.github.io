@@ -1,6 +1,6 @@
 (function(root){
 "use strict";
-var selectedIndex=0,adminModule=null,ADMIN_URL=new URL("./platform-admin-tools.js",import.meta.url).href;
+var selectedIndex=0,adminModule=null,towerModule=null,ADMIN_URL=new URL("./platform-admin-tools.js",import.meta.url).href,TOWER_URL=new URL("./control-tower.js",import.meta.url).href;
 var commands=[
 ["view-overview","Navigation","Ouvrir le Cockpit","Accueil et pilotage","dashboard accueil cockpit"],
 ["view-calls","Navigation","Ouvrir les Appels","CDR et détail","cdr telephone appels"],
@@ -11,6 +11,7 @@ var commands=[
 ["view-system","Navigation","Ouvrir Supervision","NOC, API, CDR, résilience","systeme noc api supervision erreurs"],
 ["view-settings","Navigation","Ouvrir Paramètres","Configuration et audit","reglages parametres config"],
 ["platform-admin","Administration","Administrer la plateforme","Tarif abonnement, opérateur, bascule et rollback","client sva tarif abonnement operateur carrier switch rollback"],
+["control-tower","Pilotage","Ouvrir Control Tower","Policy Engine, Digital Twin et priorités","control tower policy simulation digital twin risque capacité"],
 ["period-today","Période","Afficher aujourd’hui","Période : aujourd’hui","jour today"],
 ["period-7d","Période","Afficher 7 jours","Période glissante","semaine sept jours"],
 ["period-week","Période","Afficher cette semaine","Lundi à aujourd’hui","semaine"],
@@ -65,6 +66,11 @@ close();
 if(id==="platform-admin"){
 if(!adminModule)adminModule=import(ADMIN_URL);
 adminModule.then(function(m){m.open();}).catch(function(){});
+return;
+}
+if(id==="control-tower"){
+if(!towerModule)towerModule=import(TOWER_URL);
+towerModule.then(function(m){m.open();}).catch(function(){});
 return;
 }
 root.dispatchEvent(new CustomEvent("pgi:command",{detail:{id:id}}));
