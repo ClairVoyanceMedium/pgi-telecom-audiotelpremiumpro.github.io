@@ -40,6 +40,19 @@ ALTER TABLE tenant_portability_requests
 CREATE INDEX tenant_portability_requests_carrier_status_idx
   ON tenant_portability_requests(target_carrier_id,status,scheduled_at);
 
+CREATE OR REPLACE VIEW tenant_scoped_portability_requests
+WITH (security_barrier=true)
+AS
+SELECT
+  id,tenant_id,sva_number_id,country_code,requested_e164,display_number,service_family,
+  current_operator_name,current_operator_reference,account_holder_name,desired_port_date,
+  status,ownership_status,authorization_confirmed,number_owner_confirmed,
+  operator_portability_reference,scheduled_at,completed_at,rejection_reason,
+  tariff_code,service_rate_ttc_per_min,currency,tariff_verification_status,tariff_verified_at,
+  created_at,updated_at
+FROM tenant_portability_requests
+WHERE tenant_id=pgi_require_tenant_context();
+
 COMMENT ON COLUMN tenant_portability_requests.service_rate_ttc_per_min IS
 'Public service price per minute supplied for the existing number and verified before completion. It is copied unchanged to sva_numbers on successful port-in.';
 
