@@ -25,6 +25,8 @@ const voiceIntelligence=read("assets/voice-intelligence.js");
 const subscriptionBillingUi=read("assets/subscription-billing-ui.js");
 const customerAdmin=read("assets/customer-admin.js");
 const tenantControlDetail=read("assets/tenant-control-detail.js");
+const clientServiceCenter=read("assets/client-service-center.js");
+const tenantServiceAdmin=read("assets/tenant-service-admin.js");
 const platformAdmin=read("assets/platform-admin-tools.js");
 const callTools=read("assets/call-tools.js");
 const css=read("assets/styles.css");
@@ -298,6 +300,23 @@ test("le dossier client 1.22 centralise les opérations sans alourdir le shell",
   assert.match(tenantControlDetail,/data-expert-apply/);
   assert.match(tenantControlDetail,/data-alert-id/);
   assert.doesNotMatch(sw,/assets\/tenant-control-detail\.js/);
+});
+
+test("le centre de service premium garde un dossier unique et un routage simulable",()=>{
+  for(const id of ["client-service-center","service-incident-open","service-alert-list","service-incident-list","routing-simulate","routing-simulation-result"])assert.ok(clientPortal.includes('id="'+id+'"'),id);
+  assert.match(clientPortalJs,/client-service-center\.js/);
+  assert.match(clientServiceCenter,/CENTRE DE SERVICE/);
+  assert.match(clientServiceCenter,/Dossier créé/);
+  assert.match(clientServiceCenter,/Tester mon routage|Routage disponible|Aucun routage disponible/);
+  assert.match(clientPortalApi,/createIncident:function/);
+  assert.match(clientPortalApi,/addIncidentNote:function/);
+  assert.match(clientPortalApi,/simulateRouting:function/);
+  assert.match(tenantControlDetail,/tenant-service-admin\.js/);
+  assert.match(tenantServiceAdmin,/Centre de service & incidents/);
+  assert.match(api,/createServiceIncident:function/);
+  assert.match(api,/updateServiceIncident:function/);
+  assert.match(api,/simulateTenantRouting:function/);
+  assert.doesNotMatch(sw,/client-service-center\.js|tenant-service-admin\.js/);
 });
 
 test("les outils CDR sont chargés à la demande pour préserver app.js",()=>{
