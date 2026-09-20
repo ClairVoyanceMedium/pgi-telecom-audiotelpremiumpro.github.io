@@ -1,3 +1,16 @@
+## 1.29.0 — Operational Assurance — 2026-09-20
+
+- validation 4 yeux pour l'activation des bascules opérateur critiques ;
+- identités staff PGI distinctes et second administrateur créable depuis la Control Tower ;
+- historique d'approbation append-only chaîné SHA-256 et demandes critiques non supprimables ;
+- rollback d'urgence conservé indépendamment du cycle d'approbation ;
+- Risk Engine sur agrégats uniquement, sans scoring individuel ni PII appelant ;
+- shadow billing par devise sur 30 jours avec distinction entre données externes absentes et véritable écart ;
+- snapshot SLO opérationnel et cible API 99,9 % mesurée par Prometheus, jamais inventée ;
+- Digital Twin 2 : panne base principale, backlog workers, écart de règlement et projection hyperscale en plus des scénarios existants ;
+- projections de charge bornées et toujours `dry_run=true / mutates_state=false` ;
+- aucun branchement Stripe, opérateur SVA, APNF/RSVA ou PSP activé.
+
 ## 1.28.0 — PGI Control Tower, Policy Engine & Digital Twin — 2026-09-20
 
 - nouvelle PGI Control Tower premium, chargée à la demande depuis la palette de commandes ;
