@@ -180,3 +180,5 @@ html{scroll-padding-top:150px}
 .cp-dialog-head h2{margin:0;font-size:20px}
 .cp-dialog-close{width:34px;height:34px;border:1px solid var(--line);border-radius:10px;background:#22262b;color:var(--text);cursor:pointer;font-size:20px;line-height:1}
 @media(max-width:560px){.cp-form-grid{grid-template-columns:1fr}.cp-dialog{width:calc(100vw - 16px);max-height:94dvh}.cp-dialog-card{padding:16px}.cp-portability-row{align-items:flex-start;flex-direction:column}.cp-portability-actions{width:100%;justify-content:space-between}}
+
+.cp-command-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}@media(max-width:560px){.cp-command-actions{width:100%;justify-content:stretch}.cp-command-actions button{flex:1}}
