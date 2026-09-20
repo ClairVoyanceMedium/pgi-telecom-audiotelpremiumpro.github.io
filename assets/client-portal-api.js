@@ -59,6 +59,9 @@ root.PGICustomerApi=Object.freeze({
   newIdempotencyKey:function(){return typeof crypto!=="undefined"&&crypto.randomUUID?crypto.randomUUID():"customer-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2);},
   createBillingCheckout:function(idempotencyKey){return request("/customer/billing/checkout-session",{method:"POST",body:{},idempotencyKey:idempotencyKey});},
   createBillingPortal:function(){return request("/customer/billing/portal-session",{method:"POST",body:{}});},
+  portability:function(){return request("/customer/portability",{timeoutMs:8000});},
+  createPortability:function(payload,idempotencyKey){return request("/customer/portability",{method:"POST",body:payload,idempotencyKey:idempotencyKey});},
+  cancelPortability:function(id,idempotencyKey){return request("/customer/portability/"+encodeURIComponent(id)+"/cancel",{method:"POST",body:{},idempotencyKey:idempotencyKey});},
   portal:function(from,to){var q=new URLSearchParams({from:from,to:to});return request("/customer/portal?"+q.toString(),{timeoutMs:12000});},
   comparison:function(from,to){var q=new URLSearchParams({from:from,to:to});return request("/customer/comparison?"+q.toString(),{timeoutMs:10000});},
   calls:function(from,to,cursor,limit,filters){
