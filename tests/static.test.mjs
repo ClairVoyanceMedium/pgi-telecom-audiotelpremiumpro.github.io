@@ -34,6 +34,19 @@ const sw=read("service-worker.js");
 const manifest=read("manifest.webmanifest");
 const buildStatic=read("scripts/build-static.mjs");
 
+test("la marque client reste Audiotel Premium Pro et la plateforme reste multisectorielle",()=>{
+  assert.match(clientPortal,/Audiotel Premium Pro/);
+  assert.doesNotMatch(clientPortal,/\bPGI\b/);
+  assert.doesNotMatch(clientPortal,/voyance|voyant/i);
+  assert.doesNotMatch(clientServiceCenter,/\bPGI\b/);
+  assert.match(index,/Intervenants/);
+  assert.match(index,/Services \/ intervenants|services \/ intervenants/i);
+  assert.doesNotMatch(index,/voyance|voyant/i);
+  assert.match(tenantControlDetail,/Intervenants \/ services \/ postes/);
+  assert.doesNotMatch(tenantControlDetail,/Agents \/ postes optionnels/);
+  assert.match(clientPortalJs,/Frais de plateforme HT/);
+});
+
 test("le nom officiel et les vues principales sont présents",()=>{
   assert.match(index,/PGI • Telecom - Audiotel Premium Pro/);
   assert.match(index,/data-view="overview"><span>⌂<\/span>Cockpit/);
@@ -294,7 +307,7 @@ test("le dossier client 1.22 centralise les opérations sans alourdir le shell",
   assert.match(api,/setCallDestinationStatus:function/);
   assert.match(tenantControlDetail,/data-destination-create/);
   assert.match(tenantControlDetail,/data-destination-status/);
-  for(const label of ["DOSSIER CLIENT CENTRALISÉ","Lignes SVA","Destinations d’appel de la société","Agents / postes optionnels","Reversements récents","Historique & audit"])assert.ok(tenantControlDetail.includes(label));
+  for(const label of ["DOSSIER CLIENT CENTRALISÉ","Lignes SVA","Destinations d’appel de la société","Intervenants / services / postes","Reversements récents","Historique & audit"])assert.ok(tenantControlDetail.includes(label));
   assert.match(tenantControlDetail,/data-tenant-status/);
   assert.match(tenantControlDetail,/data-line-status/);
   assert.match(tenantControlDetail,/data-expert-apply/);
@@ -382,7 +395,7 @@ test("le produit garde son identité et ne contient pas l’ancien nom",()=>{
   assert.match(index,/PGI • Telecom - Audiotel Premium Pro/);
   assert.doesNotMatch(index,/PGI Telecom • Audiotel Premium Pro/);
   assert.match(index,/PLATEFORME/);
-  assert.match(index,/CENTRE DE PILOTAGE PGI/);
+  assert.match(index,/CENTRE DE PILOTAGE AUDIOTEL PREMIUM PRO/);
 });
 
 test("final brown cockpit theme and installed app label are authoritative",()=>{
