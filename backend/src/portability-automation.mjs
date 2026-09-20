@@ -407,18 +407,24 @@ function normalizeOperatorState(body){
   return String(body?.status||body?.portability_status||body?.state||"").trim().toLowerCase().replace(/[- ]+/g,"_");
 }
 function safeReason(body){
-  return textValue(body?.reason)||textValue(body?.message)||textValue(body?.error);
+  return redactSensitiveText(textValue(body?.reason)||textValue(body?.message)||textValue(body?.error));
 }
 function sanitizePayload(value,depth=0){
   if(depth>5)return "[truncated]";
   if(Array.isArray(value))return value.slice(0,50).map(v=>sanitizePayload(v,depth+1));
-  if(!value||typeof value!=="object")return typeof value==="string"?value.slice(0,2000):value;
+  if(!value||typeof value!=="object")return typeof value==="string"?redactSensitiveText(value.slice(0,2000)):value;
   const out={};
   for(const [key,val] of Object.entries(value).slice(0,100)){
     if(/rio|secret|token|password|authorization|credential|api[_-]?key/i.test(key)){out[key]="[redacted]";continue;}
     out[key]=sanitizePayload(val,depth+1);
   }
   return out;
+}
+function redactSensitiveText(value){
+  if(value==null)return null;
+  return String(value)
+    .replace(/\b[0-9]{2}A[A-Z0-9]{6}[A-Z0-9+]{3}\b/gi,"[redacted-rio]")
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi,"Bearer [redacted]");
 }
 function objectValue(v){return v&&typeof v==="object"&&!Array.isArray(v)?v:{};}
 function textValue(v){const s=String(v??"").trim();return s?s.slice(0,500):null;}
