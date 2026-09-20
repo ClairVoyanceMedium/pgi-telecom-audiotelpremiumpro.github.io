@@ -312,9 +312,9 @@ Le radar est chargé à la demande. Il reste donc hors du shell critique initial
 
 PGI peut rester aujourd'hui un outil strictement interne tout en ayant un modèle d'abonnement prêt pour les futurs clients externes. Le tenant `pgi-internal` et, plus généralement, tout tenant de type `internal`, sont exemptés de l'abonnement.
 
-Le plan `external-sva-access` est initialisé à 2,00 EUR par mois. Pour un tenant externe, l'accès aux appels premium n'est autorisé que si un abonnement `active` possède une période payée dont la date de fin est encore future. Les statuts `past_due`, `suspended`, `cancelled` et `ended` ne donnent pas accès au routage SVA.
+Le plan `external-sva-access` conserve son tarif historique initial de 2,00 EUR, puis passe à **3,00 EUR par mois à compter du 20 septembre 2026**. Pour un tenant externe, l'accès aux appels premium n'est autorisé que si un abonnement `active` possède une période payée dont la date de fin est encore future. Les statuts `past_due`, `suspended`, `cancelled` et `ended` ne donnent pas accès au routage SVA.
 
-Le prix est versionné : une hausse future crée une nouvelle version avec sa date d'effet. Les abonnements existants restent reliés à leur version de prix jusqu'à une migration explicite, ce qui évite de modifier silencieusement un contrat en cours.
+Le prix est versionné : le passage à 3,00 EUR crée une nouvelle version avec sa date d'effet sans modifier la version historique à 2,00 EUR. Les abonnements existants restent reliés à leur version de prix jusqu'à une migration explicite, ce qui évite de modifier silencieusement un contrat en cours.
 
 Le fournisseur de paiement reste volontairement découplé. `PGI_EXTERNAL_BILLING_ENABLED=false` est la valeur par défaut. Lors d'une ouverture commerciale, un adaptateur de paiement peut envoyer des événements normalisés vers l'endpoint interne protégé par `PGI_BILLING_INGEST_TOKEN` sans modifier le modèle télécom.
 
