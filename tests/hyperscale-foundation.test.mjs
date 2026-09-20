@@ -164,6 +164,10 @@ test("les clients externes ont un abonnement SVA payé versionné et PGI interne
   assert.ok(store.includes('problem(402,"SVA_SUBSCRIPTION_REQUIRED")'));
   assert.ok(store.includes("async createSubscriptionPrice("));
   assert.ok(store.includes("async applySubscriptionBillingEvent("));
+  assert.ok(store.includes("async customerBillingPreparation("));
+  assert.ok(store.includes("BILLING_EVENT_ID_COLLISION"));
+  assert.ok(store.includes("BILLING_SUBSCRIPTION_TENANT_MISMATCH"));
+  assert.ok(store.includes("BILLING_CUSTOMER_REFERENCE_MISMATCH"));
   assert.ok(server.includes("/api/v1/internal/billing/subscription-event"));
   assert.ok(server.includes("/api/v1/platform/subscription-prices"));
   assert.ok(server.includes("/api/v1/customer/billing/status"));
