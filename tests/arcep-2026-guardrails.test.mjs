@@ -62,6 +62,8 @@ test("ARCEP 2026 state is carried into the Evidence Pack and cockpit",()=>{
   for(const token of ["arcep_2026_evidence_ledger","arcep_2026_ready","activation_ready","sva_arcep_2026_evidence_events"])assert.ok(store.includes(token),token);
   assert.ok(adminUi.includes("ARCEP 2026"));
   assert.ok(adminUi.includes("activation_ready"));
+  for(const token of ["Conformité ARCEP 2026","data-regulatory-open","data-arcep-evidence-save","recorded_from:\"cockpit_arcep_2026\"","Aucun contrôle n’est validé automatiquement"])assert.ok(adminUi.includes(token),token);
+  assert.ok(adminUi.includes("status===\"verified\"&&!reference"));
   assert.ok(productionCheck.includes("arcep2026Migration"));
   assert.ok(productionCheck.includes("ARCEP 2026 activation gate"));
 });
