@@ -3027,7 +3027,7 @@ export class PostgresStore{
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_INCIDENT_ID");
     const status=input.status==null?null:String(input.status).trim().toLowerCase();
     const severity=input.severity==null?null:String(input.severity).trim().toLowerCase();
-    if(status&&!["open","investigating","waiting_customer","monitoring","resolved","closed"].includes(status))throw problem(400,"INVALID_INCIDENT_STATUS");
+    if(status&&!["active","open","investigating","waiting_customer","monitoring","resolved","closed"].includes(status))throw problem(400,"INVALID_INCIDENT_STATUS");
     if(severity&&!["low","normal","high","critical"].includes(severity))throw problem(400,"INVALID_INCIDENT_SEVERITY");
     if(!status&&!severity)throw problem(400,"INCIDENT_UPDATE_REQUIRED");
     const actorId=numericActor(actor);
@@ -3328,7 +3328,7 @@ export class PostgresStore{
       " t.public_id AS tenant_public_id,t.display_name AS tenant,t.country_code,sn.display_number,sn.e164"+
       " FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id LEFT JOIN sva_numbers sn ON sn.id=i.sva_number_id"+
       " WHERE t.tenant_type<>'internal'"+
-      " AND ($1::text IS NULL OR i.status=$1) AND ($2::text IS NULL OR i.severity=$2)"+
+      " AND ($1::text IS NULL OR ($1='active' AND i.status NOT IN ('resolved','closed')) OR i.status=$1) AND ($2::text IS NULL OR i.severity=$2)"+
       " AND ($3::text IS NULL OR i.category=$3) AND ($4::text IS NULL OR t.country_code=$4)"+
       " AND ($5::text IS NULL OR t.display_name ILIKE '%'||$5||'%' OR i.title ILIKE '%'||$5||'%' OR i.description ILIKE '%'||$5||'%' OR sn.e164 ILIKE '%'||$5||'%')"+
       " AND ($6::bigint IS NULL OR i.id<$6) ORDER BY i.id DESC LIMIT $7",
