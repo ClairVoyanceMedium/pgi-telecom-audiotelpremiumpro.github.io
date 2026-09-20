@@ -2255,7 +2255,7 @@ export class PostgresStore{
         " (SELECT count(*)::int FROM sva_tariff_change_plans WHERE status IN ('planned','declared')) AS tariff_changes_open"
       ),
       this.readSql.unsafe(
-        "SELECT a.id AS assignment_id,t.public_id::text AS tenant_public_id,t.display_name AS tenant,sn.id AS sva_number_id,sn.display_number,sn.e164,sn.service_rate_ttc_per_min::float8,m.country_code AS market,a.status AS assignment_status,"+
+        "SELECT a.id AS assignment_id,a.tenant_id,t.public_id::text AS tenant_public_id,t.display_name AS tenant,sn.id AS sva_number_id,sn.display_number,sn.e164,sn.service_rate_ttc_per_min::float8,m.country_code AS market,a.status AS assignment_status,"+
         " p.service_category,p.audience,p.billing_mode,p.per_call_price_ttc::float8,p.max_billable_duration_seconds,p.monthly_user_cap_ttc::float8,p.mgit_required,p.mgit_duration_seconds,p.mgit_tariff_first,p.mgit_optout_instruction,p.mgit_no_background_music,p.mgit_beep_before_billing,p.privacy_notice_url,p.consumer_contact,p.mediation_reference,p.af2m_reference_version,p.last_reviewed_at,p.next_review_at,"+
         " pgi_sva_ecosystem_ready(a.tenant_id,a.sva_number_id) AS ecosystem_ready"+
         " FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id LEFT JOIN operating_markets m ON m.id=sn.market_id LEFT JOIN sva_service_compliance_profiles p ON p.tenant_id=a.tenant_id AND p.sva_number_id=a.sva_number_id"+
