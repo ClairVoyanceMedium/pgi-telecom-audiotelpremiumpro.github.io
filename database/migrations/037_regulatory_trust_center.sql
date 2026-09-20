@@ -61,10 +61,11 @@ CREATE TABLE platform_regulatory_controls (
   valid_until timestamptz,
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE(market_id,control_key),
   CHECK (evidence_sha256 IS NULL OR evidence_sha256 ~ '^[0-9a-f]{64}$')
 );
 
+CREATE UNIQUE INDEX platform_regulatory_controls_unique_scope
+  ON platform_regulatory_controls(control_key,COALESCE(market_id,0));
 CREATE INDEX platform_regulatory_controls_state_idx
   ON platform_regulatory_controls(status,control_key);
 
@@ -272,12 +273,36 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER zy_tenant_number_assignments_regulatory_gate
+CREATE TRIGGER zzz_tenant_number_assignments_regulatory_gate
 BEFORE INSERT OR UPDATE OF status,tenant_id,sva_number_id,regulatory_assignor_carrier_id,upstream_assignment_reference
 ON tenant_number_assignments
 FOR EACH ROW
 WHEN (NEW.status='active')
 EXECUTE FUNCTION pgi_require_regulatory_ready_for_active_assignment();
+
+-- Existing external assignments are deliberately imported as not ready.
+INSERT INTO sva_regulatory_profiles(tenant_id,sva_number_id)
+SELECT DISTINCT a.tenant_id,a.sva_number_id
+FROM tenant_number_assignments a
+JOIN tenants t ON t.id=a.tenant_id
+WHERE t.tenant_type<>'internal'
+ON CONFLICT(tenant_id,sva_number_id) DO NOTHING;
+
+-- France controls are created in a truthful not_started state.
+INSERT INTO platform_regulatory_controls(market_id,control_key,status)
+SELECT m.id,v.control_key,'not_started'
+FROM operating_markets m
+CROSS JOIN (VALUES
+  ('ce_identifier'),
+  ('apnf_rsva_access'),
+  ('af2m_cgs'),
+  ('man_caller_authentication'),
+  ('fraud_route_traceability'),
+  ('incident_notification'),
+  ('33700_process')
+) AS v(control_key)
+WHERE m.country_code='FR'
+ON CONFLICT DO NOTHING;
 
 COMMENT ON TABLE sva_regulatory_profiles IS
 'Fail-closed regulatory readiness profile for every externally activated SVA number.';
