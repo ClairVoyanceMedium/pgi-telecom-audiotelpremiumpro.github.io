@@ -372,3 +372,10 @@ Deux moteurs complètent cette vue :
 - **Digital Twin** : simulation sans mutation des pannes opérateur/région, pics de trafic, portabilités massives, expirations réglementaires et impayés.
 
 Aucun de ces modules n'active une connexion externe. Stripe, opérateurs, APNF/RSVA et PSP restent non connectés.
+
+
+## Operational Assurance 1.29
+
+La Control Tower inclut désormais un niveau d'assurance supplémentaire : **validation 4 yeux**, comptes staff PGI distincts, **Risk Engine agrégé**, **shadow billing**, SLO opérationnels et scénarios Digital Twin avancés (base principale, workers, règlements et hyperscale).
+
+Une bascule opérateur préparée ne peut plus être activée sans approbation d'un second administrateur distinct. Le rollback d'urgence reste disponible dans sa fenêtre. Les simulations restent sans mutation et aucun fournisseur externe n'est connecté.
