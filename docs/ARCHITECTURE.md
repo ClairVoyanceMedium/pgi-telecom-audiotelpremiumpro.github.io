@@ -228,3 +228,17 @@ Le portail client reste noir/anthracite et indépendant du thème administrateur
 Les exports client sont générés à la demande dans le navigateur à partir de données déjà autorisées pour le tenant. L'export détaillé des appels est borné à 1 000 CDR par action dans cette version. Pour des volumes supérieurs, la stratégie cible reste un export backend asynchrone vers stockage objet.
 
 Le cockpit administrateur conserve son shell critique : le centre d'export PGI est ajouté dans `call-tools.js`, déjà chargé à la demande.
+
+
+## Voice Intelligence 1.24
+
+La couche Voice Intelligence reste entièrement auto-hébergée et n'impose aucun service tiers payant.
+
+- `tenant_voice_daily_sharded` agrège quotidiennement la qualité voix par société pour préserver la rapidité du portail client.
+- `voice_carrier_health_hourly_sharded` agrège la santé technique par marché, rôle opérateur et opérateur.
+- `voice_sip_code_hourly_sharded` conserve une distribution bornée des réponses SIP sans rescanner l'historique complet.
+- `telecom_incidents` conserve l'ouverture, l'actualisation et la résolution des incidents NOC.
+- `tenant_scoped_voice_daily` et `tenant_scoped_portal_call_details` appliquent la frontière SQL de la société aux données techniques clientes.
+- Les CDR FreeSWITCH normalisent PDD, côté de raccrochage, MOS, perte de paquets, jitter, latence, RTT et compteurs RTP lorsqu'ils sont disponibles.
+- Le worker de supervision détecte les dégradations de connexion, réseau, PDD et SIP 5xx. Il crée des incidents et des recommandations, mais n'active jamais une bascule opérateur sans action administrateur.
+- Le cockpit charge les composants Voice Intelligence à la demande afin de préserver le budget du shell critique.
