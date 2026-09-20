@@ -4,7 +4,7 @@ function impact(level,title,detail){return {level,title,detail};}
 
 export function simulateDigitalTwin(scenario,baseline={},params={}){
   scenario=String(scenario||"").trim().toLowerCase();
-  const supported=["carrier_outage","traffic_spike","mass_portability","regulatory_expiry","billing_failure","region_failure"];
+  const supported=["carrier_outage","traffic_spike","mass_portability","regulatory_expiry","billing_failure","region_failure","database_failure","worker_backlog","settlement_mismatch","hyperscale_growth"];
   if(!supported.includes(scenario)){const e=new Error("Unsupported digital twin scenario");e.code="UNSUPPORTED_DIGITAL_TWIN_SCENARIO";throw e;}
 
   const activeAssignments=num(baseline.active_assignments);
@@ -17,6 +17,10 @@ export function simulateDigitalTwin(scenario,baseline={},params={}){
   const regionsReady=Math.max(0,num(baseline.regions_ready));
   const regionsTotal=Math.max(0,num(baseline.regions_total));
   const drTargets=Math.max(0,num(baseline.dr_targets));
+  const queuePending=Math.max(0,num(baseline.queue_pending));
+  const queueDead=Math.max(0,num(baseline.queue_dead_lettered));
+  const bucketCapacity=Math.max(1,num(baseline.bucket_capacity,4096));
+  const readReplica=Boolean(baseline.read_replica_enabled);
   const impacts=[];
   let severity="info",affected=0,estimatedLoad=currentConcurrent;
 
@@ -81,6 +85,41 @@ export function simulateDigitalTwin(scenario,baseline={},params={}){
     }
   }
 
+  if(scenario==="database_failure"){
+    affected=activeAssignments;
+    if(regionsReady>1&&drTargets>0){
+      severity="warning";
+      impacts.push(impact("warning","Perte base principale simulée","La plateforme dispose de plusieurs régions et de cibles DR, mais la reprise d’écriture doit être validée par un exercice de restauration/bascule."));
+    }else{
+      severity="critical";
+      impacts.push(impact("critical","Reprise base insuffisamment redondante","Le scénario ne dispose pas d’assez de régions/cibles DR déclarées pour absorber sereinement la perte de la base principale."));
+    }
+    if(readReplica)impacts.push(impact("info","Réplique de lecture disponible","Une réplique de lecture est configurée ; elle réduit l’impact lecture mais ne prouve pas une reprise d’écriture."));
+  }
+
+  if(scenario==="worker_backlog"){
+    const pending=Math.max(0,Math.floor(num(params.pending,queuePending||1000)));
+    affected=pending;
+    severity=queueDead>0||pending>=1000?"critical":(pending>=100?"warning":"info");
+    impacts.push(impact(severity,"Backlog workers simulé",pending+" tâche(s) en attente et "+queueDead+" dead-letter(s) dans le scénario."));
+  }
+
+  if(scenario==="settlement_mismatch"){
+    const percent=clamp(num(params.percent,3),0,100);
+    affected=Math.ceil(activeAssignments*percent/100);
+    severity=percent>=2?"critical":(percent>=.5?"warning":"info");
+    impacts.push(impact(severity,"Écart de règlement simulé","Écart attendu/confirmé de "+percent+" % appliqué au périmètre financier simulé."));
+  }
+
+  if(scenario==="hyperscale_growth"){
+    const clients=Math.max(1,Math.floor(num(params.clients,1000000)));
+    const callsPerClient=Math.max(1,Math.floor(num(params.calls_per_client_day,20)));
+    const dailyCalls=clients*callsPerClient;
+    const perBucket=Math.ceil(dailyCalls/bucketCapacity);
+    affected=clients;severity=clients>1000000?"warning":"info";
+    impacts.push(impact(severity,"Projection hyperscale",clients+" client(s), "+dailyCalls+" appel(s)/jour, environ "+perBucket+" appel(s) par bucket/jour sur "+bucketCapacity+" buckets."));
+  }
+
   const recommendations=[];
   if(severity==="critical")recommendations.push("Traiter les dépendances bloquantes avant mise en production ou montée en charge.");
   if(scenario==="carrier_outage"&&!routeStandbyReady)recommendations.push("Préparer et tester une route opérateur de secours avec rollback.");
@@ -89,9 +128,13 @@ export function simulateDigitalTwin(scenario,baseline={},params={}){
   if(scenario==="regulatory_expiry")recommendations.push("Planifier les revues avant échéance et conserver les preuves append-only.");
   if(scenario==="billing_failure")recommendations.push("Utiliser une file d’impayés et des relances avant toute suspension explicite.");
   if(scenario==="region_failure")recommendations.push("Tester régulièrement le basculement DR sans modifier les données client.");
+  if(scenario==="database_failure")recommendations.push("Exécuter un restore drill isolé et documenter RPO/RTO avant production.");
+  if(scenario==="worker_backlog")recommendations.push("Valider leases, retries, dead-letter et capacité des workers sous backlog contrôlé.");
+  if(scenario==="settlement_mismatch")recommendations.push("Bloquer le reversement concerné jusqu’au rapprochement attendu/confirmé.");
+  if(scenario==="hyperscale_growth")recommendations.push("Utiliser cette projection pour dimensionner les tests de charge, pas comme preuve de capacité réelle.");
 
   return {
-    schema_version:"audiotel-digital-twin/1",
+    schema_version:"audiotel-digital-twin/2",
     scenario,
     severity,
     affected,
