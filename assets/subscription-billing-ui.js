@@ -7,7 +7,7 @@ export function render(summary={},tenantCount=0,provider={}){
   const access=Number(summary.subscription_access_enabled||0);
   const blocked=Number(summary.subscription_access_blocked||0);
   const set=(id,value)=>{const e=$(id);if(e)e.textContent=value;};
-  set("wh-sub-price",money(Number(summary.subscription_price_minor||200)/100,summary.subscription_price_currency||"EUR")+"/mois");
+  set("wh-sub-price",money(Number(summary.subscription_price_minor||300)/100,summary.subscription_price_currency||"EUR")+" TTC/mois");
   set("wh-sub-active",n(active));
   set("wh-sub-active-detail",n(tenantCount)+" client(s) externe(s)");
   set("wh-sub-access",n(access)+" / "+n(tenantCount));
