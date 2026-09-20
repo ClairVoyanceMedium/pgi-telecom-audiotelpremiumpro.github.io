@@ -952,7 +952,7 @@ export class MemoryStore{
     const baseline={
       active_assignments:12,active_subscriptions:12,ready_numbers:10,total_numbers:12,regulatory_blocking:0,
       service_incidents_critical:0,route_standby_ready:true,destination_capacity:120,current_concurrent:18,
-      regions_ready:2,regions_total:2,dr_targets:2
+      regions_ready:2,regions_total:2,dr_targets:2,read_replica_enabled:true,queue_pending:this.workQueue.length,queue_dead_lettered:this.workQueue.filter(x=>x.dead_lettered_at).length,bucket_capacity:4096
     };
     return simulateDigitalTwin(input.scenario,baseline,input.parameters||{});
   }
@@ -971,7 +971,7 @@ export class MemoryStore{
       carrier_route:await this.carrierRouting(),queue,service_operations:service,
       regulatory:{numbers_total:0,numbers_ready:0,review_blocking:0,review_today:0,review_soon:0},
       scale:{regions_total:2,regions_ready:2,dr_targets_total:2,bucket_capacity:4096},
-      capabilities:{policy_intents:["activate_number","port_in","payout_customer","carrier_switch","customer_access"],digital_twin_scenarios:["carrier_outage","traffic_spike","mass_portability","regulatory_expiry","billing_failure","region_failure"],external_connections_active:false,dual_control:true,shadow_billing:true,risk_engine:true,slo_snapshot:true}
+      capabilities:{policy_intents:["activate_number","port_in","payout_customer","carrier_switch","customer_access"],digital_twin_scenarios:["carrier_outage","traffic_spike","mass_portability","regulatory_expiry","billing_failure","region_failure","database_failure","worker_backlog","settlement_mismatch","hyperscale_growth"],external_connections_active:false,dual_control:true,shadow_billing:true,risk_engine:true,slo_snapshot:true}
     };
   }
 
