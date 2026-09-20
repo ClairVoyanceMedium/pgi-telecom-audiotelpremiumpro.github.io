@@ -581,8 +581,8 @@ test("selective baselines isolate metric categories and tenant dashboards",async
 });
 
 
-test("carrier switch can activate and rollback",async()=>{
-  await withServer(async({base})=>{
+test("carrier switch requires independent four-eyes approval and still rolls back",async()=>{
+  await withServer(async({app,base})=>{
     const key="22222222-2222-4222-8222-222222222222";
     let r=await fetch(base+"/api/v1/carrier-switches",{
       method:"POST",
@@ -591,12 +591,26 @@ test("carrier switch can activate and rollback",async()=>{
     });
     assert.equal(r.status,201);
     const planned=await r.json();
+    assert.equal(planned.change_request_status,"pending");
 
     r=await fetch(base+`/api/v1/carrier-switches/${planned.id}/activate`,{
       method:"POST",headers:{"Idempotency-Key":"33333333-3333-4333-8333-333333333333"}
     });
+    assert.equal(r.status,409);
+    assert.equal((await r.json()).error.code,"DUAL_CONTROL_APPROVAL_REQUIRED");
+
+    await assert.rejects(
+      ()=>app.store.approvePlatformChangeRequest(planned.change_request_id,{sub:"admin"},{reason:"self"}),
+      error=>error.code==="FOUR_EYES_SECOND_APPROVER_REQUIRED"
+    );
+    const approved=await app.store.approvePlatformChangeRequest(planned.change_request_id,{sub:"second-admin"},{reason:"Independent approval"});
+    assert.equal(approved.status,"approved");
+
+    r=await fetch(base+`/api/v1/carrier-switches/${planned.id}/activate`,{
+      method:"POST",headers:{"Idempotency-Key":"55555555-5555-4555-8555-555555555555"}
+    });
     assert.equal(r.status,200);
-    let active=await r.json();
+    const active=await r.json();
     assert.equal(active.route.active_carrier,"Carrier-B");
 
     r=await fetch(base+`/api/v1/carrier-switches/${planned.id}/rollback`,{
