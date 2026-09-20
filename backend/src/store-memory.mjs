@@ -963,6 +963,16 @@ export class MemoryStore{
     return {tenants_total:0,tenants_active:0,kyc_pending:0,subscription_unpaid_alerts:0,subscription_access_blocked:0,assignments_active:0,service_incidents_open:0,service_incidents_critical:0,service_sla_attention:0,routing_attention:0,portability_attention:0};
   }
 
+  async svaComplianceOverview(){
+    const frameworks=[
+      ["apnf_rsva","APNF / RSVA","Référentiel SVA"],["af2m_sva_2026","af2m","Recommandations SVA 2026"],["dgccrf_consumer","DGCCRF","Protection consommateur"],["cnil_privacy","CNIL","Données personnelles"],["af2m_33700","af2m / 33700","Signalements"],["consumer_mediation","Médiation consommation","Médiation"],["acpr_dsp2_scope","ACPR","Périmètre DSP2"]
+    ].map(x=>({framework_key:x[0],authority_name:x[1],framework_name:x[2]}));
+    return {schema_version:"audiotel-sva-compliance/1",generated_at:new Date().toISOString(),summary:{numbers_total:0,numbers_ready:0,controls_verified:0,controls_blocking:0,evidence_events:0,tariff_changes_open:0},frameworks,catalog:[],numbers:[],states:[],tariff_change_plans:[],external_connections_active:false,certification_claimed:false};
+  }
+  async upsertSvaServiceComplianceProfile(){return {ecosystem_ready:false,af2m_reference_version:"2026-09-01"};}
+  async recordSvaEcosystemEvidence(){return {event:{id:1,event_hash:"0".repeat(64)},ecosystem_ready:false};}
+  async planSvaTariffChange(id,input={}){return {id:1,public_id:randomUUID(),current_tariff_code:null,proposed_tariff_code:input.proposed_tariff_code,effective_on:input.effective_on,status:"planned"};}
+
   async operationalPolicyEvaluation(input={}){
     const intent=String(input.intent||"").trim().toLowerCase();
     const facts={
@@ -973,6 +983,7 @@ export class MemoryStore{
       kyc_verified:true,
       regulatory_ready:true,
       arcep_2026_ready:true,
+      ecosystem_ready:true,
       destination_ready:true,
       portability_dossier_ready:false,
       operator_adapter_connected:false,
