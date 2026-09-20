@@ -238,8 +238,8 @@ function populateCountries(){
 }
 function updateRegistrationNumberField(){
   var fr=$("register-country").value==="FR",label=$("register-number-label"),input=$("register-number");
-  label.textContent=fr?"SIRET":"Numéro d’immatriculation";
-  input.placeholder=fr?"14 chiffres":"Facultatif";
+  label.textContent=fr?"SIRET":tr("Numéro d’immatriculation");
+  input.placeholder=fr?tr("14 chiffres"):tr("Facultatif");
   input.inputMode=fr?"numeric":"text";
 }
 async function submitRegistration(e){
