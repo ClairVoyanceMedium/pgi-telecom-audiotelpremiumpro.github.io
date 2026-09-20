@@ -599,6 +599,17 @@ test("customer password changes require the authenticated customer flow",()=>{as
 
 test("Google customer auth validates on the backend and keeps tenant selection",()=>{assert.match(backendServer,/verifyGoogleIdToken/);assert.match(backendServer,/\/api\/v1\/customer\/auth\/google/);assert.match(backendServer,/CUSTOMER_TENANT_REQUIRED/);});
 
+test("billing orchestration is ready without connecting a payment provider",()=>{
+  assert.match(backendServer,/\/api\/v1\/customer\/billing\/status/);
+  assert.match(backendServer,/\/api\/v1\/customer\/billing\/checkout-session/);
+  assert.match(backendServer,/\/api\/v1\/customer\/billing\/portal-session/);
+  assert.match(backendServer,/PAYMENT_PROVIDER_NOT_CONNECTED/);
+  assert.match(backendServer,/target_provider:"stripe"/);
+  assert.match(backendServer,/sva_payout_flow:"carrier_to_customer"/);
+  assert.match(backendServer,/funds_held_by_pgi:false/);
+});
+
+
 
 test("customer comparison route is tenant-scoped and filtered call parameters are forwarded",()=>{
   assert.match(backendServer,/\/api\/v1\/customer\/comparison/);
