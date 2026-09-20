@@ -6,6 +6,7 @@ import {computeExpertCost} from "./expert-finance.mjs";
 import {normalizeSettlementPayload} from "./settlement-finance.mjs";
 import {computeTenantCallDistribution,summarizeTenantDistribution} from "./tenant-revenue-finance.mjs";
 import {resolveBillingCurrency} from "./billing-country-currency.mjs";
+import {normalizeVoiceServiceInput,validateVoiceFlow,simulateVoiceFlow,voiceFlowChecksum} from "./voice-studio-domain.mjs";
 import {createRequire} from "node:module";
 
 const require=createRequire(import.meta.url);
@@ -3196,6 +3197,125 @@ export class PostgresStore{
     });
     this.eventBus.publish("service.incident.staff_note",{incident_id:publicId});
     return result;
+  }
+
+  async customerVoiceStudio(tenantId){
+    const id=Number(tenantId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    return this.withTenantReadContext(id,async tx=>{
+      const services=await tx.unsafe(
+        "SELECT s.id,s.sva_number_id,s.name,s.status,s.timezone,s.default_locale,s.active_version_id,s.published_at,s.created_at,s.updated_at,"+
+        " n.display_number,n.e164 FROM tenant_scoped_voice_services s LEFT JOIN tenant_scoped_sva_numbers n ON n.id=s.sva_number_id ORDER BY s.updated_at DESC,s.id DESC LIMIT 100"
+      );
+      const versions=await tx.unsafe(
+        "SELECT id,service_id,version_no,state,flow,validation,checksum_sha256,source_version_id,published_at,created_at"+
+        " FROM tenant_scoped_voice_service_versions ORDER BY service_id,version_no DESC LIMIT 1000"
+      );
+      const events=await tx.unsafe(
+        "SELECT id,service_id,version_id,event_type,actor_type,details,occurred_at FROM tenant_scoped_voice_service_events ORDER BY occurred_at DESC,id DESC LIMIT 500"
+      );
+      return {data:services.map(s=>({...s,versions:versions.filter(v=>Number(v.service_id)===Number(s.id)),events:events.filter(e=>Number(e.service_id)===Number(s.id)).slice(0,30)}))};
+    });
+  }
+
+  async createCustomerVoiceService(tenantId,input={},actorSubject=""){
+    const id=Number(tenantId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    const normalized=normalizeVoiceServiceInput(input),check=validateVoiceFlow(normalized.flow),checksum=voiceFlowChecksum(check.flow),actor=String(actorSubject||"").slice(0,160);
+    const validation={valid:check.valid,errors:check.errors,warnings:check.warnings,node_count:check.node_count,features:check.features};
+    const result=await this.withTenantContext(id,async tx=>{
+      if(normalized.sva_number_id!=null){
+        const n=await tx.unsafe("SELECT id FROM tenant_scoped_sva_numbers WHERE id=$1 LIMIT 1",[normalized.sva_number_id]);
+        if(!n[0])throw problem(404,"SVA_NUMBER_NOT_FOUND");
+      }
+      const created=(await tx.unsafe(
+        "INSERT INTO tenant_voice_services(tenant_id,sva_number_id,name,status,timezone,default_locale,created_by_subject)"+
+        " VALUES($1,$2,$3,'draft',$4,$5,$6) RETURNING id,tenant_id,sva_number_id,name,status,timezone,default_locale,created_at,updated_at",
+        [id,normalized.sva_number_id,normalized.name,normalized.timezone,normalized.default_locale,actor||null]
+      ))[0];
+      const version=(await tx.unsafe(
+        "INSERT INTO tenant_voice_service_versions(tenant_id,service_id,version_no,state,flow,validation,checksum_sha256,created_by_subject)"+
+        " VALUES($1,$2,1,'draft',$3::jsonb,$4::jsonb,$5,$6) RETURNING id,service_id,version_no,state,flow,validation,checksum_sha256,created_at",
+        [id,created.id,JSON.stringify(check.flow),JSON.stringify(validation),checksum,actor||null]
+      ))[0];
+      await tx.unsafe("INSERT INTO tenant_voice_service_events(tenant_id,service_id,version_id,event_type,actor_type,actor_subject,details) VALUES($1,$2,$3,'created','customer',$4,$5::jsonb)",[id,created.id,version.id,actor||null,JSON.stringify({name:normalized.name,sva_number_id:normalized.sva_number_id,valid:check.valid})]);
+      await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'voice_service.create','tenant_voice_service',$2,$3::jsonb)",[id,String(created.id),JSON.stringify({actor_subject:actor||null,name:normalized.name,sva_number_id:normalized.sva_number_id,version_no:1})]);
+      return {...created,draft:version,validation};
+    });
+    this.eventBus.publish("voice_service.created",{tenant_id:id,service_id:Number(result.id)});return result;
+  }
+
+  async saveCustomerVoiceDraft(tenantId,serviceId,input={},actorSubject=""){
+    const id=Number(tenantId),sid=Number(serviceId);if(!Number.isInteger(id)||id<=0||!Number.isInteger(sid)||sid<=0)throw problem(400,"INVALID_VOICE_SERVICE_ID");
+    const normalized=normalizeVoiceServiceInput(input),check=validateVoiceFlow(normalized.flow),checksum=voiceFlowChecksum(check.flow),actor=String(actorSubject||"").slice(0,160);
+    const validation={valid:check.valid,errors:check.errors,warnings:check.warnings,node_count:check.node_count,features:check.features};
+    const result=await this.withTenantContext(id,async tx=>{
+      const service=(await tx.unsafe("SELECT id,status FROM tenant_voice_services WHERE id=$1 AND tenant_id=$2 FOR UPDATE",[sid,id]))[0];
+      if(!service)throw problem(404,"VOICE_SERVICE_NOT_FOUND");if(service.status==="archived")throw problem(409,"VOICE_SERVICE_ARCHIVED");
+      if(normalized.sva_number_id!=null){
+        const n=await tx.unsafe("SELECT id FROM tenant_scoped_sva_numbers WHERE id=$1 LIMIT 1",[normalized.sva_number_id]);
+        if(!n[0])throw problem(404,"SVA_NUMBER_NOT_FOUND");
+      }
+      const next=(await tx.unsafe("SELECT COALESCE(max(version_no),0)::int+1 AS version_no FROM tenant_voice_service_versions WHERE tenant_id=$1 AND service_id=$2",[id,sid]))[0].version_no;
+      const version=(await tx.unsafe(
+        "INSERT INTO tenant_voice_service_versions(tenant_id,service_id,version_no,state,flow,validation,checksum_sha256,created_by_subject) VALUES($1,$2,$3,'draft',$4::jsonb,$5::jsonb,$6,$7)"+
+        " RETURNING id,service_id,version_no,state,flow,validation,checksum_sha256,created_at",
+        [id,sid,next,JSON.stringify(check.flow),JSON.stringify(validation),checksum,actor||null]
+      ))[0];
+      const updated=(await tx.unsafe("UPDATE tenant_voice_services SET sva_number_id=$1,name=$2,timezone=$3,default_locale=$4,status=CASE WHEN status='published' THEN status ELSE 'draft' END,updated_at=now() WHERE id=$5 AND tenant_id=$6 RETURNING id,sva_number_id,name,status,timezone,default_locale,active_version_id,published_at,updated_at",[normalized.sva_number_id,normalized.name,normalized.timezone,normalized.default_locale,sid,id]))[0];
+      await tx.unsafe("INSERT INTO tenant_voice_service_events(tenant_id,service_id,version_id,event_type,actor_type,actor_subject,details) VALUES($1,$2,$3,'draft_saved','customer',$4,$5::jsonb)",[id,sid,version.id,actor||null,JSON.stringify({version_no:next,valid:check.valid,checksum})]);
+      return {...updated,draft:version,validation};
+    });
+    this.eventBus.publish("voice_service.draft_saved",{tenant_id:id,service_id:sid,version_no:result.draft.version_no});return result;
+  }
+
+  async simulateCustomerVoiceService(tenantId,serviceId,input={}){
+    const id=Number(tenantId),sid=Number(serviceId);if(!Number.isInteger(id)||id<=0||!Number.isInteger(sid)||sid<=0)throw problem(400,"INVALID_VOICE_SERVICE_ID");
+    let flow=input.flow&&typeof input.flow==="object"?input.flow:null;
+    if(!flow){
+      const rows=await this.withTenantReadContext(id,tx=>tx.unsafe("SELECT flow FROM tenant_scoped_voice_service_versions WHERE service_id=$1 ORDER BY version_no DESC LIMIT 1",[sid]));
+      if(!rows[0])throw problem(404,"VOICE_SERVICE_NOT_FOUND");flow=rows[0].flow;
+    }
+    const result=simulateVoiceFlow(flow,input.simulation||{});
+    await this.withTenantContext(id,async tx=>{await tx.unsafe("INSERT INTO tenant_voice_service_events(tenant_id,service_id,event_type,actor_type,details) SELECT $1,$2,'simulated','customer',$3::jsonb WHERE EXISTS(SELECT 1 FROM tenant_voice_services WHERE id=$2 AND tenant_id=$1)",[id,sid,JSON.stringify({valid:result.valid,path_length:result.path.length,result:result.result?.action||null})]);});
+    return result;
+  }
+
+  async publishCustomerVoiceService(tenantId,serviceId,actorSubject=""){
+    const id=Number(tenantId),sid=Number(serviceId);if(!Number.isInteger(id)||id<=0||!Number.isInteger(sid)||sid<=0)throw problem(400,"INVALID_VOICE_SERVICE_ID");
+    const actor=String(actorSubject||"").slice(0,160);
+    const result=await this.withTenantContext(id,async tx=>{
+      const service=(await tx.unsafe("SELECT id,status FROM tenant_voice_services WHERE id=$1 AND tenant_id=$2 FOR UPDATE",[sid,id]))[0];
+      if(!service)throw problem(404,"VOICE_SERVICE_NOT_FOUND");if(service.status==="archived")throw problem(409,"VOICE_SERVICE_ARCHIVED");
+      const version=(await tx.unsafe("SELECT id,version_no,flow,validation,checksum_sha256 FROM tenant_voice_service_versions WHERE tenant_id=$1 AND service_id=$2 ORDER BY version_no DESC LIMIT 1 FOR UPDATE",[id,sid]))[0];
+      if(!version)throw problem(404,"VOICE_SERVICE_VERSION_NOT_FOUND");
+      const check=validateVoiceFlow(version.flow);if(!check.valid)throw problem(409,"VOICE_FLOW_INVALID");
+      await tx.unsafe("UPDATE tenant_voice_service_versions SET state='retired' WHERE tenant_id=$1 AND service_id=$2 AND state='published'",[id,sid]);
+      const published=(await tx.unsafe("UPDATE tenant_voice_service_versions SET state='published',published_at=now(),validation=$1::jsonb WHERE id=$2 AND tenant_id=$3 RETURNING id,version_no,state,published_at,checksum_sha256",[JSON.stringify({valid:true,errors:[],warnings:check.warnings,node_count:check.node_count,features:check.features}),version.id,id]))[0];
+      const updated=(await tx.unsafe("UPDATE tenant_voice_services SET active_version_id=$1,status='published',published_at=now(),updated_at=now() WHERE id=$2 AND tenant_id=$3 RETURNING id,name,status,active_version_id,published_at,updated_at",[version.id,sid,id]))[0];
+      await tx.unsafe("INSERT INTO tenant_voice_service_events(tenant_id,service_id,version_id,event_type,actor_type,actor_subject,details) VALUES($1,$2,$3,'published','customer',$4,$5::jsonb)",[id,sid,version.id,actor||null,JSON.stringify({version_no:version.version_no,checksum:version.checksum_sha256,warnings:check.warnings.length})]);
+      await tx.unsafe("INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'voice_service.published','tenant_voice_service',$2,$3::jsonb)",[id,String(sid),JSON.stringify({service_id:sid,version_id:Number(version.id),version_no:Number(version.version_no),checksum:version.checksum_sha256})]);
+      return {...updated,version:published,validation:{valid:true,errors:[],warnings:check.warnings,node_count:check.node_count,features:check.features}};
+    });
+    this.eventBus.publish("voice_service.published",{tenant_id:id,service_id:sid,version_id:Number(result.active_version_id)});return result;
+  }
+
+  async rollbackCustomerVoiceService(tenantId,serviceId,versionId,actorSubject=""){
+    const id=Number(tenantId),sid=Number(serviceId),vid=Number(versionId);if(!Number.isInteger(id)||id<=0||!Number.isInteger(sid)||sid<=0||!Number.isInteger(vid)||vid<=0)throw problem(400,"INVALID_VOICE_SERVICE_VERSION_ID");
+    const actor=String(actorSubject||"").slice(0,160);
+    const result=await this.withTenantContext(id,async tx=>{
+      const service=(await tx.unsafe("SELECT id,status,active_version_id FROM tenant_voice_services WHERE id=$1 AND tenant_id=$2 FOR UPDATE",[sid,id]))[0];
+      if(!service)throw problem(404,"VOICE_SERVICE_NOT_FOUND");
+      const source=(await tx.unsafe("SELECT id,version_no,flow FROM tenant_voice_service_versions WHERE id=$1 AND tenant_id=$2 AND service_id=$3",[vid,id,sid]))[0];
+      if(!source)throw problem(404,"VOICE_SERVICE_VERSION_NOT_FOUND");
+      const check=validateVoiceFlow(source.flow);if(!check.valid)throw problem(409,"VOICE_FLOW_INVALID");
+      const next=(await tx.unsafe("SELECT COALESCE(max(version_no),0)::int+1 AS version_no FROM tenant_voice_service_versions WHERE tenant_id=$1 AND service_id=$2",[id,sid]))[0].version_no,checksum=voiceFlowChecksum(check.flow);
+      await tx.unsafe("UPDATE tenant_voice_service_versions SET state='retired' WHERE tenant_id=$1 AND service_id=$2 AND state='published'",[id,sid]);
+      const version=(await tx.unsafe("INSERT INTO tenant_voice_service_versions(tenant_id,service_id,version_no,state,flow,validation,checksum_sha256,source_version_id,created_by_subject,published_at) VALUES($1,$2,$3,'published',$4::jsonb,$5::jsonb,$6,$7,$8,now()) RETURNING id,version_no,state,published_at,checksum_sha256",[id,sid,next,JSON.stringify(check.flow),JSON.stringify({valid:true,errors:[],warnings:check.warnings,node_count:check.node_count,features:check.features}),checksum,vid,actor||null]))[0];
+      const updated=(await tx.unsafe("UPDATE tenant_voice_services SET active_version_id=$1,status='published',published_at=now(),updated_at=now() WHERE id=$2 AND tenant_id=$3 RETURNING id,name,status,active_version_id,published_at,updated_at",[version.id,sid,id]))[0];
+      await tx.unsafe("INSERT INTO tenant_voice_service_events(tenant_id,service_id,version_id,event_type,actor_type,actor_subject,details) VALUES($1,$2,$3,'rolled_back','customer',$4,$5::jsonb)",[id,sid,version.id,actor||null,JSON.stringify({source_version_id:vid,source_version_no:Number(source.version_no),new_version_no:Number(next)})]);
+      await tx.unsafe("INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'voice_service.published','tenant_voice_service',$2,$3::jsonb)",[id,String(sid),JSON.stringify({service_id:sid,version_id:Number(version.id),version_no:Number(next),rollback_from:vid,checksum})]);
+      return {...updated,version};
+    });
+    this.eventBus.publish("voice_service.rolled_back",{tenant_id:id,service_id:sid,version_id:Number(result.active_version_id),source_version_id:vid});return result;
   }
 
   async simulateTenantRouting(publicTenantId,input={}){
