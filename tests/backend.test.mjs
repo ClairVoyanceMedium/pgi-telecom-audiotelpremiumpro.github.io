@@ -103,6 +103,36 @@ test("admin login has a dedicated per-client brute-force limit",async()=>{
   }
 });
 
+test("distinct staff accounts can authenticate independently for four-eyes control",async()=>{
+  const primaryPassword="primary-admin-password-123";
+  const secondPassword="second-admin-password-456";
+  const app=createBackend({config:config({
+    authMode:"session",sessionSecret:"x".repeat(40),adminUsername:"admin",
+    adminPasswordHash:hashPassword(primaryPassword)
+  })});
+  const second=await app.store.createStaffUser(
+    {login_name:"approver",email:"approver@example.test",display_name:"Second Approver",role:"admin"},
+    hashPassword(secondPassword),
+    {sub:"local-admin"}
+  );
+  assert.equal(second.role,"admin");
+  const address=await app.listen(),base=`http://127.0.0.1:${address.port}`;
+  try{
+    let r=await fetch(base+"/api/v1/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:"admin",password:primaryPassword})});
+    assert.equal(r.status,200);
+    const primary=await r.json();
+    assert.match(String(primary.user.id),/^\d+$/);
+
+    r=await fetch(base+"/api/v1/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:"approver",password:secondPassword})});
+    assert.equal(r.status,200);
+    const approver=await r.json();
+    assert.equal(approver.user.name,"Second Approver");
+    assert.notEqual(String(approver.user.id),String(primary.user.id));
+  }finally{
+    await app.close();
+  }
+});
+
 test("invalid encoded route parameters fail as a client error",()=>{
   assert.throws(
     ()=>routeMatch("/api/v1/experts/%/status","/api/v1/experts/:id/status"),
