@@ -22,6 +22,7 @@ const files=[
   "assets/client-google.js",
   "assets/client-portal-api.js",
   "assets/client-portal.js",
+  "assets/client-search.js",
   "assets/core.js",
   "assets/api-client.js",
   "assets/data-client.js",
