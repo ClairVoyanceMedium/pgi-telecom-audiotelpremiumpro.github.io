@@ -8,6 +8,7 @@ const clientPortal=read("client.html");
 const clientPortalApi=read("assets/client-portal-api.js");
 const clientPortalJs=read("assets/client-portal.js");
 const clientPortalCss=read("assets/client-portal.css");
+const clientIntelligence=read("assets/client-intelligence.js");
 const clientI18n=read("assets/client-i18n.js");
 const clientGoogle=read("assets/client-google.js");
 const clientConfig=read("assets/client-config.js");
@@ -383,3 +384,19 @@ test("customer portal exposes extended analytics and password management",()=>{f
 
 
 test("client portal auto-localizes and prepares Google account creation",()=>{for(const token of ["pt-PT","pt-BR","es","it","de","sv"])assert.ok(clientI18n.includes(token),token);assert.match(clientI18n,/navigator\.languages/);assert.match(clientGoogle,/accounts\.google\.com\/gsi\/client/);assert.match(clientGoogle,/renderButton/);assert.match(clientConfig,/googleClientId/);assert.match(clientPortal,/google-login/);assert.match(clientPortal,/google-activation/);assert.match(clientPortalJs,/pending_contract/);});
+
+
+test("client portal intelligence compares periods, detects anomalies and filters calls",()=>{
+  for(const id of ["client-intelligence","compare-calls","compare-asr","client-insights","call-filter-status","call-filter-number","call-filter-min-duration","call-filter-min-amount","call-load-more"])assert.ok(clientPortal.includes('id="'+id+'"'),id);
+  assert.match(clientPortalJs,/comparison_previous/);
+  assert.match(clientPortalJs,/detail:\{range:state\.range,serverTime:.*data:data\}/);
+  assert.match(clientIntelligence,/function renderComparison/);
+  assert.match(clientIntelligence,/function renderInsights/);
+  assert.match(clientIntelligence,/function previousRange/);
+  assert.match(clientIntelligence,/PGICustomerApi\.comparison/);
+  assert.match(clientIntelligence,/minDuration/);
+  assert.match(clientPortalApi,/\/customer\/comparison/);
+  assert.match(clientPortalApi,/min_duration/);
+  assert.match(clientPortalApi,/min_amount/);
+  assert.match(buildStatic,/client-intelligence\.js/);
+});
