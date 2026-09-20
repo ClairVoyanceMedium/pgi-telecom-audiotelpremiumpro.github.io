@@ -21,6 +21,7 @@ const b2bDestinationMigration=fs.readFileSync("database/migrations/022_b2b_call_
 const customerPortalMigration=fs.readFileSync("database/migrations/023_customer_portal.sql","utf8");
 const customerGoogleMigration=fs.readFileSync("database/migrations/024_customer_google_identity.sql","utf8");
 const voiceIntelligenceMigration=fs.readFileSync("database/migrations/026_voice_intelligence.sql","utf8");
+const billingCurrencySource=fs.readFileSync("backend/src/billing-country-currency.mjs","utf8");
 const resilienceDocs=fs.readFileSync("docs/RESILIENCE.md","utf8");
 const alertRules=fs.readFileSync("infra/observability/prometheus-alerts.example.yml","utf8");
 const schema=fs.readFileSync("database/schema.sql","utf8");
@@ -175,6 +176,16 @@ test("les clients externes ont un abonnement SVA payé versionné et PGI interne
   assert.ok(server.includes("/api/v1/customer/billing/portal-session"));
   assert.ok(server.includes('sva_payout_flow:"carrier_to_customer"'));
   assert.ok(server.includes("funds_held_by_pgi:false"));
+});
+
+test("la devise de paiement est résolue par pays sans activer le marché SVA",()=>{
+  assert.ok(billingCurrencySource.includes("BILLING_CURRENCY_CATALOG_VERSION"));
+  assert.ok(billingCurrencySource.includes('EUR:"AD AT AX BE BG'));
+  assert.ok(billingCurrencySource.includes('GBP:"GB GG GS IM JE"'));
+  assert.ok(billingCurrencySource.includes('USD:"AS BQ EC'));
+  assert.ok(billingCurrencySource.includes('BRL:"BR"'));
+  assert.ok(store.includes("resolveBillingCurrency(country)"));
+  assert.ok(store.includes('pricing_state:offer?"local_price_ready":referenceOffer?"local_conversion_required":"unavailable"'));
 });
 
 test("le contrôle clients hyperscale gère pays suspensions lignes et impayés",()=>{
