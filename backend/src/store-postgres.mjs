@@ -2101,8 +2101,8 @@ export class PostgresStore{
     const status=params.status?String(params.status).trim().toLowerCase():null;
     if(status&&!allowedStatuses.has(status))throw problem(400,"INVALID_CALL_STATUS");
 
-    const number=params.number?String(params.number).trim():null;
-    if(number&&(number.length>40||!/^[0-9+ ().-]+$/.test(number)))throw problem(400,"INVALID_CALL_NUMBER_FILTER");
+    const numberId=params.number_id==null||params.number_id===""?null:Number(params.number_id);
+    if(numberId!=null&&(!Number.isInteger(numberId)||numberId<=0))throw problem(400,"INVALID_CALL_NUMBER_FILTER");
 
     function optionalNumber(value,code,max){
       if(value==null||value==="")return null;
@@ -2123,17 +2123,17 @@ export class PostgresStore{
         " FROM tenant_scoped_portal_calls WHERE started_at>=$1::timestamptz AND started_at<=$2::timestamptz"+
         " AND ($3::timestamptz IS NULL OR (started_at,call_id)<($3::timestamptz,$4::bigint))"+
         " AND ($5::text IS NULL OR call_status=$5)"+
-        " AND ($6::text IS NULL OR display_number ILIKE '%'||$6||'%' OR e164 ILIKE '%'||$6||'%')"+
+        " AND ($6::bigint IS NULL OR sva_number_id=$6)"+
         " AND ($7::float8 IS NULL OR COALESCE(billable_seconds,conversation_seconds,0)>=$7)"+
         " AND ($8::float8 IS NULL OR COALESCE(billable_seconds,conversation_seconds,0)<=$8)"+
         " AND ($9::numeric IS NULL OR COALESCE(retail_service_amount_ttc,0)>=$9)"+
         " AND ($10::numeric IS NULL OR COALESCE(retail_service_amount_ttc,0)<=$10)"+
         " ORDER BY started_at DESC,call_id DESC LIMIT $11",
-        [from,to,cursor?.started_at||null,cursor?.id||null,status,number,minDuration,maxDuration,minAmount,maxAmount,limit+1]
+        [from,to,cursor?.started_at||null,cursor?.id||null,status,numberId,minDuration,maxDuration,minAmount,maxAmount,limit+1]
       );
       const more=rows.length>limit;const data=more?rows.slice(0,limit):rows;
       const last=data.at(-1);
-      return {data,next_cursor:more&&last?encodeCursor({started_at:last.started_at,id:Number(last.call_id)}):null,filters:{status,number,min_duration:minDuration,max_duration:maxDuration,min_amount:minAmount,max_amount:maxAmount}};
+      return {data,next_cursor:more&&last?encodeCursor({started_at:last.started_at,id:Number(last.call_id)}):null,filters:{status,number_id:numberId,min_duration:minDuration,max_duration:maxDuration,min_amount:minAmount,max_amount:maxAmount}};
     });
   }
 
