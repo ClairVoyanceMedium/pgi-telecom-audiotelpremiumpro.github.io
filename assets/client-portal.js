@@ -59,6 +59,7 @@ function demoData(range){
     destinations:[{id:1,sva_number_id:1,label:"Standard principal",destination_type:"pstn",destination_uri:"tel:+33123456789",priority:10,status:"active",active_calls:1,max_concurrent_calls:25}],
     recent_calls:recent,
     voice_quality:{calls_total:sums.calls_total,calls_connected:sums.calls_connected,pdd_samples:sums.calls_total,avg_pdd_ms:2380,high_pdd_calls:Math.round(sums.calls_total*.025),quality_samples:sums.calls_total,network_affected_calls:Math.round(sums.calls_total*.018),low_mos_calls:Math.round(sums.calls_total*.012),mos:4.26,packet_loss_percent:.34,jitter_ms:3.4,latency_ms:44,rtt_ms:78,sip_5xx_calls:Math.round(sums.calls_total*.008),caller_hangups:Math.round(sums.calls_connected*.52),callee_hangups:Math.round(sums.calls_connected*.43),network_hangups:Math.round(sums.calls_total*.05)},
+    billing_provider:{architecture_ready:true,target_provider:"stripe",connection_state:"not_connected",external_billing_enabled:false,checkout_available:false,customer_portal_available:false,webhook_ingest_enabled:false,subscription_funds_flow:"customer_to_pgi",sva_payout_flow:"carrier_to_customer",funds_held_by_pgi:false},
     range:range,server_time:new Date().toISOString()
   };
 }
@@ -125,8 +126,14 @@ function renderSettlements(data){
   el.innerHTML=rows.length?rows.slice(0,6).map(function(x){var note=x.paid_at?"Payé le "+dateOnly(x.paid_at):x.payment_due_date?"Échéance "+dateOnly(x.payment_due_date):"Période clôturée";return '<div class="cp-row"><div><strong>'+esc(money(x.net_payout_ht,x.currency))+'</strong><span>'+esc(dateOnly(x.period_start)+" → "+dateOnly(x.period_end))+' · '+esc(note)+'</span></div>'+chip(x.status)+'</div>';}).join(""):'<p class="cp-empty">Aucun reversement disponible.</p>';
 }
 function renderSubscriptions(data){
-  var rows=data.subscriptions||[],el=$("subscription-list");
+  var rows=data.subscriptions||[],el=$("subscription-list"),provider=data.billing_provider||{};
   el.innerHTML=rows.length?rows.slice(0,3).map(function(x){var price=x.amount_minor!=null?money(n(x.amount_minor)/100,x.price_currency||x.billing_currency)+" / "+(x.billing_interval==="year"?"an":"mois"):"Tarif contractuel";return '<div class="cp-row"><div><strong>'+esc(x.plan_name||"Abonnement Audiotel")+'</strong><span>'+esc(price+" · période jusqu’au "+dateOnly(x.current_period_end))+'</span></div>'+chip(x.status)+'</div>';}).join(""):'<p class="cp-empty">Aucun abonnement affiché.</p>';
+  var stateEl=$("client-billing-provider-state"),chipEl=$("client-billing-provider-chip"),start=$("client-billing-start"),manage=$("client-billing-manage");
+  var connected=provider.connection_state&&provider.connection_state!=="not_connected";
+  if(stateEl)stateEl.textContent=connected?"Prestataire de paiement configuré.":"Architecture de paiement prête, prestataire non connecté.";
+  if(chipEl){chipEl.textContent=connected?"PRÊT":"NON CONNECTÉ";chipEl.className="cp-chip "+(connected?"ok":"neutral");}
+  if(start)start.disabled=!provider.checkout_available;
+  if(manage)manage.disabled=!provider.customer_portal_available;
 }
 function renderDestinations(data){
   var numbers={};(data.numbers||[]).forEach(function(x){numbers[String(x.id)]=x.display_number||x.e164;});
@@ -247,6 +254,18 @@ async function exportClient(kind){
     }
   }catch(err){toast("Export impossible");}
 }
+async function openBilling(kind){
+  if(state.demo){toast("Prestataire de paiement non connecté.");return;}
+  var action=kind==="manage"?window.PGICustomerApi.createBillingPortal:window.PGICustomerApi.createBillingCheckout;
+  try{
+    var result=await action();
+    var target=result&&result.url?new URL(result.url,location.origin):null;
+    if(!target||target.protocol!=="https:")throw new Error("INVALID_BILLING_URL");
+    location.assign(target.href);
+  }catch(err){
+    toast(err&&err.code==="PAYMENT_PROVIDER_NOT_CONNECTED"?"Prestataire de paiement non connecté.":"Gestion de l’abonnement indisponible.");
+  }
+}
 async function changePassword(e){
   e.preventDefault();
   var current=$("current-password").value,newPassword=$("new-password").value,confirm=$("new-password-confirm").value,msg=$("password-message");
@@ -272,6 +291,8 @@ function bind(){
   $("client-security").addEventListener("click",function(){var d=$("client-security-dialog");if(d&&typeof d.showModal==="function")d.showModal();});
   $("client-security-close").addEventListener("click",function(){var d=$("client-security-dialog");if(d&&d.open)d.close();});
   $("client-password-form").addEventListener("submit",changePassword);
+  $("client-billing-start").addEventListener("click",function(){openBilling("start");});
+  $("client-billing-manage").addEventListener("click",function(){openBilling("manage");});
   $("google-tenant-continue").addEventListener("click",function(){handleGoogleCredential(null,$("customer-tenant").value||"");});
   qsa("[data-client-export]").forEach(function(b){b.addEventListener("click",function(){var d=$("client-export-dialog");if(d&&d.open)d.close();exportClient(b.dataset.clientExport);});});
   qsa("[data-range]").forEach(function(btn){btn.addEventListener("click",function(){state.range=btn.dataset.range;qsa("[data-range]").forEach(function(x){x.classList.toggle("active",x===btn);});loadPortal().catch(function(){toast("Actualisation impossible");});});});
