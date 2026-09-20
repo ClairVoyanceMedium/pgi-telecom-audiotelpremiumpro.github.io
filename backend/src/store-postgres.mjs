@@ -7,6 +7,8 @@ import {normalizeSettlementPayload} from "./settlement-finance.mjs";
 import {computeTenantCallDistribution,summarizeTenantDistribution} from "./tenant-revenue-finance.mjs";
 import {resolveBillingCurrency} from "./billing-country-currency.mjs";
 import {normalizeVoiceServiceInput,validateVoiceFlow,simulateVoiceFlow,voiceFlowChecksum} from "./voice-studio-domain.mjs";
+import {evaluateOperationalPolicy} from "./operational-policy.mjs";
+import {simulateDigitalTwin} from "./digital-twin.mjs";
 import {createRequire} from "node:module";
 
 const require=createRequire(import.meta.url);
@@ -4085,6 +4087,149 @@ export class PostgresStore{
       tenant:{...tenant,premium_call_access:Boolean(access[0]?.allowed)},
       subscriptions:subs,lines,portability,destinations,experts,alerts,settlements,payout_terms:payoutTerms,controls,audit,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,
       activity:activity[0]||{calls_30d:0,connected_30d:0,billable_seconds_30d:0,revenue_ttc_30d:0,margin_ht_30d:0,last_call_at:null}
+    };
+  }
+
+  async operationalPolicyEvaluation(input={}){
+    const intent=String(input.intent||"").trim().toLowerCase();
+    const assignmentId=input.assignment_id==null||input.assignment_id===""?null:Number(input.assignment_id);
+    const tenantPublicId=optionalText(input.tenant_public_id,80);
+    const portabilityId=input.portability_request_id==null||input.portability_request_id===""?null:Number(input.portability_request_id);
+    const targetConnectionId=input.target_connection_id==null||input.target_connection_id===""?null:Number(input.target_connection_id);
+    let context=null;
+    if(Number.isInteger(assignmentId)&&assignmentId>0){
+      context=(await this.readSql.unsafe(
+        "SELECT t.id AS tenant_id,t.public_id::text AS tenant_public_id,t.display_name,t.status AS tenant_status,t.tenant_type,"+
+        " a.id AS assignment_id,a.status AS assignment_status,a.sva_number_id,sn.market_id"+
+        " FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.id=$1",
+        [assignmentId]
+      ))[0]||null;
+    }else if(tenantPublicId&&/^[0-9a-f-]{36}$/i.test(tenantPublicId)){
+      context=(await this.readSql.unsafe(
+        "SELECT t.id AS tenant_id,t.public_id::text AS tenant_public_id,t.display_name,t.status AS tenant_status,t.tenant_type,NULL::bigint AS assignment_id,NULL::text AS assignment_status,NULL::bigint AS sva_number_id,NULL::bigint AS market_id"+
+        " FROM tenants t WHERE t.public_id=$1::uuid",
+        [tenantPublicId]
+      ))[0]||null;
+    }
+    if(intent!=="carrier_switch"&&!context)throw problem(404,"POLICY_CONTEXT_NOT_FOUND");
+    const tenantId=context?.tenant_id||null,svaNumberId=context?.sva_number_id||null,marketId=context?.market_id||null;
+
+    const factsRows=await this.readSql.unsafe(
+      "SELECT"+
+      " CASE WHEN $1::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM tenants WHERE id=$1 AND status='active') END AS tenant_active,"+
+      " CASE WHEN $1::bigint IS NULL THEN NULL ELSE pgi_tenant_has_premium_call_access($1,$3,now()) END AS subscription_active,"+
+      " CASE WHEN $1::bigint IS NULL THEN NULL ELSE pgi_tenant_has_payout_terms($1,$3,$2,now()) END AS payout_terms_ready,"+
+      " CASE WHEN $1::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM tenant_kyc_profiles WHERE tenant_id=$1 AND status='verified') END AS kyc_verified,"+
+      " CASE WHEN $2::bigint IS NULL THEN NULL ELSE pgi_sva_regulatory_ready($1,$2) END AS regulatory_ready,"+
+      " CASE WHEN $2::bigint IS NULL THEN NULL ELSE pgi_arcep_2026_number_ready($1,$2) END AS arcep_2026_ready,"+
+      " CASE WHEN $4::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM tenant_number_assignments WHERE id=$4) END AS assignment_exists,"+
+      " CASE WHEN $1::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM tenant_call_destinations d WHERE d.tenant_id=$1 AND ($2::bigint IS NULL OR d.sva_number_id IS NULL OR d.sva_number_id=$2) AND d.status='active' AND d.active_calls<d.max_concurrent_calls) END AS destination_ready,"+
+      " CASE WHEN $5::bigint IS NULL THEN EXISTS(SELECT 1 FROM tenant_portability_requests p WHERE p.tenant_id=$1 AND p.status IN ('scheduled','ported')) ELSE EXISTS(SELECT 1 FROM tenant_portability_requests p WHERE p.tenant_id=$1 AND p.id=$5 AND p.status IN ('scheduled','ported')) END AS portability_dossier_ready,"+
+      " EXISTS(SELECT 1 FROM carrier_adapters ca JOIN carrier_connections cc ON cc.carrier_id=ca.carrier_id WHERE ca.enabled AND cc.purpose='api' AND cc.state IN ('ready','active')) AS operator_adapter_connected,"+
+      " CASE WHEN $6::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM carrier_connections cc WHERE cc.id=$6 AND cc.state IN ('ready','active','standby')) END AS target_carrier_ready,"+
+      " EXISTS(SELECT 1 FROM logical_carrier_routes r WHERE r.route_key='sva-primary' AND r.active_carrier_id IS NOT NULL AND r.active_connection_id IS NOT NULL) AS rollback_ready,"+
+      " CASE WHEN $1::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM tenant_revenue_distributions d WHERE d.tenant_id=$1 AND d.status IN ('reconciled','payable','paid')) END AS settlement_reconciled",
+      [tenantId,svaNumberId,marketId,assignmentId,portabilityId,targetConnectionId]
+    );
+    const facts={...(factsRows[0]||{}),payment_provider_connected:false};
+    const result=evaluateOperationalPolicy(intent,facts);
+    return {...result,context:context?{tenant_public_id:context.tenant_public_id,tenant:context.display_name,assignment_id:context.assignment_id,assignment_status:context.assignment_status}:null};
+  }
+
+  async digitalTwinSimulation(input={}){
+    const scenario=String(input.scenario||"").trim().toLowerCase();
+    const params=input.parameters&&typeof input.parameters==="object"&&!Array.isArray(input.parameters)?input.parameters:{};
+    const [platform,service,route,capacityRows]=await Promise.all([
+      this.wholesaleOverview(),
+      this.serviceOperationsHealth(),
+      this.carrierRouting(),
+      this.readSql.unsafe(
+        "SELECT"+
+        " COALESCE(sum(max_concurrent_calls) FILTER(WHERE status='active'),0)::int AS destination_capacity,"+
+        " COALESCE(sum(active_calls) FILTER(WHERE status='active'),0)::int AS current_concurrent"+
+        " FROM tenant_call_destinations"
+      )
+    ]);
+    const s=platform.summary||{},r=platform.regulatory_trust?.summary||{},scale=platform.scale||{},cap=capacityRows[0]||{};
+    const baseline={
+      active_assignments:Number(s.assignments_active||0),
+      active_subscriptions:Number(s.external_subscriptions_active||0),
+      ready_numbers:Number(r.numbers_ready||0),
+      total_numbers:Number(r.numbers_total||0),
+      regulatory_blocking:Number(r.review_blocking||0),
+      service_incidents_critical:Number(service.service_incidents_critical||0),
+      route_standby_ready:Boolean(route?.standby_carrier_id||route?.standby_carrier),
+      destination_capacity:Number(cap.destination_capacity||0),
+      current_concurrent:Number(cap.current_concurrent||0),
+      regions_ready:Number(scale.regions_ready||0),
+      regions_total:Number(scale.regions_total||0),
+      dr_targets:Number(scale.dr_targets_total||0)
+    };
+    return simulateDigitalTwin(scenario,baseline,params);
+  }
+
+  async controlTowerOverview(){
+    const [platform,service,route,queue,capacityRows,portabilityRows]=await Promise.all([
+      this.wholesaleOverview(),
+      this.serviceOperationsHealth(),
+      this.carrierRouting(),
+      this.workQueueHealth(),
+      this.readSql.unsafe(
+        "SELECT COALESCE(sum(max_concurrent_calls) FILTER(WHERE status='active'),0)::int AS capacity,COALESCE(sum(active_calls) FILTER(WHERE status='active'),0)::int AS in_use FROM tenant_call_destinations"
+      ),
+      this.readSql.unsafe(
+        "SELECT count(*) FILTER(WHERE status NOT IN ('ported','rejected','cancelled'))::int AS open,count(*) FILTER(WHERE automation_state IN ('action_required','failed'))::int AS attention FROM tenant_portability_requests"
+      )
+    ]);
+    const s=platform.summary||{},reg=platform.regulatory_trust?.summary||{},scale=platform.scale||{},cap=capacityRows[0]||{},port=portabilityRows[0]||{};
+    const ratios=[
+      Number(s.tenants_total||0)>0?Number(s.tenants_active||0)/Number(s.tenants_total||1):1,
+      Number(s.assignments_total||0)>0?Number(reg.numbers_ready||0)/Number(s.assignments_total||1):1,
+      Number(s.assignments_total||0)>0?Number(s.subscription_access_enabled||0)/Number(s.assignments_total||1):1,
+      Number(scale.regions_total||0)>0?Number(scale.regions_ready||0)/Number(scale.regions_total||1):1
+    ];
+    const readinessScore=Math.round(100*ratios.reduce((a,b)=>a+Math.max(0,Math.min(1,b)),0)/ratios.length);
+    const priorities=[];
+    const push=(severity,code,title,detail)=>priorities.push({severity,code,title,detail});
+    if(Number(reg.review_blocking||0)>0)push("critical","REGULATORY_BLOCKING","Conformité bloquante",reg.review_blocking+" contrôle(s) réglementaire(s) critique(s) à traiter.");
+    if(Number(service.service_incidents_critical||0)>0)push("critical","SERVICE_CRITICAL","Incidents critiques",service.service_incidents_critical+" incident(s) de service critique(s) ouvert(s).");
+    if(Number(service.routing_unavailable||0)>0)push("critical","ROUTING_UNAVAILABLE","Routage indisponible",service.routing_unavailable+" alerte(s) de routage sans destination disponible.");
+    if(Number(queue.dead_lettered||0)>0)push("warning","DEAD_LETTERS","Travaux en échec",queue.dead_lettered+" tâche(s) en dead-letter à examiner.");
+    if(Number(port.attention||0)>0)push("warning","PORTABILITY_ATTENTION","Portabilités à traiter",port.attention+" dossier(s) de portabilité demandent une action.");
+    if(Number(s.subscription_unpaid_alerts||0)>0)push("warning","UNPAID_SUBSCRIPTIONS","Abonnements impayés",s.subscription_unpaid_alerts+" alerte(s) d’impayé ouverte(s).");
+    if(!priorities.length)push("info","NO_CRITICAL_ATTENTION","Aucune urgence critique","Les contrôles internes ne remontent aucun blocage critique.");
+    const critical=priorities.filter(x=>x.severity==="critical").length,warning=priorities.filter(x=>x.severity==="warning").length;
+    return {
+      schema_version:"audiotel-control-tower/1",
+      generated_at:new Date().toISOString(),
+      status:critical?"critical":(warning?"attention":"healthy"),
+      readiness_score:readinessScore,
+      kpis:{
+        customers_active:Number(s.tenants_active||0),
+        customers_total:Number(s.tenants_total||0),
+        assignments_active:Number(s.assignments_active||0),
+        numbers_ready:Number(reg.numbers_ready||0),
+        subscription_blocked:Number(s.subscription_access_blocked||0),
+        regulatory_blocking:Number(reg.review_blocking||0),
+        service_critical:Number(service.service_incidents_critical||0),
+        portability_attention:Number(port.attention||0),
+        queue_dead_lettered:Number(queue.dead_lettered||0),
+        destination_capacity:Number(cap.capacity||0),
+        concurrent_in_use:Number(cap.in_use||0),
+        regions_ready:Number(scale.regions_ready||0),
+        regions_total:Number(scale.regions_total||0)
+      },
+      priorities:priorities.slice(0,12),
+      carrier_route:route,
+      queue,
+      service_operations:service,
+      regulatory:reg,
+      scale,
+      capabilities:{
+        policy_intents:["activate_number","port_in","payout_customer","carrier_switch","customer_access"],
+        digital_twin_scenarios:["carrier_outage","traffic_spike","mass_portability","regulatory_expiry","billing_failure","region_failure"],
+        external_connections_active:false
+      }
     };
   }
 
