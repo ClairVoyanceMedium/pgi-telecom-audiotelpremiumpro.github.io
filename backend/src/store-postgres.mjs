@@ -2285,7 +2285,7 @@ export class PostgresStore{
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     return this.withTenantReadContext(id,async tx=>{
       const tenant=(await tx.unsafe(
-        "SELECT id,public_id,display_name,legal_name,status,country_code,billing_email,preferred_locale,default_currency,timezone FROM tenants WHERE id=$1 LIMIT 1",
+        "SELECT id,public_id,display_name,legal_name,tenant_type,status,country_code,billing_email,preferred_locale,default_currency,timezone FROM tenants WHERE id=$1 LIMIT 1",
         [id]
       ))[0];
       if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
