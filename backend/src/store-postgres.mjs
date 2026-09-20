@@ -2157,12 +2157,16 @@ export class PostgresStore{
       if(!assignment)throw problem(404,"ASSIGNMENT_NOT_FOUND");
       if(assignment.tenant_status==="closed")throw problem(409,"TENANT_CLOSED");
       const e164Plus=String(assignment.e164||"").startsWith("+")?String(assignment.e164):"+"+String(assignment.e164||"");
-      const [kycRows,profileRows,evidence,arcepProfileRows,arcepEvidence,portability,operatorEvents,carrierAssignments,controlEvents,incidents,abuseCases,platformControls,routeRows,switches]=await Promise.all([
+      const [kycRows,profileRows,evidence,arcepProfileRows,arcepEvidence,ecosystemProfileRows,ecosystemStates,ecosystemEvidence,tariffPlans,portability,operatorEvents,carrierAssignments,controlEvents,incidents,abuseCases,platformControls,routeRows,switches]=await Promise.all([
         tx.unsafe("SELECT entity_type,registration_country,registration_number,legal_representative_verified,bank_account_verified,status,reviewed_at,expires_at,updated_at FROM tenant_kyc_profiles WHERE tenant_id=$1",[assignment.tenant_id]),
         tx.unsafe("SELECT regulatory_role,service_name,service_description,provider_name,provider_website,provider_address,complaint_contact,signaletic_model,numbering_rights_status,editor_identity_status,rsva_status,tariff_transparency_status,mgit_status,complaint_process_status,fraud_monitoring_status,last_reviewed_at,next_review_at,created_at,updated_at FROM sva_regulatory_profiles WHERE tenant_id=$1 AND sva_number_id=$2",[assignment.tenant_id,assignment.sva_number_id]),
         tx.unsafe("SELECT id,control_key,status,source,evidence_reference,previous_hash,event_hash,actor_subject,occurred_at FROM sva_regulatory_evidence_events WHERE tenant_id=$1 AND sva_number_id=$2 ORDER BY id",[assignment.tenant_id,assignment.sva_number_id]),
         tx.unsafe("SELECT decision_reference,exclusive_stable_assignee_status,single_service_status,portability_offered_status,tariff_ceiling_status,no_temporary_contact_use_status,public_body_eligibility_status,caller_id_block_status,parental_control_classification_status,last_reviewed_at,next_review_at,created_at,updated_at FROM sva_arcep_2026_profiles WHERE tenant_id=$1 AND sva_number_id=$2",[assignment.tenant_id,assignment.sva_number_id]),
         tx.unsafe("SELECT id,control_key,status,source,evidence_reference,previous_hash,event_hash,actor_subject,occurred_at FROM sva_arcep_2026_evidence_events WHERE tenant_id=$1 AND sva_number_id=$2 ORDER BY id",[assignment.tenant_id,assignment.sva_number_id]),
+        tx.unsafe("SELECT service_category,audience,billing_mode,per_call_price_ttc::float8,max_billable_duration_seconds,monthly_user_cap_ttc::float8,mgit_required,mgit_duration_seconds,mgit_tariff_first,mgit_optout_instruction,mgit_no_background_music,mgit_beep_before_billing,privacy_notice_url,consumer_contact,mediation_reference,af2m_reference_version,last_reviewed_at,next_review_at,created_at,updated_at,pgi_sva_ecosystem_ready(tenant_id,sva_number_id) AS ecosystem_ready FROM sva_service_compliance_profiles WHERE tenant_id=$1 AND sva_number_id=$2",[assignment.tenant_id,assignment.sva_number_id]),
+        tx.unsafe("SELECT s.control_key,c.framework_key,c.label,c.required_for_activation,c.allow_not_applicable,s.status,s.evidence_reference,s.evidence_event_hash,s.reviewed_at,s.valid_until,s.updated_at FROM sva_ecosystem_control_states s JOIN sva_ecosystem_control_catalog c ON c.control_key=s.control_key WHERE s.tenant_id=$1 AND s.sva_number_id=$2 ORDER BY c.framework_key,s.control_key",[assignment.tenant_id,assignment.sva_number_id]),
+        tx.unsafe("SELECT id,control_key,status,source,evidence_reference,valid_until,previous_hash,event_hash,actor_subject,occurred_at FROM sva_ecosystem_evidence_events WHERE tenant_id=$1 AND sva_number_id=$2 ORDER BY id",[assignment.tenant_id,assignment.sva_number_id]),
+        tx.unsafe("SELECT public_id::text AS public_id,current_tariff_code,proposed_tariff_code,proposed_service_rate_ttc_per_min::float8,proposed_service_price_ttc_per_call::float8,effective_on,declaration_due_at,status,rsva_reference,created_at,declared_at,confirmed_at,notes FROM sva_tariff_change_plans WHERE tenant_id=$1 AND sva_number_id=$2 ORDER BY effective_on,id",[assignment.tenant_id,assignment.sva_number_id]),
         tx.unsafe(
           "SELECT p.id,p.country_code,p.requested_e164,p.display_number,p.service_family,p.current_operator_name,p.current_operator_reference,p.desired_port_date,p.status,p.ownership_status,p.authorization_confirmed,p.number_owner_confirmed,"+
           " c.name AS target_carrier,p.operator_portability_reference,p.scheduled_at,p.completed_at,p.rejection_reason,p.tariff_code,p.service_rate_ttc_per_min::float8,p.currency,p.tariff_verification_status,p.tariff_verified_at,"+
@@ -2191,7 +2195,8 @@ export class PostgresStore{
       ]);
       const chainLinksValid=evidence.every((event,index)=>index===0?!event.previous_hash:event.previous_hash===evidence[index-1].event_hash);
       const arcepChainLinksValid=arcepEvidence.every((event,index)=>index===0?!event.previous_hash:event.previous_hash===arcepEvidence[index-1].event_hash);
-      const allLinksValid=chainLinksValid&&arcepChainLinksValid;
+      const ecosystemChainLinksValid=ecosystemEvidence.every((event,index)=>index===0?!event.previous_hash:event.previous_hash===ecosystemEvidence[index-1].event_hash);
+      const allLinksValid=chainLinksValid&&arcepChainLinksValid&&ecosystemChainLinksValid;
       const generatedAt=new Date().toISOString();
       const body={
         schema:"audiotel-regulatory-evidence-pack/1",
@@ -2202,6 +2207,10 @@ export class PostgresStore{
         evidence_ledger:evidence,
         arcep_2026_profile:arcepProfileRows[0]||null,
         arcep_2026_evidence_ledger:arcepEvidence,
+        sva_ecosystem_profile:ecosystemProfileRows[0]||null,
+        sva_ecosystem_control_states:ecosystemStates,
+        sva_ecosystem_evidence_ledger:ecosystemEvidence,
+        sva_tariff_change_plans:tariffPlans,
         portability,
         portability_operator_events:operatorEvents,
         carrier_assignments:carrierAssignments,
@@ -2215,17 +2224,18 @@ export class PostgresStore{
       const packHash=createHash("sha256").update(JSON.stringify(body)).digest("hex");
       const chainHead=evidence.length?evidence.at(-1).event_hash:null;
       const arcepChainHead=arcepEvidence.length?arcepEvidence.at(-1).event_hash:null;
-      const totalEvidenceEvents=evidence.length+arcepEvidence.length;
+      const ecosystemChainHead=ecosystemEvidence.length?ecosystemEvidence.at(-1).event_hash:null;
+      const totalEvidenceEvents=evidence.length+arcepEvidence.length+ecosystemEvidence.length;
       const exportRow=(await tx.unsafe(
-        "INSERT INTO sva_regulatory_evidence_pack_exports(tenant_id,assignment_id,sva_number_id,generated_at,pack_sha256,evidence_chain_head,evidence_links_valid,evidence_events,actor_subject,arcep_2026_chain_head,arcep_2026_links_valid,arcep_2026_evidence_events)"+
-        " VALUES($1,$2,$3,$4::timestamptz,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING public_id::text AS public_id,created_at",
-        [assignment.tenant_id,id,assignment.sva_number_id,generatedAt,packHash,chainHead,allLinksValid,totalEvidenceEvents,actorSubject||null,arcepChainHead,arcepChainLinksValid,arcepEvidence.length]
+        "INSERT INTO sva_regulatory_evidence_pack_exports(tenant_id,assignment_id,sva_number_id,generated_at,pack_sha256,evidence_chain_head,evidence_links_valid,evidence_events,actor_subject,arcep_2026_chain_head,arcep_2026_links_valid,arcep_2026_evidence_events,ecosystem_chain_head,ecosystem_links_valid,ecosystem_evidence_events)"+
+        " VALUES($1,$2,$3,$4::timestamptz,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING public_id::text AS public_id,created_at",
+        [assignment.tenant_id,id,assignment.sva_number_id,generatedAt,packHash,chainHead,allLinksValid,totalEvidenceEvents,actorSubject||null,arcepChainHead,arcepChainLinksValid,arcepEvidence.length,ecosystemChainHead,ecosystemChainLinksValid,ecosystemEvidence.length]
       ))[0];
       await tx.unsafe(
         "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'regulatory.evidence_pack.export','tenant_number_assignment',$3,jsonb_build_object('export_public_id',$4::text,'generated_at',$5::timestamptz,'pack_sha256',$6::text,'evidence_chain_head',$7::text,'arcep_2026_chain_head',$8::text,'evidence_links_valid',$9::boolean))",
         [assignment.tenant_id,actorId,String(id),exportRow.public_id,generatedAt,packHash,chainHead,arcepChainHead,allLinksValid]
       );
-      return {...body,integrity:{algorithm:"sha256",export_id:exportRow.public_id,pack_sha256:packHash,evidence_chain_head:chainHead,arcep_2026_chain_head:arcepChainHead,evidence_links_valid:allLinksValid,legacy_evidence_links_valid:chainLinksValid,arcep_2026_links_valid:arcepChainLinksValid,evidence_events:totalEvidenceEvents,legacy_evidence_events:evidence.length,arcep_2026_evidence_events:arcepEvidence.length}};
+      return {...body,integrity:{algorithm:"sha256",export_id:exportRow.public_id,pack_sha256:packHash,evidence_chain_head:chainHead,arcep_2026_chain_head:arcepChainHead,ecosystem_chain_head:ecosystemChainHead,evidence_links_valid:allLinksValid,legacy_evidence_links_valid:chainLinksValid,arcep_2026_links_valid:arcepChainLinksValid,ecosystem_links_valid:ecosystemChainLinksValid,evidence_events:totalEvidenceEvents,legacy_evidence_events:evidence.length,arcep_2026_evidence_events:arcepEvidence.length,ecosystem_evidence_events:ecosystemEvidence.length}};
     });
   }
 
