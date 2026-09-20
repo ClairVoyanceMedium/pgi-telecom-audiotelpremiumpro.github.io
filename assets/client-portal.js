@@ -24,16 +24,36 @@ function rangeFor(key){
   else if(key==="year"){from=new Date(to);from.setMonth(0,1);from.setHours(0,0,0,0);}
   return {from:from.toISOString(),to:to.toISOString()};
 }
+function previousRangeFor(range){
+  var from=new Date(range.from),to=new Date(range.to),span=Math.max(86400000,to-from);
+  return {from:new Date(from.getTime()-span).toISOString(),to:new Date(from.getTime()-1).toISOString()};
+}
 function demoData(range){
-  var series=[],today=new Date();
-  for(var i=29;i>=0;i--){var d=new Date(today.getTime()-i*86400000);var calls=18+((i*7)%19)+Math.round(5*Math.sin(i)),connected=Math.round(calls*.82),failed=Math.max(1,Math.round(calls*.06));series.push({bucket_date:d.toISOString().slice(0,10),calls_total:calls,calls_connected:connected,calls_abandoned:Math.max(0,calls-connected-failed),calls_failed:failed,billable_seconds:calls*148,generated_revenue_ttc:calls*1.87,updated_at:new Date().toISOString()});}
-  var recent=[];for(var j=0;j<8;j++){var s=new Date(Date.now()-j*5400000);recent.push({call_id:j+1,display_number:"0892 12 34 56",market:"FR",currency:"EUR",started_at:s.toISOString(),call_status:j===3?"abandoned":"connected",conversation_seconds:j===3?0:120+j*17,billable_seconds:j===3?0:120+j*17,retail_service_amount_ttc:j===3?0:1.6+j*.18});}
+  var series=[],to=new Date(range&&range.to||Date.now()),from=new Date(range&&range.from||to.getTime()-30*86400000);
+  var days=Math.max(1,Math.min(62,Math.ceil((to-from)/86400000)));
+  var sums={calls_total:0,calls_connected:0,calls_abandoned:0,calls_failed:0,billable_seconds:0,generated_revenue_ttc:0};
+  for(var i=days-1;i>=0;i--){
+    var d=new Date(to.getTime()-i*86400000),seed=Math.floor(d.getTime()/86400000);
+    var calls=Math.max(8,22+((seed*7)%17)+Math.round(6*Math.sin(seed/2.7)));
+    var ratio=.78+((seed%8)/100),connected=Math.min(calls,Math.round(calls*ratio));
+    var failed=Math.max(1,Math.round(calls*(.04+((seed%3)/100))));
+    var abandoned=Math.max(0,calls-connected-failed);
+    var billable=Math.max(0,connected*(132+(seed%47)));
+    var revenue=Math.round((connected*(1.62+((seed%11)/100)))*100)/100;
+    var row={bucket_date:d.toISOString().slice(0,10),calls_total:calls,calls_connected:connected,calls_abandoned:abandoned,calls_failed:failed,billable_seconds:billable,generated_revenue_ttc:revenue,updated_at:new Date().toISOString()};
+    series.push(row);
+    Object.keys(sums).forEach(function(k){sums[k]+=Number(row[k]||0);});
+  }
+  var recent=[];for(var j=0;j<20;j++){var s=new Date(to.getTime()-j*5400000),connected=j%6!==3;recent.push({call_id:j+1,display_number:j%3===0?"0892 98 76 54":"0892 12 34 56",market:"FR",currency:"EUR",started_at:s.toISOString(),call_status:connected?"connected":j%2?"abandoned":"no_answer",conversation_seconds:connected?110+j*13:0,billable_seconds:connected?110+j*13:0,retail_service_amount_ttc:connected?Math.round((1.45+j*.11)*100)/100:0});}
   return {
     user:{name:"Camille Martin",role:"owner"},
     tenant:{display_name:"Société Démo",default_currency:"EUR",country_code:"FR",status:"active"},
-    financial_by_currency:[{currency:"EUR",calls_total:742,calls_connected:611,calls_abandoned:79,calls_failed:52,billable_seconds:98760,generated_revenue_ttc:1386.4,updated_at:new Date().toISOString()}],
+    financial_by_currency:[{currency:"EUR",calls_total:sums.calls_total,calls_connected:sums.calls_connected,calls_abandoned:sums.calls_abandoned,calls_failed:sums.calls_failed,billable_seconds:sums.billable_seconds,generated_revenue_ttc:Math.round(sums.generated_revenue_ttc*100)/100,updated_at:new Date().toISOString()}],
     series:series,
-    numbers:[{id:1,display_number:"0892 12 34 56",e164:"+33892123456",currency:"EUR",number_type:"premium",service_rate_ttc_per_min:.8,status:"active",assignment_status:"active",kyc_status:"verified",tariff_code:"D080"}],
+    numbers:[
+      {id:1,display_number:"0892 12 34 56",e164:"+33892123456",currency:"EUR",number_type:"premium",service_rate_ttc_per_min:.8,status:"active",assignment_status:"active",kyc_status:"verified",tariff_code:"D080"},
+      {id:2,display_number:"0892 98 76 54",e164:"+33892987654",currency:"EUR",number_type:"premium",service_rate_ttc_per_min:.8,status:"active",assignment_status:"active",kyc_status:"verified",tariff_code:"D080"}
+    ],
     settlements:[{id:1,currency:"EUR",period_start:"2026-08-01",period_end:"2026-08-31",net_payout_ht:428.75,status:"paid",paid_at:"2026-09-12T10:00:00Z"},{id:2,currency:"EUR",period_start:"2026-09-01",period_end:"2026-09-15",net_payout_ht:231.2,status:"payable",payment_due_date:"2026-09-30"}],
     subscriptions:[{id:1,status:"active",billing_currency:"EUR",current_period_start:"2026-09-01T00:00:00Z",current_period_end:"2026-10-01T00:00:00Z",plan_name:"Accès Audiotel",amount_minor:200,price_currency:"EUR",billing_interval:"month",last_payment_status:"paid"}],
     destinations:[{id:1,sva_number_id:1,label:"Standard principal",destination_type:"pstn",destination_uri:"tel:+33123456789",priority:10,status:"active",active_calls:1,max_concurrent_calls:25}],
