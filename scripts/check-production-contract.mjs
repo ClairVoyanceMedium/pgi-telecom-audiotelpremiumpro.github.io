@@ -64,6 +64,11 @@ const arcep2026Migration=fs.readFileSync("database/migrations/040_arcep_2026_num
 const arcep2026EvidencePackMigration=fs.readFileSync("database/migrations/041_arcep_2026_evidence_pack.sql","utf8");
 const subscriptionTaxInclusiveMigration=fs.readFileSync("database/migrations/042_subscription_price_tax_inclusive.sql","utf8");
 const regulatoryReviewMonitoringMigration=fs.readFileSync("database/migrations/043_regulatory_review_monitoring.sql","utf8");
+const operationalAssuranceMigration=fs.readFileSync("database/migrations/044_operational_assurance.sql","utf8");
+const shadowBillingSource=fs.readFileSync("backend/src/shadow-billing.mjs","utf8");
+const riskEngineSource=fs.readFileSync("backend/src/risk-engine.mjs","utf8");
+const sloAssuranceSource=fs.readFileSync("backend/src/slo-assurance.mjs","utf8");
+const controlTowerAssuranceUi=fs.readFileSync("assets/control-tower-assurance.js","utf8");
 const clientServiceCenter=fs.readFileSync("assets/client-service-center.js","utf8");
 const tenantServiceAdmin=fs.readFileSync("assets/tenant-service-admin.js","utf8");
 const googleIdSource=fs.readFileSync("backend/src/google-id.mjs","utf8");
@@ -176,6 +181,15 @@ if(!/\/api\/v1\/platform\/control-tower/.test(backendServer)||!/controlTowerOver
 if(!/\/api\/v1\/platform\/policy\/evaluate/.test(backendServer)||!/evaluateOperationalPolicy/.test(postgresStore)||!/BLOCKED/.test(operationalPolicySource)||!/ACTION_REQUIRED/.test(operationalPolicySource)||!/mutates_state:false/.test(operationalPolicySource))failures.push("Policy Engine must remain centralized, explainable and dry-run");
 if(!/\/api\/v1\/platform\/digital-twin\/simulate/.test(backendServer)||!/simulateDigitalTwin/.test(postgresStore)||!/carrier_outage/.test(digitalTwinSource)||!/traffic_spike/.test(digitalTwinSource)||!/region_failure/.test(digitalTwinSource)||!/mutates_state:false/.test(digitalTwinSource))failures.push("Digital Twin must retain bounded dry-run operational scenarios");
 if(!/Control Tower/.test(controlTowerUi)||!/Policy Engine/.test(controlTowerUi)||!/Digital Twin/.test(controlTowerUi)||!/AUCUN BRANCHEMENT EXTERNE/.test(controlTowerUi))failures.push("cockpit must retain the lazy premium Control Tower without pretending external connections exist");
+if(!/CREATE TABLE platform_change_requests/.test(operationalAssuranceMigration)||!/CREATE TABLE platform_change_approval_events/.test(operationalAssuranceMigration)||!/approved_by<>requested_by/.test(operationalAssuranceMigration)||!/platform_change_requests_no_delete/.test(operationalAssuranceMigration)||!/append-only/.test(operationalAssuranceMigration))failures.push("critical changes must retain four-eyes control and immutable approval history");
+if(!/DUAL_CONTROL_APPROVAL_REQUIRED/.test(postgresStore)||!/FOUR_EYES_SECOND_APPROVER_REQUIRED/.test(postgresStore)||!/appendChangeApprovalEvent/.test(postgresStore))failures.push("carrier switch activation must retain independent four-eyes approval");
+if(!/\/api\/v1\/platform\/change-requests/.test(backendServer)||!/change-requests\/:id\/approve/.test(backendServer)||!/change-requests\/:id\/reject/.test(backendServer))failures.push("private change-approval API must remain available");
+if(!/audiotel-shadow-billing\/1/.test(shadowBillingSource)||!/external_settlement_required:true/.test(shadowBillingSource)||!/mutates_state:false/.test(shadowBillingSource))failures.push("shadow billing must remain currency-aware and non-mutating");
+if(!/aggregate_only/.test(riskEngineSource)||!/mutates_state:false/.test(riskEngineSource)||!/FINANCIAL_VARIANCE_CRITICAL/.test(riskEngineSource))failures.push("Risk Engine must remain aggregate-only and non-mutating");
+if(!/target_percent:99\.9/.test(sloAssuranceSource)||!/prometheus_burn_rate/.test(sloAssuranceSource)||!/current_percent:null/.test(sloAssuranceSource))failures.push("SLO snapshot must preserve the 99.9 target without inventing measured availability");
+if(!/Risk Engine/.test(controlTowerAssuranceUi)||!/Shadow billing/.test(controlTowerAssuranceUi)||!/Validations 4 yeux/.test(controlTowerAssuranceUi))failures.push("Control Tower assurance center must expose risk SLO finance and four-eyes workflow");
+for(const scenario of ["database_failure","worker_backlog","settlement_mismatch","hyperscale_growth"]){if(!digitalTwinSource.includes(scenario))failures.push("Digital Twin missing advanced scenario "+scenario);}
+if(!/audiotel-digital-twin\/2/.test(digitalTwinSource)||!/mutates_state:false/.test(digitalTwinSource))failures.push("advanced Digital Twin must remain bounded and non-mutating");
 if(!/pgi_publish_service_plan_price/.test(subscriptionPrice300Migration)||!/300/.test(subscriptionPrice300Migration)||!/3\.00 EUR\/month/.test(subscriptionPrice300Migration))failures.push("current external subscription reference price must remain versioned at 3 EUR/month");
 if(!/tax_behavior text NOT NULL DEFAULT 'inclusive'/.test(subscriptionTaxInclusiveMigration)||!/3\.00 EUR TTC\/month/.test(subscriptionTaxInclusiveMigration)||!/customer_price_basis','TTC'/.test(subscriptionTaxInclusiveMigration))failures.push("external subscription price must remain explicitly tax-inclusive at the customer-facing layer");
 if(!/tax_behavior IS DISTINCT FROM OLD\.tax_behavior/.test(subscriptionTaxInclusiveMigration)||!/subscription price tax behavior is immutable/.test(subscriptionTaxInclusiveMigration))failures.push("subscription tax behavior must remain immutable once published");
