@@ -34,6 +34,7 @@ export function evaluateOperationalPolicy(intent,facts={}){
     requireTrue(facts,"kyc_verified","KYC_REQUIRED","KYC vérifié requis",blockers,actions,true);
     requireTrue(facts,"regulatory_ready","REGULATORY_TRUST_REQUIRED","Trust Center réglementaire prêt requis",blockers,actions,true);
     requireTrue(facts,"arcep_2026_ready","ARCEP_2026_REQUIRED","Garde-fous ARCEP 2026 prêts requis",blockers,actions,true);
+    requireTrue(facts,"ecosystem_ready","SVA_ECOSYSTEM_REQUIRED","Readiness SVA AF2M / RSVA / consommateur / privacy requise",blockers,actions,true);
     requireTrue(facts,"destination_ready","DESTINATION_REQUIRED","Destination téléphonique testée et disponible requise",blockers,actions,true);
     actionTrue(facts,"operator_adapter_connected","OPERATOR_CONNECTION_PENDING","Connexion opérateur réelle à effectuer avant mise en production",actions);
   }
