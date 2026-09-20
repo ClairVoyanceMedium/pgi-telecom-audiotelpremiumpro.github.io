@@ -893,6 +893,10 @@ export class MemoryStore{
         placements_active:1,call_fact_partitions:64,bucket_capacity:4096,
         regions_total:1,regions_ready:1,dr_targets_total:4,dr_drills_passed:0,
         read_replica_enabled:false,process_role:this.config.processRole||"all"
+      },
+      regulatory_trust:{
+        summary:{numbers_total:0,numbers_ready:0,evidence_events:0,abuse_open:0,abuse_critical:0,platform_controls_verified:0,platform_controls_attention:0},
+        numbers:[],platform_controls:[]
       }
     };
   }
