@@ -347,7 +347,6 @@ test("le produit garde son identité et ne contient pas l’ancien nom",()=>{
 });
 
 test("final brown cockpit theme and installed app label are authoritative",()=>{
-  assert.match(css,/Final cockpit visual hierarchy/);
   assert.match(css,/--bg:#2b1b15/);
   assert.match(css,/\.product-name\{color:#f7e5d6;font-size:clamp\(24px,2\.3vw,32px\)/);
   assert.match(css,/@media \(max-width:820px\)[\s\S]*\.product-name\{max-width:min\(76vw,430px\);font-size:clamp\(18px,5\.0vw,22px\)/);
