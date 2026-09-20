@@ -2148,7 +2148,9 @@ export class PostgresStore{
         " sn.e164,sn.display_number,sn.number_type,sn.currency,sn.tariff_code AS number_tariff_code,sn.service_rate_ttc_per_min::float8,sn.status AS number_status,sn.market_id,"+
         " m.country_code AS market,m.regulator_name,m.numbering_authority,c.name AS regulatory_assignor,"+
         " pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AS regulatory_ready,"+
-        " pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id) AS arcep_2026_ready"+
+        " pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id) AS arcep_2026_ready,"+
+        " pgi_sva_ecosystem_ready(a.tenant_id,a.sva_number_id) AS sva_ecosystem_ready,"+
+        " (pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AND pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id) AND pgi_sva_ecosystem_ready(a.tenant_id,a.sva_number_id)) AS activation_ready"+
         " FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id"+
         " LEFT JOIN operating_markets m ON m.id=sn.market_id LEFT JOIN carriers c ON c.id=a.regulatory_assignor_carrier_id"+
         " WHERE a.id=$1 FOR SHARE OF a,t,sn",
@@ -2232,15 +2234,15 @@ export class PostgresStore{
         [assignment.tenant_id,id,assignment.sva_number_id,generatedAt,packHash,chainHead,allLinksValid,totalEvidenceEvents,actorSubject||null,arcepChainHead,arcepChainLinksValid,arcepEvidence.length,ecosystemChainHead,ecosystemChainLinksValid,ecosystemEvidence.length]
       ))[0];
       await tx.unsafe(
-        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'regulatory.evidence_pack.export','tenant_number_assignment',$3,jsonb_build_object('export_public_id',$4::text,'generated_at',$5::timestamptz,'pack_sha256',$6::text,'evidence_chain_head',$7::text,'arcep_2026_chain_head',$8::text,'evidence_links_valid',$9::boolean))",
-        [assignment.tenant_id,actorId,String(id),exportRow.public_id,generatedAt,packHash,chainHead,arcepChainHead,allLinksValid]
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'regulatory.evidence_pack.export','tenant_number_assignment',$3,jsonb_build_object('export_public_id',$4::text,'generated_at',$5::timestamptz,'pack_sha256',$6::text,'evidence_chain_head',$7::text,'arcep_2026_chain_head',$8::text,'ecosystem_chain_head',$9::text,'evidence_links_valid',$10::boolean))",
+        [assignment.tenant_id,actorId,String(id),exportRow.public_id,generatedAt,packHash,chainHead,arcepChainHead,ecosystemChainHead,allLinksValid]
       );
       return {...body,integrity:{algorithm:"sha256",export_id:exportRow.public_id,pack_sha256:packHash,evidence_chain_head:chainHead,arcep_2026_chain_head:arcepChainHead,ecosystem_chain_head:ecosystemChainHead,evidence_links_valid:allLinksValid,legacy_evidence_links_valid:chainLinksValid,arcep_2026_links_valid:arcepChainLinksValid,ecosystem_links_valid:ecosystemChainLinksValid,evidence_events:totalEvidenceEvents,legacy_evidence_events:evidence.length,arcep_2026_evidence_events:arcepEvidence.length,ecosystem_evidence_events:ecosystemEvidence.length}};
     });
   }
 
   async svaComplianceOverview(){
-    const [frameworks,catalog,summary,numbers,states,plans]=await Promise.all([
+    const [frameworks,catalog,summary,numbers,states,plans,frameworkStatus]=await Promise.all([
       this.readSql.unsafe("SELECT framework_key,authority_name,framework_name,category,reference_version,effective_from,source_reference,description FROM regulatory_framework_registry ORDER BY category,authority_name,framework_key"),
       this.readSql.unsafe("SELECT control_key,framework_key,label,required_for_activation,allow_not_applicable,default_review_days,description FROM sva_ecosystem_control_catalog ORDER BY framework_key,control_key"),
       this.readSql.unsafe(
@@ -2266,9 +2268,23 @@ export class PostgresStore{
       this.readSql.unsafe(
         "SELECT p.id,p.public_id::text AS public_id,p.tenant_id,p.sva_number_id,p.current_tariff_code,p.proposed_tariff_code,p.proposed_service_rate_ttc_per_min::float8,p.proposed_service_price_ttc_per_call::float8,p.effective_on,p.declaration_due_at,p.status,p.rsva_reference,p.created_at,p.declared_at,p.confirmed_at,p.notes"+
         " FROM sva_tariff_change_plans p ORDER BY p.effective_on DESC,p.id DESC LIMIT 100"
+      ),
+      this.readSql.unsafe(
+        "WITH assignments AS ("+
+        " SELECT a.tenant_id,a.sva_number_id FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers n ON n.id=a.sva_number_id LEFT JOIN operating_markets m ON m.id=n.market_id"+
+        " WHERE t.tenant_type<>'internal' AND COALESCE(m.country_code,'FR')='FR'"+
+        "), expected AS ("+
+        " SELECT f.framework_key,f.authority_name,f.framework_name,c.control_key,c.allow_not_applicable,a.tenant_id,a.sva_number_id"+
+        " FROM regulatory_framework_registry f JOIN sva_ecosystem_control_catalog c ON c.framework_key=f.framework_key AND c.required_for_activation CROSS JOIN assignments a"+
+        ") SELECT e.framework_key,e.authority_name,e.framework_name,count(*)::int AS required_total,"+
+        " count(*) FILTER(WHERE s.status='verified' AND (s.valid_until IS NULL OR s.valid_until>now()) OR s.status='not_applicable' AND e.allow_not_applicable AND (s.valid_until IS NULL OR s.valid_until>now()))::int AS ready_total,"+
+        " count(*) FILTER(WHERE s.status IN ('failed','expired') OR s.valid_until IS NOT NULL AND s.valid_until<=now())::int AS blocking_total,"+
+        " count(*) FILTER(WHERE s.control_key IS NULL OR s.status IN ('not_started','pending'))::int AS pending_total"+
+        " FROM expected e LEFT JOIN sva_ecosystem_control_states s ON s.tenant_id=e.tenant_id AND s.sva_number_id=e.sva_number_id AND s.control_key=e.control_key"+
+        " GROUP BY e.framework_key,e.authority_name,e.framework_name ORDER BY e.authority_name,e.framework_key"
       )
     ]);
-    return {schema_version:"audiotel-sva-compliance/1",generated_at:new Date().toISOString(),summary:summary[0]||{},frameworks,catalog,numbers,states,tariff_change_plans:plans,external_connections_active:false,certification_claimed:false};
+    return {schema_version:"audiotel-sva-compliance/1",generated_at:new Date().toISOString(),summary:summary[0]||{},frameworks,framework_status:frameworkStatus,catalog,numbers,states,tariff_change_plans:plans,external_connections_active:false,certification_claimed:false};
   }
 
   async upsertSvaServiceComplianceProfile(id,input={},actor={}){
