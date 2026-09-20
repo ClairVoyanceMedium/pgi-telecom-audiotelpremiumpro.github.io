@@ -251,6 +251,49 @@ export class MemoryStore{
     return {granularity,series,hours,weekdays,heatmap,quality,quality_series:qualitySeries,experience,experience_series:experienceSeries,experts:expertsRows.slice(0,50),carriers:carriersRows.slice(0,50),durations};
   }
 
+  async voiceIntelligence(from,to,market=null){
+    void market;
+    const rows=this.#range(from,to);
+    const summarize=items=>{
+      const quality=items.filter(x=>x.quality);
+      const count=(fn)=>items.filter(fn).length;
+      const qavg=key=>quality.length?quality.reduce((a,x)=>a+Number(x.quality?.[key]||0),0)/quality.length:null;
+      const pdd=items.filter(x=>Number.isFinite(Number(x.post_dial_delay_ms)));
+      return {
+        calls_total:items.length,calls_connected:count(x=>x.call_status==="connected"),
+        calls_failed:count(x=>!["connected","abandoned"].includes(x.call_status)),
+        pdd_samples:pdd.length,avg_pdd_ms:pdd.length?pdd.reduce((a,x)=>a+Number(x.post_dial_delay_ms||0),0)/pdd.length:null,
+        high_pdd_calls:pdd.filter(x=>Number(x.post_dial_delay_ms)>8000).length,
+        quality_samples:quality.length,
+        network_affected_calls:quality.filter(x=>Number(x.quality?.packet_loss_percent||0)>=5||Number(x.quality?.jitter_ms||0)>5||Number(x.quality?.latency_ms||0)>150).length,
+        low_mos_calls:quality.filter(x=>Number(x.quality?.mos||0)<3.5).length,
+        mos:qavg("mos"),packet_loss_percent:qavg("packet_loss_percent"),jitter_ms:qavg("jitter_ms"),latency_ms:qavg("latency_ms"),rtt_ms:qavg("rtt_ms"),
+        sip_4xx_calls:count(x=>Number(x.sip_final_code)>=400&&Number(x.sip_final_code)<500),
+        sip_5xx_calls:count(x=>Number(x.sip_final_code)>=500&&Number(x.sip_final_code)<600),
+        caller_hangups:count(x=>x.hangup_party==="caller"),callee_hangups:count(x=>x.hangup_party==="callee"),network_hangups:count(x=>x.hangup_party==="network")
+      };
+    };
+    const group=(role)=>{
+      const map=new Map();
+      for(const x of rows){
+        const carrier=role==="host"?(x.host_carrier||"Unknown"):(x.origin_carrier||"Unknown");
+        if(!map.has(carrier))map.set(carrier,[]);
+        map.get(carrier).push(x);
+      }
+      return [...map].map(([carrier,items],i)=>({carrier_role:role,carrier_id:i+1,carrier,...summarize(items)})).sort((a,b)=>b.calls_total-a.calls_total);
+    };
+    const sip=new Map();
+    for(const x of rows){const code=Number(x.sip_final_code);if(code>=100&&code<=699)sip.set(code,(sip.get(code)||0)+1);}
+    return {
+      summary:summarize(rows),
+      carriers:group("host").concat(group("origin")),
+      sip_codes:[...sip].map(([sip_final_code,calls_total])=>({sip_final_code,calls_total})).sort((a,b)=>b.calls_total-a.calls_total).slice(0,20),
+      incidents:[]
+    };
+  }
+
+  async scanVoiceIncidents(){return [];}
+
   async listCalls(params={}){
     const limit=clampInt(params.limit,100,1,250);
     const offset=decodeCursor(params.cursor);
@@ -345,8 +388,10 @@ export class MemoryStore{
       started_at:new Date(p.started_at).toISOString(),
       ivr_started_at:p.ivr_started_at?new Date(p.ivr_started_at).toISOString():null,
       queued_at:p.queued_at?new Date(p.queued_at).toISOString():null,
+      ringing_at:p.ringing_at?new Date(p.ringing_at).toISOString():null,
       bridged_at:p.bridged_at?new Date(p.bridged_at).toISOString():null,
       ended_at:new Date(p.ended_at).toISOString(),
+      post_dial_delay_ms:p.post_dial_delay_ms==null?null:Number(p.post_dial_delay_ms),
       caller_masked:String(p.caller_masked||"Masqué"),
       caller_hash:deriveCallerHash(p,{key:this.config.callerHashKey,source:envelope.source,sourceEventId:envelope.source_event_id}),
       origin_carrier:String(p.origin_carrier||"Unknown"),
@@ -365,6 +410,7 @@ export class MemoryStore{
       call_status:status,
       sip_final_code:p.sip_final_code==null?null:Number(p.sip_final_code),
       hangup_cause:String(p.hangup_cause||""),
+      hangup_party:p.hangup_party||"unknown",
       codec:String(p.codec||""),
       service_rate_ttc_per_min:this.config.serviceRateTtcPerMin,
       carrier_rate_ht_per_min:this.config.payoutRateHtPerMin,
@@ -699,7 +745,7 @@ export class MemoryStore{
   async createCustomerPortalInvitation(publicId,input={},tokenHash){return {id:"demo-invitation",tenant_public_id:publicId,tenant_name:"Société Démo",email:input.email,role:input.role||"readonly",status:"pending",expires_at:new Date(Date.now()+72*3600000).toISOString(),token_hash:tokenHash};}
   async activateCustomerPortalInvitation(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
   async customerPortalUsers(){return [];}
-  async customerPortalOverview(tenantId,from,to){void tenantId;return {tenant:{display_name:"Société Démo",default_currency:"EUR",status:"active"},financial_by_currency:[],series:[],numbers:[],settlements:[],subscriptions:[],destinations:[],recent_calls:[],range:{from,to}};}
+  async customerPortalOverview(tenantId,from,to){void tenantId;const voice=await this.voiceIntelligence(from,to);return {tenant:{display_name:"Société Démo",default_currency:"EUR",status:"active"},financial_by_currency:[],series:[],numbers:[],settlements:[],subscriptions:[],destinations:[],recent_calls:[],voice_quality:voice.summary,range:{from,to}};}
   async customerPortalComparison(_tenantId,from,to){return {financial_by_currency:[],range:{from,to}};}
   async customerPortalCalls(){return {data:[],next_cursor:null};}
 
