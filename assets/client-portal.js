@@ -346,6 +346,35 @@ function downloadCsv(name,rows){
   var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");
   a.href=url;a.download=name;a.click();setTimeout(function(){URL.revokeObjectURL(url);},500);
 }
+function metricLabel(el){
+  var p=el&&el.parentElement,label="";
+  if(p){var candidate=p.querySelector("span:not([id]),small:not([id]),h2,h3");label=candidate?String(candidate.textContent||"").trim():"";}
+  return label||String(el.id||"Métrique").replace(/[-_]+/g," ");
+}
+function clientMetricRows(){
+  var rows=[["Métrique","Valeur","Identifiant"]],seen={};
+  qsa("main strong[id],main span[id]").forEach(function(el){
+    var id=String(el.id||"").trim(),value=String(el.textContent||"").replace(/\s+/g," ").trim();
+    if(!id||!value||value.length>220||seen[id])return;
+    seen[id]=true;rows.push([metricLabel(el),value,id]);
+  });
+  return rows;
+}
+function rowsToPlainText(rows){return rows.map(function(row){return row.map(function(v){return String(v==null?"":v);}).join("\t");}).join("\n");}
+async function copyPlainText(text){
+  if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(text);return;}
+  var ta=document.createElement("textarea");ta.value=text;ta.setAttribute("readonly","");ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.select();
+  var ok=document.execCommand("copy");ta.remove();if(!ok)throw new Error("COPY_FAILED");
+}
+async function buildClientReportRows(data){
+  var a=aggregate(data),calls=await fetchCallsForExport(),rows=[["RAPPORT AUDIOTEL PREMIUM PRO"],["Société",(data.tenant&&data.tenant.display_name)||""],["Période",data.range&&data.range.from||"",data.range&&data.range.to||""],["Appels",a.calls],["Appels décrochés",a.connected],["Minutes facturables",n(a.billable)/60],["Montant service TTC",a.revenue,a.currency],["Reversement net validé",a.payout,a.currency],[],["MÉTRIQUES DU TABLEAU DE BORD"]];
+  rows=rows.concat(clientMetricRows());
+  rows.push([],["NUMÉROS"],["Numéro","Tarif","État"]);
+  (data.numbers||[]).forEach(function(x){rows.push([x.display_number||x.e164,x.tariff_code,statusLabel(x.assignment_status||x.status)]);});
+  rows.push([],["REVERSEMENTS"],["Période fin","Net HT","Devise","Statut"]);
+  (data.settlements||[]).forEach(function(x){rows.push([x.period_end,n(x.net_payout_ht),x.currency,statusLabel(x.status)]);});
+  rows.push([],["APPELS"]);return rows.concat(callRows(calls));
+}
 async function fetchCallsForExport(){
   if(state.demo)return (state.data&&state.data.recent_calls)||[];
   var range=rangeFor(state.range),rows=[],cursor=null;
@@ -360,14 +389,8 @@ async function exportClient(kind){
     if(kind==="calls"){var calls=await fetchCallsForExport();downloadCsv("audiotel-appels-"+slug+".csv",callRows(calls));toast(calls.length+" appel(s) exporté(s)");return;}
     if(kind==="settlements"){var rows=[["Période début","Période fin","Devise","Reversement opérateur HT","Frais de plateforme HT","Net client HT","Statut","Échéance","Payé le"]];(data.settlements||[]).forEach(function(x){rows.push([x.period_start,x.period_end,x.currency,n(x.upstream_payout_ht),n(x.platform_fee_ht),n(x.net_payout_ht),statusLabel(x.status),x.payment_due_date||"",x.paid_at||""]);});downloadCsv("audiotel-reversements-"+slug+".csv",rows);toast("Reversements exportés");return;}
     if(kind==="numbers"){var nr=[["Numéro","E164","Devise","Tarif","Prix/min","État","KYC"]];(data.numbers||[]).forEach(function(x){nr.push([x.display_number,x.e164,x.currency,x.tariff_code,n(x.service_rate_ttc_per_min),statusLabel(x.assignment_status||x.status),statusLabel(x.kyc_status)]);});downloadCsv("audiotel-numeros-"+slug+".csv",nr);toast("Numéros exportés");return;}
-    if(kind==="report"){
-      var a=aggregate(data),calls=await fetchCallsForExport(),rows=[["RAPPORT AUDIOTEL PREMIUM PRO"],["Société",(data.tenant&&data.tenant.display_name)||""],["Période",data.range&&data.range.from||"",data.range&&data.range.to||""],["Appels",a.calls],["Appels décrochés",a.connected],["Minutes facturables",n(a.billable)/60],["Montant service TTC",a.revenue,a.currency],["Reversement net validé",a.payout,a.currency],[],["NUMÉROS"],["Numéro","Tarif","État"]];
-      (data.numbers||[]).forEach(function(x){rows.push([x.display_number||x.e164,x.tariff_code,statusLabel(x.assignment_status||x.status)]);});
-      rows.push([],["REVERSEMENTS"],["Période fin","Net HT","Devise","Statut"]);
-      (data.settlements||[]).forEach(function(x){rows.push([x.period_end,n(x.net_payout_ht),x.currency,statusLabel(x.status)]);});
-      rows.push([],["APPELS"]);rows=rows.concat(callRows(calls));
-      downloadCsv("audiotel-rapport-"+slug+".csv",rows);toast("Rapport complet exporté");return;
-    }
+    if(kind==="copy"){var copied=await buildClientReportRows(data);await copyPlainText(rowsToPlainText(copied));toast("Rapport complet copié");return;}
+    if(kind==="report"){var reportRows=await buildClientReportRows(data);downloadCsv("audiotel-rapport-"+slug+".csv",reportRows);toast("Rapport complet exporté");return;}
   }catch(err){toast("Export impossible");}
 }
 async function openBilling(kind){
