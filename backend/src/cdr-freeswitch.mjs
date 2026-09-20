@@ -62,7 +62,6 @@ export function normalizeFreeSwitchCdr(raw,{uuid,callerHashKey}){
 function qualityFrom(v,stats){
   const packetLoss=firstNumber(
     v.rtp_audio_in_packet_loss_percent,
-    v.rtp_audio_in_packet_loss,
     stats?.audio?.inbound?.packet_loss_percent
   );
   const jitter=firstNumber(v.rtp_audio_in_jitter_max_variance,stats?.audio?.inbound?.jitter_ms);
