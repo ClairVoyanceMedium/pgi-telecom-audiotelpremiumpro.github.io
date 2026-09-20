@@ -27,17 +27,28 @@ Sources :
 
 ## Paiements / reversements
 
-Le marché SVA est concerné par la réglementation des services de paiement.
+Le modèle commercial cible de PGI est explicite :
 
-Si les fonds transitent par PGI avant reversement à plusieurs éditeurs, le schéma doit être validé sous un cadre conforme, par exemple :
+```
+Opérateur SVA amont
+        │ reversement SVA rapproché
+        ▼
+    PGI Telecom
+        │ conserve la marge contractuelle PGI
+        ▼
+  Net dû au client
+        │ paiement sous contrôle de conformité
+        ▼
+   Client / éditeur
+```
 
-- reversement direct de l'opérateur/PSP à l'éditeur ;
-- PGI agent d'un prestataire de services de paiement agréé ;
-- autre montage validé par un PSP / conseil réglementaire compétent.
+Dans le ledger PGI, le reversement opérateur est donc attribué à PGI avant calcul du net client. PGI conserve sa marge selon les conditions configurées pour le tenant, le marché ou le numéro. L’absence de conditions commerciales bloque le reversement client et ne vaut jamais marge nulle implicite.
 
-Ne jamais activer un flux de fonds tiers en production en utilisant uniquement un compte bancaire PGI sans profil de conformité actif dans `payment_compliance_profiles`.
+La circulation juridique et bancaire des fonds doit utiliser un montage autorisé pour le marché concerné. Selon le contrat retenu, cela peut notamment nécessiter un PSP agréé, un statut d’agent de PSP ou un autre schéma validé. `payment_compliance_profiles` représente ce garde-fou. Aucun net client ne devient payable tant que le règlement amont n’est pas encaissé et que le profil de conformité applicable, le KYC et les informations bancaires ne sont pas validés.
 
-L'AF2M publie une liste de PSP du marché SVA et indique notamment le modèle agent de PSP / établissement de paiement :
+Ne jamais activer en production un transit de fonds tiers sur un simple compte bancaire PGI sans cadre de conformité actif.
+
+L'AF2M publie une liste de PSP du marché SVA et des informations sur la mise en conformité :
 - https://af2m.org/liste-prestataires-services-paiement-dsp2/
 - https://af2m.org/mise-en-conformite-marche-sva-dsp2-reunion-acpr-decembre-2020/
 
