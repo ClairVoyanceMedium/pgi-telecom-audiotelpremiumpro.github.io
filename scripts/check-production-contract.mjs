@@ -26,6 +26,7 @@ const indexSource=fs.readFileSync("index.html","utf8");
 const appSource=fs.readFileSync("assets/app.js","utf8");
 const customerAdmin=fs.readFileSync("assets/customer-admin.js","utf8");
 const platformAdminTools=fs.readFileSync("assets/platform-admin-tools.js","utf8");
+const platformRegulatoryTools=fs.readFileSync("assets/platform-regulatory-tools.js","utf8");
 const serviceWorker=fs.readFileSync("service-worker.js","utf8");
 const buildStatic=fs.readFileSync("scripts/build-static.mjs","utf8");
 const security=fs.readFileSync("backend/src/security.mjs","utf8");
@@ -162,7 +163,8 @@ if(!/pgi_arcep_2026_number_ready/.test(arcep2026Migration)||!/zzzz_tenant_number
 if(!/sva_arcep_2026_evidence_events/.test(arcep2026Migration)||!/sva_arcep_2026_evidence_no_mutation/.test(arcep2026Migration)||!/digest\(/.test(arcep2026Migration))failures.push("ARCEP 2026 evidence must remain append-only and cryptographically chained");
 if(!/arcep_2026_chain_head/.test(arcep2026EvidencePackMigration)||!/arcep_2026_links_valid/.test(arcep2026EvidencePackMigration)||!/arcep_2026_evidence_events/.test(arcep2026EvidencePackMigration))failures.push("Evidence Pack registry must retain ARCEP 2026 chain metadata");
 if(!/arcep_2026_evidence_ledger/.test(postgresStore)||!/pgi_arcep_2026_number_ready/.test(postgresStore)||!/activation_ready/.test(postgresStore))failures.push("runtime and cockpit data must include ARCEP 2026 readiness and evidence");
-if(!/Conformité ARCEP 2026/.test(platformAdminTools)||!/data-arcep-evidence-save/.test(platformAdminTools)||!/cockpit_arcep_2026/.test(platformAdminTools)||!/status==="verified"&&!reference/.test(platformAdminTools))failures.push("cockpit must keep explicit manual ARCEP 2026 evidence controls and never auto-verify them");
+if(!/data-regulatory-open/.test(platformAdminTools)||!/platform-regulatory-tools\.js/.test(platformAdminTools))failures.push("cockpit must lazy-load the ARCEP 2026 evidence editor");
+if(!/Conformité ARCEP 2026/.test(platformRegulatoryTools)||!/data-arcep-evidence-save/.test(platformRegulatoryTools)||!/cockpit_arcep_2026/.test(platformRegulatoryTools)||!/status==="verified"&&!reference/.test(platformRegulatoryTools))failures.push("cockpit must keep explicit manual ARCEP 2026 evidence controls and never auto-verify them");
 if(!/pgi_publish_service_plan_price/.test(subscriptionPrice300Migration)||!/300/.test(subscriptionPrice300Migration)||!/3\.00 EUR\/month/.test(subscriptionPrice300Migration))failures.push("current external subscription reference price must remain versioned at 3 EUR/month");
 if(!/tax_behavior text NOT NULL DEFAULT 'inclusive'/.test(subscriptionTaxInclusiveMigration)||!/3\.00 EUR TTC\/month/.test(subscriptionTaxInclusiveMigration)||!/customer_price_basis','TTC'/.test(subscriptionTaxInclusiveMigration))failures.push("external subscription price must remain explicitly tax-inclusive at the customer-facing layer");
 if(!/tax_behavior IS DISTINCT FROM OLD\.tax_behavior/.test(subscriptionTaxInclusiveMigration)||!/subscription price tax behavior is immutable/.test(subscriptionTaxInclusiveMigration))failures.push("subscription tax behavior must remain immutable once published");
