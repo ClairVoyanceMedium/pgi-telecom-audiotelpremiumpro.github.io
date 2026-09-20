@@ -20,6 +20,14 @@ test("PGI fee can never exceed upstream SVA revenue",()=>{
   assert.equal(row.platform_fee_ht+row.net_payout_ht+row.unallocated_amount_ht,row.upstream_amount_ht);
 });
 
+test("zero-margin terms are treated as invalid and never pay 100 percent to the client",()=>{
+  const row=computeTenantCallDistribution(8,300,{id:99,platform_fee_bps:0,platform_fee_ht_per_min:0});
+  assert.equal(row.platform_fee_ht,0);
+  assert.equal(row.net_payout_ht,0);
+  assert.equal(row.unallocated_amount_ht,8);
+  assert.equal(row.payout_terms_id,99);
+});
+
 test("missing commercial terms never defaults to 100 percent client payout",()=>{
   const row=computeTenantCallDistribution(12.345678,180,null);
   assert.equal(row.platform_fee_ht,0);
