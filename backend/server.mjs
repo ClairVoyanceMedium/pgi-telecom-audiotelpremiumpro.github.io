@@ -302,6 +302,36 @@ export function createBackend(options={}){
         return done(res,metrics,started,"customer.portability.cancel",200,{...result.value,replayed:result.replayed});
       }
 
+      if(method==="GET"&&pathname==="/api/v1/customer/incidents"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        const params=Object.fromEntries(url.searchParams.entries());
+        return done(res,metrics,started,"customer.incidents.list",200,await store.customerServiceIncidents(context.tenant_id,params));
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/incidents"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={tenant_id:context.tenant_id,...body};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer.service_incident.create",payload,()=>store.createCustomerServiceIncident(context.tenant_id,body,customerActor.sub));
+        return done(res,metrics,started,"customer.incidents.create",201,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/customer/incidents/:id/notes");
+      if(method==="POST"&&match){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={tenant_id:context.tenant_id,incident_id:match.id,body:body.body};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer.service_incident.note",payload,()=>store.addCustomerServiceIncidentNote(context.tenant_id,match.id,body.body,customerActor.sub));
+        return done(res,metrics,started,"customer.incidents.note",201,{...result.value,replayed:result.replayed});
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/routing/simulate"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        const body=await readJson(req,config.bodyLimitBytes);
+        return done(res,metrics,started,"customer.routing.simulate",200,await store.simulateTenantRoutingById(context.tenant_id,body));
+      }
+
       if(method==="GET"&&pathname==="/api/v1/customer/comparison"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
@@ -581,6 +611,37 @@ export function createBackend(options={}){
         const payload={id:match.id,...body};
         const result=await store.idempotent(req.headers["idempotency-key"],"portability.complete",payload,()=>store.completePortabilityRequest(match.id,body,actor));
         return done(res,metrics,started,"platform.portability_complete",200,{...result.value,replayed:result.replayed});
+      }
+
+      match=routeMatch(pathname,"/api/v1/platform/tenants/:id/incidents");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={tenant:match.id,...body};
+        const result=await store.idempotent(req.headers["idempotency-key"],"service_incident.create",payload,()=>store.createTenantServiceIncident(match.id,body,actor));
+        return done(res,metrics,started,"platform.service_incident.create",201,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/platform/incidents/:id/status");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={incident:match.id,status:body.status||null,severity:body.severity||null};
+        const result=await store.idempotent(req.headers["idempotency-key"],"service_incident.update",payload,()=>store.updateServiceIncident(match.id,body,actor));
+        return done(res,metrics,started,"platform.service_incident.update",200,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/platform/incidents/:id/notes");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={incident:match.id,body:body.body,customer_visible:body.customer_visible!==false};
+        const result=await store.idempotent(req.headers["idempotency-key"],"service_incident.note",payload,()=>store.addServiceIncidentNote(match.id,body,actor));
+        return done(res,metrics,started,"platform.service_incident.note",201,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/platform/tenants/:id/routing/simulate");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin","readonly"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        return done(res,metrics,started,"platform.routing.simulate",200,await store.simulateTenantRouting(match.id,body));
       }
 
       if(method==="GET"&&pathname==="/api/v1/platform/billing-alerts"){
