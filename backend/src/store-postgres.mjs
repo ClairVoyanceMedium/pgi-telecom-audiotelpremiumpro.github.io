@@ -1850,13 +1850,17 @@ export class PostgresStore{
     reason=String(reason||"").trim().slice(0,500);const actorId=numericActor(actor);
     const result=await this.sql.begin(async tx=>{
       const rows=await tx.unsafe(
-        "SELECT a.id,a.tenant_id,a.status,t.public_id,t.display_name,t.tenant_type,sn.e164,sn.display_number FROM tenant_number_assignments a"+
+        "SELECT a.id,a.tenant_id,a.sva_number_id,a.status,t.public_id,t.display_name,t.tenant_type,sn.market_id,sn.e164,sn.display_number FROM tenant_number_assignments a"+
         " JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.id=$1 FOR UPDATE",[id]
       );
       const row=rows[0];if(!row)throw problem(404,"ASSIGNMENT_NOT_FOUND");
       if(row.tenant_type==="internal")throw problem(409,"INTERNAL_ASSIGNMENT_PROTECTED");
       const previous=row.status;
       if(previous===status)return {...row,status,previous_status:previous,changed:false};
+      if(status==="active"){
+        const payout=(await tx.unsafe("SELECT pgi_tenant_has_payout_terms($1,$2,$3,now()) AS allowed",[row.tenant_id,row.market_id,row.sva_number_id]))[0];
+        if(!payout?.allowed)throw problem(409,"PAYOUT_TERMS_REQUIRED");
+      }
       const updated=await tx.unsafe("UPDATE tenant_number_assignments SET status=$1 WHERE id=$2 RETURNING id,tenant_id,status,kyc_status,valid_from,valid_to",[status,id]);
       await tx.unsafe(
         "INSERT INTO tenant_control_events(tenant_id,assignment_id,actor_user_id,action,previous_status,new_status,reason,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)",
@@ -2522,6 +2526,8 @@ export class PostgresStore{
       if(!kyc||kyc.status!=="verified")throw problem(409,"PORTABILITY_KYC_REQUIRED");
       const access=(await tx.unsafe("SELECT pgi_tenant_has_premium_call_access($1,$2,now()) AS allowed",[current.tenant_id,market.id]))[0];
       if(!access?.allowed)throw problem(402,"SVA_SUBSCRIPTION_REQUIRED");
+      const payout=(await tx.unsafe("SELECT pgi_tenant_has_payout_terms($1,$2,NULL,now()) AS allowed",[current.tenant_id,market.id]))[0];
+      if(!payout?.allowed)throw problem(409,"PORTABILITY_PAYOUT_TERMS_REQUIRED");
 
       const carrier=(await tx.unsafe("SELECT id,name FROM carriers WHERE id=$1 AND kind='sva_host' AND enabled LIMIT 1",[targetCarrierId]))[0];
       if(!carrier)throw problem(409,"PORTABILITY_TARGET_CARRIER_UNAVAILABLE");
@@ -3445,7 +3451,7 @@ async function rebuildTenantRevenueDistributions(tx,settlementId,actorId){
       "INSERT INTO tenant_revenue_distributions(tenant_id,upstream_settlement_id,market_id,currency,period_start,period_end,collection_model,"+
       " upstream_payout_ht,platform_fee_ht,net_payout_ht,unallocated_amount_ht,held_amount_ht,payment_compliance_profile_id,status,payment_due_date,statement_reference)"+
       " VALUES($1,$2,$3,$4,$5,$6,'pgi_collects',$7,$8,$9,$10,$11,$12,$13,$14,$15)"+
-      " ON CONFLICT (upstream_settlement_id,tenant_id,COALESCE(market_id,0),currency) DO UPDATE SET"+
+      " ON CONFLICT (upstream_settlement_id,tenant_id,(COALESCE(market_id,0)),currency) DO UPDATE SET"+
       " upstream_payout_ht=EXCLUDED.upstream_payout_ht,platform_fee_ht=EXCLUDED.platform_fee_ht,net_payout_ht=EXCLUDED.net_payout_ht,"+
       " unallocated_amount_ht=EXCLUDED.unallocated_amount_ht,held_amount_ht=EXCLUDED.held_amount_ht,"+
       " payment_compliance_profile_id=EXCLUDED.payment_compliance_profile_id,status=EXCLUDED.status,payment_due_date=EXCLUDED.payment_due_date,"+
