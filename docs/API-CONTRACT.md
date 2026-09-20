@@ -242,6 +242,17 @@ Publie une nouvelle version tarifaire de l’abonnement SVA externe. Les version
 
 Les routes client utilisent une session distincte de la session administrateur PGI. La session est liée à un tenant et son autorisation est revérifiée côté base.
 
+### POST /customer/auth/register
+Inscription autonome d’un nouveau client professionnel sans compte Google ni intervention administrateur initiale.
+
+Le formulaire accepte prénom, nom, adresse e-mail, mot de passe, pays, téléphone facultatif, société/activité facultative et numéro d’immatriculation facultatif. En France, lorsqu’un SIRET est fourni, son format est limité à 14 chiffres. L’absence de SIRET n’empêche pas la création du compte.
+
+La création est transactionnelle : principal client, identifiants par mot de passe, société `pending`, rattachement `owner`, profil KYC `pending`, profil marché `onboarding`, journal d’audit et événement outbox sont créés ensemble. Le client reçoit immédiatement une session d’onboarding. Un tenant `pending` n’obtient jamais l’accès SVA : l’activation télécom reste protégée par les contrôles d’abonnement, de KYC, d’opérateur et de statut existants.
+
+L’adresse e-mail est enregistrée comme non vérifiée tant qu’aucun service de vérification d’e-mail n’est connecté. Cette vérification est un état distinct de l’ouverture du compte et de l’accès SVA.
+
+Protection : même origine, mot de passe d’au moins 12 caractères, champ anti-robot, validation serveur et limite dédiée de cinq créations par fenêtre d’authentification et par adresse IP.
+
 ### POST /customer/auth/login
 Connexion d'un utilisateur externe par e-mail et mot de passe. Si un même utilisateur appartient à plusieurs sociétés, la réponse demande explicitement de sélectionner le tenant.
 
