@@ -11,12 +11,12 @@ const [migration,store,server,index,portal,api]=await Promise.all([
   readFile(new URL("../assets/api-client.js",import.meta.url),"utf8")
 ]);
 
-test("PGI is the economic settlement recipient before client payout",()=>{
+test("Audiotel Premium Pro is visibly the settlement recipient before client payout",()=>{
   assert.match(server,/sva_payout_flow:"carrier_to_pgi_to_customer"/);
   assert.match(server,/pgi_margin_retained:true/);
   assert.match(server,/client_payout_compliance_gated:true/);
-  assert.match(index,/OPÉRATEUR → PGI → CLIENT/);
-  assert.doesNotMatch(index,/Les fonds SVA ne transitent pas par PGI/);
+  assert.match(index,/OPÉRATEUR → AUDIOTEL PREMIUM PRO → CLIENT/);
+  assert.doesNotMatch(index,/Les fonds SVA ne transitent pas par Audiotel Premium Pro/);
   assert.doesNotMatch(portal,/carrier_to_customer/);
 });
 
