@@ -4200,7 +4200,7 @@ export class PostgresStore{
         "SELECT a.id AS assignment_id,t.display_name AS tenant,sn.id AS sva_number_id,sn.display_number,sn.e164,m.country_code AS market,a.status AS assignment_status,"+
         " p.regulatory_role,p.service_name,p.provider_name,p.signaletic_model,p.numbering_rights_status,p.editor_identity_status,p.rsva_status,"+
         " p.tariff_transparency_status,p.mgit_status,p.complaint_process_status,p.fraud_monitoring_status,p.last_reviewed_at,p.next_review_at,"+
-        " ap.exclusive_stable_assignee_status,ap.single_service_status,ap.portability_offered_status,ap.tariff_ceiling_status,ap.no_temporary_contact_use_status,ap.public_body_eligibility_status,ap.caller_id_block_status,ap.parental_control_classification_status,"+
+        " ap.exclusive_stable_assignee_status,ap.single_service_status,ap.portability_offered_status,ap.tariff_ceiling_status,ap.no_temporary_contact_use_status,ap.public_body_eligibility_status,ap.caller_id_block_status,ap.parental_control_classification_status,ap.next_review_at AS arcep_2026_next_review_at,"+
         " pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AS regulatory_ready,pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id) AS arcep_2026_ready,"+
         " (pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AND pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id)) AS activation_ready,"+
         " (SELECT e.event_hash FROM sva_regulatory_evidence_events e WHERE e.tenant_id=a.tenant_id AND e.sva_number_id=a.sva_number_id ORDER BY e.id DESC LIMIT 1) AS evidence_chain_head,"+
