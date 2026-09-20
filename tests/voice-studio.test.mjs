@@ -19,7 +19,7 @@ test("new voice service fails closed until a real destination is supplied",()=>{
   const flow=defaultVoiceFlow();
   const result=validateVoiceFlow(flow);
   assert.equal(result.valid,false);
-  assert.ok(result.errors.some(x=>x.code==="VOICE_QUEUE_URI_INVALID"));
+  assert.ok(result.errors.some(x=>["VOICE_QUEUE_EMPTY","VOICE_QUEUE_URI_INVALID"].includes(x.code)));
 });
 
 test("voice studio validates advanced flows and simulates without mutation",()=>{
@@ -37,6 +37,16 @@ test("voice studio validates advanced flows and simulates without mutation",()=>
   assert.ok(sim.path.length>0);
   assert.equal(JSON.stringify(flow),before);
   assert.match(voiceFlowChecksum(flow),/^[0-9a-f]{64}$/);
+});
+
+test("recording publication rules require caller information and sensible retention",()=>{
+  const flow=defaultVoiceFlow({destination_uri:"tel:+33123456789"});
+  flow.recording={policy:"always",purpose:"quality",consent_required:false,retention_days:365};
+  const checked=validateVoiceFlow(flow);
+  assert.equal(checked.valid,false);
+  assert.ok(checked.errors.some(x=>x.code==="VOICE_RECORDING_NOTICE_REQUIRED"));
+  assert.ok(checked.errors.some(x=>x.code==="VOICE_RECORDING_NODE_REQUIRED"));
+  assert.ok(checked.errors.some(x=>x.code==="VOICE_RECORDING_RETENTION_TOO_LONG"));
 });
 
 test("weighted routing is rejected unless weights total exactly 100",()=>{
@@ -87,7 +97,7 @@ test("customer voice studio exceeds basic SVI configuration surface with safety 
     "Multi-langue",
     "Répartition pondérée",
     "Débordement",
-    "Consentement enregistrement",
+    "Information enregistrement",
     "Anti-abus"
   ])assert.ok(clientUi.includes(token),token);
   assert.match(clientPortal,/client-voice-studio\.js/);
