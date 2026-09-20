@@ -703,6 +703,11 @@ export class MemoryStore{
     throw problem(404,"TENANT_NOT_FOUND");
   }
 
+  async createTenantPayoutTerms(publicId,input={}){
+    void publicId;void input;
+    throw problem(404,"TENANT_NOT_FOUND");
+  }
+
   async setTenantStatus(publicId,status){
     void publicId;void status;
     throw problem(404,"TENANT_NOT_FOUND");
