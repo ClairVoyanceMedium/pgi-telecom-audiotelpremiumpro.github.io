@@ -123,9 +123,17 @@ function render(data){
 }
 async function loadPortal(){
   var range=rangeFor(state.range),data;
-  if(state.demo)data=demoData(range);
-  else data=await window.PGICustomerApi.portal(range.from,range.to);
-  render(data);
+  document.dispatchEvent(new CustomEvent("pgi:portal-loading",{detail:{range:state.range}}));
+  try{
+    if(state.demo)data=demoData(range);
+    else data=await window.PGICustomerApi.portal(range.from,range.to);
+    render(data);
+    document.dispatchEvent(new CustomEvent("pgi:portal-loaded",{detail:{range:state.range,serverTime:data&&data.server_time||null}}));
+    return data;
+  }catch(error){
+    document.dispatchEvent(new CustomEvent("pgi:portal-error",{detail:{range:state.range,code:error&&error.code||"LOAD_FAILED"}}));
+    throw error;
+  }
 }
 function showApp(){
   $("customer-auth").hidden=true;$("customer-app").hidden=false;loadPortal().catch(function(e){toast("Chargement impossible : "+(e.code||e.message));});
