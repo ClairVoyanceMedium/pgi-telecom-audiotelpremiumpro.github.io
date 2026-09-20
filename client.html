@@ -322,29 +322,31 @@
       <div><p class="cp-kicker">PORTABILITÉ ENTRANTE</p><h2>Conserver mon numéro surtaxé</h2></div>
       <button id="portability-close" class="cp-dialog-close" type="button" aria-label="Fermer">×</button>
     </div>
-    <p class="cp-muted">Saisissez le numéro que vous utilisez déjà. PGI préparera le dossier de transfert ; le numéro ne sera jamais modifié dans le processus.</p>
+    <p class="cp-muted">Saisissez le numéro que vous utilisez déjà. PGI prépare sa portabilité sans reprendre votre ancien contrat, vos dettes, vos pénalités ni votre durée d’engagement éventuelle. Le numéro reste identique.</p>
     <div class="cp-form-grid">
       <label>Pays du numéro<select id="portability-country" required><option value="FR">France</option></select></label>
       <label>Numéro actuel<input id="portability-number" type="tel" inputmode="tel" autocomplete="tel" required maxlength="24" placeholder="0890… ou +33890…"></label>
     </div>
     <div class="cp-form-grid">
-      <label>Opérateur actuel <span class="cp-optional">(facultatif)</span><input id="portability-operator" type="text" maxlength="160" autocomplete="organization"></label>
-      <label>Référence opérateur / contrat <span class="cp-optional">(facultatif)</span><input id="portability-reference" type="text" maxlength="200"></label>
+      <label>RIO du numéro <span id="portability-rio-required" class="cp-optional">(obligatoire en France)</span><input id="portability-rio" type="text" inputmode="text" autocomplete="off" maxlength="20" autocapitalize="characters" spellcheck="false" placeholder="12 caractères"></label>
+      <label>Référence ancien opérateur <span class="cp-optional">(facultatif)</span><input id="portability-reference" type="text" maxlength="200"></label>
     </div>
+    <label>Opérateur actuel <span class="cp-optional">(facultatif)</span><input id="portability-operator" type="text" maxlength="160" autocomplete="organization"></label>
     <div class="cp-form-grid">
       <label>Nom du titulaire <span class="cp-optional">(facultatif)</span><input id="portability-holder" type="text" maxlength="200" autocomplete="name"></label>
       <label>Date souhaitée <span class="cp-optional">(facultatif)</span><input id="portability-date" type="date"></label>
     </div>
     <div class="cp-form-grid">
-      <label>Tarif actuel TTC par minute<input id="portability-rate" type="number" inputmode="decimal" min="0" max="10000" step="0.000001" required placeholder="0,80"></label>
+      <label>Tarif actuel TTC par minute <span class="cp-optional">(facultatif si inconnu)</span><input id="portability-rate" type="number" inputmode="decimal" min="0" max="10000" step="0.000001" placeholder="0,80"></label>
       <label>Code tarifaire <span class="cp-optional">(si connu)</span><input id="portability-tariff-code" type="text" maxlength="80" placeholder="Ex. D080"></label>
     </div>
     <label>Type de numéro<select id="portability-service-family"><option value="premium_rate">Numéro surtaxé</option><option value="shared_cost">Numéro à coût partagé</option><option value="freephone">Numéro gratuit</option><option value="other">Autre numéro de service</option></select></label>
+    <label class="cp-check"><input id="portability-source-contract" type="checkbox" required><span>Je comprends que PGI ne reprend ni dette, ni pénalité, ni durée d’engagement de mon ancien contrat. Ces obligations éventuelles restent à ma charge.</span></label>
     <label class="cp-check"><input id="portability-owner-confirmed" type="checkbox" required><span>Je confirme être titulaire de ce numéro ou être mandaté par son titulaire.</span></label>
     <label class="cp-check"><input id="portability-authority-confirmed" type="checkbox" required><span>J’autorise l’ouverture d’une demande de portabilité auprès de l’opérateur concerné.</span></label>
     <p id="portability-message" class="cp-form-message" aria-live="polite"></p>
     <button id="portability-submit" class="cp-primary" type="submit">Envoyer ma demande</button>
-    <p class="cp-billing-trust">La demande ne coupe pas votre ligne actuelle. Aucune bascule n’est effectuée avant confirmation et planification opérateur.</p>
+    <p class="cp-billing-trust">La demande ne coupe pas votre ligne actuelle. À la portabilité effective, le service lié au numéro est résilié chez l’ancien opérateur selon les règles applicables, sans transfert de ses obligations antérieures à PGI. Votre service chez PGI relève de vos propres conditions PGI.</p>
   </form>
 </dialog>
 
