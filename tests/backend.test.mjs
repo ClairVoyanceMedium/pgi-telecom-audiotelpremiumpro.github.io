@@ -7,6 +7,7 @@ import {hashPassword,verifyPassword,issueSession,verifySession,sessionCookie,csr
 import {selectExpert} from "../backend/src/expert-router.mjs";
 import {clientIp,routeMatch} from "../backend/src/http.mjs";
 import {sanitizeCdrPayload,deriveCallerHash} from "../backend/src/cdr-privacy.mjs";
+import {normalizeFreeSwitchCdr} from "../backend/src/cdr-freeswitch.mjs";
 import {computeExpertCost} from "../backend/src/expert-finance.mjs";
 
 const backendServer=fs.readFileSync(new URL("../backend/server.mjs",import.meta.url),"utf8");
@@ -603,4 +604,23 @@ test("customer comparison route is tenant-scoped and filtered call parameters ar
   assert.match(backendServer,/\/api\/v1\/customer\/comparison/);
   assert.match(backendServer,/customerPortalComparison/);
   assert.match(backendServer,/customerPortalCalls\(context\.tenant_id,params\)/);
+});
+
+
+test("FreeSWITCH normalization preserves PDD, hangup side and distinct RTP loss metrics",()=>{
+  const raw={variables:{
+    uuid:"fs-voice-1",start_epoch:"1789723200",progress_epoch:"1789723203",answer_epoch:"1789723208",end_epoch:"1789723268",
+    duration:"68",billsec:"60",destination_number:"33890000000",caller_id_number:"0612345678",
+    hangup_cause:"NORMAL_CLEARING",sip_term_status:"200",sip_hangup_disposition:"recv_bye",read_codec:"PCMA",
+    rtp_audio_in_packet_loss_percent:"0.4",rtp_audio_in_packet_loss:"4",rtp_audio_in_jitter_max_variance:"3.2",
+    rtp_audio_in_rtt:"55",rtp_audio_in_mos:"4.31",rtp_audio_in_packet_count:"1000",rtp_audio_out_packet_count:"990",
+    rtp_audio_in_media_bytes:"160000",rtp_audio_out_media_bytes:"158400"
+  },callStats:{audio:{inbound:{latency_ms:28}}}};
+  const out=normalizeFreeSwitchCdr(raw,{callerHashKey:"k".repeat(32)});
+  assert.equal(out.payload.post_dial_delay_ms,3000);
+  assert.equal(out.payload.hangup_party,"caller");
+  assert.equal(out.payload.quality.packet_loss_percent,0.4);
+  assert.equal(out.payload.quality.packets_lost,4);
+  assert.equal(out.payload.quality.rtt_ms,55);
+  assert.equal(out.payload.quality.mos,4.31);
 });
