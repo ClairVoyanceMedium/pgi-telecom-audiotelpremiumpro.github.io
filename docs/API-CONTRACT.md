@@ -275,6 +275,8 @@ La future intégration publique du prestataire ne devra jamais appeler directeme
 ### GET /customer/billing/status
 Retourne l’état de préparation du prestataire de paiement pour le tenant authentifié. Tant que le prestataire n’est pas connecté, `connection_state=not_connected` et les actions de paiement restent indisponibles.
 
+Chaque tentative de création de session de paiement doit porter une clé `Idempotency-Key` unique et stable pendant la tentative. Le client web en génère une avant l’appel. Le futur adaptateur devra réutiliser cette même clé jusqu’au prestataire afin qu’un double clic, un délai réseau ou une répétition HTTP ne crée jamais deux sessions de souscription.
+
 ### POST /customer/billing/checkout-session
 Point d’orchestration réservé à la future création d’une session de souscription. Le contrat HTTP et la protection CSRF sont déjà en place. Sans prestataire connecté, la route répond `503 PAYMENT_PROVIDER_NOT_CONNECTED` et aucune opération financière n’est effectuée.
 
