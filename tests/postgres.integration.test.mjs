@@ -393,28 +393,55 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(onboardAccess[0].allowed,false);
 
     const internalTenant=(await store.sql.unsafe("SELECT id FROM tenants WHERE slug='pgi-internal'"))[0];
-    const portalBeforeReset=await store.customerPortalOverview(Number(internalTenant.id),"2026-09-18T00:00:00Z","2026-09-19T00:00:00Z");
+    const requestedFrom="2026-09-18T00:00:00Z",requestedTo="2026-09-19T00:00:00Z";
+    let tenantRanges=await store.effectiveMetricRanges(requestedFrom,requestedTo,Number(internalTenant.id));
+    const portalBeforeReset=await store.customerPortalOverview(Number(internalTenant.id),requestedFrom,requestedTo,tenantRanges);
     assert.equal(Number(portalBeforeReset.financial_by_currency[0].calls_total),1);
+    assert.equal(Number(portalBeforeReset.financial_by_currency[0].generated_revenue_ttc),8);
     assert.equal(portalBeforeReset.recent_calls.length,1);
 
-    const globalReset=await store.createBaseline({scope:"global",reason:"integration global reset"},{});
-    const resetRange=await store.effectiveMetricRange("2026-09-18T00:00:00Z","2026-09-19T00:00:00Z");
-    assert.equal(resetRange.baseline,new Date(globalReset.effective_from).toISOString());
-    assert.equal(resetRange.empty,true);
-    const portalAfterReset=await store.customerPortalOverview(Number(internalTenant.id),resetRange.from,resetRange.to);
-    assert.equal(portalAfterReset.financial_by_currency.length,0);
-    assert.equal(portalAfterReset.recent_calls.length,0);
-    assert.equal(portalAfterReset.metric_net_payout_by_currency.length,0);
+    const globalCallReset=await store.createBaseline({scope:"global",metric_key:"calls",reason:"integration cockpit calls reset"},{});
+    const globalRanges=await store.effectiveMetricRanges(requestedFrom,requestedTo);
+    assert.equal(globalRanges.calls.baseline,new Date(globalCallReset.effective_from).toISOString());
+    assert.equal(globalRanges.calls.empty,true);
+    assert.equal(globalRanges.revenue.baseline,null);
+
+    tenantRanges=await store.effectiveMetricRanges(requestedFrom,requestedTo,Number(internalTenant.id));
+    assert.equal(tenantRanges.calls.baseline,null);
+    const portalAfterCockpitReset=await store.customerPortalOverview(Number(internalTenant.id),requestedFrom,requestedTo,tenantRanges);
+    assert.equal(Number(portalAfterCockpitReset.financial_by_currency[0].calls_total),1);
+    assert.equal(portalAfterCockpitReset.recent_calls.length,1);
+
+    const tenantRevenueReset=await store.createBaseline({scope:"tenant",tenant_id:Number(internalTenant.id),metric_key:"revenue",reason:"integration tenant revenue reset"},{});
+    tenantRanges=await store.effectiveMetricRanges(requestedFrom,requestedTo,Number(internalTenant.id));
+    assert.equal(tenantRanges.revenue.baseline,new Date(tenantRevenueReset.effective_from).toISOString());
+    assert.equal(tenantRanges.calls.baseline,null);
+    const portalAfterRevenueReset=await store.customerPortalOverview(Number(internalTenant.id),requestedFrom,requestedTo,tenantRanges);
+    assert.equal(Number(portalAfterRevenueReset.financial_by_currency[0].calls_total),1);
+    assert.equal(Number(portalAfterRevenueReset.financial_by_currency[0].billable_seconds),600);
+    assert.equal(Number(portalAfterRevenueReset.financial_by_currency[0].generated_revenue_ttc),0);
+    assert.equal(portalAfterRevenueReset.recent_calls.length,1);
+
+    const tenantCallsReset=await store.createBaseline({scope:"tenant",tenant_id:Number(internalTenant.id),metric_key:"calls",reason:"integration tenant calls reset"},{});
+    tenantRanges=await store.effectiveMetricRanges(requestedFrom,requestedTo,Number(internalTenant.id));
+    assert.equal(tenantRanges.calls.baseline,new Date(tenantCallsReset.effective_from).toISOString());
+    const portalAfterCallsReset=await store.customerPortalOverview(Number(internalTenant.id),requestedFrom,requestedTo,tenantRanges);
+    assert.equal(Number(portalAfterCallsReset.financial_by_currency[0].calls_total),0);
+    assert.equal(Number(portalAfterCallsReset.financial_by_currency[0].billable_seconds),600);
+    assert.equal(portalAfterCallsReset.recent_calls.length,0);
+
     const visibleSystemAfterReset=await store.systemSnapshot();
     assert.equal(Number(visibleSystemAfterReset.calls_total),0);
 
     const metrics=await store.metrics();
     assert.equal(metrics.calls_total,1);
+    const rawCalls=await store.sql.unsafe("SELECT count(*)::int AS count FROM calls");
+    assert.equal(rawCalls[0].count,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
-    assert.equal(migrations.length,34);
+    assert.equal(migrations.length,35);
     assert.equal(new Set(migrations.map(x=>x.version)).size,migrations.length);
     assert.equal(migrations[0].version,"001_baseline");
-    assert.equal(migrations.at(-1).version,"034_service_incident_tenant_integrity");
+    assert.equal(migrations.at(-1).version,"035_selective_metric_baselines");
     for(const migration of migrations)assert.match(migration.checksum,/^[a-f0-9]{64}$/);
   }finally{
     await store.close();
