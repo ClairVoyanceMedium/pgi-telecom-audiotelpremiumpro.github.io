@@ -2340,7 +2340,7 @@ export class PostgresStore{
       "SELECT id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,"+
       " account_holder_name,desired_port_date,status,ownership_status,operator_portability_reference,scheduled_at,completed_at,rejection_reason,"+
       " tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,tariff_verified_at,created_at,updated_at"+
-      " FROM tenant_scoped_portability_requests ORDER BY created_at DESC,id DESC LIMIT 50"
+      " FROM tenant_scoped_portability_requests_v2 ORDER BY created_at DESC,id DESC LIMIT 50"
     ));
   }
 
@@ -2656,7 +2656,7 @@ export class PostgresStore{
       const portabilityRequests=await tx.unsafe(
         "SELECT id,country_code,requested_e164,display_number,service_family,current_operator_name,desired_port_date,status,ownership_status,"+
         " operator_portability_reference,scheduled_at,completed_at,rejection_reason,tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,tariff_verified_at,created_at,updated_at"+
-        " FROM tenant_scoped_portability_requests ORDER BY created_at DESC,id DESC LIMIT 20"
+        " FROM tenant_scoped_portability_requests_v2 ORDER BY created_at DESC,id DESC LIMIT 20"
       );
       const recentCalls=await tx.unsafe(
         "SELECT call_id,market,currency,sva_number_id,display_number,e164,started_at,ringing_at,bridged_at,ended_at,call_status,wait_seconds,conversation_seconds,billable_seconds,"+
