@@ -142,3 +142,23 @@ html{scroll-padding-top:150px}
 @media print{
   .cp-call-filters,.cp-call-filter-meta{display:none!important}
 }
+
+/* autonomous-customer-onboarding-v35 */
+.cp-auth-card:has(#register-panel:not([hidden])){width:min(680px,100%)}
+.cp-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.cp-optional{color:#747c84;font-size:9px;font-weight:650}
+.cp-check{grid-template-columns:auto 1fr!important;align-items:flex-start;gap:10px!important;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:#111417}
+.cp-check input{width:18px!important;min-height:18px!important;margin:1px 0 0;padding:0}
+.cp-check span{font-size:10px;line-height:1.45}
+.cp-honeypot{position:absolute!important;left:-10000px!important;width:1px!important;height:1px!important;overflow:hidden!important}
+.cp-register-open,.cp-register-back{width:100%;margin-top:8px}
+.cp-onboarding{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20px;align-items:center;margin:0 0 15px;padding:16px 18px;border:1px solid rgba(255,255,255,.11);border-radius:15px;background:linear-gradient(135deg,rgba(255,255,255,.055),rgba(255,255,255,.018))}
+.cp-onboarding h2{margin:0;font-size:17px;letter-spacing:-.02em}
+.cp-onboarding p:last-child{margin:6px 0 0;color:var(--muted);font-size:10px;line-height:1.55}
+.cp-onboarding-steps{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;max-width:520px}
+.cp-onboarding-steps span{padding:7px 9px;border:1px solid var(--line);border-radius:999px;background:#101317;color:#c7ccd1;font-size:8px;font-weight:850;white-space:nowrap}
+@media(max-width:680px){
+  .cp-form-grid{grid-template-columns:1fr}
+  .cp-onboarding{grid-template-columns:1fr}
+  .cp-onboarding-steps{justify-content:flex-start}
+}
