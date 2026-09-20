@@ -241,6 +241,12 @@
         <div class="cp-panel-head"><div><p class="cp-kicker">NUMÉROS</p><h2>Mes lignes Audiotel</h2></div><span id="numbers-count">0</span></div>
         <div id="numbers-list" class="cp-stack"></div>
       </article>
+      <article class="cp-panel cp-chart-card cp-portability-card">
+        <div class="cp-panel-head"><div><p class="cp-kicker">PORTABILITÉ</p><h2>Conserver mon numéro actuel</h2></div><span id="portability-count">0</span></div>
+        <p class="cp-muted">Vous avez déjà un numéro surtaxé ? Demandez son transfert sans changer de numéro. La mise en service reste soumise à la vérification du titulaire, à l’éligibilité et à la confirmation des opérateurs.</p>
+        <button id="portability-open" class="cp-primary" type="button">Demander la portabilité</button>
+        <div id="portability-list" class="cp-stack cp-portability-list"></div>
+      </article>
     </section>
 
     <section id="client-calls" class="cp-panel cp-anchor-section">
@@ -309,6 +315,34 @@
 </div>
 
 <div id="client-call-diagnostic-mount"></div>
+
+<dialog id="client-portability-dialog" class="cp-dialog">
+  <form id="client-portability-form" class="cp-dialog-card cp-form">
+    <div class="cp-dialog-head">
+      <div><p class="cp-kicker">PORTABILITÉ ENTRANTE</p><h2>Conserver mon numéro surtaxé</h2></div>
+      <button id="portability-close" class="cp-dialog-close" type="button" aria-label="Fermer">×</button>
+    </div>
+    <p class="cp-muted">Saisissez le numéro que vous utilisez déjà. PGI préparera le dossier de transfert ; le numéro ne sera jamais modifié dans le processus.</p>
+    <div class="cp-form-grid">
+      <label>Pays du numéro<select id="portability-country" required><option value="FR">France</option></select></label>
+      <label>Numéro actuel<input id="portability-number" type="tel" inputmode="tel" autocomplete="tel" required maxlength="24" placeholder="0890… ou +33890…"></label>
+    </div>
+    <div class="cp-form-grid">
+      <label>Opérateur actuel <span class="cp-optional">(facultatif)</span><input id="portability-operator" type="text" maxlength="160" autocomplete="organization"></label>
+      <label>Référence opérateur / contrat <span class="cp-optional">(facultatif)</span><input id="portability-reference" type="text" maxlength="200"></label>
+    </div>
+    <div class="cp-form-grid">
+      <label>Nom du titulaire <span class="cp-optional">(facultatif)</span><input id="portability-holder" type="text" maxlength="200" autocomplete="name"></label>
+      <label>Date souhaitée <span class="cp-optional">(facultatif)</span><input id="portability-date" type="date"></label>
+    </div>
+    <label>Type de numéro<select id="portability-service-family"><option value="premium_rate">Numéro surtaxé</option><option value="shared_cost">Numéro à coût partagé</option><option value="freephone">Numéro gratuit</option><option value="other">Autre numéro de service</option></select></label>
+    <label class="cp-check"><input id="portability-owner-confirmed" type="checkbox" required><span>Je confirme être titulaire de ce numéro ou être mandaté par son titulaire.</span></label>
+    <label class="cp-check"><input id="portability-authority-confirmed" type="checkbox" required><span>J’autorise l’ouverture d’une demande de portabilité auprès de l’opérateur concerné.</span></label>
+    <p id="portability-message" class="cp-form-message" aria-live="polite"></p>
+    <button id="portability-submit" class="cp-primary" type="submit">Envoyer ma demande</button>
+    <p class="cp-billing-trust">La demande ne coupe pas votre ligne actuelle. Aucune bascule n’est effectuée avant confirmation et planification opérateur.</p>
+  </form>
+</dialog>
 
 <dialog id="client-security-dialog" class="cp-export-dialog">
   <form id="client-password-form" class="cp-export-card">
