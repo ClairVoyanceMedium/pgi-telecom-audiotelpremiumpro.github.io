@@ -513,4 +513,6 @@ test("cockpit and client expose carrier-grade voice intelligence without bloatin
   assert.match(clientIntelligence,/function showCallDiagnostic/);
   assert.match(buildStatic,/cockpit-pro\.css/);
 });
-\n\ntest("PWA cockpit uses the exact install label",()=>{const m=JSON.parse(manifest);assert.equal(m.name,"Cockpit / PGI Telecom • Audiotel Premium Pro");assert.equal(m.short_name,"Cockpit / PGI Telecom • Audiotel Premium Pro");assert.match(index,/apple-mobile-web-app-title\" content=\"Cockpit \/ PGI Telecom • Audiotel Premium Pro/);});\n
+
+
+test("PWA cockpit uses the exact install label",()=>{const m=JSON.parse(manifest);assert.equal(m.name,"Cockpit / PGI Telecom • Audiotel Premium Pro");assert.equal(m.short_name,"Cockpit / PGI Telecom • Audiotel Premium Pro");assert.match(index,/apple-mobile-web-app-title\" content=\"Cockpit \/ PGI Telecom • Audiotel Premium Pro/);}));
