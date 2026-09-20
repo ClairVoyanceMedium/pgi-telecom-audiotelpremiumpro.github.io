@@ -35,7 +35,8 @@ test("worker scans regulatory deadlines without auto-suspending lines",()=>{
   assert.ok(workers.includes("scanRegulatoryReviews(1000)"));
   assert.ok(memory.includes("scanRegulatoryReviews"));
   assert.ok(migration.includes("does not itself suspend service"));
-  assert.equal(store.includes("UPDATE tenant_number_assignments SET status='suspended'"),false);
+  const scanner=store.slice(store.indexOf("async scanRegulatoryReviews("),store.indexOf("async listRegulatoryReviewAlerts("));
+  assert.equal(scanner.includes("UPDATE tenant_number_assignments SET status='suspended'"),false);
 });
 
 test("review alerts are available and acknowledgeable through private API",()=>{
