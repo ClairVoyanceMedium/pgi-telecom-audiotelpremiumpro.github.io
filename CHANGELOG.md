@@ -1,3 +1,15 @@
+## 1.28.0 — PGI Control Tower, Policy Engine & Digital Twin — 2026-09-20
+
+- nouvelle PGI Control Tower premium, chargée à la demande depuis la palette de commandes ;
+- score de readiness interne et priorités critiques agrégées depuis les données existantes ;
+- Policy Engine centralisé avec décisions `ALLOWED`, `BLOCKED` et `ACTION_REQUIRED` ;
+- intentions couvertes : activation numéro, portabilité, reversement client, bascule opérateur et accès client ;
+- Digital Twin dry-run avec six scénarios : panne opérateur, pic de trafic, portabilité massive, expiration réglementaire, impayés et panne région/datacenter ;
+- aucune simulation ne modifie les lignes, clients, preuves, paiements ou routes ;
+- API privées dédiées, protégées par rôles et CSRF pour les POST ;
+- module frontend lazy afin de préserver le budget du shell ;
+- aucune connexion Stripe, opérateur, APNF/RSVA ou PSP activée.
+
 ## 1.27.0 — Surveillance réglementaire proactive — 2026-09-20
 
 - file persistante `regulatory_review_alerts` pour les échéances et contrôles réglementaires à traiter ;
