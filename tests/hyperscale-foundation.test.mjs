@@ -166,6 +166,11 @@ test("les clients externes ont un abonnement SVA payé versionné et PGI interne
   assert.ok(store.includes("async applySubscriptionBillingEvent("));
   assert.ok(server.includes("/api/v1/internal/billing/subscription-event"));
   assert.ok(server.includes("/api/v1/platform/subscription-prices"));
+  assert.ok(server.includes("/api/v1/customer/billing/status"));
+  assert.ok(server.includes("/api/v1/customer/billing/checkout-session"));
+  assert.ok(server.includes("/api/v1/customer/billing/portal-session"));
+  assert.ok(server.includes('sva_payout_flow:"carrier_to_customer"'));
+  assert.ok(server.includes("funds_held_by_pgi:false"));
 });
 
 test("le contrôle clients hyperscale gère pays suspensions lignes et impayés",()=>{
