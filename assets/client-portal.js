@@ -343,9 +343,10 @@ async function openBilling(kind){
   if(state.demo){toast("Prestataire de paiement non connecté.");return;}
   var action=kind==="manage"?window.PGICustomerApi.createBillingPortal:window.PGICustomerApi.createBillingCheckout;
   var button=kind==="manage"?$("client-billing-manage"):$("client-billing-start"),original=button?button.textContent:"";
+  var idempotencyKey=kind==="manage"?null:window.PGICustomerApi.newIdempotencyKey();
   state.billingBusy=true;if(button){button.disabled=true;button.textContent=kind==="manage"?"Ouverture de la facturation…":"Ouverture du paiement…";}
   try{
-    var result=await action();
+    var result=kind==="manage"?await action():await action(idempotencyKey);
     var target=result&&result.url?new URL(result.url,location.origin):null;
     if(!target||target.protocol!=="https:")throw new Error("INVALID_BILLING_URL");
     location.assign(target.href);
