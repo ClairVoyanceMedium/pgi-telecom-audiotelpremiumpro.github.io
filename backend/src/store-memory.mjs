@@ -450,35 +450,65 @@ export class MemoryStore{
     return [...groups.values()].map(roundFinance);
   }
 
-  async effectiveMetricRange(from,to){
+  async effectiveMetricRanges(from,to,tenantId=null){
     const fromMs=Date.parse(from),toMs=Date.parse(to);
     if(!Number.isFinite(fromMs)||!Number.isFinite(toMs))throw problem(400,"INVALID_RANGE");
-    const row=this.baselines.filter(x=>x.scope==="global"&&x.scope_id==null)
-      .slice().sort((a,b)=>Date.parse(b.effective_from||b.created_at)-Date.parse(a.effective_from||a.created_at))[0]||null;
-    const baseline=row?new Date(row.effective_from||row.created_at):null;
-    const effectiveFrom=baseline&&baseline.getTime()>fromMs?baseline:new Date(fromMs);
-    return {from:effectiveFrom.toISOString(),to:new Date(toMs).toISOString(),baseline:baseline?baseline.toISOString():null,reset_applied:Boolean(baseline&&baseline.getTime()>fromMs),empty:effectiveFrom.getTime()>toMs};
+    const keys=["calls","minutes","revenue","payout","quality"];
+    const scope=tenantId==null?"global":"tenant",id=tenantId==null?null:Number(tenantId);
+    const rows=this.baselines.filter(x=>x.scope===scope&&(id==null?x.tenant_id==null:Number(x.tenant_id)===id))
+      .slice().sort((a,b)=>Date.parse(b.effective_from||b.created_at)-Date.parse(a.effective_from||a.created_at));
+    const latest={};
+    for(const row of rows){const key=row.metric_key||"all";if(latest[key]==null)latest[key]=new Date(row.effective_from||row.created_at);}
+    const all=latest.all||null,result={};
+    for(const key of keys){
+      const own=latest[key]||null,baseline=!all?own:!own?all:(all.getTime()>own.getTime()?all:own);
+      const effectiveFrom=baseline&&baseline.getTime()>fromMs?baseline:new Date(fromMs);
+      result[key]={from:effectiveFrom.toISOString(),to:new Date(toMs).toISOString(),baseline:baseline?baseline.toISOString():null,reset_applied:Boolean(baseline&&baseline.getTime()>fromMs),empty:effectiveFrom.getTime()>toMs};
+    }
+    return result;
+  }
+
+  async effectiveMetricRange(from,to,options={}){
+    const ranges=await this.effectiveMetricRanges(from,to,options?.tenant_id??null);
+    return ranges[String(options?.metric_key||"calls")]||ranges.calls;
   }
 
   async listBaselines(params={}){
     const scope=params.scope||"global";
-    const limit=clampInt(params.limit,20,1,100);
+    const limit=clampInt(params.limit,20,1,100),tenantId=params.tenant_id==null?null:Number(params.tenant_id);
     return this.baselines
-      .filter(x=>x.scope===scope)
+      .filter(x=>x.scope===scope&&(tenantId==null||Number(x.tenant_id)===tenantId))
       .slice()
       .sort((a,b)=>Date.parse(b.effective_from||b.created_at)-Date.parse(a.effective_from||a.created_at))
       .slice(0,limit)
-      .map(x=>({...x}));
+      .map(x=>({...x,metric_key:x.metric_key||"all"}));
   }
 
   async createBaseline(payload,actor){
-    if(!["global","expert","sva_number"].includes(payload.scope))throw problem(400,"INVALID_SCOPE");
+    if(!["global","tenant","expert","sva_number"].includes(payload.scope))throw problem(400,"INVALID_SCOPE");
+    const metricKey=String(payload.metric_key||"all");
+    if(!["all","calls","minutes","revenue","payout","quality"].includes(metricKey))throw problem(400,"INVALID_METRIC_KEY");
+    const tenantId=payload.tenant_id==null?null:Number(payload.tenant_id);
+    if(payload.scope==="tenant"&&(!Number.isInteger(tenantId)||tenantId<=0))throw problem(400,"INVALID_TENANT_CONTEXT");
     const now=new Date().toISOString();
-    const row={id:this.nextBaselineId++,scope:payload.scope,scope_id:payload.scope_id??null,reason:String(payload.reason||""),created_at:now,effective_from:now,created_by:actor?.sub||null};
+    const row={id:this.nextBaselineId++,tenant_id:tenantId,scope:payload.scope,scope_id:payload.scope_id??null,metric_key:metricKey,reason:String(payload.reason||""),created_at:now,effective_from:now,created_by:actor?.sub||null};
     this.baselines.push(row);
     this.#audit("baseline.create",String(row.id),row);
-    this.eventBus.publish("baseline.created",{id:row.id,scope:row.scope});
+    this.eventBus.publish("baseline.created",{id:row.id,scope:row.scope,tenant_id:row.tenant_id,metric_key:row.metric_key});
     return {...row};
+  }
+
+  async createCustomerMetricReset(tenantId,metricKeys,customerPrincipalId){
+    const allowed=["calls","minutes","revenue","payout","quality"],id=Number(tenantId);
+    let keys=Array.isArray(metricKeys)?metricKeys.map(String):[];
+    if(keys.includes("all"))keys=allowed.slice();
+    keys=[...new Set(keys)];
+    if(!keys.length||keys.some(x=>!allowed.includes(x)))throw problem(400,"INVALID_METRIC_SELECTION");
+    const now=new Date().toISOString(),rows=keys.map(key=>({id:this.nextBaselineId++,tenant_id:id,scope:"tenant",scope_id:null,metric_key:key,reason:"Remise à zéro depuis l’espace client",created_at:now,effective_from:now,created_by:null,created_by_customer_principal_id:customerPrincipalId||null}));
+    this.baselines.push(...rows);
+    this.#audit("customer.metrics.reset",String(rows[0].id),{tenant_id:id,metric_keys:keys});
+    this.eventBus.publish("customer.metrics.reset",{tenant_id:id,metric_keys:keys});
+    return {data:structuredClone(rows),metric_keys:keys,effective_from:now};
   }
 
   async carrierRouting(){
