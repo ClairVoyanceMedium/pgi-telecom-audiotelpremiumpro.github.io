@@ -1123,48 +1123,105 @@ export class PostgresStore{
     );
   }
 
-  async effectiveMetricRange(from,to){
+  async effectiveMetricRanges(from,to,tenantId=null){
     const fromMs=Date.parse(from),toMs=Date.parse(to);
     if(!Number.isFinite(fromMs)||!Number.isFinite(toMs))throw problem(400,"INVALID_RANGE");
+    const keys=["calls","minutes","revenue","payout","quality"];
+    const id=tenantId==null?null:Number(tenantId);
+    if(tenantId!=null&&(!Number.isInteger(id)||id<=0))throw problem(400,"INVALID_TENANT_CONTEXT");
     const rows=await this.readSql.unsafe(
-      "SELECT effective_from FROM metric_baselines WHERE scope='global' AND scope_id IS NULL AND tenant_id IS NULL ORDER BY effective_from DESC,id DESC LIMIT 1"
+      id==null
+        ?"SELECT metric_key,effective_from FROM metric_baselines WHERE scope='global' AND tenant_id IS NULL AND metric_key=ANY($1::text[]) ORDER BY effective_from DESC,id DESC"
+        :"SELECT metric_key,effective_from FROM metric_baselines WHERE scope='tenant' AND tenant_id=$2 AND metric_key=ANY($1::text[]) ORDER BY effective_from DESC,id DESC",
+      id==null?[["all",...keys]]:[["all",...keys],id]
     );
-    const baseline=rows[0]?.effective_from?new Date(rows[0].effective_from):null;
-    const effectiveFrom=baseline&&baseline.getTime()>fromMs?baseline:new Date(fromMs);
-    return {
-      from:effectiveFrom.toISOString(),
-      to:new Date(toMs).toISOString(),
-      baseline:baseline?baseline.toISOString():null,
-      reset_applied:Boolean(baseline&&baseline.getTime()>fromMs),
-      empty:effectiveFrom.getTime()>toMs
-    };
+    const latest={};
+    for(const row of rows)if(latest[row.metric_key]==null)latest[row.metric_key]=new Date(row.effective_from);
+    const all=latest.all||null,result={};
+    for(const key of keys){
+      const own=latest[key]||null;
+      const baseline=!all?own:!own?all:(all.getTime()>own.getTime()?all:own);
+      const effectiveFrom=baseline&&baseline.getTime()>fromMs?baseline:new Date(fromMs);
+      result[key]={
+        from:effectiveFrom.toISOString(),to:new Date(toMs).toISOString(),
+        baseline:baseline?baseline.toISOString():null,
+        reset_applied:Boolean(baseline&&baseline.getTime()>fromMs),
+        empty:effectiveFrom.getTime()>toMs
+      };
+    }
+    return result;
+  }
+
+  async effectiveMetricRange(from,to,options={}){
+    const tenantId=options&&typeof options==="object"?options.tenant_id??null:null;
+    const metricKey=options&&typeof options==="object"?String(options.metric_key||"calls"):"calls";
+    const ranges=await this.effectiveMetricRanges(from,to,tenantId);
+    return ranges[metricKey]||ranges.calls;
   }
 
   async listBaselines(params={}){
     const scope=params.scope||"global";
-    if(!["global","expert","sva_number"].includes(scope))throw problem(400,"INVALID_SCOPE");
+    if(!["global","tenant","expert","sva_number"].includes(scope))throw problem(400,"INVALID_SCOPE");
     const limit=clampInt(params.limit,20,1,100);
+    const tenantId=params.tenant_id==null?null:Number(params.tenant_id);
+    if(scope==="tenant"&&(!Number.isInteger(tenantId)||tenantId<=0))throw problem(400,"INVALID_TENANT_CONTEXT");
     return this.sql.unsafe(
-      "SELECT id,scope,scope_id,reason,created_at,effective_from,created_by"+
-      " FROM metric_baselines WHERE scope=$1 ORDER BY effective_from DESC,id DESC LIMIT $2",
-      [scope,limit]
+      "SELECT id,tenant_id,scope,scope_id,metric_key,reason,created_at,effective_from,created_by,created_by_customer_principal_id"+
+      " FROM metric_baselines WHERE scope=$1 AND ($2::bigint IS NULL OR tenant_id=$2) ORDER BY effective_from DESC,id DESC LIMIT $3",
+      [scope,tenantId,limit]
     );
   }
 
   async createBaseline(payload,actor){
-    if(!["global","expert","sva_number"].includes(payload.scope))throw problem(400,"INVALID_SCOPE");
+    const scope=String(payload.scope||"global");
+    if(!["global","tenant","expert","sva_number"].includes(scope))throw problem(400,"INVALID_SCOPE");
+    const metricKey=String(payload.metric_key||"all");
+    if(!["all","calls","minutes","revenue","payout","quality"].includes(metricKey))throw problem(400,"INVALID_METRIC_KEY");
+    const tenantId=payload.tenant_id==null?null:Number(payload.tenant_id);
+    if(scope==="tenant"&&(!Number.isInteger(tenantId)||tenantId<=0))throw problem(400,"INVALID_TENANT_CONTEXT");
     const rows=await this.sql.unsafe(
-      "INSERT INTO metric_baselines(created_by,scope,scope_id,reason,effective_from) VALUES($1,$2,$3,$4,now())"+
-      " RETURNING id,scope,scope_id,reason,created_at,effective_from",
-      [numericActor(actor),payload.scope,payload.scope_id==null?null:Number(payload.scope_id),String(payload.reason||"")]
+      "INSERT INTO metric_baselines(created_by,tenant_id,scope,scope_id,metric_key,reason,effective_from) VALUES($1,$2,$3,$4,$5,$6,now())"+
+      " RETURNING id,tenant_id,scope,scope_id,metric_key,reason,created_at,effective_from",
+      [numericActor(actor),tenantId,scope,payload.scope_id==null?null:Number(payload.scope_id),metricKey,String(payload.reason||"")]
     );
     const row=rows[0];
     await this.sql.unsafe(
-      "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'baseline.create','metric_baseline',$2,$3::jsonb)",
-      [numericActor(actor),String(row.id),JSON.stringify({scope:row.scope})]
+      "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'baseline.create','metric_baseline',$3,$4::jsonb)",
+      [tenantId,numericActor(actor),String(row.id),JSON.stringify({scope:row.scope,metric_key:row.metric_key})]
     );
-    this.eventBus.publish("baseline.created",{id:row.id,scope:row.scope});
+    this.eventBus.publish("baseline.created",{id:row.id,scope:row.scope,tenant_id:row.tenant_id,metric_key:row.metric_key});
     return row;
+  }
+
+  async createCustomerMetricReset(tenantId,metricKeys,customerPrincipalId){
+    const id=Number(tenantId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_CONTEXT");
+    const allowed=["calls","minutes","revenue","payout","quality"];
+    let keys=Array.isArray(metricKeys)?metricKeys.map(x=>String(x)):[];
+    if(keys.includes("all"))keys=allowed.slice();
+    keys=[...new Set(keys)];
+    if(!keys.length||keys.some(x=>!allowed.includes(x)))throw problem(400,"INVALID_METRIC_SELECTION");
+    const principal=String(customerPrincipalId||"");
+    if(!/^[0-9a-f-]{36}$/i.test(principal))throw problem(400,"INVALID_CUSTOMER_PRINCIPAL");
+    const rows=await this.sql.begin(async tx=>{
+      const created=[];
+      for(const key of keys){
+        const inserted=await tx.unsafe(
+          "INSERT INTO metric_baselines(tenant_id,scope,metric_key,reason,effective_from,created_by_customer_principal_id)"+
+          " VALUES($1,'tenant',$2,'Remise à zéro depuis l’espace client',now(),$3::uuid)"+
+          " RETURNING id,tenant_id,scope,metric_key,reason,created_at,effective_from",
+          [id,key,principal]
+        );
+        created.push(inserted[0]);
+      }
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,action,entity_type,entity_id,details) VALUES($1,'customer.metrics.reset','metric_baseline',$2,$3::jsonb)",
+        [id,String(created[0].id),JSON.stringify({metric_keys:keys,customer_principal_id:principal})]
+      );
+      return created;
+    });
+    this.eventBus.publish("customer.metrics.reset",{tenant_id:id,metric_keys:keys});
+    return {data:rows,metric_keys:keys,effective_from:rows[0]?.effective_from||null};
   }
 
   async carrierRouting(){
