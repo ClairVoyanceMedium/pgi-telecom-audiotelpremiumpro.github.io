@@ -122,20 +122,40 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.match(regulatoryLedger[0].event_hash,/^[0-9a-f]{64}$/);
     assert.match(regulatoryLedger[1].previous_hash,/^[0-9a-f]{64}$/);
 
-    await store.sql.unsafe("INSERT INTO tenant_number_assignments(tenant_id,sva_number_id,assignment_type,status,valid_from,regulatory_assignor_carrier_id,upstream_assignment_reference) SELECT t.id,s.id,'customer_service','active',now(),c.id,'integration-upstream-001' FROM tenants t CROSS JOIN sva_numbers s CROSS JOIN carriers c WHERE t.slug='integration-external' AND s.e164='33890000001' AND c.name='Host A'");
+    await store.sql.unsafe("INSERT INTO tenant_number_assignments(tenant_id,sva_number_id,assignment_type,status,valid_from,regulatory_assignor_carrier_id,upstream_assignment_reference) SELECT t.id,s.id,'customer_service','testing',now(),c.id,'integration-upstream-001' FROM tenants t CROSS JOIN sva_numbers s CROSS JOIN carriers c WHERE t.slug='integration-external' AND s.e164='33890000001' AND c.name='Host A'");
     const extAssignmentForRoute=await store.sql.unsafe("SELECT id FROM tenant_number_assignments WHERE tenant_id=(SELECT id FROM tenants WHERE slug='integration-external') AND sva_number_id=(SELECT id FROM sva_numbers WHERE e164='33890000001') LIMIT 1");
+
+    await assert.rejects(
+      ()=>store.sql.unsafe("UPDATE tenant_number_assignments SET status='active' WHERE id=$1",[Number(extAssignmentForRoute[0].id)]),
+      /verified ARCEP 2026 number-plan guardrails required/
+    );
+    for(const control of ["exclusive_stable_assignee","single_service","portability_offered","tariff_ceiling","no_temporary_contact_use","public_body_eligibility","caller_id_block","parental_control_classification"]){
+      const evidence=await store.recordSvaRegulatoryEvidence(Number(extAssignmentForRoute[0].id),{control_key:control,status:"verified",source:"internal",evidence_reference:"integration:arcep2026:"+control},{sub:"admin"});
+      assert.equal(evidence.framework,"arcep_2026");
+    }
+    const arcepReady=await store.sql.unsafe("SELECT pgi_arcep_2026_number_ready(t.id,s.id) AS ready FROM tenants t CROSS JOIN sva_numbers s WHERE t.slug='integration-external' AND s.e164='33890000001'");
+    assert.equal(arcepReady[0].ready,true);
+    await store.sql.unsafe("UPDATE tenant_number_assignments SET status='active' WHERE id=$1",[Number(extAssignmentForRoute[0].id)]);
+
     const evidencePack=await store.regulatoryEvidencePack(Number(extAssignmentForRoute[0].id),{sub:"admin"});
     assert.equal(evidencePack.assignment.regulatory_ready,true);
+    assert.equal(evidencePack.assignment.arcep_2026_ready,true);
     assert.equal(evidencePack.evidence_ledger.length,7);
+    assert.equal(evidencePack.arcep_2026_evidence_ledger.length,8);
     assert.equal(evidencePack.integrity.evidence_links_valid,true);
+    assert.equal(evidencePack.integrity.arcep_2026_links_valid,true);
     assert.match(evidencePack.integrity.pack_sha256,/^[0-9a-f]{64}$/);
     assert.match(evidencePack.integrity.evidence_chain_head,/^[0-9a-f]{64}$/);
+    assert.match(evidencePack.integrity.arcep_2026_chain_head,/^[0-9a-f]{64}$/);
     assert.equal(evidencePack.privacy.raw_rio_included,false);
-    const packRegister=await store.sql.unsafe("SELECT public_id::text AS public_id,pack_sha256,evidence_links_valid,evidence_events FROM sva_regulatory_evidence_pack_exports WHERE assignment_id=$1 ORDER BY id DESC LIMIT 1",[Number(extAssignmentForRoute[0].id)]);
+    const packRegister=await store.sql.unsafe("SELECT public_id::text AS public_id,pack_sha256,evidence_links_valid,evidence_events,arcep_2026_chain_head,arcep_2026_links_valid,arcep_2026_evidence_events FROM sva_regulatory_evidence_pack_exports WHERE assignment_id=$1 ORDER BY id DESC LIMIT 1",[Number(extAssignmentForRoute[0].id)]);
     assert.equal(packRegister[0].public_id,evidencePack.integrity.export_id);
     assert.equal(packRegister[0].pack_sha256,evidencePack.integrity.pack_sha256);
     assert.equal(packRegister[0].evidence_links_valid,true);
-    assert.equal(Number(packRegister[0].evidence_events),7);
+    assert.equal(packRegister[0].arcep_2026_links_valid,true);
+    assert.match(packRegister[0].arcep_2026_chain_head,/^[0-9a-f]{64}$/);
+    assert.equal(Number(packRegister[0].evidence_events),15);
+    assert.equal(Number(packRegister[0].arcep_2026_evidence_events),8);
     const packAudit=await store.sql.unsafe("SELECT details->>'export_public_id' AS export_public_id FROM audit_log WHERE action='regulatory.evidence_pack.export' AND entity_id=$1 ORDER BY id DESC LIMIT 1",[String(extAssignmentForRoute[0].id)]);
     assert.equal(packAudit[0].export_public_id,evidencePack.integrity.export_id);
     const createdDestination=await store.createCallDestination(externalIdentity[0].public_id,{assignment_id:Number(extAssignmentForRoute[0].id),label:"Standard principal",destination_type:"pstn",destination_uri:"tel:+33123456789",priority:10,max_concurrent_calls:25},{sub:"admin"});
