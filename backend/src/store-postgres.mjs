@@ -1568,6 +1568,7 @@ export class PostgresStore{
     const eventTime=payload.event_time||new Date().toISOString();
     const periodStart=payload.current_period_start||null;
     const periodEnd=payload.current_period_end||null;
+    const endsAtInput=payload.ends_at||null;
     const priceVersionId=Number(payload.price_version_id);
     const marketId=payload.market_id==null||payload.market_id===""?null:Number(payload.market_id);
     const lastPaymentStatus=payload.last_payment_status==null?null:String(payload.last_payment_status).trim().toLowerCase();
@@ -1575,21 +1576,31 @@ export class PostgresStore{
     if(!eventId||eventId.length>200)throw problem(400,"INVALID_BILLING_EVENT_ID");
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantPublicId))throw problem(400,"INVALID_BILLING_TENANT");
     if(!providerSubscription||providerSubscription.length>200)throw problem(400,"INVALID_BILLING_SUBSCRIPTION_REFERENCE");
+    if(providerCustomer&&providerCustomer.length>200)throw problem(400,"INVALID_BILLING_CUSTOMER_REFERENCE");
+    if(!eventType||eventType.length>120||!/^[A-Za-z0-9_.:-]+$/.test(eventType))throw problem(400,"INVALID_BILLING_EVENT_TYPE");
     if(!["active","past_due","suspended","cancelled","ended"].includes(status))throw problem(400,"INVALID_SUBSCRIPTION_STATUS");
     if(!Number.isInteger(priceVersionId)||priceVersionId<=0)throw problem(400,"INVALID_PRICE_VERSION");
+    if(marketId!=null&&(!Number.isInteger(marketId)||marketId<=0))throw problem(400,"INVALID_MARKET_ID");
     if(!Number.isFinite(Date.parse(eventTime)))throw problem(400,"INVALID_BILLING_EVENT_TIME");
-    if(status==="active"&&(!periodEnd||!Number.isFinite(Date.parse(periodEnd))||Date.parse(periodEnd)<=Date.parse(eventTime)))throw problem(400,"ACTIVE_SUBSCRIPTION_PERIOD_REQUIRED");
+    if(periodStart&&!Number.isFinite(Date.parse(periodStart)))throw problem(400,"INVALID_SUBSCRIPTION_PERIOD_START");
+    if(periodEnd&&!Number.isFinite(Date.parse(periodEnd)))throw problem(400,"INVALID_SUBSCRIPTION_PERIOD_END");
+    if(periodStart&&periodEnd&&Date.parse(periodEnd)<=Date.parse(periodStart))throw problem(400,"INVALID_SUBSCRIPTION_PERIOD");
+    if(endsAtInput&&!Number.isFinite(Date.parse(endsAtInput)))throw problem(400,"INVALID_SUBSCRIPTION_END");
+    if(status==="active"&&(!periodEnd||Date.parse(periodEnd)<=Date.parse(eventTime)))throw problem(400,"ACTIVE_SUBSCRIPTION_PERIOD_REQUIRED");
     const normalized={
       provider,provider_event_id:eventId,tenant_public_id:tenantPublicId,provider_customer_reference:providerCustomer,
       provider_subscription_reference:providerSubscription,event_type:eventType,status,event_time:eventTime,
       price_version_id:priceVersionId,market_id:marketId,current_period_start:periodStart,current_period_end:periodEnd,
-      cancel_at_period_end:!!payload.cancel_at_period_end,last_payment_status:lastPaymentStatus
+      cancel_at_period_end:!!payload.cancel_at_period_end,last_payment_status:lastPaymentStatus,ends_at:endsAtInput
     };
     const hash=createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
     const result=await this.sql.begin(async tx=>{
       await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",[provider+":"+eventId]);
-      const seen=await tx.unsafe("SELECT id,subscription_id FROM subscription_billing_events WHERE provider=$1 AND provider_event_id=$2",[provider,eventId]);
-      if(seen.length)return {duplicate:true,subscription_id:seen[0].subscription_id};
+      const seen=await tx.unsafe("SELECT id,subscription_id,payload_sha256 FROM subscription_billing_events WHERE provider=$1 AND provider_event_id=$2",[provider,eventId]);
+      if(seen.length){
+        if(String(seen[0].payload_sha256)!==hash)throw problem(409,"BILLING_EVENT_ID_COLLISION");
+        return {duplicate:true,subscription_id:seen[0].subscription_id};
+      }
       const tenantRows=await tx.unsafe("SELECT id,tenant_type,status FROM tenants WHERE public_id=$1::uuid LIMIT 1",[tenantPublicId]);
       const tenant=tenantRows[0];
       if(!tenant)throw problem(404,"BILLING_TENANT_NOT_FOUND");
@@ -1601,14 +1612,16 @@ export class PostgresStore{
       );
       const price=priceRows[0];
       if(!price)throw problem(404,"SUBSCRIPTION_PRICE_NOT_FOUND");
-      if(marketId!=null&&price.market_id!=null&&Number(price.market_id)!==marketId)throw problem(409,"SUBSCRIPTION_PRICE_MARKET_MISMATCH");
+      if(price.market_id!=null&&Number(price.market_id)!==marketId)throw problem(409,"SUBSCRIPTION_PRICE_MARKET_MISMATCH");
       let subscriptions=await tx.unsafe(
-        "SELECT id,last_event_at FROM tenant_subscriptions WHERE billing_provider=$1 AND provider_subscription_reference=$2 LIMIT 1 FOR UPDATE",
+        "SELECT id,tenant_id,last_event_at,provider_customer_reference FROM tenant_subscriptions WHERE billing_provider=$1 AND provider_subscription_reference=$2 LIMIT 1 FOR UPDATE",
         [provider,providerSubscription]
       );
+      if(subscriptions.length&&Number(subscriptions[0].tenant_id)!==Number(tenant.id))throw problem(409,"BILLING_SUBSCRIPTION_TENANT_MISMATCH");
+      if(subscriptions.length&&providerCustomer&&subscriptions[0].provider_customer_reference&&String(subscriptions[0].provider_customer_reference)!==providerCustomer)throw problem(409,"BILLING_CUSTOMER_REFERENCE_MISMATCH");
       let subscriptionId;
       const startsAt=periodStart||eventTime;
-      const endsAt=["cancelled","ended"].includes(status)?(payload.ends_at||eventTime):null;
+      const endsAt=["cancelled","ended"].includes(status)?(endsAtInput||eventTime):null;
       if(!subscriptions.length){
         const inserted=await tx.unsafe(
           "INSERT INTO tenant_subscriptions(tenant_id,service_plan_id,market_id,status,billing_currency,external_billing_reference,"+
@@ -1637,6 +1650,10 @@ export class PostgresStore{
         "INSERT INTO subscription_billing_events(provider,provider_event_id,tenant_id,subscription_id,event_type,event_time,payload_sha256,normalized_details)"+
         " VALUES($1,$2,$3,$4,$5,$6::timestamptz,$7,$8::jsonb)",
         [provider,eventId,tenant.id,subscriptionId,eventType,eventTime,hash,JSON.stringify(normalized)]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'subscription.billing_event','tenant_subscription',$2,$3::jsonb)",
+        [tenant.id,String(subscriptionId),JSON.stringify({provider,event_type:eventType,status,provider_event_id:eventId,price_version_id:priceVersionId})]
       );
       await tx.unsafe(
         "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'subscription.changed','tenant_subscription',$2,$3::jsonb)",
@@ -2261,6 +2278,44 @@ export class PostgresStore{
       " WHERE t.public_id=$1::uuid AND t.tenant_type<>'internal' ORDER BY p.display_name,p.email",[publicId]
     );
     return rows;
+  }
+
+  async customerBillingPreparation(tenantId){
+    const id=Number(tenantId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    return this.withTenantReadContext(id,async tx=>{
+      const tenant=(await tx.unsafe(
+        "SELECT id,public_id,display_name,legal_name,status,country_code,billing_email,preferred_locale,default_currency,timezone FROM tenants WHERE id=$1 LIMIT 1",
+        [id]
+      ))[0];
+      if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+      if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_BILLING_EXEMPT");
+      const offer=(await tx.unsafe(
+        "SELECT v.id AS price_version_id,p.plan_key,p.display_name AS plan_name,v.market_id,m.country_code AS market,v.currency,v.amount_minor,"+
+        " v.billing_interval,v.interval_count,v.effective_from,v.effective_to FROM service_plan_price_versions v"+
+        " JOIN service_plans p ON p.id=v.service_plan_id LEFT JOIN operating_markets m ON m.id=v.market_id"+
+        " WHERE p.plan_key='external-sva-access' AND p.status='active' AND v.currency=$1"+
+        " AND (v.market_id IS NULL OR m.country_code=$2) AND v.effective_from<=now() AND (v.effective_to IS NULL OR v.effective_to>now())"+
+        " ORDER BY (v.market_id IS NOT NULL) DESC,v.effective_from DESC LIMIT 1",
+        [tenant.default_currency,tenant.country_code]
+      ))[0]||null;
+      const subscription=(await tx.unsafe(
+        "SELECT s.id,s.status,s.billing_currency,s.current_period_start,s.current_period_end,s.cancel_at_period_end,s.last_payment_status,"+
+        " s.billing_provider,s.provider_customer_reference,s.provider_subscription_reference,s.price_version_id"+
+        " FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id"+
+        " WHERE s.tenant_id=$1 AND p.plan_key='external-sva-access' ORDER BY s.created_at DESC,s.id DESC LIMIT 1",
+        [id]
+      ))[0]||null;
+      const access=(await tx.unsafe("SELECT pgi_tenant_has_premium_call_access($1,NULL,now()) AS allowed",[id]))[0];
+      return {
+        tenant:{id:tenant.public_id,name:tenant.display_name,billing_email:tenant.billing_email,country_code:tenant.country_code,locale:tenant.preferred_locale,currency:tenant.default_currency,timezone:tenant.timezone,status:tenant.status},
+        offer,
+        subscription,
+        premium_call_access:Boolean(access?.allowed),
+        checkout_prefill:{email:tenant.billing_email||null,locale:tenant.preferred_locale,country_code:tenant.country_code,currency:tenant.default_currency},
+        return_paths:{success:"client.html?billing=success",cancel:"client.html?billing=cancelled"}
+      };
+    });
   }
 
   async customerPortalOverview(tenantId,from,to){
