@@ -405,7 +405,7 @@ test("la PWA met en cache uniquement le shell critique",()=>{
   assert.match(app,/loadDemoCalls/);
   assert.doesNotMatch(sw,/assets\/command-palette\.js/);
   assert.doesNotMatch(sw,/assets\/customer-admin\.css/);
-  assert.match(sw,/pgi-telecom-shell-v39/);
+  assert.match(sw,/pgi-telecom-shell-v40/);
 });
 
 test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiques",()=>{
@@ -417,7 +417,7 @@ test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiqu
   assert.match(css,/\.auth-brand-logo\{/);
   assert.match(sw,/audiotel-brand-icon-v33\.png/);
   assert.match(sw,/audiotel-brand-logo-v33\.png/);
-  assert.match(sw,/pgi-telecom-shell-v39/);
+  assert.match(sw,/pgi-telecom-shell-v40/);
   assert.match(buildStatic,/audiotel-brand-logo-v33\.png/);
   assert.doesNotMatch(css,/brand-mark|command-brand-emblem|auth-brand-lockup|auth-brand-emblem/);
   assert.doesNotMatch(sw,/favicon\.svg/);
@@ -453,7 +453,7 @@ test("brand header polish keeps split colors, larger icon and dark period contra
   assert.match(css,/\.product-name-pgi\{color:#f4e8dc\}/);
   assert.match(css,/\.product-name-audiotel\{color:#e0ad6d\}/);
   assert.match(css,/\.periods\{[\s\S]*rgba\(31,22,18,.96\)/);
-  assert.match(sw,/pgi-telecom-shell-v39/);
+  assert.match(sw,/pgi-telecom-shell-v40/);
 });
 
 
@@ -461,7 +461,7 @@ test("customer portal stays separate, tenant-facing and outside the critical she
 
 
 test("customer portal has professional analytics and multi-export center",()=>{for(const id of ["calls-chart","minutes-chart","revenue-chart","status-donut","payout-bars","client-export-dialog"])assert.ok(clientPortal.includes('id="'+id+'"'),id);assert.match(clientPortalJs,/function renderAnalytics/);assert.match(clientPortalJs,/function exportClient/);for(const kind of ["report","calls","settlements","numbers","copy","print"])assert.ok(clientPortal.includes('data-client-export="'+kind+'"'),kind);assert.match(clientPortalCss,/--panel:#181b1f/);});
-test("admin export center stays lazy and exposes calls, summary, finance and PDF",()=>{assert.match(callTools,/export function openExports/);assert.match(callTools,/Centre d’export PGI/);assert.match(commands,/Ouvrir le centre d’export/);assert.match(app,/m\.openExports/);assert.doesNotMatch(sw,/call-tools\.js/);});
+test("admin export center exposes complete download copy and PDF actions",()=>{assert.match(callTools,/export function openExports/);assert.match(callTools,/Centre d’export PGI/);assert.match(callTools,/Rapport complet CSV/);assert.match(callTools,/Copier le rapport complet/);assert.match(callTools,/adminMetricRows/);assert.match(callTools,/print-overview/);assert.match(commands,/Ouvrir le centre d’export/);assert.match(app,/m\.openExports/);assert.doesNotMatch(sw,/call-tools\.js/);});
 
 
 test("customer portal exposes extended analytics and password management",()=>{for(const id of ["asr-chart","value-chart","duration-chart","client-security-dialog","client-password-form"])assert.ok(clientPortal.includes('id="'+id+'"'),id);assert.match(clientPortalApi,/changePassword/);assert.match(clientPortalJs,/function changePassword/);assert.match(clientPortalJs,/svgLine\("asr-chart"/);});
