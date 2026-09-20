@@ -334,8 +334,8 @@ CREATE TABLE call_quality (
 CREATE TABLE tenant_voice_daily_sharded (
   tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
   bucket_date date NOT NULL,
-  tenant_id bigint NOT NULL REFERENCES tenants(id),
-  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  tenant_id bigint NOT NULL,
+  market_id bigint NOT NULL,
   calls_total bigint NOT NULL DEFAULT 0,
   calls_connected bigint NOT NULL DEFAULT 0,
   pdd_samples bigint NOT NULL DEFAULT 0,
@@ -368,7 +368,7 @@ CREATE INDEX tenant_voice_daily_tenant_date_idx ON tenant_voice_daily_sharded(te
 
 CREATE TABLE voice_carrier_health_hourly_sharded (
   bucket_start timestamptz NOT NULL,
-  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  market_id bigint NOT NULL,
   carrier_role text NOT NULL CHECK (carrier_role IN ('origin','host')),
   carrier_id bigint NOT NULL REFERENCES carriers(id),
   rollup_shard smallint NOT NULL CHECK (rollup_shard BETWEEN 0 AND 63),
@@ -400,7 +400,7 @@ CREATE INDEX voice_carrier_health_time_brin ON voice_carrier_health_hourly_shard
 
 CREATE TABLE voice_sip_code_hourly_sharded (
   bucket_start timestamptz NOT NULL,
-  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  market_id bigint NOT NULL,
   host_carrier_id bigint NOT NULL REFERENCES carriers(id),
   sip_final_code integer NOT NULL CHECK (sip_final_code BETWEEN 100 AND 699),
   rollup_shard smallint NOT NULL CHECK (rollup_shard BETWEEN 0 AND 63),
@@ -417,7 +417,7 @@ CREATE TABLE telecom_incidents (
   severity text NOT NULL CHECK (severity IN ('warning','critical')),
   carrier_role text CHECK (carrier_role IS NULL OR carrier_role IN ('origin','host')),
   carrier_id bigint REFERENCES carriers(id),
-  market_id bigint REFERENCES operating_markets(id),
+  market_id bigint,
   state text NOT NULL DEFAULT 'open' CHECK (state IN ('open','resolved')),
   title text NOT NULL,
   details jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -937,6 +937,18 @@ SET market_id=(SELECT id FROM operating_markets WHERE country_code='FR')
 WHERE market_id IS NULL;
 
 CREATE INDEX sva_numbers_market_status_idx ON sva_numbers(market_id,status);
+
+-- Voice/NOC tables are declared earlier for snapshot locality, then constrained here
+-- once their tenant and market parent tables exist.
+ALTER TABLE tenant_voice_daily_sharded
+  ADD CONSTRAINT tenant_voice_daily_tenant_fk FOREIGN KEY(tenant_id) REFERENCES tenants(id),
+  ADD CONSTRAINT tenant_voice_daily_market_fk FOREIGN KEY(market_id) REFERENCES operating_markets(id);
+ALTER TABLE voice_carrier_health_hourly_sharded
+  ADD CONSTRAINT voice_carrier_health_market_fk FOREIGN KEY(market_id) REFERENCES operating_markets(id);
+ALTER TABLE voice_sip_code_hourly_sharded
+  ADD CONSTRAINT voice_sip_code_market_fk FOREIGN KEY(market_id) REFERENCES operating_markets(id);
+ALTER TABLE telecom_incidents
+  ADD CONSTRAINT telecom_incidents_market_fk FOREIGN KEY(market_id) REFERENCES operating_markets(id);
 
 CREATE TABLE sva_number_aliases (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
