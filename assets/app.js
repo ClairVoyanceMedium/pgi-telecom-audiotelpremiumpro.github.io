@@ -2,7 +2,7 @@
 "use strict";
 var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
 var CONFIG={serviceRate:.8,payoutRate:.46,expertCostPerMin:.18,fixedCostPerCall:.03};
-var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},callsExpanded:false,diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,pendingSyncMode:"dashboard",scheduledSyncMode:"dashboard",hiddenAt:null,lastSyncAt:null,activeView:"overview",system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
+var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,pendingSyncMode:"dashboard",scheduledSyncMode:"dashboard",hiddenAt:null,lastSyncAt:null,activeView:"overview",system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
 var titles={overview:"Cockpit",calls:"Appels",finance:"Finance",experts:"Intervenants",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Supervision",settings:"Paramètres"};var experts=["Accueil","Service commercial","Support client","Service technique","Prise de rendez-vous","Comptabilité"];
 var carriers=["Orange","SFR","Bouygues","Free"];
 var number089="0890 80 24 24";
@@ -733,21 +733,9 @@ body.innerHTML=rhtml||'<tr><td colspan="6">Aucune donnée sur cette période.</t
 }
 function renderCalls(rows){
 renderRecentCalls(rows);
-var tableRows=applyCallFilters(rows),compactLimit=8;
-var visibleRows=state.callsExpanded?tableRows:tableRows.slice(0,compactLimit);
-var full=visibleRows.map(function(c){
-return "<tr><td>"+fmtDate(c.ts)+"</td><td>"+fmtTime(c.ts)+"</td><td>"+esc(c.caller)+"</td><td>"+esc(c.carrier)+"</td><td>"+esc(c.number)+"</td><td><strong>"+esc(c.expert)+"</strong></td><td>"+fmtDuration(c.wait)+"</td><td>"+fmtDuration(c.conversation)+"</td><td>"+c.billable+" min</td><td>"+money(c.expected)+"</td><td>"+chip(c.status)+'</td><td><button class="detail-btn" type="button" data-call-id="'+c.id+'">Voir</button></td></tr>';
-}).join("");
-if(!full)full='<tr><td colspan="12">Aucune donnée sur cette période.</td></tr>';
-var table=$("calls-table");if(table)table.innerHTML=full;
+var tableRows=applyCallFilters(rows);
 setText("calls-total-label",nfmt(tableRows.length)+" appels");
-var toggle=$("calls-toggle"),label=$("calls-toggle-label");
-if(toggle){
-toggle.hidden=tableRows.length<=compactLimit;
-toggle.setAttribute("aria-expanded",state.callsExpanded?"true":"false");
-toggle.classList.toggle("expanded",state.callsExpanded);
-}
-if(label)label.textContent=state.callsExpanded?"Réduire la liste":"Afficher les "+nfmt(tableRows.length)+" appels";
+callTools().then(function(m){m.renderCallTable(tableRows,state.marketCurrency||"EUR");});
 }
 function cockpitAnalytics(rows){
 if(RUNTIME.mode==="production"&&state.serverAnalytics)return state.serverAnalytics;
@@ -1324,24 +1312,16 @@ state.callFilters.search=$("call-search").value||"";
 state.callFilters.expert=$("call-expert").value||"";
 state.callFilters.carrier=$("call-carrier").value||"";
 state.callFilters.status=$("call-status").value||"";
-state.callsExpanded=false;
 renderCalls(filteredCalls());
 });
 });
 $("calls-table").addEventListener("click",function(e){
 var b=e.target.closest("[data-call-id]");if(b){var c=allCalls.find(function(x){return String(x.id)===String(b.getAttribute("data-call-id"));});if(c)callTools().then(function(m){m.showDetail(c);});}
 });
-var callsToggle=$("calls-toggle");
-if(callsToggle)callsToggle.addEventListener("click",function(){
-state.callsExpanded=!state.callsExpanded;
-renderCalls(filteredCalls());
-});
 $("export-csv").addEventListener("click",function(){callTools().then(function(m){m.exportCsv(applyCallFilters(filteredCalls()),$("export-csv"));});});
 $("print-calls").addEventListener("click",function(){window.print();});
 $("print-finance").addEventListener("click",function(){window.print();});
-function openMetricReset(){var d=$("reset-dialog");if(d&&typeof d.showModal==="function")d.showModal();}
-$("reset-metrics").addEventListener("click",openMetricReset);
-var cockpitReset=$("reset-metrics-cockpit");if(cockpitReset)cockpitReset.addEventListener("click",openMetricReset);
+$("reset-metrics").addEventListener("click",function(){var d=$("reset-dialog");if(typeof d.showModal==="function")d.showModal();});
 $("confirm-reset").addEventListener("click",async function(){
 var at=new Date();
 try{
