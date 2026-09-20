@@ -361,3 +361,14 @@ Après cette passe, le shell critique reste sous 238 Ko et conserve plus de 27 K
 Le Regulatory Trust Center surveille désormais les prochaines revues et les preuves plateforme arrivant à échéance. Le cockpit distingue les éléments **bloquants**, **à traiter aujourd'hui** et **bientôt**, avec une file persistante et acquittable.
 
 Une revue peut être planifiée directement lors de l'ajout d'une preuve ARCEP 2026. Le worker d'alertes anticipe les échéances jusqu'à 30 jours et signale les revues non planifiées sur les profils déjà prêts. Il ne suspend jamais automatiquement une ligne active : l'activation reste fail-closed, tandis qu'une interruption de production exige une décision explicite.
+
+
+## Control Tower 1.28
+
+Audiotel Premium Pro possède désormais une **PGI Control Tower** chargée à la demande depuis la palette de commandes. Elle regroupe les priorités d'exploitation, la readiness interne, la capacité, la conformité, les incidents, la portabilité et la résilience.
+
+Deux moteurs complètent cette vue :
+- **Policy Engine** : décision explicable `ALLOWED / BLOCKED / ACTION_REQUIRED` avant une opération sensible ;
+- **Digital Twin** : simulation sans mutation des pannes opérateur/région, pics de trafic, portabilités massives, expirations réglementaires et impayés.
+
+Aucun de ces modules n'active une connexion externe. Stripe, opérateurs, APNF/RSVA et PSP restent non connectés.
