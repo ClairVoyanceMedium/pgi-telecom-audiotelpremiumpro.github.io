@@ -252,12 +252,13 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/customer/portal"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
-        const range=rangeParams(url);
+        const requestedRange=rangeParams(url);
+        const range=await store.effectiveMetricRange(requestedRange.from,requestedRange.to);
         const [data,billing]=await Promise.all([
           store.customerPortalOverview(context.tenant_id,range.from,range.to),
           store.customerBillingPreparation(context.tenant_id)
         ]);
-        return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,billing_offer:billing.offer,billing_summary:{subscription:billing.subscription,premium_call_access:billing.premium_call_access,billing_currency:billing.billing_currency,pricing_state:billing.pricing_state,reference_offer:billing.reference_offer,checkout_prefill:billing.checkout_prefill,return_paths:billing.return_paths},billing_provider:billingProviderStatus(config),server_time:new Date().toISOString()});
+        return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,metrics_reset_at:range.baseline,billing_offer:billing.offer,billing_summary:{subscription:billing.subscription,premium_call_access:billing.premium_call_access,billing_currency:billing.billing_currency,pricing_state:billing.pricing_state,reference_offer:billing.reference_offer,checkout_prefill:billing.checkout_prefill,return_paths:billing.return_paths},billing_provider:billingProviderStatus(config),server_time:new Date().toISOString()});
       }
       if(method==="GET"&&pathname==="/api/v1/customer/billing/status"){
         requireActor(customerActor);
@@ -336,15 +337,19 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/customer/comparison"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
-        const range=rangeParams(url);
-        return done(res,metrics,started,"customer.comparison",200,await store.customerPortalComparison(context.tenant_id,range.from,range.to));
+        const requestedRange=rangeParams(url);
+        const range=await store.effectiveMetricRange(requestedRange.from,requestedRange.to);
+        if(range.empty)return done(res,metrics,started,"customer.comparison",200,{financial_by_currency:[],range:{from:range.from,to:range.to},metrics_reset_at:range.baseline});
+        return done(res,metrics,started,"customer.comparison",200,{...await store.customerPortalComparison(context.tenant_id,range.from,range.to),metrics_reset_at:range.baseline});
       }
       if(method==="GET"&&pathname==="/api/v1/customer/calls"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
-        const range=rangeParams(url);
+        const requestedRange=rangeParams(url);
+        const range=await store.effectiveMetricRange(requestedRange.from,requestedRange.to);
+        if(range.empty)return done(res,metrics,started,"customer.calls",200,{data:[],next_cursor:null,metrics_reset_at:range.baseline});
         const params={...Object.fromEntries(url.searchParams.entries()),from:range.from,to:range.to};
-        return done(res,metrics,started,"customer.calls",200,await store.customerPortalCalls(context.tenant_id,params));
+        return done(res,metrics,started,"customer.calls",200,{...await store.customerPortalCalls(context.tenant_id,params),metrics_reset_at:range.baseline});
       }
 
       if(method==="POST"&&pathname==="/api/v1/auth/logout"){
@@ -373,7 +378,8 @@ export function createBackend(options={}){
 
       if(method==="GET"&&pathname==="/api/v1/dashboard/bootstrap"){
         requireRole(actor,["admin","finance","readonly"]);
-        const range=rangeParams(url);
+        const requestedRange=rangeParams(url);
+        const range=await store.effectiveMetricRange(requestedRange.from,requestedRange.to);
         const market=url.searchParams.get("market")||null;
         const previousFrom=url.searchParams.get("previous_from")||null;
         const previousTo=url.searchParams.get("previous_to")||null;
@@ -381,9 +387,10 @@ export function createBackend(options={}){
            (previousFrom&&(!Number.isFinite(Date.parse(previousFrom))||!Number.isFinite(Date.parse(previousTo))||Date.parse(previousTo)<Date.parse(previousFrom)))){
           const e=new Error("Invalid previous range");e.status=400;e.code="INVALID_PREVIOUS_RANGE";throw e;
         }
+        const previousRange=previousFrom?await store.effectiveMetricRange(previousFrom,previousTo):null;
         const [summary,previousSummary,analytics,voiceIntelligence,experts,system,route,reconciliation]=await Promise.all([
           store.summary(range.from,range.to,market),
-          previousFrom?store.summary(previousFrom,previousTo,market):Promise.resolve(null),
+          previousRange&&!previousRange.empty?store.summary(previousRange.from,previousRange.to,market):Promise.resolve(null),
           store.dashboardAnalytics(range.from,range.to,market),
           typeof store.voiceIntelligence==="function"?store.voiceIntelligence(range.from,range.to,market):Promise.resolve(null),
           store.listExperts(),
@@ -400,36 +407,44 @@ export function createBackend(options={}){
           system:runtimeSystemSnapshot(system,eventBus,workers,config),
           route,
           reconciliation:{data:reconciliation},
+          metrics_reset_at:range.baseline,
           server_time:new Date().toISOString()
         });
       }
 
       if(method==="GET"&&pathname==="/api/v1/dashboard/summary"){
         requireRole(actor,["admin","finance","expert","readonly"]);
-        const range=rangeParams(url);
+        const requestedRange=rangeParams(url);
+        const range=await store.effectiveMetricRange(requestedRange.from,requestedRange.to);
         const market=url.searchParams.get("market")||null;
-        return done(res,metrics,started,"dashboard.summary",200,await store.summary(range.from,range.to,market));
+        return done(res,metrics,started,"dashboard.summary",200,{...await store.summary(range.from,range.to,market),metrics_reset_at:range.baseline});
       }
 
       if(method==="GET"&&pathname==="/api/v1/dashboard/analytics"){
         requireRole(actor,["admin","finance","readonly"]);
-        const range=rangeParams(url);
+        const requestedRange=rangeParams(url);
+        const range=await store.effectiveMetricRange(requestedRange.from,requestedRange.to);
         const market=url.searchParams.get("market")||null;
-        return done(res,metrics,started,"dashboard.analytics",200,await store.dashboardAnalytics(range.from,range.to,market));
+        return done(res,metrics,started,"dashboard.analytics",200,{...await store.dashboardAnalytics(range.from,range.to,market),metrics_reset_at:range.baseline});
       }
 
       if(method==="GET"&&pathname==="/api/v1/dashboard/voice-intelligence"){
         requireRole(actor,["admin","finance","readonly"]);
-        const range=rangeParams(url);
+        const requestedRange=rangeParams(url);
+        const range=await store.effectiveMetricRange(requestedRange.from,requestedRange.to);
         const market=url.searchParams.get("market")||null;
-        return done(res,metrics,started,"dashboard.voice_intelligence",200,await store.voiceIntelligence(range.from,range.to,market));
+        return done(res,metrics,started,"dashboard.voice_intelligence",200,{...await store.voiceIntelligence(range.from,range.to,market),metrics_reset_at:range.baseline});
       }
 
       if(method==="GET"&&pathname==="/api/v1/calls"){
         requireRole(actor,["admin","finance","expert","readonly"]);
         const params=Object.fromEntries(url.searchParams.entries());
+        const requestedFrom=params.from||new Date(0).toISOString(),requestedTo=params.to||new Date().toISOString();
+        const range=await store.effectiveMetricRange(requestedFrom,requestedTo);
+        if(range.empty)return done(res,metrics,started,"calls.list",200,{data:[],next_cursor:null,metrics_reset_at:range.baseline});
+        params.from=range.from;params.to=range.to;
         if(actor.role==="expert")params.expert_id=actor.expert_id||actor.sub;
-        return done(res,metrics,started,"calls.list",200,await store.listCalls(params));
+        return done(res,metrics,started,"calls.list",200,{...await store.listCalls(params),metrics_reset_at:range.baseline});
       }
 
       if(method==="GET"&&pathname==="/api/v1/experts"){
@@ -494,9 +509,10 @@ export function createBackend(options={}){
 
       if(method==="GET"&&pathname==="/api/v1/finance/reconciliation"){
         requireRole(actor,["admin","finance","readonly"]);
-        const range=rangeParams(url);
+        const requestedRange=rangeParams(url);
+        const range=await store.effectiveMetricRange(requestedRange.from,requestedRange.to);
         const market=url.searchParams.get("market")||null;
-        return done(res,metrics,started,"finance.reconciliation",200,{data:await store.reconciliation(range.from,range.to,market)});
+        return done(res,metrics,started,"finance.reconciliation",200,{data:await store.reconciliation(range.from,range.to,market),metrics_reset_at:range.baseline});
       }
 
       if(method==="GET"&&pathname==="/api/v1/system/health"){
