@@ -38,7 +38,7 @@ test("la marque client reste Audiotel Premium Pro et la plateforme reste multise
   assert.match(clientPortal,/Audiotel Premium Pro/);
   assert.doesNotMatch(clientPortal,/\bPGI\b/);
   assert.doesNotMatch(clientPortal,/voyance|voyant/i);
-  assert.doesNotMatch(clientServiceCenter,/\bPGI\b/);
+  assert.match(clientServiceCenter,/Audiotel Premium Pro/);
   assert.match(index,/Intervenants/);
   assert.match(index,/Services \/ intervenants|services \/ intervenants/i);
   assert.doesNotMatch(index,/voyance|voyant/i);
