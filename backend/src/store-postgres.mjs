@@ -1374,6 +1374,84 @@ export class PostgresStore{
     return result;
   }
 
+  async ensureLegacyStaffIdentity(loginName){
+    const login=staffLoginName(loginName);
+    const existing=await this.readSql.unsafe("SELECT id,login_name,display_name,role,enabled FROM app_users WHERE lower(login_name)=lower($1) LIMIT 1",[login]);
+    if(existing[0])return existing[0];
+    const suffix=createHash("sha256").update(login.toLowerCase()).digest("hex").slice(0,16);
+    await this.sql.unsafe(
+      "INSERT INTO app_users(email,display_name,role,enabled,login_name) VALUES($1,$2,'admin',true,$3) ON CONFLICT DO NOTHING",
+      ["legacy-"+suffix+"@staff.pgi.invalid","Administrator",login]
+    );
+    const rows=await this.readSql.unsafe("SELECT id,login_name,display_name,role,enabled FROM app_users WHERE lower(login_name)=lower($1) LIMIT 1",[login]);
+    if(!rows[0])throw problem(500,"STAFF_IDENTITY_BOOTSTRAP_FAILED");
+    return rows[0];
+  }
+
+  async staffLoginIdentity(loginName){
+    const login=String(loginName||"").trim();
+    if(login.length<3||login.length>120)return null;
+    const rows=await this.readSql.unsafe(
+      "SELECT u.id,u.login_name,u.display_name,u.role,u.enabled,c.password_hash,c.session_version,c.failed_attempts,c.first_failure_at,c.locked_until"+
+      " FROM app_users u JOIN staff_password_credentials c ON c.app_user_id=u.id"+
+      " WHERE lower(u.login_name)=lower($1) LIMIT 1",
+      [login]
+    );
+    return rows[0]||null;
+  }
+
+  async recordStaffAuthFailure(appUserId,maxFailures=8,windowSeconds=900){
+    const max=clampInt(maxFailures,8,2,50),window=clampInt(windowSeconds,900,60,86400);
+    await this.sql.unsafe(
+      "UPDATE staff_password_credentials SET"+
+      " failed_attempts=CASE WHEN first_failure_at IS NULL OR first_failure_at<now()-make_interval(secs=>$2) THEN 1 ELSE failed_attempts+1 END,"+
+      " first_failure_at=CASE WHEN first_failure_at IS NULL OR first_failure_at<now()-make_interval(secs=>$2) THEN now() ELSE first_failure_at END,"+
+      " locked_until=CASE WHEN (CASE WHEN first_failure_at IS NULL OR first_failure_at<now()-make_interval(secs=>$2) THEN 1 ELSE failed_attempts+1 END)>=$3 THEN now()+interval '15 minutes' ELSE locked_until END,"+
+      " updated_at=now() WHERE app_user_id=$1",
+      [Number(appUserId),window,max]
+    );
+  }
+
+  async recordStaffAuthSuccess(appUserId){
+    await this.sql.unsafe("UPDATE staff_password_credentials SET failed_attempts=0,first_failure_at=NULL,locked_until=NULL,updated_at=now() WHERE app_user_id=$1",[Number(appUserId)]);
+    await this.sql.unsafe("UPDATE app_users SET last_login_at=now() WHERE id=$1",[Number(appUserId)]);
+  }
+
+  async listStaffUsers(){
+    return this.readSql.unsafe(
+      "SELECT u.id,u.public_id::text AS public_id,u.login_name,u.email,u.display_name,u.role,u.enabled,u.last_login_at,u.created_at,"+
+      " (c.app_user_id IS NOT NULL) AS password_login_enabled,c.password_changed_at,c.locked_until"+
+      " FROM app_users u LEFT JOIN staff_password_credentials c ON c.app_user_id=u.id"+
+      " WHERE u.login_name IS NOT NULL ORDER BY u.enabled DESC,u.display_name,u.id"
+    );
+  }
+
+  async createStaffUser(input={},passwordHash,actor={}){
+    const login=staffLoginName(input.login_name),role=staffRole(input.role);
+    const email=String(input.email||"").trim().toLowerCase();
+    const display=String(input.display_name||"").trim();
+    if(display.length<2||display.length>120)throw problem(400,"INVALID_STAFF_DISPLAY_NAME");
+    if(email.length<5||email.length>254||!email.includes("@"))throw problem(400,"INVALID_STAFF_EMAIL");
+    if(typeof passwordHash!=="string"||passwordHash.length<20)throw problem(400,"INVALID_STAFF_PASSWORD_HASH");
+    const created=await this.sql.begin(async tx=>{
+      const rows=await tx.unsafe(
+        "INSERT INTO app_users(email,display_name,role,enabled,login_name) VALUES($1,$2,$3,true,$4) RETURNING id,public_id::text AS public_id,login_name,email,display_name,role,enabled,created_at",
+        [email,display,role,login]
+      );
+      const user=rows[0];
+      await tx.unsafe("INSERT INTO staff_password_credentials(app_user_id,password_hash) VALUES($1,$2)",[user.id,passwordHash]);
+      await tx.unsafe(
+        "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'staff_user.create','app_user',$2,$3::jsonb)",
+        [numericActor(actor),String(user.id),JSON.stringify({login_name:login,email,role})]
+      );
+      return user;
+    }).catch(error=>{
+      if(String(error?.code)==="23505")throw problem(409,"STAFF_LOGIN_OR_EMAIL_EXISTS");
+      throw error;
+    });
+    return created;
+  }
+
   async listPlatformChangeRequests(params={}){
     const limit=clampInt(params.limit,30,1,100);
     const status=String(params.status||"active").toLowerCase();
@@ -5052,6 +5130,16 @@ function normalizePortabilityNumber(value,countryCode){
 function optionalText(value,max){
   const valueText=String(value==null?"":value).trim();
   return valueText?valueText.slice(0,max):null;
+}
+function staffLoginName(value){
+  const name=String(value||"").trim();
+  if(name.length<3||name.length>120||!/^[A-Za-z0-9._@+-]+$/.test(name))throw problem(400,"INVALID_STAFF_LOGIN");
+  return name;
+}
+function staffRole(value){
+  const role=String(value||"readonly").trim().toLowerCase();
+  if(!["admin","finance","readonly"].includes(role))throw problem(400,"INVALID_STAFF_ROLE");
+  return role;
 }
 function dateOnlyValue(value,field){
   const valueText=String(value||"").trim();
