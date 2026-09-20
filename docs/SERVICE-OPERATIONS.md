@@ -80,3 +80,23 @@ Le fonctionnement normal doit être proactif :
 `détection → diagnostic → dossier unique → suivi → résolution → historique`
 
 Le support manuel reste disponible pour les exceptions, mais la plateforme doit fournir le maximum de contexte avant qu’un opérateur PGI ou un client ait besoin d’intervenir.
+
+## File centrale d’exploitation
+
+Le cockpit dispose d’une file globale paginée des dossiers. Elle peut être filtrée par état, priorité, catégorie, pays et recherche textuelle. La vue expose également les retards de première prise en charge et de résolution. Les index de `033_service_operations_queue.sql` évitent de transformer ce tableau en balayage complet lorsque le nombre de clients augmente.
+
+## Alertes proactives
+
+PGI crée une alerte et un dossier système lorsqu’un client actif possédant une ligne active n’a plus aucune destination ni expert disponible. Lorsque le routage redevient disponible, le dossier et l’alerte sont résolus automatiquement.
+
+Une portabilité dont l’automatisation passe à `action_required` ou `failed` génère une alerte interne `portability_attention`. Cette alerte n’expose pas au client les codes techniques internes.
+
+## Événements durables et futurs canaux de notification
+
+Les créations, changements d’état, notes et résolutions produisent des événements dans l’outbox PGI. L’outbox ne contient pas le texte des notes, le diagnostic complet, le RIO ou des secrets. Elle permet de brancher ultérieurement un canal e-mail, SMS ou webhook sans modifier la logique métier du centre de service.
+
+## Pièces jointes
+
+La table `tenant_service_incident_attachments` relie un dossier aux objets déjà gérés par la couche `object_assets`. Le stockage reste donc indépendant du fournisseur et bénéficie du cycle de rétention, du chiffrement et des mécanismes de confidentialité déjà prévus par PGI. Aucun stockage externe payant n’est imposé par cette architecture.
+
+La migration d’intégrité impose aussi la correspondance du tenant entre le dossier, ses événements, ses notes et ses pièces jointes. Une pièce jointe appartenant à un autre client est rejetée au niveau PostgreSQL, même si une erreur applicative tentait de la rattacher.
