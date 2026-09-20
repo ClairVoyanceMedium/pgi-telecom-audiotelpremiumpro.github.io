@@ -135,6 +135,21 @@ function renderSubscriptions(data){
   if(start)start.disabled=!provider.checkout_available;
   if(manage)manage.disabled=!provider.customer_portal_available;
 }
+function renderOnboarding(data){
+  var root=$("client-onboarding");if(!root)return;
+  var tenant=data.tenant||{},user=data.user||{},subs=data.subscriptions||[];
+  var subscriptionActive=subs.some(function(x){return x.status==="active"&&(!x.current_period_end||Date.parse(x.current_period_end)>Date.now());});
+  var complete=tenant.status==="active"&&user.email_verified===true&&tenant.kyc_status==="verified"&&subscriptionActive;
+  root.hidden=complete;
+  if(complete)return;
+  $("onboarding-account").textContent="Compte créé";
+  $("onboarding-email").textContent=user.email_verified===true?"E-mail vérifié":"E-mail à vérifier";
+  $("onboarding-kyc").textContent=tenant.kyc_status==="verified"?"KYC vérifié":tenant.kyc_status==="rejected"?"KYC à corriger":"KYC en attente";
+  $("onboarding-subscription").textContent=subscriptionActive?"Abonnement actif":"Abonnement à activer";
+  $("client-onboarding-text").textContent=tenant.status==="pending"
+    ?"Votre compte est ouvert. Vous pouvez préparer votre dossier pendant que les validations nécessaires sont effectuées."
+    :"Votre espace est actif. Les derniers contrôles restants sont indiqués ci-dessous.";
+}
 function renderDestinations(data){
   var numbers={};(data.numbers||[]).forEach(function(x){numbers[String(x.id)]=x.display_number||x.e164;});
   var rows=data.destinations||[],el=$("destinations-list");
@@ -151,7 +166,7 @@ function render(data){
   $("kpi-minutes").textContent=nf(a.billable/60,1);$("kpi-revenue").textContent=money(a.revenue,a.currency);$("kpi-payout").textContent=money(a.payout,a.currency);
   $("portal-sync").textContent="Dernière consolidation : "+(a.updated?dt(a.updated):dt(data.server_time));
   $("traffic-total").textContent=nf(a.calls)+" appels";
-  renderAnalytics(data);renderNumbers(data);renderCalls(data);renderSettlements(data);renderSubscriptions(data);renderDestinations(data);if(I.apply)I.apply(document.body);
+  renderAnalytics(data);renderNumbers(data);renderCalls(data);renderSettlements(data);renderSubscriptions(data);renderOnboarding(data);renderDestinations(data);if(I.apply)I.apply(document.body);
 }
 async function loadPortal(){
   var range=rangeFor(state.range),data;
@@ -173,10 +188,14 @@ function showApp(){
   $("customer-auth").hidden=true;$("customer-app").hidden=false;loadPortal().catch(function(e){toast("Chargement impossible : "+(e.code||e.message));});
 }
 function showLogin(){
-  $("customer-app").hidden=true;$("customer-auth").hidden=false;$("login-panel").hidden=false;$("activation-panel").hidden=true;
+  $("customer-app").hidden=true;$("customer-auth").hidden=false;$("login-panel").hidden=false;$("register-panel").hidden=true;$("activation-panel").hidden=true;
+}
+function showRegister(){
+  $("customer-app").hidden=true;$("customer-auth").hidden=false;$("login-panel").hidden=true;$("register-panel").hidden=false;$("activation-panel").hidden=true;
+  populateCountries();
 }
 function showActivation(){
-  $("customer-app").hidden=true;$("customer-auth").hidden=false;$("login-panel").hidden=true;$("activation-panel").hidden=false;
+  $("customer-app").hidden=true;$("customer-auth").hidden=false;$("login-panel").hidden=true;$("register-panel").hidden=true;$("activation-panel").hidden=false;
 }
 async function handleGoogleCredential(response,tenantOverride){
   var credential=response&&response.credential?response.credential:state.googleCredential;
@@ -202,6 +221,62 @@ async function handleGoogleCredential(response,tenantOverride){
 async function initGoogle(){
   if(!window.PGICustomerGoogle)return;
   try{await window.PGICustomerGoogle.init({callback:function(r){handleGoogleCredential(r);},loginElement:$("google-login"),activationElement:$("google-activation")});}catch(_e){}
+}
+var COUNTRY_CODES=("AD AE AF AG AI AL AM AO AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS XK YE YT ZA ZM ZW").split(" ");
+var countriesReady=false;
+function localeRegion(){
+  try{return new Intl.Locale((navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR").region||"FR";}catch(_e){return "FR";}
+}
+function populateCountries(){
+  if(countriesReady)return;
+  var select=$("register-country"),current=localeRegion().toUpperCase(),dn=null;
+  try{dn=new Intl.DisplayNames([(navigator.languages&&navigator.languages[0])||navigator.language||"fr"],{type:"region"});}catch(_e){}
+  var rows=COUNTRY_CODES.map(function(code){return {code:code,label:dn?dn.of(code):code};}).filter(function(x){return x.label;}).sort(function(a,b){return a.label.localeCompare(b.label,undefined,{sensitivity:"base"});});
+  select.innerHTML=rows.map(function(x){return '<option value="'+x.code+'">'+esc(x.label)+'</option>';}).join("");
+  select.value=COUNTRY_CODES.includes(current)?current:"FR";
+  countriesReady=true;updateRegistrationNumberField();
+}
+function updateRegistrationNumberField(){
+  var fr=$("register-country").value==="FR",label=$("register-number-label"),input=$("register-number");
+  label.textContent=fr?"SIRET":"Numéro d’immatriculation";
+  input.placeholder=fr?"14 chiffres":"Facultatif";
+  input.inputMode=fr?"numeric":"text";
+}
+async function submitRegistration(e){
+  e.preventDefault();setAuthMessage("");
+  var password=$("register-password").value,confirm=$("register-password-confirm").value;
+  if(password!==confirm){setAuthMessage("Les deux mots de passe sont différents.",true);return;}
+  if(password.length<12){setAuthMessage("Le mot de passe doit contenir au moins 12 caractères.",true);return;}
+  var payload={
+    first_name:$("register-first-name").value.trim(),
+    last_name:$("register-last-name").value.trim(),
+    company_name:$("register-company").value.trim(),
+    country_code:$("register-country").value,
+    registration_number:$("register-number").value.trim(),
+    phone:$("register-phone").value.trim(),
+    email:$("register-email").value.trim(),
+    password:password,
+    authority_confirmed:$("register-authority").checked,
+    website:$("register-website").value,
+    preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",
+    timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC")
+  };
+  try{
+    var result=await window.PGICustomerApi.register(payload);
+    state.user=result.user;
+    setAuthMessage("");
+    showApp();
+  }catch(err){
+    var messages={
+      CUSTOMER_ACCOUNT_EXISTS:"Un compte existe déjà avec cette adresse e-mail.",
+      INVALID_SIRET:"Le SIRET doit contenir 14 chiffres.",
+      INVALID_REGISTRATION_NUMBER:"Le numéro d’immatriculation n’est pas valide.",
+      INVALID_PHONE:"Le numéro de téléphone n’est pas valide.",
+      REGISTRATION_RATE_LIMITED:"Trop de créations de compte ont été tentées. Réessayez plus tard.",
+      REGISTRATION_AUTHORITY_REQUIRED:"Vous devez confirmer être autorisé à créer ce compte."
+    };
+    setAuthMessage(messages[err.code]||"Création du compte impossible. Vérifiez les informations saisies.",true);
+  }
 }
 async function submitLogin(e){
   e.preventDefault();setAuthMessage("");
@@ -284,7 +359,11 @@ async function changePassword(e){
 }
 function bind(){
   $("customer-login-form").addEventListener("submit",submitLogin);
+  $("customer-register-form").addEventListener("submit",submitRegistration);
   $("customer-activation-form").addEventListener("submit",submitActivation);
+  $("show-register").addEventListener("click",showRegister);
+  $("show-login").addEventListener("click",showLogin);
+  $("register-country").addEventListener("change",updateRegistrationNumberField);
   $("customer-logout").addEventListener("click",async function(){try{await window.PGICustomerApi.logout();}catch(_e){}state.user=null;showLogin();});
   $("export-calls").addEventListener("click",function(){exportClient("calls");});
   $("client-export").addEventListener("click",function(){var d=$("client-export-dialog");if(d&&typeof d.showModal==="function")d.showModal();});
