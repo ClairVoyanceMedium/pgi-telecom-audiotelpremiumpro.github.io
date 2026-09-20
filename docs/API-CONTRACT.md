@@ -80,7 +80,7 @@ Expose attendu, confirmé, différence, taux de concordance et anomalies.
 
 ## GET /experts
 
-Expose présence, statut, appels, minutes, ACD, ASR, reversement généré, coût expert et contribution de marge.
+Nom technique historique conservé pour compatibilité. Dans l’interface produit, ces ressources sont présentées comme des **intervenants / postes**. La route expose présence, statut, appels, minutes, ACD, ASR, reversement généré, coût de l’intervenant et contribution de marge.
 
 ## GET /system/health
 
@@ -133,7 +133,7 @@ Les totaux financiers sont calculés sur l'ensemble des règlements, indépendam
 
 ### GET /platform/tenants
 
-Réservé aux administrateurs PGI.
+Réservé aux administrateurs de la plateforme Audiotel Premium Pro.
 
 Filtres prévus :
 
@@ -197,7 +197,7 @@ Les futures routes tenant utilisent le contexte authentifié ; aucun `tenant_id`
 
 Retourne un dossier opérationnel borné pour un tenant externe identifié par son UUID public. Accessible aux rôles plateforme admin, finance et readonly.
 
-Le dossier regroupe l’identité et le statut du tenant, l’état KYC sans document d’identité, l’accès SVA effectif, les abonnements et la dernière situation de paiement, jusqu’à 100 affectations SVA, jusqu’à 100 experts, jusqu’à 50 alertes, jusqu’à 24 reversements, jusqu’à 50 événements de contrôle, jusqu’à 50 entrées d’audit et l’activité agrégée sur les 30 derniers jours.
+Le dossier regroupe l’identité et le statut du tenant, l’état KYC sans document d’identité, l’accès SVA effectif, les abonnements et la dernière situation de paiement, jusqu’à 100 affectations SVA, jusqu’à 100 intervenants/postes, jusqu’à 50 alertes, jusqu’à 24 reversements, jusqu’à 50 événements de contrôle, jusqu’à 50 entrées d’audit et l’activité agrégée sur les 30 derniers jours.
 
 GET /platform/tenants accepte aussi le filtre number, normalisé en E.164 sans signe +, afin de retrouver un client à partir d’un préfixe de numéro SVA. Cette recherche s’appuie sur l’index de préfixe du parc SVA.
 
