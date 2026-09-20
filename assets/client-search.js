@@ -1,7 +1,15 @@
 (function(){
 "use strict";
 
-var input=null,clearButton=null,count=null,observer=null,timer=null;
+var input=null,clearButton=null,count=null,observer=null,timer=null,scope="all";
+
+var groups=[
+  {type:"numbers",selector:"#numbers-list .cp-row",label:"numéro"},
+  {type:"settlements",selector:"#settlements-list .cp-row",label:"reversement"},
+  {type:"subscriptions",selector:"#subscription-list .cp-row",label:"contrat"},
+  {type:"routing",selector:"#destinations-list .cp-row",label:"routage"},
+  {type:"calls",selector:"#calls-body tr",label:"appel"}
+];
 
 function normalize(value){
   return String(value==null?"":value)
@@ -10,29 +18,60 @@ function normalize(value){
 }
 function targets(){
   var rows=[];
-  ["#numbers-list .cp-row","#settlements-list .cp-row","#subscription-list .cp-row","#destinations-list .cp-row","#calls-body tr"].forEach(function(sel){
-    document.querySelectorAll(sel).forEach(function(el){rows.push(el);});
+  groups.forEach(function(group){
+    document.querySelectorAll(group.selector).forEach(function(el){
+      rows.push({el:el,type:group.type,label:group.label});
+    });
   });
   return rows;
 }
+function summary(counts,total){
+  if(!total)return "Aucun résultat";
+  var parts=[];
+  groups.forEach(function(group){
+    var value=counts[group.type]||0;
+    if(value)parts.push(value+" "+group.label+(value>1&&group.type!=="routing"?"s":""));
+  });
+  return parts.join(" · ");
+}
 function apply(){
   if(!input)return;
-  var query=normalize(input.value),rows=targets(),visible=0;
-  rows.forEach(function(row){
-    var show=!query||normalize(row.textContent).includes(query);
-    row.hidden=!show;
-    if(show)visible++;
+  var query=normalize(input.value),rows=targets(),visible=0,counts={};
+  rows.forEach(function(item){
+    var inScope=scope==="all"||item.type===scope;
+    var matches=!query||normalize(item.el.textContent).includes(query);
+    var show=inScope&&matches;
+    item.el.hidden=!show;
+    if(show){
+      visible++;
+      counts[item.type]=(counts[item.type]||0)+1;
+    }
   });
-  clearButton.hidden=!query;
-  if(!query){
-    count.textContent="Recherche dans les appels, numéros, reversements, abonnement et routage";
+  clearButton.hidden=!query&&scope==="all";
+  if(!query&&scope==="all"){
+    count.textContent="Recherche dans les appels, numéros, reversements, contrat et routage";
   }else{
-    count.textContent=visible+" résultat"+(visible>1?"s":"")+" affiché"+(visible>1?"s":"");
+    count.textContent=summary(counts,visible);
   }
 }
 function schedule(){
   clearTimeout(timer);
-  timer=setTimeout(apply,60);
+  timer=setTimeout(apply,50);
+}
+function setScope(next,button){
+  scope=next||"all";
+  document.querySelectorAll("[data-search-scope]").forEach(function(el){
+    var active=el===button||el.dataset.searchScope===scope;
+    el.classList.toggle("active",active);
+    el.setAttribute("aria-pressed",active?"true":"false");
+  });
+  apply();
+}
+function reset(){
+  input.value="";
+  var all=document.querySelector('[data-search-scope="all"]');
+  setScope("all",all);
+  input.focus();
 }
 function init(){
   input=document.getElementById("client-search");
@@ -42,16 +81,13 @@ function init(){
 
   input.addEventListener("input",schedule);
   input.addEventListener("search",schedule);
-  clearButton.addEventListener("click",function(){
-    input.value="";
-    apply();
-    input.focus();
-  });
+  clearButton.addEventListener("click",reset);
   input.addEventListener("keydown",function(event){
-    if(event.key==="Escape"&&input.value){
-      input.value="";
-      apply();
-    }
+    if(event.key==="Escape"&&(input.value||scope!=="all"))reset();
+  });
+  document.querySelectorAll("[data-search-scope]").forEach(function(button){
+    button.setAttribute("aria-pressed",button.dataset.searchScope==="all"?"true":"false");
+    button.addEventListener("click",function(){setScope(button.dataset.searchScope,button);});
   });
   document.addEventListener("keydown",function(event){
     var tag=(document.activeElement&&document.activeElement.tagName||"").toLowerCase();
