@@ -108,5 +108,5 @@ function apply(rootNode){
   document.querySelectorAll("[placeholder]").forEach(function(el){var v=el.getAttribute("placeholder"),translated=t(v);if(translated!==v)el.setAttribute("placeholder",translated);});
   document.title=t("Audiotel Premium Pro — Espace client");
 }
-root.Audiotel Premium ProClientI18n=Object.freeze({locale:locale,t:t,apply:apply,supported:Object.freeze(["fr","en","es","it","pt-PT","pt-BR","de","sv"]),fallback:"en"});
+root.PGIClientI18n=Object.freeze({locale:locale,t:t,apply:apply,supported:Object.freeze(["fr","en","es","it","pt-PT","pt-BR","de","sv"]),fallback:"en"});
 })(window);
