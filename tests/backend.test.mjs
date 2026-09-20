@@ -600,7 +600,7 @@ test("carrier switch requires independent four-eyes approval and still rolls bac
     assert.equal((await r.json()).error.code,"DUAL_CONTROL_APPROVAL_REQUIRED");
 
     await assert.rejects(
-      ()=>app.store.approvePlatformChangeRequest(planned.change_request_id,{sub:"admin"},{reason:"self"}),
+      ()=>app.store.approvePlatformChangeRequest(planned.change_request_id,{sub:"local-admin"},{reason:"self"}),
       error=>error.code==="FOUR_EYES_SECOND_APPROVER_REQUIRED"
     );
     const approved=await app.store.approvePlatformChangeRequest(planned.change_request_id,{sub:"second-admin"},{reason:"Independent approval"});
