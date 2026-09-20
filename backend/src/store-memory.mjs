@@ -721,6 +721,20 @@ export class MemoryStore{
   async createCallDestination(publicId,input={}){void publicId;const label=String(input.label||"").trim(),destination_uri=String(input.destination_uri||"").trim();if(!label||!destination_uri)throw problem(400,"INVALID_CALL_DESTINATION");const row={id:this.nextDestinationId++,tenant_id:null,sva_number_id:null,label,destination_type:String(input.destination_type||"pstn"),destination_uri,priority:Number(input.priority||100),status:"testing",max_concurrent_calls:input.max_concurrent_calls==null?null:Number(input.max_concurrent_calls),active_calls:0};this.callDestinations.push(row);return structuredClone(row);}
   async setCallDestinationStatus(id,status){const row=this.callDestinations.find(x=>x.id===Number(id));if(!row)throw problem(404,"CALL_DESTINATION_NOT_FOUND");if(!["active","testing","disabled"].includes(status))throw problem(400,"INVALID_CALL_DESTINATION_STATUS");row.status=status;if(status==="disabled")row.active_calls=0;return structuredClone(row);}
 
+  async createTenantServiceIncident(publicId,input={}){void publicId;void input;throw problem(404,"TENANT_NOT_FOUND");}
+  async updateServiceIncident(id,input={}){void id;void input;throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");}
+  async addServiceIncidentNote(id,input={}){void id;void input;throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");}
+  async simulateTenantRouting(publicId,input={}){void publicId;return this.simulateTenantRoutingById(1,input);}
+  async simulateTenantRoutingById(tenantId,input={}){
+    void tenantId;
+    const numberId=input.sva_number_id==null||input.sva_number_id===""?null:Number(input.sva_number_id);
+    const rows=this.callDestinations.filter(x=>(numberId==null||x.sva_number_id==null||Number(x.sva_number_id)===numberId));
+    const candidates=rows.map(x=>({...structuredClone(x),eligible:x.status==="active"&&(x.max_concurrent_calls==null||Number(x.active_calls)<Number(x.max_concurrent_calls))}));
+    const selected=candidates.filter(x=>x.eligible).sort((a,b)=>Number(a.priority||100)-Number(b.priority||100)||Number(a.active_calls||0)-Number(b.active_calls||0))[0]||null;
+    return {tenant_id:1,sva_number_id:numberId,dry_run:true,safe_to_activate:Boolean(selected),selected,candidates,warnings:selected?[]:["Aucune destination actuellement disponible"]};
+  }
+  async scanTenantServiceIncidents(){return [];}
+
   async scanUnpaidSubscriptions(){
     return [];
   }
@@ -759,7 +773,10 @@ export class MemoryStore{
   async activateCustomerPortalInvitation(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
   async customerPortalUsers(){return [];}
   async customerBillingPreparation(tenantId){void tenantId;return {tenant:{id:"00000000-0000-4000-8000-000000000001",name:"Société Démo",billing_email:"demo@example.test",country_code:"FR",locale:"fr-FR",currency:"EUR",timezone:"Europe/Paris",status:"pending"},offer:{price_version_id:1,plan_key:"external-sva-access",plan_name:"External SVA Access",market:null,currency:"EUR",amount_minor:200,billing_interval:"month",interval_count:1},reference_offer:{price_version_id:1,plan_key:"external-sva-access",plan_name:"External SVA Access",currency:"EUR",amount_minor:200,billing_interval:"month",interval_count:1},pricing_state:"local_price_ready",subscription:null,premium_call_access:false,billing_currency:{currency:"EUR",source:"country_default",catalog_version:"2026-09-20",accepted_currencies:["EUR"],local_price_configured:true},checkout_prefill:{email:"demo@example.test",locale:"fr-FR",country_code:"FR",currency:"EUR"},return_paths:{success:"client.html?billing=success",cancel:"client.html?billing=cancelled"}};}
-  async customerPortalOverview(tenantId,from,to){void tenantId;const voice=await this.voiceIntelligence(from,to);return {tenant:{display_name:"Société Démo",default_currency:"EUR",status:"active"},financial_by_currency:[],series:[],numbers:[],settlements:[],subscriptions:[],destinations:[],recent_calls:[],voice_quality:voice.summary,range:{from,to}};}
+  async customerPortalOverview(tenantId,from,to){void tenantId;const voice=await this.voiceIntelligence(from,to);return {tenant:{display_name:"Société Démo",default_currency:"EUR",status:"active"},financial_by_currency:[],series:[],numbers:[],settlements:[],subscriptions:[],destinations:[],service_incidents:[],operational_alerts:[],recent_calls:[],voice_quality:voice.summary,range:{from,to}};}
+  async customerServiceIncidents(_tenantId,params={}){if(params.incident_id)throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");return {data:[],alerts:[]};}
+  async createCustomerServiceIncident(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
+  async addCustomerServiceIncidentNote(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
   async customerPortalComparison(_tenantId,from,to){return {financial_by_currency:[],range:{from,to}};}
   async customerPortalCalls(){return {data:[],next_cursor:null};}
 
