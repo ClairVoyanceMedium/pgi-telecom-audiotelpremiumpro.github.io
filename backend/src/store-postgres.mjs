@@ -2776,6 +2776,7 @@ export class PostgresStore{
     const effectiveFrom=input.effective_from?new Date(input.effective_from):new Date();
     if(!Number.isInteger(bps)||bps<0||bps>10000)throw problem(400,"INVALID_PLATFORM_FEE");
     if(!Number.isFinite(perMinute)||perMinute<0||perMinute>10000)throw problem(400,"INVALID_PLATFORM_FEE");
+    if(bps===0&&perMinute===0)throw problem(400,"PGI_MARGIN_REQUIRED");
     if(!Number.isInteger(delay)||delay<0||delay>365)throw problem(400,"INVALID_PAYOUT_DELAY");
     if(marketId!=null&&(!Number.isInteger(marketId)||marketId<=0))throw problem(400,"INVALID_MARKET_ID");
     if(svaNumberId!=null&&(!Number.isInteger(svaNumberId)||svaNumberId<=0))throw problem(400,"INVALID_SVA_NUMBER_ID");
