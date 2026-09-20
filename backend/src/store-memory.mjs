@@ -12,10 +12,10 @@ export class MemoryStore{
     this.eventBus=eventBus;
     this.calls=[];
     this.experts=[
-      {id:1,code:"FRED",display_name:"Frederick",destination_uri:"loopback/9101",status:"available",enabled:true,active_calls:0,last_assigned_at:null},
-      {id:2,code:"SOFIA",display_name:"Sofia",destination_uri:"loopback/9102",status:"available",enabled:true,active_calls:0,last_assigned_at:null},
-      {id:3,code:"EMMA",display_name:"Emma",destination_uri:"loopback/9103",status:"away",enabled:true,active_calls:0,last_assigned_at:null},
-      {id:4,code:"LINA",display_name:"Lina",destination_uri:"loopback/9104",status:"available",enabled:true,active_calls:0,last_assigned_at:null}
+      {id:1,code:"ACC",display_name:"Accueil",destination_uri:"loopback/9101",status:"available",enabled:true,active_calls:0,last_assigned_at:null},
+      {id:2,code:"COM",display_name:"Service commercial",destination_uri:"loopback/9102",status:"available",enabled:true,active_calls:0,last_assigned_at:null},
+      {id:3,code:"SUP",display_name:"Support client",destination_uri:"loopback/9103",status:"away",enabled:true,active_calls:0,last_assigned_at:null},
+      {id:4,code:"TECH",display_name:"Service technique",destination_uri:"loopback/9104",status:"available",enabled:true,active_calls:0,last_assigned_at:null}
     ];
     this.callDestinations=[];
     this.nextDestinationId=1;
