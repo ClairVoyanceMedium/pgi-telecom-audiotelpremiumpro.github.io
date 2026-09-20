@@ -1,6 +1,8 @@
-# PGI • Telecom - Audiotel Premium Pro
+# Audiotel Premium Pro
 
-Cockpit Audiotel, financier et télécom de PGI Telecom.
+Plateforme Audiotel professionnelle. Le cockpit interne conserve l’identité « PGI • Telecom - Audiotel Premium Pro ».
+
+> Convention produit : **Audiotel Premium Pro** est le nom public/client. **PGI • Telecom - Audiotel Premium Pro** désigne uniquement le cockpit interne. Les termes publics sont « services », « intervenants » et « postes » ; le nom technique historique `experts` reste conservé dans le code pour compatibilité.
 
 ## État actuel
 
@@ -13,7 +15,7 @@ Fonctions déjà présentes :
 - reversement attendu, confirmé et écart ;
 - marge estimée ;
 - appels, minutes, ACD, ASR, abandons ;
-- vues CDR, experts et opérateurs ;
+- vues CDR, intervenants/services et opérateurs ;
 - contrôle financier et rapprochement ;
 - santé SIP / CDR préparée pour le futur backend ;
 - remise à zéro non destructive des métriques avec historique local ;
@@ -67,7 +69,7 @@ Les valeurs visibles dans la V1 sont générées localement dans le navigateur. 
 
 - service D080 : 0,80 € TTC/min ;
 - reversement cible : 0,46 € HT/min ;
-- coût expert démo : 0,18 €/min.
+- coût intervenant démo : 0,18 €/min.
 
 Ces hypothèses seront remplacées par les paramètres contractuels réels de l'opérateur retenu.
 
@@ -109,13 +111,13 @@ PGI est désormais conçu pour pouvoir évoluer sans réécriture majeure vers t
 La couche 1.8.0 ajoute notamment :
 
 - tenants et droits d'accès par organisation ;
-- rattachement des numéros, experts, appels, audits et écritures financières à un tenant ;
+- rattachement des numéros, intervenants/services, appels, audits et écritures financières à un tenant ;
 - affectations commerciales/réglementaires de numéros ;
 - profils KYC ;
 - profils de conformité des flux financiers ;
 - relevés de reversement par client et justification appel par appel ;
 - routage FreeSWITCH fail-closed par numéro SVA en production ;
-- rejet explicite des associations expert/numéro appartenant à deux tenants différents.
+- rejet explicite des associations intervenant/numéro appartenant à deux tenants différents.
 
 Aucun portail client ni flux de fonds tiers n'est activé automatiquement par cette fondation. Ces fonctions resteront fermées tant que l'isolation d'authentification, le contrat opérateur amont et le montage de paiement ne seront pas validés.
 
@@ -246,7 +248,7 @@ Le Cockpit ajoute une couche analytique dense pilotée par le backend :
 - répartition hebdomadaire ;
 - statuts d'appels ;
 - distribution des durées ;
-- contribution experts ;
+- contribution intervenants ;
 - contribution opérateurs ;
 - économie unitaire par appel et par minute ;
 - qualité voix MOS, perte de paquets, jitter et latence ;
@@ -267,14 +269,14 @@ La couche 1.16 vise directement le temps gagné au quotidien et la réduction de
 - métadonnées applicatives mises en cache 60 secondes ;
 - événements temps réel traités selon leur coût ;
 - nouvel appel : une seule page récente de CDR est fusionnée ;
-- changements expert/opérateur : aucun rechargement CDR ;
+- changements intervenant/opérateur : aucun rechargement CDR ;
 - suspension des SSE lorsque l'application passe en arrière-plan ;
 - resynchronisation complète après une absence prolongée ;
 - rendu limité à l'espace de travail actuellement ouvert ;
 - dernière vue, période, marché et mode mobile mémorisés ;
 - palette universelle Actions avec `Ctrl/⌘ + K` et bouton mobile ;
 - alertes regroupées comme centre de décision ;
-- Experts, Opérateurs et Réconciliation alimentés par les données exactes serveur ;
+- Intervenants, Opérateurs et Réconciliation alimentés par les données exactes serveur ;
 - runtime frontend modularisé sans augmenter les budgets : `app.js` reste limité à 90 KiB et le shell à 260 KiB.
 
 Voir `docs/EFFICIENCY.md`.
@@ -287,7 +289,7 @@ Le bus SSE de production peut maintenant être relayé entre plusieurs processus
 
 ## Command Center 1.17
 
-Le Cockpit devient une tour de contrôle métier et télécom dense : 12 indicateurs avancés, tendances finance/volume/conversion/qualité, économie unitaire, chaîne de paiement, concentration experts/opérateurs et supervision du bus temps réel distribué. Les graphiques de production utilisent des agrégats PostgreSQL exacts et n’inventent jamais les métriques absentes.
+Le Cockpit devient une tour de contrôle métier et télécom dense : 12 indicateurs avancés, tendances finance/volume/conversion/qualité, économie unitaire, chaîne de paiement, concentration intervenants/opérateurs et supervision du bus temps réel distribué. Les graphiques de production utilisent des agrégats PostgreSQL exacts et n’inventent jamais les métriques absentes.
 
 Le temps réel multi-processus s’appuie sur PostgreSQL `LISTEN/NOTIFY`, sans Redis/Valkey supplémentaire. Le moteur graphique avancé est séparé du runtime principal afin de conserver les budgets de performance du shell.
 
