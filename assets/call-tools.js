@@ -7,39 +7,9 @@ const t=v=>v?new Intl.DateTimeFormat("fr-FR",{timeStyle:"medium"}).format(new Da
 const dur=s=>{s=Math.max(0,Number(s)||0);const m=Math.floor(s/60),r=Math.floor(s%60);return m+":"+String(r).padStart(2,"0");};
 const cell=v=>'"'+String(v??"").replace(/"/g,'""')+'"';
 
-let callRows=[],callCurrency="EUR",callExpanded=false;
-function callMoney(v){
-  try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:callCurrency}).format(Number(v)||0);}
-  catch{return n(v,2)+" "+callCurrency;}
-}
-function callTime(v){return new Intl.DateTimeFormat("fr-FR",{hour:"2-digit",minute:"2-digit"}).format(new Date(v));}
-function callChip(status){
-  const label=status==="connected"?"ABOUTI":status==="abandoned"?"ABANDON":"ÉCHEC";
-  return '<span class="status-chip '+esc(status)+'">'+label+"</span>";
-}
-function ensureCallDisclosure(){
-  const table=$("calls-table");if(!table)return null;
-  let button=$("calls-toggle");
-  if(!button){
-    const style=document.createElement("style");
-    style.textContent=".calls-disclosure{display:flex;justify-content:center;padding-top:10px;border-top:1px solid rgba(73,51,40,.45)}.calls-toggle{display:inline-flex;align-items:center;gap:8px;border:0;background:transparent;color:var(--cyan);font-size:10px;font-weight:800;padding:7px 10px}.calls-toggle-arrow{display:inline-block;font-size:14px;transition:transform .18s ease}.calls-toggle.expanded .calls-toggle-arrow{transform:rotate(180deg)}";
-    document.head.appendChild(style);
-    const wrap=document.createElement("div");wrap.className="calls-disclosure";
-    wrap.innerHTML='<button id="calls-toggle" class="calls-toggle" type="button" aria-expanded="false"><span id="calls-toggle-label"></span><span class="calls-toggle-arrow" aria-hidden="true">⌄</span></button>';
-    table.closest(".table-wrap")?.after(wrap);
-    button=$("calls-toggle");
-    button?.addEventListener("click",()=>{callExpanded=!callExpanded;renderCallTable(callRows,callCurrency);});
-  }
-  return button;
-}
-export function renderCallTable(rows,currency="EUR"){
-  callRows=Array.isArray(rows)?rows:[];callCurrency=String(currency||"EUR").toUpperCase();
-  const table=$("calls-table");if(!table)return;
-  const visible=callExpanded?callRows:callRows.slice(0,8);
-  table.innerHTML=visible.map(c=>"<tr><td>"+d(c.ts)+"</td><td>"+callTime(c.ts)+"</td><td>"+esc(c.caller)+"</td><td>"+esc(c.carrier)+"</td><td>"+esc(c.number)+"</td><td><strong>"+esc(c.expert)+"</strong></td><td>"+dur(c.wait)+"</td><td>"+dur(c.conversation)+"</td><td>"+esc(c.billable)+" min</td><td>"+callMoney(c.expected)+"</td><td>"+callChip(c.status)+'</td><td><button class="detail-btn" type="button" data-call-id="'+esc(c.id)+'">Voir</button></td></tr>').join("")||'<tr><td colspan="12">Aucune donnée sur cette période.</td></tr>';
-  const button=ensureCallDisclosure(),label=$("calls-toggle-label");
-  if(button){button.hidden=callRows.length<=8;button.classList.toggle("expanded",callExpanded);button.setAttribute("aria-expanded",callExpanded?"true":"false");}
-  if(label)label.textContent=callExpanded?"Réduire la liste":"Afficher les "+new Intl.NumberFormat("fr-FR").format(callRows.length)+" appels";
+let callListPromise;
+export function renderCallTable(rows,currency){
+  return (callListPromise||(callListPromise=import("./call-list.js"))).then(m=>m.renderCallTable(rows,currency));
 }
 
 export function exportCsv(rows,button){
