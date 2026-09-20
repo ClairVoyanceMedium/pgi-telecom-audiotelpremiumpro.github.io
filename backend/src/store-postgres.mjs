@@ -1132,7 +1132,7 @@ export class PostgresStore{
     const rows=await this.readSql.unsafe(
       id==null
         ?"SELECT metric_key,effective_from FROM metric_baselines WHERE scope='global' AND tenant_id IS NULL AND metric_key=ANY($1::text[]) ORDER BY effective_from DESC,id DESC"
-        :"SELECT metric_key,effective_from FROM metric_baselines WHERE scope='tenant' AND tenant_id=$2 AND metric_key=ANY($1::text[]) ORDER BY effective_from DESC,id DESC",
+        :"SELECT metric_key,effective_from FROM metric_baselines WHERE scope='global' AND tenant_id=$2 AND metric_key=ANY($1::text[]) ORDER BY effective_from DESC,id DESC",
       id==null?[["all",...keys]]:[["all",...keys],id]
     );
     const latest={};
@@ -1161,11 +1161,10 @@ export class PostgresStore{
 
   async listBaselines(params={}){
     const scope=params.scope||"global";
-    if(!["global","tenant","expert","sva_number"].includes(scope))throw problem(400,"INVALID_SCOPE");
+    if(!["global","expert","sva_number"].includes(scope))throw problem(400,"INVALID_SCOPE");
     const limit=clampInt(params.limit,20,1,100);
     const tenantId=params.tenant_id==null?null:Number(params.tenant_id);
-    if(scope==="tenant"&&(!Number.isInteger(tenantId)||tenantId<=0))throw problem(400,"INVALID_TENANT_CONTEXT");
-    return this.sql.unsafe(
+        return this.sql.unsafe(
       "SELECT id,tenant_id,scope,scope_id,metric_key,reason,created_at,effective_from,created_by,created_by_customer_principal_id"+
       " FROM metric_baselines WHERE scope=$1 AND ($2::bigint IS NULL OR tenant_id=$2) ORDER BY effective_from DESC,id DESC LIMIT $3",
       [scope,tenantId,limit]
@@ -1174,12 +1173,11 @@ export class PostgresStore{
 
   async createBaseline(payload,actor){
     const scope=String(payload.scope||"global");
-    if(!["global","tenant","expert","sva_number"].includes(scope))throw problem(400,"INVALID_SCOPE");
+    if(!["global","expert","sva_number"].includes(scope))throw problem(400,"INVALID_SCOPE");
     const metricKey=String(payload.metric_key||"all");
     if(!["all","calls","minutes","revenue","payout","quality"].includes(metricKey))throw problem(400,"INVALID_METRIC_KEY");
     const tenantId=payload.tenant_id==null?null:Number(payload.tenant_id);
-    if(scope==="tenant"&&(!Number.isInteger(tenantId)||tenantId<=0))throw problem(400,"INVALID_TENANT_CONTEXT");
-    const rows=await this.sql.unsafe(
+        const rows=await this.sql.unsafe(
       "INSERT INTO metric_baselines(created_by,tenant_id,scope,scope_id,metric_key,reason,effective_from) VALUES($1,$2,$3,$4,$5,$6,now())"+
       " RETURNING id,tenant_id,scope,scope_id,metric_key,reason,created_at,effective_from",
       [numericActor(actor),tenantId,scope,payload.scope_id==null?null:Number(payload.scope_id),metricKey,String(payload.reason||"")]
@@ -1208,7 +1206,7 @@ export class PostgresStore{
       for(const key of keys){
         const inserted=await tx.unsafe(
           "INSERT INTO metric_baselines(tenant_id,scope,metric_key,reason,effective_from,created_by_customer_principal_id)"+
-          " VALUES($1,'tenant',$2,'Remise à zéro depuis l’espace client',now(),$3::uuid)"+
+          " VALUES($1,'global',$2,'Remise à zéro depuis l’espace client',now(),$3::uuid)"+
           " RETURNING id,tenant_id,scope,metric_key,reason,created_at,effective_from",
           [id,key,principal]
         );
