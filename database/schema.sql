@@ -356,14 +356,14 @@ CREATE TABLE tenant_voice_daily_sharded (
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY(tenant_bucket,bucket_date,tenant_id,market_id)
 ) PARTITION BY HASH (tenant_bucket);
-DO $
+DO $pgi$
 DECLARE i integer;
 BEGIN
   FOR i IN 0..63 LOOP
     EXECUTE format('CREATE TABLE tenant_voice_daily_sharded_p%s PARTITION OF tenant_voice_daily_sharded FOR VALUES WITH (MODULUS 64, REMAINDER %s)',i,i);
   END LOOP;
 END;
-$;
+$pgi$;
 CREATE INDEX tenant_voice_daily_tenant_date_idx ON tenant_voice_daily_sharded(tenant_id,bucket_date DESC);
 
 CREATE TABLE voice_carrier_health_hourly_sharded (
