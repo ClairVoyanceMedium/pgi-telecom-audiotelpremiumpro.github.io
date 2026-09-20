@@ -2524,7 +2524,7 @@ export class PostgresStore{
       if(!carrier)throw problem(409,"PORTABILITY_TARGET_CARRIER_UNAVAILABLE");
       const route=(await tx.unsafe(
         "SELECT r.active_carrier_id,r.active_connection_id,cc.state AS connection_state FROM logical_carrier_routes r"+
-        " LEFT JOIN carrier_connections cc ON cc.id=r.active_connection_id WHERE r.route_key='sva-primary' FOR UPDATE",
+        " LEFT JOIN carrier_connections cc ON cc.id=r.active_connection_id WHERE r.route_key='sva-primary' FOR UPDATE OF r",
         []
       ))[0];
       if(!route||Number(route.active_carrier_id)!==targetCarrierId)throw problem(409,"PORTABILITY_TARGET_ROUTE_NOT_ACTIVE");
