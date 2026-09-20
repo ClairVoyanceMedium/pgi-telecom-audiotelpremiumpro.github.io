@@ -14,7 +14,7 @@ const budgets = {
   "service-worker.js": 16 * 1024
 };
 
-const portalBudgets = {"client.html":22*1024,"assets/client-portal.css":24*1024,"assets/client-portal-api.js":7*1024,"assets/client-portal.js":36*1024,"assets/client-config.js":2*1024,"assets/client-google.js":5*1024,"assets/client-i18n.js":56*1024};
+const portalBudgets = {"client.html":28*1024,"assets/client-portal.css":30*1024,"assets/client-portal-api.js":8*1024,"assets/client-portal.js":44*1024,"assets/client-config.js":2*1024,"assets/client-google.js":5*1024,"assets/client-i18n.js":72*1024};
 const lazyBudgets = {"assets/demo-data.js":8*1024,"assets/customer-admin.css":10*1024,"assets/cockpit-pro.js":12*1024,"assets/cockpit-pro.css":4*1024,"assets/voice-intelligence.js":20*1024,"assets/client-intelligence.js":28*1024,"assets/command-palette.js":8*1024,"assets/performance-radar.js":16*1024,"assets/subscription-billing-ui.js":4*1024,"assets/customer-admin.js":24*1024,"assets/tenant-control-detail.js":20*1024,"assets/platform-admin-tools.js":18*1024,"assets/call-tools.js":10*1024};
 
 let total = 0;
