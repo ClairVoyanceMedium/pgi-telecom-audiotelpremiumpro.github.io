@@ -180,7 +180,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
       proposed_tariff_code:"D090",proposed_service_rate_ttc_per_min:0.9,effective_on:tariffEffective,notes:"integration"
     },{sub:"admin"});
     assert.equal(tariffPlan.status,"planned");
-    assert.equal(String(tariffPlan.effective_on).slice(0,10),tariffEffective);
+    assert.equal(new Date(tariffPlan.effective_on).toISOString().slice(0,10),tariffEffective);
 
     await store.sql.unsafe("UPDATE tenant_number_assignments SET status='active' WHERE id=$1",[Number(extAssignmentForRoute[0].id)]);
 
