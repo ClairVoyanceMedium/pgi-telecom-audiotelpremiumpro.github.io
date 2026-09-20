@@ -259,3 +259,10 @@ La couche Voice Intelligence reste entièrement auto-hébergée et n'impose aucu
 - Les CDR FreeSWITCH normalisent PDD, côté de raccrochage, MOS, perte de paquets, jitter, latence, RTT et compteurs RTP lorsqu'ils sont disponibles.
 - Le worker de supervision détecte les dégradations de connexion, réseau, PDD et SIP 5xx. Il crée des incidents et des recommandations, mais n'active jamais une bascule opérateur sans action administrateur.
 - Le cockpit charge les composants Voice Intelligence à la demande afin de préserver le budget du shell critique.
+## Portabilité SVA sans changement de numéro
+
+La portabilité est un workflow du control plane, distinct du routage média. Une demande client ne crée jamais de route et ne modifie jamais la ligne en cours. Le numéro E.164 et le tarif public vérifié deviennent des invariants de la bascule.
+
+La finalisation n'est autorisée qu'après confirmation opérateur et réunit dans une seule transaction PostgreSQL le numéro, l'affectation tenant, le rattachement opérateur, l'événement de portabilité et les journaux d'audit. Le backend vérifie aussi la route SVA réellement active avant de passer le dossier à `ported`.
+
+Les interfaces de portabilité sont chargées à la demande afin de préserver le budget du shell critique. Détails : `docs/PORTABILITY.md`.
