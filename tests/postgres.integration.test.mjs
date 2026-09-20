@@ -70,6 +70,21 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const duplicateBilling=await store.applySubscriptionBillingEvent(billingEvent);
     assert.equal(duplicateBilling.duplicate,true);
 
+    await assert.rejects(
+      ()=>store.applySubscriptionBillingEvent({...billingEvent,status:"past_due",last_payment_status:"failed"}),
+      error=>error.status===409&&error.code==="BILLING_EVENT_ID_COLLISION"
+    );
+    await store.sql.unsafe("INSERT INTO tenants(slug,display_name,legal_name,tenant_type,status,country_code,billing_email) VALUES('integration-external-2','External Test 2','External Test 2','customer','active','FR','billing2@example.test')");
+    const externalIdentity2=await store.sql.unsafe("SELECT public_id::text AS public_id FROM tenants WHERE slug='integration-external-2'");
+    await assert.rejects(
+      ()=>store.applySubscriptionBillingEvent({...billingEvent,provider_event_id:"sub-wrong-tenant-1",tenant_public_id:externalIdentity2[0].public_id}),
+      error=>error.status===409&&error.code==="BILLING_SUBSCRIPTION_TENANT_MISMATCH"
+    );
+    const billingPrep=await store.customerBillingPreparation((await store.sql.unsafe("SELECT id FROM tenants WHERE slug='integration-external'"))[0].id);
+    assert.equal(Number(billingPrep.offer.amount_minor),200);
+    assert.equal(billingPrep.checkout_prefill.email,"billing@example.test");
+    assert.equal(billingPrep.return_paths.success,"client.html?billing=success");
+
     await store.sql.unsafe("INSERT INTO tenant_number_assignments(tenant_id,sva_number_id,assignment_type,status,valid_from) SELECT t.id,s.id,'customer_service','active',now() FROM tenants t CROSS JOIN sva_numbers s WHERE t.slug='integration-external' AND s.e164='33890000001'");
     const extAssignmentForRoute=await store.sql.unsafe("SELECT id FROM tenant_number_assignments WHERE tenant_id=(SELECT id FROM tenants WHERE slug='integration-external') AND sva_number_id=(SELECT id FROM sva_numbers WHERE e164='33890000001') LIMIT 1");
     const createdDestination=await store.createCallDestination(externalIdentity[0].public_id,{assignment_id:Number(extAssignmentForRoute[0].id),label:"Standard principal",destination_type:"pstn",destination_uri:"tel:+33123456789",priority:10,max_concurrent_calls:25},{sub:"admin"});
