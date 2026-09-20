@@ -77,7 +77,7 @@ Chaque affectation SVA peut générer un dossier d'audit JSON horodaté depuis l
 - contrôles réglementaires de la plateforme pour le marché concerné ;
 - route opérateur courante et dernières bascules.
 
-Le pack contient sa propre empreinte SHA-256 et un indicateur de continuité des liens de la chaîne de preuves. Chaque export est lui-même journalisé dans `audit_log` avec l'empreinte produite. Pour limiter l'exposition de données sensibles, le pack exclut volontairement le RIO brut, les secrets de portabilité, les numéros d'appelants et le contenu des appels.
+Le pack contient sa propre empreinte SHA-256 et un indicateur de continuité des liens de la chaîne de preuves. Chaque export reçoit un identifiant UUID et est inscrit dans le registre append-only `sva_regulatory_evidence_pack_exports` avec son hash, puis journalisé dans `audit_log`. Pour limiter l'exposition de données sensibles, le pack exclut volontairement le RIO brut, les secrets de portabilité, les numéros d'appelants et le contenu des appels.
 
 ## Signalements et fraude
 
