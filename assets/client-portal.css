@@ -162,3 +162,6 @@ html{scroll-padding-top:150px}
   .cp-onboarding{grid-template-columns:1fr}
   .cp-onboarding-steps{justify-content:flex-start}
 }
+
+.cp-billing-trust{margin:10px 0 0;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:rgba(255,255,255,.018);color:var(--muted);font-size:9px;line-height:1.55}
+#client-billing-start:disabled,#client-billing-manage:disabled{cursor:not-allowed;opacity:.58}
