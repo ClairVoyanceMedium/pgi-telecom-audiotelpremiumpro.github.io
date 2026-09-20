@@ -47,6 +47,8 @@ export class MemoryStore{
     this.subscriptionPrices=[{id:1,plan_key:"external-sva-access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,effective_from:"2026-09-20T19:33:00Z",effective_to:null}];
     this.subscriptionEvents=new Set();
     this.adminAlerts=[];
+    this.staffUsers=[{id:1,public_id:randomUUID(),login_name:"local-admin",email:"local-admin@staff.pgi.invalid",display_name:"Local Simulator",role:"admin",enabled:true,password_hash:null,session_version:1,last_login_at:null,created_at:new Date().toISOString()}];
+    this.nextStaffUserId=2;
   }
 
   seedSimulator(days=21){
@@ -551,6 +553,40 @@ export class MemoryStore{
     this.changeRequests.push(cr);
     this.#audit("carrier_switch.plan",String(sw.id),{...sw,change_request_id:cr.id,dual_control_required:true});
     return {...sw,change_request_id:cr.id,change_request_public_id:cr.public_id,change_request_status:cr.status,change_request_expires_at:cr.expires_at};
+  }
+
+  async ensureLegacyStaffIdentity(loginName){
+    const login=String(loginName||"local-admin").trim();
+    let row=this.staffUsers.find(x=>x.login_name.toLowerCase()===login.toLowerCase());
+    if(!row){
+      row={id:this.nextStaffUserId++,public_id:randomUUID(),login_name:login,email:"legacy-"+this.nextStaffUserId+"@staff.pgi.invalid",display_name:"Administrator",role:"admin",enabled:true,password_hash:null,session_version:1,last_login_at:null,created_at:new Date().toISOString()};
+      this.staffUsers.push(row);
+    }
+    return structuredClone(row);
+  }
+
+  async staffLoginIdentity(loginName){
+    const row=this.staffUsers.find(x=>x.enabled&&x.password_hash&&x.login_name.toLowerCase()===String(loginName||"").trim().toLowerCase());
+    return row?structuredClone(row):null;
+  }
+
+  async recordStaffAuthFailure(){return;}
+  async recordStaffAuthSuccess(id){const row=this.staffUsers.find(x=>Number(x.id)===Number(id));if(row)row.last_login_at=new Date().toISOString();}
+
+  async listStaffUsers(){
+    return this.staffUsers.map(({password_hash,...x})=>({...structuredClone(x),password_login_enabled:Boolean(password_hash),password_changed_at:null,locked_until:null}));
+  }
+
+  async createStaffUser(input={},passwordHash,actor={}){
+    const login=String(input.login_name||"").trim(),email=String(input.email||"").trim().toLowerCase(),display=String(input.display_name||"").trim(),role=String(input.role||"readonly").trim().toLowerCase();
+    if(login.length<3||login.length>120||!/^[A-Za-z0-9._@+-]+$/.test(login))throw problem(400,"INVALID_STAFF_LOGIN");
+    if(display.length<2||display.length>120)throw problem(400,"INVALID_STAFF_DISPLAY_NAME");
+    if(email.length<5||!email.includes("@"))throw problem(400,"INVALID_STAFF_EMAIL");
+    if(!["admin","finance","readonly"].includes(role))throw problem(400,"INVALID_STAFF_ROLE");
+    if(this.staffUsers.some(x=>x.login_name.toLowerCase()===login.toLowerCase()||x.email===email))throw problem(409,"STAFF_LOGIN_OR_EMAIL_EXISTS");
+    const row={id:this.nextStaffUserId++,public_id:randomUUID(),login_name:login,email,display_name:display,role,enabled:true,password_hash:passwordHash,session_version:1,last_login_at:null,created_at:new Date().toISOString()};
+    this.staffUsers.push(row);this.#audit("staff_user.create",String(row.id),{login_name:login,email,role,created_by:actor?.sub||null});
+    const {password_hash,...safe}=row;return structuredClone(safe);
   }
 
   async listPlatformChangeRequests(params={}){
