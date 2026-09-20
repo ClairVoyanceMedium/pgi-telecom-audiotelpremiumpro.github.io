@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-const [migration,store,memory,server,adminUi,productionCheck]=await Promise.all([
+const [migration,priceMigration,store,memory,server,adminUi,productionCheck]=await Promise.all([
   readFile(new URL("../database/migrations/037_regulatory_trust_center.sql",import.meta.url),"utf8"),
+  readFile(new URL("../database/migrations/038_subscription_price_300.sql",import.meta.url),"utf8"),
   readFile(new URL("../backend/src/store-postgres.mjs",import.meta.url),"utf8"),
   readFile(new URL("../backend/src/store-memory.mjs",import.meta.url),"utf8"),
   readFile(new URL("../backend/server.mjs",import.meta.url),"utf8"),
@@ -58,6 +59,20 @@ test("private regulatory operations are authenticated, idempotent and audited",(
   assert.ok(store.includes("REGULATORY_EVIDENCE_REFERENCE_REQUIRED"));
   assert.ok(store.includes("INSERT INTO audit_log"));
   assert.ok(store.includes("INSERT INTO outbox_events"));
+});
+
+test("evidence pack is private, hashed, privacy-minimised and exportable",()=>{
+  for(const token of ["regulatoryEvidencePack","audiotel-regulatory-evidence-pack/1","pack_sha256","evidence_links_valid","raw_rio_included:false","regulatory.evidence_pack.export"])assert.ok(store.includes(token),token);
+  assert.ok(server.includes("/api/v1/platform/tenant-number-assignments/:id/regulatory-evidence-pack"));
+  assert.ok(adminUi.includes("Evidence Pack"));
+  assert.ok(adminUi.includes("evidence-pack-"));
+});
+
+test("current external subscription reference price is 3 EUR without rewriting the historical 2 EUR migration",()=>{
+  assert.ok(priceMigration.includes("300"));
+  assert.ok(priceMigration.includes("2026-09-20T19:33:00Z"));
+  assert.ok(priceMigration.includes("pgi_publish_service_plan_price"));
+  assert.ok(memory.includes("amount_minor:300"));
 });
 
 test("production verification protects regulatory trust center",()=>{
