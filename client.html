@@ -15,6 +15,7 @@
 <script src="assets/client-google.js" defer></script>
 <script src="assets/client-portal-api.js" defer></script>
 <script src="assets/client-premium.js" defer></script>
+<script src="assets/client-intelligence.js" defer></script>
 <script src="assets/client-portal.js" defer></script>
 <script src="assets/client-search.js" defer></script>
 </head>
@@ -93,6 +94,7 @@
 
     <nav class="cp-section-nav" aria-label="Navigation du tableau de bord">
       <a href="#client-overview">Synthèse</a>
+      <a href="#client-intelligence">Radar</a>
       <a href="#client-analytics">Analyses</a>
       <a href="#client-calls">Appels</a>
       <a href="#client-finance">Reversements</a>
@@ -129,6 +131,31 @@
       <article><span>Minutes facturables</span><strong id="kpi-minutes">0</strong><small>Sur la période</small></article>
       <article><span>Montant service TTC</span><strong id="kpi-revenue">0</strong><small>Volume généré par les appels</small></article>
       <article class="cp-kpi-accent"><span>Reversement net validé</span><strong id="kpi-payout">0</strong><small>Après validation des relevés</small></article>
+    </section>
+
+    <section id="client-intelligence" class="cp-intelligence-grid cp-anchor-section" aria-label="Comparaison et signaux automatiques">
+      <article class="cp-panel cp-comparison-panel">
+        <div class="cp-panel-head">
+          <div><p class="cp-kicker">COMPARAISON</p><h2>Période actuelle vs précédente</h2></div>
+          <span id="comparison-period-label">Même durée</span>
+        </div>
+        <div class="cp-comparison-grid">
+          <div class="cp-compare-card"><span>Appels</span><strong id="compare-calls">—</strong><small id="compare-calls-delta">—</small></div>
+          <div class="cp-compare-card"><span>Taux de décroché</span><strong id="compare-asr">—</strong><small id="compare-asr-delta">—</small></div>
+          <div class="cp-compare-card"><span>Minutes facturables</span><strong id="compare-minutes">—</strong><small id="compare-minutes-delta">—</small></div>
+          <div class="cp-compare-card"><span>Montant service TTC</span><strong id="compare-revenue">—</strong><small id="compare-revenue-delta">—</small></div>
+        </div>
+      </article>
+
+      <article class="cp-panel cp-radar-panel">
+        <div class="cp-panel-head">
+          <div><p class="cp-kicker">RADAR AUTOMATIQUE</p><h2>Signaux à examiner</h2></div>
+          <span>Analyse locale</span>
+        </div>
+        <div id="client-insights" class="cp-insights" aria-live="polite">
+          <p class="cp-empty">Analyse en cours.</p>
+        </div>
+      </article>
     </section>
 
     <section id="client-analytics" class="cp-chart-grid cp-anchor-section" aria-label="Analyses graphiques">
@@ -174,6 +201,24 @@
       <div class="cp-panel-head">
         <div><p class="cp-kicker">CONSOMMATION</p><h2>Derniers appels</h2></div>
         <button id="export-calls" class="cp-ghost" type="button">Exporter CSV</button>
+      </div>
+      <div class="cp-call-filters" aria-label="Filtres avancés des appels">
+        <label><span>État</span><select id="call-filter-status">
+          <option value="">Tous les états</option>
+          <option value="connected">Décrochés</option>
+          <option value="abandoned">Abandonnés</option>
+          <option value="no_answer">Sans réponse</option>
+          <option value="busy">Occupés</option>
+          <option value="failed">Échoués</option>
+        </select></label>
+        <label><span>Numéro</span><select id="call-filter-number"><option value="">Tous les numéros</option></select></label>
+        <label><span>Durée min.</span><input id="call-filter-min-duration" type="number" min="0" max="1440" step="0.5" inputmode="decimal" placeholder="minutes"></label>
+        <label><span>Montant min.</span><input id="call-filter-min-amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00"></label>
+        <button id="call-filter-reset" class="cp-ghost" type="button">Réinitialiser</button>
+      </div>
+      <div class="cp-call-filter-meta">
+        <span id="call-filter-summary">20 derniers appels affichés</span>
+        <button id="call-load-more" class="cp-ghost" type="button" hidden>Charger plus</button>
       </div>
       <div class="cp-table-wrap">
         <table class="cp-table">
