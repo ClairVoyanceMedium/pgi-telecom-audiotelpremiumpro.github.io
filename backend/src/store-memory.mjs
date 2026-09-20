@@ -761,6 +761,16 @@ export class MemoryStore{
     throw problem(404,"ASSIGNMENT_NOT_FOUND");
   }
 
+  async upsertSvaRegulatoryProfile(id,input={},actor={}){
+    void id;void input;void actor;throw problem(404,"ASSIGNMENT_NOT_FOUND");
+  }
+  async recordSvaRegulatoryEvidence(id,input={},actor={}){
+    void id;void input;void actor;throw problem(404,"ASSIGNMENT_NOT_FOUND");
+  }
+  async createSvaAbuseCase(id,input={},actor={}){
+    void id;void input;void actor;throw problem(404,"ASSIGNMENT_NOT_FOUND");
+  }
+
   async customerVoiceStudio(tenantId){void tenantId;return {data:structuredClone(this.voiceServices)};}
 
   async createCustomerVoiceService(tenantId,input={},actorSubject=""){
