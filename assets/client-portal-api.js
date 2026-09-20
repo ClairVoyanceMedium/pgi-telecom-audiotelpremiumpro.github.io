@@ -68,6 +68,12 @@ root.PGICustomerApi=Object.freeze({
   createIncident:function(payload,idempotencyKey){return request("/customer/incidents",{method:"POST",body:payload,idempotencyKey:idempotencyKey});},
   addIncidentNote:function(id,body,idempotencyKey){return request("/customer/incidents/"+encodeURIComponent(id)+"/notes",{method:"POST",body:{body:body},idempotencyKey:idempotencyKey});},
   simulateRouting:function(payload){return request("/customer/routing/simulate",{method:"POST",body:payload||{}});},
+  voiceStudio:function(){return request("/customer/voice-studio",{timeoutMs:8000});},
+  createVoiceService:function(payload,idempotencyKey){return request("/customer/voice-studio/services",{method:"POST",body:payload,idempotencyKey:idempotencyKey});},
+  saveVoiceServiceDraft:function(id,payload,idempotencyKey){return request("/customer/voice-studio/services/"+encodeURIComponent(id)+"/draft",{method:"POST",body:payload,idempotencyKey:idempotencyKey});},
+  simulateVoiceService:function(id,payload){return request("/customer/voice-studio/services/"+encodeURIComponent(id)+"/simulate",{method:"POST",body:payload||{}});},
+  publishVoiceService:function(id,idempotencyKey){return request("/customer/voice-studio/services/"+encodeURIComponent(id)+"/publish",{method:"POST",body:{},idempotencyKey:idempotencyKey});},
+  rollbackVoiceService:function(id,versionId,idempotencyKey){return request("/customer/voice-studio/services/"+encodeURIComponent(id)+"/rollback",{method:"POST",body:{version_id:versionId},idempotencyKey:idempotencyKey});},
   comparison:function(from,to){var q=new URLSearchParams({from:from,to:to});return request("/customer/comparison?"+q.toString(),{timeoutMs:10000});},
   calls:function(from,to,cursor,limit,filters){
     var q=new URLSearchParams({from:from,to:to,limit:String(limit||100)});
