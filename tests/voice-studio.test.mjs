@@ -1,0 +1,97 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {readFile} from "node:fs/promises";
+import {defaultVoiceFlow,validateVoiceFlow,simulateVoiceFlow,voiceFlowChecksum} from "../backend/src/voice-studio-domain.mjs";
+
+const [migration,store,server,clientApi,clientUi,clientPortal,buildStatic,checkStatic,sizeCheck]=await Promise.all([
+  readFile(new URL("../database/migrations/035_voice_studio.sql",import.meta.url),"utf8"),
+  readFile(new URL("../backend/src/store-postgres.mjs",import.meta.url),"utf8"),
+  readFile(new URL("../backend/server.mjs",import.meta.url),"utf8"),
+  readFile(new URL("../assets/client-portal-api.js",import.meta.url),"utf8"),
+  readFile(new URL("../assets/client-voice-studio.js",import.meta.url),"utf8"),
+  readFile(new URL("../assets/client-portal.js",import.meta.url),"utf8"),
+  readFile(new URL("../scripts/build-static.mjs",import.meta.url),"utf8"),
+  readFile(new URL("../scripts/check-static.mjs",import.meta.url),"utf8"),
+  readFile(new URL("../scripts/check-size.mjs",import.meta.url),"utf8")
+]);
+
+test("new voice service fails closed until a real destination is supplied",()=>{
+  const flow=defaultVoiceFlow();
+  const result=validateVoiceFlow(flow);
+  assert.equal(result.valid,false);
+  assert.ok(result.errors.some(x=>x.code==="VOICE_QUEUE_URI_INVALID"));
+});
+
+test("voice studio validates advanced flows and simulates without mutation",()=>{
+  const flow=defaultVoiceFlow({destination_uri:"tel:+33123456789",overflow_uri:"tel:+33987654321"});
+  flow.entry="access";
+  flow.recording={policy:"always",consent_required:true,retention_days:30};
+  flow.nodes.unshift({id:"access",type:"access_control",blacklist:["+33600"],whitelist:["+336001"],blocked_next:"blocked",allowed_next:"welcome"});
+  flow.nodes.push({id:"blocked",type:"terminate",reason:"blocked"});
+  const checked=validateVoiceFlow(flow);
+  assert.equal(checked.valid,true);
+  assert.ok(checked.features.includes("access_control"));
+  const before=JSON.stringify(flow);
+  const sim=simulateVoiceFlow(flow,{digits:"1",caller_number:"+33123456789",at:"2026-09-21T10:00:00Z"});
+  assert.equal(sim.dry_run,true);
+  assert.ok(sim.path.length>0);
+  assert.equal(JSON.stringify(flow),before);
+  assert.match(voiceFlowChecksum(flow),/^[0-9a-f]{64}$/);
+});
+
+test("weighted routing is rejected unless weights total exactly 100",()=>{
+  const flow={schema_version:1,entry:"split",default_locale:"fr-FR",nodes:[
+    {id:"split",type:"weighted_split",branches:[{weight:60,next:"a"},{weight:30,next:"b"}]},
+    {id:"a",type:"route",destination_uri:"tel:+33123456789"},
+    {id:"b",type:"route",destination_uri:"tel:+33987654321"}
+  ]};
+  const checked=validateVoiceFlow(flow);
+  assert.equal(checked.valid,false);
+  assert.ok(checked.errors.some(x=>x.code==="VOICE_SPLIT_WEIGHT_INVALID"));
+});
+
+test("voice studio schema is tenant scoped, versioned and rollback-ready",()=>{
+  for(const token of [
+    "CREATE TABLE tenant_voice_services",
+    "CREATE TABLE tenant_voice_service_versions",
+    "CREATE TABLE tenant_voice_access_rules",
+    "CREATE TABLE tenant_voice_service_events",
+    "tenant_scoped_voice_services",
+    "tenant_scoped_voice_service_versions",
+    "security_barrier=true",
+    "active_version_id",
+    "source_version_id"
+  ])assert.ok(migration.includes(token),token);
+  assert.doesNotMatch(migration,/^\s*(DROP|TRUNCATE|DELETE)\b/im);
+});
+
+test("customer voice studio API supports draft simulation publish and rollback",()=>{
+  for(const token of [
+    "/api/v1/customer/voice-studio",
+    "customer.voice_service.create",
+    "customer.voice_service.draft",
+    "customer.voice_service.simulate",
+    "customer.voice_service.publish",
+    "customer.voice_service.rollback"
+  ])assert.ok(server.includes(token),token);
+  for(const token of ["customerVoiceStudio","createCustomerVoiceService","saveCustomerVoiceDraft","simulateCustomerVoiceService","publishCustomerVoiceService","rollbackCustomerVoiceService"])assert.ok(store.includes(token),token);
+  for(const token of ["voiceStudio:function","createVoiceService:function","saveVoiceServiceDraft:function","simulateVoiceService:function","publishVoiceService:function","rollbackVoiceService:function"])assert.ok(clientApi.includes(token),token);
+});
+
+test("customer voice studio exceeds basic SVI configuration surface with safety controls",()=>{
+  for(const token of [
+    "Simulation avant publication",
+    "Versions & retour arrière",
+    "Horaires & jours fériés",
+    "Liste noire / blanche",
+    "Multi-langue",
+    "Répartition pondérée",
+    "Débordement",
+    "Consentement enregistrement",
+    "Anti-abus"
+  ])assert.ok(clientUi.includes(token),token);
+  assert.match(clientPortal,/client-voice-studio\.js/);
+  assert.match(buildStatic,/client-voice-studio\.js/);
+  assert.match(checkStatic,/client-voice-studio\.js/);
+  assert.match(sizeCheck,/client-voice-studio\.js/);
+});
