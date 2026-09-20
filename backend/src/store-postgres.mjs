@@ -2054,7 +2054,7 @@ export class PostgresStore{
         [assignment.tenant_id,id,assignment.sva_number_id,generatedAt,packHash,chainHead,chainLinksValid,evidence.length,actorSubject||null]
       ))[0];
       await tx.unsafe(
-        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'regulatory.evidence_pack.export','tenant_number_assignment',$3,jsonb_build_object('export_public_id',$4,'generated_at',$5,'pack_sha256',$6,'evidence_chain_head',$7,'evidence_links_valid',$8))",
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'regulatory.evidence_pack.export','tenant_number_assignment',$3,jsonb_build_object('export_public_id',$4::text,'generated_at',$5::timestamptz,'pack_sha256',$6::text,'evidence_chain_head',$7::text,'evidence_links_valid',$8::boolean))",
         [assignment.tenant_id,actorId,String(id),exportRow.public_id,generatedAt,packHash,chainHead,chainLinksValid]
       );
       return {...body,integrity:{algorithm:"sha256",export_id:exportRow.public_id,pack_sha256:packHash,evidence_chain_head:chainHead,evidence_links_valid:chainLinksValid,evidence_events:evidence.length}};
