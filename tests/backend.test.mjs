@@ -640,8 +640,8 @@ test("billing orchestration is ready without connecting a payment provider",()=>
   assert.match(backendServer,/event_collision_detection:true/);
   assert.match(backendServer,/tenant_binding_validation:true/);
   assert.match(backendServer,/automatic_access_recovery:true/);
-  assert.match(backendServer,/sva_payout_flow:"carrier_to_customer"/);
-  assert.match(backendServer,/funds_held_by_pgi:false/);
+  assert.match(backendServer,/sva_payout_flow:"carrier_to_pgi_to_customer"/);
+  assert.match(backendServer,/pgi_margin_retained:true/);
 });
 
 
