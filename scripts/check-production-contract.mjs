@@ -53,6 +53,7 @@ const serviceExcellenceMigration=fs.readFileSync("database/migrations/032_servic
 const serviceOperationsMigration=fs.readFileSync("database/migrations/033_service_operations_queue.sql","utf8");
 const serviceIntegrityMigration=fs.readFileSync("database/migrations/034_service_incident_tenant_integrity.sql","utf8");
 const regulatoryTrustMigration=fs.readFileSync("database/migrations/037_regulatory_trust_center.sql","utf8");
+const subscriptionPrice300Migration=fs.readFileSync("database/migrations/038_subscription_price_300.sql","utf8");
 const clientServiceCenter=fs.readFileSync("assets/client-service-center.js","utf8");
 const tenantServiceAdmin=fs.readFileSync("assets/tenant-service-admin.js","utf8");
 const googleIdSource=fs.readFileSync("backend/src/google-id.mjs","utf8");
@@ -148,6 +149,8 @@ if(!/sva_regulatory_profiles/.test(regulatoryTrustMigration)||!/pgi_sva_regulato
 if(!/sva_regulatory_evidence_events/.test(regulatoryTrustMigration)||!/sva_regulatory_evidence_no_update/.test(regulatoryTrustMigration)||!/digest\(/.test(regulatoryTrustMigration))failures.push("regulatory trust center must retain append-only cryptographic evidence");
 if(!/man_caller_authentication/.test(regulatoryTrustMigration)||!/fraud_route_traceability/.test(regulatoryTrustMigration)||!/33700_process/.test(regulatoryTrustMigration))failures.push("regulatory trust center must retain caller-authentication and abuse controls");
 if(!/upsertSvaRegulatoryProfile/.test(postgresStore)||!/recordSvaRegulatoryEvidence/.test(postgresStore)||!/createSvaAbuseCase/.test(postgresStore)||!/regulatory-evidence/.test(backendServer))failures.push("regulatory trust center must retain private evidence and abuse operations");
+if(!/regulatoryEvidencePack/.test(postgresStore)||!/regulatory-evidence-pack/.test(backendServer)||!/pack_sha256/.test(postgresStore)||!/raw_rio_included:false/.test(postgresStore))failures.push("regulatory trust center must retain privacy-minimised hashed evidence pack export");
+if(!/pgi_publish_service_plan_price/.test(subscriptionPrice300Migration)||!/300/.test(subscriptionPrice300Migration)||!/3\.00 EUR\/month/.test(subscriptionPrice300Migration))failures.push("current external subscription reference price must remain versioned at 3 EUR/month");
 if(!/tenant_payout_terms/.test(pgiRevenueMigration)||!/tenant_revenue_distributions/.test(pgiRevenueMigration)||!/pgi_collects/.test(pgiRevenueMigration))failures.push("production must retain PGI-collected SVA revenue distribution");
 if(!/tenant_number_assignments_payout_terms_gate/.test(pgiRevenueMigration)||!/pgi_tenant_has_payout_terms/.test(pgiRevenueMigration))failures.push("external SVA activation must require PGI payout terms");
 if(!/rebuildTenantRevenueDistributions/.test(postgresStore)||!/PORTABILITY_PAYOUT_TERMS_REQUIRED/.test(postgresStore))failures.push("carrier settlements and port-ins must enforce PGI revenue distribution");
