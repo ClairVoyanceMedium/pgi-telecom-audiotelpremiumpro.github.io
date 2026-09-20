@@ -359,3 +359,32 @@ La réponse vaut `ALLOWED`, `BLOCKED` ou `ACTION_REQUIRED` et expose les raisons
 Exécute un scénario `carrier_outage`, `traffic_spike`, `mass_portability`, `regulatory_expiry`, `billing_failure` ou `region_failure`.
 
 La réponse contient l'impact projeté, la sévérité, des recommandations et les hypothèses de base. `dry_run=true` et `mutates_state=false` sont contractuels.
+
+
+## Operational Assurance 1.29
+
+### GET /platform/staff-users
+
+Rôle `admin`. Liste les identités staff internes sans exposer de hash de mot de passe.
+
+### POST /platform/staff-users
+
+Rôle `admin`, CSRF et idempotence obligatoires. Crée une identité staff `admin`, `finance` ou `readonly`. Le mot de passe initial doit contenir au moins 12 caractères et n'est stocké que sous forme hashée.
+
+### GET /platform/change-requests
+
+Lecture privée des changements critiques en attente, approuvés ou historiques.
+
+### POST /platform/change-requests/:id/approve
+
+Rôle `admin`, CSRF et idempotence obligatoires. Le demandeur original ne peut pas approuver sa propre demande.
+
+### POST /platform/change-requests/:id/reject
+
+Rôle `admin`, CSRF et idempotence obligatoires. Un motif de refus est requis et le demandeur ne peut pas refuser sa propre demande.
+
+L'activation d'une bascule opérateur exige une demande `carrier_switch_activation` approuvée et non expirée. Le rollback d'une bascule exécutée reste une action de récupération indépendante.
+
+La réponse Control Tower `audiotel-control-tower/2` contient `assurance.risk`, `assurance.slo`, `assurance.shadow_billing` et `assurance.change_requests`.
+
+Le Digital Twin `audiotel-digital-twin/2` ajoute `database_failure`, `worker_backlog`, `settlement_mismatch` et `hyperscale_growth`.
