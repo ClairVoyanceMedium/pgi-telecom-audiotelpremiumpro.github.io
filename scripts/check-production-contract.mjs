@@ -124,6 +124,8 @@ if(!/tenant_scoped_portal_calls/.test(customerPortalMigration)||!/tenant_scoped_
 if(!/customer_federated_identities/.test(customerGoogleMigration)||!/provider_subject/.test(customerGoogleMigration))failures.push("Google identities must be stored as federated subjects");
 if(!/RS256/.test(googleIdSource)||!/audienceMatches/.test(googleIdSource)||!/accounts\.google\.com/.test(googleIdSource))failures.push("Google ID tokens must be cryptographically validated server-side");
 if(!/\/api\/v1\/customer\/portal/.test(backendServer)||!/customerPortalOverview/.test(postgresStore)||!/withTenantReadContext/.test(postgresStore))failures.push("customer portal must use a tenant-scoped read path");
+if(!/\/api\/v1\/customer\/comparison/.test(backendServer)||!/customerPortalComparison/.test(postgresStore))failures.push("customer comparison must remain tenant-scoped");
+if(!/INVALID_CALL_STATUS/.test(postgresStore)||!/min_duration/.test(postgresStore)||!/min_amount/.test(postgresStore))failures.push("customer call filters must be validated and server-side");
 if(!/__Host-pgi_customer_session/.test(security)||!/__Host-pgi_customer_csrf/.test(security))failures.push("customer portal must use cookies isolated from PGI staff sessions");
 if(!/SVA_ROUTING_CONTEXT_REQUIRED/.test(backendServer)||!/resolveTelephonyRoutingContext/.test(backendServer))failures.push("production telephony must require an SVA routing context");
 if(!/\/api\/v1\/platform\/overview/.test(backendServer)||!/platform\.overview/.test(backendServer))failures.push("backend must expose the read-only wholesale overview");
