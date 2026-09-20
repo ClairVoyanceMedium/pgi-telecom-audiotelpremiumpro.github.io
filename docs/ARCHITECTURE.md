@@ -9,6 +9,10 @@ La plateforme traite deux flux financiers indépendants.
 - Abonnement PGI : le client paie son abonnement mensuel au prestataire de paiement, qui reverse ensuite le revenu de plateforme à PGI.
 - Reversement SVA : l’opérateur SVA verse directement les sommes dues au client. PGI calcule, rapproche et affiche ces montants, sans encaisser les fonds pour le compte du client.
 
+La frontière de sécurité est volontairement en deux étages : un futur adaptateur public du prestataire devra d’abord vérifier cryptographiquement la signature native du webhook, puis seulement transmettre un événement normalisé vers l’ingress privé PGI. La route interne `/internal/billing/subscription-event` n’est donc pas destinée à être exposée directement comme webhook public. Les événements normalisés sont dédupliqués, protégés contre les collisions d’identifiant, liés strictement au tenant et conservés dans un journal append-only.
+
+Le parcours client est préparé pour un paiement hébergé par le prestataire : e-mail, langue, pays, devise, version tarifaire et chemins de retour sont calculés côté serveur avant l’ouverture du paiement. PGI ne stocke pas de numéro de carte. Le retour navigateur après paiement n’accorde jamais l’accès SVA à lui seul : seul l’état d’abonnement confirmé par l’événement serveur peut ouvrir l’accès.
+
 L’architecture de paiement est pré-câblée mais inactive. Les routes `/customer/billing/status`, `/customer/billing/checkout-session` et `/customer/billing/portal-session` sont présentes, protégées par la session client et le CSRF. Tant qu’aucun adaptateur de paiement n’est volontairement connecté, les actions financières répondent `PAYMENT_PROVIDER_NOT_CONNECTED`.
 
 Le prestataire cible prévu est Stripe, mais aucun secret, appel API, compte ou webhook Stripe n’est nécessaire pour faire fonctionner l’application actuelle. Le branchement futur doit rester derrière ce contrat afin de ne pas coupler les appels, le routage SVA ou les reversements à un prestataire de paiement.
