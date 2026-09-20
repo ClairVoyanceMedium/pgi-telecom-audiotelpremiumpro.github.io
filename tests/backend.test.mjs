@@ -570,7 +570,7 @@ test("selective baselines isolate metric categories and tenant dashboards",async
   assert.equal(global.revenue.baseline,revenue.effective_from);
   assert.equal(global.revenue.empty,true);
 
-  const tenantCalls=await app.store.createBaseline({scope:"tenant",tenant_id:77,metric_key:"calls",reason:"tenant calls reset"},{sub:"admin"});
+  const tenantCalls=await app.store.createBaseline({scope:"global",tenant_id:77,metric_key:"calls",reason:"tenant calls reset"},{sub:"admin"});
   const tenant=await app.store.effectiveMetricRanges(from,to,77);
   assert.equal(tenant.calls.baseline,tenantCalls.effective_from);
   assert.equal(tenant.revenue.baseline,null);
