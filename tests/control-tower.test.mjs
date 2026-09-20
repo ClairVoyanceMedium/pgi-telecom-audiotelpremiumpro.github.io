@@ -48,11 +48,10 @@ test("Digital Twin covers carrier, portability, regulatory, billing and DR scena
 });
 
 test("Control Tower is private, lazy-loaded and wired to both engines",async()=>{
-  const [server,store,memory,api,commands,ui,build,size]=await Promise.all([
+  const [server,store,memory,commands,ui,build,size]=await Promise.all([
     readFile(new URL("../backend/server.mjs",import.meta.url),"utf8"),
     readFile(new URL("../backend/src/store-postgres.mjs",import.meta.url),"utf8"),
     readFile(new URL("../backend/src/store-memory.mjs",import.meta.url),"utf8"),
-    readFile(new URL("../assets/api-client.js",import.meta.url),"utf8"),
     readFile(new URL("../assets/command-palette.js",import.meta.url),"utf8"),
     readFile(new URL("../assets/control-tower.js",import.meta.url),"utf8"),
     readFile(new URL("../scripts/build-static.mjs",import.meta.url),"utf8"),
@@ -61,7 +60,7 @@ test("Control Tower is private, lazy-loaded and wired to both engines",async()=>
   for(const path of ["/api/v1/platform/control-tower","/api/v1/platform/policy/evaluate","/api/v1/platform/digital-twin/simulate"])assert.ok(server.includes(path),path);
   for(const token of ["controlTowerOverview","operationalPolicyEvaluation","digitalTwinSimulation"])assert.ok(store.includes(token),token);
   for(const token of ["controlTowerOverview","operationalPolicyEvaluation","digitalTwinSimulation"])assert.ok(memory.includes(token),token);
-  for(const token of ["controlTower:function","evaluatePolicy:function","simulateDigitalTwin:function"])assert.ok(api.includes(token),token);
+  for(const path of ["/platform/control-tower","/platform/policy/evaluate","/platform/digital-twin/simulate"])assert.ok(ui.includes(path),path);
   assert.ok(commands.includes("control-tower"));
   assert.ok(commands.includes('import(TOWER_URL)'));
   for(const token of ["Control Tower","Policy Engine","Digital Twin","AUCUN BRANCHEMENT EXTERNE","AUCUNE MUTATION"])assert.ok(ui.includes(token),token);
