@@ -2705,34 +2705,45 @@ export class PostgresStore{
       );
       const tenant=tenantRows[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
       const financial=await tx.unsafe(
-        "SELECT currency,COALESCE(sum(calls_total),0)::bigint AS calls_total,COALESCE(sum(calls_connected),0)::bigint AS calls_connected,"+
-        " COALESCE(sum(calls_abandoned),0)::bigint AS calls_abandoned,COALESCE(sum(calls_failed),0)::bigint AS calls_failed,"+
+        "SELECT currency,count(*)::bigint AS calls_total,"+
+        " count(*) FILTER(WHERE call_status='connected')::bigint AS calls_connected,"+
+        " count(*) FILTER(WHERE call_status='abandoned')::bigint AS calls_abandoned,"+
+        " count(*) FILTER(WHERE call_status NOT IN ('connected','abandoned'))::bigint AS calls_failed,"+
         " COALESCE(sum(conversation_seconds),0)::float8 AS conversation_seconds,COALESCE(sum(billable_seconds),0)::float8 AS billable_seconds,"+
-        " COALESCE(sum(generated_revenue_ttc),0)::float8 AS generated_revenue_ttc,max(updated_at) AS updated_at"+
-        " FROM tenant_scoped_metric_rollups_daily WHERE bucket_date BETWEEN $1::timestamptz::date AND $2::timestamptz::date"+
+        " COALESCE(sum(retail_service_amount_ttc),0)::float8 AS generated_revenue_ttc,max(ended_at) AS updated_at"+
+        " FROM tenant_scoped_call_facts WHERE started_at >= $1::timestamptz AND started_at <= $2::timestamptz"+
         " GROUP BY currency ORDER BY currency",[from,to]
       );
       const series=await tx.unsafe(
-        "SELECT bucket_date,COALESCE(sum(calls_total),0)::bigint AS calls_total,COALESCE(sum(calls_connected),0)::bigint AS calls_connected,"+
-        " COALESCE(sum(calls_abandoned),0)::bigint AS calls_abandoned,COALESCE(sum(calls_failed),0)::bigint AS calls_failed,"+
-        " COALESCE(sum(billable_seconds),0)::float8 AS billable_seconds,COALESCE(sum(generated_revenue_ttc),0)::float8 AS generated_revenue_ttc,max(updated_at) AS updated_at"+
-        " FROM tenant_scoped_metric_rollups_daily WHERE bucket_date BETWEEN $1::timestamptz::date AND $2::timestamptz::date"+
-        " GROUP BY bucket_date ORDER BY bucket_date",[from,to]
+        "SELECT started_at::date AS bucket_date,count(*)::bigint AS calls_total,"+
+        " count(*) FILTER(WHERE call_status='connected')::bigint AS calls_connected,"+
+        " count(*) FILTER(WHERE call_status='abandoned')::bigint AS calls_abandoned,"+
+        " count(*) FILTER(WHERE call_status NOT IN ('connected','abandoned'))::bigint AS calls_failed,"+
+        " COALESCE(sum(billable_seconds),0)::float8 AS billable_seconds,COALESCE(sum(retail_service_amount_ttc),0)::float8 AS generated_revenue_ttc,max(ended_at) AS updated_at"+
+        " FROM tenant_scoped_call_facts WHERE started_at >= $1::timestamptz AND started_at <= $2::timestamptz"+
+        " GROUP BY started_at::date ORDER BY bucket_date",[from,to]
       );
       const voiceQuality=await tx.unsafe(
-        "SELECT COALESCE(sum(calls_total),0)::bigint AS calls_total,COALESCE(sum(calls_connected),0)::bigint AS calls_connected,"+
-        " COALESCE(sum(pdd_samples),0)::bigint AS pdd_samples,CASE WHEN sum(pdd_samples)>0 THEN sum(pdd_ms_sum)::float8/sum(pdd_samples) ELSE NULL END AS avg_pdd_ms,"+
-        " COALESCE(sum(high_pdd_calls),0)::bigint AS high_pdd_calls,COALESCE(sum(quality_samples),0)::bigint AS quality_samples,"+
-        " COALESCE(sum(network_affected_calls),0)::bigint AS network_affected_calls,COALESCE(sum(low_mos_calls),0)::bigint AS low_mos_calls,"+
-        " CASE WHEN sum(quality_samples)>0 THEN sum(mos_sum)::float8/sum(quality_samples) ELSE NULL END AS mos,"+
-        " CASE WHEN sum(quality_samples)>0 THEN sum(packet_loss_sum)::float8/sum(quality_samples) ELSE NULL END AS packet_loss_percent,"+
-        " CASE WHEN sum(quality_samples)>0 THEN sum(jitter_ms_sum)::float8/sum(quality_samples) ELSE NULL END AS jitter_ms,"+
-        " CASE WHEN sum(quality_samples)>0 THEN sum(latency_ms_sum)::float8/sum(quality_samples) ELSE NULL END AS latency_ms,"+
-        " CASE WHEN sum(quality_samples)>0 THEN sum(rtt_ms_sum)::float8/sum(quality_samples) ELSE NULL END AS rtt_ms,"+
-        " COALESCE(sum(sip_5xx_calls),0)::bigint AS sip_5xx_calls,COALESCE(sum(caller_hangups),0)::bigint AS caller_hangups,"+
-        " COALESCE(sum(callee_hangups),0)::bigint AS callee_hangups,COALESCE(sum(network_hangups),0)::bigint AS network_hangups"+
-        " FROM tenant_scoped_voice_daily WHERE bucket_date BETWEEN $1::timestamptz::date AND $2::timestamptz::date",
+        "SELECT count(*)::bigint AS calls_total,count(*) FILTER(WHERE call_status='connected')::bigint AS calls_connected,"+
+        " count(post_dial_delay_ms)::bigint AS pdd_samples,avg(post_dial_delay_ms)::float8 AS avg_pdd_ms,"+
+        " count(*) FILTER(WHERE post_dial_delay_ms>8000)::bigint AS high_pdd_calls,count(mos)::bigint AS quality_samples,"+
+        " count(*) FILTER(WHERE COALESCE(rtp_packet_loss_percent,0)>=5 OR COALESCE(jitter_ms,0)>5 OR COALESCE(latency_ms,0)>150)::bigint AS network_affected_calls,"+
+        " count(*) FILTER(WHERE mos IS NOT NULL AND mos<3.5)::bigint AS low_mos_calls,avg(mos)::float8 AS mos,"+
+        " avg(rtp_packet_loss_percent)::float8 AS packet_loss_percent,avg(jitter_ms)::float8 AS jitter_ms,avg(latency_ms)::float8 AS latency_ms,avg(rtt_ms)::float8 AS rtt_ms,"+
+        " count(*) FILTER(WHERE sip_final_code BETWEEN 500 AND 599)::bigint AS sip_5xx_calls,"+
+        " count(*) FILTER(WHERE hangup_party='caller')::bigint AS caller_hangups,count(*) FILTER(WHERE hangup_party='callee')::bigint AS callee_hangups,"+
+        " count(*) FILTER(WHERE hangup_party='network')::bigint AS network_hangups"+
+        " FROM tenant_scoped_portal_call_details WHERE started_at >= $1::timestamptz AND started_at <= $2::timestamptz",
         [from,to]
+      );
+      const metricPayout=await tx.unsafe(
+        "SELECT d.currency,COALESCE(sum(dc.net_payout_ht),0)::float8 AS net_payout_ht"+
+        " FROM tenant_revenue_distribution_calls dc"+
+        " JOIN tenant_revenue_distributions d ON d.id=dc.tenant_distribution_id AND d.tenant_id=$3"+
+        " JOIN calls c ON c.id=dc.call_id AND c.tenant_id=$3"+
+        " WHERE c.started_at >= $1::timestamptz AND c.started_at <= $2::timestamptz"+
+        " AND d.status IN ('reconciled','payable','paid') GROUP BY d.currency ORDER BY d.currency",
+        [from,to,id]
       );
       const numbers=await tx.unsafe(
         "SELECT n.id,n.display_number,n.e164,n.tariff_code,n.currency,n.number_type,n.service_rate_ttc_per_min::float8,n.status,n.activated_at,"+
@@ -2777,21 +2788,22 @@ export class PostgresStore{
         " FROM tenant_scoped_portal_call_details WHERE started_at>=$1::timestamptz AND started_at<=$2::timestamptz"+
         " ORDER BY started_at DESC,call_id DESC LIMIT 20",[from,to]
       );
-      return {tenant,financial_by_currency:financial,series,numbers,settlements,subscriptions,portability_requests:portabilityRequests,destinations,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,recent_calls:recentCalls,voice_quality:voiceQuality[0]||null,range:{from,to}};
+      return {tenant,financial_by_currency:financial,metric_net_payout_by_currency:metricPayout,series,numbers,settlements,subscriptions,portability_requests:portabilityRequests,destinations,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,recent_calls:recentCalls,voice_quality:voiceQuality[0]||null,range:{from,to}};
     });
   }
 
   async customerPortalComparison(tenantId,from,to){
     const id=Number(tenantId);
-    if(!Number.isFinite(Date.parse(from))||!Number.isFinite(Date.parse(to))||Date.parse(to)<Date.parse(from))throw problem(400,"INVALID_RANGE");
+    if(!Number.isFinite(Date.parse(from))||!Number.isFinite(Date.parse(to)))throw problem(400,"INVALID_RANGE");
+    if(Date.parse(to)<Date.parse(from))return {financial_by_currency:[],range:{from,to}};
     return this.withTenantReadContext(id,async tx=>{
       const financial=await tx.unsafe(
-        "SELECT currency,COALESCE(sum(calls_total),0)::bigint AS calls_total,COALESCE(sum(calls_connected),0)::bigint AS calls_connected,"+
-        " COALESCE(sum(calls_abandoned),0)::bigint AS calls_abandoned,COALESCE(sum(calls_failed),0)::bigint AS calls_failed,"+
+        "SELECT currency,count(*)::bigint AS calls_total,count(*) FILTER(WHERE call_status='connected')::bigint AS calls_connected,"+
+        " count(*) FILTER(WHERE call_status='abandoned')::bigint AS calls_abandoned,count(*) FILTER(WHERE call_status NOT IN ('connected','abandoned'))::bigint AS calls_failed,"+
         " COALESCE(sum(conversation_seconds),0)::float8 AS conversation_seconds,COALESCE(sum(billable_seconds),0)::float8 AS billable_seconds,"+
-        " COALESCE(sum(generated_revenue_ttc),0)::float8 AS generated_revenue_ttc,max(updated_at) AS updated_at"+
-        " FROM tenant_scoped_metric_rollups_daily WHERE bucket_date BETWEEN $1::timestamptz::date AND $2::timestamptz::date"+
-        " GROUP BY currency ORDER BY currency",[from,to]
+        " COALESCE(sum(retail_service_amount_ttc),0)::float8 AS generated_revenue_ttc,max(ended_at) AS updated_at"+
+        " FROM tenant_scoped_call_facts WHERE started_at >= $1::timestamptz AND started_at <= $2::timestamptz GROUP BY currency ORDER BY currency",
+        [from,to]
       );
       return {financial_by_currency:financial,range:{from,to}};
     });
@@ -3664,8 +3676,9 @@ export class PostgresStore{
   async systemSnapshot(){
     const [counts,last,route,queue,resilienceRows,serviceHealth]=await Promise.all([
       this.sql.unsafe(
-        "SELECT count(*)::int AS calls_total,(SELECT count(*)::int FROM experts WHERE enabled AND status='available') AS experts_available,"+
-        " (SELECT count(*)::int FROM outbox_events WHERE published_at IS NULL) AS outbox_pending FROM calls"
+        "WITH b AS (SELECT COALESCE((SELECT effective_from FROM metric_baselines WHERE scope='global' AND scope_id IS NULL ORDER BY effective_from DESC,id DESC LIMIT 1),'-infinity'::timestamptz) AS from_ts)"+
+        " SELECT count(*) FILTER(WHERE calls.started_at>=b.from_ts)::int AS calls_total,(SELECT count(*)::int FROM experts WHERE enabled AND status='available') AS experts_available,"+
+        " (SELECT count(*)::int FROM outbox_events WHERE published_at IS NULL) AS outbox_pending FROM calls CROSS JOIN b"
       ),
       this.sql.unsafe("SELECT ended_at FROM calls ORDER BY ended_at DESC LIMIT 1"),
       this.carrierRouting(),
