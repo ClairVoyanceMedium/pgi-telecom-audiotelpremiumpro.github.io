@@ -1725,10 +1725,11 @@ export class PostgresStore{
     if(kyc&&!["verified","pending","rejected","expired","not_started"].includes(kyc))throw problem(400,"INVALID_KYC_FILTER");
     const rows=await this.readSql.unsafe(
       "WITH page AS ("+
-      " SELECT t.id,t.public_id,t.slug,t.display_name,t.legal_name,t.tenant_type,t.status,t.country_code,"+
+      " SELECT t.id,t.public_id,t.slug,t.display_name,t.legal_name,t.tenant_type,t.status,t.country_code,t.billing_email,"+
       " t.preferred_locale,t.default_currency,t.timezone,t.home_region,t.capacity_tier,t.created_at"+
       " FROM tenants t WHERE t.tenant_type<>'internal'"+
-      " AND ($1::text IS NULL OR t.slug_search LIKE $1||'%' OR t.display_name_search LIKE $1||'%' OR t.legal_name_search LIKE $1||'%' OR lower(t.country_code)=$1)"+
+      " AND ($1::text IS NULL OR t.slug_search LIKE $1||'%' OR t.display_name_search LIKE $1||'%' OR t.legal_name_search LIKE $1||'%' OR lower(t.country_code)=$1"+
+      " OR EXISTS (SELECT 1 FROM customer_tenant_memberships cm JOIN customer_principals cp ON cp.id=cm.customer_principal_id WHERE cm.tenant_id=t.id AND cp.email_normalized=$1))"+
       " AND ($2::text IS NULL OR t.status=$2) AND ($3::text IS NULL OR t.country_code=$3)"+
       " AND ($4::text IS NULL OR ($4='active' AND pgi_tenant_has_premium_call_access(t.id,NULL,now()))"+
       " OR ($4='unpaid' AND NOT EXISTS (SELECT 1 FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id WHERE s.tenant_id=t.id AND p.plan_key='external-sva-access' AND s.status='active' AND s.current_period_end>now()))"+
@@ -1736,7 +1737,7 @@ export class PostgresStore{
       " AND ($5::text IS NULL OR EXISTS (SELECT 1 FROM tenant_number_assignments ta JOIN sva_numbers sn ON sn.id=ta.sva_number_id WHERE ta.tenant_id=t.id AND sn.e164 LIKE $5||'%'))"+
       " AND ($6::text IS NULL OR ($6='not_started' AND NOT EXISTS (SELECT 1 FROM tenant_kyc_profiles kf WHERE kf.tenant_id=t.id)) OR EXISTS (SELECT 1 FROM tenant_kyc_profiles kf WHERE kf.tenant_id=t.id AND kf.status=$6))"+
       " AND ($7::bigint IS NULL OR t.id<$7) ORDER BY t.id DESC LIMIT $8"+
-      ") SELECT page.id AS _cursor_id,page.public_id,page.slug,page.display_name,page.legal_name,page.tenant_type,page.status,page.country_code,"+
+      ") SELECT page.id AS _cursor_id,page.public_id,page.slug,page.display_name,page.legal_name,page.tenant_type,page.status,page.country_code,page.billing_email,"+
       " page.preferred_locale,page.default_currency,page.timezone,page.home_region,page.capacity_tier,COALESCE(k.status,'not_started') AS kyc_status,page.created_at,"+
       " COALESCE(a.assignment_count,0)::int AS number_assignments,COALESCE(a.active_assignments,0)::int AS active_assignments,"+
       " s.status AS subscription_status,s.current_period_end,s.last_payment_status,s.cancel_at_period_end,s.billing_provider,"+
