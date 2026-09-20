@@ -89,7 +89,7 @@ export function createController({api,reload,toast,locale}){
     const inc=data.incident||{},d=ensureDetailDialog();
     d.dataset.incidentId=inc.public_id||d.dataset.incidentId||"";
     d.querySelector("#incident-detail-title").textContent=inc.title||"Dossier";
-    d.querySelector("#incident-detail-meta").textContent=label(cats,inc.category)+" · "+label(priorities,inc.severity)+" · "+label(states,inc.status)+" · Équipe : "+(inc.assigned_team||"PGI Operations");
+    d.querySelector("#incident-detail-meta").textContent=label(cats,inc.category)+" · "+label(priorities,inc.severity)+" · "+label(states,inc.status)+" · Équipe : "+(inc.assigned_team==="PGI Operations"?"Exploitation PGI":(inc.assigned_team||"Exploitation PGI"));
     const rows=[
       ...(data.events||[]).map(x=>({at:x.occurred_at,kind:"Événement",text:x.message||label(states,x.new_value)||x.event_type})),
       ...(data.notes||[]).map(x=>({at:x.created_at,kind:x.author_type==="customer"?"Vous":"PGI",text:x.body}))
