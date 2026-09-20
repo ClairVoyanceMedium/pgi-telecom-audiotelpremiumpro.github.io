@@ -627,6 +627,12 @@ export function createBackend(options={}){
         const result=await store.idempotent(req.headers["idempotency-key"],"service_incident.create",payload,()=>store.createTenantServiceIncident(match.id,body,actor));
         return done(res,metrics,started,"platform.service_incident.create",201,{...result.value,replayed:result.replayed});
       }
+      match=routeMatch(pathname,"/api/v1/platform/incidents/:id");
+      if(method==="GET"&&match){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.service_incident.detail",200,await store.serviceIncidentDetail(match.id));
+      }
+
       match=routeMatch(pathname,"/api/v1/platform/incidents/:id/status");
       if(method==="POST"&&match){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
