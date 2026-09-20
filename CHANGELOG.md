@@ -1,3 +1,16 @@
+## 1.25.0 — Garde-fous ARCEP 2026 — 2026-09-20
+
+- décision ARCEP 2025-2215 ajoutée aux références suivies pour le plan applicable au 1er janvier 2026 ;
+- verrou fail-closed supplémentaire pour les numéros français 081, 082 et 089 ;
+- preuves séparées pour affectataire exclusif et stable, service unique, portabilité offerte, plafond tarifaire, absence d’usage temporaire sans consentement et éligibilité secteur public ;
+- contrôle spécifique 089 interdisant sa présentation comme identifiant de l’appelant ;
+- contrôle spécifique 0895 pour la classification liée au contrôle parental ;
+- activation concurrente du même numéro bloquée sous verrou transactionnel ;
+- seconde chaîne de preuves SHA-256 append-only et intégration complète à l’Evidence Pack ;
+- cockpit aligné sur la readiness combinée Trust Center + ARCEP 2026 ;
+- abonnement externe maintenu à 3,00 EUR/mois ;
+- aucune connexion Stripe, opérateur, APNF ou PSP activée par cette version.
+
 ## Regulatory Trust & abonnement 3 EUR — 2026-09-20
 
 - prix courant de l'abonnement externe porté à 3,00 EUR/mois par nouvelle version tarifaire, sans réécriture de l'historique à 2,00 EUR ;
