@@ -48,15 +48,18 @@ test("la marque client reste Audiotel Premium Pro et la plateforme reste multise
 });
 
 test("le cockpit garde une liste d'appels compacte et une remise à zéro sûre",()=>{
-  for(const id of ["reset-metrics-cockpit","reset-dialog","calls-toggle","calls-toggle-label","calls-table"])assert.ok(index.includes('id="'+id+'"'));
+  assert.ok(index.includes('id="reset-metrics"'));
+  assert.equal((index.match(/id="reset-metrics"/g)||[]).length,1);
+  assert.ok(index.includes('id="reset-dialog"'));
+  assert.ok(index.includes('id="calls-table"'));
   assert.match(index,/Les CDR et l’historique resteront intacts/);
-  assert.match(app,/compactLimit=8/);
-  assert.match(app,/state\.callsExpanded\?tableRows:tableRows\.slice\(0,compactLimit\)/);
-  assert.match(app,/Afficher les /);
-  assert.match(app,/Réduire la liste/);
+  assert.match(app,/renderCallTable\(tableRows,state\.marketCurrency/);
+  assert.match(callTools,/callRows\.slice\(0,8\)/);
+  assert.match(callTools,/Afficher les /);
+  assert.match(callTools,/Réduire la liste/);
   assert.match(app,/createBaseline\(\{scope:"global",reason:"Remise à zéro depuis le cockpit"\}/);
   assert.doesNotMatch(app,/DELETE\s+FROM\s+calls/i);
-});
+}
 
 test("le nom officiel et les vues principales sont présents",()=>{
   assert.match(index,/PGI • Telecom - Audiotel Premium Pro/);
