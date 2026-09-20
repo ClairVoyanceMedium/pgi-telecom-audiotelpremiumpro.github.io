@@ -257,8 +257,11 @@ Ferme uniquement la session client, sans toucher à une éventuelle session admi
 ### GET /customer/portal?from=...&to=...
 Appel consolidé du portail client : trafic, séries journalières, numéros, reversements, abonnement, destinations de routage et derniers appels. Les données sont lues dans le contexte SQL du tenant et peuvent utiliser la réplique de lecture.
 
-### GET /customer/calls?from=...&to=...&cursor=...&limit=...
-Historique paginé des appels du tenant. Le curseur évite les offsets coûteux.
+### GET /customer/comparison?from=...&to=...
+Comparaison financière légère et isolée par tenant. Retourne uniquement les agrégats d'appels, de minutes et de montant généré pour une période, afin de comparer deux périodes sans recharger tout le portail.
+
+### GET /customer/calls?from=...&to=...&cursor=...&limit=...&status=...&number=...&min_duration=...&max_duration=...&min_amount=...&max_amount=...
+Historique paginé des appels du tenant. Le curseur évite les offsets coûteux. Les filtres sont appliqués côté PostgreSQL afin de rester efficaces sur de gros volumes.
 
 ### GET /platform/tenants/:id/customer-users
 Lecture administrateur des utilisateurs externes d'une société.
