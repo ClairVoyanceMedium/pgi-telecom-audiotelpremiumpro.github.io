@@ -2229,6 +2229,121 @@ export class PostgresStore{
     });
   }
 
+  async svaComplianceOverview(){
+    const [frameworks,catalog,summary,numbers,states,plans]=await Promise.all([
+      this.readSql.unsafe("SELECT framework_key,authority_name,framework_name,category,reference_version,effective_from,source_reference,description FROM regulatory_framework_registry ORDER BY category,authority_name,framework_key"),
+      this.readSql.unsafe("SELECT control_key,framework_key,label,required_for_activation,allow_not_applicable,default_review_days,description FROM sva_ecosystem_control_catalog ORDER BY framework_key,control_key"),
+      this.readSql.unsafe(
+        "SELECT"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers n ON n.id=a.sva_number_id LEFT JOIN operating_markets m ON m.id=n.market_id WHERE t.tenant_type<>'internal' AND COALESCE(m.country_code,'FR')='FR') AS numbers_total,"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers n ON n.id=a.sva_number_id LEFT JOIN operating_markets m ON m.id=n.market_id WHERE t.tenant_type<>'internal' AND COALESCE(m.country_code,'FR')='FR' AND pgi_sva_ecosystem_ready(a.tenant_id,a.sva_number_id)) AS numbers_ready,"+
+        " (SELECT count(*)::int FROM sva_ecosystem_control_states WHERE status='verified' AND (valid_until IS NULL OR valid_until>now())) AS controls_verified,"+
+        " (SELECT count(*)::int FROM sva_ecosystem_control_states WHERE status IN ('failed','expired')) AS controls_blocking,"+
+        " (SELECT count(*)::int FROM sva_ecosystem_evidence_events) AS evidence_events,"+
+        " (SELECT count(*)::int FROM sva_tariff_change_plans WHERE status IN ('planned','declared')) AS tariff_changes_open"
+      ),
+      this.readSql.unsafe(
+        "SELECT a.id AS assignment_id,t.public_id::text AS tenant_public_id,t.display_name AS tenant,sn.id AS sva_number_id,sn.display_number,sn.e164,sn.service_rate_ttc_per_min::float8,m.country_code AS market,a.status AS assignment_status,"+
+        " p.service_category,p.audience,p.billing_mode,p.per_call_price_ttc::float8,p.max_billable_duration_seconds,p.monthly_user_cap_ttc::float8,p.mgit_required,p.mgit_duration_seconds,p.mgit_tariff_first,p.mgit_optout_instruction,p.mgit_no_background_music,p.mgit_beep_before_billing,p.privacy_notice_url,p.consumer_contact,p.mediation_reference,p.af2m_reference_version,p.last_reviewed_at,p.next_review_at,"+
+        " pgi_sva_ecosystem_ready(a.tenant_id,a.sva_number_id) AS ecosystem_ready"+
+        " FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id LEFT JOIN operating_markets m ON m.id=sn.market_id LEFT JOIN sva_service_compliance_profiles p ON p.tenant_id=a.tenant_id AND p.sva_number_id=a.sva_number_id"+
+        " WHERE t.tenant_type<>'internal' AND COALESCE(m.country_code,'FR')='FR' ORDER BY a.created_at DESC LIMIT 100"
+      ),
+      this.readSql.unsafe(
+        "SELECT s.tenant_id,s.sva_number_id,s.control_key,s.status,s.evidence_reference,s.evidence_event_hash,s.reviewed_at,s.valid_until,s.updated_at,c.framework_key,c.label,c.required_for_activation,c.allow_not_applicable"+
+        " FROM sva_ecosystem_control_states s JOIN sva_ecosystem_control_catalog c ON c.control_key=s.control_key ORDER BY s.updated_at DESC,s.control_key"
+      ),
+      this.readSql.unsafe(
+        "SELECT p.id,p.public_id::text AS public_id,p.tenant_id,p.sva_number_id,p.current_tariff_code,p.proposed_tariff_code,p.proposed_service_rate_ttc_per_min::float8,p.proposed_service_price_ttc_per_call::float8,p.effective_on,p.declaration_due_at,p.status,p.rsva_reference,p.created_at,p.declared_at,p.confirmed_at,p.notes"+
+        " FROM sva_tariff_change_plans p ORDER BY p.effective_on DESC,p.id DESC LIMIT 100"
+      )
+    ]);
+    return {schema_version:"audiotel-sva-compliance/1",generated_at:new Date().toISOString(),summary:summary[0]||{},frameworks,catalog,numbers,states,tariff_change_plans:plans,external_connections_active:false,certification_claimed:false};
+  }
+
+  async upsertSvaServiceComplianceProfile(id,input={},actor={}){
+    id=Number(id);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_ASSIGNMENT_ID");
+    const serviceCategory=String(input.service_category||"other").trim().toLowerCase();
+    const audience=String(input.audience||"consumer").trim().toLowerCase();
+    const billingMode=String(input.billing_mode||"per_minute").trim().toLowerCase();
+    if(!["general","advice","connection","payment","stock_information","distance_selling","m2m","automated_content","classifieds","telephony","access_code","directory_assistance","user_matching","minors","other"].includes(serviceCategory))throw problem(400,"INVALID_SVA_SERVICE_CATEGORY");
+    if(!["consumer","professional","mixed"].includes(audience))throw problem(400,"INVALID_SVA_AUDIENCE");
+    if(!["free","normal","per_minute","per_call","mixed"].includes(billingMode))throw problem(400,"INVALID_SVA_BILLING_MODE");
+    const perCall=input.per_call_price_ttc==null||input.per_call_price_ttc===""?null:Number(input.per_call_price_ttc);
+    const maxDuration=input.max_billable_duration_seconds==null||input.max_billable_duration_seconds===""?null:Number(input.max_billable_duration_seconds);
+    const monthlyCap=input.monthly_user_cap_ttc==null||input.monthly_user_cap_ttc===""?300:Number(input.monthly_user_cap_ttc);
+    const mgitRequired=input.mgit_required!==false;
+    const mgitDuration=input.mgit_duration_seconds==null||input.mgit_duration_seconds===""?null:Number(input.mgit_duration_seconds);
+    if(perCall!=null&&(!Number.isFinite(perCall)||perCall<0||perCall>24))throw problem(400,"SVA_PER_CALL_CAP_EXCEEDED");
+    if(maxDuration!=null&&(!Number.isInteger(maxDuration)||maxDuration<1||maxDuration>86400))throw problem(400,"INVALID_SVA_MAX_DURATION");
+    if(!Number.isFinite(monthlyCap)||monthlyCap<=0||monthlyCap>300)throw problem(400,"SVA_MONTHLY_CAP_EXCEEDED");
+    if(mgitDuration!=null&&(!Number.isInteger(mgitDuration)||mgitDuration<1||mgitDuration>60))throw problem(400,"INVALID_MGIT_DURATION");
+    const privacyUrl=optionalText(input.privacy_notice_url,500);if(privacyUrl&&!/^https:\/\//i.test(privacyUrl))throw problem(400,"SVA_PRIVACY_URL_HTTPS_REQUIRED");
+    let nextReview=null;if(input.next_review_at){const d=new Date(input.next_review_at);if(!Number.isFinite(d.getTime())||d.getTime()<=Date.now())throw problem(400,"INVALID_REGULATORY_REVIEW_DATE");nextReview=d.toISOString();}
+    const actorId=numericActor(actor),actorSubject=String(actor?.sub||actor?.username||"").slice(0,200);
+    return this.sql.begin(async tx=>{
+      const assignment=(await tx.unsafe("SELECT a.tenant_id,a.sva_number_id,t.tenant_type,sn.e164,sn.service_rate_ttc_per_min::float8 FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.id=$1 FOR UPDATE",[id]))[0];
+      if(!assignment)throw problem(404,"ASSIGNMENT_NOT_FOUND");
+      if(assignment.tenant_type==="internal")throw problem(409,"INTERNAL_ASSIGNMENT_PROTECTED");
+      if(Number(assignment.service_rate_ttc_per_min||0)>.20&&(!maxDuration||maxDuration>1800))throw problem(400,"SVA_HIGH_RATE_MAX_DURATION_REQUIRED");
+      if(mgitRequired&&(!mgitDuration||mgitDuration<10||mgitDuration>20))throw problem(400,"SVA_MGIT_10_20_SECONDS_REQUIRED");
+      const rows=await tx.unsafe(
+        "INSERT INTO sva_service_compliance_profiles AS p(tenant_id,sva_number_id,service_category,audience,billing_mode,per_call_price_ttc,max_billable_duration_seconds,monthly_user_cap_ttc,mgit_required,mgit_duration_seconds,mgit_tariff_first,mgit_optout_instruction,mgit_no_background_music,mgit_beep_before_billing,privacy_notice_url,consumer_contact,mediation_reference,af2m_reference_version,last_reviewed_at,next_review_at,updated_at)"+
+        " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'2026-09-01',now(),$18,now())"+
+        " ON CONFLICT(tenant_id,sva_number_id) DO UPDATE SET service_category=EXCLUDED.service_category,audience=EXCLUDED.audience,billing_mode=EXCLUDED.billing_mode,per_call_price_ttc=EXCLUDED.per_call_price_ttc,max_billable_duration_seconds=EXCLUDED.max_billable_duration_seconds,monthly_user_cap_ttc=EXCLUDED.monthly_user_cap_ttc,mgit_required=EXCLUDED.mgit_required,mgit_duration_seconds=EXCLUDED.mgit_duration_seconds,mgit_tariff_first=EXCLUDED.mgit_tariff_first,mgit_optout_instruction=EXCLUDED.mgit_optout_instruction,mgit_no_background_music=EXCLUDED.mgit_no_background_music,mgit_beep_before_billing=EXCLUDED.mgit_beep_before_billing,privacy_notice_url=EXCLUDED.privacy_notice_url,consumer_contact=EXCLUDED.consumer_contact,mediation_reference=EXCLUDED.mediation_reference,af2m_reference_version='2026-09-01',last_reviewed_at=now(),next_review_at=COALESCE(EXCLUDED.next_review_at,p.next_review_at),updated_at=now() RETURNING *",
+        [assignment.tenant_id,assignment.sva_number_id,serviceCategory,audience,billingMode,perCall,maxDuration,monthlyCap,mgitRequired,mgitDuration,Boolean(input.mgit_tariff_first),Boolean(input.mgit_optout_instruction),Boolean(input.mgit_no_background_music),Boolean(input.mgit_beep_before_billing),privacyUrl,optionalText(input.consumer_contact,500),optionalText(input.mediation_reference,500),nextReview]
+      );
+      await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'sva.compliance.profile.update','sva_service_compliance_profile',$3,$4::jsonb)",[assignment.tenant_id,actorId,String(assignment.sva_number_id),JSON.stringify({assignment_id:id,e164:assignment.e164,actor_subject:actorSubject,af2m_reference_version:"2026-09-01"})]);
+      return {...rows[0],ecosystem_ready:Boolean((await tx.unsafe("SELECT pgi_sva_ecosystem_ready($1,$2) AS ready",[assignment.tenant_id,assignment.sva_number_id]))[0]?.ready)};
+    });
+  }
+
+  async recordSvaEcosystemEvidence(id,input={},actor={}){
+    id=Number(id);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_ASSIGNMENT_ID");
+    const control=String(input.control_key||"").trim().toLowerCase(),status=String(input.status||"").trim().toLowerCase(),source=String(input.source||"internal").trim().toLowerCase();
+    if(!["not_started","pending","verified","failed","expired","not_applicable"].includes(status))throw problem(400,"INVALID_REGULATORY_STATUS");
+    if(!["internal","customer","operator","apnf_rsva","af2m","arcep","dgccrf","cnil","33700","mediator","acpr","other"].includes(source))throw problem(400,"INVALID_REGULATORY_SOURCE");
+    const reference=optionalText(input.evidence_reference,500);
+    if(status==="verified"&&!reference)throw problem(400,"REGULATORY_EVIDENCE_REFERENCE_REQUIRED");
+    const validUntil=input.valid_until?new Date(input.valid_until):null;if(validUntil&&!Number.isFinite(validUntil.getTime()))throw problem(400,"INVALID_REGULATORY_VALID_UNTIL");
+    const metadata=input.metadata&&typeof input.metadata==="object"&&!Array.isArray(input.metadata)?input.metadata:{};
+    const actorId=numericActor(actor),actorSubject=String(actor?.sub||actor?.username||"").slice(0,200);
+    return this.sql.begin(async tx=>{
+      const assignment=(await tx.unsafe("SELECT a.tenant_id,a.sva_number_id,t.tenant_type,sn.e164 FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.id=$1 FOR UPDATE",[id]))[0];
+      if(!assignment)throw problem(404,"ASSIGNMENT_NOT_FOUND");
+      if(assignment.tenant_type==="internal")throw problem(409,"INTERNAL_ASSIGNMENT_PROTECTED");
+      const catalog=(await tx.unsafe("SELECT control_key,allow_not_applicable FROM sva_ecosystem_control_catalog WHERE control_key=$1",[control]))[0];
+      if(!catalog)throw problem(400,"INVALID_SVA_ECOSYSTEM_CONTROL");
+      if(status==="not_applicable"&&!catalog.allow_not_applicable)throw problem(400,"SVA_CONTROL_NOT_APPLICABLE_FORBIDDEN");
+      if(status==="not_applicable"&&!reference&&!optionalText(metadata.reason,500))throw problem(400,"SVA_NOT_APPLICABLE_REASON_REQUIRED");
+      const event=(await tx.unsafe("INSERT INTO sva_ecosystem_evidence_events(tenant_id,sva_number_id,control_key,status,source,evidence_reference,valid_until,metadata,actor_subject) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9) RETURNING id,control_key,status,source,evidence_reference,valid_until,previous_hash,event_hash,occurred_at",[assignment.tenant_id,assignment.sva_number_id,control,status,source,reference,validUntil?validUntil.toISOString():null,JSON.stringify(metadata),actorSubject||null]))[0];
+      const ready=Boolean((await tx.unsafe("SELECT pgi_sva_ecosystem_ready($1,$2) AS ready",[assignment.tenant_id,assignment.sva_number_id]))[0]?.ready);
+      await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'sva.compliance.evidence.append','sva_ecosystem_evidence',$3,$4::jsonb)",[assignment.tenant_id,actorId,String(event.id),JSON.stringify({assignment_id:id,e164:assignment.e164,control_key:control,status,source,event_hash:event.event_hash})]);
+      return {event,ecosystem_ready:ready};
+    });
+  }
+
+  async planSvaTariffChange(id,input={},actor={}){
+    id=Number(id);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_ASSIGNMENT_ID");
+    const proposedCode=String(input.proposed_tariff_code||"").trim();if(!proposedCode||proposedCode.length>80)throw problem(400,"INVALID_SVA_TARIFF_CODE");
+    const effective=String(input.effective_on||"").trim();if(!/^\d{4}-\d{2}-\d{2}$/.test(effective))throw problem(400,"INVALID_SVA_TARIFF_EFFECTIVE_DATE");
+    const date=new Date(effective+"T00:00:00Z");if(!Number.isFinite(date.getTime())||date.getUTCDate()!==1)throw problem(400,"SVA_TARIFF_CHANGE_FIRST_DAY_REQUIRED");
+    if(date.getTime()<Date.now()+7*86400000)throw problem(400,"SVA_TARIFF_CHANGE_SEVEN_DAY_NOTICE_REQUIRED");
+    const perMinute=input.proposed_service_rate_ttc_per_min==null||input.proposed_service_rate_ttc_per_min===""?null:Number(input.proposed_service_rate_ttc_per_min);
+    const perCall=input.proposed_service_price_ttc_per_call==null||input.proposed_service_price_ttc_per_call===""?null:Number(input.proposed_service_price_ttc_per_call);
+    if(perMinute!=null&&(!Number.isFinite(perMinute)||perMinute<0))throw problem(400,"INVALID_SVA_TARIFF_RATE");
+    if(perCall!=null&&(!Number.isFinite(perCall)||perCall<0||perCall>24))throw problem(400,"SVA_PER_CALL_CAP_EXCEEDED");
+    const actorId=numericActor(actor);
+    return this.sql.begin(async tx=>{
+      const assignment=(await tx.unsafe("SELECT a.tenant_id,a.sva_number_id,a.tariff_code,t.tenant_type,sn.e164 FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.id=$1 FOR UPDATE",[id]))[0];
+      if(!assignment)throw problem(404,"ASSIGNMENT_NOT_FOUND");
+      if(assignment.tenant_type==="internal")throw problem(409,"INTERNAL_ASSIGNMENT_PROTECTED");
+      const row=(await tx.unsafe("INSERT INTO sva_tariff_change_plans(tenant_id,sva_number_id,current_tariff_code,proposed_tariff_code,proposed_service_rate_ttc_per_min,proposed_service_price_ttc_per_call,effective_on,status,rsva_reference,requested_by,notes) VALUES($1,$2,$3,$4,$5,$6,$7::date,'planned',$8,$9,$10) RETURNING id,public_id::text AS public_id,current_tariff_code,proposed_tariff_code,proposed_service_rate_ttc_per_min::float8,proposed_service_price_ttc_per_call::float8,effective_on,declaration_due_at,status,rsva_reference,created_at",[assignment.tenant_id,assignment.sva_number_id,assignment.tariff_code,proposedCode,perMinute,perCall,effective,optionalText(input.rsva_reference,500),actorId,optionalText(input.notes,1000)]))[0];
+      await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'sva.tariff_change.plan','sva_tariff_change_plan',$3,$4::jsonb)",[assignment.tenant_id,actorId,String(row.id),JSON.stringify({assignment_id:id,e164:assignment.e164,effective_on:effective,proposed_tariff_code:proposedCode})]);
+      return row;
+    });
+  }
+
   async upsertSvaRegulatoryProfile(id,input={},actor={}){
     id=Number(id);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_ASSIGNMENT_ID");
     const signaletic=input.signaletic_model==null||input.signaletic_model===""?null:String(input.signaletic_model).trim().toLowerCase();
@@ -4279,6 +4394,7 @@ export class PostgresStore{
       " CASE WHEN $1::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM tenant_kyc_profiles WHERE tenant_id=$1 AND status='verified') END AS kyc_verified,"+
       " CASE WHEN $2::bigint IS NULL THEN NULL ELSE pgi_sva_regulatory_ready($1,$2) END AS regulatory_ready,"+
       " CASE WHEN $2::bigint IS NULL THEN NULL ELSE pgi_arcep_2026_number_ready($1,$2) END AS arcep_2026_ready,"+
+      " CASE WHEN $2::bigint IS NULL THEN NULL ELSE pgi_sva_ecosystem_ready($1,$2) END AS ecosystem_ready,"+
       " CASE WHEN $4::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM tenant_number_assignments WHERE id=$4) END AS assignment_exists,"+
       " CASE WHEN $1::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM tenant_call_destinations d WHERE d.tenant_id=$1 AND ($2::bigint IS NULL OR d.sva_number_id IS NULL OR d.sva_number_id=$2) AND d.status='active' AND d.active_calls<d.max_concurrent_calls) END AS destination_ready,"+
       " CASE WHEN $5::bigint IS NULL THEN EXISTS(SELECT 1 FROM tenant_portability_requests p WHERE p.tenant_id=$1 AND p.status IN ('scheduled','ported')) ELSE EXISTS(SELECT 1 FROM tenant_portability_requests p WHERE p.tenant_id=$1 AND p.id=$5 AND p.status IN ('scheduled','ported')) END AS portability_dossier_ready,"+
@@ -4504,10 +4620,12 @@ export class PostgresStore{
       this.readSql.unsafe(
         "SELECT"+
         " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal') AS numbers_total,"+
-        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AND pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id)) AS numbers_ready,"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AND pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id) AND pgi_sva_ecosystem_ready(a.tenant_id,a.sva_number_id)) AS numbers_ready,"+
         " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id)) AS arcep_2026_ready,"+
         " (SELECT count(*)::int FROM sva_regulatory_evidence_events) AS evidence_events,"+
         " (SELECT count(*)::int FROM sva_arcep_2026_evidence_events) AS arcep_2026_evidence_events,"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND pgi_sva_ecosystem_ready(a.tenant_id,a.sva_number_id)) AS sva_ecosystem_ready,"+
+        " (SELECT count(*)::int FROM sva_ecosystem_evidence_events) AS sva_ecosystem_evidence_events,"+
         " (SELECT count(*)::int FROM sva_abuse_cases WHERE status NOT IN ('resolved','closed')) AS abuse_open,"+
         " (SELECT count(*)::int FROM sva_abuse_cases WHERE status NOT IN ('resolved','closed') AND severity='critical') AS abuse_critical,"+
         " (SELECT count(*)::int FROM platform_regulatory_controls WHERE status='verified' AND (valid_until IS NULL OR valid_until>now())) AS platform_controls_verified,"+
@@ -4522,8 +4640,8 @@ export class PostgresStore{
         " p.regulatory_role,p.service_name,p.provider_name,p.signaletic_model,p.numbering_rights_status,p.editor_identity_status,p.rsva_status,"+
         " p.tariff_transparency_status,p.mgit_status,p.complaint_process_status,p.fraud_monitoring_status,p.last_reviewed_at,p.next_review_at,"+
         " ap.exclusive_stable_assignee_status,ap.single_service_status,ap.portability_offered_status,ap.tariff_ceiling_status,ap.no_temporary_contact_use_status,ap.public_body_eligibility_status,ap.caller_id_block_status,ap.parental_control_classification_status,ap.next_review_at AS arcep_2026_next_review_at,"+
-        " pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AS regulatory_ready,pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id) AS arcep_2026_ready,"+
-        " (pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AND pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id)) AS activation_ready,"+
+        " pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AS regulatory_ready,pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id) AS arcep_2026_ready,pgi_sva_ecosystem_ready(a.tenant_id,a.sva_number_id) AS sva_ecosystem_ready,"+
+        " (pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AND pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id) AND pgi_sva_ecosystem_ready(a.tenant_id,a.sva_number_id)) AS activation_ready,"+
         " (SELECT e.event_hash FROM sva_regulatory_evidence_events e WHERE e.tenant_id=a.tenant_id AND e.sva_number_id=a.sva_number_id ORDER BY e.id DESC LIMIT 1) AS evidence_chain_head,"+
         " (SELECT e.event_hash FROM sva_arcep_2026_evidence_events e WHERE e.tenant_id=a.tenant_id AND e.sva_number_id=a.sva_number_id ORDER BY e.id DESC LIMIT 1) AS arcep_2026_chain_head"+
         " FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id"+
@@ -4571,7 +4689,7 @@ export class PostgresStore{
         process_role:this.config.processRole||"all"
       },
       regulatory_trust:{
-        summary:regulatorySummary[0]||{numbers_total:0,numbers_ready:0,arcep_2026_ready:0,evidence_events:0,arcep_2026_evidence_events:0,abuse_open:0,abuse_critical:0,platform_controls_verified:0,platform_controls_attention:0,review_attention_total:0,review_blocking:0,review_today:0,review_soon:0},
+        summary:regulatorySummary[0]||{numbers_total:0,numbers_ready:0,arcep_2026_ready:0,evidence_events:0,sva_ecosystem_ready:0,sva_ecosystem_evidence_events:0,arcep_2026_evidence_events:0,abuse_open:0,abuse_critical:0,platform_controls_verified:0,platform_controls_attention:0,review_attention_total:0,review_blocking:0,review_today:0,review_soon:0},
         numbers:regulatoryNumbers,
         platform_controls:platformRegulatoryControls,
         review_alerts:regulatoryReviewAlerts
