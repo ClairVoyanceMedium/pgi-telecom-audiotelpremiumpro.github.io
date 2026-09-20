@@ -750,8 +750,10 @@ export function billingProviderStatus(config){
     provider_signature_validation_at_adapter:true,
     automatic_access_recovery:true,
     subscription_funds_flow:"customer_to_pgi",
-    sva_payout_flow:"carrier_to_customer",
-    funds_held_by_pgi:false
+    sva_payout_flow:"carrier_to_pgi_to_customer",
+    pgi_margin_retained:true,
+    client_payout_compliance_gated:true,
+    funds_custody_mode:"payment_compliance_profile"
   });
 }
 
