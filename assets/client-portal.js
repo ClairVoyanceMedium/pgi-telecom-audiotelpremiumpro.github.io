@@ -1,6 +1,6 @@
 (function(){
 "use strict";
-var state={range:"30",data:null,user:null,demo:false,googleCredential:null};
+var state={range:"30",data:null,user:null,demo:false,googleCredential:null,billingBusy:false};
 var I=window.PGIClientI18n||{locale:"fr-FR",t:function(x){return x;},apply:function(){}};
 function tr(x){return I.t?I.t(x):x;}
 var $=function(id){return document.getElementById(id);};
@@ -339,8 +339,11 @@ async function exportClient(kind){
   }catch(err){toast("Export impossible");}
 }
 async function openBilling(kind){
+  if(state.billingBusy)return;
   if(state.demo){toast("Prestataire de paiement non connecté.");return;}
   var action=kind==="manage"?window.PGICustomerApi.createBillingPortal:window.PGICustomerApi.createBillingCheckout;
+  var button=kind==="manage"?$("client-billing-manage"):$("client-billing-start"),original=button?button.textContent:"";
+  state.billingBusy=true;if(button){button.disabled=true;button.textContent=kind==="manage"?"Ouverture de la facturation…":"Ouverture du paiement…";}
   try{
     var result=await action();
     var target=result&&result.url?new URL(result.url,location.origin):null;
@@ -348,7 +351,17 @@ async function openBilling(kind){
     location.assign(target.href);
   }catch(err){
     toast(err&&err.code==="PAYMENT_PROVIDER_NOT_CONNECTED"?"Prestataire de paiement non connecté.":"Gestion de l’abonnement indisponible.");
+  }finally{
+    state.billingBusy=false;
+    if(button){button.textContent=original;renderSubscriptions(state.data||{});}
   }
+}
+function handleBillingReturn(){
+  var url=new URL(location.href),result=url.searchParams.get("billing");
+  if(!result)return;
+  url.searchParams.delete("billing");history.replaceState(null,"",url.pathname+(url.search?"?"+url.searchParams.toString():"")+url.hash);
+  if(result==="success")toast("Paiement terminé. Le statut de l’abonnement sera confirmé automatiquement.");
+  else if(result==="cancelled")toast("Paiement annulé. Aucun changement n’a été appliqué.");
 }
 async function changePassword(e){
   e.preventDefault();
@@ -389,6 +402,7 @@ async function init(){
   if(I.apply)I.apply(document.body);
   bind();
   initGoogle();
+  handleBillingReturn();
   var cfg=window.PGI_CONFIG||{};
   state.demo=cfg.mode==="demo"||!cfg.apiBaseUrl;
   if(state.demo){showApp();return;}
