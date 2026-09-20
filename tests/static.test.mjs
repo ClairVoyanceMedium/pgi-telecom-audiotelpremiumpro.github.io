@@ -266,8 +266,8 @@ test("la Plateforme SVA distingue abonnement externe et usage interne exempté",
   assert.match(clientPortalJs,/PAYMENT_PROVIDER_NOT_CONNECTED/);
   assert.match(clientPortalJs,/handleBillingReturn/);
   assert.match(clientPortalJs,/Ouverture du paiement/);
-  assert.match(clientPortal,/ne stockera pas les données de carte bancaire/);
-  assert.match(clientPortal,/L’opérateur règle PGI, puis PGI calcule et reverse votre montant net/);
+  assert.match(clientPortal,/ne stockera aucune donnée de carte/);
+  assert.match(clientPortal,/L’opérateur règle Audiotel Premium Pro, qui calcule puis reverse votre net contractuel/);
   assert.doesNotMatch(sw,/assets\/subscription-billing-ui\.js/);
 });
 
