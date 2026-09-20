@@ -1,3 +1,17 @@
+## 1.30.0 — SVA Compliance Center multi-organismes — 2026-09-20
+
+- nouveau SVA Compliance Center premium, lazy-loadé depuis le cockpit ;
+- registre distinct ARCEP, APNF/RSVA, af2m 2026, DGCCRF, CNIL, 33700, médiation et évaluation ACPR/DSP2 ;
+- 21 contrôles SVA avec applicabilité explicite, preuve et échéance ;
+- profil SVA par numéro : catégorie, audience, facturation, plafonds, MGIT, privacy, contact consommateur et médiation ;
+- garde-fous locaux AF2M 2026 : 24 EUR TTC/appel, plafond mensuel 300 EUR TTC, durée max 30 min au-delà de 0,20 EUR/min et MGIT 10–20 s avec règles de contenu ;
+- planification tarifaire RSVA : premier jour du mois et délai local minimal de sept jours, sans déclaration externe automatique ;
+- chaîne de preuves SVA écosystème append-only SHA-256 intégrée à l'Evidence Pack ;
+- activation externe française fail-closed sur Trust Center + ARCEP 2026 + SVA Ecosystem Readiness ;
+- aucune suspension automatique des lignes déjà actives ;
+- aucune certification ou approbation d'organisme revendiquée ;
+- aucun branchement opérateur, APNF/RSVA, AF2M, DGCCRF, CNIL, ACPR, Stripe ou PSP activé.
+
 ## 1.29.0 — Operational Assurance — 2026-09-20
 
 - validation 4 yeux pour l'activation des bascules opérateur critiques ;
