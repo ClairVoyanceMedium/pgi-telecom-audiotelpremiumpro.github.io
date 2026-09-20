@@ -71,8 +71,8 @@ function t(text){return locale==="fr"?text:(pack[text]||packs.en[text]||text);}
 function apply(rootNode){
   document.documentElement.lang=locale;
   var walker=document.createTreeWalker(rootNode||document.body,NodeFilter.SHOW_TEXT);
-  var node;while((node=walker.nextNode())){var raw=node.nodeValue,trim=raw.trim();if(trim&&pack[trim])node.nodeValue=raw.replace(trim,pack[trim]);}
-  document.querySelectorAll("[placeholder]").forEach(function(el){var v=el.getAttribute("placeholder");if(pack[v])el.setAttribute("placeholder",pack[v]);});
+  var node;while((node=walker.nextNode())){var raw=node.nodeValue,trim=raw.trim(),translated=trim?t(trim):trim;if(trim&&translated!==trim)node.nodeValue=raw.replace(trim,translated);}
+  document.querySelectorAll("[placeholder]").forEach(function(el){var v=el.getAttribute("placeholder"),translated=t(v);if(translated!==v)el.setAttribute("placeholder",translated);});
   document.title=t("Audiotel Premium Pro — Espace client");
 }
 root.PGIClientI18n=Object.freeze({locale:locale,t:t,apply:apply,supported:Object.freeze(["fr","en","es","it","pt-PT","pt-BR","de","sv"]),fallback:"en"});
