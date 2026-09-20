@@ -2,22 +2,26 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-const [html,portal,api,server,migration]=await Promise.all([
+const [html,portal,customerApi,adminApi,adminUi,server,store,migration,migrationTariff]=await Promise.all([
   readFile(new URL("../client.html",import.meta.url),"utf8"),
   readFile(new URL("../assets/client-portal.js",import.meta.url),"utf8"),
   readFile(new URL("../assets/client-portal-api.js",import.meta.url),"utf8"),
+  readFile(new URL("../assets/api-client.js",import.meta.url),"utf8"),
+  readFile(new URL("../assets/tenant-portability-admin.js",import.meta.url),"utf8"),
   readFile(new URL("../backend/server.mjs",import.meta.url),"utf8"),
-  readFile(new URL("../database/migrations/027_customer_number_portability.sql",import.meta.url),"utf8")
+  readFile(new URL("../backend/src/store-postgres.mjs",import.meta.url),"utf8"),
+  readFile(new URL("../database/migrations/027_customer_number_portability.sql",import.meta.url),"utf8"),
+  readFile(new URL("../database/migrations/028_portability_tariff_completion.sql",import.meta.url),"utf8")
 ]);
 
-test("customer portability UI is wired end to end",()=>{
+test("customer portability UI is wired end to end without changing the number",()=>{
   assert.match(html,/id="client-portability-form"/);
   assert.match(html,/id="portability-number"/);
-  assert.match(portal,/submitPortability/);
-  assert.match(portal,/renderPortability/);
-  assert.match(portal,/data-portability-cancel/);
-  assert.match(api,/createPortability/);
-  assert.match(api,/cancelPortability/);
+  assert.match(html,/id="portability-rate"/);
+  assert.match(portal,/client-portability\.js/);
+  assert.match(customerApi,/createPortability/);
+  assert.match(customerApi,/cancelPortability/);
+  assert.match(store,/normalizePortabilityNumber/);
 });
 
 test("customer portability remains tenant scoped and fail closed",()=>{
@@ -30,8 +34,37 @@ test("customer portability remains tenant scoped and fail closed",()=>{
   assert.match(migration,/pgi_require_tenant_context/);
 });
 
-test("portability request does not itself activate routing",()=>{
+test("portability intake does not itself activate routing",()=>{
   assert.doesNotMatch(migration,/logical_carrier_routes/);
   assert.doesNotMatch(migration,/active_connection_id/);
   assert.match(html,/Aucune bascule n’est effectuée avant confirmation et planification opérateur/);
+});
+
+test("verified tariff is required and copied unchanged on completion",()=>{
+  assert.match(migrationTariff,/tariff_verification_status text NOT NULL DEFAULT 'pending'/);
+  assert.match(migrationTariff,/service_rate_ttc_per_min numeric\(10,6\)/);
+  assert.match(migrationTariff,/tenant_portability_requests_ported_guard/);
+  assert.match(migrationTariff,/status <> 'ported'/);
+  assert.doesNotMatch(migrationTariff,/CREATE\s+OR\s+REPLACE/i);
+  assert.match(store,/PORTABILITY_TARIFF_VERIFICATION_REQUIRED/);
+  assert.match(store,/service_rate_ttc_per_min,rate/);
+  assert.match(store,/public_tariff_locked:true/);
+  assert.match(store,/tariff_preserved:true/);
+});
+
+test("port-in completion is a dedicated guarded atomic server action",()=>{
+  assert.match(server,/\/api\/v1\/platform\/portability\/:id\/complete/);
+  assert.match(adminApi,/completePortability:function/);
+  assert.match(adminApi,/setPortabilityStatus:function/);
+  assert.match(adminUi,/data-portability-complete/);
+  assert.match(store,/PORTABILITY_USE_COMPLETION_ENDPOINT/);
+  assert.match(store,/async completePortabilityRequest/);
+  assert.match(store,/pgi_tenant_has_premium_call_access/);
+  assert.match(store,/PORTABILITY_KYC_REQUIRED/);
+  assert.match(store,/PORTABILITY_TARGET_ROUTE_NOT_ACTIVE/);
+  assert.match(store,/INSERT INTO sva_numbers/);
+  assert.match(store,/INSERT INTO tenant_number_assignments/);
+  assert.match(store,/INSERT INTO number_carrier_assignments/);
+  assert.match(store,/INSERT INTO number_portability_events/);
+  assert.match(store,/portability\.completed/);
 });
