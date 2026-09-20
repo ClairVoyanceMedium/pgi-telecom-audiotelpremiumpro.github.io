@@ -33,6 +33,7 @@ const files=[
   "assets/command-palette.js",
   "assets/workspace.js",
   "assets/cockpit-pro.js",
+  "assets/cockpit-pro.css",
   "assets/performance-radar.js",
   "assets/voice-intelligence.js",
   "assets/subscription-billing-ui.js",
