@@ -252,7 +252,7 @@ test("la Plateforme SVA distingue abonnement externe et usage interne exempté",
   assert.match(clientPortalJs,/handleBillingReturn/);
   assert.match(clientPortalJs,/Ouverture du paiement/);
   assert.match(clientPortal,/ne stockera pas les données de carte bancaire/);
-  assert.match(clientPortal,/Les fonds SVA ne transitent pas par PGI|Ils ne transitent pas par PGI/);
+  assert.match(clientPortal,/L’opérateur règle PGI, puis PGI calcule et reverse votre montant net/);
   assert.doesNotMatch(sw,/assets\/subscription-billing-ui\.js/);
 });
 
