@@ -1,3 +1,12 @@
+## Regulatory Trust & abonnement 3 EUR — 2026-09-20
+
+- prix courant de l'abonnement externe porté à 3,00 EUR/mois par nouvelle version tarifaire, sans réécriture de l'historique à 2,00 EUR ;
+- Regulatory Evidence Pack exportable par numéro depuis le cockpit ;
+- pack horodaté avec KYC, profil réglementaire, preuves chaînées, portabilité, opérateurs, incidents, fraude et historique de routage ;
+- empreinte SHA-256 du pack et contrôle de continuité de la chaîne de preuves ;
+- chaque export est journalisé dans l'audit ;
+- RIO brut, secrets de portabilité, numéros d'appelants et contenu des appels exclus de l'export.
+
 ## Sécurité client & graphiques avancés — 2026-09-20
 
 - changement de mot de passe depuis l'espace client avec vérification de l'ancien mot de passe ;
