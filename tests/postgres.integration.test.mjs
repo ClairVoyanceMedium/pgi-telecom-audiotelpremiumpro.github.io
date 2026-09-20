@@ -19,7 +19,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
   const bus=new EventBus();
   const store=await PostgresStore.connect(config(),bus);
   try{
-    await store.sql.unsafe("TRUNCATE TABLE platform_change_approval_events,platform_change_requests,settlement_call_matches,carrier_settlements,call_quality,financial_ledger,outbox_events,raw_cdr_events,calls,tenant_call_destinations,callers,expert_presence_events,metric_baselines,carrier_switches,number_carrier_assignments,carrier_connections,carrier_adapters,carrier_contracts,number_portability_events,sva_numbers,carriers,audit_log,api_idempotency_keys RESTART IDENTITY CASCADE");
+    await store.sql.unsafe("TRUNCATE TABLE sva_ecosystem_evidence_events,sva_ecosystem_control_states,sva_tariff_change_plans,sva_service_compliance_profiles,platform_change_approval_events,platform_change_requests,settlement_call_matches,carrier_settlements,call_quality,financial_ledger,outbox_events,raw_cdr_events,calls,tenant_call_destinations,callers,expert_presence_events,metric_baselines,carrier_switches,number_carrier_assignments,carrier_connections,carrier_adapters,carrier_contracts,number_portability_events,sva_numbers,carriers,audit_log,api_idempotency_keys RESTART IDENTITY CASCADE");
     await store.sql.unsafe("UPDATE app_users SET expert_id=NULL; DELETE FROM experts");
     await store.sql.unsafe("INSERT INTO carriers(name,kind) VALUES('Host A','sva_host'),('Host B','sva_host')");
     await store.sql.unsafe("INSERT INTO logical_carrier_routes(route_key,description) VALUES('sva-primary','Integration test route')");
@@ -137,6 +137,51 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     }
     const arcepReady=await store.sql.unsafe("SELECT pgi_arcep_2026_number_ready(t.id,s.id) AS ready FROM tenants t CROSS JOIN sva_numbers s WHERE t.slug='integration-external' AND s.e164='33890000001'");
     assert.equal(arcepReady[0].ready,true);
+
+    await assert.rejects(
+      ()=>store.sql.unsafe("UPDATE tenant_number_assignments SET status='active' WHERE id=$1",[Number(extAssignmentForRoute[0].id)]),
+      /verified SVA ecosystem readiness required/
+    );
+
+    const svaProfile=await store.upsertSvaServiceComplianceProfile(Number(extAssignmentForRoute[0].id),{
+      service_category:"advice",audience:"consumer",billing_mode:"per_minute",
+      max_billable_duration_seconds:1800,monthly_user_cap_ttc:300,
+      mgit_required:true,mgit_duration_seconds:15,mgit_tariff_first:true,
+      mgit_optout_instruction:true,mgit_no_background_music:true,mgit_beep_before_billing:true,
+      privacy_notice_url:"https://example.test/privacy",consumer_contact:"consumer@example.test",
+      mediation_reference:"integration:mediation",next_review_at:new Date(Date.now()+365*86400000).toISOString()
+    },{sub:"admin"});
+    assert.equal(svaProfile.af2m_reference_version,"2026-09-01");
+    assert.equal(svaProfile.ecosystem_ready,false);
+
+    const ecosystemControls=await store.sql.unsafe("SELECT control_key FROM sva_ecosystem_control_catalog ORDER BY control_key");
+    assert.equal(ecosystemControls.length,21);
+    for(const row of ecosystemControls){
+      const evidence=await store.recordSvaEcosystemEvidence(Number(extAssignmentForRoute[0].id),{
+        control_key:row.control_key,status:"verified",source:"internal",evidence_reference:"integration:sva:"+row.control_key,
+        valid_until:new Date(Date.now()+365*86400000).toISOString()
+      },{sub:"admin"});
+      assert.match(evidence.event.event_hash,/^[0-9a-f]{64}$/);
+    }
+    const ecosystemReady=await store.sql.unsafe("SELECT pgi_sva_ecosystem_ready(t.id,s.id) AS ready FROM tenants t CROSS JOIN sva_numbers s WHERE t.slug='integration-external' AND s.e164='33890000001'");
+    assert.equal(ecosystemReady[0].ready,true);
+
+    const svaCenter=await store.svaComplianceOverview();
+    assert.equal(svaCenter.schema_version,"audiotel-sva-compliance/1");
+    assert.equal(svaCenter.external_connections_active,false);
+    assert.equal(svaCenter.certification_claimed,false);
+    assert.ok(svaCenter.frameworks.some(x=>x.framework_key==="af2m_sva_2026"));
+    assert.ok(svaCenter.framework_status.some(x=>x.framework_key==="af2m_sva_2026"&&Number(x.ready_total)===Number(x.required_total)));
+
+    const tariffDate=new Date();
+    tariffDate.setUTCDate(1);tariffDate.setUTCMonth(tariffDate.getUTCMonth()+2);
+    const tariffEffective=tariffDate.toISOString().slice(0,10);
+    const tariffPlan=await store.planSvaTariffChange(Number(extAssignmentForRoute[0].id),{
+      proposed_tariff_code:"D090",proposed_service_rate_ttc_per_min:0.9,effective_on:tariffEffective,notes:"integration"
+    },{sub:"admin"});
+    assert.equal(tariffPlan.status,"planned");
+    assert.equal(String(tariffPlan.effective_on).slice(0,10),tariffEffective);
+
     await store.sql.unsafe("UPDATE tenant_number_assignments SET status='active' WHERE id=$1",[Number(extAssignmentForRoute[0].id)]);
 
     const accessPolicy=await store.operationalPolicyEvaluation({intent:"customer_access",tenant_public_id:externalIdentity[0].public_id});
@@ -159,22 +204,31 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const evidencePack=await store.regulatoryEvidencePack(Number(extAssignmentForRoute[0].id),{sub:"admin"});
     assert.equal(evidencePack.assignment.regulatory_ready,true);
     assert.equal(evidencePack.assignment.arcep_2026_ready,true);
+    assert.equal(evidencePack.assignment.sva_ecosystem_ready,true);
+    assert.equal(evidencePack.assignment.activation_ready,true);
     assert.equal(evidencePack.evidence_ledger.length,7);
     assert.equal(evidencePack.arcep_2026_evidence_ledger.length,8);
+    assert.equal(evidencePack.sva_ecosystem_evidence_ledger.length,21);
+    assert.equal(evidencePack.sva_tariff_change_plans.length,1);
     assert.equal(evidencePack.integrity.evidence_links_valid,true);
     assert.equal(evidencePack.integrity.arcep_2026_links_valid,true);
+    assert.equal(evidencePack.integrity.ecosystem_links_valid,true);
     assert.match(evidencePack.integrity.pack_sha256,/^[0-9a-f]{64}$/);
     assert.match(evidencePack.integrity.evidence_chain_head,/^[0-9a-f]{64}$/);
     assert.match(evidencePack.integrity.arcep_2026_chain_head,/^[0-9a-f]{64}$/);
+    assert.match(evidencePack.integrity.ecosystem_chain_head,/^[0-9a-f]{64}$/);
     assert.equal(evidencePack.privacy.raw_rio_included,false);
-    const packRegister=await store.sql.unsafe("SELECT public_id::text AS public_id,pack_sha256,evidence_links_valid,evidence_events,arcep_2026_chain_head,arcep_2026_links_valid,arcep_2026_evidence_events FROM sva_regulatory_evidence_pack_exports WHERE assignment_id=$1 ORDER BY id DESC LIMIT 1",[Number(extAssignmentForRoute[0].id)]);
+    const packRegister=await store.sql.unsafe("SELECT public_id::text AS public_id,pack_sha256,evidence_links_valid,evidence_events,arcep_2026_chain_head,arcep_2026_links_valid,arcep_2026_evidence_events,ecosystem_chain_head,ecosystem_links_valid,ecosystem_evidence_events FROM sva_regulatory_evidence_pack_exports WHERE assignment_id=$1 ORDER BY id DESC LIMIT 1",[Number(extAssignmentForRoute[0].id)]);
     assert.equal(packRegister[0].public_id,evidencePack.integrity.export_id);
     assert.equal(packRegister[0].pack_sha256,evidencePack.integrity.pack_sha256);
     assert.equal(packRegister[0].evidence_links_valid,true);
     assert.equal(packRegister[0].arcep_2026_links_valid,true);
+    assert.equal(packRegister[0].ecosystem_links_valid,true);
     assert.match(packRegister[0].arcep_2026_chain_head,/^[0-9a-f]{64}$/);
-    assert.equal(Number(packRegister[0].evidence_events),15);
+    assert.match(packRegister[0].ecosystem_chain_head,/^[0-9a-f]{64}$/);
+    assert.equal(Number(packRegister[0].evidence_events),36);
     assert.equal(Number(packRegister[0].arcep_2026_evidence_events),8);
+    assert.equal(Number(packRegister[0].ecosystem_evidence_events),21);
     const packAudit=await store.sql.unsafe("SELECT details->>'export_public_id' AS export_public_id FROM audit_log WHERE action='regulatory.evidence_pack.export' AND entity_id=$1 ORDER BY id DESC LIMIT 1",[String(extAssignmentForRoute[0].id)]);
     assert.equal(packAudit[0].export_public_id,evidencePack.integrity.export_id);
     const dueSoon=new Date(Date.now()+12*3600000).toISOString();
@@ -553,10 +607,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const rawCalls=await store.sql.unsafe("SELECT count(*)::int AS count FROM calls");
     assert.equal(rawCalls[0].count,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
-    assert.equal(migrations.length,44);
+    assert.equal(migrations.length,45);
     assert.equal(new Set(migrations.map(x=>x.version)).size,migrations.length);
     assert.equal(migrations[0].version,"001_baseline");
-    assert.equal(migrations.at(-1).version,"044_operational_assurance");
+    assert.equal(migrations.at(-1).version,"045_sva_ecosystem_compliance");
     for(const migration of migrations)assert.match(migration.checksum,/^[a-f0-9]{64}$/);
   }finally{
     await store.close();
