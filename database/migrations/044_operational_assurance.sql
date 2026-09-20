@@ -50,6 +50,19 @@ CREATE UNIQUE INDEX platform_change_requests_active_entity_idx
 CREATE INDEX platform_change_requests_status_time_idx
   ON platform_change_requests(status,expires_at,id DESC);
 
+CREATE FUNCTION pgi_prevent_change_request_delete()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $
+BEGIN
+  RAISE EXCEPTION 'platform_change_requests cannot be deleted';
+END;
+$;
+
+CREATE TRIGGER platform_change_requests_no_delete
+BEFORE DELETE ON platform_change_requests
+FOR EACH ROW EXECUTE FUNCTION pgi_prevent_change_request_delete();
+
 CREATE TABLE platform_change_approval_events (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   change_request_id bigint NOT NULL REFERENCES platform_change_requests(id) ON DELETE CASCADE,
