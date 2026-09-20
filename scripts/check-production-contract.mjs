@@ -136,6 +136,7 @@ if(!/upstream_payout_ht/.test(postgresStore)||!/platform_fee_ht/.test(postgresSt
 if(!/tenant_payout_terms/.test(pgiRevenueMigration)||!/tenant_revenue_distributions/.test(pgiRevenueMigration)||!/pgi_collects/.test(pgiRevenueMigration))failures.push("production must retain PGI-collected SVA revenue distribution");
 if(!/tenant_number_assignments_payout_terms_gate/.test(pgiRevenueMigration)||!/pgi_tenant_has_payout_terms/.test(pgiRevenueMigration))failures.push("external SVA activation must require PGI payout terms");
 if(!/rebuildTenantRevenueDistributions/.test(postgresStore)||!/PORTABILITY_PAYOUT_TERMS_REQUIRED/.test(postgresStore))failures.push("carrier settlements and port-ins must enforce PGI revenue distribution");
+if((postgresStore.match(/SVA_PAYOUT_TERMS_REQUIRED/g)||[]).length<2)failures.push("every external SVA routing path must require PGI payout terms");
 if(!/sva_payout_flow:"carrier_to_pgi_to_customer"/.test(backendServer)||!/pgi_margin_retained:true/.test(backendServer))failures.push("backend contract must declare operator to PGI to client SVA flow");
 if(!/DSP2/.test(wholesaleDoc)||!/opérateur attributaire/i.test(wholesaleDoc)||!/multi-éditeurs/i.test(wholesaleDoc))failures.push("wholesale roadmap must retain regulatory and payment-compliance boundaries");
 if(!/PGI_PROCESS_ROLE/.test(compose)||!/PGI_PROCESS_ROLE=/.test(envExample))failures.push("production contract must expose the API/worker process role");
