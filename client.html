@@ -156,6 +156,15 @@
           <p class="cp-empty">Analyse en cours.</p>
         </div>
       </article>
+
+      <article class="cp-panel cp-client-voice-panel">
+        <div class="cp-panel-head">
+          <div><p class="cp-kicker">QUALITÉ & CONNECTIVITÉ</p><h2>Expérience de mes appels</h2></div>
+          <span id="client-voice-samples">Données techniques</span>
+        </div>
+        <div id="client-voice-quality" class="cp-client-voice-grid"></div>
+        <p class="cp-voice-note">Ces indicateurs sont des diagnostics techniques de vos appels. Ils ne constituent pas un engagement contractuel de niveau de service.</p>
+      </article>
     </section>
 
     <section id="client-analytics" class="cp-chart-grid cp-anchor-section" aria-label="Analyses graphiques">
@@ -223,7 +232,7 @@
       <div class="cp-table-wrap">
         <table class="cp-table">
           <caption class="cp-visually-hidden">Historique des derniers appels</caption>
-          <thead><tr><th scope="col">Date</th><th scope="col">Numéro</th><th scope="col">État</th><th scope="col">Durée</th><th scope="col">Montant TTC</th></tr></thead>
+          <thead><tr><th scope="col">Date</th><th scope="col">Numéro</th><th scope="col">État</th><th scope="col">Durée</th><th scope="col">Montant TTC</th><th scope="col">Diagnostic</th></tr></thead>
           <tbody id="calls-body"></tbody>
         </table>
       </div>
@@ -252,6 +261,13 @@
   </main>
 </div>
 
+<dialog id="client-call-diagnostic-dialog" class="cp-export-dialog">
+  <form method="dialog" class="cp-export-card cp-diagnostic-card">
+    <div class="cp-export-head"><div><p class="cp-kicker">DIAGNOSTIC D’APPEL</p><h2 id="client-call-diagnostic-title">Détail technique</h2></div><button class="cp-close" value="cancel" aria-label="Fermer">×</button></div>
+    <p class="cp-export-note">Les informations ci-dessous concernent uniquement cet appel et votre ligne Audiotel.</p>
+    <div id="client-call-diagnostic-grid" class="cp-diagnostic-grid"></div>
+  </form>
+</dialog>
 <dialog id="client-security-dialog" class="cp-export-dialog">
   <form id="client-password-form" class="cp-export-card">
     <div class="cp-export-head"><div><p class="cp-kicker">SÉCURITÉ</p><h2>Changer mon mot de passe</h2></div><button id="client-security-close" class="cp-close" type="button" aria-label="Fermer">×</button></div>
