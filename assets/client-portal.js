@@ -55,7 +55,7 @@ function demoData(range){
       {id:2,display_number:"0892 98 76 54",e164:"+33892987654",currency:"EUR",number_type:"premium",service_rate_ttc_per_min:.8,status:"active",assignment_status:"active",kyc_status:"verified",tariff_code:"D080"}
     ],
     settlements:[{id:1,currency:"EUR",period_start:"2026-08-01",period_end:"2026-08-31",net_payout_ht:428.75,status:"paid",paid_at:"2026-09-12T10:00:00Z"},{id:2,currency:"EUR",period_start:"2026-09-01",period_end:"2026-09-15",net_payout_ht:231.2,status:"payable",payment_due_date:"2026-09-30"}],
-    subscriptions:[{id:1,status:"active",billing_currency:"EUR",current_period_start:"2026-09-01T00:00:00Z",current_period_end:"2026-10-01T00:00:00Z",plan_name:"Accès Audiotel",amount_minor:300,price_currency:"EUR",billing_interval:"month",last_payment_status:"paid"}],
+    subscriptions:[{id:1,status:"active",billing_currency:"EUR",current_period_start:"2026-09-01T00:00:00Z",current_period_end:"2026-10-01T00:00:00Z",plan_name:"Accès Audiotel",amount_minor:300,price_currency:"EUR",tax_behavior:"inclusive",billing_interval:"month",last_payment_status:"paid"}],
     portability_requests:[],
     destinations:[{id:1,sva_number_id:1,label:"Standard principal",destination_type:"pstn",destination_uri:"tel:+33123456789",priority:10,status:"active",active_calls:1,max_concurrent_calls:25}],
     recent_calls:recent,
@@ -130,11 +130,11 @@ function renderSettlements(data){
 }
 function renderSubscriptions(data){
   var rows=data.subscriptions||[],el=$("subscription-list"),provider=data.billing_provider||{},offer=data.billing_offer||null,billingSummary=data.billing_summary||{},currencyInfo=billingSummary.billing_currency||{};
-  el.innerHTML=rows.length?rows.slice(0,3).map(function(x){var price=x.amount_minor!=null?money(n(x.amount_minor)/100,x.price_currency||x.billing_currency)+" / "+(x.billing_interval==="year"?"an":"mois"):"Tarif contractuel";return '<div class="cp-row"><div><strong>'+esc(x.plan_name||"Abonnement Audiotel")+'</strong><span>'+esc(price+" · période jusqu’au "+dateOnly(x.current_period_end))+'</span></div>'+chip(x.status)+'</div>';}).join(""):'<p class="cp-empty">Aucun abonnement actif pour le moment.</p>';
+  el.innerHTML=rows.length?rows.slice(0,3).map(function(x){var price=x.amount_minor!=null?money(n(x.amount_minor)/100,x.price_currency||x.billing_currency)+" TTC / "+(x.billing_interval==="year"?"an":"mois"):"Tarif contractuel";return '<div class="cp-row"><div><strong>'+esc(x.plan_name||"Abonnement Audiotel")+'</strong><span>'+esc(price+" · période jusqu’au "+dateOnly(x.current_period_end))+'</span></div>'+chip(x.status)+'</div>';}).join(""):'<p class="cp-empty">Aucun abonnement actif pour le moment.</p>';
   var stateEl=$("client-billing-provider-state"),chipEl=$("client-billing-provider-chip"),start=$("client-billing-start"),manage=$("client-billing-manage"),offerDetail=$("client-billing-offer-detail"),offerChip=$("client-billing-offer-chip");
   var connected=provider.connection_state&&provider.connection_state!=="not_connected";
   if(offer&&offer.amount_minor!=null){
-    var cadence=offer.billing_interval==="year"?"an":"mois",offerPrice=money(n(offer.amount_minor)/100,offer.currency)+" / "+cadence;
+    var cadence=offer.billing_interval==="year"?"an":"mois",offerPrice=money(n(offer.amount_minor)/100,offer.currency)+" TTC / "+cadence;
     if(offerDetail)offerDetail.textContent=offerPrice+" · "+tr("tarif versionné");
     if(offerChip){offerChip.textContent=money(n(offer.amount_minor)/100,offer.currency);offerChip.className="cp-chip ok";}
     if(start)start.textContent=tr("Activer mon abonnement")+" — "+offerPrice;
