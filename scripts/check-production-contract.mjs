@@ -46,6 +46,7 @@ const b2bDestinationMigration=fs.readFileSync("database/migrations/022_b2b_call_
 const customerPortalMigration=fs.readFileSync("database/migrations/023_customer_portal.sql","utf8");
 const customerGoogleMigration=fs.readFileSync("database/migrations/024_customer_google_identity.sql","utf8");
 const voiceIntelligenceMigration=fs.readFileSync("database/migrations/026_voice_intelligence.sql","utf8");
+const pgiRevenueMigration=fs.readFileSync("database/migrations/029_pgi_collected_revenue_distribution.sql","utf8");
 const googleIdSource=fs.readFileSync("backend/src/google-id.mjs","utf8");
 const workersSource=fs.readFileSync("backend/src/workers.mjs","utf8");
 const resilienceDoc=fs.readFileSync("docs/RESILIENCE.md","utf8");
@@ -132,6 +133,10 @@ if(!/SVA_ROUTING_CONTEXT_REQUIRED/.test(backendServer)||!/resolveTelephonyRoutin
 if(!/\/api\/v1\/platform\/overview/.test(backendServer)||!/platform\.overview/.test(backendServer))failures.push("backend must expose the read-only wholesale overview");
 if(!/wholesaleOverview/.test(apiClient))failures.push("frontend API client must expose the wholesale overview");
 if(!/upstream_payout_ht/.test(postgresStore)||!/platform_fee_ht/.test(postgresStore)||!/net_payout_ht/.test(postgresStore))failures.push("wholesale overview must expose authoritative settlement totals");
+if(!/tenant_payout_terms/.test(pgiRevenueMigration)||!/tenant_revenue_distributions/.test(pgiRevenueMigration)||!/pgi_collects/.test(pgiRevenueMigration))failures.push("production must retain PGI-collected SVA revenue distribution");
+if(!/tenant_number_assignments_payout_terms_gate/.test(pgiRevenueMigration)||!/pgi_tenant_has_payout_terms/.test(pgiRevenueMigration))failures.push("external SVA activation must require PGI payout terms");
+if(!/rebuildTenantRevenueDistributions/.test(postgresStore)||!/PORTABILITY_PAYOUT_TERMS_REQUIRED/.test(postgresStore))failures.push("carrier settlements and port-ins must enforce PGI revenue distribution");
+if(!/sva_payout_flow:"carrier_to_pgi_to_customer"/.test(backendServer)||!/pgi_margin_retained:true/.test(backendServer))failures.push("backend contract must declare operator to PGI to client SVA flow");
 if(!/DSP2/.test(wholesaleDoc)||!/opérateur attributaire/i.test(wholesaleDoc)||!/multi-éditeurs/i.test(wholesaleDoc))failures.push("wholesale roadmap must retain regulatory and payment-compliance boundaries");
 if(!/PGI_PROCESS_ROLE/.test(compose)||!/PGI_PROCESS_ROLE=/.test(envExample))failures.push("production contract must expose the API/worker process role");
 if(!/PGI_DATABASE_READ_URL/.test(compose)||!/PGI_DATABASE_READ_URL=/.test(envExample))failures.push("production contract must support an optional read replica");
