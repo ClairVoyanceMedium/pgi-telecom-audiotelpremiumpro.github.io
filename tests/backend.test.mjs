@@ -40,7 +40,7 @@ test("production config rejects missing or malformed release identity",()=>{
     PGI_INGEST_TOKEN:secret,
     PGI_TELEPHONY_USER:"pgi-telephony",
     PGI_TELEPHONY_PASSWORD:secret,
-    PGI_CALLER_HASH_KEY:secret,
+    PGI_CALLER_HASH_KEY:secret,PGI_PORTABILITY_SECRET_KEY:secret,
     PGI_DATABASE_URL:"postgresql://user:password@postgres:5432/pgi_telecom",
     PGI_DATABASE_SSL:"disable"
   };
@@ -224,7 +224,7 @@ test("expert compensation engine supports all declared modes",()=>{
 
 test("external billing stays disabled by default and requires a dedicated production token",()=>{
   const secret="x".repeat(48);
-  const base={PGI_BACKEND_MODE:"production",PGI_AUTH_MODE:"session",PGI_SESSION_SECRET:secret,PGI_ADMIN_PASSWORD_HASH:"scrypt$16384$8$1$placeholder$placeholder",PGI_INGEST_TOKEN:secret,PGI_TELEPHONY_USER:"pgi-telephony",PGI_TELEPHONY_PASSWORD:secret,PGI_CALLER_HASH_KEY:secret,PGI_DATABASE_URL:"postgresql://user:password@postgres:5432/pgi_telecom",PGI_RELEASE_ID:"a".repeat(40)};
+  const base={PGI_BACKEND_MODE:"production",PGI_AUTH_MODE:"session",PGI_SESSION_SECRET:secret,PGI_ADMIN_PASSWORD_HASH:"scrypt$16384$8$1$placeholder$placeholder",PGI_INGEST_TOKEN:secret,PGI_TELEPHONY_USER:"pgi-telephony",PGI_TELEPHONY_PASSWORD:secret,PGI_CALLER_HASH_KEY:secret,PGI_PORTABILITY_SECRET_KEY:secret,PGI_DATABASE_URL:"postgresql://user:password@postgres:5432/pgi_telecom",PGI_RELEASE_ID:"a".repeat(40)};
   const internalOnly=loadConfig(base);
   assert.equal(internalOnly.externalBillingEnabled,false);
   assert.throws(()=>loadConfig({...base,PGI_EXTERNAL_BILLING_ENABLED:"true"}),/PGI_BILLING_INGEST_TOKEN/);
