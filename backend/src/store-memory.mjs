@@ -859,11 +859,12 @@ export class MemoryStore{
   async serviceOperationsHealth(){return {service_incidents_open:0,service_incidents_critical:0,service_first_response_overdue:0,service_resolution_overdue:0,routing_unavailable:0,portability_attention:0};}
 
   async systemSnapshot(){
-    const last=this.calls[0];
+    const last=this.calls[0],rows=this.baselines.filter(x=>x.scope==="global"&&x.tenant_id==null&&["all","calls"].includes(x.metric_key||"all")).sort((a,b)=>Date.parse(b.effective_from||b.created_at)-Date.parse(a.effective_from||a.created_at));
+    const resetAt=rows[0]?Date.parse(rows[0].effective_from||rows[0].created_at):-Infinity;
     return {
       mode:this.config.mode,
       store:"memory",
-      calls_total:this.calls.length,
+      calls_total:this.calls.filter(x=>Date.parse(x.started_at)>=resetAt).length,
       experts_available:this.experts.filter(x=>x.status==="available").length,
       cdr_lag_seconds:last?Math.max(0,(Date.now()-Date.parse(last.ended_at))/1000):0,
       outbox_pending:this.outbox.filter(x=>!x.published_at).length,
