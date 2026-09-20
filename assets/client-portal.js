@@ -174,6 +174,8 @@ function render(data){
   $("tenant-meta").textContent=[data.tenant&&data.tenant.country_code,data.tenant&&data.tenant.default_currency,state.demo?"Démonstration":null].filter(Boolean).join(" · ");
   $("customer-user-name").textContent=(state.user&&state.user.name)||"Utilisateur";
   $("customer-user-role").textContent=statusLabel((state.user&&state.user.role)||"readonly");
+  var resetButton=$("client-metrics-reset"),canReset=state.demo||["owner","admin"].includes(String((state.user&&state.user.role)||"").toLowerCase());
+  if(resetButton)resetButton.hidden=!canReset;
   var a=aggregate(data),rate=a.calls?a.connected/a.calls*100:0;
   $("kpi-calls").textContent=nf(a.calls);$("kpi-answer-rate").textContent=nf(rate,1)+" % décrochés";
   $("kpi-minutes").textContent=nf(a.billable/60,1);$("kpi-revenue").textContent=money(a.revenue,a.currency);$("kpi-payout").textContent=money(a.payout,a.currency);
@@ -421,6 +423,23 @@ function bind(){
   $("export-calls").addEventListener("click",function(){exportClient("calls");});
   $("client-export").addEventListener("click",function(){var d=$("client-export-dialog");if(d&&typeof d.showModal==="function")d.showModal();});
   $("client-security").addEventListener("click",function(){var d=$("client-security-dialog");if(d&&typeof d.showModal==="function")d.showModal();});
+  $("client-metrics-reset").addEventListener("click",function(){
+    import("./metric-reset.js").then(function(m){
+      m.openMetricReset({
+        title:"Remettre mes statistiques à zéro",
+        note:"Choisissez uniquement les statistiques de votre société qui doivent repartir de zéro. Vos règlements, contrats et CDR restent conservés.",
+        onConfirm:async function(keys){
+          if(state.demo){
+            toast("Sélection enregistrée en démonstration. En production, seuls ces indicateurs repartiront de zéro.");
+            return;
+          }
+          await window.PGICustomerApi.resetMetrics(keys,window.PGICustomerApi.newIdempotencyKey());
+          await loadPortal();
+          toast("Les statistiques sélectionnées repartent de zéro.");
+        }
+      });
+    }).catch(function(){toast("Cette action est momentanément indisponible.");});
+  });
   $("client-security-close").addEventListener("click",function(){var d=$("client-security-dialog");if(d&&d.open)d.close();});
   $("client-password-form").addEventListener("submit",changePassword);
   $("client-billing-start").addEventListener("click",function(){openBilling("start");});
