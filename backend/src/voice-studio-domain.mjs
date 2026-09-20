@@ -1,7 +1,7 @@
 import {createHash} from "node:crypto";
 
 const TYPES=new Set(["announcement","tts","menu","schedule","route","queue","weighted_split","recording_consent","access_control","language","voicemail","terminate"]);
-const NEXT_FIELDS=["next","open_next","closed_next","timeout_next","invalid_next","overflow_next","blocked_next","allowed_next","fallback_next","consent_next","decline_next"];
+const NEXT_FIELDS=["next","open_next","closed_next","timeout_next","invalid_next","overflow_next","blocked_next","allowed_next","fallback_next","failover_next","consent_next","decline_next"];
 const URI=/^(?:tel:\+[1-9][0-9]{6,14}|sips?:[^\s@]+@[^\s@]+)$/i;
 const NODE_ID=/^[a-z][a-z0-9_-]{0,63}$/i;
 const LOCALE=/^[a-z]{2,3}(?:-[A-Z]{2})?$/;
@@ -50,7 +50,8 @@ export function normalizeVoiceFlow(value={}){
     block_anonymous:Boolean(flow.anti_abuse?.block_anonymous)
   };
   const policy=["off","on_demand","always"].includes(flow.recording?.policy)?flow.recording.policy:"off";
-  flow.recording={policy,consent_required:flow.recording?.consent_required!==false,retention_days:integer(flow.recording?.retention_days,30,1,365)};
+  const purpose=["quality","training","contract_evidence","other"].includes(flow.recording?.purpose)?flow.recording.purpose:"quality";
+  flow.recording={policy,purpose,consent_required:flow.recording?.consent_required!==false,retention_days:integer(flow.recording?.retention_days,30,1,365)};
   flow.nodes=(Array.isArray(flow.nodes)?flow.nodes:[]).slice(0,200).map(raw=>{
     const n=clone(raw);n.id=text(n.id,64);n.type=text(n.type,40);
     if(n.text!=null)n.text=text(n.text,1500);
@@ -116,7 +117,9 @@ export function validateVoiceFlow(input={}){
   }
   if(flow.entry&&!ids.has(flow.entry))errors.push({code:"VOICE_ENTRY_NOT_FOUND",message:"L’étape d’entrée n’existe pas."});
   for(const [node,key,target] of refs)if(!ids.has(target))errors.push({code:"VOICE_TARGET_NOT_FOUND",node,field:key,target,message:"Une transition cible une étape inexistante."});
-  if(flow.recording.policy!=="off"&&!flow.recording.consent_required)warnings.push({code:"VOICE_RECORDING_CONSENT_DISABLED",message:"L’enregistrement est activé sans consentement obligatoire dans le parcours."});
+  if(flow.recording.policy!=="off"&&!flow.recording.consent_required)errors.push({code:"VOICE_RECORDING_NOTICE_REQUIRED",message:"Une annonce d’information est obligatoire avant enregistrement."});
+  if(flow.recording.policy!=="off"&&!flow.nodes.some(n=>n.type==="recording_consent"))errors.push({code:"VOICE_RECORDING_NODE_REQUIRED",message:"Le parcours doit contenir une étape d’information avant enregistrement."});
+  if(flow.recording.policy!=="off"&&["quality","training"].includes(flow.recording.purpose)&&flow.recording.retention_days>180)errors.push({code:"VOICE_RECORDING_RETENTION_TOO_LONG",message:"Pour la qualité ou la formation, la conservation active ne doit pas dépasser 180 jours."});
   const featureTypes=[...new Set(flow.nodes.map(n=>n.type))];
   return {valid:errors.length===0,errors,warnings,node_count:flow.nodes.length,features:featureTypes,flow};
 }
@@ -124,8 +127,10 @@ export function validateVoiceFlow(input={}){
 function minutesOf(value){const [h,m]=String(value||"00:00").split(":").map(Number);return h*60+m;}
 function isOpenSchedule(node,at){
   const d=new Date(at);if(Number.isNaN(d.getTime()))return true;
-  const isoDay=((d.getUTCDay()+6)%7)+1,minute=d.getUTCHours()*60+d.getUTCMinutes();
-  if((node.holidays||[]).includes(d.toISOString().slice(0,10)))return false;
+  const zone=text(node.timezone||"UTC",80)||"UTC",days={Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6,Sun:7};
+  let parts;try{parts=Object.fromEntries(new Intl.DateTimeFormat("en-CA",{timeZone:zone,weekday:"short",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(d).filter(x=>x.type!=="literal").map(x=>[x.type,x.value]));}catch(_e){parts={weekday:["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getUTCDay()],year:String(d.getUTCFullYear()),month:String(d.getUTCMonth()+1).padStart(2,"0"),day:String(d.getUTCDate()).padStart(2,"0"),hour:String(d.getUTCHours()).padStart(2,"0"),minute:String(d.getUTCMinutes()).padStart(2,"0")};}
+  const isoDay=days[parts.weekday]||1,minute=Number(parts.hour)*60+Number(parts.minute),localDate=parts.year+"-"+parts.month+"-"+parts.day;
+  if((node.holidays||[]).includes(localDate))return false;
   return (node.weekly||[]).some(s=>(s.days||[]).map(Number).includes(isoDay)&&minute>=minutesOf(s.start)&&minute<minutesOf(s.end));
 }
 
