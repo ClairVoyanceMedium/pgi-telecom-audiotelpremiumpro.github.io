@@ -1425,16 +1425,6 @@ CREATE INDEX calls_destination_started_idx ON calls(call_destination_id,started_
 CREATE INDEX IF NOT EXISTS tenant_kyc_status_tenant_idx
   ON tenant_kyc_profiles(status,tenant_id);
 
--- Selective metric reset epochs. Migration 035 keeps existing databases aligned.
-ALTER TABLE metric_baselines
-  ADD COLUMN IF NOT EXISTS metric_key text NOT NULL DEFAULT 'all';
-ALTER TABLE metric_baselines
-  ADD COLUMN IF NOT EXISTS created_by_customer_principal_id uuid REFERENCES customer_principals(id);
-ALTER TABLE metric_baselines
-  ADD CONSTRAINT metric_baselines_metric_key_check CHECK (metric_key IN ('all','calls','minutes','revenue','payout','quality'));
-CREATE INDEX IF NOT EXISTS metric_baselines_selective_idx
-  ON metric_baselines(scope,tenant_id,metric_key,effective_from DESC,id DESC);
-
 -- Fresh-database bootstrap manifest. backend/migrate.mjs validates every checksum
 -- against the immutable migration files before seeding schema_migrations.
 CREATE TABLE schema_bootstrap_migrations (
