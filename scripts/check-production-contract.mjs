@@ -64,7 +64,8 @@ const requiredCompose=[
   "PGI_INGEST_TOKEN",
   "PGI_TELEPHONY_USER",
   "PGI_TELEPHONY_PASSWORD",
-  "PGI_CALLER_HASH_KEY"
+  "PGI_CALLER_HASH_KEY",
+  "PGI_PORTABILITY_SECRET_KEY"
 ];
 
 for(const name of requiredCompose){
@@ -77,6 +78,8 @@ if(!/apiBaseUrl:\s*"\/api\/v1"/.test(runtime))failures.push("production runtime 
 if(!/@internalMachine path \/api\/v1\/internal\/\* \/api\/v1\/ingest\/freeswitch \/api\/v1\/ready \/api\/v1\/ingest\/cdr/.test(caddy))failures.push("public proxy must block internal machine and ingest endpoints by default");
 if(!/handle @internalMachine\s*\{\s*respond 404/.test(caddy))failures.push("internal machine endpoints must not be publicly proxied");
 if(!/PGI_REQUIRE_OPERATOR/.test(preflight))failures.push("preflight must separate operator go-live checks");
+if(!/PGI_REQUIRE_CARRIER_CONTRACT:\s*\$\{PGI_REQUIRE_CARRIER_CONTRACT:-true\}/.test(compose))failures.push("production must require explicit carrier commercial terms by default");
+if(!/PGI_PAYOUT_RATE_HT_PER_MIN:\s*\$\{PGI_PAYOUT_RATE_HT_PER_MIN:-0\}/.test(compose))failures.push("production must not use a fictional fallback carrier payout rate");
 if(!/PGI_BACKEND_MODE/.test(preflight)||!/PGI_AUTH_MODE/.test(preflight))failures.push("preflight must validate backend production mode");
 for(const name of requiredCompose){
   if(!preflight.includes("need_env "+name))failures.push("preflight missing "+name);
@@ -205,6 +208,7 @@ try{
     PGI_TELEPHONY_USER:"pgi-telephony",
     PGI_TELEPHONY_PASSWORD:secret,
     PGI_CALLER_HASH_KEY:secret,
+    PGI_PORTABILITY_SECRET_KEY:secret,
     PGI_DATABASE_URL:"postgresql://user:password@postgres:5432/pgi_telecom",
     PGI_DATABASE_SSL:"disable"
   });
