@@ -70,6 +70,11 @@ if (!index.includes("PGI • Telecom - Audiotel Premium Pro")) failures.push("No
 if (!index.includes('name="viewport"')) failures.push("Viewport mobile absent");
 if (!clientPortal.includes('name="robots" content="noindex,nofollow,noarchive"')) failures.push("Customer portal must be noindex");
 if (!clientPortal.includes("Audiotel Premium Pro")) failures.push("Customer portal branding missing");
+if (/\bPGI\b/.test(clientPortal)) failures.push("Customer portal must use Audiotel Premium Pro, not PGI");
+if (/voyance|voyant/i.test(frontRuntime)) failures.push("Generic Audiotel product must not be sector-specific to clairvoyance");
+if (!index.includes("Intervenants")) failures.push("Cockpit must use generic intervenant terminology");
+if (/>Experts</.test(index)||/>Expert</.test(index)) failures.push("Visible cockpit labels must not use the legacy Expert wording");
+if (!clientPortal.includes("plusieurs services, équipes, intervenants ou postes")) failures.push("Customer portal must explain multiservice routing");
 if (/http:\/\//i.test(frontRuntime)) failures.push("Référence HTTP non chiffrée détectée");
 if (/localhost|127\.0\.0\.1/i.test(frontRuntime)) failures.push("Endpoint local détecté dans le front");
 if (!app.includes("baseline")) failures.push("Logique de baseline absente");
