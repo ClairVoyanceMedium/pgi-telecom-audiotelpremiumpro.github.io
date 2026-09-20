@@ -1144,6 +1144,16 @@ export class PostgresStore{
     });
   }
 
+  async withTenantReadContext(tenantId,fn){
+    const id=Number(tenantId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_CONTEXT");
+    if(typeof fn!=="function")throw problem(500,"TENANT_CONTEXT_HANDLER_REQUIRED");
+    return this.readSql.begin(async tx=>{
+      await tx.unsafe("SELECT set_config('pgi.tenant_id',$1,true)",[String(id)]);
+      return fn(tx);
+    });
+  }
+
   async acquireWorkerLease(leaseKey,ownerId,ttlSeconds=45){
     const rows=await this.sql.unsafe(
       "INSERT INTO worker_leases(lease_key,owner_id,expires_at)"+
@@ -1799,6 +1809,228 @@ export class PostgresStore{
     });
     this.eventBus.publish("billing.alert.acknowledged",{id,result:"acknowledged"});
     return result;
+  }
+
+  async customerAuthLookup(email){
+    email=String(email||"").trim().toLowerCase();
+    if(!email||email.length>320)return null;
+    const principals=await this.sql.unsafe(
+      "SELECT p.id,p.email,p.display_name,p.status,p.preferred_locale,p.timezone,p.session_version,"+
+      " c.password_hash,c.status AS credential_status,c.failed_attempts,c.locked_until"+
+      " FROM customer_principals p LEFT JOIN customer_password_credentials c ON c.customer_principal_id=p.id"+
+      " WHERE p.email_normalized=$1 LIMIT 1",[email]
+    );
+    const principal=principals[0];if(!principal)return null;
+    const memberships=await this.sql.unsafe(
+      "SELECT m.tenant_id,m.role,m.status,t.public_id,t.slug,t.display_name,t.status AS tenant_status,t.authorization_version"+
+      " FROM customer_tenant_memberships m JOIN tenants t ON t.id=m.tenant_id"+
+      " WHERE m.customer_principal_id=$1::uuid AND m.status='active' AND t.status='active'"+
+      " ORDER BY t.display_name,t.id",[principal.id]
+    );
+    return {...principal,memberships};
+  }
+
+  async recordCustomerAuthFailure(principalId){
+    if(!principalId)return;
+    await this.sql.unsafe(
+      "UPDATE customer_password_credentials SET failed_attempts=failed_attempts+1,last_failed_at=now(),"+
+      " locked_until=CASE WHEN failed_attempts+1>=5 THEN now()+interval '15 minutes' ELSE locked_until END,updated_at=now()"+
+      " WHERE customer_principal_id=$1::uuid",[String(principalId)]
+    );
+  }
+
+  async recordCustomerAuthSuccess(principalId){
+    if(!principalId)return;
+    await this.sql.begin(async tx=>{
+      await tx.unsafe(
+        "UPDATE customer_password_credentials SET failed_attempts=0,locked_until=NULL,last_failed_at=NULL,updated_at=now()"+
+        " WHERE customer_principal_id=$1::uuid",[String(principalId)]
+      );
+      await tx.unsafe(
+        "UPDATE customer_principals SET last_authenticated_at=now(),updated_at=now() WHERE id=$1::uuid",[String(principalId)]
+      );
+    });
+  }
+
+  async customerSessionContext(actor){
+    if(!actor?.sub||!actor?.tenant_id)throw problem(401,"CUSTOMER_AUTH_REQUIRED");
+    const rows=await this.sql.unsafe(
+      "SELECT p.id,p.email,p.display_name,p.status,p.preferred_locale,p.timezone,p.session_version,"+
+      " m.tenant_id,m.role AS customer_role,m.status AS membership_status,t.public_id AS tenant_public_id,t.slug,t.display_name AS tenant_name,"+
+      " t.status AS tenant_status,t.authorization_version,t.default_currency,t.country_code"+
+      " FROM customer_principals p JOIN customer_tenant_memberships m ON m.customer_principal_id=p.id"+
+      " JOIN tenants t ON t.id=m.tenant_id WHERE p.id=$1::uuid AND m.tenant_id=$2 LIMIT 1",
+      [String(actor.sub),Number(actor.tenant_id)]
+    );
+    const row=rows[0];
+    if(!row||row.status!=="active"||row.membership_status!=="active"||row.tenant_status!=="active")throw problem(401,"CUSTOMER_SESSION_REVOKED");
+    if(Number(row.session_version)!==Number(actor.session_version)||Number(row.authorization_version)!==Number(actor.authorization_version))throw problem(401,"CUSTOMER_SESSION_STALE");
+    if(String(row.customer_role)!==String(actor.customer_role))throw problem(401,"CUSTOMER_SESSION_STALE");
+    return row;
+  }
+
+  async createCustomerPortalInvitation(publicId,input={},tokenHash){
+    publicId=String(publicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    const email=String(input.email||"").trim().toLowerCase();
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>320)throw problem(400,"INVALID_CUSTOMER_EMAIL");
+    const role=String(input.role||"readonly").trim().toLowerCase();
+    if(!["owner","admin","finance","operator","analyst","readonly"].includes(role))throw problem(400,"INVALID_CUSTOMER_ROLE");
+    if(!/^[a-f0-9]{64}$/.test(String(tokenHash||"")))throw problem(400,"INVALID_INVITATION_TOKEN_HASH");
+    const ttlHours=Math.max(1,Math.min(168,Number(input.expires_in_hours)||72));
+    return this.sql.begin(async tx=>{
+      const tenants=await tx.unsafe("SELECT id,public_id,display_name,tenant_type,status FROM tenants WHERE public_id=$1::uuid FOR UPDATE",[publicId]);
+      const tenant=tenants[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+      if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+      if(tenant.status==="closed")throw problem(409,"TENANT_CLOSED");
+      await tx.unsafe(
+        "UPDATE customer_tenant_invitations SET status='revoked' WHERE tenant_id=$1 AND email_normalized=$2 AND status='pending'",
+        [tenant.id,email]
+      );
+      const rows=await tx.unsafe(
+        "INSERT INTO customer_tenant_invitations(tenant_id,email,role,token_hash,status,expires_at)"+
+        " VALUES($1,$2,$3,$4,'pending',now()+make_interval(hours=>$5))"+
+        " RETURNING id,tenant_id,email,role,status,expires_at,created_at",
+        [tenant.id,email,role,String(tokenHash),ttlHours]
+      );
+      return {...rows[0],tenant_public_id:tenant.public_id,tenant_name:tenant.display_name};
+    });
+  }
+
+  async activateCustomerPortalInvitation(tokenHash,displayName,passwordHash){
+    if(!/^[a-f0-9]{64}$/.test(String(tokenHash||"")))throw problem(400,"INVALID_INVITATION_TOKEN");
+    displayName=String(displayName||"").trim();
+    if(!displayName||displayName.length>160)throw problem(400,"INVALID_CUSTOMER_NAME");
+    if(String(passwordHash||"").length<20)throw problem(400,"INVALID_PASSWORD_HASH");
+    return this.sql.begin(async tx=>{
+      const invitations=await tx.unsafe(
+        "SELECT i.id,i.tenant_id,i.email,i.role,i.status,i.expires_at,t.public_id,t.display_name AS tenant_name,t.status AS tenant_status,t.authorization_version"+
+        " FROM customer_tenant_invitations i JOIN tenants t ON t.id=i.tenant_id"+
+        " WHERE i.token_hash=$1 FOR UPDATE",[String(tokenHash)]
+      );
+      const inv=invitations[0];if(!inv)throw problem(404,"INVITATION_NOT_FOUND");
+      if(inv.status!=="pending")throw problem(409,"INVITATION_NOT_PENDING");
+      if(Date.parse(inv.expires_at)<=Date.now())throw problem(410,"INVITATION_EXPIRED");
+      if(inv.tenant_status!=="active"&&inv.tenant_status!=="pending")throw problem(409,"TENANT_NOT_ACTIVE");
+      let principals=await tx.unsafe(
+        "SELECT id,email,display_name,status,session_version FROM customer_principals WHERE email_normalized=lower(btrim($1)) FOR UPDATE",[inv.email]
+      );
+      if(principals[0]){
+        const credential=await tx.unsafe("SELECT customer_principal_id FROM customer_password_credentials WHERE customer_principal_id=$1::uuid",[principals[0].id]);
+        if(credential.length)throw problem(409,"CUSTOMER_ACCOUNT_EXISTS");
+        if(principals[0].status!=="active"&&principals[0].status!=="pending")throw problem(409,"CUSTOMER_ACCOUNT_DISABLED");
+        await tx.unsafe("UPDATE customer_principals SET display_name=$1,status='active',updated_at=now() WHERE id=$2::uuid",[displayName,principals[0].id]);
+      }else{
+        principals=await tx.unsafe(
+          "INSERT INTO customer_principals(email,display_name,status,email_verified) VALUES($1,$2,'active',false)"+
+          " RETURNING id,email,display_name,status,session_version",[inv.email,displayName]
+        );
+      }
+      const principal=principals[0];
+      await tx.unsafe(
+        "INSERT INTO customer_password_credentials(customer_principal_id,password_hash,status) VALUES($1::uuid,$2,'active')",
+        [principal.id,String(passwordHash)]
+      );
+      await tx.unsafe(
+        "INSERT INTO customer_tenant_memberships(tenant_id,customer_principal_id,role,status) VALUES($1,$2::uuid,$3,'active')"+
+        " ON CONFLICT(tenant_id,customer_principal_id) DO UPDATE SET role=EXCLUDED.role,status='active',updated_at=now()",
+        [inv.tenant_id,principal.id,inv.role]
+      );
+      await tx.unsafe(
+        "UPDATE customer_tenant_invitations SET status='accepted',accepted_by_customer_principal_id=$1::uuid,accepted_at=now() WHERE id=$2::uuid",
+        [principal.id,inv.id]
+      );
+      const context=await tx.unsafe(
+        "SELECT p.id,p.email,p.display_name,p.session_version,m.role AS customer_role,t.id AS tenant_id,t.public_id AS tenant_public_id,"+
+        " t.display_name AS tenant_name,t.authorization_version FROM customer_principals p"+
+        " JOIN customer_tenant_memberships m ON m.customer_principal_id=p.id"+
+        " JOIN tenants t ON t.id=m.tenant_id WHERE p.id=$1::uuid AND t.id=$2",
+        [principal.id,inv.tenant_id]
+      );
+      return context[0];
+    });
+  }
+
+  async customerPortalUsers(publicId){
+    publicId=String(publicId||"").trim();
+    const rows=await this.readSql.unsafe(
+      "SELECT p.id,p.email,p.display_name,p.status,p.email_verified,p.last_authenticated_at,m.role,m.status AS membership_status,m.joined_at"+
+      " FROM tenants t JOIN customer_tenant_memberships m ON m.tenant_id=t.id JOIN customer_principals p ON p.id=m.customer_principal_id"+
+      " WHERE t.public_id=$1::uuid AND t.tenant_type<>'internal' ORDER BY p.display_name,p.email",[publicId]
+    );
+    return rows;
+  }
+
+  async customerPortalOverview(tenantId,from,to){
+    const id=Number(tenantId);
+    return this.withTenantReadContext(id,async tx=>{
+      const tenantRows=await tx.unsafe(
+        "SELECT id,public_id,display_name,legal_name,status,country_code,preferred_locale,default_currency,timezone FROM tenants WHERE id=$1",[id]
+      );
+      const tenant=tenantRows[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+      const financial=await tx.unsafe(
+        "SELECT currency,COALESCE(sum(calls_total),0)::bigint AS calls_total,COALESCE(sum(calls_connected),0)::bigint AS calls_connected,"+
+        " COALESCE(sum(calls_abandoned),0)::bigint AS calls_abandoned,COALESCE(sum(calls_failed),0)::bigint AS calls_failed,"+
+        " COALESCE(sum(conversation_seconds),0)::float8 AS conversation_seconds,COALESCE(sum(billable_seconds),0)::float8 AS billable_seconds,"+
+        " COALESCE(sum(generated_revenue_ttc),0)::float8 AS generated_revenue_ttc,max(updated_at) AS updated_at"+
+        " FROM tenant_scoped_metric_rollups_daily WHERE bucket_date BETWEEN $1::timestamptz::date AND $2::timestamptz::date"+
+        " GROUP BY currency ORDER BY currency",[from,to]
+      );
+      const series=await tx.unsafe(
+        "SELECT bucket_date,COALESCE(sum(calls_total),0)::bigint AS calls_total,COALESCE(sum(calls_connected),0)::bigint AS calls_connected,"+
+        " COALESCE(sum(billable_seconds),0)::float8 AS billable_seconds,max(updated_at) AS updated_at"+
+        " FROM tenant_scoped_metric_rollups_daily WHERE bucket_date BETWEEN $1::timestamptz::date AND $2::timestamptz::date"+
+        " GROUP BY bucket_date ORDER BY bucket_date",[from,to]
+      );
+      const numbers=await tx.unsafe(
+        "SELECT n.id,n.display_number,n.e164,n.tariff_code,n.currency,n.number_type,n.service_rate_ttc_per_min::float8,n.status,n.activated_at,"+
+        " a.assignment_type,a.status AS assignment_status,a.kyc_status,a.valid_from,a.valid_to"+
+        " FROM tenant_scoped_sva_numbers n LEFT JOIN tenant_scoped_number_assignments a ON a.sva_number_id=n.id"+
+        " ORDER BY n.status,n.display_number LIMIT 100"
+      );
+      const settlements=await tx.unsafe(
+        "SELECT id,market_id,currency,period_start,period_end,gross_service_amount_ht::float8,upstream_payout_ht::float8,"+
+        " platform_fee_ht::float8,net_payout_ht::float8,status,payment_due_date,paid_at,statement_reference"+
+        " FROM tenant_scoped_settlements ORDER BY period_end DESC,id DESC LIMIT 24"
+      );
+      const subscriptions=await tx.unsafe(
+        "SELECT id,market_id,status,billing_currency,starts_at,current_period_start,current_period_end,ends_at,cancel_at_period_end,"+
+        " last_payment_status,last_event_at,plan_key,plan_name,amount_minor,price_currency,billing_interval,interval_count"+
+        " FROM tenant_scoped_subscriptions ORDER BY starts_at DESC,id DESC LIMIT 10"
+      );
+      const destinations=await tx.unsafe(
+        "SELECT id,sva_number_id,label,destination_type,destination_uri,priority,status,failover_enabled,max_concurrent_calls,active_calls,last_assigned_at"+
+        " FROM tenant_scoped_call_destinations ORDER BY priority,id LIMIT 100"
+      );
+      const recentCalls=await tx.unsafe(
+        "SELECT call_id,market,currency,display_number,e164,started_at,ended_at,call_status,conversation_seconds,billable_seconds,retail_service_amount_ttc::float8"+
+        " FROM tenant_scoped_portal_calls WHERE started_at>=$1::timestamptz AND started_at<=$2::timestamptz"+
+        " ORDER BY started_at DESC,call_id DESC LIMIT 20",[from,to]
+      );
+      return {tenant,financial_by_currency:financial,series,numbers,settlements,subscriptions,destinations,recent_calls:recentCalls,range:{from,to}};
+    });
+  }
+
+  async customerPortalCalls(tenantId,params={}){
+    const id=Number(tenantId);
+    const from=String(params.from||"");
+    const to=String(params.to||"");
+    if(!Number.isFinite(Date.parse(from))||!Number.isFinite(Date.parse(to))||Date.parse(to)<Date.parse(from))throw problem(400,"INVALID_RANGE");
+    const limit=clampInt(params.limit,50,1,100);
+    const cursor=params.cursor?decodeCursor(params.cursor):null;
+    if(params.cursor&&!cursor)throw problem(400,"INVALID_CURSOR");
+    return this.withTenantReadContext(id,async tx=>{
+      const rows=await tx.unsafe(
+        "SELECT call_id,market,currency,display_number,e164,started_at,ended_at,call_status,conversation_seconds,billable_seconds,retail_service_amount_ttc::float8"+
+        " FROM tenant_scoped_portal_calls WHERE started_at>=$1::timestamptz AND started_at<=$2::timestamptz"+
+        " AND ($3::timestamptz IS NULL OR (started_at,call_id)<($3::timestamptz,$4::bigint))"+
+        " ORDER BY started_at DESC,call_id DESC LIMIT $5",
+        [from,to,cursor?.started_at||null,cursor?.id||null,limit+1]
+      );
+      const more=rows.length>limit;const data=more?rows.slice(0,limit):rows;
+      const last=data.at(-1);
+      return {data,next_cursor:more&&last?encodeCursor({started_at:last.started_at,id:Number(last.call_id)}):null};
+    });
   }
 
   async customerAdminSummary(){

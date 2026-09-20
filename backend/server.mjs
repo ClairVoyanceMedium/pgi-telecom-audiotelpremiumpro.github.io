@@ -1,10 +1,10 @@
 import http from "node:http";
 import {pathToFileURL} from "node:url";
-import {randomUUID} from "node:crypto";
+import {randomUUID,randomBytes,createHash} from "node:crypto";
 import {loadConfig} from "./src/config.mjs";
 import {EventBus} from "./src/event-bus.mjs";
 import {MemoryStore} from "./src/store-memory.mjs";
-import {parseCookies,verifyPassword,issueSession,verifySession,constantTimeTokenEqual,sessionCookie,csrfCookie,clearSessionCookies} from "./src/security.mjs";
+import {parseCookies,hashPassword,verifyPassword,issueSession,verifySession,constantTimeTokenEqual,sessionCookie,csrfCookie,clearSessionCookies,customerSessionCookie,customerCsrfCookie,clearCustomerSessionCookies} from "./src/security.mjs";
 import {securityHeaders,readJson,json,text,problemJson,routeMatch,clientIp} from "./src/http.mjs";
 import {normalizeFreeSwitchCdr} from "./src/cdr-freeswitch.mjs";
 import {startWorkers} from "./src/workers.mjs";
@@ -115,7 +115,91 @@ export function createBackend(options={}){
         });
       }
 
+      if(method==="POST"&&pathname==="/api/v1/customer/auth/login"){
+        if(config.authMode!=="session")return done(res,metrics,started,"customer.auth.login",404,{error:{code:"AUTH_DISABLED"}});
+        requireSameOriginBrowser(req);
+        const authKey=enforceAuthLoginRate(req,config,authBuckets,metrics);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const email=String(body.email||"").trim().toLowerCase();
+        const password=String(body.password||"");
+        const auth=await store.customerAuthLookup(email);
+        const fallbackHash=config.adminPasswordHash||"invalid";
+        const passwordOk=verifyPassword(password,auth?.password_hash||fallbackHash);
+        const locked=auth?.locked_until&&Date.parse(auth.locked_until)>Date.now();
+        if(!auth||!passwordOk||locked||auth.status!=="active"||auth.credential_status!=="active"){
+          metrics.authFailures++;recordAuthFailure(authKey,config,authBuckets);
+          if(auth?.id)await store.recordCustomerAuthFailure(auth.id);
+          const e=new Error("Invalid credentials");e.status=401;e.code="INVALID_CREDENTIALS";throw e;
+        }
+        const memberships=(auth.memberships||[]).filter(x=>x.status==="active"&&x.tenant_status==="active");
+        let membership=null;
+        const requested=String(body.tenant||"").trim();
+        if(requested)membership=memberships.find(x=>String(x.public_id)===requested||String(x.slug)===requested)||null;
+        else if(memberships.length===1)membership=memberships[0];
+        if(!membership){
+          authBuckets.delete(authKey);
+          return done(res,metrics,started,"customer.auth.login",409,{error:{code:"CUSTOMER_TENANT_REQUIRED"},tenants:memberships.map(x=>({id:x.public_id,slug:x.slug,name:x.display_name,role:x.role}))});
+        }
+        await store.recordCustomerAuthSuccess(auth.id);authBuckets.delete(authKey);
+        const refreshed=await store.customerAuthLookup(email);
+        const current=(refreshed?.memberships||[]).find(x=>Number(x.tenant_id)===Number(membership.tenant_id))||membership;
+        const issued=issueSession({
+          secret:config.sessionSecret,
+          user:{id:auth.id,role:"customer",name:auth.display_name||auth.email,actor_type:"customer",tenant_id:Number(current.tenant_id),tenant_public_id:current.public_id,customer_role:current.role,authorization_version:Number(current.authorization_version),session_version:Number(refreshed?.session_version||auth.session_version)},
+          ttlSeconds:config.sessionTtlSeconds
+        });
+        return done(res,metrics,started,"customer.auth.login",200,{user:{id:auth.id,name:auth.display_name||auth.email,email:auth.email,role:current.role,tenant:{id:current.public_id,name:current.display_name}}},{
+          "Set-Cookie":[customerSessionCookie(issued.token,config.sessionTtlSeconds),customerCsrfCookie(issued.csrf,config.sessionTtlSeconds)]
+        });
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/customer/auth/activate"){
+        if(config.authMode!=="session")return done(res,metrics,started,"customer.auth.activate",404,{error:{code:"AUTH_DISABLED"}});
+        requireSameOriginBrowser(req);
+        const authKey=enforceAuthLoginRate(req,config,authBuckets,metrics);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const rawToken=String(body.token||"").trim();
+        const password=String(body.password||"");
+        if(rawToken.length<32||password.length<12){const e=new Error("Invalid activation");e.status=400;e.code="INVALID_ACTIVATION";throw e;}
+        const tokenHash=createHash("sha256").update(rawToken).digest("hex");
+        const activated=await store.activateCustomerPortalInvitation(tokenHash,String(body.display_name||""),hashPassword(password));
+        authBuckets.delete(authKey);
+        const issued=issueSession({
+          secret:config.sessionSecret,
+          user:{id:activated.id,role:"customer",name:activated.display_name||activated.email,actor_type:"customer",tenant_id:Number(activated.tenant_id),tenant_public_id:activated.tenant_public_id,customer_role:activated.customer_role,authorization_version:Number(activated.authorization_version),session_version:Number(activated.session_version)},
+          ttlSeconds:config.sessionTtlSeconds
+        });
+        return done(res,metrics,started,"customer.auth.activate",201,{user:{id:activated.id,name:activated.display_name,email:activated.email,role:activated.customer_role,tenant:{id:activated.tenant_public_id,name:activated.tenant_name}}},{
+          "Set-Cookie":[customerSessionCookie(issued.token,config.sessionTtlSeconds),customerCsrfCookie(issued.csrf,config.sessionTtlSeconds)]
+        });
+      }
+
       const actor=authenticate(req,config);
+      const customerActor=authenticateCustomer(req,config);
+      if(method==="POST"&&pathname==="/api/v1/customer/auth/logout"){
+        requireCustomerCsrf(req,customerActor,config);
+        return done(res,metrics,started,"customer.auth.logout",200,{ok:true},{"Set-Cookie":clearCustomerSessionCookies()});
+      }
+      if(method==="GET"&&pathname==="/api/v1/customer/auth/me"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        return done(res,metrics,started,"customer.auth.me",200,{user:publicCustomerActor(customerActor,context)});
+      }
+      if(method==="GET"&&pathname==="/api/v1/customer/portal"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        const range=rangeParams(url);
+        const data=await store.customerPortalOverview(context.tenant_id,range.from,range.to);
+        return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,server_time:new Date().toISOString()});
+      }
+      if(method==="GET"&&pathname==="/api/v1/customer/calls"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        const range=rangeParams(url);
+        const params={...Object.fromEntries(url.searchParams.entries()),from:range.from,to:range.to};
+        return done(res,metrics,started,"customer.calls",200,await store.customerPortalCalls(context.tenant_id,params));
+      }
+
       if(method==="POST"&&pathname==="/api/v1/auth/logout"){
         requireActor(actor);
         requireCsrf(req,actor,config);
@@ -302,6 +386,21 @@ export function createBackend(options={}){
         requireRole(actor,["admin","finance","readonly"]);
         const params=Object.fromEntries(url.searchParams.entries());
         return done(res,metrics,started,"platform.tenant_assignments",200,await store.listTenantAssignments(params));
+      }
+
+      match=routeMatch(pathname,"/api/v1/platform/tenants/:id/customer-users");
+      if(method==="GET"&&match){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.customer_users",200,{data:await store.customerPortalUsers(match.id)});
+      }
+      match=routeMatch(pathname,"/api/v1/platform/tenants/:id/customer-invitations");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const token=randomBytes(32).toString("base64url");
+        const tokenHash=createHash("sha256").update(token).digest("hex");
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer.invitation.create",{tenant:match.id,email:body.email,role:body.role||"readonly"},()=>store.createCustomerPortalInvitation(match.id,body,tokenHash));
+        return done(res,metrics,started,"platform.customer_invitation",201,{...result.value,activation_path:"client.html?invite="+encodeURIComponent(token),replayed:result.replayed});
       }
 
       match=routeMatch(pathname,"/api/v1/platform/tenants/:id/control-center");
@@ -553,6 +652,12 @@ function authenticate(req,config){
   const cookies=parseCookies(req.headers.cookie||"");
   return verifySession(cookies["__Host-pgi_session"],config.sessionSecret);
 }
+function authenticateCustomer(req,config){
+  if(config.authMode!=="session")return null;
+  const cookies=parseCookies(req.headers.cookie||"");
+  const actor=verifySession(cookies["__Host-pgi_customer_session"],config.sessionSecret);
+  return actor?.actor_type==="customer"?actor:null;
+}
 function requireActor(actor){
   if(!actor){const e=new Error("Authentication required");e.status=401;e.code="AUTH_REQUIRED";throw e;}
 }
@@ -567,6 +672,15 @@ function requireCsrf(req,actor,config){
   const cookieToken=cookies["__Host-pgi_csrf"]||"";
   if(!header||!cookieToken||!constantTimeTokenEqual(header,cookieToken)||!constantTimeTokenEqual(header,actor.csrf)){
     const e=new Error("CSRF validation failed");e.status=403;e.code="CSRF_FAILED";throw e;
+  }
+}
+function requireCustomerCsrf(req,actor,config){
+  requireActor(actor);
+  const cookies=parseCookies(req.headers.cookie||"");
+  const header=String(req.headers["x-csrf-token"]||"");
+  const cookieToken=cookies["__Host-pgi_customer_csrf"]||"";
+  if(!header||!cookieToken||!constantTimeTokenEqual(header,cookieToken)||!constantTimeTokenEqual(header,actor.csrf)){
+    const e=new Error("Customer CSRF validation failed");e.status=403;e.code="CUSTOMER_CSRF_FAILED";throw e;
   }
 }
 function authorizeTelephony(req,config){
@@ -655,6 +769,9 @@ function rangeParams(url){
   return {from,to};
 }
 function publicActor(a){return {id:a.sub,role:a.role,name:a.name,expert_id:a.expert_id||null};}
+function publicCustomerActor(a,context){
+  return {id:a.sub,role:context.customer_role,name:context.display_name||a.name,email:context.email,tenant:{id:context.tenant_public_id,name:context.tenant_name,currency:context.default_currency,country_code:context.country_code}};
+}
 function rateLimit(req,config,buckets,metrics){
   const key=clientIp(req);
   const minute=Math.floor(Date.now()/60000);

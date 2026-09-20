@@ -585,3 +585,6 @@ test("forwarded client IP is trusted only from the loopback proxy",()=>{
   assert.equal(clientIp({socket:{remoteAddress:"198.51.100.9"},headers:{"x-forwarded-for":"203.0.113.7"}}),"198.51.100.9");
   assert.equal(clientIp({socket:{remoteAddress:"127.0.0.1"},headers:{"x-forwarded-for":"spoofed-host"}}),"127.0.0.1");
 });
+
+
+test("customer sessions carry tenant claims and use isolated Host cookies",()=>{const issued=issueSession({secret:"x".repeat(64),user:{id:"11111111-1111-4111-8111-111111111111",role:"customer",name:"Client",actor_type:"customer",tenant_id:42,tenant_public_id:"22222222-2222-4222-8222-222222222222",customer_role:"finance",authorization_version:3,session_version:7},ttlSeconds:300});const payload=verifySession(issued.token,"x".repeat(64));assert.equal(payload.actor_type,"customer");assert.equal(payload.tenant_id,42);assert.equal(payload.customer_role,"finance");assert.match(customerSessionCookie(issued.token,300),/__Host-pgi_customer_session=/);assert.match(customerCsrfCookie(issued.csrf,300),/__Host-pgi_customer_csrf=/);assert.equal(clearCustomerSessionCookies().length,2);});

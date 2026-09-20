@@ -37,6 +37,9 @@ export function issueSession({secret,user,ttlSeconds}){
   const now=Math.floor(Date.now()/1000);
   const csrf=randomBytes(24).toString("base64url");
   const payload={sub:String(user.id),role:user.role,name:user.name,iat:now,exp:now+ttlSeconds,csrf};
+  for(const key of ["actor_type","tenant_id","tenant_public_id","customer_role","authorization_version","session_version"]){
+    if(user[key]!=null)payload[key]=user[key];
+  }
   const encoded=Buffer.from(JSON.stringify(payload)).toString("base64url");
   const sig=createHmac("sha256",secret).update(encoded).digest("base64url");
   return {token:encoded+"."+sig,csrf,payload};
@@ -71,5 +74,17 @@ export function clearSessionCookies(){
   return [
     "__Host-pgi_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0",
     "__Host-pgi_csrf=; Path=/; Secure; SameSite=Strict; Max-Age=0"
+  ];
+}
+export function customerSessionCookie(token,maxAge){
+  return "__Host-pgi_customer_session="+encodeURIComponent(token)+"; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age="+maxAge;
+}
+export function customerCsrfCookie(token,maxAge){
+  return "__Host-pgi_customer_csrf="+encodeURIComponent(token)+"; Path=/; Secure; SameSite=Strict; Max-Age="+maxAge;
+}
+export function clearCustomerSessionCookies(){
+  return [
+    "__Host-pgi_customer_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0",
+    "__Host-pgi_customer_csrf=; Path=/; Secure; SameSite=Strict; Max-Age=0"
   ];
 }

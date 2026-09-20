@@ -687,6 +687,19 @@ export class MemoryStore{
     return structuredClone(row);
   }
 
+  async customerAuthLookup(){return null;}
+  async recordCustomerAuthFailure(){return;}
+  async recordCustomerAuthSuccess(){return;}
+  async customerSessionContext(actor){
+    if(!actor?.tenant_id)throw problem(401,"CUSTOMER_AUTH_REQUIRED");
+    return {id:actor.sub,email:"demo@example.test",display_name:actor.name||"Client Démo",status:"active",session_version:actor.session_version||1,tenant_id:Number(actor.tenant_id),customer_role:actor.customer_role||"readonly",tenant_public_id:actor.tenant_public_id||"00000000-0000-4000-8000-000000000001",tenant_name:"Société Démo",authorization_version:actor.authorization_version||1,default_currency:"EUR",country_code:"FR"};
+  }
+  async createCustomerPortalInvitation(publicId,input={},tokenHash){return {id:"demo-invitation",tenant_public_id:publicId,tenant_name:"Société Démo",email:input.email,role:input.role||"readonly",status:"pending",expires_at:new Date(Date.now()+72*3600000).toISOString(),token_hash:tokenHash};}
+  async activateCustomerPortalInvitation(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
+  async customerPortalUsers(){return [];}
+  async customerPortalOverview(tenantId,from,to){void tenantId;return {tenant:{display_name:"Société Démo",default_currency:"EUR",status:"active"},financial_by_currency:[],series:[],numbers:[],settlements:[],subscriptions:[],destinations:[],recent_calls:[],range:{from,to}};}
+  async customerPortalCalls(){return {data:[],next_cursor:null};}
+
   async customerAdminSummary(){
     return {tenants_total:0,tenants_active:0,kyc_pending:0,subscription_unpaid_alerts:0,subscription_access_blocked:0,assignments_active:0};
   }

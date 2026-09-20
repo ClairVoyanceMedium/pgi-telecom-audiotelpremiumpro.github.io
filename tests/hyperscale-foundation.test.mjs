@@ -18,6 +18,7 @@ const subscriptionBillingMigration=fs.readFileSync("database/migrations/019_exte
 const customerControlMigration=fs.readFileSync("database/migrations/020_customer_control_center.sql","utf8");
 const customerAdminFiltersMigration=fs.readFileSync("database/migrations/021_customer_admin_filters.sql","utf8");
 const b2bDestinationMigration=fs.readFileSync("database/migrations/022_b2b_call_destinations.sql","utf8");
+const customerPortalMigration=fs.readFileSync("database/migrations/023_customer_portal.sql","utf8");
 const resilienceDocs=fs.readFileSync("docs/RESILIENCE.md","utf8");
 const alertRules=fs.readFileSync("infra/observability/prometheus-alerts.example.yml","utf8");
 const schema=fs.readFileSync("database/schema.sql","utf8");
@@ -215,3 +216,6 @@ test("le cockpit analytique reste borné côté serveur",()=>{
 
 
 test("B2B call destinations keep routing tenant-bound and expert-optional",()=>{for(const token of ["tenant_call_destinations","call_destination_id","tenant_scoped_call_destinations","max_concurrent_calls"])assert.ok(b2bDestinationMigration.includes(token),token);assert.ok(schema.includes("tenant_call_destinations"));assert.ok(store.includes("selectCallDestination"));assert.ok(store.includes("CALL_DESTINATION_TENANT_MISMATCH"));});
+
+
+test("customer portal remains tenant-scoped and separate from PGI staff auth",()=>{for(const token of ["customer_password_credentials","tenant_scoped_portal_calls","tenant_scoped_metric_rollups_daily","tenant_scoped_subscriptions","session_version"])assert.ok(customerPortalMigration.includes(token),token);assert.ok(store.includes("customerPortalOverview"));assert.ok(store.includes("withTenantReadContext"));});
