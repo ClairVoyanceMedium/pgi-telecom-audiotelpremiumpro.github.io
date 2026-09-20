@@ -363,6 +363,19 @@ CREATE INDEX voice_carrier_health_market_time_idx ON voice_carrier_health_hourly
 CREATE INDEX voice_carrier_health_carrier_time_idx ON voice_carrier_health_hourly_sharded(carrier_role,carrier_id,bucket_start DESC);
 CREATE INDEX voice_carrier_health_time_brin ON voice_carrier_health_hourly_sharded USING brin(bucket_start);
 
+CREATE TABLE voice_sip_code_hourly_sharded (
+  bucket_start timestamptz NOT NULL,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  host_carrier_id bigint NOT NULL REFERENCES carriers(id),
+  sip_final_code integer NOT NULL CHECK (sip_final_code BETWEEN 100 AND 699),
+  rollup_shard smallint NOT NULL CHECK (rollup_shard BETWEEN 0 AND 63),
+  calls_total bigint NOT NULL DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(bucket_start,market_id,host_carrier_id,sip_final_code,rollup_shard)
+);
+CREATE INDEX voice_sip_code_market_time_idx ON voice_sip_code_hourly_sharded(market_id,bucket_start DESC,sip_final_code);
+CREATE INDEX voice_sip_code_carrier_time_idx ON voice_sip_code_hourly_sharded(host_carrier_id,bucket_start DESC,sip_final_code);
+
 CREATE TABLE telecom_incidents (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   incident_type text NOT NULL,
