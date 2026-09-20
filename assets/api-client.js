@@ -142,6 +142,7 @@ return request("/platform/tenant-number-assignments"+(q?"?"+q:""));
 },
 tenantControlDetail:function(id){return request("/platform/tenants/"+encodeURIComponent(id)+"/control-center",{timeoutMs:10000});},
 serviceIncidents:function(params){return request("/platform/service-incidents"+qs(params));},
+serviceIncident:function(id){return request("/platform/incidents/"+encodeURIComponent(id));},
 createServiceIncident:function(id,p,k){return idem("/platform/tenants/"+encodeURIComponent(id)+"/incidents",p,k);},
 updateServiceIncident:function(id,p,k){return idem("/platform/incidents/"+encodeURIComponent(id)+"/status",p,k);},
 addServiceIncidentNote:function(id,p,k){return idem("/platform/incidents/"+encodeURIComponent(id)+"/notes",p,k);},
