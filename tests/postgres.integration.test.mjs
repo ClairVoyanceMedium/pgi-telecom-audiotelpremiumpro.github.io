@@ -44,6 +44,16 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(billingBefore.internal_usage_exempt,true);
     assert.equal(billingBefore.summary.access_blocked,1);
 
+    const usTenant=await store.createTenant({display_name:"US Currency Test",legal_name:"US Currency Test",tenant_type:"customer",country_code:"US",billing_email:"usd@example.test"},{sub:"admin"});
+    const usStored=(await store.sql.unsafe("SELECT id,default_currency FROM tenants WHERE public_id=$1::uuid",[usTenant.public_id]))[0];
+    assert.equal(usStored.default_currency,"USD");
+    const usBilling=await store.customerBillingPreparation(usStored.id);
+    assert.equal(usBilling.billing_currency.currency,"USD");
+    assert.equal(usBilling.checkout_prefill.currency,"USD");
+    assert.equal(usBilling.offer,null);
+    assert.equal(usBilling.pricing_state,"local_conversion_required");
+    assert.equal(usBilling.reference_offer.currency,"EUR");
+
     await assert.rejects(
       ()=>store.selectExpert({svaNumber:"33890000001"}),
       error=>error.status===402&&error.code==="SVA_SUBSCRIPTION_REQUIRED"
