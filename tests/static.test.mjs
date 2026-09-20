@@ -405,7 +405,7 @@ test("la PWA met en cache uniquement le shell critique",()=>{
   assert.match(app,/loadDemoCalls/);
   assert.doesNotMatch(sw,/assets\/command-palette\.js/);
   assert.doesNotMatch(sw,/assets\/customer-admin\.css/);
-  assert.match(sw,/pgi-telecom-shell-v41/);
+  assert.match(sw,/pgi-v42/);
 });
 
 test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiques",()=>{
@@ -417,7 +417,7 @@ test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiqu
   assert.match(css,/\.auth-brand-logo\{/);
   assert.match(sw,/audiotel-brand-icon-v33\.png/);
   assert.match(sw,/audiotel-brand-logo-v33\.png/);
-  assert.match(sw,/pgi-telecom-shell-v41/);
+  assert.match(sw,/pgi-v42/);
   assert.match(buildStatic,/audiotel-brand-logo-v33\.png/);
   assert.doesNotMatch(css,/brand-mark|command-brand-emblem|auth-brand-lockup|auth-brand-emblem/);
   assert.doesNotMatch(sw,/favicon\.svg/);
@@ -431,9 +431,9 @@ test("la release Git exacte reste visible et obligatoire",()=>{
   assert.match(buildStatic,/40-character Git SHA/);
 });
 
-test("le produit garde son identité et ne contient pas l’ancien nom",()=>{
+test("le produit garde son identité interne et le nom de cockpit installé",()=>{
   assert.match(index,/PGI • Telecom - Audiotel Premium Pro/);
-  assert.doesNotMatch(index,/PGI Telecom • Audiotel Premium Pro/);
+  assert.match(index,/Cockpit \/ PGI Telecom • Audiotel Premium Pro/);
   assert.match(index,/PLATEFORME/);
   assert.match(index,/CENTRE DE PILOTAGE AUDIOTEL PREMIUM PRO/);
 });
@@ -442,7 +442,7 @@ test("final brown cockpit theme and installed app label are authoritative",()=>{
   assert.match(css,/--bg:#2b1b15/);
   assert.match(css,/\.product-name\{color:#f7e5d6;font-size:clamp\(24px,2\.3vw,32px\)/);
   assert.match(css,/@media \(max-width:820px\)[\s\S]*\.product-name\{max-width:min\(76vw,430px\);font-size:clamp\(18px,5\.0vw,22px\)/);
-  assert.match(index,/apple-mobile-web-app-title" content="Audiotel Premium Pro"/);
+  assert.match(index,/apple-mobile-web-app-title" content="Cockpit \/ PGI Telecom • Audiotel Premium Pro"/);
   assert.match(manifest,/Audiotel Premium Pro/);
 });
 
@@ -453,7 +453,7 @@ test("brand header polish keeps split colors, larger icon and dark period contra
   assert.match(css,/\.product-name-pgi\{color:#f4e8dc\}/);
   assert.match(css,/\.product-name-audiotel\{color:#e0ad6d\}/);
   assert.match(css,/\.periods\{[\s\S]*rgba\(31,22,18,.96\)/);
-  assert.match(sw,/pgi-telecom-shell-v41/);
+  assert.match(sw,/pgi-v42/);
 });
 
 
