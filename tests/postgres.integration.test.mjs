@@ -104,7 +104,25 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(Number(payoutTerms.platform_fee_bps),2000);
     assert.equal(payoutTerms.collection_model,"pgi_collects");
 
-    await store.sql.unsafe("INSERT INTO tenant_number_assignments(tenant_id,sva_number_id,assignment_type,status,valid_from) SELECT t.id,s.id,'customer_service','active',now() FROM tenants t CROSS JOIN sva_numbers s WHERE t.slug='integration-external' AND s.e164='33890000001'");
+    await assert.rejects(
+      ()=>store.sql.unsafe("INSERT INTO tenant_number_assignments(tenant_id,sva_number_id,assignment_type,status,valid_from,regulatory_assignor_carrier_id,upstream_assignment_reference) SELECT t.id,s.id,'customer_service','active',now(),c.id,'integration-upstream-001' FROM tenants t CROSS JOIN sva_numbers s CROSS JOIN carriers c WHERE t.slug='integration-external' AND s.e164='33890000001' AND c.name='Host A'"),
+      /verified regulatory trust profile required/
+    );
+
+    await store.sql.unsafe("INSERT INTO tenant_kyc_profiles(tenant_id,entity_type,registration_country,registration_number,legal_representative_verified,bank_account_verified,status,reviewed_at) SELECT id,'company','FR','12345678901234',true,true,'verified',now() FROM tenants WHERE slug='integration-external' ON CONFLICT(tenant_id) DO UPDATE SET legal_representative_verified=true,bank_account_verified=true,status='verified',reviewed_at=now()");
+    await store.sql.unsafe("INSERT INTO sva_regulatory_profiles(tenant_id,sva_number_id,service_name,service_description,provider_name,provider_website,provider_address,complaint_contact,signaletic_model,next_review_at) SELECT t.id,s.id,'Service intégration','Service SVA de test de conformité','External Test','https://example.test','1 rue de Test, 75001 Paris','complaints@example.test','majorated',now()+interval '1 year' FROM tenants t CROSS JOIN sva_numbers s WHERE t.slug='integration-external' AND s.e164='33890000001' ON CONFLICT(tenant_id,sva_number_id) DO UPDATE SET service_name=EXCLUDED.service_name,service_description=EXCLUDED.service_description,provider_name=EXCLUDED.provider_name,provider_website=EXCLUDED.provider_website,provider_address=EXCLUDED.provider_address,complaint_contact=EXCLUDED.complaint_contact,signaletic_model=EXCLUDED.signaletic_model,next_review_at=EXCLUDED.next_review_at");
+    for(const control of ["numbering_rights","editor_identity","rsva","tariff_transparency","mgit","complaint_process","fraud_monitoring"]){
+      await store.sql.unsafe("INSERT INTO sva_regulatory_evidence_events(tenant_id,sva_number_id,control_key,status,source,evidence_reference,actor_subject) SELECT t.id,s.id,$1,'verified','internal',$2,'integration-test' FROM tenants t CROSS JOIN sva_numbers s WHERE t.slug='integration-external' AND s.e164='33890000001'",[control,"integration:"+control]);
+    }
+    const regulatoryReady=await store.sql.unsafe("SELECT pgi_sva_regulatory_ready(t.id,s.id) AS ready FROM tenants t CROSS JOIN sva_numbers s WHERE t.slug='integration-external' AND s.e164='33890000001'");
+    assert.equal(regulatoryReady[0].ready,true);
+    const regulatoryLedger=await store.sql.unsafe("SELECT control_key,previous_hash,event_hash FROM sva_regulatory_evidence_events WHERE tenant_id=(SELECT id FROM tenants WHERE slug='integration-external') ORDER BY id");
+    assert.equal(regulatoryLedger.length,7);
+    assert.equal(regulatoryLedger[0].previous_hash,null);
+    assert.match(regulatoryLedger[0].event_hash,/^[0-9a-f]{64}$/);
+    assert.match(regulatoryLedger[1].previous_hash,/^[0-9a-f]{64}$/);
+
+    await store.sql.unsafe("INSERT INTO tenant_number_assignments(tenant_id,sva_number_id,assignment_type,status,valid_from,regulatory_assignor_carrier_id,upstream_assignment_reference) SELECT t.id,s.id,'customer_service','active',now(),c.id,'integration-upstream-001' FROM tenants t CROSS JOIN sva_numbers s CROSS JOIN carriers c WHERE t.slug='integration-external' AND s.e164='33890000001' AND c.name='Host A'");
     const extAssignmentForRoute=await store.sql.unsafe("SELECT id FROM tenant_number_assignments WHERE tenant_id=(SELECT id FROM tenants WHERE slug='integration-external') AND sva_number_id=(SELECT id FROM sva_numbers WHERE e164='33890000001') LIMIT 1");
     const createdDestination=await store.createCallDestination(externalIdentity[0].public_id,{assignment_id:Number(extAssignmentForRoute[0].id),label:"Standard principal",destination_type:"pstn",destination_uri:"tel:+33123456789",priority:10,max_concurrent_calls:25},{sub:"admin"});
     assert.equal(createdDestination.status,"testing");
@@ -438,10 +456,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const rawCalls=await store.sql.unsafe("SELECT count(*)::int AS count FROM calls");
     assert.equal(rawCalls[0].count,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
-    assert.equal(migrations.length,36);
+    assert.equal(migrations.length,37);
     assert.equal(new Set(migrations.map(x=>x.version)).size,migrations.length);
     assert.equal(migrations[0].version,"001_baseline");
-    assert.equal(migrations.at(-1).version,"036_voice_studio");
+    assert.equal(migrations.at(-1).version,"037_regulatory_trust_center");
     for(const migration of migrations)assert.match(migration.checksum,/^[a-f0-9]{64}$/);
   }finally{
     await store.close();
