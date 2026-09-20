@@ -265,6 +265,8 @@ export function createBackend(options={}){
       }
       if(method==="POST"&&pathname==="/api/v1/customer/billing/checkout-session"){
         requireCustomerCsrf(req,customerActor,config);
+        const checkoutIdempotencyKey=String(req.headers["idempotency-key"]||"").trim();
+        if(!checkoutIdempotencyKey||checkoutIdempotencyKey.length>200){const e=new Error("Checkout idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
         const context=await store.customerSessionContext(customerActor);
         const billing=await store.customerBillingPreparation(context.tenant_id);
         const provider=billingProviderStatus(config);
@@ -694,6 +696,7 @@ export function billingProviderStatus(config){
     event_deduplication:true,
     event_collision_detection:true,
     tenant_binding_validation:true,
+    checkout_idempotency_required:true,
     normalized_ingest_private:true,
     provider_webhook_adapter_required:true,
     provider_signature_validation_at_adapter:true,
