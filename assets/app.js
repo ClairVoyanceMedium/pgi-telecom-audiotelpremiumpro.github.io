@@ -3,7 +3,7 @@
 var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
 var CONFIG={serviceRate:.8,payoutRate:.46,expertCostPerMin:.18,fixedCostPerCall:.03};
 var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,pendingSyncMode:"dashboard",scheduledSyncMode:"dashboard",hiddenAt:null,lastSyncAt:null,activeView:"overview",system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
-var titles={overview:"Cockpit",calls:"Appels",finance:"Finance",experts:"Experts",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Supervision",settings:"Paramètres"};var experts=["Frederick","Sofia","Emma","Lina","Clara","Nora"];
+var titles={overview:"Cockpit",calls:"Appels",finance:"Finance",experts:"Intervenants",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Supervision",settings:"Paramètres"};var experts=["Accueil","Service commercial","Support client","Service technique","Prise de rendez-vous","Comptabilité"];
 var carriers=["Orange","SFR","Bouygues","Free"];
 var number089="0890 80 24 24";
 var callToolsPromise=null;
@@ -962,7 +962,7 @@ return '<article class="entity-card"><h3>'+esc(name)+'</h3><div class="amount">'
 var r=rows.filter(function(x){return x.expert===name;}),a=aggregate(r),all=aggregate(rows),share=all.expected?Math.min(100,a.expected/all.expected*100):0;
 return '<article class="entity-card"><h3>'+esc(name)+'</h3><div class="amount">'+money(a.expected)+'</div><small>Reversement généré</small><div class="progress"><span style="width:'+share.toFixed(1)+'%"></span></div><div class="entity-meta"><div><span>Appels</span><strong>'+a.connected+'</strong></div><div><span>Minutes</span><strong>'+nfmt(a.mins)+'</strong></div><div><span>ACD</span><strong>'+fmtDuration(a.acd)+'</strong></div><div><span>ASR</span><strong>'+nfmt(a.asr,1)+'%</strong></div></div></article>';
 }).join("");
-$("experts-grid").innerHTML=html||'<p class="muted">Aucun expert configuré.</p>';
+$("experts-grid").innerHTML=html||'<p class="muted">Aucun intervenant configuré.</p>';
 }
 function renderHostCarrier(){
 if(RUNTIME.mode==="production"&&state.route){
@@ -1064,7 +1064,7 @@ var progress=$("activation-progress-bar");
 if(progress)progress.style.width=(readyCount*25)+"%";
 setText("activation-title",readyCount===4?"Chaîne SVA prête à exploiter":(real?"Activation SVA en cours":"Préparation du lancement SVA"));
 setText("activation-detail",real
-?(readyCount===4?"Les prérequis techniques visibles dans PGI sont validés.":"PGI indique automatiquement le prochain blocage à lever avant exploitation.")
+?(readyCount===4?"Les prérequis techniques visibles dans Audiotel Premium Pro sont validés.":"Audiotel Premium Pro indique automatiquement le prochain blocage à lever avant exploitation.")
 :"Mode démo : la structure est prête, mais aucun contrat, numéro ou trunk réel n’est simulé.");
 function gate(id,label,ok){
 setText(id,label);
@@ -1259,7 +1259,7 @@ if(!titles[name])return;
 state.activeView=name;
 qsa(".view").forEach(function(v){v.classList.toggle("active",v.id==="view-"+name);});
 qsa("[data-view]").forEach(function(b){b.classList.toggle("active",b.getAttribute("data-view")===name);});
-setText("view-title",titles[name]||"PGI • Telecom");
+setText("view-title",titles[name]||"Audiotel Premium Pro");
 saveUiPreferences();
 if(!(options&&options.noRender))render();
 if(!(options&&options.noScroll))window.scrollTo({top:0,behavior:"smooth"});
