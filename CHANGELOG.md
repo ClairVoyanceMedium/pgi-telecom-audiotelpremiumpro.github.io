@@ -1,3 +1,14 @@
+## 1.26.0 — Cockpit conformité ARCEP — 2026-09-20
+
+- fiche « Conformité ARCEP 2026 » directement accessible pour chaque numéro externe ;
+- affichage séparé des 8 garde-fous ARCEP 2026 et de leur statut courant ;
+- saisie manuelle d'un nouvel événement de preuve avec statut, source et référence ;
+- aucune validation automatique : une référence est obligatoire avant tout statut `verified` ;
+- chaque saisie continue d'alimenter la chaîne SHA-256 append-only et l'audit existant ;
+- export Evidence Pack conservé depuis la même fiche ;
+- affichage du prix d'abonnement harmonisé à **3,00 EUR TTC/mois** dans le cockpit ;
+- aucune connexion Stripe, opérateur, APNF ou PSP activée.
+
 ## 1.25.0 — Garde-fous ARCEP 2026 — 2026-09-20
 
 - décision ARCEP 2025-2215 ajoutée aux références suivies pour le plan applicable au 1er janvier 2026 ;
