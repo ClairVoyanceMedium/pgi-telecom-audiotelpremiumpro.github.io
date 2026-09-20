@@ -4028,8 +4028,10 @@ export class PostgresStore{
       this.readSql.unsafe(
         "SELECT"+
         " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal') AS numbers_total,"+
-        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id)) AS numbers_ready,"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AND pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id)) AS numbers_ready,"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id)) AS arcep_2026_ready,"+
         " (SELECT count(*)::int FROM sva_regulatory_evidence_events) AS evidence_events,"+
+        " (SELECT count(*)::int FROM sva_arcep_2026_evidence_events) AS arcep_2026_evidence_events,"+
         " (SELECT count(*)::int FROM sva_abuse_cases WHERE status NOT IN ('resolved','closed')) AS abuse_open,"+
         " (SELECT count(*)::int FROM sva_abuse_cases WHERE status NOT IN ('resolved','closed') AND severity='critical') AS abuse_critical,"+
         " (SELECT count(*)::int FROM platform_regulatory_controls WHERE status='verified' AND (valid_until IS NULL OR valid_until>now())) AS platform_controls_verified,"+
@@ -4039,10 +4041,14 @@ export class PostgresStore{
         "SELECT a.id AS assignment_id,t.display_name AS tenant,sn.id AS sva_number_id,sn.display_number,sn.e164,m.country_code AS market,a.status AS assignment_status,"+
         " p.regulatory_role,p.service_name,p.provider_name,p.signaletic_model,p.numbering_rights_status,p.editor_identity_status,p.rsva_status,"+
         " p.tariff_transparency_status,p.mgit_status,p.complaint_process_status,p.fraud_monitoring_status,p.last_reviewed_at,p.next_review_at,"+
-        " pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AS regulatory_ready,"+
-        " (SELECT e.event_hash FROM sva_regulatory_evidence_events e WHERE e.tenant_id=a.tenant_id AND e.sva_number_id=a.sva_number_id ORDER BY e.id DESC LIMIT 1) AS evidence_chain_head"+
+        " ap.exclusive_stable_assignee_status,ap.single_service_status,ap.portability_offered_status,ap.tariff_ceiling_status,ap.no_temporary_contact_use_status,ap.public_body_eligibility_status,ap.caller_id_block_status,ap.parental_control_classification_status,"+
+        " pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AS regulatory_ready,pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id) AS arcep_2026_ready,"+
+        " (pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AND pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id)) AS activation_ready,"+
+        " (SELECT e.event_hash FROM sva_regulatory_evidence_events e WHERE e.tenant_id=a.tenant_id AND e.sva_number_id=a.sva_number_id ORDER BY e.id DESC LIMIT 1) AS evidence_chain_head,"+
+        " (SELECT e.event_hash FROM sva_arcep_2026_evidence_events e WHERE e.tenant_id=a.tenant_id AND e.sva_number_id=a.sva_number_id ORDER BY e.id DESC LIMIT 1) AS arcep_2026_chain_head"+
         " FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id"+
         " LEFT JOIN operating_markets m ON m.id=sn.market_id LEFT JOIN sva_regulatory_profiles p ON p.tenant_id=a.tenant_id AND p.sva_number_id=a.sva_number_id"+
+        " LEFT JOIN sva_arcep_2026_profiles ap ON ap.tenant_id=a.tenant_id AND ap.sva_number_id=a.sva_number_id"+
         " WHERE t.tenant_type<>'internal' ORDER BY a.created_at DESC LIMIT 100"
       ),
       this.readSql.unsafe(
@@ -4077,7 +4083,7 @@ export class PostgresStore{
         process_role:this.config.processRole||"all"
       },
       regulatory_trust:{
-        summary:regulatorySummary[0]||{numbers_total:0,numbers_ready:0,evidence_events:0,abuse_open:0,abuse_critical:0,platform_controls_verified:0,platform_controls_attention:0},
+        summary:regulatorySummary[0]||{numbers_total:0,numbers_ready:0,arcep_2026_ready:0,evidence_events:0,arcep_2026_evidence_events:0,abuse_open:0,abuse_critical:0,platform_controls_verified:0,platform_controls_attention:0},
         numbers:regulatoryNumbers,
         platform_controls:platformRegulatoryControls
       }
