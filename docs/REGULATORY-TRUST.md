@@ -124,3 +124,14 @@ Les niveaux de sévérité créent des échéances de première réponse et de r
 ## Règle de sécurité
 
 Aucune intégration opérateur, APNF, 33700 ou PSP n'est simulée comme active. Les connecteurs réels devront fournir une preuve de configuration et être validés séparément avant passage à `verified`.
+
+
+## SVA Ecosystem Readiness
+
+Le Trust Center reste la couche de preuve réglementaire historique et les garde-fous ARCEP 2026 restent séparés. La migration 045 ajoute une troisième couche pour les exigences et bonnes pratiques propres à l'écosystème SVA : APNF/RSVA, af2m 2026, protection consommateur, privacy et signalements 33700.
+
+La séparation est volontaire : un état technique `ready` dans une couche ne signifie ni certification ni approbation d'un organisme.
+
+Pour une nouvelle activation SVA externe française, `activation_ready` exige désormais les trois niveaux. Les lignes déjà actives ne sont pas suspendues automatiquement lors de l'introduction d'un nouveau contrôle.
+
+L'Evidence Pack rassemble les trois chaînes SHA-256 tout en conservant la minimisation des données.
