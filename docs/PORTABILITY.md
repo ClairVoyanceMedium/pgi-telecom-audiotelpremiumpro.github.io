@@ -39,3 +39,9 @@ Avant la bascule opérateur, PGI peut annuler le dossier sans toucher à la lign
 ## Performance
 
 Les contrôles client et administrateur sont chargés dans des modules séparés (`client-portability.js` et `tenant-portability-admin.js`). Ils ne consomment pas la réserve du shell critique du cockpit.
+
+## Modèle économique après portabilité
+
+Une fois le numéro porté, il entre dans le même modèle financier que tout numéro SVA géré par PGI : `opérateur SVA → PGI → marge PGI → net client`. La portabilité ne crée donc aucune exception de reversement direct au client.
+
+La finalisation d’une portabilité externe exige des `tenant_payout_terms` applicables au client et au marché. Sans conditions commerciales PGI, la bascule est refusée. Les règlements opérateurs ultérieurs alimentent `tenant_revenue_distributions` et sont justifiés appel par appel.
