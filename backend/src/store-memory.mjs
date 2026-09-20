@@ -816,6 +816,8 @@ export class MemoryStore{
     };
   }
 
+  async serviceOperationsHealth(){return {service_incidents_open:0,service_incidents_critical:0,service_first_response_overdue:0,service_resolution_overdue:0,routing_unavailable:0,portability_attention:0};}
+
   async systemSnapshot(){
     const last=this.calls[0];
     return {
@@ -825,10 +827,12 @@ export class MemoryStore{
       experts_available:this.experts.filter(x=>x.status==="available").length,
       cdr_lag_seconds:last?Math.max(0,(Date.now()-Date.parse(last.ended_at))/1000):0,
       outbox_pending:this.outbox.filter(x=>!x.published_at).length,
+      ...(await this.serviceOperationsHealth()),
       event_subscribers:this.eventBus.size,
       carrier_route:{...this.route},
       work_queue:await this.workQueueHealth(),
-      resilience:{regions_total:1,regions_ready:1,dr_targets_total:4}
+      resilience:{regions_total:1,regions_ready:1,dr_targets_total:4},
+      service_operations:await this.serviceOperationsHealth()
     };
   }
 
