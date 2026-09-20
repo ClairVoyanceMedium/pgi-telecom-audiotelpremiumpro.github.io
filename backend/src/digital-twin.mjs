@@ -98,7 +98,7 @@ export function simulateDigitalTwin(scenario,baseline={},params={}){
   }
 
   if(scenario==="worker_backlog"){
-    const pending=Math.max(0,Math.floor(num(params.pending,queuePending||1000)));
+    const pending=Math.floor(clamp(num(params.pending,queuePending||1000),0,10000000));
     affected=pending;
     severity=queueDead>0||pending>=1000?"critical":(pending>=100?"warning":"info");
     impacts.push(impact(severity,"Backlog workers simulé",pending+" tâche(s) en attente et "+queueDead+" dead-letter(s) dans le scénario."));
@@ -112,8 +112,8 @@ export function simulateDigitalTwin(scenario,baseline={},params={}){
   }
 
   if(scenario==="hyperscale_growth"){
-    const clients=Math.max(1,Math.floor(num(params.clients,1000000)));
-    const callsPerClient=Math.max(1,Math.floor(num(params.calls_per_client_day,20)));
+    const clients=Math.floor(clamp(num(params.clients,1000000),1,10000000));
+    const callsPerClient=Math.floor(clamp(num(params.calls_per_client_day,20),1,1000));
     const dailyCalls=clients*callsPerClient;
     const perBucket=Math.ceil(dailyCalls/bucketCapacity);
     affected=clients;severity=clients>1000000?"warning":"info";
