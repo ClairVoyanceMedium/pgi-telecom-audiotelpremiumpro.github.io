@@ -413,7 +413,9 @@ test("cockpit and client expose carrier-grade voice intelligence without bloatin
   assert.match(callTools,/Qui a raccroché/);
   assert.doesNotMatch(sw,/voice-intelligence\.js/);
   assert.match(buildStatic,/voice-intelligence\.js/);
-  for(const id of ["client-voice-quality","client-call-diagnostic-dialog","client-call-diagnostic-grid"])assert.ok(clientPortal.includes('id="'+id+'"'),id);
+  for(const id of ["client-voice-mount","client-call-diagnostic-mount"])assert.ok(clientPortal.includes('id="'+id+'"'),id);
+  for(const id of ["client-voice-quality","client-call-diagnostic-dialog","client-call-diagnostic-grid"])assert.ok(clientIntelligence.includes(id),id);
   assert.match(clientIntelligence,/function renderVoiceQuality/);
   assert.match(clientIntelligence,/function showCallDiagnostic/);
+  assert.match(buildStatic,/cockpit-pro\.css/);
 });
