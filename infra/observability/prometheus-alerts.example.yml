@@ -94,3 +94,48 @@ groups:
           severity: warning
         annotations:
           summary: "Queue workers are not making progress"
+
+      - alert: PGIServiceCriticalIncident
+        expr: pgi_service_incidents_critical > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Dossier client critique ouvert"
+          description: "Au moins un dossier critique est actuellement ouvert dans le centre de service PGI."
+
+      - alert: PGIServiceFirstResponseOverdue
+        expr: pgi_service_first_response_overdue > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Objectif de première prise en charge dépassé"
+          description: "Un ou plusieurs dossiers n'ont pas reçu de première prise en charge avant leur cible interne."
+
+      - alert: PGIServiceResolutionOverdue
+        expr: pgi_service_resolution_overdue > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Objectif de résolution dépassé"
+          description: "Un ou plusieurs dossiers actifs ont dépassé leur cible interne de résolution."
+
+      - alert: PGIRoutingUnavailable
+        expr: pgi_routing_unavailable > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Routage client indisponible"
+          description: "PGI détecte au moins un client actif sans destination ni expert disponible."
+
+      - alert: PGIPortabilityAttention
+        expr: pgi_portability_attention > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Portabilité nécessitant une intervention"
+          description: "Au moins une portabilité automatique est en échec ou requiert une action PGI."
