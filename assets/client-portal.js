@@ -70,8 +70,10 @@ function aggregate(data){
   var currency=(data.tenant&&data.tenant.default_currency)||((rows[0]&&rows[0].currency)||"EUR");
   var moneyRows=rows.filter(function(x){return x.currency===currency;});
   var revenue=moneyRows.reduce(function(a,x){return a+n(x.generated_revenue_ttc);},0);
-  var payoutRows=data.metric_net_payout_by_currency||[];
-  var payout=payoutRows.filter(function(x){return x.currency===currency;}).reduce(function(a,x){return a+n(x.net_payout_ht);},0);
+  var payoutRows=data.metric_net_payout_by_currency;
+  var payout=Array.isArray(payoutRows)
+    ?payoutRows.filter(function(x){return x.currency===currency;}).reduce(function(a,x){return a+n(x.net_payout_ht);},0)
+    :(data.settlements||[]).filter(function(x){return x.currency===currency&&["reconciled","invoiced","payable","paid"].includes(String(x.status));}).reduce(function(a,x){return a+n(x.net_payout_ht);},0);
   return {calls:calls,connected:connected,billable:billable,currency:currency,revenue:revenue,payout:payout,updated:updated};
 }
 function svgLine(id,rows,series,options){
