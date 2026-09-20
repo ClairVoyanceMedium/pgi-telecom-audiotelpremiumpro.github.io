@@ -3,6 +3,8 @@ import {createHash,randomUUID} from "node:crypto";
 import {sanitizeCdrPayload,deriveCallerHash} from "./cdr-privacy.mjs";
 import {selectExpert} from "./expert-router.mjs";
 import {normalizeVoiceServiceInput,validateVoiceFlow,simulateVoiceFlow,voiceFlowChecksum} from "./voice-studio-domain.mjs";
+import {evaluateOperationalPolicy} from "./operational-policy.mjs";
+import {simulateDigitalTwin} from "./digital-twin.mjs";
 
 const require=createRequire(import.meta.url);
 const core=require("../../assets/core.js");
@@ -883,6 +885,48 @@ export class MemoryStore{
 
   async customerAdminSummary(){
     return {tenants_total:0,tenants_active:0,kyc_pending:0,subscription_unpaid_alerts:0,subscription_access_blocked:0,assignments_active:0,service_incidents_open:0,service_incidents_critical:0,service_sla_attention:0,routing_attention:0,portability_attention:0};
+  }
+
+  async operationalPolicyEvaluation(input={}){
+    const intent=String(input.intent||"").trim().toLowerCase();
+    const facts={
+      tenant_active:intent==="carrier_switch"?null:true,
+      assignment_exists:true,
+      subscription_active:true,
+      payout_terms_ready:true,
+      kyc_verified:true,
+      regulatory_ready:true,
+      arcep_2026_ready:true,
+      destination_ready:true,
+      portability_dossier_ready:false,
+      operator_adapter_connected:false,
+      target_carrier_ready:false,
+      rollback_ready:true,
+      settlement_reconciled:false,
+      payment_provider_connected:false
+    };
+    return {...evaluateOperationalPolicy(intent,facts),context:intent==="carrier_switch"?null:{tenant_public_id:"00000000-0000-4000-8000-000000000001",tenant:"Société Démo",assignment_id:1,assignment_status:"testing"}};
+  }
+
+  async digitalTwinSimulation(input={}){
+    const baseline={
+      active_assignments:12,active_subscriptions:12,ready_numbers:10,total_numbers:12,regulatory_blocking:0,
+      service_incidents_critical:0,route_standby_ready:true,destination_capacity:120,current_concurrent:18,
+      regions_ready:2,regions_total:2,dr_targets:2
+    };
+    return simulateDigitalTwin(input.scenario,baseline,input.parameters||{});
+  }
+
+  async controlTowerOverview(){
+    return {
+      schema_version:"audiotel-control-tower/1",generated_at:new Date().toISOString(),status:"healthy",readiness_score:96,
+      kpis:{customers_active:0,customers_total:0,assignments_active:0,numbers_ready:0,subscription_blocked:0,regulatory_blocking:0,service_critical:0,portability_attention:0,queue_dead_lettered:0,destination_capacity:120,concurrent_in_use:18,regions_ready:2,regions_total:2},
+      priorities:[{severity:"info",code:"DEMO_MODE",title:"Mode démonstration",detail:"Aucune connexion opérateur, Stripe, APNF/RSVA ou PSP réelle n’est active."}],
+      carrier_route:await this.carrierRouting(),queue:await this.workQueueHealth(),service_operations:await this.serviceOperationsHealth(),
+      regulatory:{numbers_total:0,numbers_ready:0,review_blocking:0,review_today:0,review_soon:0},
+      scale:{regions_total:2,regions_ready:2,dr_targets_total:2,bucket_capacity:4096},
+      capabilities:{policy_intents:["activate_number","port_in","payout_customer","carrier_switch","customer_access"],digital_twin_scenarios:["carrier_outage","traffic_spike","mass_portability","regulatory_expiry","billing_failure","region_failure"],external_connections_active:false}
+    };
   }
 
   async wholesaleOverview(){
