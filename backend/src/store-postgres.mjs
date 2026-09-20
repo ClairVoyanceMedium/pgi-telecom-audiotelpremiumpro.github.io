@@ -2993,6 +2993,35 @@ export class PostgresStore{
     return result;
   }
 
+  async serviceIncidentDetail(incidentPublicId){
+    const publicId=String(incidentPublicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_INCIDENT_ID");
+    const rows=await this.readSql.unsafe(
+      "SELECT i.id,i.public_id,i.tenant_id,i.sva_number_id,i.source_telecom_incident_id,i.category,i.severity,i.status,i.source,i.title,i.description,"+
+      " i.assigned_team,i.first_response_due_at,i.target_resolution_at,i.first_responded_at,i.last_customer_update_at,i.last_pgi_update_at,i.resolved_at,i.closed_at,"+
+      " i.customer_visible,i.diagnostic_snapshot,i.created_at,i.updated_at,t.public_id AS tenant_public_id,t.display_name AS tenant,t.country_code,sn.display_number,sn.e164"+
+      " FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id LEFT JOIN sva_numbers sn ON sn.id=i.sva_number_id WHERE i.public_id=$1::uuid LIMIT 1",
+      [publicId]
+    );
+    const incident=rows[0];if(!incident)throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");
+    const [events,notes,attachments]=await Promise.all([
+      this.readSql.unsafe(
+        "SELECT id,event_type,actor_type,previous_value,new_value,message,customer_visible,details,occurred_at FROM tenant_service_incident_events WHERE incident_id=$1 ORDER BY occurred_at,id LIMIT 500",
+        [incident.id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,author_type,body,customer_visible,created_at FROM tenant_service_incident_notes WHERE incident_id=$1 ORDER BY created_at,id LIMIT 500",
+        [incident.id]
+      ),
+      this.readSql.unsafe(
+        "SELECT a.id,a.object_asset_id,a.label,a.customer_visible,a.created_by_type,a.created_at,o.asset_type,o.media_type,o.size_bytes,o.status"+
+        " FROM tenant_service_incident_attachments a JOIN object_assets o ON o.id=a.object_asset_id WHERE a.incident_id=$1 ORDER BY a.created_at,a.id LIMIT 100",
+        [incident.id]
+      )
+    ]);
+    return {incident,events,notes,attachments};
+  }
+
   async updateServiceIncident(incidentPublicId,input={},actor={}){
     const publicId=String(incidentPublicId||"").trim();
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_INCIDENT_ID");
