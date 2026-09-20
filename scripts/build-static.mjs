@@ -49,6 +49,7 @@ const files=[
   "assets/platform-admin-tools.js",
   "assets/call-tools.js",
   "assets/call-list.js",
+  "assets/metric-reset.js",
   "assets/app.js",
   "assets/audiotel-brand-icon-v33.png",
   "assets/audiotel-brand-logo-v33.png"
