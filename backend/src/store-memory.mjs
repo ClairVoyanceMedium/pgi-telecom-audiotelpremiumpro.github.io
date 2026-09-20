@@ -908,7 +908,7 @@ export class MemoryStore{
         read_replica_enabled:false,process_role:this.config.processRole||"all"
       },
       regulatory_trust:{
-        summary:{numbers_total:0,numbers_ready:0,evidence_events:0,abuse_open:0,abuse_critical:0,platform_controls_verified:0,platform_controls_attention:0},
+        summary:{numbers_total:0,numbers_ready:0,arcep_2026_ready:0,evidence_events:0,arcep_2026_evidence_events:0,abuse_open:0,abuse_critical:0,platform_controls_verified:0,platform_controls_attention:0},
         numbers:[],platform_controls:[]
       }
     };
