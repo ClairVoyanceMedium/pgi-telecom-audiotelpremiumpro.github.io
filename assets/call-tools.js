@@ -35,8 +35,10 @@ export function showDetail(c){
     label("Début",t(c.ts))+label("Entrée SVI",t(c.ivrStarted))+label("Mise en file",t(c.queued))+label("Mise en relation",c.bridged?t(c.bridged):"—")+
     label("Fin",t(c.ended))+label("Attente",dur(c.wait))+label("Conversation",dur(c.conversation))+label("Durée totale",dur(c.total))+
     label("Facturable",(c.billable||0)+" min")+label("Éligible reversement",(c.payoutEligible||0)+" min")+label("CA service TTC",money(c.serviceAmount))+label("Reversement attendu HT",money(c.expected))+
-    label("Reversement confirmé HT",money(c.confirmed))+label("Reversement payé HT",money(c.paid))+label("Écart",money(c.variance))+label("SIP final",String(c.sipFinalCode??"—"))+label("Cause de fin",c.hangupCause)+
-    label("Codec",c.codec)+label("Perte paquets",n(c.packetLoss,3)+" %")+label("Jitter",n(c.jitter)+" ms")+label("Latence",n(c.latency)+" ms")+label("MOS",n(c.mos));
+    label("Reversement confirmé HT",money(c.confirmed))+label("Reversement payé HT",money(c.paid))+label("Écart",money(c.variance))+label("PDD",c.pddMs==null?"—":n(c.pddMs/1000,2)+" s")+
+    label("SIP final",String(c.sipFinalCode??"—"))+label("Cause de fin",c.hangupCause)+label("Qui a raccroché",c.hangupParty==="caller"?"Appelant":c.hangupParty==="callee"?"Destinataire":c.hangupParty==="network"?"Réseau":"Indéterminé")+
+    label("Codec",c.codec)+label("Perte paquets",n(c.packetLoss,3)+" %")+label("Jitter",n(c.jitter)+" ms")+label("Latence",n(c.latency)+" ms")+label("RTT",n(c.rtt)+" ms")+label("MOS",n(c.mos))+
+    label("Paquets reçus",n(c.packetsIn,0))+label("Paquets envoyés",n(c.packetsOut,0))+label("Paquets perdus",n(c.packetsLost,0))+label("Erreurs DTMF",n(c.dtmfErrors,0));
   const dialog=$("call-dialog");if(dialog&&typeof dialog.showModal==="function")dialog.showModal();
 }
 
