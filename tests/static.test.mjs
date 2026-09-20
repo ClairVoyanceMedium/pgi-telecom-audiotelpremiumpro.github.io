@@ -242,6 +242,12 @@ test("la Plateforme SVA distingue abonnement externe et usage interne exempté",
   assert.match(api,/createSubscriptionPrice:function/);
   assert.match(app,/subscription-billing-ui\.js/);
   assert.match(subscriptionBillingUi,/subscription_price_minor/);
+  for(const id of ["wh-billing-provider","wh-billing-provider-state","wh-billing-checkout","wh-billing-payout"])assert.ok(index.includes('id="'+id+'"'));
+  for(const id of ["client-billing-provider-state","client-billing-provider-chip","client-billing-start","client-billing-manage"])assert.ok(clientPortal.includes('id="'+id+'"'));
+  assert.match(clientPortalApi,/\/customer\/billing\/checkout-session/);
+  assert.match(clientPortalApi,/\/customer\/billing\/portal-session/);
+  assert.match(clientPortalJs,/PAYMENT_PROVIDER_NOT_CONNECTED/);
+  assert.match(clientPortal,/Les fonds SVA ne transitent pas par PGI|Ils ne transitent pas par PGI/);
   assert.doesNotMatch(sw,/assets\/subscription-billing-ui\.js/);
 });
 
