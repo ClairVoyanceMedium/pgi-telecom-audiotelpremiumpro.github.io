@@ -3727,7 +3727,7 @@ export class PostgresStore{
   }
 
   async wholesaleOverview(){
-    const [summaryRows,tenants,numbers,settlements,payments,markets,currencyTotals,scaleRows]=await Promise.all([
+    const [summaryRows,tenants,numbers,settlements,payments,markets,currencyTotals,scaleRows,regulatorySummary,regulatoryNumbers,platformRegulatoryControls]=await Promise.all([
       this.readSql.unsafe(
         "SELECT"+
         " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal') AS tenants_total,"+
@@ -3817,6 +3817,31 @@ export class PostgresStore{
         " (SELECT count(*)::int FROM platform_regions WHERE status IN ('ready','active')) AS regions_ready,"+
         " (SELECT count(*)::int FROM disaster_recovery_targets WHERE enabled) AS dr_targets_total,"+
         " (SELECT count(*)::int FROM disaster_recovery_drills WHERE status='passed') AS dr_drills_passed"
+      ),
+      this.readSql.unsafe(
+        "SELECT"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal') AS numbers_total,"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id)) AS numbers_ready,"+
+        " (SELECT count(*)::int FROM sva_regulatory_evidence_events) AS evidence_events,"+
+        " (SELECT count(*)::int FROM sva_abuse_cases WHERE status NOT IN ('resolved','closed')) AS abuse_open,"+
+        " (SELECT count(*)::int FROM sva_abuse_cases WHERE status NOT IN ('resolved','closed') AND severity='critical') AS abuse_critical,"+
+        " (SELECT count(*)::int FROM platform_regulatory_controls WHERE status='verified' AND (valid_until IS NULL OR valid_until>now())) AS platform_controls_verified,"+
+        " (SELECT count(*)::int FROM platform_regulatory_controls WHERE status IN ('failed','expired')) AS platform_controls_attention"
+      ),
+      this.readSql.unsafe(
+        "SELECT a.id AS assignment_id,t.display_name AS tenant,sn.id AS sva_number_id,sn.display_number,sn.e164,m.country_code AS market,a.status AS assignment_status,"+
+        " p.regulatory_role,p.service_name,p.provider_name,p.signaletic_model,p.numbering_rights_status,p.editor_identity_status,p.rsva_status,"+
+        " p.tariff_transparency_status,p.mgit_status,p.complaint_process_status,p.fraud_monitoring_status,p.last_reviewed_at,p.next_review_at,"+
+        " pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AS regulatory_ready,"+
+        " (SELECT e.event_hash FROM sva_regulatory_evidence_events e WHERE e.tenant_id=a.tenant_id AND e.sva_number_id=a.sva_number_id ORDER BY e.id DESC LIMIT 1) AS evidence_chain_head"+
+        " FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id"+
+        " LEFT JOIN operating_markets m ON m.id=sn.market_id LEFT JOIN sva_regulatory_profiles p ON p.tenant_id=a.tenant_id AND p.sva_number_id=a.sva_number_id"+
+        " WHERE t.tenant_type<>'internal' ORDER BY a.created_at DESC LIMIT 100"
+      ),
+      this.readSql.unsafe(
+        "SELECT c.id,m.country_code AS market,c.control_key,c.status,c.evidence_reference,c.evidence_sha256,c.verified_at,c.valid_until,c.updated_at"+
+        " FROM platform_regulatory_controls c LEFT JOIN operating_markets m ON m.id=c.market_id"+
+        " ORDER BY COALESCE(m.country_code,'ZZ'),c.control_key"
       )
     ]);
     const singleCurrency=currencyTotals.length===1?currencyTotals[0]:null;
@@ -3843,6 +3868,11 @@ export class PostgresStore{
         bucket_capacity:4096,
         read_replica_enabled:this.readSql!==this.sql,
         process_role:this.config.processRole||"all"
+      },
+      regulatory_trust:{
+        summary:regulatorySummary[0]||{numbers_total:0,numbers_ready:0,evidence_events:0,abuse_open:0,abuse_critical:0,platform_controls_verified:0,platform_controls_attention:0},
+        numbers:regulatoryNumbers,
+        platform_controls:platformRegulatoryControls
       }
     };
   }
