@@ -733,6 +733,14 @@ export class MemoryStore{
     return structuredClone(row);
   }
 
+  async selfServiceRegister(input={},passwordHash){
+    const first=String(input.first_name||"").trim(),last=String(input.last_name||"").trim(),email=String(input.email||"").trim().toLowerCase();
+    if(!first||!last)throw problem(400,"CUSTOMER_NAME_REQUIRED");
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw problem(400,"INVALID_CUSTOMER_EMAIL");
+    if(String(passwordHash||"").length<20)throw problem(400,"INVALID_PASSWORD_HASH");
+    if(input.authority_confirmed!==true)throw problem(400,"REGISTRATION_AUTHORITY_REQUIRED");
+    return {id:randomUUID(),email,display_name:(first+" "+last).trim(),status:"active",email_verified:false,session_version:1,tenant_id:1,tenant_public_id:"00000000-0000-4000-8000-000000000001",tenant_name:String(input.company_name||"").trim()||(first+" "+last).trim(),tenant_status:"pending",customer_role:"owner",authorization_version:1};
+  }
   async customerGoogleSignIn(){throw problem(403,"GOOGLE_INVITATION_REQUIRED");}
   async customerAuthLookup(){return null;}
   async recordCustomerAuthFailure(){return;}
@@ -740,7 +748,7 @@ export class MemoryStore{
   async updateCustomerPassword(){return {ok:true};}
   async customerSessionContext(actor){
     if(!actor?.tenant_id)throw problem(401,"CUSTOMER_AUTH_REQUIRED");
-    return {id:actor.sub,email:"demo@example.test",display_name:actor.name||"Client Démo",status:"active",session_version:actor.session_version||1,tenant_id:Number(actor.tenant_id),customer_role:actor.customer_role||"readonly",tenant_public_id:actor.tenant_public_id||"00000000-0000-4000-8000-000000000001",tenant_name:"Société Démo",authorization_version:actor.authorization_version||1,default_currency:"EUR",country_code:"FR"};
+    return {id:actor.sub,email:"demo@example.test",display_name:actor.name||"Client Démo",status:"active",email_verified:false,session_version:actor.session_version||1,tenant_id:Number(actor.tenant_id),customer_role:actor.customer_role||"readonly",tenant_public_id:actor.tenant_public_id||"00000000-0000-4000-8000-000000000001",tenant_name:"Société Démo",tenant_status:"pending",authorization_version:actor.authorization_version||1,default_currency:"EUR",country_code:"FR"};
   }
   async createCustomerPortalInvitation(publicId,input={},tokenHash){return {id:"demo-invitation",tenant_public_id:publicId,tenant_name:"Société Démo",email:input.email,role:input.role||"readonly",status:"pending",expires_at:new Date(Date.now()+72*3600000).toISOString(),token_hash:tokenHash};}
   async activateCustomerPortalInvitation(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
