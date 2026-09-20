@@ -27,6 +27,7 @@ async function request(path,options){
   var method=(options.method||"GET").toUpperCase();
   var headers={"Accept":"application/json"};
   if(options.body)headers["Content-Type"]="application/json";
+  if(options.idempotencyKey)headers["Idempotency-Key"]=String(options.idempotencyKey);
   if(!["GET","HEAD","OPTIONS"].includes(method)){
     var csrf=cookie("__Host-pgi_customer_csrf");
     if(csrf)headers["X-CSRF-Token"]=csrf;
@@ -55,7 +56,8 @@ root.PGICustomerApi=Object.freeze({
   logout:function(){return request("/customer/auth/logout",{method:"POST",body:{}});},
   changePassword:function(currentPassword,newPassword){return request("/customer/auth/change-password",{method:"POST",body:{current_password:currentPassword,new_password:newPassword}});},
   billingStatus:function(){return request("/customer/billing/status",{timeoutMs:5000});},
-  createBillingCheckout:function(){return request("/customer/billing/checkout-session",{method:"POST",body:{}});},
+  newIdempotencyKey:function(){return typeof crypto!=="undefined"&&crypto.randomUUID?crypto.randomUUID():"customer-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2);},
+  createBillingCheckout:function(idempotencyKey){return request("/customer/billing/checkout-session",{method:"POST",body:{},idempotencyKey:idempotencyKey});},
   createBillingPortal:function(){return request("/customer/billing/portal-session",{method:"POST",body:{}});},
   portal:function(from,to){var q=new URLSearchParams({from:from,to:to});return request("/customer/portal?"+q.toString(),{timeoutMs:12000});},
   comparison:function(from,to){var q=new URLSearchParams({from:from,to:to});return request("/customer/comparison?"+q.toString(),{timeoutMs:10000});},
