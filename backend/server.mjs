@@ -565,6 +565,15 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.portability_status",200,{...result.value,replayed:result.replayed});
       }
 
+      match=routeMatch(pathname,"/api/v1/platform/portability/:id/complete");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={id:match.id,...body};
+        const result=await store.idempotent(req.headers["idempotency-key"],"portability.complete",payload,()=>store.completePortabilityRequest(match.id,body,actor));
+        return done(res,metrics,started,"platform.portability_complete",200,{...result.value,replayed:result.replayed});
+      }
+
       if(method==="GET"&&pathname==="/api/v1/platform/billing-alerts"){
         requireRole(actor,["admin","finance","readonly"]);
         const params=Object.fromEntries(url.searchParams.entries());
