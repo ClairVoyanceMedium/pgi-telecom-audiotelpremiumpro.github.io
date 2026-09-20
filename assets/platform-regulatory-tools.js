@@ -1,5 +1,7 @@
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
+const dt=v=>{if(!v)return"—";const d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeStyle:"short"}).format(d):"—";};
+const dateInput=v=>{if(!v)return"";const d=new Date(v);return Number.isFinite(d.getTime())?d.toISOString().slice(0,10):"";};
 
 const CONTROLS=[
   ["exclusive_stable_assignee","Titulaire exclusif et stable"],
@@ -47,27 +49,57 @@ function render(ctx,row){
   const options=CONTROLS.map(([key,label])=>'<option value="'+esc(key)+'">'+esc(label)+'</option>').join("");
   editor.hidden=false;
   editor.dataset.assignmentId=String(row.assignment_id);
-  editor.innerHTML='<div class="pa-compliance-head"><div><p class="pa-note">NUMÉRO • '+esc(row.display_number||row.e164||row.assignment_id)+'</p><h3>Conformité ARCEP 2026</h3></div><span class="pa-badge '+(row.arcep_2026_ready?"ok":"warn")+'">'+(row.arcep_2026_ready?"ARCEP PRÊT":"À DOCUMENTER")+'</span></div><p class="pa-note">Aucun contrôle n’est validé automatiquement. Chaque changement ajoute un événement immuable à la chaîne de preuves SHA-256. Pour le statut « verified », une référence de preuve est obligatoire.</p><div class="pa-checklist">'+checks+'</div><div class="pa-form-grid"><label class="pa-field">Contrôle<select id="pa-arcep-control">'+options+'</select></label><label class="pa-field">Statut<select id="pa-arcep-status"><option value="pending">En attente</option><option value="verified">Vérifié</option><option value="failed">Échec</option><option value="expired">Expiré</option><option value="not_applicable">Non applicable</option><option value="not_started">Non démarré</option></select></label><label class="pa-field">Source<select id="pa-arcep-source"><option value="internal">Interne</option><option value="operator">Opérateur</option><option value="apnf_rsva">APNF / RSVA</option><option value="af2m">AF2M</option><option value="arcep">ARCEP</option><option value="customer">Client</option><option value="dgccrf">DGCCRF</option><option value="other">Autre</option></select></label><label class="pa-field">Référence de preuve<input id="pa-arcep-reference" maxlength="500" placeholder="Contrat, ticket, URL interne, référence opérateur…"></label></div><div class="pa-actions"><button class="pa-btn success" type="button" data-arcep-evidence-save>Ajouter la preuve</button><button class="pa-btn" type="button" data-evidence-pack="'+esc(row.assignment_id)+'">Exporter l’Evidence Pack</button></div>';
+  editor.innerHTML='<div class="pa-compliance-head"><div><p class="pa-note">NUMÉRO • '+esc(row.display_number||row.e164||row.assignment_id)+'</p><h3>Conformité ARCEP 2026</h3></div><span class="pa-badge '+(row.arcep_2026_ready?"ok":"warn")+'">'+(row.arcep_2026_ready?"ARCEP PRÊT":"À DOCUMENTER")+'</span></div><p class="pa-note">Aucun contrôle n’est validé automatiquement. Chaque changement ajoute un événement immuable à la chaîne de preuves SHA-256. Pour le statut « verified », une référence de preuve est obligatoire.</p><div class="pa-checklist">'+checks+'</div><div class="pa-form-grid"><label class="pa-field">Contrôle<select id="pa-arcep-control">'+options+'</select></label><label class="pa-field">Statut<select id="pa-arcep-status"><option value="pending">En attente</option><option value="verified">Vérifié</option><option value="failed">Échec</option><option value="expired">Expiré</option><option value="not_applicable">Non applicable</option><option value="not_started">Non démarré</option></select></label><label class="pa-field">Source<select id="pa-arcep-source"><option value="internal">Interne</option><option value="operator">Opérateur</option><option value="apnf_rsva">APNF / RSVA</option><option value="af2m">AF2M</option><option value="arcep">ARCEP</option><option value="customer">Client</option><option value="dgccrf">DGCCRF</option><option value="other">Autre</option></select></label><label class="pa-field">Référence de preuve<input id="pa-arcep-reference" maxlength="500" placeholder="Contrat, ticket, URL interne, référence opérateur…"></label><label class="pa-field">Prochaine revue<input id="pa-arcep-next-review" type="date" value="'+esc(dateInput(row.arcep_2026_next_review_at))+'"></label></div><div class="pa-actions"><button class="pa-btn success" type="button" data-arcep-evidence-save>Ajouter la preuve</button><button class="pa-btn" type="button" data-evidence-pack="'+esc(row.assignment_id)+'">Exporter l’Evidence Pack</button></div>';
   const save=editor.querySelector("[data-arcep-evidence-save]");
   if(save)save.addEventListener("click",event=>{event.stopPropagation();void saveEvidence(ctx,row);});
   editor.scrollIntoView({behavior:"smooth",block:"nearest"});
 }
 async function saveEvidence(ctx,row){
   if(busy)return;
-  const control=$("pa-arcep-control")?.value,status=$("pa-arcep-status")?.value,source=$("pa-arcep-source")?.value,reference=String($("pa-arcep-reference")?.value||"").trim();
+  const control=$("pa-arcep-control")?.value,status=$("pa-arcep-status")?.value,source=$("pa-arcep-source")?.value,reference=String($("pa-arcep-reference")?.value||"").trim(),reviewDate=$("pa-arcep-next-review")?.value||"";
   if(!row?.assignment_id||!LABEL[control])return ctx.feedback("Contrôle ARCEP invalide.","error");
   if(status==="verified"&&!reference)return ctx.feedback("Une référence de preuve est obligatoire pour marquer ce contrôle comme vérifié.","error");
   if(!confirm("Ajouter un événement de preuve « "+status+" » pour : "+LABEL[control]+" ?"))return;
   busy=true;ctx.feedback("Enregistrement de la preuve ARCEP 2026…");
   try{
-    const data=await ctx.postJson("/platform/tenant-number-assignments/"+encodeURIComponent(row.assignment_id)+"/regulatory-evidence",{control_key:control,status:status,source:source,evidence_reference:reference||null,metadata:{recorded_from:"cockpit_arcep_2026"}});
+    const payload={control_key:control,status:status,source:source,evidence_reference:reference||null,metadata:{recorded_from:"cockpit_arcep_2026"}};
+    if(reviewDate)payload.next_review_at=new Date(reviewDate+"T23:59:59").toISOString();
+    const data=await ctx.postJson("/platform/tenant-number-assignments/"+encodeURIComponent(row.assignment_id)+"/regulatory-evidence",payload);
     row[FIELD[control]]=status;
     if(data?.profile?.arcep_2026_ready!=null)row.arcep_2026_ready=Boolean(data.profile.arcep_2026_ready);
+    if(data?.profile?.next_review_at)row.arcep_2026_next_review_at=data.profile.next_review_at;
     busy=false;render(ctx,row);
     ctx.feedback("Preuve ajoutée à la chaîne immuable. État ARCEP 2026 recalculé.","ok");
     window.dispatchEvent(new CustomEvent("pgi:command",{detail:{id:"refresh"}}));
   }catch(err){busy=false;ctx.feedback(err.code||"Enregistrement impossible","error");}
 }
+
+function attentionBadge(bucket){
+  if(bucket==="blocking")return["BLOQUANT","bad"];
+  if(bucket==="today")return["AUJOURD’HUI","warn"];
+  return["BIENTÔT",""];
+}
+function renderAttention(options,items){
+  const editor=$("pa-compliance-editor");if(!editor)return;
+  editor.hidden=false;delete editor.dataset.assignmentId;
+  const rows=(items||[]).map(x=>{const b=attentionBadge(x.attention_bucket);return '<div class="pa-check"><div><strong>'+esc(x.title||"Échéance réglementaire")+'</strong><small>'+esc((x.tenant?x.tenant+" • ":"")+(x.display_number||x.e164||x.market||"Plateforme")+" • "+x.message+(x.due_at?" • échéance "+dt(x.due_at):""))+'</small></div><div class="pa-actions"><span class="pa-badge '+b[1]+'">'+b[0]+'</span>'+(x.state==="open"?'<button class="pa-btn" type="button" data-regulatory-alert-ack="'+esc(x.id)+'">Acquitter</button>':'<span class="pa-badge">ACQUITTÉ</span>')+'</div></div>';}).join("");
+  editor.innerHTML='<div class="pa-compliance-head"><div><p class="pa-note">SURVEILLANCE AUTOMATIQUE</p><h3>Échéances réglementaires</h3></div><span class="pa-badge">'+esc((items||[]).length)+' À TRAITER</span></div><p class="pa-note">Les alertes anticipent les revues à 30 jours. Une échéance dépassée ou un contrôle bloquant devient critique. L’acquittement ne modifie aucune preuve et ne réactive aucun contrôle.</p><div class="pa-checklist">'+(rows||'<p class="pa-note">Aucune échéance réglementaire ouverte.</p>')+'</div>';
+  editor.querySelectorAll("[data-regulatory-alert-ack]").forEach(btn=>btn.addEventListener("click",async event=>{
+    event.stopPropagation();if(busy)return;busy=true;options.feedback?.("Acquittement de l’alerte…");
+    try{
+      await window.PGIApi.acknowledgeRegulatoryReviewAlert(btn.dataset.regulatoryAlertAck,window.PGIApi.newIdempotencyKey());
+      const row=items.find(x=>String(x.id)===String(btn.dataset.regulatoryAlertAck));if(row)row.state="acknowledged";
+      busy=false;renderAttention(options,items);options.feedback?.("Alerte acquittée. La surveillance reste active.","ok");
+    }catch(err){busy=false;options.feedback?.(err.code||"Acquittement impossible","error");}
+  }));
+  editor.scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+export function openAttention(options={}){
+  ensureStyle();
+  if(typeof options.feedback!=="function")throw new Error("REGULATORY_ATTENTION_CONTEXT_REQUIRED");
+  renderAttention(options,options.platform?.regulatory_trust?.review_alerts||[]);
+}
+
 export function open(options={}){
   ensureStyle();
   const assignmentId=String(options.assignmentId||"");
