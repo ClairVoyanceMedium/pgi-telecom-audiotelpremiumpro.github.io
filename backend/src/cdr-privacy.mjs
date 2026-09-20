@@ -1,12 +1,12 @@
 import {createHmac} from "node:crypto";
 
 const ALLOWED_KEYS=new Set([
-  "external_call_id","started_at","ivr_started_at","queued_at","bridged_at","ended_at",
-  "wait_seconds","conversation_seconds","total_seconds","call_status",
+  "external_call_id","started_at","ivr_started_at","queued_at","ringing_at","bridged_at","ended_at",
+  "wait_seconds","conversation_seconds","total_seconds","post_dial_delay_ms","call_status",
   "caller_masked","caller_hash","origin_carrier","origin_type","host_carrier","sva_number",
-  "expert_id","expert_name","call_destination_id","destination_label","sip_final_code","hangup_cause","codec","quality"
+  "expert_id","expert_name","call_destination_id","destination_label","sip_final_code","hangup_cause","hangup_party","codec","quality"
 ]);
-const QUALITY_KEYS=new Set(["packet_loss_percent","jitter_ms","latency_ms","mos","dtmf_errors"]);
+const QUALITY_KEYS=new Set(["packet_loss_percent","jitter_ms","latency_ms","rtt_ms","mos","dtmf_errors","packets_in","packets_out","packets_lost","bytes_in","bytes_out"]);
 const CALL_STATUSES=new Set(["connected","abandoned","failed","rejected","busy","cancelled"]);
 const ORIGIN_TYPES=new Set(["mobile","fixed","unknown"]);
 const TEXT_LIMITS=Object.freeze({
@@ -15,6 +15,7 @@ const TEXT_LIMITS=Object.freeze({
   ivr_started_at:64,
   queued_at:64,
   bridged_at:64,
+  ringing_at:64,
   ended_at:64,
   origin_carrier:120,
   host_carrier:120,
@@ -22,14 +23,21 @@ const TEXT_LIMITS=Object.freeze({
   expert_name:120,
   destination_label:120,
   hangup_cause:96,
+  hangup_party:16,
   codec:32
 });
 const QUALITY_LIMITS=Object.freeze({
   packet_loss_percent:[0,100],
   jitter_ms:[0,60000],
   latency_ms:[0,60000],
+  rtt_ms:[0,120000],
   mos:[0,5],
-  dtmf_errors:[0,1000000]
+  dtmf_errors:[0,1000000],
+  packets_in:[0,1000000000000],
+  packets_out:[0,1000000000000],
+  packets_lost:[0,1000000000000],
+  bytes_in:[0,1000000000000000],
+  bytes_out:[0,1000000000000000]
 });
 
 export function sanitizeCdrPayload(input){
@@ -50,7 +58,7 @@ export function sanitizeCdrPayload(input){
         const n=Number(qv);
         const bounds=QUALITY_LIMITS[qk];
         if(!Number.isFinite(n)||n<bounds[0]||n>bounds[1])throw invalidField("quality."+qk);
-        quality[qk]=qk==="dtmf_errors"?Math.round(n):n;
+        quality[qk]=["dtmf_errors","packets_in","packets_out","packets_lost","bytes_in","bytes_out"].includes(qk)?Math.round(n):n;
       }
       if(Object.keys(quality).length)out.quality=quality;
       continue;
@@ -74,6 +82,8 @@ export function sanitizeCdrPayload(input){
     out.origin_type=origin;
   }
   if(out.call_destination_id!=null){const id=Number(out.call_destination_id);if(!Number.isInteger(id)||id<=0)throw invalidField("call_destination_id");out.call_destination_id=id;}
+  if(out.post_dial_delay_ms!=null){const n=Number(out.post_dial_delay_ms);if(!Number.isFinite(n)||n<0||n>300000)throw invalidField("post_dial_delay_ms");out.post_dial_delay_ms=Math.round(n);}
+  if(out.hangup_party!=null){const side=String(out.hangup_party).trim().toLowerCase();if(!["caller","callee","network","unknown"].includes(side))throw invalidField("hangup_party");out.hangup_party=side;}
 
   out.caller_masked=safeMaskedCaller(source.caller_masked);
   if(typeof source.caller_hash==="string"&&/^[a-fA-F0-9]{64}$/.test(source.caller_hash)){
