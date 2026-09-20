@@ -19,7 +19,7 @@ ALTER TABLE tenant_service_incident_attachments
   FOREIGN KEY(incident_id,tenant_id)
   REFERENCES tenant_service_incidents(id,tenant_id);
 
-CREATE OR REPLACE FUNCTION pgi_validate_service_incident_attachment_tenant()
+CREATE FUNCTION pgi_validate_service_incident_attachment_tenant()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
