@@ -110,6 +110,33 @@ test("invalid encoded route parameters fail as a client error",()=>{
   );
 });
 
+test("customer can self-register by email without Google",async()=>{
+  const app=createBackend({config:config({authMode:"session",sessionSecret:"x".repeat(40),adminPasswordHash:hashPassword("admin-password-for-tests")})});
+  const address=await app.listen();
+  const base=`http://127.0.0.1:${address.port}`;
+  try{
+    const response=await fetch(base+"/api/v1/customer/auth/register",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        first_name:"Camille",last_name:"Martin",company_name:"Cabinet Martin",country_code:"FR",
+        registration_number:"",phone:"+33600000000",email:"camille@example.test",
+        password:"long-password-12345",authority_confirmed:true,website:"",preferred_locale:"fr-FR",timezone:"Europe/Paris"
+      })
+    });
+    assert.equal(response.status,201);
+    const body=await response.json();
+    assert.equal(body.account_created,true);
+    assert.equal(body.onboarding,true);
+    assert.equal(body.email_verification_required,true);
+    assert.equal(body.user.role,"owner");
+    assert.equal(body.user.tenant.status,"pending");
+    assert.match(response.headers.get("set-cookie")||"",/__Host-pgi_customer_session=/);
+  }finally{
+    await app.close();
+  }
+});
+
 test("different-origin browser login is rejected",async()=>{
   const password="correct-test-password-123";
   const app=createBackend({config:config({
