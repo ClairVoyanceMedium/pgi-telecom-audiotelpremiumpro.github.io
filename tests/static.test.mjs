@@ -20,6 +20,7 @@ const platformAdmin=read("assets/platform-admin-tools.js");
 const callTools=read("assets/call-tools.js");
 const css=read("assets/styles.css");
 const sw=read("service-worker.js");
+const manifest=read("manifest.webmanifest");
 const buildStatic=read("scripts/build-static.mjs");
 
 test("le nom officiel et les vues principales sont présents",()=>{
