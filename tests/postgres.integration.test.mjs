@@ -412,7 +412,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(Number(portalAfterCockpitReset.financial_by_currency[0].calls_total),1);
     assert.equal(portalAfterCockpitReset.recent_calls.length,1);
 
-    const tenantRevenueReset=await store.createBaseline({scope:"tenant",tenant_id:Number(internalTenant.id),metric_key:"revenue",reason:"integration tenant revenue reset"},{});
+    const tenantRevenueReset=await store.createBaseline({scope:"global",tenant_id:Number(internalTenant.id),metric_key:"revenue",reason:"integration tenant revenue reset"},{});
     tenantRanges=await store.effectiveMetricRanges(requestedFrom,requestedTo,Number(internalTenant.id));
     assert.equal(tenantRanges.revenue.baseline,new Date(tenantRevenueReset.effective_from).toISOString());
     assert.equal(tenantRanges.calls.baseline,null);
@@ -422,7 +422,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(Number(portalAfterRevenueReset.financial_by_currency[0].generated_revenue_ttc),0);
     assert.equal(portalAfterRevenueReset.recent_calls.length,1);
 
-    const tenantCallsReset=await store.createBaseline({scope:"tenant",tenant_id:Number(internalTenant.id),metric_key:"calls",reason:"integration tenant calls reset"},{});
+    const tenantCallsReset=await store.createBaseline({scope:"global",tenant_id:Number(internalTenant.id),metric_key:"calls",reason:"integration tenant calls reset"},{});
     tenantRanges=await store.effectiveMetricRanges(requestedFrom,requestedTo,Number(internalTenant.id));
     assert.equal(tenantRanges.calls.baseline,new Date(tenantCallsReset.effective_from).toISOString());
     const portalAfterCallsReset=await store.customerPortalOverview(Number(internalTenant.id),requestedFrom,requestedTo,tenantRanges);
