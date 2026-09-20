@@ -74,6 +74,7 @@ export function createBackend(options={}){
       const url=new URL(req.url||"/","http://localhost");
       const pathname=url.pathname;
       const method=(req.method||"GET").toUpperCase();
+      let match=null;
 
       if(method==="GET"&&pathname==="/api/v1/health"){
         return done(res,metrics,started,"health",200,{
@@ -436,7 +437,7 @@ export function createBackend(options={}){
         return done(res,metrics,started,"experts.list",200,{data:await store.listExperts()});
       }
 
-      let match=routeMatch(pathname,"/api/v1/experts/:id/status");
+      match=routeMatch(pathname,"/api/v1/experts/:id/status");
       if(method==="POST"&&match){
         requireRole(actor,["admin"]);
         requireCsrf(req,actor,config);
