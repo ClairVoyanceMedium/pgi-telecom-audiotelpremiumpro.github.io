@@ -2422,6 +2422,80 @@ async function writeExperienceRollup(tx,callId){
   );
 }
 
+async function writeTenantDailyRollup(tx,callId){
+  await tx.unsafe(
+    "INSERT INTO metric_rollups_daily_v2("+
+    " tenant_bucket,bucket_date,tenant_id,market_id,currency,calls_total,calls_connected,calls_abandoned,calls_failed,"+
+    " conversation_seconds,billable_seconds,payout_eligible_seconds,generated_revenue_ttc,expected_payout_ht,confirmed_payout_ht,"+
+    " paid_payout_ht,expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,source_generation)"+
+    " SELECT f.tenant_bucket,f.started_at::date,f.tenant_id,f.market_id,f.currency,1,"+
+    " (f.call_status='connected')::int,(f.call_status='abandoned')::int,(f.call_status NOT IN ('connected','abandoned'))::int,"+
+    " f.conversation_seconds,f.billable_seconds,f.payout_eligible_seconds,f.retail_service_amount_ttc,f.expected_payout_ht,"+
+    " f.confirmed_payout_ht,f.paid_payout_ht,f.expert_cost_ht,f.technical_cost_ht,f.estimated_margin_ht,f.reconciliation_variance_ht,1"+
+    " FROM call_facts f WHERE f.call_id=$1 AND f.tenant_id IS NOT NULL AND f.market_id IS NOT NULL"+
+    " ON CONFLICT(tenant_bucket,bucket_date,tenant_id,market_id,currency) DO UPDATE SET"+
+    " calls_total=metric_rollups_daily_v2.calls_total+1,"+
+    " calls_connected=metric_rollups_daily_v2.calls_connected+EXCLUDED.calls_connected,"+
+    " calls_abandoned=metric_rollups_daily_v2.calls_abandoned+EXCLUDED.calls_abandoned,"+
+    " calls_failed=metric_rollups_daily_v2.calls_failed+EXCLUDED.calls_failed,"+
+    " conversation_seconds=metric_rollups_daily_v2.conversation_seconds+EXCLUDED.conversation_seconds,"+
+    " billable_seconds=metric_rollups_daily_v2.billable_seconds+EXCLUDED.billable_seconds,"+
+    " payout_eligible_seconds=metric_rollups_daily_v2.payout_eligible_seconds+EXCLUDED.payout_eligible_seconds,"+
+    " generated_revenue_ttc=metric_rollups_daily_v2.generated_revenue_ttc+EXCLUDED.generated_revenue_ttc,"+
+    " expected_payout_ht=metric_rollups_daily_v2.expected_payout_ht+EXCLUDED.expected_payout_ht,"+
+    " confirmed_payout_ht=metric_rollups_daily_v2.confirmed_payout_ht+EXCLUDED.confirmed_payout_ht,"+
+    " paid_payout_ht=metric_rollups_daily_v2.paid_payout_ht+EXCLUDED.paid_payout_ht,"+
+    " expert_cost_ht=metric_rollups_daily_v2.expert_cost_ht+EXCLUDED.expert_cost_ht,"+
+    " technical_cost_ht=metric_rollups_daily_v2.technical_cost_ht+EXCLUDED.technical_cost_ht,"+
+    " estimated_margin_ht=metric_rollups_daily_v2.estimated_margin_ht+EXCLUDED.estimated_margin_ht,"+
+    " reconciliation_variance_ht=metric_rollups_daily_v2.reconciliation_variance_ht+EXCLUDED.reconciliation_variance_ht,"+
+    " source_generation=metric_rollups_daily_v2.source_generation+1,updated_at=now()",
+    [callId]
+  );
+}
+
+async function writeVoiceCarrierHealthRollup(tx,callId){
+  await tx.unsafe(
+    "INSERT INTO voice_carrier_health_hourly_sharded("+
+    " bucket_start,market_id,carrier_role,carrier_id,rollup_shard,calls_total,calls_connected,calls_failed,pdd_samples,pdd_ms_sum,high_pdd_calls,"+
+    " quality_samples,network_affected_calls,low_mos_calls,mos_sum,packet_loss_sum,jitter_ms_sum,latency_ms_sum,rtt_ms_sum,"+
+    " sip_4xx_calls,sip_5xx_calls,caller_hangups,callee_hangups,network_hangups)"+
+    " SELECT date_trunc('hour',c.started_at),c.market_id,r.carrier_role,r.carrier_id,(c.tenant_bucket%64)::smallint,1,"+
+    " (c.call_status='connected')::int,(c.call_status NOT IN ('connected','abandoned'))::int,"+
+    " (c.post_dial_delay_ms IS NOT NULL)::int,COALESCE(c.post_dial_delay_ms,0),(COALESCE(c.post_dial_delay_ms,0)>8000)::int,"+
+    " (q.call_id IS NOT NULL)::int,"+
+    " (q.call_id IS NOT NULL AND (COALESCE(q.rtp_packet_loss_percent,0)>=5 OR COALESCE(q.jitter_ms,0)>5 OR COALESCE(q.latency_ms,0)>150))::int,"+
+    " (q.call_id IS NOT NULL AND q.mos IS NOT NULL AND q.mos<3.5)::int,"+
+    " COALESCE(q.mos,0),COALESCE(q.rtp_packet_loss_percent,0),COALESCE(q.jitter_ms,0),COALESCE(q.latency_ms,0),COALESCE(q.rtt_ms,0),"+
+    " (c.sip_final_code BETWEEN 400 AND 499)::int,(c.sip_final_code BETWEEN 500 AND 599)::int,"+
+    " (c.hangup_party='caller')::int,(c.hangup_party='callee')::int,(c.hangup_party='network')::int"+
+    " FROM calls c LEFT JOIN call_quality q ON q.call_id=c.id"+
+    " CROSS JOIN LATERAL (VALUES ('origin'::text,c.origin_carrier_id),('host'::text,c.host_carrier_id)) AS r(carrier_role,carrier_id)"+
+    " WHERE c.id=$1 AND c.market_id IS NOT NULL AND r.carrier_id IS NOT NULL"+
+    " ON CONFLICT(bucket_start,market_id,carrier_role,carrier_id,rollup_shard) DO UPDATE SET"+
+    " calls_total=voice_carrier_health_hourly_sharded.calls_total+1,"+
+    " calls_connected=voice_carrier_health_hourly_sharded.calls_connected+EXCLUDED.calls_connected,"+
+    " calls_failed=voice_carrier_health_hourly_sharded.calls_failed+EXCLUDED.calls_failed,"+
+    " pdd_samples=voice_carrier_health_hourly_sharded.pdd_samples+EXCLUDED.pdd_samples,"+
+    " pdd_ms_sum=voice_carrier_health_hourly_sharded.pdd_ms_sum+EXCLUDED.pdd_ms_sum,"+
+    " high_pdd_calls=voice_carrier_health_hourly_sharded.high_pdd_calls+EXCLUDED.high_pdd_calls,"+
+    " quality_samples=voice_carrier_health_hourly_sharded.quality_samples+EXCLUDED.quality_samples,"+
+    " network_affected_calls=voice_carrier_health_hourly_sharded.network_affected_calls+EXCLUDED.network_affected_calls,"+
+    " low_mos_calls=voice_carrier_health_hourly_sharded.low_mos_calls+EXCLUDED.low_mos_calls,"+
+    " mos_sum=voice_carrier_health_hourly_sharded.mos_sum+EXCLUDED.mos_sum,"+
+    " packet_loss_sum=voice_carrier_health_hourly_sharded.packet_loss_sum+EXCLUDED.packet_loss_sum,"+
+    " jitter_ms_sum=voice_carrier_health_hourly_sharded.jitter_ms_sum+EXCLUDED.jitter_ms_sum,"+
+    " latency_ms_sum=voice_carrier_health_hourly_sharded.latency_ms_sum+EXCLUDED.latency_ms_sum,"+
+    " rtt_ms_sum=voice_carrier_health_hourly_sharded.rtt_ms_sum+EXCLUDED.rtt_ms_sum,"+
+    " sip_4xx_calls=voice_carrier_health_hourly_sharded.sip_4xx_calls+EXCLUDED.sip_4xx_calls,"+
+    " sip_5xx_calls=voice_carrier_health_hourly_sharded.sip_5xx_calls+EXCLUDED.sip_5xx_calls,"+
+    " caller_hangups=voice_carrier_health_hourly_sharded.caller_hangups+EXCLUDED.caller_hangups,"+
+    " callee_hangups=voice_carrier_health_hourly_sharded.callee_hangups+EXCLUDED.callee_hangups,"+
+    " network_hangups=voice_carrier_health_hourly_sharded.network_hangups+EXCLUDED.network_hangups,updated_at=now()",
+    [callId]
+  );
+}
+
 async function writeQualityRollup(tx,callId){
   await tx.unsafe(
     "INSERT INTO quality_rollups_hourly_sharded("+
