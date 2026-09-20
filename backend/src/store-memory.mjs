@@ -700,6 +700,7 @@ export class MemoryStore{
   async activateCustomerPortalInvitation(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
   async customerPortalUsers(){return [];}
   async customerPortalOverview(tenantId,from,to){void tenantId;return {tenant:{display_name:"Société Démo",default_currency:"EUR",status:"active"},financial_by_currency:[],series:[],numbers:[],settlements:[],subscriptions:[],destinations:[],recent_calls:[],range:{from,to}};}
+  async customerPortalComparison(_tenantId,from,to){return {financial_by_currency:[],range:{from,to}};}
   async customerPortalCalls(){return {data:[],next_cursor:null};}
 
   async customerAdminSummary(){
