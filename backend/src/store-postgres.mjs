@@ -3,6 +3,7 @@ import {createHash} from "node:crypto";
 import {sanitizeCdrPayload,deriveCallerHash} from "./cdr-privacy.mjs";
 import {computeExpertCost} from "./expert-finance.mjs";
 import {normalizeSettlementPayload} from "./settlement-finance.mjs";
+import {computeTenantCallDistribution,summarizeTenantDistribution} from "./tenant-revenue-finance.mjs";
 import {resolveBillingCurrency} from "./billing-country-currency.mjs";
 import {createRequire} from "node:module";
 
@@ -1025,7 +1026,8 @@ export class PostgresStore{
         [String(row.id),JSON.stringify({carrier_id:carrier.id,status:settlement.status})]
       );
 
-      return {...row,carrier_name:carrier.name,matches:matched.length};
+      const tenantDistributions=await rebuildTenantRevenueDistributions(tx,row.id,numericActor(actor));
+      return {...row,carrier_name:carrier.name,matches:matched.length,tenant_distributions:tenantDistributions.length};
     });
     this.eventBus.publish("settlement.imported",{id:result.id,carrier_id:result.carrier_id,status:result.status});
     return result;
@@ -1091,8 +1093,9 @@ export class PostgresStore{
         "INSERT INTO outbox_events(event_type,aggregate_type,aggregate_id,payload) VALUES('settlement.paid','carrier_settlement',$1,$2::jsonb)",
         [String(settlementId),JSON.stringify({paid_at:paidAt.toISOString()})]
       );
+      const tenantDistributions=await rebuildTenantRevenueDistributions(tx,settlementId,numericActor(actor));
 
-      return {...updated[0],changed:true};
+      return {...updated[0],changed:true,tenant_distributions:tenantDistributions.length};
     });
     if(result.changed)this.eventBus.publish("settlement.paid",{id:settlementId,paid_at:result.paid_at});
     return result;
@@ -2640,9 +2643,9 @@ export class PostgresStore{
         " ORDER BY n.status,n.display_number LIMIT 100"
       );
       const settlements=await tx.unsafe(
-        "SELECT id,market_id,currency,period_start,period_end,gross_service_amount_ht::float8,upstream_payout_ht::float8,"+
-        " platform_fee_ht::float8,net_payout_ht::float8,status,payment_due_date,paid_at,statement_reference"+
-        " FROM tenant_scoped_settlements ORDER BY period_end DESC,id DESC LIMIT 24"
+        "SELECT id,market_id,currency,period_start,period_end,upstream_payout_ht::float8,platform_fee_ht::float8,net_payout_ht::float8,"+
+        " unallocated_amount_ht::float8,held_amount_ht::float8,collection_model,status,payment_due_date,paid_at,statement_reference"+
+        " FROM tenant_scoped_revenue_distributions ORDER BY period_end DESC,id DESC LIMIT 24"
       );
       const subscriptions=await tx.unsafe(
         "SELECT id,market_id,status,billing_currency,starts_at,current_period_start,current_period_end,ends_at,cancel_at_period_end,"+
@@ -2751,6 +2754,66 @@ export class PostgresStore{
     return rows[0]||{tenants_total:0,tenants_active:0,kyc_pending:0,subscription_unpaid_alerts:0,subscription_access_blocked:0,assignments_active:0};
   }
 
+  async createTenantPayoutTerms(publicId,input={},actor={}){
+    publicId=String(publicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    const percent=input.platform_fee_percent==null||input.platform_fee_percent===""?null:Number(input.platform_fee_percent);
+    const bps=input.platform_fee_bps==null||input.platform_fee_bps===""?(percent==null?null:Math.round(percent*100)):Number(input.platform_fee_bps);
+    const perMinute=input.platform_fee_ht_per_min==null||input.platform_fee_ht_per_min===""?0:Number(input.platform_fee_ht_per_min);
+    const delay=Number(input.payout_delay_days??0);
+    const marketId=input.market_id==null||input.market_id===""?null:Number(input.market_id);
+    const svaNumberId=input.sva_number_id==null||input.sva_number_id===""?null:Number(input.sva_number_id);
+    const effectiveFrom=input.effective_from?new Date(input.effective_from):new Date();
+    if(!Number.isInteger(bps)||bps<0||bps>10000)throw problem(400,"INVALID_PLATFORM_FEE");
+    if(!Number.isFinite(perMinute)||perMinute<0||perMinute>10000)throw problem(400,"INVALID_PLATFORM_FEE");
+    if(!Number.isInteger(delay)||delay<0||delay>365)throw problem(400,"INVALID_PAYOUT_DELAY");
+    if(marketId!=null&&(!Number.isInteger(marketId)||marketId<=0))throw problem(400,"INVALID_MARKET_ID");
+    if(svaNumberId!=null&&(!Number.isInteger(svaNumberId)||svaNumberId<=0))throw problem(400,"INVALID_SVA_NUMBER_ID");
+    if(!Number.isFinite(effectiveFrom.getTime()))throw problem(400,"INVALID_EFFECTIVE_FROM");
+    const actorId=numericActor(actor);
+    const result=await this.sql.begin(async tx=>{
+      const tenant=(await tx.unsafe("SELECT id,tenant_type FROM tenants WHERE public_id=$1::uuid FOR UPDATE",[publicId]))[0];
+      if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+      if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+      if(marketId!=null){
+        const market=(await tx.unsafe("SELECT id FROM operating_markets WHERE id=$1 LIMIT 1",[marketId]))[0];
+        if(!market)throw problem(404,"MARKET_NOT_FOUND");
+      }
+      if(svaNumberId!=null){
+        const number=(await tx.unsafe("SELECT id,tenant_id,market_id FROM sva_numbers WHERE id=$1 LIMIT 1",[svaNumberId]))[0];
+        if(!number||Number(number.tenant_id)!==Number(tenant.id))throw problem(409,"PAYOUT_TERMS_NUMBER_TENANT_MISMATCH");
+        if(marketId!=null&&Number(number.market_id)!==marketId)throw problem(409,"PAYOUT_TERMS_MARKET_MISMATCH");
+      }
+      await tx.unsafe(
+        "UPDATE tenant_payout_terms SET status='ended',effective_to=$4::timestamptz WHERE tenant_id=$1"+
+        " AND COALESCE(market_id,0)=COALESCE($2::bigint,0) AND COALESCE(sva_number_id,0)=COALESCE($3::bigint,0)"+
+        " AND status='active' AND effective_to IS NULL",
+        [tenant.id,marketId,svaNumberId,effectiveFrom.toISOString()]
+      );
+      const row=(await tx.unsafe(
+        "INSERT INTO tenant_payout_terms(tenant_id,market_id,sva_number_id,collection_model,platform_fee_bps,platform_fee_ht_per_min,payout_delay_days,effective_from,created_by)"+
+        " VALUES($1,$2,$3,'pgi_collects',$4,$5,$6,$7,$8) RETURNING id,tenant_id,market_id,sva_number_id,collection_model,platform_fee_bps,platform_fee_ht_per_min::float8,payout_delay_days,status,effective_from,effective_to,created_at",
+        [tenant.id,marketId,svaNumberId,bps,perMinute,delay,effectiveFrom.toISOString(),actorId]
+      ))[0];
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'tenant.payout_terms.create','tenant_payout_terms',$3,$4::jsonb)",
+        [tenant.id,actorId,String(row.id),JSON.stringify({collection_model:"pgi_collects",platform_fee_bps:bps,platform_fee_ht_per_min:perMinute,payout_delay_days:delay,market_id:marketId,sva_number_id:svaNumberId})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,market_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,$2,'tenant.payout_terms.changed','tenant_payout_terms',$3,$4::jsonb)",
+        [tenant.id,marketId,String(row.id),JSON.stringify({platform_fee_bps:bps,platform_fee_ht_per_min:perMinute,payout_delay_days:delay})]
+      );
+      const pending=await tx.unsafe(
+        "SELECT DISTINCT upstream_settlement_id FROM tenant_revenue_distributions WHERE tenant_id=$1 AND status IN ('blocked_terms','blocked_compliance','reconciled','payable') ORDER BY upstream_settlement_id",
+        [tenant.id]
+      );
+      for(const p of pending)await rebuildTenantRevenueDistributions(tx,Number(p.upstream_settlement_id),actorId);
+      return row;
+    });
+    this.eventBus.publish("tenant.payout_terms.changed",{tenant_public_id:publicId,id:Number(result.id)});
+    return result;
+  }
+
   async tenantControlDetail(publicId){
     publicId=String(publicId||"").trim();
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
@@ -2765,7 +2828,7 @@ export class PostgresStore{
     const tenant=base[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
     if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
     const id=Number(tenant.id);
-    const [subs,lines,portability,destinations,experts,alerts,settlements,controls,audit,activity]=await Promise.all([
+    const [subs,lines,portability,destinations,experts,alerts,settlements,payoutTerms,controls,audit,activity]=await Promise.all([
       this.readSql.unsafe(
         "SELECT s.id,s.status,s.billing_currency,s.starts_at,s.current_period_start,s.current_period_end,s.ends_at,"+
         " s.billing_provider,s.provider_customer_reference,s.provider_subscription_reference,s.cancel_at_period_end,s.last_payment_status,s.last_event_at,"+
@@ -2798,8 +2861,15 @@ export class PostgresStore{
       ),
       this.readSql.unsafe(
         "SELECT s.id,m.country_code AS market,s.currency,s.period_start,s.period_end,s.upstream_payout_ht::float8,s.platform_fee_ht::float8,s.net_payout_ht::float8,"+
-        " s.status,s.payment_due_date,s.paid_at FROM tenant_settlements s LEFT JOIN operating_markets m ON m.id=s.market_id"+
+        " s.unallocated_amount_ht::float8,s.held_amount_ht::float8,s.collection_model,s.status,s.payment_due_date,s.paid_at,s.statement_reference"+
+        " FROM tenant_revenue_distributions s LEFT JOIN operating_markets m ON m.id=s.market_id"+
         " WHERE s.tenant_id=$1 ORDER BY s.period_end DESC,s.id DESC LIMIT 24",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT pt.id,pt.market_id,m.country_code AS market,pt.sva_number_id,sn.display_number,pt.collection_model,pt.platform_fee_bps,"+
+        " pt.platform_fee_ht_per_min::float8,pt.payout_delay_days,pt.status,pt.effective_from,pt.effective_to,pt.created_at"+
+        " FROM tenant_payout_terms pt LEFT JOIN operating_markets m ON m.id=pt.market_id LEFT JOIN sva_numbers sn ON sn.id=pt.sva_number_id"+
+        " WHERE pt.tenant_id=$1 ORDER BY (pt.status='active') DESC,pt.effective_from DESC,pt.id DESC LIMIT 50",[id]
       ),
       this.readSql.unsafe(
         "SELECT id,assignment_id,action,previous_status,new_status,reason,occurred_at,details FROM tenant_control_events"+
@@ -2818,7 +2888,7 @@ export class PostgresStore{
     const access=await this.readSql.unsafe("SELECT pgi_tenant_has_premium_call_access($1,NULL,now()) AS allowed",[id]);
     return {
       tenant:{...tenant,premium_call_access:Boolean(access[0]?.allowed)},
-      subscriptions:subs,lines,portability,destinations,experts,alerts,settlements,controls,audit,
+      subscriptions:subs,lines,portability,destinations,experts,alerts,settlements,payout_terms:payoutTerms,controls,audit,
       activity:activity[0]||{calls_30d:0,connected_30d:0,billable_seconds_30d:0,revenue_ttc_30d:0,margin_ht_30d:0,last_call_at:null}
     };
   }
@@ -2874,7 +2944,7 @@ export class PostgresStore{
       this.readSql.unsafe(
         "SELECT s.id,t.display_name AS tenant,m.country_code AS market,s.currency,s.period_start,s.period_end,s.upstream_payout_ht::float8,"+
         " s.platform_fee_ht::float8,s.net_payout_ht::float8,s.status,s.payment_due_date,s.paid_at"+
-        " FROM tenant_settlements s JOIN tenants t ON t.id=s.tenant_id"+
+        " FROM tenant_revenue_distributions s JOIN tenants t ON t.id=s.tenant_id"+
         " LEFT JOIN operating_markets m ON m.id=s.market_id"+
         " WHERE t.tenant_type<>'internal' ORDER BY s.period_end DESC,s.id DESC LIMIT 50"
       ),
@@ -2900,7 +2970,7 @@ export class PostgresStore{
         " COALESCE(sum(s.upstream_payout_ht),0)::float8 AS upstream_payout,"+
         " COALESCE(sum(s.platform_fee_ht),0)::float8 AS platform_fee,"+
         " COALESCE(sum(s.net_payout_ht),0)::float8 AS net_payout"+
-        " FROM tenant_settlements s JOIN tenants t ON t.id=s.tenant_id"+
+        " FROM tenant_revenue_distributions s JOIN tenants t ON t.id=s.tenant_id"+
         " WHERE t.tenant_type<>'internal' GROUP BY s.currency ORDER BY s.currency"
       ),
       this.readSql.unsafe(
@@ -3308,6 +3378,110 @@ async function routeWith(sql,key){
     [key]
   );
   return rows[0];
+}
+async function rebuildTenantRevenueDistributions(tx,settlementId,actorId){
+  const rows=await tx.unsafe(
+    "SELECT scm.call_id,scm.carrier_amount_ht::float8 AS upstream_amount_ht,c.tenant_id,c.market_id,c.currency,c.sva_number_id,"+
+    " c.billable_seconds,c.started_at,t.tenant_type,k.status AS kyc_status,k.bank_account_verified,"+
+    " cs.status AS upstream_status,cs.period_start,cs.period_end,cs.paid_at AS upstream_paid_at,cs.statement_reference,"+
+    " pt.id AS payout_terms_id,pt.platform_fee_bps,pt.platform_fee_ht_per_min::float8,pt.payout_delay_days,"+
+    " pc.id AS payment_compliance_profile_id"+
+    " FROM settlement_call_matches scm JOIN calls c ON c.id=scm.call_id"+
+    " JOIN carrier_settlements cs ON cs.id=scm.settlement_id JOIN tenants t ON t.id=c.tenant_id"+
+    " LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=c.tenant_id"+
+    " LEFT JOIN LATERAL ("+
+    "  SELECT x.id,x.platform_fee_bps,x.platform_fee_ht_per_min,x.payout_delay_days FROM tenant_payout_terms x"+
+    "  WHERE x.tenant_id=c.tenant_id AND x.status='active' AND x.effective_from<=c.started_at"+
+    "   AND (x.effective_to IS NULL OR x.effective_to>c.started_at)"+
+    "   AND (x.market_id IS NULL OR x.market_id=c.market_id)"+
+    "   AND (x.sva_number_id IS NULL OR x.sva_number_id=c.sva_number_id)"+
+    "  ORDER BY (x.sva_number_id IS NOT NULL) DESC,(x.market_id IS NOT NULL) DESC,x.effective_from DESC,x.id DESC LIMIT 1"+
+    " ) pt ON true"+
+    " LEFT JOIN LATERAL ("+
+    "  SELECT p.id FROM payment_compliance_profiles p"+
+    "  JOIN payment_compliance_market_profiles pm ON pm.payment_compliance_profile_id=p.id"+
+    "  WHERE p.status='active' AND p.funds_flow_mode IN ('platform_managed','psp_managed')"+
+    "   AND pm.market_id=c.market_id AND pm.status='active'"+
+    "   AND (p.valid_from IS NULL OR p.valid_from<=CURRENT_DATE) AND (p.valid_to IS NULL OR p.valid_to>=CURRENT_DATE)"+
+    "  ORDER BY CASE p.funds_flow_mode WHEN 'platform_managed' THEN 0 ELSE 1 END,p.id LIMIT 1"+
+    " ) pc ON true"+
+    " WHERE scm.settlement_id=$1 AND t.tenant_type<>'internal' ORDER BY c.tenant_id,c.market_id,c.currency,scm.call_id",
+    [settlementId]
+  );
+  const groups=new Map();
+  for(const row of rows){
+    const key=String(row.tenant_id)+":"+String(row.market_id||0)+":"+String(row.currency||"EUR");
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push(row);
+  }
+  const results=[];
+  for(const groupRows of groups.values()){
+    const first=groupRows[0],calculated=groupRows.map(row=>{
+      const terms=row.payout_terms_id==null?null:{
+        id:Number(row.payout_terms_id),
+        platform_fee_bps:Number(row.platform_fee_bps||0),
+        platform_fee_ht_per_min:Number(row.platform_fee_ht_per_min||0)
+      };
+      return {
+        call_id:Number(row.call_id),
+        payout_delay_days:Number(row.payout_delay_days||0),
+        ...computeTenantCallDistribution(row.upstream_amount_ht,row.billable_seconds,terms)
+      };
+    });
+    const totals=summarizeTenantDistribution(calculated);
+    const complianceId=first.payment_compliance_profile_id==null?null:Number(first.payment_compliance_profile_id);
+    const upstreamPaid=String(first.upstream_status)==="paid";
+    const kycOk=String(first.kyc_status)==="verified"&&Boolean(first.bank_account_verified);
+    let status="reconciled",held=totals.net_payout_ht;
+    if(totals.unallocated_amount_ht>0){status="blocked_terms";held=0;}
+    else if(upstreamPaid&&complianceId&&kycOk){status="payable";held=0;}
+    else if(upstreamPaid){status="blocked_compliance";held=totals.net_payout_ht;}
+    let due=null;
+    if(upstreamPaid&&first.upstream_paid_at){
+      const d=new Date(first.upstream_paid_at);
+      if(Number.isFinite(d.getTime())){d.setUTCDate(d.getUTCDate()+totals.max_payout_delay_days);due=d.toISOString().slice(0,10);}
+    }
+    let dist=(await tx.unsafe(
+      "INSERT INTO tenant_revenue_distributions(tenant_id,upstream_settlement_id,market_id,currency,period_start,period_end,collection_model,"+
+      " upstream_payout_ht,platform_fee_ht,net_payout_ht,unallocated_amount_ht,held_amount_ht,payment_compliance_profile_id,status,payment_due_date,statement_reference)"+
+      " VALUES($1,$2,$3,$4,$5,$6,'pgi_collects',$7,$8,$9,$10,$11,$12,$13,$14,$15)"+
+      " ON CONFLICT (upstream_settlement_id,tenant_id,COALESCE(market_id,0),currency) DO UPDATE SET"+
+      " upstream_payout_ht=EXCLUDED.upstream_payout_ht,platform_fee_ht=EXCLUDED.platform_fee_ht,net_payout_ht=EXCLUDED.net_payout_ht,"+
+      " unallocated_amount_ht=EXCLUDED.unallocated_amount_ht,held_amount_ht=EXCLUDED.held_amount_ht,"+
+      " payment_compliance_profile_id=EXCLUDED.payment_compliance_profile_id,status=EXCLUDED.status,payment_due_date=EXCLUDED.payment_due_date,"+
+      " statement_reference=EXCLUDED.statement_reference,updated_at=now()"+
+      " WHERE tenant_revenue_distributions.status<>'paid' RETURNING *",
+      [first.tenant_id,settlementId,first.market_id,first.currency,first.period_start,first.period_end,
+       totals.upstream_payout_ht,totals.platform_fee_ht,totals.net_payout_ht,totals.unallocated_amount_ht,held,complianceId,status,due,first.statement_reference]
+    ))[0];
+    if(!dist){
+      dist=(await tx.unsafe(
+        "SELECT * FROM tenant_revenue_distributions WHERE upstream_settlement_id=$1 AND tenant_id=$2 AND COALESCE(market_id,0)=COALESCE($3::bigint,0) AND currency=$4 LIMIT 1",
+        [settlementId,first.tenant_id,first.market_id,first.currency]
+      ))[0];
+    }
+    if(String(dist.status)!=="paid"){
+      for(const item of calculated){
+        await tx.unsafe(
+          "INSERT INTO tenant_revenue_distribution_calls(tenant_distribution_id,call_id,payout_terms_id,upstream_amount_ht,platform_fee_ht,net_payout_ht,unallocated_amount_ht)"+
+          " VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (tenant_distribution_id,call_id) DO UPDATE SET"+
+          " payout_terms_id=EXCLUDED.payout_terms_id,upstream_amount_ht=EXCLUDED.upstream_amount_ht,platform_fee_ht=EXCLUDED.platform_fee_ht,"+
+          " net_payout_ht=EXCLUDED.net_payout_ht,unallocated_amount_ht=EXCLUDED.unallocated_amount_ht",
+          [dist.id,item.call_id,item.payout_terms_id,item.upstream_amount_ht,item.platform_fee_ht,item.net_payout_ht,item.unallocated_amount_ht]
+        );
+      }
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'tenant.revenue_distribution','tenant_revenue_distribution',$3,$4::jsonb)",
+        [first.tenant_id,actorId,String(dist.id),JSON.stringify({upstream_settlement_id:settlementId,status,upstream_payout_ht:totals.upstream_payout_ht,platform_fee_ht:totals.platform_fee_ht,net_payout_ht:totals.net_payout_ht,collection_model:"pgi_collects"})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,market_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,$2,'tenant.revenue_distribution.updated','tenant_revenue_distribution',$3,$4::jsonb)",
+        [first.tenant_id,first.market_id,String(dist.id),JSON.stringify({status,upstream_settlement_id:settlementId,platform_fee_ht:totals.platform_fee_ht,net_payout_ht:totals.net_payout_ht})]
+      );
+    }
+    results.push(dist);
+  }
+  return results;
 }
 function roundFinanceNumber(value){
   return Math.round((Number(value)+Number.EPSILON)*1e6)/1e6;
