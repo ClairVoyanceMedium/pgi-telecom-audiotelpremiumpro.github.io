@@ -79,11 +79,7 @@ CREATE INDEX platform_change_requests_status_time_idx
 CREATE FUNCTION pgi_prevent_change_request_delete()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $
-BEGIN
-  RAISE EXCEPTION 'platform_change_requests cannot be deleted';
-END;
-$;
+AS 'BEGIN RAISE EXCEPTION ''platform_change_requests cannot be deleted''; END;';
 
 CREATE TRIGGER platform_change_requests_no_delete
 BEFORE DELETE ON platform_change_requests
