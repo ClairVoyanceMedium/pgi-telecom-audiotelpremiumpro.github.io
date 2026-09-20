@@ -45,7 +45,7 @@ test("portability intake does not itself activate routing",()=>{
   assert.doesNotMatch(migration,/logical_carrier_routes/);
   assert.doesNotMatch(migration,/active_connection_id/);
   assert.match(html,/La demande ne coupe pas votre ligne actuelle/);
-  assert.match(html,/sans transfert de ses obligations antérieures à PGI/);
+  assert.match(html,/sans transfert de ses obligations à Audiotel Premium Pro/);
 });
 
 test("French SVA port-in requires a verified encrypted RIO and never transfers the donor contract",()=>{
