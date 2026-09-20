@@ -45,6 +45,7 @@ const qualityRollupMigration=fs.readFileSync("database/migrations/017_quality_ro
 const b2bDestinationMigration=fs.readFileSync("database/migrations/022_b2b_call_destinations.sql","utf8");
 const customerPortalMigration=fs.readFileSync("database/migrations/023_customer_portal.sql","utf8");
 const customerGoogleMigration=fs.readFileSync("database/migrations/024_customer_google_identity.sql","utf8");
+const voiceIntelligenceMigration=fs.readFileSync("database/migrations/026_voice_intelligence.sql","utf8");
 const googleIdSource=fs.readFileSync("backend/src/google-id.mjs","utf8");
 const workersSource=fs.readFileSync("backend/src/workers.mjs","utf8");
 const resilienceDoc=fs.readFileSync("docs/RESILIENCE.md","utf8");
@@ -174,6 +175,9 @@ if(!/customer-admin\.css/.test(customerAdmin))failures.push("customer admin styl
 if(serviceWorker.includes("assets/customer-admin.css"))failures.push("customer admin stylesheet must stay outside the critical shell");
 if(!/quality_rollups_hourly_sharded/.test(qualityRollupMigration)||!/mos_sum/.test(qualityRollupMigration)||!/packet_loss_sum/.test(qualityRollupMigration))failures.push("quality analytics must retain bounded RTP rollups");
 if(!/writeQualityRollup/.test(postgresStore)||!/quality:quality\[0\]/.test(postgresStore))failures.push("backend must write and expose scalable voice-quality aggregates");
+if(!/voice_carrier_health_hourly_sharded/.test(voiceIntelligenceMigration)||!/tenant_voice_daily_sharded/.test(voiceIntelligenceMigration)||!/voice_sip_code_hourly_sharded/.test(voiceIntelligenceMigration)||!/telecom_incidents/.test(voiceIntelligenceMigration))failures.push("voice intelligence must retain scalable carrier, tenant, SIP and incident foundations");
+if(!/writeVoiceCarrierHealthRollup/.test(postgresStore)||!/writeTenantVoiceDailyRollup/.test(postgresStore)||!/writeSipCodeRollup/.test(postgresStore)||!/scanVoiceIncidents/.test(postgresStore))failures.push("voice intelligence runtime writers and incident scanner are required");
+if(!/\/api\/v1\/dashboard\/voice-intelligence/.test(backendServer)||!/voiceIntelligence:function/.test(apiClient))failures.push("voice intelligence must remain exposed to the admin cockpit");
 for(const name of ["PGI_WORK_QUEUE_BATCH_SIZE","PGI_WORK_QUEUE_LEASE_SECONDS","PGI_WORK_QUEUE_RETRY_BASE_SECONDS","PGI_WORK_QUEUE_POLL_MS"]){
   if(!compose.includes(name+":"))failures.push("docker compose missing "+name);
   if(!envExample.includes(name+"="))failures.push("production env example missing "+name);
