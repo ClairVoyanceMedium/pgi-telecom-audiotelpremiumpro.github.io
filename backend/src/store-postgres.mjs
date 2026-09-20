@@ -440,7 +440,7 @@ export class PostgresStore{
   }
 
   async scanVoiceIncidents(){
-    const rows=await this.readSql.unsafe(
+    const rows=await this.sql.unsafe(
       "SELECT r.market_id,r.carrier_id,c.name AS carrier,COALESCE(sum(r.calls_total),0)::bigint AS calls_total,"+
       " COALESCE(sum(r.calls_connected),0)::bigint AS calls_connected,COALESCE(sum(r.pdd_samples),0)::bigint AS pdd_samples,"+
       " COALESCE(sum(r.high_pdd_calls),0)::bigint AS high_pdd_calls,COALESCE(sum(r.quality_samples),0)::bigint AS quality_samples,"+
