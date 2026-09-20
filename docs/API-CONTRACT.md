@@ -303,3 +303,12 @@ Crée une invitation à usage unique. Le backend ne stocke que le hash du jeton 
 
 ### POST /customer/auth/change-password
 Permet au client authentifié de remplacer son mot de passe. L'ancien mot de passe est vérifié côté serveur, le nouveau est haché avec scrypt et un nouveau sel aléatoire, puis toutes les sessions client existantes sont invalidées par changement de version. Une reconnexion est obligatoire.
+## Portabilité entrante d'un numéro existant
+
+`GET /customer/portability` retourne uniquement les dossiers du tenant authentifié. `POST /customer/portability` ouvre une demande sans modifier le routage ni couper la ligne existante. `POST /customer/portability/:id/cancel` reste disponible avant la planification opérateur.
+
+Le dossier conserve l'E.164 existant, le tarif TTC/minute déclaré, sa devise et son état de vérification. La route administrateur `POST /platform/portability/:id/status` permet de vérifier titularité, tarif, référence opérateur, opérateur cible et date de bascule. Elle ne peut pas produire l'état `ported`.
+
+`POST /platform/portability/:id/complete` est l'unique finalisation. Elle exige un dossier `scheduled`, titularité et tarif vérifiés, KYC validé, client et abonnement SVA actifs, opérateur cible égal à la route `sva-primary` active et connexion prête. La création du numéro, de l'affectation client, du rattachement opérateur, de l'événement de portabilité, de l'audit et du passage à `ported` est atomique.
+
+Voir `docs/PORTABILITY.md`.
