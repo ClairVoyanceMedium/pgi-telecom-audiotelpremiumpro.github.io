@@ -377,12 +377,13 @@
 <dialog id="client-export-dialog" class="cp-export-dialog">
   <form method="dialog" class="cp-export-card">
     <div class="cp-export-head"><div><p class="cp-kicker">EXPORTS</p><h2>Exporter mes données</h2></div><button class="cp-close" value="cancel" aria-label="Fermer">×</button></div>
-    <p class="cp-export-note">Les exports utilisent uniquement les données de votre société et de la période sélectionnée.</p>
+    <p class="cp-export-note">Téléchargement, copie et impression utilisent uniquement les données de votre société et de la période sélectionnée.</p>
     <div class="cp-export-grid">
-      <button type="button" data-client-export="report"><strong>Rapport complet CSV</strong><span>Synthèse, numéros, reversements et appels</span></button>
+      <button type="button" data-client-export="report"><strong>Rapport complet CSV</strong><span>Toutes les métriques visibles, numéros, reversements et appels</span></button>
       <button type="button" data-client-export="calls"><strong>Appels CSV</strong><span>Historique détaillé, jusqu’à 1 000 appels</span></button>
       <button type="button" data-client-export="settlements"><strong>Reversements CSV</strong><span>Périodes, statut et net client</span></button>
       <button type="button" data-client-export="numbers"><strong>Numéros CSV</strong><span>Lignes, tarif et état</span></button>
+      <button type="button" data-client-export="copy"><strong>Copier le rapport complet</strong><span>Métriques et données prêtes à coller</span></button>
       <button type="button" data-client-export="print"><strong>Imprimer / PDF</strong><span>Rapport visuel du tableau de bord</span></button>
     </div>
   </form>
