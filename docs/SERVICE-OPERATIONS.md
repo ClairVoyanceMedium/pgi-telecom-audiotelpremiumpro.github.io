@@ -1,6 +1,6 @@
-# Centre de service et excellence opérationnelle PGI
+# Centre de service et excellence opérationnelle Audiotel Premium Pro
 
-PGI Telecom conserve un dossier unique lorsqu’un client signale un problème ou lorsqu’un incident technique susceptible d’affecter ses lignes est détecté automatiquement.
+Audiotel Premium Pro conserve un dossier unique lorsqu’un client signale un problème ou lorsqu’un incident technique susceptible d’affecter ses lignes est détecté automatiquement.
 
 ## Objectifs
 
@@ -9,9 +9,9 @@ Le centre de service évite qu’un client doive réexpliquer plusieurs fois la 
 - la catégorie et la priorité ;
 - la ligne éventuellement concernée ;
 - l’état actuel ;
-- l’équipe PGI responsable ;
+- l’équipe Audiotel Premium Pro responsable ;
 - la chronologie des changements ;
-- les messages du client et de PGI ;
+- les messages du client et d’Audiotel Premium Pro ;
 - un diagnostic technique non sensible capturé à l’ouverture ;
 - une cible de première prise en charge ;
 - une cible de résolution ;
@@ -32,7 +32,7 @@ Le scanner `scanVoiceIncidents` reste la source de vérité pour les anomalies v
 
 ## Objectifs internes de traitement
 
-Les délais enregistrés servent au pilotage interne PGI :
+Les délais enregistrés servent au pilotage interne Audiotel Premium Pro :
 
 | Priorité | Première prise en charge | Cible de résolution |
 | --- | ---: | ---: |
@@ -67,11 +67,11 @@ Il ne doit jamais inclure RIO en clair, secret opérateur, jeton d’authentific
 
 La réponse indique la destination qui serait choisie, les candidats, leur capacité et les avertissements. Cette fonction sert à contrôler une configuration avant activation ou à diagnostiquer une indisponibilité.
 
-## Frontières client / PGI
+## Frontières client / plateforme
 
 Le client voit uniquement ses dossiers, événements, notes et alertes marqués comme visibles, via les vues SQL à barrière de sécurité. Les éléments purement internes peuvent rester masqués.
 
-PGI peut ouvrir un dossier, modifier sa priorité ou son état et ajouter des notes. Les opérations sont auditées et les mutations exposées par API utilisent l’authentification, la protection CSRF et l’idempotence déjà présentes dans la plateforme.
+Audiotel Premium Pro peut ouvrir un dossier, modifier sa priorité ou son état et ajouter des notes. Les opérations sont auditées et les mutations exposées par API utilisent l’authentification, la protection CSRF et l’idempotence déjà présentes dans la plateforme.
 
 ## Principe d’exploitation
 
@@ -79,7 +79,7 @@ Le fonctionnement normal doit être proactif :
 
 `détection → diagnostic → dossier unique → suivi → résolution → historique`
 
-Le support manuel reste disponible pour les exceptions, mais la plateforme doit fournir le maximum de contexte avant qu’un opérateur PGI ou un client ait besoin d’intervenir.
+Le support manuel reste disponible pour les exceptions, mais la plateforme doit fournir le maximum de contexte avant qu’un opérateur de la plateforme ou un client ait besoin d’intervenir.
 
 ## File centrale d’exploitation
 
@@ -87,16 +87,16 @@ Le cockpit dispose d’une file globale paginée des dossiers. Elle peut être f
 
 ## Alertes proactives
 
-PGI crée une alerte et un dossier système lorsqu’un client actif possédant une ligne active n’a plus aucune destination ni expert disponible. Lorsque le routage redevient disponible, le dossier et l’alerte sont résolus automatiquement.
+Audiotel Premium Pro crée une alerte et un dossier système lorsqu’un client actif possédant une ligne active n’a plus aucune destination, aucun service ni intervenant disponible. Lorsque le routage redevient disponible, le dossier et l’alerte sont résolus automatiquement.
 
 Une portabilité dont l’automatisation passe à `action_required` ou `failed` génère une alerte interne `portability_attention`. Cette alerte n’expose pas au client les codes techniques internes.
 
 ## Événements durables et futurs canaux de notification
 
-Les créations, changements d’état, notes et résolutions produisent des événements dans l’outbox PGI. L’outbox ne contient pas le texte des notes, le diagnostic complet, le RIO ou des secrets. Elle permet de brancher ultérieurement un canal e-mail, SMS ou webhook sans modifier la logique métier du centre de service.
+Les créations, changements d’état, notes et résolutions produisent des événements dans l’outbox de la plateforme. L’outbox ne contient pas le texte des notes, le diagnostic complet, le RIO ou des secrets. Elle permet de brancher ultérieurement un canal e-mail, SMS ou webhook sans modifier la logique métier du centre de service.
 
 ## Pièces jointes
 
-La table `tenant_service_incident_attachments` relie un dossier aux objets déjà gérés par la couche `object_assets`. Le stockage reste donc indépendant du fournisseur et bénéficie du cycle de rétention, du chiffrement et des mécanismes de confidentialité déjà prévus par PGI. Aucun stockage externe payant n’est imposé par cette architecture.
+La table `tenant_service_incident_attachments` relie un dossier aux objets déjà gérés par la couche `object_assets`. Le stockage reste donc indépendant du fournisseur et bénéficie du cycle de rétention, du chiffrement et des mécanismes de confidentialité déjà prévus par Audiotel Premium Pro. Aucun stockage externe payant n’est imposé par cette architecture.
 
 La migration d’intégrité impose aussi la correspondance du tenant entre le dossier, ses événements, ses notes et ses pièces jointes. Une pièce jointe appartenant à un autre client est rejetée au niveau PostgreSQL, même si une erreur applicative tentait de la rattacher.
