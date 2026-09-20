@@ -390,6 +390,17 @@ test("admin export center stays lazy and exposes calls, summary, finance and PDF
 test("customer portal exposes extended analytics and password management",()=>{for(const id of ["asr-chart","value-chart","duration-chart","client-security-dialog","client-password-form"])assert.ok(clientPortal.includes('id="'+id+'"'),id);assert.match(clientPortalApi,/changePassword/);assert.match(clientPortalJs,/function changePassword/);assert.match(clientPortalJs,/svgLine\("asr-chart"/);});
 
 
+test("client portal supports autonomous professional email registration",()=>{
+  for(const id of ["register-panel","customer-register-form","register-first-name","register-last-name","register-company","register-country","register-number","register-phone","register-email","register-password","register-authority","show-register","show-login","client-onboarding"])assert.ok(clientPortal.includes('id="'+id+'"'),id);
+  assert.match(clientPortalApi,/\/customer\/auth\/register/);
+  assert.match(clientPortalJs,/submitRegistration/);
+  assert.match(clientPortalJs,/COUNTRY_CODES/);
+  assert.match(clientPortalJs,/authority_confirmed/);
+  assert.match(clientPortalJs,/INVALID_SIRET/);
+  assert.match(clientPortalCss,/autonomous-customer-onboarding-v35/);
+  assert.match(clientI18n,/signupPacks/);
+});
+
 test("client portal auto-localizes and prepares Google account creation",()=>{for(const token of ["pt-PT","pt-BR","es","it","de","sv"])assert.ok(clientI18n.includes(token),token);assert.match(clientI18n,/navigator\.languages/);assert.match(clientGoogle,/accounts\.google\.com\/gsi\/client/);assert.match(clientGoogle,/renderButton/);assert.match(clientConfig,/googleClientId/);assert.match(clientPortal,/google-login/);assert.match(clientPortal,/google-activation/);assert.match(clientPortalJs,/pending_contract/);});
 
 
