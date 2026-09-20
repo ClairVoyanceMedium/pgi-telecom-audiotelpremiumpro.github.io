@@ -388,7 +388,7 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/dashboard/bootstrap"){
         requireRole(actor,["admin","finance","readonly"]);
         const requestedRange=rangeParams(url);
-        const range=await store.effectiveMetricRange(requestedRange.from,requestedRange.to);
+        const metricRanges=await store.effectiveMetricRanges(requestedRange.from,requestedRange.to);
         const market=url.searchParams.get("market")||null;
         const previousFrom=url.searchParams.get("previous_from")||null;
         const previousTo=url.searchParams.get("previous_to")||null;
@@ -396,16 +396,16 @@ export function createBackend(options={}){
            (previousFrom&&(!Number.isFinite(Date.parse(previousFrom))||!Number.isFinite(Date.parse(previousTo))||Date.parse(previousTo)<Date.parse(previousFrom)))){
           const e=new Error("Invalid previous range");e.status=400;e.code="INVALID_PREVIOUS_RANGE";throw e;
         }
-        const previousRange=previousFrom?await store.effectiveMetricRange(previousFrom,previousTo):null;
+        const previousRanges=previousFrom?await store.effectiveMetricRanges(previousFrom,previousTo):null;
         const [summary,previousSummary,analytics,voiceIntelligence,experts,system,route,reconciliation]=await Promise.all([
-          store.summary(range.from,range.to,market),
-          previousRange&&!previousRange.empty?store.summary(previousRange.from,previousRange.to,market):Promise.resolve(null),
-          store.dashboardAnalytics(range.from,range.to,market),
-          typeof store.voiceIntelligence==="function"?store.voiceIntelligence(range.from,range.to,market):Promise.resolve(null),
+          selectiveSummary(store,metricRanges,market),
+          previousRanges?selectiveSummary(store,previousRanges,market):Promise.resolve(null),
+          selectiveAnalytics(store,metricRanges,market),
+          typeof store.voiceIntelligence==="function"?store.voiceIntelligence(metricRanges.quality.from,metricRanges.quality.to,market):Promise.resolve(null),
           store.listExperts(),
           store.systemSnapshot(),
           store.carrierRouting(),
-          store.reconciliation(range.from,range.to,market)
+          store.reconciliation(metricRanges.payout.from,metricRanges.payout.to,market)
         ]);
         return done(res,metrics,started,"dashboard.bootstrap",200,{
           summary,
@@ -416,44 +416,43 @@ export function createBackend(options={}){
           system:runtimeSystemSnapshot(system,eventBus,workers,config),
           route,
           reconciliation:{data:reconciliation},
-          metrics_reset_at:range.baseline,
+          metric_resets:Object.fromEntries(Object.entries(metricRanges).map(([k,v])=>[k,v.baseline])),
           server_time:new Date().toISOString()
         });
       }
-
       if(method==="GET"&&pathname==="/api/v1/dashboard/summary"){
         requireRole(actor,["admin","finance","expert","readonly"]);
         const requestedRange=rangeParams(url);
-        const range=await store.effectiveMetricRange(requestedRange.from,requestedRange.to);
+        const metricRanges=await store.effectiveMetricRanges(requestedRange.from,requestedRange.to);
         const market=url.searchParams.get("market")||null;
-        return done(res,metrics,started,"dashboard.summary",200,{...await store.summary(range.from,range.to,market),metrics_reset_at:range.baseline});
+        return done(res,metrics,started,"dashboard.summary",200,{...await selectiveSummary(store,metricRanges,market),metric_resets:Object.fromEntries(Object.entries(metricRanges).map(([k,v])=>[k,v.baseline]))});
       }
 
       if(method==="GET"&&pathname==="/api/v1/dashboard/analytics"){
         requireRole(actor,["admin","finance","readonly"]);
         const requestedRange=rangeParams(url);
-        const range=await store.effectiveMetricRange(requestedRange.from,requestedRange.to);
+        const metricRanges=await store.effectiveMetricRanges(requestedRange.from,requestedRange.to);
         const market=url.searchParams.get("market")||null;
-        return done(res,metrics,started,"dashboard.analytics",200,{...await store.dashboardAnalytics(range.from,range.to,market),metrics_reset_at:range.baseline});
+        return done(res,metrics,started,"dashboard.analytics",200,{...await selectiveAnalytics(store,metricRanges,market),metric_resets:Object.fromEntries(Object.entries(metricRanges).map(([k,v])=>[k,v.baseline]))});
       }
 
       if(method==="GET"&&pathname==="/api/v1/dashboard/voice-intelligence"){
         requireRole(actor,["admin","finance","readonly"]);
         const requestedRange=rangeParams(url);
-        const range=await store.effectiveMetricRange(requestedRange.from,requestedRange.to);
+        const range=(await store.effectiveMetricRanges(requestedRange.from,requestedRange.to)).quality;
         const market=url.searchParams.get("market")||null;
-        return done(res,metrics,started,"dashboard.voice_intelligence",200,{...await store.voiceIntelligence(range.from,range.to,market),metrics_reset_at:range.baseline});
+        return done(res,metrics,started,"dashboard.voice_intelligence",200,{...await store.voiceIntelligence(range.from,range.to,market),metric_reset_at:range.baseline});
       }
 
       if(method==="GET"&&pathname==="/api/v1/calls"){
         requireRole(actor,["admin","finance","expert","readonly"]);
         const params=Object.fromEntries(url.searchParams.entries());
         const requestedFrom=params.from||new Date(0).toISOString(),requestedTo=params.to||new Date().toISOString();
-        const range=await store.effectiveMetricRange(requestedFrom,requestedTo);
-        if(range.empty)return done(res,metrics,started,"calls.list",200,{data:[],next_cursor:null,metrics_reset_at:range.baseline});
+        const range=(await store.effectiveMetricRanges(requestedFrom,requestedTo)).calls;
+        if(range.empty)return done(res,metrics,started,"calls.list",200,{data:[],next_cursor:null,metric_reset_at:range.baseline});
         params.from=range.from;params.to=range.to;
         if(actor.role==="expert")params.expert_id=actor.expert_id||actor.sub;
-        return done(res,metrics,started,"calls.list",200,{...await store.listCalls(params),metrics_reset_at:range.baseline});
+        return done(res,metrics,started,"calls.list",200,{...await store.listCalls(params),metric_reset_at:range.baseline});
       }
 
       if(method==="GET"&&pathname==="/api/v1/experts"){
@@ -519,9 +518,9 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/finance/reconciliation"){
         requireRole(actor,["admin","finance","readonly"]);
         const requestedRange=rangeParams(url);
-        const range=await store.effectiveMetricRange(requestedRange.from,requestedRange.to);
+        const range=(await store.effectiveMetricRanges(requestedRange.from,requestedRange.to)).payout;
         const market=url.searchParams.get("market")||null;
-        return done(res,metrics,started,"finance.reconciliation",200,{data:await store.reconciliation(range.from,range.to,market),metrics_reset_at:range.baseline});
+        return done(res,metrics,started,"finance.reconciliation",200,{data:await store.reconciliation(range.from,range.to,market),metric_reset_at:range.baseline});
       }
 
       if(method==="GET"&&pathname==="/api/v1/system/health"){
