@@ -1376,14 +1376,14 @@ export class PostgresStore{
 
   async ensureLegacyStaffIdentity(loginName){
     const login=staffLoginName(loginName);
-    const existing=await this.readSql.unsafe("SELECT id,login_name,display_name,role,enabled FROM app_users WHERE lower(login_name)=lower($1) LIMIT 1",[login]);
+    const existing=await this.sql.unsafe("SELECT id,login_name,display_name,role,enabled FROM app_users WHERE lower(login_name)=lower($1) LIMIT 1",[login]);
     if(existing[0])return existing[0];
     const suffix=createHash("sha256").update(login.toLowerCase()).digest("hex").slice(0,16);
     await this.sql.unsafe(
       "INSERT INTO app_users(email,display_name,role,enabled,login_name) VALUES($1,$2,'admin',true,$3) ON CONFLICT DO NOTHING",
       ["legacy-"+suffix+"@staff.pgi.invalid","Administrator",login]
     );
-    const rows=await this.readSql.unsafe("SELECT id,login_name,display_name,role,enabled FROM app_users WHERE lower(login_name)=lower($1) LIMIT 1",[login]);
+    const rows=await this.sql.unsafe("SELECT id,login_name,display_name,role,enabled FROM app_users WHERE lower(login_name)=lower($1) LIMIT 1",[login]);
     if(!rows[0])throw problem(500,"STAFF_IDENTITY_BOOTSTRAP_FAILED");
     return rows[0];
   }
@@ -1391,7 +1391,7 @@ export class PostgresStore{
   async staffLoginIdentity(loginName){
     const login=String(loginName||"").trim();
     if(login.length<3||login.length>120)return null;
-    const rows=await this.readSql.unsafe(
+    const rows=await this.sql.unsafe(
       "SELECT u.id,u.login_name,u.display_name,u.role,u.enabled,c.password_hash,c.session_version,c.failed_attempts,c.first_failure_at,c.locked_until"+
       " FROM app_users u JOIN staff_password_credentials c ON c.app_user_id=u.id"+
       " WHERE lower(u.login_name)=lower($1) LIMIT 1",
