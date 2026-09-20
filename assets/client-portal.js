@@ -15,7 +15,7 @@ function duration(s){s=Math.max(0,Math.round(n(s)));var m=Math.floor(s/60),r=s%6
 function statusLabel(v){var m={active:"Actif",pending:"En attente",testing:"Test",suspended:"Suspendu",closed:"Fermé",connected:"Décroché",abandoned:"Abandonné",failed:"Échoué",busy:"Occupé",no_answer:"Sans réponse",open:"En cours",reconciled:"Validé",invoiced:"Facturé",payable:"À payer",paid:"Payé",disputed:"Contesté",past_due:"Impayé",cancelled:"Résilié",ended:"Terminé"};return tr(m[String(v||"").toLowerCase()]||String(v||"—"));}
 function chip(status){var s=String(status||"").toLowerCase();var tone=["active","connected","paid","reconciled","payable"].includes(s)?"ok":["pending","testing","open","invoiced"].includes(s)?"warn":["suspended","closed","failed","past_due","disputed"].includes(s)?"bad":"neutral";return '<span class="cp-chip '+tone+'">'+esc(statusLabel(status))+"</span>";}
 function toast(message){var el=$("client-toast");el.textContent=message;el.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(function(){el.hidden=true;},2600);}
-function setAuthMessage(message,bad){var el=$("auth-message");el.textContent=message||"";el.classList.toggle("bad",Boolean(bad));}
+function setAuthMessage(message,bad){var el=$("auth-message");el.textContent=message?tr(message):"";el.classList.toggle("bad",Boolean(bad));}
 function rangeFor(key){
   var to=new Date(),from=new Date(to);
   if(key==="7")from=new Date(to.getTime()-7*86400000);
