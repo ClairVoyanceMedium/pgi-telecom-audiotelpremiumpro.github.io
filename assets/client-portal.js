@@ -1,6 +1,6 @@
 (function(){
 "use strict";
-var state={range:"30",data:null,user:null,demo:false,googleCredential:null,billingBusy:false};
+var state={range:"30",data:null,user:null,demo:false,googleCredential:null,billingBusy:false,portabilityBusy:false};
 var I=window.PGIClientI18n||{locale:"fr-FR",t:function(x){return x;},apply:function(){}};
 function tr(x){return I.t?I.t(x):x;}
 var $=function(id){return document.getElementById(id);};
@@ -12,8 +12,8 @@ function money(v,c){if(v==null||!Number.isFinite(Number(v)))return "—";try{ret
 function dt(v){if(!v)return "—";var d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat(I.locale||"fr-FR",{dateStyle:"short",timeStyle:"short"}).format(d):"—";}
 function dateOnly(v){if(!v)return "—";var d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat(I.locale||"fr-FR",{dateStyle:"medium"}).format(d):"—";}
 function duration(s){s=Math.max(0,Math.round(n(s)));var m=Math.floor(s/60),r=s%60;return m+" min "+String(r).padStart(2,"0")+" s";}
-function statusLabel(v){var m={active:"Actif",pending:"En attente",testing:"Test",suspended:"Suspendu",closed:"Fermé",connected:"Décroché",abandoned:"Abandonné",failed:"Échoué",busy:"Occupé",no_answer:"Sans réponse",open:"En cours",reconciled:"Validé",invoiced:"Facturé",payable:"À payer",paid:"Payé",disputed:"Contesté",past_due:"Impayé",cancelled:"Résilié",ended:"Terminé"};return tr(m[String(v||"").toLowerCase()]||String(v||"—"));}
-function chip(status){var s=String(status||"").toLowerCase();var tone=["active","connected","paid","reconciled","payable"].includes(s)?"ok":["pending","testing","open","invoiced"].includes(s)?"warn":["suspended","closed","failed","past_due","disputed"].includes(s)?"bad":"neutral";return '<span class="cp-chip '+tone+'">'+esc(statusLabel(status))+"</span>";}
+function statusLabel(v){var m={active:"Actif",pending:"En attente",testing:"Test",suspended:"Suspendu",closed:"Fermé",connected:"Décroché",abandoned:"Abandonné",failed:"Échoué",busy:"Occupé",no_answer:"Sans réponse",open:"En cours",reconciled:"Validé",invoiced:"Facturé",payable:"À payer",paid:"Payé",disputed:"Contesté",past_due:"Impayé",cancelled:"Annulé",ended:"Terminé",submitted:"Demande reçue",awaiting_documents:"Justificatifs requis",eligibility_check:"Éligibilité en cours",operator_pending:"En attente opérateur",scheduled:"Portabilité planifiée",ported:"Numéro porté",rejected:"Demande refusée"};return tr(m[String(v||"").toLowerCase()]||String(v||"—"));}
+function chip(status){var s=String(status||"").toLowerCase();var tone=["active","connected","paid","reconciled","payable","ported"].includes(s)?"ok":["pending","testing","open","invoiced","submitted","awaiting_documents","eligibility_check","operator_pending","scheduled"].includes(s)?"warn":["suspended","closed","failed","past_due","disputed","rejected"].includes(s)?"bad":"neutral";return '<span class="cp-chip '+tone+'">'+esc(statusLabel(status))+"</span>";}
 function toast(message){var el=$("client-toast");el.textContent=tr(message);el.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(function(){el.hidden=true;},2600);}
 function setAuthMessage(message,bad){var el=$("auth-message");el.textContent=message?tr(message):"";el.classList.toggle("bad",Boolean(bad));}
 function rangeFor(key){
@@ -56,6 +56,7 @@ function demoData(range){
     ],
     settlements:[{id:1,currency:"EUR",period_start:"2026-08-01",period_end:"2026-08-31",net_payout_ht:428.75,status:"paid",paid_at:"2026-09-12T10:00:00Z"},{id:2,currency:"EUR",period_start:"2026-09-01",period_end:"2026-09-15",net_payout_ht:231.2,status:"payable",payment_due_date:"2026-09-30"}],
     subscriptions:[{id:1,status:"active",billing_currency:"EUR",current_period_start:"2026-09-01T00:00:00Z",current_period_end:"2026-10-01T00:00:00Z",plan_name:"Accès Audiotel",amount_minor:200,price_currency:"EUR",billing_interval:"month",last_payment_status:"paid"}],
+    portability_requests:[],
     destinations:[{id:1,sva_number_id:1,label:"Standard principal",destination_type:"pstn",destination_uri:"tel:+33123456789",priority:10,status:"active",active_calls:1,max_concurrent_calls:25}],
     recent_calls:recent,
     voice_quality:{calls_total:sums.calls_total,calls_connected:sums.calls_connected,pdd_samples:sums.calls_total,avg_pdd_ms:2380,high_pdd_calls:Math.round(sums.calls_total*.025),quality_samples:sums.calls_total,network_affected_calls:Math.round(sums.calls_total*.018),low_mos_calls:Math.round(sums.calls_total*.012),mos:4.26,packet_loss_percent:.34,jitter_ms:3.4,latency_ms:44,rtt_ms:78,sip_5xx_calls:Math.round(sums.calls_total*.008),caller_hangups:Math.round(sums.calls_connected*.52),callee_hangups:Math.round(sums.calls_connected*.43),network_hangups:Math.round(sums.calls_total*.05)},
@@ -118,6 +119,22 @@ function renderNumbers(data){
   var el=$("numbers-list"),rows=data.numbers||[];$("numbers-count").textContent=String(rows.length);
   el.innerHTML=rows.length?rows.map(function(x){return '<div class="cp-row"><div><strong>'+esc(x.display_number||x.e164)+'</strong><span>'+esc((x.market||data.tenant.country_code||"")+" · "+(x.tariff_code||"Tarif")+" · "+money(x.service_rate_ttc_per_min,x.currency)+"/min")+'</span></div><div>'+chip(x.assignment_status||x.status)+'</div></div>';}).join(""):'<p class="cp-empty">Aucun numéro attribué.</p>';
 }
+function renderPortability(data){
+  var rows=data.portability_requests||[],el=$("portability-list"),count=$("portability-count");
+  if(count)count.textContent=String(rows.length);
+  if(!el)return;
+  el.innerHTML=rows.length?rows.map(function(x){
+    var status=String(x.status||"submitted").toLowerCase();
+    var meta=[x.country_code||"",statusLabel(status)];
+    if(x.desired_port_date)meta.push("Souhaitée : "+dateOnly(x.desired_port_date));
+    if(x.scheduled_at)meta.push("Prévue : "+dt(x.scheduled_at));
+    if(x.operator_portability_reference)meta.push("Réf. opérateur : "+x.operator_portability_reference);
+    if(x.rejection_reason)meta.push("Motif : "+x.rejection_reason);
+    var cancellable=["submitted","awaiting_documents","eligibility_check","operator_pending"].includes(status);
+    var action=cancellable?'<button class="cp-portability-cancel" type="button" data-portability-cancel="'+esc(x.id)+'">Annuler</button>':"";
+    return '<div class="cp-row cp-portability-row"><div><strong>'+esc(x.display_number||x.requested_e164||"Numéro")+'</strong><span>'+esc(meta.filter(Boolean).join(" · "))+'</span></div><div class="cp-portability-actions">'+chip(status)+action+'</div></div>';
+  }).join(""):'<p class="cp-empty">Aucune demande de portabilité en cours.</p>';
+}
 function renderCalls(data){
   var rows=data.recent_calls||[];$("calls-body").innerHTML=rows.length?rows.map(function(x){return "<tr><td>"+esc(dt(x.started_at))+"</td><td>"+esc(x.display_number||x.e164||"—")+"</td><td>"+chip(x.call_status)+"</td><td>"+esc(duration(x.billable_seconds||x.conversation_seconds))+"</td><td>"+esc(money(n(x.retail_service_amount_ttc),x.currency))+"</td><td><button class=\"cp-diagnostic-btn\" type=\"button\" data-call-diagnostic=\""+esc(x.call_id)+"\">Voir</button></td></tr>";}).join(""):'<tr><td colspan="6" class="cp-empty-cell">Aucun appel sur cette période.</td></tr>';
 }
@@ -176,7 +193,7 @@ function render(data){
   $("kpi-minutes").textContent=nf(a.billable/60,1);$("kpi-revenue").textContent=money(a.revenue,a.currency);$("kpi-payout").textContent=money(a.payout,a.currency);
   $("portal-sync").textContent="Dernière consolidation : "+(a.updated?dt(a.updated):dt(data.server_time));
   $("traffic-total").textContent=nf(a.calls)+" appels";
-  renderAnalytics(data);renderNumbers(data);renderCalls(data);renderSettlements(data);renderSubscriptions(data);renderOnboarding(data);renderDestinations(data);if(I.apply)I.apply(document.body);
+  renderAnalytics(data);renderNumbers(data);renderPortability(data);renderCalls(data);renderSettlements(data);renderSubscriptions(data);renderOnboarding(data);renderDestinations(data);if(I.apply)I.apply(document.body);
 }
 async function loadPortal(){
   var range=rangeFor(state.range),data;
@@ -245,6 +262,55 @@ function populateCountries(){
   select.innerHTML=rows.map(function(x){return '<option value="'+x.code+'">'+esc(x.label)+'</option>';}).join("");
   select.value=COUNTRY_CODES.includes(current)?current:"FR";
   countriesReady=true;updateRegistrationNumberField();
+}
+function populatePortabilityCountries(){
+  var select=$("portability-country");if(!select||select.dataset.ready==="1")return;
+  var current=((state.data&&state.data.tenant&&state.data.tenant.country_code)||localeRegion()||"FR").toUpperCase(),dn=null;
+  try{dn=new Intl.DisplayNames([(navigator.languages&&navigator.languages[0])||navigator.language||"fr"],{type:"region"});}catch(_e){}
+  var rows=COUNTRY_CODES.map(function(code){return {code:code,label:dn?dn.of(code):code};}).filter(function(x){return x.label;}).sort(function(a,b){return a.label.localeCompare(b.label,undefined,{sensitivity:"base"});});
+  select.innerHTML=rows.map(function(x){return '<option value="'+x.code+'">'+esc(x.label)+'</option>';}).join("");
+  select.value=COUNTRY_CODES.includes(current)?current:"FR";select.dataset.ready="1";
+}
+function openPortabilityDialog(){
+  populatePortabilityCountries();
+  var d=$("client-portability-dialog"),msg=$("portability-message");
+  if(msg){msg.textContent="";msg.classList.remove("bad");}
+  if(d&&typeof d.showModal==="function")d.showModal();else if(d)d.setAttribute("open","");
+}
+function closePortabilityDialog(){var d=$("client-portability-dialog");if(!d)return;if(typeof d.close==="function"&&d.open)d.close();else d.removeAttribute("open");}
+async function submitPortability(e){
+  e.preventDefault();if(state.portabilityBusy)return;
+  var msg=$("portability-message"),submit=$("portability-submit");
+  msg.textContent="";msg.classList.remove("bad");
+  if(!$("portability-owner-confirmed").checked||!$("portability-authority-confirmed").checked){msg.classList.add("bad");msg.textContent="Les deux confirmations sont nécessaires pour ouvrir le dossier.";return;}
+  var payload={
+    country_code:$("portability-country").value,
+    number:$("portability-number").value.trim(),
+    current_operator_name:$("portability-operator").value.trim(),
+    current_operator_reference:$("portability-reference").value.trim(),
+    account_holder_name:$("portability-holder").value.trim(),
+    desired_port_date:$("portability-date").value||null,
+    service_family:$("portability-service-family").value,
+    number_owner_confirmed:true,
+    authorization_confirmed:true
+  };
+  if(state.demo){msg.textContent="Le parcours est prêt. La demande réelle sera envoyée lorsque le backend privé sera connecté.";return;}
+  state.portabilityBusy=true;submit.disabled=true;var previous=submit.textContent;submit.textContent="Envoi en cours…";
+  try{
+    await window.PGICustomerApi.createPortability(payload,window.PGICustomerApi.newIdempotencyKey());
+    $("client-portability-form").reset();closePortabilityDialog();await loadPortal();toast("Demande de portabilité enregistrée.");
+  }catch(err){
+    var messages={INVALID_PORTABILITY_NUMBER:"Le numéro saisi n’est pas valide.",PORTABILITY_ALREADY_REQUESTED:"Une demande est déjà ouverte pour ce numéro.",NUMBER_ALREADY_MANAGED:"Ce numéro est déjà géré dans votre espace.",PORTABILITY_NUMBER_UNAVAILABLE:"Ce numéro est déjà rattaché à un autre dossier.",PORTABILITY_AUTHORIZATION_REQUIRED:"Les autorisations doivent être confirmées.",TENANT_CLOSED:"Ce compte ne peut plus ouvrir de portabilité."};
+    msg.classList.add("bad");msg.textContent=messages[err&&err.code]||"La demande de portabilité n’a pas pu être enregistrée.";
+  }finally{state.portabilityBusy=false;submit.disabled=false;submit.textContent=previous;}
+}
+async function cancelPortability(id){
+  if(state.portabilityBusy)return;
+  if(state.demo){toast("Aucune portabilité réelle n’est active en démonstration.");return;}
+  state.portabilityBusy=true;
+  try{await window.PGICustomerApi.cancelPortability(id,window.PGICustomerApi.newIdempotencyKey());await loadPortal();toast("Demande de portabilité annulée.");}
+  catch(_err){toast("Cette demande ne peut plus être annulée.");}
+  finally{state.portabilityBusy=false;}
 }
 function updateRegistrationNumberField(){
   var fr=$("register-country").value==="FR",label=$("register-number-label"),input=$("register-number");
@@ -396,6 +462,10 @@ function bind(){
   $("client-password-form").addEventListener("submit",changePassword);
   $("client-billing-start").addEventListener("click",function(){openBilling("start");});
   $("client-billing-manage").addEventListener("click",function(){openBilling("manage");});
+  $("portability-open").addEventListener("click",openPortabilityDialog);
+  $("portability-close").addEventListener("click",closePortabilityDialog);
+  $("client-portability-form").addEventListener("submit",submitPortability);
+  $("portability-list").addEventListener("click",function(e){var b=e.target.closest("[data-portability-cancel]");if(b)cancelPortability(b.dataset.portabilityCancel);});
   $("google-tenant-continue").addEventListener("click",function(){handleGoogleCredential(null,$("customer-tenant").value||"");});
   qsa("[data-client-export]").forEach(function(b){b.addEventListener("click",function(){var d=$("client-export-dialog");if(d&&d.open)d.close();exportClient(b.dataset.clientExport);});});
   qsa("[data-range]").forEach(function(btn){btn.addEventListener("click",function(){state.range=btn.dataset.range;qsa("[data-range]").forEach(function(x){x.classList.toggle("active",x===btn);});loadPortal().catch(function(){toast("Actualisation impossible");});});});
