@@ -47,6 +47,17 @@ test("la marque client reste Audiotel Premium Pro et la plateforme reste multise
   assert.match(clientPortalJs,/Frais de plateforme HT/);
 });
 
+test("le cockpit garde une liste d'appels compacte et une remise à zéro sûre",()=>{
+  for(const id of ["reset-metrics-cockpit","reset-dialog","calls-toggle","calls-toggle-label","calls-table"])assert.ok(index.includes('id="'+id+'"'));
+  assert.match(index,/Les CDR et l’historique resteront intacts/);
+  assert.match(app,/compactLimit=8/);
+  assert.match(app,/state\.callsExpanded\?tableRows:tableRows\.slice\(0,compactLimit\)/);
+  assert.match(app,/Afficher les /);
+  assert.match(app,/Réduire la liste/);
+  assert.match(app,/createBaseline\(\{scope:"global",reason:"Remise à zéro depuis le cockpit"\}/);
+  assert.doesNotMatch(app,/DELETE\s+FROM\s+calls/i);
+});
+
 test("le nom officiel et les vues principales sont présents",()=>{
   assert.match(index,/PGI • Telecom - Audiotel Premium Pro/);
   assert.match(index,/data-view="overview"><span>⌂<\/span>Cockpit/);
