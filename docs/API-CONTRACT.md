@@ -254,8 +254,11 @@ Retourne uniquement l'identité externe et la société de la session client.
 ### POST /customer/auth/logout
 Ferme uniquement la session client, sans toucher à une éventuelle session administrateur PGI ouverte dans le même navigateur.
 
+### GET /dashboard/voice-intelligence?from=...&to=...&market=...
+Diagnostic voix agrégé et borné pour le cockpit administrateur : taux de connexion, PDD, MOS, perte de paquets, jitter, latence, RTT, réponses SIP, origine des raccrochages, santé par opérateur et historique d'incidents. Les périodes complètes utilisent des agrégats pré-calculés et seules les bordures de période relisent les appels bruts.
+
 ### GET /customer/portal?from=...&to=...
-Appel consolidé du portail client : trafic, séries journalières, numéros, reversements, abonnement, destinations de routage et derniers appels. Les données sont lues dans le contexte SQL du tenant et peuvent utiliser la réplique de lecture.
+Appel consolidé du portail client : trafic, séries journalières, numéros, reversements, abonnement, destinations de routage, qualité voix agrégée et derniers appels avec diagnostic technique. Les données sont lues dans le contexte SQL du tenant et peuvent utiliser la réplique de lecture.
 
 ### GET /customer/comparison?from=...&to=...
 Comparaison financière légère et isolée par tenant. Retourne uniquement les agrégats d'appels, de minutes et de montant généré pour une période, afin de comparer deux périodes sans recharger tout le portail.
