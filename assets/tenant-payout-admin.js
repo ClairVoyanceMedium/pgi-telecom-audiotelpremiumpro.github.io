@@ -17,11 +17,11 @@ export async function runPayoutTermsAction(e,api,tenantId){
   const percent=Number(document.getElementById("td-payout-percent")?.value);
   const perMin=Number(document.getElementById("td-payout-per-min")?.value||0);
   const delay=Number(document.getElementById("td-payout-delay")?.value||0);
-  if(!Number.isFinite(percent)||percent<0||percent>100)throw Object.assign(new Error("INVALID_PLATFORM_FEE"),{code:"INVALID_PLATFORM_FEE"});
+  if(!Number.isFinite(percent)||percent<0||percent>100)throw Object.assign(new Error("INVALID_PLATFORM_FEE"),{code:"INVALID_PLATFORM_FEE"});if(percent===0&&perMin===0)throw Object.assign(new Error("PGI_MARGIN_REQUIRED"),{code:"PGI_MARGIN_REQUIRED"});
   await api.createTenantPayoutTerms(tenantId,{platform_fee_percent:percent,platform_fee_ht_per_min:perMin,payout_delay_days:delay},api.newIdempotencyKey());
   return {handled:true,message:"Marge PGI et règles de reversement enregistrées."};
 }
 
 export function payoutTermsError(e){
-  return {INVALID_PLATFORM_FEE:"La marge PGI doit être comprise entre 0 % et 100 %.",INVALID_PAYOUT_DELAY:"Le délai de reversement est invalide.",PAYOUT_TERMS_NUMBER_TENANT_MISMATCH:"Le numéro sélectionné n’appartient pas à ce client.",PAYOUT_TERMS_MARKET_MISMATCH:"Le marché sélectionné ne correspond pas au numéro."}[e&&e.code]||(e&&e.code)||"Impossible d’enregistrer les conditions de reversement.";
+  return {INVALID_PLATFORM_FEE:"La marge PGI doit être comprise entre 0 % et 100 %.",PGI_MARGIN_REQUIRED:"Une marge PGI positive est obligatoire : pourcentage ou montant HT/minute.",INVALID_PAYOUT_DELAY:"Le délai de reversement est invalide.",PAYOUT_TERMS_NUMBER_TENANT_MISMATCH:"Le numéro sélectionné n’appartient pas à ce client.",PAYOUT_TERMS_MARKET_MISMATCH:"Le marché sélectionné ne correspond pas au numéro."}[e&&e.code]||(e&&e.code)||"Impossible d’enregistrer les conditions de reversement.";
 }
