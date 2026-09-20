@@ -2,9 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-const [migration,priceMigration,store,memory,server,adminUi,productionCheck]=await Promise.all([
+const [migration,priceMigration,exportMigration,store,memory,server,adminUi,productionCheck]=await Promise.all([
   readFile(new URL("../database/migrations/037_regulatory_trust_center.sql",import.meta.url),"utf8"),
   readFile(new URL("../database/migrations/038_subscription_price_300.sql",import.meta.url),"utf8"),
+  readFile(new URL("../database/migrations/039_regulatory_evidence_pack_exports.sql",import.meta.url),"utf8"),
   readFile(new URL("../backend/src/store-postgres.mjs",import.meta.url),"utf8"),
   readFile(new URL("../backend/src/store-memory.mjs",import.meta.url),"utf8"),
   readFile(new URL("../backend/server.mjs",import.meta.url),"utf8"),
@@ -62,7 +63,9 @@ test("private regulatory operations are authenticated, idempotent and audited",(
 });
 
 test("evidence pack is private, hashed, privacy-minimised and exportable",()=>{
-  for(const token of ["regulatoryEvidencePack","audiotel-regulatory-evidence-pack/1","pack_sha256","evidence_links_valid","raw_rio_included:false","regulatory.evidence_pack.export"])assert.ok(store.includes(token),token);
+  for(const token of ["regulatoryEvidencePack","audiotel-regulatory-evidence-pack/1","pack_sha256","evidence_links_valid","raw_rio_included:false","regulatory.evidence_pack.export","sva_regulatory_evidence_pack_exports"])assert.ok(store.includes(token),token);
+  for(const token of ["CREATE TABLE sva_regulatory_evidence_pack_exports","pack_sha256 char(64)","evidence_chain_head","evidence_links_valid","sva_regulatory_evidence_pack_exports_no_mutation","append-only"])assert.ok(exportMigration.includes(token),token);
+  assert.doesNotMatch(exportMigration,/^\s*(DROP|TRUNCATE|DELETE)\b/im);
   assert.ok(server.includes("/api/v1/platform/tenant-number-assignments/:id/regulatory-evidence-pack"));
   assert.ok(adminUi.includes("Evidence Pack"));
   assert.ok(adminUi.includes("evidence-pack-"));
