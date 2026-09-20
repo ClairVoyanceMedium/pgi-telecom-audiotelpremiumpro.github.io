@@ -687,6 +687,7 @@ export class MemoryStore{
     return structuredClone(row);
   }
 
+  async customerGoogleSignIn(){throw problem(403,"GOOGLE_INVITATION_REQUIRED");}
   async customerAuthLookup(){return null;}
   async recordCustomerAuthFailure(){return;}
   async recordCustomerAuthSuccess(){return;}

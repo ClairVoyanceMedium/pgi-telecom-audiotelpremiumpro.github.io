@@ -19,6 +19,7 @@ export function loadConfig(env=process.env){
   const databaseReadUrl=env.PGI_DATABASE_READ_URL||"";
   const databaseSsl=(env.PGI_DATABASE_SSL||"disable").toLowerCase();
   const releaseId=env.PGI_RELEASE_ID||"";
+  const googleClientId=String(env.PGI_GOOGLE_CLIENT_ID||"").trim();
   if(!["disable","require"].includes(databaseSsl))throw new Error("PGI_DATABASE_SSL must be disable or require");
 
   if(mode==="production"){
@@ -34,7 +35,7 @@ export function loadConfig(env=process.env){
   }
 
   return Object.freeze({
-    mode,authMode,host,port,releaseId,
+    mode,authMode,host,port,releaseId,googleClientId,
     sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,telephonyUser,telephonyPassword,callerHashKey,databaseUrl,databaseReadUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),

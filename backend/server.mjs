@@ -1,6 +1,7 @@
 import http from "node:http";
 import {pathToFileURL} from "node:url";
 import {randomUUID,randomBytes,createHash} from "node:crypto";
+import {verifyGoogleIdToken} from "./src/google-id.mjs";
 import {loadConfig} from "./src/config.mjs";
 import {EventBus} from "./src/event-bus.mjs";
 import {MemoryStore} from "./src/store-memory.mjs";
@@ -113,6 +114,29 @@ export function createBackend(options={}){
         return done(res,metrics,started,"auth.login",200,{user:{id:"admin",role:"admin",name:"Administrator"}},{
           "Set-Cookie":[sessionCookie(issued.token,config.sessionTtlSeconds),csrfCookie(issued.csrf,config.sessionTtlSeconds)]
         });
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/customer/auth/google"){
+        if(config.authMode!=="session")return done(res,metrics,started,"customer.auth.google",404,{error:{code:"AUTH_DISABLED"}});
+        requireSameOriginBrowser(req);
+        const authKey=enforceAuthLoginRate(req,config,authBuckets,metrics);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const identity=await verifyGoogleIdToken(String(body.credential||""),config.googleClientId);
+        const rawInvite=String(body.invite||"").trim();
+        const inviteHash=rawInvite?createHash("sha256").update(rawInvite).digest("hex"):null;
+        const auth=await store.customerGoogleSignIn(identity,inviteHash);
+        const memberships=(auth.memberships||[]).filter(x=>x.status==="active"&&x.tenant_status==="active");
+        let membership=null;
+        const requested=String(body.tenant||"").trim();
+        if(requested)membership=memberships.find(x=>String(x.public_id)===requested||String(x.slug)===requested)||null;
+        else if(memberships.length===1)membership=memberships[0];
+        if(!membership){
+          authBuckets.delete(authKey);
+          return done(res,metrics,started,"customer.auth.google",409,{error:{code:"CUSTOMER_TENANT_REQUIRED"},tenants:memberships.map(x=>({id:x.public_id,slug:x.slug,name:x.display_name,role:x.role}))});
+        }
+        authBuckets.delete(authKey);
+        const issued=issueSession({secret:config.sessionSecret,user:{id:auth.id,role:"customer",name:auth.display_name||auth.email,actor_type:"customer",tenant_id:Number(membership.tenant_id),tenant_public_id:membership.public_id,customer_role:membership.role,authorization_version:Number(membership.authorization_version),session_version:Number(auth.session_version)},ttlSeconds:config.sessionTtlSeconds});
+        return done(res,metrics,started,"customer.auth.google",200,{user:{id:auth.id,name:auth.display_name||auth.email,email:auth.email,role:membership.role,tenant:{id:membership.public_id,name:membership.display_name}}},{"Set-Cookie":[customerSessionCookie(issued.token,config.sessionTtlSeconds),customerCsrfCookie(issued.csrf,config.sessionTtlSeconds)]});
       }
 
       if(method==="POST"&&pathname==="/api/v1/customer/auth/login"){
