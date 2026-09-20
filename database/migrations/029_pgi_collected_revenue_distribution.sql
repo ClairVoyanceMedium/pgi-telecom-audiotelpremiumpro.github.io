@@ -13,6 +13,7 @@ CREATE TABLE tenant_payout_terms (
     CHECK (platform_fee_bps BETWEEN 0 AND 10000),
   platform_fee_ht_per_min numeric(14,6) NOT NULL DEFAULT 0
     CHECK (platform_fee_ht_per_min >= 0),
+  CHECK (platform_fee_bps > 0 OR platform_fee_ht_per_min > 0),
   payout_delay_days integer NOT NULL DEFAULT 0
     CHECK (payout_delay_days BETWEEN 0 AND 365),
   status text NOT NULL DEFAULT 'active'
