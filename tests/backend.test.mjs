@@ -557,6 +557,17 @@ test("baseline mutations replay safely with same idempotency key",async()=>{
     assert.ok(history.data[0].effective_from);
   });
 });
+test("global baseline defines a reporting epoch for every dashboard",async()=>{
+  const app=createBackend({config:config()});
+  const before=await app.store.effectiveMetricRange("2026-01-01T00:00:00.000Z","2026-01-02T00:00:00.000Z");
+  assert.equal(before.baseline,null);
+  const baseline=await app.store.createBaseline({scope:"global",reason:"global reset"},{sub:"admin"});
+  const after=await app.store.effectiveMetricRange("2026-01-01T00:00:00.000Z","2026-01-02T00:00:00.000Z");
+  assert.equal(after.baseline,baseline.effective_from);
+  assert.equal(after.reset_applied,true);
+  assert.equal(after.empty,true);
+});
+
 
 test("carrier switch can activate and rollback",async()=>{
   await withServer(async({base})=>{
