@@ -1127,7 +1127,7 @@ export class PostgresStore{
     const fromMs=Date.parse(from),toMs=Date.parse(to);
     if(!Number.isFinite(fromMs)||!Number.isFinite(toMs))throw problem(400,"INVALID_RANGE");
     const rows=await this.readSql.unsafe(
-      "SELECT effective_from FROM metric_baselines WHERE scope='global' AND scope_id IS NULL ORDER BY effective_from DESC,id DESC LIMIT 1"
+      "SELECT effective_from FROM metric_baselines WHERE scope='global' AND scope_id IS NULL AND tenant_id IS NULL ORDER BY effective_from DESC,id DESC LIMIT 1"
     );
     const baseline=rows[0]?.effective_from?new Date(rows[0].effective_from):null;
     const effectiveFrom=baseline&&baseline.getTime()>fromMs?baseline:new Date(fromMs);
@@ -3676,7 +3676,7 @@ export class PostgresStore{
   async systemSnapshot(){
     const [counts,last,route,queue,resilienceRows,serviceHealth]=await Promise.all([
       this.sql.unsafe(
-        "WITH b AS (SELECT COALESCE((SELECT effective_from FROM metric_baselines WHERE scope='global' AND scope_id IS NULL ORDER BY effective_from DESC,id DESC LIMIT 1),'-infinity'::timestamptz) AS from_ts)"+
+        "WITH b AS (SELECT COALESCE((SELECT effective_from FROM metric_baselines WHERE scope='global' AND scope_id IS NULL AND tenant_id IS NULL ORDER BY effective_from DESC,id DESC LIMIT 1),'-infinity'::timestamptz) AS from_ts)"+
         " SELECT count(*) FILTER(WHERE calls.started_at>=b.from_ts)::int AS calls_total,(SELECT count(*)::int FROM experts WHERE enabled AND status='available') AS experts_available,"+
         " (SELECT count(*)::int FROM outbox_events WHERE published_at IS NULL) AS outbox_pending FROM calls CROSS JOIN b"
       ),
