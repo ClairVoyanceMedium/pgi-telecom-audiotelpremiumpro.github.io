@@ -139,6 +139,19 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(arcepReady[0].ready,true);
     await store.sql.unsafe("UPDATE tenant_number_assignments SET status='active' WHERE id=$1",[Number(extAssignmentForRoute[0].id)]);
 
+    const accessPolicy=await store.operationalPolicyEvaluation({intent:"customer_access",tenant_public_id:externalIdentity[0].public_id});
+    assert.equal(accessPolicy.decision,"ALLOWED");
+    assert.equal(accessPolicy.dry_run,true);
+    assert.equal(accessPolicy.mutates_state,false);
+    const tower=await store.controlTowerOverview();
+    assert.equal(tower.schema_version,"audiotel-control-tower/1");
+    assert.ok(Number.isInteger(tower.readiness_score));
+    assert.ok(["healthy","attention","critical"].includes(tower.status));
+    const twin=await store.digitalTwinSimulation({scenario:"traffic_spike",parameters:{multiplier:3}});
+    assert.equal(twin.schema_version,"audiotel-digital-twin/1");
+    assert.equal(twin.dry_run,true);
+    assert.equal(twin.mutates_state,false);
+
     const evidencePack=await store.regulatoryEvidencePack(Number(extAssignmentForRoute[0].id),{sub:"admin"});
     assert.equal(evidencePack.assignment.regulatory_ready,true);
     assert.equal(evidencePack.assignment.arcep_2026_ready,true);
