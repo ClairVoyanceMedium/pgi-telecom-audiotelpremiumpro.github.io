@@ -2305,6 +2305,12 @@ export class PostgresStore{
         " ORDER BY (v.market_id IS NOT NULL) DESC,v.effective_from DESC LIMIT 1",
         [billingCurrency,tenant.country_code]
       ))[0]||null;
+      const referenceOffer=offer?offer:(await tx.unsafe(
+        "SELECT v.id AS price_version_id,p.plan_key,p.display_name AS plan_name,v.currency,v.amount_minor,v.billing_interval,v.interval_count,v.effective_from,v.effective_to"+
+        " FROM service_plan_price_versions v JOIN service_plans p ON p.id=v.service_plan_id"+
+        " WHERE p.plan_key='external-sva-access' AND p.status='active' AND v.market_id IS NULL AND v.currency='EUR'"+
+        " AND v.effective_from<=now() AND (v.effective_to IS NULL OR v.effective_to>now()) ORDER BY v.effective_from DESC LIMIT 1"
+      ))[0]||null;
       const subscription=(await tx.unsafe(
         "SELECT s.id,s.status,s.billing_currency,s.current_period_start,s.current_period_end,s.cancel_at_period_end,s.last_payment_status,"+
         " s.billing_provider,s.provider_customer_reference,s.provider_subscription_reference,s.price_version_id"+
@@ -2316,6 +2322,8 @@ export class PostgresStore{
       return {
         tenant:{id:tenant.public_id,name:tenant.display_name,billing_email:tenant.billing_email,country_code:tenant.country_code,locale:tenant.preferred_locale,currency:billingCurrency,timezone:tenant.timezone,status:tenant.status},
         offer,
+        reference_offer:referenceOffer,
+        pricing_state:offer?"local_price_ready":referenceOffer?"local_conversion_required":"unavailable",
         subscription,
         premium_call_access:Boolean(access?.allowed),
         billing_currency:{currency:billingCurrency,source:billingDefault?.source||"tenant_default",catalog_version:billingDefault?.catalog_version||null,accepted_currencies:billingDefault?.accepted_currencies||[billingCurrency],local_price_configured:Boolean(offer)},
