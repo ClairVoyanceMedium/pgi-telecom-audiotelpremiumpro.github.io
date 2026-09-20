@@ -37,7 +37,7 @@ export class MemoryStore{
     this.nextCallId=1;
     this.nextBaselineId=1;
     this.nextSwitchId=1;
-    this.subscriptionPrices=[{id:1,plan_key:"external-sva-access",currency:"EUR",amount_minor:300,billing_interval:"month",interval_count:1,effective_from:"2026-09-20T19:33:00Z",effective_to:null}];
+    this.subscriptionPrices=[{id:1,plan_key:"external-sva-access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,effective_from:"2026-09-20T19:33:00Z",effective_to:null}];
     this.subscriptionEvents=new Set();
     this.adminAlerts=[];
   }
@@ -713,7 +713,7 @@ export class MemoryStore{
     const current=this.subscriptionPrices.filter(x=>x.currency===currency&&!x.effective_to).sort((a,b)=>Date.parse(b.effective_from)-Date.parse(a.effective_from))[0];
     if(current&&Date.parse(effective)<=Date.parse(current.effective_from))throw problem(409,"SUBSCRIPTION_PRICE_NOT_LATER");
     if(current)current.effective_to=effective;
-    const price={id:this.subscriptionPrices.length+1,plan_key:"external-sva-access",currency,amount_minor:amount,billing_interval:"month",interval_count:1,effective_from:effective,effective_to:null};
+    const price={id:this.subscriptionPrices.length+1,plan_key:"external-sva-access",currency,amount_minor:amount,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,effective_from:effective,effective_to:null};
     this.subscriptionPrices.push(price);
     return structuredClone(price);
   }
@@ -867,7 +867,7 @@ export class MemoryStore{
   async createCustomerPortalInvitation(publicId,input={},tokenHash){return {id:"demo-invitation",tenant_public_id:publicId,tenant_name:"Société Démo",email:input.email,role:input.role||"readonly",status:"pending",expires_at:new Date(Date.now()+72*3600000).toISOString(),token_hash:tokenHash};}
   async activateCustomerPortalInvitation(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
   async customerPortalUsers(){return [];}
-  async customerBillingPreparation(tenantId){void tenantId;return {tenant:{id:"00000000-0000-4000-8000-000000000001",name:"Société Démo",billing_email:"demo@example.test",country_code:"FR",locale:"fr-FR",currency:"EUR",timezone:"Europe/Paris",status:"pending"},offer:{price_version_id:1,plan_key:"external-sva-access",plan_name:"External SVA Access",market:null,currency:"EUR",amount_minor:300,billing_interval:"month",interval_count:1},reference_offer:{price_version_id:1,plan_key:"external-sva-access",plan_name:"External SVA Access",currency:"EUR",amount_minor:300,billing_interval:"month",interval_count:1},pricing_state:"local_price_ready",subscription:null,premium_call_access:false,billing_currency:{currency:"EUR",source:"country_default",catalog_version:"2026-09-20",accepted_currencies:["EUR"],local_price_configured:true},checkout_prefill:{email:"demo@example.test",locale:"fr-FR",country_code:"FR",currency:"EUR"},return_paths:{success:"client.html?billing=success",cancel:"client.html?billing=cancelled"}};}
+  async customerBillingPreparation(tenantId){void tenantId;return {tenant:{id:"00000000-0000-4000-8000-000000000001",name:"Société Démo",billing_email:"demo@example.test",country_code:"FR",locale:"fr-FR",currency:"EUR",timezone:"Europe/Paris",status:"pending"},offer:{price_version_id:1,plan_key:"external-sva-access",plan_name:"External SVA Access",market:null,currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1},reference_offer:{price_version_id:1,plan_key:"external-sva-access",plan_name:"External SVA Access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1},pricing_state:"local_price_ready",subscription:null,premium_call_access:false,billing_currency:{currency:"EUR",source:"country_default",catalog_version:"2026-09-20",accepted_currencies:["EUR"],local_price_configured:true},checkout_prefill:{email:"demo@example.test",locale:"fr-FR",country_code:"FR",currency:"EUR"},return_paths:{success:"client.html?billing=success",cancel:"client.html?billing=cancelled"}};}
   async customerPortalOverview(tenantId,from,to){void tenantId;const voice=await this.voiceIntelligence(from,to);return {tenant:{display_name:"Société Démo",default_currency:"EUR",status:"active"},financial_by_currency:[],series:[],numbers:[],settlements:[],subscriptions:[],destinations:[],service_incidents:[],operational_alerts:[],recent_calls:[],voice_quality:voice.summary,range:{from,to}};}
   async customerServiceIncidents(_tenantId,params={}){if(params.incident_id)throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");return {data:[],alerts:[]};}
   async createCustomerServiceIncident(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
