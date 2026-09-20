@@ -25,7 +25,7 @@ export function evaluateOperationalPolicy(intent,facts={}){
     const error=new Error("Unsupported policy intent");error.code="UNSUPPORTED_POLICY_INTENT";throw error;
   }
 
-  requireTrue(facts,"tenant_active","TENANT_INACTIVE","Client actif requis",blockers,actions,true);
+  if(intent!=="carrier_switch")requireTrue(facts,"tenant_active","TENANT_INACTIVE","Client actif requis",blockers,actions,true);
 
   if(intent==="activate_number"){
     requireTrue(facts,"assignment_exists","ASSIGNMENT_REQUIRED","Affectation du numéro requise",blockers,actions,true);
