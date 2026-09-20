@@ -9,6 +9,9 @@ import {resolveBillingCurrency} from "./billing-country-currency.mjs";
 import {normalizeVoiceServiceInput,validateVoiceFlow,simulateVoiceFlow,voiceFlowChecksum} from "./voice-studio-domain.mjs";
 import {evaluateOperationalPolicy} from "./operational-policy.mjs";
 import {simulateDigitalTwin} from "./digital-twin.mjs";
+import {assessShadowBilling} from "./shadow-billing.mjs";
+import {assessOperationalRisk} from "./risk-engine.mjs";
+import {assessOperationalSlo} from "./slo-assurance.mjs";
 import {createRequire} from "node:module";
 
 const require=createRequire(import.meta.url);
@@ -1262,35 +1265,59 @@ export class PostgresStore{
   }
 
   async planCarrierSwitch(payload,actor){
-    const connections=await this.sql.unsafe(
-      "SELECT cc.id,cc.carrier_id,c.name AS carrier_name,cc.state FROM carrier_connections cc JOIN carriers c ON c.id=cc.carrier_id"+
-      " WHERE cc.id=$1 AND cc.carrier_id=$2 AND cc.purpose='sip_inbound' AND cc.state IN ('ready','active','standby')",
-      [Number(payload.connection_id),Number(payload.to_carrier_id)]
-    );
-    const connection=connections[0];
-    if(!connection)throw problem(409,"TARGET_CONNECTION_NOT_READY");
-    const routes=await this.sql.unsafe("SELECT active_carrier_id FROM logical_carrier_routes WHERE route_key=$1",[payload.route_key||"sva-primary"]);
-    const route=routes[0];
-    if(!route)throw problem(404,"ROUTE_NOT_FOUND");
-    const rollbackMinutes=clampInt(payload.rollback_window_minutes,1440,5,10080);
-    const rows=await this.sql.unsafe(
-      "INSERT INTO carrier_switches(route_key,from_carrier_id,to_carrier_id,requested_by,scheduled_for,status,validation,notes)"+
-      " VALUES($1,$2,$3,$4,$5::timestamptz,'ready',$6::jsonb,$7) RETURNING *",
-      [payload.route_key||"sva-primary",route.active_carrier_id,connection.carrier_id,numericActor(actor),payload.scheduled_for||null,JSON.stringify({connection_id:connection.id,rollback_window_minutes:rollbackMinutes}),String(payload.notes||"")]
-    );
-    await this.sql.unsafe(
-      "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'carrier_switch.plan','carrier_switch',$2,$3::jsonb)",
-      [numericActor(actor),String(rows[0].id),JSON.stringify({route_key:rows[0].route_key,to_carrier_id:Number(connection.carrier_id),connection_id:Number(connection.id),rollback_window_minutes:rollbackMinutes})]
-    );
-    return rows[0];
+    const actorId=numericActor(actor);
+    if(!actorId)throw problem(403,"STAFF_IDENTITY_REQUIRED");
+    const result=await this.sql.begin(async tx=>{
+      const connections=await tx.unsafe(
+        "SELECT cc.id,cc.carrier_id,c.name AS carrier_name,cc.state FROM carrier_connections cc JOIN carriers c ON c.id=cc.carrier_id"+
+        " WHERE cc.id=$1 AND cc.carrier_id=$2 AND cc.purpose='sip_inbound' AND cc.state IN ('ready','active','standby') FOR UPDATE",
+        [Number(payload.connection_id),Number(payload.to_carrier_id)]
+      );
+      const connection=connections[0];
+      if(!connection)throw problem(409,"TARGET_CONNECTION_NOT_READY");
+      const routes=await tx.unsafe("SELECT active_carrier_id FROM logical_carrier_routes WHERE route_key=$1 FOR UPDATE",[payload.route_key||"sva-primary"]);
+      const route=routes[0];
+      if(!route)throw problem(404,"ROUTE_NOT_FOUND");
+      const rollbackMinutes=clampInt(payload.rollback_window_minutes,1440,5,10080);
+      const rows=await tx.unsafe(
+        "INSERT INTO carrier_switches(route_key,from_carrier_id,to_carrier_id,requested_by,scheduled_for,status,validation,notes)"+
+        " VALUES($1,$2,$3,$4,$5::timestamptz,'ready',$6::jsonb,$7) RETURNING *",
+        [payload.route_key||"sva-primary",route.active_carrier_id,connection.carrier_id,actorId,payload.scheduled_for||null,JSON.stringify({connection_id:connection.id,rollback_window_minutes:rollbackMinutes}),String(payload.notes||"")]
+      );
+      const sw=rows[0];
+      const approvalPayload={route_key:sw.route_key,to_carrier_id:Number(connection.carrier_id),connection_id:Number(connection.id),rollback_window_minutes:rollbackMinutes,scheduled_for:sw.scheduled_for||null};
+      const payloadHash=createHash("sha256").update(JSON.stringify(approvalPayload)).digest("hex");
+      const approvals=await tx.unsafe(
+        "INSERT INTO platform_change_requests(change_type,entity_type,entity_id,risk_level,payload_sha256,request_reason,requested_by)"+
+        " VALUES('carrier_switch_activation','carrier_switch',$1,'critical',$2,$3,$4) RETURNING id,public_id::text AS public_id,status,expires_at",
+        [String(sw.id),payloadHash,String(payload.notes||"Bascule opérateur"),actorId]
+      );
+      const approval=approvals[0];
+      await appendChangeApprovalEvent(tx,approval.id,"requested",actorId,{entity_type:"carrier_switch",entity_id:String(sw.id),payload_sha256:payloadHash});
+      await tx.unsafe(
+        "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'carrier_switch.plan','carrier_switch',$2,$3::jsonb)",
+        [actorId,String(sw.id),JSON.stringify({...approvalPayload,change_request_id:Number(approval.id),dual_control_required:true})]
+      );
+      return {...sw,change_request_id:Number(approval.id),change_request_public_id:approval.public_id,change_request_status:approval.status,change_request_expires_at:approval.expires_at};
+    });
+    return result;
   }
 
   async activateCarrierSwitch(id,actor={}){
+    const actorId=numericActor(actor);
+    if(!actorId)throw problem(403,"STAFF_IDENTITY_REQUIRED");
     const result=await this.sql.begin(async tx=>{
       const switchRows=await tx.unsafe("SELECT * FROM carrier_switches WHERE id=$1 FOR UPDATE",[Number(id)]);
       const sw=switchRows[0];
       if(!sw)throw problem(404,"SWITCH_NOT_FOUND");
       if(!["ready","planned"].includes(sw.status))throw problem(409,"SWITCH_NOT_READY");
+      const approvalRows=await tx.unsafe(
+        "SELECT * FROM platform_change_requests WHERE change_type='carrier_switch_activation' AND entity_type='carrier_switch' AND entity_id=$1 AND status='approved' AND expires_at>now() ORDER BY id DESC LIMIT 1 FOR UPDATE",
+        [String(sw.id)]
+      );
+      const approval=approvalRows[0];
+      if(!approval)throw problem(409,"DUAL_CONTROL_APPROVAL_REQUIRED");
+      if(Number(approval.requested_by)===Number(approval.approved_by))throw problem(409,"DUAL_CONTROL_INVALID");
       let validation=sw.validation;
       if(typeof validation==="string"){try{validation=JSON.parse(validation);}catch{validation={};}}
       if(!validation||typeof validation!=="object")validation={};
@@ -1313,11 +1340,13 @@ export class PostgresStore{
         "UPDATE carrier_connections SET state='standby',updated_at=now() WHERE carrier_id=$1 AND purpose='sip_inbound' AND state='active'",
         [sw.from_carrier_id]
       );
+      await tx.unsafe("UPDATE platform_change_requests SET status='executed',executed_at=now(),updated_at=now() WHERE id=$1",[approval.id]);
+      await appendChangeApprovalEvent(tx,approval.id,"executed",actorId,{generation:Number(gens[0].generation)});
       await tx.unsafe(
         "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'carrier_switch.activate','carrier_switch',$2,$3::jsonb)",
-        [numericActor(actor),String(sw.id),JSON.stringify({generation:gens[0].generation})]
+        [actorId,String(sw.id),JSON.stringify({generation:gens[0].generation,change_request_id:Number(approval.id),approved_by:Number(approval.approved_by)})]
       );
-      return {switch:updated[0],route:await routeWith(tx,sw.route_key)};
+      return {switch:updated[0],route:await routeWith(tx,sw.route_key),change_request_id:Number(approval.id)};
     });
     this.eventBus.publish("carrier.switched",{id:Number(id),active:result.route.active_carrier,generation:result.route.generation});
     return result;
@@ -1343,6 +1372,56 @@ export class PostgresStore{
     });
     this.eventBus.publish("carrier.rollback",{id:Number(id),active:result.route.active_carrier,generation:result.route.generation});
     return result;
+  }
+
+  async listPlatformChangeRequests(params={}){
+    const limit=clampInt(params.limit,30,1,100);
+    const status=String(params.status||"active").toLowerCase();
+    const filter=status==="pending"?" AND cr.status='pending' AND cr.expires_at>now()":status==="approved"?" AND cr.status='approved' AND cr.expires_at>now()":status==="history"?"":" AND cr.status IN ('pending','approved') AND cr.expires_at>now()";
+    const rows=await this.readSql.unsafe(
+      "SELECT cr.id,cr.public_id::text AS public_id,cr.change_type,cr.entity_type,cr.entity_id,cr.risk_level,cr.status,cr.request_reason,cr.requested_at,cr.expires_at,cr.approved_at,cr.decision_reason,"+
+      " requester.display_name AS requested_by_name,approver.display_name AS approved_by_name,cr.requested_by,cr.approved_by"+
+      " FROM platform_change_requests cr JOIN app_users requester ON requester.id=cr.requested_by LEFT JOIN app_users approver ON approver.id=cr.approved_by"+
+      " WHERE 1=1"+filter+" ORDER BY cr.requested_at DESC,cr.id DESC LIMIT $1",
+      [limit]
+    );
+    return {data:rows,dual_control:true};
+  }
+
+  async approvePlatformChangeRequest(id,actor={},input={}){
+    const actorId=numericActor(actor);
+    if(!actorId)throw problem(403,"STAFF_IDENTITY_REQUIRED");
+    return this.sql.begin(async tx=>{
+      const rows=await tx.unsafe("SELECT * FROM platform_change_requests WHERE id=$1 FOR UPDATE",[Number(id)]);
+      const row=rows[0];
+      if(!row)throw problem(404,"CHANGE_REQUEST_NOT_FOUND");
+      if(row.status!=="pending")throw problem(409,"CHANGE_REQUEST_NOT_PENDING");
+      if(Date.now()>=Date.parse(row.expires_at))throw problem(409,"CHANGE_REQUEST_EXPIRED");
+      if(Number(row.requested_by)===actorId)throw problem(409,"FOUR_EYES_SECOND_APPROVER_REQUIRED");
+      const reason=optionalText(input.reason,500);
+      const updated=await tx.unsafe("UPDATE platform_change_requests SET status='approved',approved_by=$1,approved_at=now(),decision_reason=$2,updated_at=now() WHERE id=$3 RETURNING id,public_id::text AS public_id,status,approved_at,approved_by",[actorId,reason,Number(id)]);
+      await appendChangeApprovalEvent(tx,row.id,"approved",actorId,{reason});
+      await tx.unsafe("INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'platform_change.approve','platform_change_request',$2,$3::jsonb)",[actorId,String(row.id),JSON.stringify({change_type:row.change_type,target_type:row.entity_type,target_id:row.entity_id})]);
+      return updated[0];
+    });
+  }
+
+  async rejectPlatformChangeRequest(id,actor={},input={}){
+    const actorId=numericActor(actor);
+    if(!actorId)throw problem(403,"STAFF_IDENTITY_REQUIRED");
+    const reason=optionalText(input.reason,500);
+    if(!reason)throw problem(400,"CHANGE_REJECTION_REASON_REQUIRED");
+    return this.sql.begin(async tx=>{
+      const rows=await tx.unsafe("SELECT * FROM platform_change_requests WHERE id=$1 FOR UPDATE",[Number(id)]);
+      const row=rows[0];
+      if(!row)throw problem(404,"CHANGE_REQUEST_NOT_FOUND");
+      if(row.status!=="pending")throw problem(409,"CHANGE_REQUEST_NOT_PENDING");
+      if(Number(row.requested_by)===actorId)throw problem(409,"FOUR_EYES_SECOND_APPROVER_REQUIRED");
+      const updated=await tx.unsafe("UPDATE platform_change_requests SET status='rejected',rejected_by=$1,rejected_at=now(),decision_reason=$2,updated_at=now() WHERE id=$3 RETURNING id,public_id::text AS public_id,status,rejected_at",[actorId,reason,Number(id)]);
+      await appendChangeApprovalEvent(tx,row.id,"rejected",actorId,{reason});
+      await tx.unsafe("INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'platform_change.reject','platform_change_request',$2,$3::jsonb)",[actorId,String(row.id),JSON.stringify({change_type:row.change_type,target_type:row.entity_type,target_id:row.entity_id,reason})]);
+      return updated[0];
+    });
   }
 
   async idempotent(key,operation,requestBody,fn){
@@ -4169,19 +4248,38 @@ export class PostgresStore{
   }
 
   async controlTowerOverview(){
-    const [platform,service,route,queue,capacityRows,portabilityRows]=await Promise.all([
+    const [platform,service,route,queue,capacityRows,portabilityRows,shadowRows,riskRows,lastRows,changeRows]=await Promise.all([
       this.wholesaleOverview(),
       this.serviceOperationsHealth(),
       this.carrierRouting(),
       this.workQueueHealth(),
+      this.readSql.unsafe("SELECT COALESCE(sum(max_concurrent_calls) FILTER(WHERE status='active'),0)::int AS capacity,COALESCE(sum(active_calls) FILTER(WHERE status='active'),0)::int AS in_use FROM tenant_call_destinations"),
+      this.readSql.unsafe("SELECT count(*) FILTER(WHERE status NOT IN ('ported','rejected','cancelled'))::int AS open,count(*) FILTER(WHERE automation_state IN ('action_required','failed'))::int AS attention FROM tenant_portability_requests"),
       this.readSql.unsafe(
-        "SELECT COALESCE(sum(max_concurrent_calls) FILTER(WHERE status='active'),0)::int AS capacity,COALESCE(sum(active_calls) FILTER(WHERE status='active'),0)::int AS in_use FROM tenant_call_destinations"
+        "SELECT currency,COALESCE(sum(expected_payout_ht),0)::float8 AS expected_payout_ht,COALESCE(sum(confirmed_payout_ht),0)::float8 AS confirmed_payout_ht,COALESCE(sum(paid_payout_ht),0)::float8 AS paid_payout_ht,"+
+        " COALESCE(sum(abs(reconciliation_variance_ht)),0)::float8 AS reconciliation_variance_ht,COALESCE(sum(calls_total) FILTER(WHERE confirmed_payout_ht>0),0)::bigint AS confirmed_calls,"+
+        " COALESCE(sum(calls_total) FILTER(WHERE abs(reconciliation_variance_ht)>0.01),0)::bigint AS variance_calls"+
+        " FROM metric_rollups_daily_v2 WHERE bucket_date>=current_date-29 GROUP BY currency ORDER BY currency"
       ),
       this.readSql.unsafe(
-        "SELECT count(*) FILTER(WHERE status NOT IN ('ported','rejected','cancelled'))::int AS open,count(*) FILTER(WHERE automation_state IN ('action_required','failed'))::int AS attention FROM tenant_portability_requests"
+        "SELECT COALESCE(sum(calls_total),0)::float8 AS calls_7d,COALESCE(sum(calls_failed),0)::float8 AS failed_7d,COALESCE(sum(expected_payout_ht),0)::float8 AS expected_7d,"+
+        " COALESCE(sum(abs(reconciliation_variance_ht)),0)::float8 AS variance_7d,COALESCE(sum(calls_total) FILTER(WHERE bucket_start>=now()-interval '1 hour'),0)::float8 AS calls_last_hour,"+
+        " COALESCE(sum(calls_total),0)::float8/168.0 AS avg_hourly_7d FROM platform_rollups_hourly_sharded WHERE bucket_start>=now()-interval '7 days'"
+      ),
+      this.readSql.unsafe("SELECT max(ended_at) AS last_ended_at FROM calls"),
+      this.readSql.unsafe(
+        "SELECT cr.id,cr.public_id::text AS public_id,cr.change_type,cr.entity_type,cr.entity_id,cr.risk_level,cr.status,cr.request_reason,cr.requested_at,cr.expires_at,cr.approved_at,"+
+        " requester.display_name AS requested_by_name,approver.display_name AS approved_by_name,cr.requested_by,cr.approved_by"+
+        " FROM platform_change_requests cr JOIN app_users requester ON requester.id=cr.requested_by LEFT JOIN app_users approver ON approver.id=cr.approved_by"+
+        " WHERE cr.status IN ('pending','approved') AND cr.expires_at>now() ORDER BY cr.requested_at DESC,cr.id DESC LIMIT 20"
       )
     ]);
     const s=platform.summary||{},reg=platform.regulatory_trust?.summary||{},scale=platform.scale||{},cap=capacityRows[0]||{},port=portabilityRows[0]||{};
+    const cdrLag=lastRows[0]?.last_ended_at?Math.max(0,(Date.now()-Date.parse(lastRows[0].last_ended_at))/1000):0;
+    const shadowBilling=assessShadowBilling(shadowRows);
+    const risk=assessOperationalRisk({...riskRows[0],service_critical:service.service_incidents_critical,regulatory_blocking:reg.review_blocking,queue_dead_lettered:queue.dead_lettered});
+    const slo=assessOperationalSlo({cdr_lag_seconds:cdrLag,queue_oldest_seconds:queue.oldest_pending_seconds,queue_dead_lettered:queue.dead_lettered,service_critical:service.service_incidents_critical,resolution_overdue:service.service_resolution_overdue,regions_total:scale.regions_total,regions_ready:scale.regions_ready});
+    const pendingApprovals=changeRows.filter(x=>x.status==="pending").length;
     const ratios=[
       Number(s.tenants_total||0)>0?Number(s.tenants_active||0)/Number(s.tenants_total||1):1,
       Number(s.assignments_total||0)>0?Number(reg.numbers_ready||0)/Number(s.assignments_total||1):1,
@@ -4194,41 +4292,36 @@ export class PostgresStore{
     if(Number(reg.review_blocking||0)>0)push("critical","REGULATORY_BLOCKING","Conformité bloquante",reg.review_blocking+" contrôle(s) réglementaire(s) critique(s) à traiter.");
     if(Number(service.service_incidents_critical||0)>0)push("critical","SERVICE_CRITICAL","Incidents critiques",service.service_incidents_critical+" incident(s) de service critique(s) ouvert(s).");
     if(Number(service.routing_unavailable||0)>0)push("critical","ROUTING_UNAVAILABLE","Routage indisponible",service.routing_unavailable+" alerte(s) de routage sans destination disponible.");
-    if(Number(queue.dead_lettered||0)>0)push("warning","DEAD_LETTERS","Travaux en échec",queue.dead_lettered+" tâche(s) en dead-letter à examiner.");
+    if(Number(queue.dead_lettered||0)>0)push("critical","DEAD_LETTERS","Travaux en échec",queue.dead_lettered+" tâche(s) en dead-letter à examiner.");
+    if(risk.level==="critical"||risk.level==="high")push(risk.level==="critical"?"critical":"warning","RISK_ENGINE","Risk Engine",risk.score+"/100 — "+risk.signals.length+" signal(s) agrégé(s).");
+    if(slo.state==="critical"||slo.state==="burning")push(slo.state==="critical"?"critical":"warning","SLO_BURN","SLO opérationnels",slo.score+" % des objectifs instantanés respectés.");
+    if(shadowBilling.status==="critical")push("critical","SHADOW_BILLING_VARIANCE","Écart shadow billing","Un écart de rapprochement supérieur au seuil interne est détecté.");
+    if(pendingApprovals>0)push("warning","FOUR_EYES_PENDING","Validations 4 yeux",pendingApprovals+" changement(s) critique(s) attendent un second administrateur.");
     if(Number(port.attention||0)>0)push("warning","PORTABILITY_ATTENTION","Portabilités à traiter",port.attention+" dossier(s) de portabilité demandent une action.");
     if(Number(s.subscription_unpaid_alerts||0)>0)push("warning","UNPAID_SUBSCRIPTIONS","Abonnements impayés",s.subscription_unpaid_alerts+" alerte(s) d’impayé ouverte(s).");
     if(!priorities.length)push("info","NO_CRITICAL_ATTENTION","Aucune urgence critique","Les contrôles internes ne remontent aucun blocage critique.");
     const critical=priorities.filter(x=>x.severity==="critical").length,warning=priorities.filter(x=>x.severity==="warning").length;
     return {
-      schema_version:"audiotel-control-tower/1",
+      schema_version:"audiotel-control-tower/2",
       generated_at:new Date().toISOString(),
       status:critical?"critical":(warning?"attention":"healthy"),
       readiness_score:readinessScore,
       kpis:{
-        customers_active:Number(s.tenants_active||0),
-        customers_total:Number(s.tenants_total||0),
-        assignments_active:Number(s.assignments_active||0),
-        numbers_ready:Number(reg.numbers_ready||0),
-        subscription_blocked:Number(s.subscription_access_blocked||0),
-        regulatory_blocking:Number(reg.review_blocking||0),
-        service_critical:Number(service.service_incidents_critical||0),
-        portability_attention:Number(port.attention||0),
-        queue_dead_lettered:Number(queue.dead_lettered||0),
-        destination_capacity:Number(cap.capacity||0),
-        concurrent_in_use:Number(cap.in_use||0),
-        regions_ready:Number(scale.regions_ready||0),
-        regions_total:Number(scale.regions_total||0)
+        customers_active:Number(s.tenants_active||0),customers_total:Number(s.tenants_total||0),
+        assignments_active:Number(s.assignments_active||0),numbers_ready:Number(reg.numbers_ready||0),
+        subscription_blocked:Number(s.subscription_access_blocked||0),regulatory_blocking:Number(reg.review_blocking||0),
+        service_critical:Number(service.service_incidents_critical||0),portability_attention:Number(port.attention||0),
+        queue_dead_lettered:Number(queue.dead_lettered||0),destination_capacity:Number(cap.capacity||0),concurrent_in_use:Number(cap.in_use||0),
+        regions_ready:Number(scale.regions_ready||0),regions_total:Number(scale.regions_total||0),
+        risk_score:risk.score,slo_score:slo.score,approvals_pending:pendingApprovals,shadow_billing_status:shadowBilling.status
       },
-      priorities:priorities.slice(0,12),
-      carrier_route:route,
-      queue,
-      service_operations:service,
-      regulatory:reg,
-      scale,
+      priorities:priorities.slice(0,16),
+      assurance:{risk,slo,shadow_billing:shadowBilling,change_requests:changeRows,dual_control_required:true},
+      carrier_route:route,queue,service_operations:service,regulatory:reg,scale,
       capabilities:{
         policy_intents:["activate_number","port_in","payout_customer","carrier_switch","customer_access"],
         digital_twin_scenarios:["carrier_outage","traffic_spike","mass_portability","regulatory_expiry","billing_failure","region_failure"],
-        external_connections_active:false
+        external_connections_active:false,dual_control:true,shadow_billing:true,risk_engine:true,slo_snapshot:true
       }
     };
   }
@@ -5009,4 +5102,18 @@ async function tenantDiagnosticSnapshot(tx,tenantId,svaNumberId=null){
 }
 function problem(status,code,message=code){
   const e=new Error(message);e.status=status;e.code=code;return e;
+}
+
+async function appendChangeApprovalEvent(tx,changeRequestId,eventType,actorId,details={}){
+  const prevRows=await tx.unsafe("SELECT event_sha256 FROM platform_change_approval_events WHERE change_request_id=$1 ORDER BY id DESC LIMIT 1",[Number(changeRequestId)]);
+  const previous=prevRows[0]?.event_sha256||null;
+  const createdAt=new Date().toISOString();
+  const safeDetails=details&&typeof details==="object"&&!Array.isArray(details)?details:{};
+  const material=JSON.stringify({change_request_id:Number(changeRequestId),event_type:String(eventType),actor_id:actorId==null?null:Number(actorId),details:safeDetails,previous_sha256:previous,created_at:createdAt});
+  const hash=createHash("sha256").update(material).digest("hex");
+  const rows=await tx.unsafe(
+    "INSERT INTO platform_change_approval_events(change_request_id,event_type,actor_id,details,previous_sha256,event_sha256,created_at) VALUES($1,$2,$3,$4::jsonb,$5,$6,$7::timestamptz) RETURNING id,event_sha256,created_at",
+    [Number(changeRequestId),String(eventType),actorId==null?null:Number(actorId),JSON.stringify(safeDetails),previous,hash,createdAt]
+  );
+  return rows[0];
 }
