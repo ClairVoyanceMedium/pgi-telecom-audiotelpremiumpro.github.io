@@ -356,6 +356,154 @@ export class PostgresStore{
     };
   }
 
+  async voiceIntelligence(from,to,market=null){
+    const commonCte=
+      "WITH bounds AS ("+
+      " SELECT $1::timestamptz AS from_ts,$2::timestamptz AS to_ts,"+
+      " CASE WHEN $1::timestamptz=date_trunc('hour',$1::timestamptz) THEN $1::timestamptz ELSE date_trunc('hour',$1::timestamptz)+interval '1 hour' END AS full_from,"+
+      " date_trunc('hour',$2::timestamptz) AS full_to,(SELECT id FROM operating_markets WHERE country_code=$3) AS market_id"+
+      "), vbase AS ("+
+      " SELECT r.carrier_role,r.carrier_id,r.calls_total,r.calls_connected,r.calls_failed,r.pdd_samples,r.pdd_ms_sum,r.high_pdd_calls,"+
+      " r.quality_samples,r.network_affected_calls,r.low_mos_calls,r.mos_sum,r.packet_loss_sum,r.jitter_ms_sum,r.latency_ms_sum,r.rtt_ms_sum,"+
+      " r.sip_4xx_calls,r.sip_5xx_calls,r.caller_hangups,r.callee_hangups,r.network_hangups"+
+      " FROM voice_carrier_health_hourly_sharded r CROSS JOIN bounds b"+
+      " WHERE b.full_to>b.full_from AND r.bucket_start>=b.full_from AND r.bucket_start<b.full_to"+
+      " AND ($3::text IS NULL OR r.market_id=b.market_id)"+
+      " UNION ALL"+
+      " SELECT cr.carrier_role,cr.carrier_id,1::bigint,(c.call_status='connected')::int::bigint,"+
+      " (c.call_status NOT IN ('connected','abandoned'))::int::bigint,(c.post_dial_delay_ms IS NOT NULL)::int::bigint,"+
+      " COALESCE(c.post_dial_delay_ms,0)::bigint,(COALESCE(c.post_dial_delay_ms,0)>8000)::int::bigint,(q.call_id IS NOT NULL)::int::bigint,"+
+      " (q.call_id IS NOT NULL AND (COALESCE(q.rtp_packet_loss_percent,0)>=5 OR COALESCE(q.jitter_ms,0)>5 OR COALESCE(q.latency_ms,0)>150))::int::bigint,"+
+      " (q.call_id IS NOT NULL AND q.mos IS NOT NULL AND q.mos<3.5)::int::bigint,COALESCE(q.mos,0),COALESCE(q.rtp_packet_loss_percent,0),"+
+      " COALESCE(q.jitter_ms,0),COALESCE(q.latency_ms,0),COALESCE(q.rtt_ms,0),(c.sip_final_code BETWEEN 400 AND 499)::int::bigint,"+
+      " (c.sip_final_code BETWEEN 500 AND 599)::int::bigint,(c.hangup_party='caller')::int::bigint,(c.hangup_party='callee')::int::bigint,"+
+      " (c.hangup_party='network')::int::bigint"+
+      " FROM calls c LEFT JOIN call_quality q ON q.call_id=c.id CROSS JOIN bounds b"+
+      " CROSS JOIN LATERAL (VALUES ('origin'::text,c.origin_carrier_id),('host'::text,c.host_carrier_id)) AS cr(carrier_role,carrier_id)"+
+      " WHERE c.started_at>=b.from_ts AND c.started_at<=b.to_ts"+
+      " AND NOT (b.full_to>b.full_from AND c.started_at>=b.full_from AND c.started_at<b.full_to)"+
+      " AND cr.carrier_id IS NOT NULL AND ($3::text IS NULL OR c.market_id=b.market_id)"+
+      ") ";
+
+    const aggregateSql=
+      "SELECT COALESCE(sum(calls_total),0)::bigint AS calls_total,COALESCE(sum(calls_connected),0)::bigint AS calls_connected,"+
+      " COALESCE(sum(calls_failed),0)::bigint AS calls_failed,COALESCE(sum(pdd_samples),0)::bigint AS pdd_samples,"+
+      " CASE WHEN sum(pdd_samples)>0 THEN sum(pdd_ms_sum)::float8/sum(pdd_samples) ELSE NULL END AS avg_pdd_ms,"+
+      " COALESCE(sum(high_pdd_calls),0)::bigint AS high_pdd_calls,COALESCE(sum(quality_samples),0)::bigint AS quality_samples,"+
+      " COALESCE(sum(network_affected_calls),0)::bigint AS network_affected_calls,COALESCE(sum(low_mos_calls),0)::bigint AS low_mos_calls,"+
+      " CASE WHEN sum(quality_samples)>0 THEN sum(mos_sum)::float8/sum(quality_samples) ELSE NULL END AS mos,"+
+      " CASE WHEN sum(quality_samples)>0 THEN sum(packet_loss_sum)::float8/sum(quality_samples) ELSE NULL END AS packet_loss_percent,"+
+      " CASE WHEN sum(quality_samples)>0 THEN sum(jitter_ms_sum)::float8/sum(quality_samples) ELSE NULL END AS jitter_ms,"+
+      " CASE WHEN sum(quality_samples)>0 THEN sum(latency_ms_sum)::float8/sum(quality_samples) ELSE NULL END AS latency_ms,"+
+      " CASE WHEN sum(quality_samples)>0 THEN sum(rtt_ms_sum)::float8/sum(quality_samples) ELSE NULL END AS rtt_ms,"+
+      " COALESCE(sum(sip_4xx_calls),0)::bigint AS sip_4xx_calls,COALESCE(sum(sip_5xx_calls),0)::bigint AS sip_5xx_calls,"+
+      " COALESCE(sum(caller_hangups),0)::bigint AS caller_hangups,COALESCE(sum(callee_hangups),0)::bigint AS callee_hangups,"+
+      " COALESCE(sum(network_hangups),0)::bigint AS network_hangups";
+
+    const [summaryRows,carrierRows,sipRows,incidentRows]=await Promise.all([
+      this.readSql.unsafe(commonCte+aggregateSql+" FROM vbase WHERE carrier_role='host'",[from,to,market||null]),
+      this.readSql.unsafe(
+        commonCte+"SELECT v.carrier_role,v.carrier_id,c.name AS carrier,"+aggregateSql.replace(/^SELECT /,"")+
+        " FROM vbase v JOIN carriers c ON c.id=v.carrier_id GROUP BY v.carrier_role,v.carrier_id,c.name ORDER BY v.carrier_role,calls_total DESC LIMIT 100",
+        [from,to,market||null]
+      ),
+      this.readSql.unsafe(
+        "WITH bounds AS (SELECT $1::timestamptz AS from_ts,$2::timestamptz AS to_ts,"+
+        " CASE WHEN $1::timestamptz=date_trunc('hour',$1::timestamptz) THEN $1::timestamptz ELSE date_trunc('hour',$1::timestamptz)+interval '1 hour' END AS full_from,"+
+        " date_trunc('hour',$2::timestamptz) AS full_to,(SELECT id FROM operating_markets WHERE country_code=$3) AS market_id), s AS ("+
+        " SELECT r.sip_final_code,r.calls_total FROM voice_sip_code_hourly_sharded r CROSS JOIN bounds b"+
+        " WHERE b.full_to>b.full_from AND r.bucket_start>=b.full_from AND r.bucket_start<b.full_to AND ($3::text IS NULL OR r.market_id=b.market_id)"+
+        " UNION ALL SELECT c.sip_final_code,1::bigint FROM calls c CROSS JOIN bounds b"+
+        " WHERE c.sip_final_code BETWEEN 100 AND 699 AND c.started_at>=b.from_ts AND c.started_at<=b.to_ts"+
+        " AND NOT (b.full_to>b.full_from AND c.started_at>=b.full_from AND c.started_at<b.full_to)"+
+        " AND ($3::text IS NULL OR c.market_id=b.market_id))"+
+        " SELECT sip_final_code,COALESCE(sum(calls_total),0)::bigint AS calls_total FROM s GROUP BY sip_final_code ORDER BY calls_total DESC,sip_final_code LIMIT 20",
+        [from,to,market||null]
+      ),
+      this.readSql.unsafe(
+        "SELECT i.id,i.incident_type,i.severity,i.carrier_role,c.name AS carrier,m.country_code AS market,i.state,i.title,i.details,"+
+        " i.started_at,i.last_detected_at,i.resolved_at FROM telecom_incidents i"+
+        " LEFT JOIN carriers c ON c.id=i.carrier_id LEFT JOIN operating_markets m ON m.id=i.market_id"+
+        " WHERE ($1::text IS NULL OR m.country_code=$1) ORDER BY (i.state='open') DESC,i.last_detected_at DESC LIMIT 50",
+        [market||null]
+      )
+    ]);
+    const keys=["calls_total","calls_connected","calls_failed","pdd_samples","avg_pdd_ms","high_pdd_calls","quality_samples","network_affected_calls","low_mos_calls","mos","packet_loss_percent","jitter_ms","latency_ms","rtt_ms","sip_4xx_calls","sip_5xx_calls","caller_hangups","callee_hangups","network_hangups"];
+    const summary=numberFields(summaryRows[0]||{},keys);
+    const carriers=carrierRows.map(row=>numberFields(row,keys));
+    return {
+      summary,
+      carriers,
+      sip_codes:sipRows.map(row=>numberFields(row,["sip_final_code","calls_total"])),
+      incidents:incidentRows.map(row=>({...row,id:Number(row.id)}))
+    };
+  }
+
+  async scanVoiceIncidents(){
+    const rows=await this.readSql.unsafe(
+      "SELECT r.market_id,r.carrier_id,c.name AS carrier,COALESCE(sum(r.calls_total),0)::bigint AS calls_total,"+
+      " COALESCE(sum(r.calls_connected),0)::bigint AS calls_connected,COALESCE(sum(r.pdd_samples),0)::bigint AS pdd_samples,"+
+      " COALESCE(sum(r.high_pdd_calls),0)::bigint AS high_pdd_calls,COALESCE(sum(r.quality_samples),0)::bigint AS quality_samples,"+
+      " COALESCE(sum(r.network_affected_calls),0)::bigint AS network_affected_calls,COALESCE(sum(r.sip_5xx_calls),0)::bigint AS sip_5xx_calls"+
+      " FROM voice_carrier_health_hourly_sharded r JOIN carriers c ON c.id=r.carrier_id"+
+      " WHERE r.carrier_role='host' AND r.bucket_start>=date_trunc('hour',now())-interval '1 hour'"+
+      " GROUP BY r.market_id,r.carrier_id,c.name"
+    );
+    const types=["connection_low","network_degraded","pdd_high","sip_5xx_high"];
+    const changes=[];
+    await this.sql.begin(async tx=>{
+      for(const raw of rows){
+        const row=numberFields(raw,["market_id","carrier_id","calls_total","calls_connected","pdd_samples","high_pdd_calls","quality_samples","network_affected_calls","sip_5xx_calls"]);
+        const connection=row.calls_total?row.calls_connected/row.calls_total*100:100;
+        const affected=row.quality_samples?row.network_affected_calls/row.quality_samples*100:0;
+        const highPdd=row.pdd_samples?row.high_pdd_calls/row.pdd_samples*100:0;
+        const sip5xx=row.calls_total?row.sip_5xx_calls/row.calls_total*100:0;
+        const conditions={
+          connection_low:row.calls_total>=20&&connection<75,
+          network_degraded:row.quality_samples>=10&&affected>=15,
+          pdd_high:row.pdd_samples>=10&&highPdd>=15,
+          sip_5xx_high:row.calls_total>=20&&sip5xx>=10
+        };
+        const meta={
+          connection_low:{title:"Taux de connexion opérateur dégradé",value:connection,critical:connection<60},
+          network_degraded:{title:"Qualité réseau opérateur dégradée",value:affected,critical:affected>=30},
+          pdd_high:{title:"Temps avant sonnerie anormalement élevé",value:highPdd,critical:highPdd>=30},
+          sip_5xx_high:{title:"Erreurs SIP 5xx élevées",value:sip5xx,critical:sip5xx>=20}
+        };
+        for(const type of types){
+          const open=await tx.unsafe(
+            "SELECT id,severity FROM telecom_incidents WHERE incident_type=$1 AND carrier_role='host' AND carrier_id=$2 AND market_id=$3 AND state='open' LIMIT 1",
+            [type,row.carrier_id,row.market_id]
+          );
+          if(conditions[type]){
+            const severity=meta[type].critical?"critical":"warning";
+            const details=JSON.stringify({carrier:row.carrier,calls:row.calls_total,value_percent:Number(meta[type].value.toFixed(2)),window:"2h"});
+            if(open[0]){
+              await tx.unsafe("UPDATE telecom_incidents SET severity=$2,title=$3,details=$4::jsonb,last_detected_at=now() WHERE id=$1",[open[0].id,severity,meta[type].title,details]);
+              if(open[0].severity!==severity)changes.push({event:"voice.incident",id:Number(open[0].id),type,severity,carrier:row.carrier});
+            }else{
+              const created=await tx.unsafe(
+                "INSERT INTO telecom_incidents(incident_type,severity,carrier_role,carrier_id,market_id,state,title,details)"+
+                " VALUES($1,$2,'host',$3,$4,'open',$5,$6::jsonb) RETURNING id",
+                [type,severity,row.carrier_id,row.market_id,meta[type].title,details]
+              );
+              changes.push({event:"voice.incident",id:Number(created[0].id),type,severity,carrier:row.carrier});
+            }
+          }else if(open[0]){
+            await tx.unsafe("UPDATE telecom_incidents SET state='resolved',resolved_at=now(),last_detected_at=now() WHERE id=$1",[open[0].id]);
+            changes.push({event:"voice.incident.resolved",id:Number(open[0].id),type,carrier:row.carrier});
+          }
+        }
+      }
+      const stale=await tx.unsafe(
+        "UPDATE telecom_incidents SET state='resolved',resolved_at=now() WHERE state='open' AND last_detected_at<now()-interval '90 minutes' RETURNING id,incident_type"
+      );
+      for(const row of stale)changes.push({event:"voice.incident.resolved",id:Number(row.id),type:row.incident_type});
+    });
+    for(const change of changes)this.eventBus.publish(change.event,change);
+    return changes;
+  }
+
   async listCalls(params={}){
     const limit=clampInt(params.limit,100,1,250);
     const cursor=decodeCursor(params.cursor);
