@@ -175,8 +175,9 @@ closeLogin();
 var logout=$("logout-btn");if(logout)logout.hidden=false;
 var baselineRows=Array.isArray(appBootstrap&&appBootstrap.baselines&&appBootstrap.baselines.data)
 ?appBootstrap.baselines.data:[];
-state.resets=baselineRows.map(function(x){return {at:x.effective_from||x.created_at,scope:x.scope,reason:x.reason||""};});
-state.baseline=baselineRows.length?new Date(baselineRows[0].effective_from||baselineRows[0].created_at):null;
+state.resets=baselineRows.map(function(x){return {at:x.effective_from||x.created_at,scope:x.scope,metric_key:x.metric_key||"all",reason:x.reason||""};});
+var callBaseline=baselineRows.find(function(x){return ["all","calls"].includes(x.metric_key||"all");});
+state.baseline=callBaseline?new Date(callBaseline.effective_from||callBaseline.created_at):null;
 state.wholesale=appBootstrap&&appBootstrap.wholesale?appBootstrap.wholesale:null;
 syncMarketSelector(state.wholesale);
 var range=getRange(),windowRange=productionDataRange(),prevRange=comparisonRange(range);
@@ -1321,15 +1322,27 @@ var b=e.target.closest("[data-call-id]");if(b){var c=allCalls.find(function(x){r
 $("export-csv").addEventListener("click",function(){callTools().then(function(m){m.exportCsv(applyCallFilters(filteredCalls()),$("export-csv"));});});
 $("print-calls").addEventListener("click",function(){window.print();});
 $("print-finance").addEventListener("click",function(){window.print();});
-$("reset-metrics").addEventListener("click",function(){var d=$("reset-dialog");if(typeof d.showModal==="function")d.showModal();});
-$("confirm-reset").addEventListener("click",async function(){
+$("reset-metrics").addEventListener("click",function(){
+import("./metric-reset.js").then(function(m){
+m.openMetricReset({
+title:"Remettre des métriques du cockpit à zéro",
+note:"Choisissez les indicateurs du cockpit Audiotel Premium Pro qui doivent repartir de zéro. Les espaces clients ont leurs propres remises à zéro.",
+onConfirm:async function(keys){
 var at=new Date();
 try{
 if(RUNTIME.mode==="production"&&window.PGIApi){
-await window.PGIApi.createBaseline({scope:"global",reason:"Remise à zéro depuis le cockpit"},window.PGIApi.newIdempotencyKey());
+for(const key of keys)await window.PGIApi.createBaseline({scope:"global",metric_key:key,reason:"Remise à zéro sélective depuis le cockpit"},window.PGIApi.newIdempotencyKey());
+if(window.PGIDataClient)window.PGIDataClient.invalidateAppBootstrap();
+await syncProductionData({mode:"full",forceMeta:true});
+return;
 }
-state.baseline=at;state.resets.push({at:at.toISOString(),scope:"global"});saveState();if(window.PGIDataClient)window.PGIDataClient.invalidateAppBootstrap();refreshData({forceMeta:true});
-}catch(e){recordRuntimeError();}
+if(keys.includes("calls"))state.baseline=at;
+keys.forEach(function(key){state.resets.push({at:at.toISOString(),scope:"global",metric_key:key,reason:"Remise à zéro sélective depuis le cockpit"});});
+saveState();render();
+}catch(e){recordRuntimeError();throw e;}
+}
+});
+}).catch(recordRuntimeError);
 });
 var authForm=$("auth-form");
 if(authForm)authForm.addEventListener("submit",function(e){e.preventDefault();submitLogin();});
