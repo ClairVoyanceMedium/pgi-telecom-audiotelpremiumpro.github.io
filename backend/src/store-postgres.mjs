@@ -1978,6 +1978,115 @@ export class PostgresStore{
     return result;
   }
 
+  async upsertSvaRegulatoryProfile(id,input={},actor={}){
+    id=Number(id);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_ASSIGNMENT_ID");
+    const signaletic=input.signaletic_model==null||input.signaletic_model===""?null:String(input.signaletic_model).trim().toLowerCase();
+    if(signaletic&&!["free","normal","majorated"].includes(signaletic))throw problem(400,"INVALID_SIGNALETIC_MODEL");
+    const fields={
+      service_name:optionalText(input.service_name,200),
+      service_description:optionalText(input.service_description,1000),
+      provider_name:optionalText(input.provider_name,200),
+      provider_website:optionalText(input.provider_website,500),
+      provider_address:optionalText(input.provider_address,1000),
+      complaint_contact:optionalText(input.complaint_contact,500)
+    };
+    if(fields.provider_website&&!/^https:\/\//i.test(fields.provider_website))throw problem(400,"REGULATORY_PROVIDER_WEBSITE_HTTPS_REQUIRED");
+    let nextReview=null;
+    if(input.next_review_at){const d=new Date(input.next_review_at);if(!Number.isFinite(d.getTime()))throw problem(400,"INVALID_REGULATORY_REVIEW_DATE");nextReview=d.toISOString();}
+    const actorId=numericActor(actor),actorSubject=String(actor?.sub||actor?.username||"").slice(0,200);
+    return this.sql.begin(async tx=>{
+      const assignment=(await tx.unsafe(
+        "SELECT a.id,a.tenant_id,a.sva_number_id,t.tenant_type,sn.e164 FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.id=$1 FOR UPDATE",
+        [id]
+      ))[0];
+      if(!assignment)throw problem(404,"ASSIGNMENT_NOT_FOUND");
+      if(assignment.tenant_type==="internal")throw problem(409,"INTERNAL_ASSIGNMENT_PROTECTED");
+      const rows=await tx.unsafe(
+        "INSERT INTO sva_regulatory_profiles AS p(tenant_id,sva_number_id,service_name,service_description,provider_name,provider_website,provider_address,complaint_contact,signaletic_model,next_review_at,updated_at)"+
+        " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())"+
+        " ON CONFLICT(tenant_id,sva_number_id) DO UPDATE SET"+
+        " service_name=COALESCE(EXCLUDED.service_name,p.service_name),service_description=COALESCE(EXCLUDED.service_description,p.service_description),"+
+        " provider_name=COALESCE(EXCLUDED.provider_name,p.provider_name),provider_website=COALESCE(EXCLUDED.provider_website,p.provider_website),"+
+        " provider_address=COALESCE(EXCLUDED.provider_address,p.provider_address),complaint_contact=COALESCE(EXCLUDED.complaint_contact,p.complaint_contact),"+
+        " signaletic_model=COALESCE(EXCLUDED.signaletic_model,p.signaletic_model),next_review_at=COALESCE(EXCLUDED.next_review_at,p.next_review_at),updated_at=now()"+
+        " RETURNING *",
+        [assignment.tenant_id,assignment.sva_number_id,fields.service_name,fields.service_description,fields.provider_name,fields.provider_website,fields.provider_address,fields.complaint_contact,signaletic,nextReview]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'regulatory.profile.update','sva_regulatory_profile',$3,$4::jsonb)",
+        [assignment.tenant_id,actorId,String(assignment.sva_number_id),JSON.stringify({assignment_id:id,e164:assignment.e164,actor_subject:actorSubject})]
+      );
+      return {...rows[0],regulatory_ready:Boolean((await tx.unsafe("SELECT pgi_sva_regulatory_ready($1,$2) AS ready",[assignment.tenant_id,assignment.sva_number_id]))[0]?.ready)};
+    });
+  }
+
+  async recordSvaRegulatoryEvidence(id,input={},actor={}){
+    id=Number(id);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_ASSIGNMENT_ID");
+    const control=String(input.control_key||"").trim().toLowerCase();
+    const status=String(input.status||"").trim().toLowerCase();
+    const source=String(input.source||"internal").trim().toLowerCase();
+    const controls=new Set(["numbering_rights","editor_identity","rsva","tariff_transparency","mgit","complaint_process","fraud_monitoring"]);
+    const statuses=new Set(["not_started","pending","verified","failed","expired","not_applicable"]);
+    const sources=new Set(["internal","customer","operator","apnf_rsva","af2m","arcep","dgccrf","33700","other"]);
+    if(!controls.has(control))throw problem(400,"INVALID_REGULATORY_CONTROL");
+    if(!statuses.has(status))throw problem(400,"INVALID_REGULATORY_STATUS");
+    if(!sources.has(source))throw problem(400,"INVALID_REGULATORY_SOURCE");
+    const reference=optionalText(input.evidence_reference,500);
+    if(status==="verified"&&!reference)throw problem(400,"REGULATORY_EVIDENCE_REFERENCE_REQUIRED");
+    const metadata=input.metadata&&typeof input.metadata==="object"&&!Array.isArray(input.metadata)?input.metadata:{};
+    const actorId=numericActor(actor),actorSubject=String(actor?.sub||actor?.username||"").slice(0,200);
+    return this.sql.begin(async tx=>{
+      const assignment=(await tx.unsafe(
+        "SELECT a.id,a.tenant_id,a.sva_number_id,t.tenant_type,sn.e164 FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.id=$1 FOR UPDATE",
+        [id]
+      ))[0];
+      if(!assignment)throw problem(404,"ASSIGNMENT_NOT_FOUND");
+      if(assignment.tenant_type==="internal")throw problem(409,"INTERNAL_ASSIGNMENT_PROTECTED");
+      const event=(await tx.unsafe(
+        "INSERT INTO sva_regulatory_evidence_events(tenant_id,sva_number_id,control_key,status,source,evidence_reference,metadata,actor_subject) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8) RETURNING id,control_key,status,source,evidence_reference,previous_hash,event_hash,occurred_at",
+        [assignment.tenant_id,assignment.sva_number_id,control,status,source,reference,JSON.stringify(metadata),actorSubject||null]
+      ))[0];
+      const profile=(await tx.unsafe("SELECT *,pgi_sva_regulatory_ready(tenant_id,sva_number_id) AS regulatory_ready FROM sva_regulatory_profiles WHERE tenant_id=$1 AND sva_number_id=$2",[assignment.tenant_id,assignment.sva_number_id]))[0];
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'regulatory.evidence.append','sva_regulatory_evidence',$3,$4::jsonb)",
+        [assignment.tenant_id,actorId,String(event.id),JSON.stringify({assignment_id:id,e164:assignment.e164,control_key:control,status,source,event_hash:event.event_hash})]
+      );
+      return {event,profile};
+    });
+  }
+
+  async createSvaAbuseCase(id,input={},actor={}){
+    id=Number(id);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_ASSIGNMENT_ID");
+    const source=String(input.source||"internal").trim().toLowerCase(),category=String(input.category||"other").trim().toLowerCase(),severity=String(input.severity||"normal").trim().toLowerCase();
+    if(!["33700","arcep","dgccrf","operator","consumer","internal","other"].includes(source))throw problem(400,"INVALID_ABUSE_SOURCE");
+    if(!["spam","fraud","spoofing","tariff","content","identity","routing","other"].includes(category))throw problem(400,"INVALID_ABUSE_CATEGORY");
+    if(!["low","normal","high","critical"].includes(severity))throw problem(400,"INVALID_ABUSE_SEVERITY");
+    const summary=String(input.summary||"").trim();if(summary.length<3||summary.length>500)throw problem(400,"INVALID_ABUSE_SUMMARY");
+    const externalReference=optionalText(input.external_reference,500),suspensionRequired=Boolean(input.suspension_required);
+    const sla={low:[240,2880],normal:[120,1440],high:[30,240],critical:[15,120]}[severity];
+    const details=input.details&&typeof input.details==="object"&&!Array.isArray(input.details)?input.details:{};
+    const actorId=numericActor(actor);
+    return this.sql.begin(async tx=>{
+      const assignment=(await tx.unsafe("SELECT a.tenant_id,a.sva_number_id,t.tenant_type,sn.e164 FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.id=$1",[id]))[0];
+      if(!assignment)throw problem(404,"ASSIGNMENT_NOT_FOUND");
+      if(assignment.tenant_type==="internal")throw problem(409,"INTERNAL_ASSIGNMENT_PROTECTED");
+      const row=(await tx.unsafe(
+        "INSERT INTO sva_abuse_cases(tenant_id,sva_number_id,source,external_reference,category,severity,status,suspension_required,first_response_due_at,resolution_due_at,summary,details)"+
+        " VALUES($1,$2,$3,$4,$5,$6,'open',$7,now()+($8::int*interval '1 minute'),now()+($9::int*interval '1 minute'),$10,$11::jsonb) RETURNING *",
+        [assignment.tenant_id,assignment.sva_number_id,source,externalReference,category,severity,suspensionRequired,sla[0],sla[1],summary,JSON.stringify(details)]
+      ))[0];
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'regulatory.abuse.open','sva_abuse_case',$3,$4::jsonb)",
+        [assignment.tenant_id,actorId,String(row.public_id),JSON.stringify({assignment_id:id,e164:assignment.e164,source,category,severity,suspension_required:suspensionRequired})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'regulatory.abuse.opened','sva_abuse_case',$2,$3::jsonb)",
+        [assignment.tenant_id,String(row.public_id),JSON.stringify({assignment_id:id,source,category,severity,suspension_required:suspensionRequired})]
+      );
+      return row;
+    });
+  }
+
   async createCallDestination(publicId,input={},actor={}){
     publicId=String(publicId||"").trim();
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
