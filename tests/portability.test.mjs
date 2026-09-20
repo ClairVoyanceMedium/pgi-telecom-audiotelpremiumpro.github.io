@@ -82,6 +82,8 @@ test("port-in completion is a dedicated guarded atomic server action",()=>{
   assert.match(store,/pgi_tenant_has_premium_call_access/);
   assert.match(store,/PORTABILITY_KYC_REQUIRED/);
   assert.match(store,/PORTABILITY_TARGET_ROUTE_NOT_ACTIVE/);
+  assert.match(store,/PORTABILITY_CARRIER_CONTRACT_REQUIRED/);
+  assert.match(store,/carrier_contracts/);
   assert.match(store,/INSERT INTO sva_numbers/);
   assert.match(store,/INSERT INTO tenant_number_assignments/);
   assert.match(store,/INSERT INTO number_carrier_assignments/);
