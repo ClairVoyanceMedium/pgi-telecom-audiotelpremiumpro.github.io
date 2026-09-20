@@ -160,6 +160,24 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(Number(packRegister[0].arcep_2026_evidence_events),8);
     const packAudit=await store.sql.unsafe("SELECT details->>'export_public_id' AS export_public_id FROM audit_log WHERE action='regulatory.evidence_pack.export' AND entity_id=$1 ORDER BY id DESC LIMIT 1",[String(extAssignmentForRoute[0].id)]);
     assert.equal(packAudit[0].export_public_id,evidencePack.integrity.export_id);
+    const dueSoon=new Date(Date.now()+12*3600000).toISOString();
+    const dueEvidence=await store.recordSvaRegulatoryEvidence(Number(extAssignmentForRoute[0].id),{control_key:"single_service",status:"verified",source:"internal",evidence_reference:"integration:review-due",next_review_at:dueSoon},{sub:"admin"});
+    assert.equal(dueEvidence.framework,"arcep_2026");
+    assert.equal(dueEvidence.profile.next_review_at,dueSoon);
+    const regulatoryAlerts=await store.scanRegulatoryReviews();
+    const dueAlert=regulatoryAlerts.find(x=>x.framework==="arcep_2026"&&x.alert_kind==="review_due_today");
+    assert.ok(dueAlert);
+    assert.equal(dueAlert.state,"open");
+    const listedAlerts=await store.listRegulatoryReviewAlerts({state:"unresolved",limit:20});
+    assert.ok(listedAlerts.data.some(x=>Number(x.id)===Number(dueAlert.id)&&x.attention_bucket==="today"));
+    const acknowledgedReview=await store.acknowledgeRegulatoryReviewAlert(dueAlert.id,{sub:"admin"});
+    assert.equal(acknowledgedReview.state,"acknowledged");
+    const nextReview=new Date(Date.now()+90*86400000).toISOString();
+    await store.recordSvaRegulatoryEvidence(Number(extAssignmentForRoute[0].id),{control_key:"single_service",status:"verified",source:"internal",evidence_reference:"integration:review-extended",next_review_at:nextReview},{sub:"admin"});
+    await store.scanRegulatoryReviews();
+    const unresolvedAfterReview=await store.listRegulatoryReviewAlerts({state:"unresolved",limit:50});
+    assert.equal(unresolvedAfterReview.data.some(x=>x.framework==="arcep_2026"&&Number(x.assignment_id)===Number(extAssignmentForRoute[0].id)),false);
+
     const createdDestination=await store.createCallDestination(externalIdentity[0].public_id,{assignment_id:Number(extAssignmentForRoute[0].id),label:"Standard principal",destination_type:"pstn",destination_uri:"tel:+33123456789",priority:10,max_concurrent_calls:25},{sub:"admin"});
     assert.equal(createdDestination.status,"testing");
     await store.setCallDestinationStatus(createdDestination.id,"active",{sub:"admin"},"integration");
@@ -492,10 +510,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const rawCalls=await store.sql.unsafe("SELECT count(*)::int AS count FROM calls");
     assert.equal(rawCalls[0].count,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
-    assert.equal(migrations.length,42);
+    assert.equal(migrations.length,43);
     assert.equal(new Set(migrations.map(x=>x.version)).size,migrations.length);
     assert.equal(migrations[0].version,"001_baseline");
-    assert.equal(migrations.at(-1).version,"042_subscription_price_tax_inclusive");
+    assert.equal(migrations.at(-1).version,"043_regulatory_review_monitoring");
     for(const migration of migrations)assert.match(migration.checksum,/^[a-f0-9]{64}$/);
   }finally{
     await store.close();
