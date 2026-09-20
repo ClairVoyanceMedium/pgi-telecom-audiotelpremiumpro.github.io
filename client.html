@@ -10,6 +10,9 @@
 <link rel="icon" type="image/png" href="assets/audiotel-brand-icon-v33.png">
 <link rel="stylesheet" href="assets/client-portal.css">
 <script src="assets/config.js" defer></script>
+<script src="assets/client-config.js" defer></script>
+<script src="assets/client-i18n.js" defer></script>
+<script src="assets/client-google.js" defer></script>
 <script src="assets/client-portal-api.js" defer></script>
 <script src="assets/client-portal.js" defer></script>
 </head>
@@ -33,6 +36,9 @@
         <label id="tenant-choice-wrap" hidden>Société<select id="customer-tenant" name="tenant"></select></label>
         <button class="cp-primary" type="submit">Se connecter</button>
       </form>
+      <div class="cp-auth-divider"><span>ou</span></div>
+      <div id="google-login" class="cp-google" hidden></div>
+      <button id="google-tenant-continue" class="cp-ghost cp-google-continue" type="button" hidden>Continuer avec Google</button>
     </div>
 
     <div id="activation-panel" hidden>
@@ -45,6 +51,8 @@
         <label>Confirmer<input id="activation-password-confirm" type="password" autocomplete="new-password" required minlength="12"></label>
         <button class="cp-primary" type="submit">Activer mon espace</button>
       </form>
+      <div class="cp-auth-divider"><span>ou</span></div>
+      <div id="google-activation" class="cp-google" hidden></div>
     </div>
     <p class="cp-form-message" id="auth-message" role="status"></p>
   </div>

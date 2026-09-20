@@ -1,16 +1,18 @@
 (function(){
 "use strict";
-var state={range:"30",data:null,user:null,demo:false};
+var state={range:"30",data:null,user:null,demo:false,googleCredential:null};
+var I=window.PGIClientI18n||{locale:"fr-FR",t:function(x){return x;},apply:function(){}};
+function tr(x){return I.t?I.t(x):x;}
 var $=function(id){return document.getElementById(id);};
 var qsa=function(sel){return Array.from(document.querySelectorAll(sel));};
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];});}
 function n(v){var x=Number(v);return Number.isFinite(x)?x:0;}
-function nf(v,d){return new Intl.NumberFormat("fr-FR",{maximumFractionDigits:d==null?0:d}).format(n(v));}
-function money(v,c){if(v==null||!Number.isFinite(Number(v)))return "—";try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:c||"EUR",maximumFractionDigits:2}).format(Number(v));}catch(_e){return nf(v,2)+" "+(c||"");}}
-function dt(v){if(!v)return "—";var d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat("fr-FR",{dateStyle:"short",timeStyle:"short"}).format(d):"—";}
-function dateOnly(v){if(!v)return "—";var d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium"}).format(d):"—";}
+function nf(v,d){return new Intl.NumberFormat(I.locale||"fr-FR",{maximumFractionDigits:d==null?0:d}).format(n(v));}
+function money(v,c){if(v==null||!Number.isFinite(Number(v)))return "—";try{return new Intl.NumberFormat(I.locale||"fr-FR",{style:"currency",currency:c||"EUR",maximumFractionDigits:2}).format(Number(v));}catch(_e){return nf(v,2)+" "+(c||"");}}
+function dt(v){if(!v)return "—";var d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat(I.locale||"fr-FR",{dateStyle:"short",timeStyle:"short"}).format(d):"—";}
+function dateOnly(v){if(!v)return "—";var d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat(I.locale||"fr-FR",{dateStyle:"medium"}).format(d):"—";}
 function duration(s){s=Math.max(0,Math.round(n(s)));var m=Math.floor(s/60),r=s%60;return m+" min "+String(r).padStart(2,"0")+" s";}
-function statusLabel(v){var m={active:"Actif",pending:"En attente",testing:"Test",suspended:"Suspendu",closed:"Fermé",connected:"Décroché",abandoned:"Abandonné",failed:"Échoué",busy:"Occupé",no_answer:"Sans réponse",open:"En cours",reconciled:"Validé",invoiced:"Facturé",payable:"À payer",paid:"Payé",disputed:"Contesté",past_due:"Impayé",cancelled:"Résilié",ended:"Terminé"};return m[String(v||"").toLowerCase()]||String(v||"—");}
+function statusLabel(v){var m={active:"Actif",pending:"En attente",testing:"Test",suspended:"Suspendu",closed:"Fermé",connected:"Décroché",abandoned:"Abandonné",failed:"Échoué",busy:"Occupé",no_answer:"Sans réponse",open:"En cours",reconciled:"Validé",invoiced:"Facturé",payable:"À payer",paid:"Payé",disputed:"Contesté",past_due:"Impayé",cancelled:"Résilié",ended:"Terminé"};return tr(m[String(v||"").toLowerCase()]||String(v||"—"));}
 function chip(status){var s=String(status||"").toLowerCase();var tone=["active","connected","paid","reconciled","payable"].includes(s)?"ok":["pending","testing","open","invoiced"].includes(s)?"warn":["suspended","closed","failed","past_due","disputed"].includes(s)?"bad":"neutral";return '<span class="cp-chip '+tone+'">'+esc(statusLabel(status))+"</span>";}
 function toast(message){var el=$("client-toast");el.textContent=message;el.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(function(){el.hidden=true;},2600);}
 function setAuthMessage(message,bad){var el=$("auth-message");el.textContent=message||"";el.classList.toggle("bad",Boolean(bad));}
@@ -117,7 +119,7 @@ function render(data){
   $("kpi-minutes").textContent=nf(a.billable/60,1);$("kpi-revenue").textContent=money(a.revenue,a.currency);$("kpi-payout").textContent=money(a.payout,a.currency);
   $("portal-sync").textContent="Dernière consolidation : "+(a.updated?dt(a.updated):dt(data.server_time));
   $("traffic-total").textContent=nf(a.calls)+" appels";
-  renderAnalytics(data);renderNumbers(data);renderCalls(data);renderSettlements(data);renderSubscriptions(data);renderDestinations(data);
+  renderAnalytics(data);renderNumbers(data);renderCalls(data);renderSettlements(data);renderSubscriptions(data);renderDestinations(data);if(I.apply)I.apply(document.body);
 }
 async function loadPortal(){
   var range=rangeFor(state.range),data;
@@ -133,6 +135,27 @@ function showLogin(){
 }
 function showActivation(){
   $("customer-app").hidden=true;$("customer-auth").hidden=false;$("login-panel").hidden=true;$("activation-panel").hidden=false;
+}
+async function handleGoogleCredential(response,tenantOverride){
+  var credential=response&&response.credential?response.credential:state.googleCredential;
+  if(!credential)return;
+  state.googleCredential=credential;setAuthMessage("");
+  var invite=new URLSearchParams(location.search).get("invite")||"";
+  var tenant=tenantOverride||$("customer-tenant").value||"";
+  try{
+    var result=await window.PGICustomerApi.google(credential,tenant,invite);state.user=result.user;state.googleCredential=null;
+    if(invite)history.replaceState(null,"",location.pathname);showApp();
+  }catch(err){
+    if(err.code==="CUSTOMER_TENANT_REQUIRED"&&err.payload&&Array.isArray(err.payload.tenants)&&err.payload.tenants.length){
+      var sel=$("customer-tenant");sel.innerHTML=err.payload.tenants.map(function(x){return '<option value="'+esc(x.id)+'">'+esc(x.name+" · "+x.role)+'</option>';}).join("");$("tenant-choice-wrap").hidden=false;$("google-tenant-continue").hidden=false;setAuthMessage(tr("Société")+" : "+tr("Confirmer"),false);return;
+    }
+    var messages={GOOGLE_INVITATION_REQUIRED:"Google account requires a valid company invitation.",GOOGLE_INVITATION_EMAIL_MISMATCH:"The Google account email does not match the invitation.",GOOGLE_LINK_REQUIRES_INVITATION:"For security, this Google account must be linked through an invitation.",GOOGLE_AUTH_NOT_CONFIGURED:"Google sign-in is not configured yet."};
+    setAuthMessage(messages[err.code]||"Google sign-in failed.",true);
+  }
+}
+async function initGoogle(){
+  if(!window.PGICustomerGoogle)return;
+  try{await window.PGICustomerGoogle.init({callback:function(r){handleGoogleCredential(r);},loginElement:$("google-login"),activationElement:$("google-activation")});}catch(_e){}
 }
 async function submitLogin(e){
   e.preventDefault();setAuthMessage("");
@@ -210,11 +233,14 @@ function bind(){
   $("client-security").addEventListener("click",function(){var d=$("client-security-dialog");if(d&&typeof d.showModal==="function")d.showModal();});
   $("client-security-close").addEventListener("click",function(){var d=$("client-security-dialog");if(d&&d.open)d.close();});
   $("client-password-form").addEventListener("submit",changePassword);
+  $("google-tenant-continue").addEventListener("click",function(){handleGoogleCredential(null,$("customer-tenant").value||"");});
   qsa("[data-client-export]").forEach(function(b){b.addEventListener("click",function(){var d=$("client-export-dialog");if(d&&d.open)d.close();exportClient(b.dataset.clientExport);});});
   qsa("[data-range]").forEach(function(btn){btn.addEventListener("click",function(){state.range=btn.dataset.range;qsa("[data-range]").forEach(function(x){x.classList.toggle("active",x===btn);});loadPortal().catch(function(){toast("Actualisation impossible");});});});
 }
 async function init(){
+  if(I.apply)I.apply(document.body);
   bind();
+  initGoogle();
   var cfg=window.PGI_CONFIG||{};
   state.demo=cfg.mode==="demo"||!cfg.apiBaseUrl;
   if(state.demo){showApp();return;}

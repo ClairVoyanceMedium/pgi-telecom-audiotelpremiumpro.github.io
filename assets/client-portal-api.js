@@ -48,6 +48,7 @@ async function request(path,options){
 }
 root.PGICustomerApi=Object.freeze({
   login:function(email,password,tenant){return request("/customer/auth/login",{method:"POST",body:{email:email,password:password,tenant:tenant||null}});},
+  google:function(credential,tenant,invite){return request("/customer/auth/google",{method:"POST",body:{credential:credential,tenant:tenant||null,invite:invite||null}});},
   activate:function(token,displayName,password){return request("/customer/auth/activate",{method:"POST",body:{token:token,display_name:displayName,password:password}});},
   me:function(){return request("/customer/auth/me",{timeoutMs:5000});},
   logout:function(){return request("/customer/auth/logout",{method:"POST",body:{}});},

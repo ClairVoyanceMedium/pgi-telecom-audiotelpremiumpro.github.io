@@ -17,6 +17,9 @@ const files=[
   ".nojekyll",
   "assets/styles.css",
   "assets/client-portal.css",
+  "assets/client-config.js",
+  "assets/client-i18n.js",
+  "assets/client-google.js",
   "assets/client-portal-api.js",
   "assets/client-portal.js",
   "assets/core.js",
@@ -49,6 +52,7 @@ for(const file of files){
 
 const mode=process.env.PGI_RUNTIME_MODE||"demo";
 const apiBaseUrl=process.env.PGI_API_BASE_URL||"";
+const googleClientId=String(process.env.PGI_GOOGLE_CLIENT_ID||"").trim();
 const releaseId=process.env.PGI_RELEASE_ID||"";
 const production=mode==="production";
 if(production&&!/^[0-9a-f]{40}$/.test(releaseId))throw new Error("PGI_RELEASE_ID must be the 40-character Git SHA in production");
@@ -67,6 +71,8 @@ const config={
     fullCallerNumber:false
   }
 };
+
+fs.writeFileSync(path.join(dist,"assets","client-config.js"),"window.PGI_CLIENT_CONFIG=Object.freeze("+JSON.stringify({googleClientId})+");\n","utf8");
 
 fs.writeFileSync(
   path.join(dist,"assets","config.js"),
