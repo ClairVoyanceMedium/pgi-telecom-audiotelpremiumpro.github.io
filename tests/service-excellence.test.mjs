@@ -127,6 +127,21 @@ test("proactive operations detect routing outage and portability attention",()=>
   assert.match(store,/portability_attention/);
 });
 
+test("service operations are observable and staff can inspect full history",()=>{
+  assert.match(store,/async serviceOperationsHealth/);
+  assert.match(store,/service_first_response_overdue/);
+  assert.match(store,/service_resolution_overdue/);
+  assert.match(server,/pgi_service_incidents_open/);
+  assert.match(server,/pgi_service_resolution_overdue/);
+  assert.match(server,/pgi_routing_unavailable/);
+  assert.match(server,/pgi_portability_attention/);
+  assert.match(store,/async serviceIncidentDetail/);
+  assert.match(server,/platform\/incidents\/:id/);
+  assert.match(adminApi,/serviceIncident:function/);
+  assert.match(tenantService,/data-service-detail/);
+  assert.match(tenantService,/Historique/);
+});
+
 test("service center remains lazy and outside the critical PWA shell",()=>{
   assert.match(clientPortal,/import\("\.\/client-service-center\.js"\)/);
   assert.match(tenantDetail,/tenant-service-admin\.js/);
