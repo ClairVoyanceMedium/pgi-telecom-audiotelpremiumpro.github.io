@@ -325,3 +325,18 @@ Génère un Evidence Pack réglementaire privé pour une affectation SVA externe
 
 La réponse expose `integrity.pack_sha256`, `integrity.evidence_chain_head` et `integrity.evidence_links_valid`. L'export est journalisé dans `audit_log`. Le RIO brut, les secrets de portabilité, les numéros d'appelants et le contenu des appels ne sont jamais inclus.
 
+
+
+### GET /platform/regulatory-review-alerts
+
+Liste paginée des alertes réglementaires de revue. Le filtre `state` accepte `open`, `acknowledged`, `resolved`, `unresolved` ou `all`. Chaque entrée expose notamment `framework`, `alert_kind`, `severity`, `attention_bucket`, `due_at`, le numéro concerné lorsqu'il existe et un diagnostic minimisé.
+
+Les buckets d'attention visibles dans le cockpit sont `blocking`, `today` et `soon`. Une revue non planifiée est classée dans `soon` tant qu'elle n'est pas par ailleurs bloquante.
+
+### POST /platform/regulatory-review-alerts/:id/acknowledge
+
+Acquitte une alerte réglementaire ouverte. L'opération exige le rôle administrateur, CSRF et idempotence. Elle ne modifie aucune preuve réglementaire, aucun statut de contrôle et aucun routage.
+
+### POST /platform/tenant-number-assignments/:id/regulatory-evidence — next_review_at
+
+Le payload de preuve accepte désormais un `next_review_at` futur. Lorsqu'il est fourni, la prochaine revue du profil concerné est mise à jour dans la même transaction que l'ajout de preuve, puis les anciennes alertes de ce framework sont résolues avant le prochain recalcul.
