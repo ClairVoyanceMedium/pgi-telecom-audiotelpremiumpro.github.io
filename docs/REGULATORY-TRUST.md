@@ -13,6 +13,7 @@ L'activation d'une affectation SVA externe est fail-closed. Elle reste impossibl
 - AF2M, recommandations déontologiques SVA : https://af2m.org/rd-sva/
 - Code de la consommation, services accessibles par opérateurs : https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000006069565/LEGISCTA000032221565/
 - Décision Arcep 2022-1583 / plan de numérotation : https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000046830288
+- Décision Arcep 2025-2215 du 27 novembre 2025, version du plan applicable au 1er janvier 2026 : https://www.arcep.fr/uploads/tx_gsavis/25-2215.pdf
 
 Les exigences contractuelles de l'opérateur attributaire et les versions en vigueur des recommandations AF2M restent à vérifier lors du raccordement réel.
 
@@ -33,6 +34,23 @@ Activation externe requise :
 9. Nom, description, fournisseur, adresse et contact réclamation renseignés.
 10. Opérateur attributaire et référence amont présents.
 11. Revue réglementaire non expirée.
+
+## Garde-fous ARCEP 2026
+
+La migration `040_arcep_2026_number_guardrails.sql` ajoute un second verrou fail-closed pour les numéros spéciaux français à tarification majorée des racines 081, 082 et 089. Il traduit en contrôles techniques séparés les exigences du plan de numérotation applicable au 1er janvier 2026, sans prétendre délivrer une certification juridique.
+
+Avant activation externe, le dossier doit désormais établir :
+
+- l'affectation exclusive et stable du numéro à une seule personne physique ou morale ;
+- l'utilisation du numéro pour un seul service ;
+- la mise à disposition de la portabilité dès l'affectation ;
+- la vérification du respect du plafond tarifaire applicable à la racine concernée ;
+- l'absence d'utilisation temporaire du numéro pour contacter une personne sans consentement préalable explicite ;
+- l'éligibilité de l'entité lorsqu'elle relève du secteur public, ou le caractère non applicable de ce contrôle ;
+- pour un 089, le blocage de sa présentation comme identifiant de l’appelant ;
+- pour un 0895, la classification explicite correspondant à la catégorie dédiée aux services que l'éditeur souhaite rendre inaccessibles avec l'option de contrôle parental.
+
+Une seconde chaîne de preuves, `sva_arcep_2026_evidence_events`, est append-only et protégée par SHA-256. Une activation concurrente du même numéro par deux clients est aussi refusée sous verrou transactionnel par numéro.
 
 ## Contrôles plateforme France
 
@@ -70,6 +88,7 @@ Chaque affectation SVA peut générer un dossier d'audit JSON horodaté depuis l
 - état KYC ;
 - profil réglementaire et état de préparation ;
 - chaîne complète des preuves réglementaires et son hash de tête ;
+- profil ARCEP 2026, chaîne de preuves ARCEP 2026 et hash de tête dédié ;
 - historique de portabilité et événements opérateur assainis ;
 - affectations successives aux opérateurs ;
 - historique d'activation / suspension de la ligne ;
