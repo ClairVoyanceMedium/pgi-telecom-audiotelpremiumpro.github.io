@@ -291,14 +291,14 @@
         <div id="subscription-list" class="cp-stack"></div>
         <div class="cp-stack">
           <div id="client-billing-offer" class="cp-row"><div><strong>Offre mensuelle</strong><span id="client-billing-offer-detail">Tarif en cours de chargement.</span></div><span id="client-billing-offer-chip" class="cp-chip neutral">—</span></div>
-          <div class="cp-row"><div><strong>Abonnement PGI</strong><span id="client-billing-provider-state">Architecture de paiement prête, prestataire non connecté.</span></div><span id="client-billing-provider-chip" class="cp-chip neutral">NON CONNECTÉ</span></div>
-          <div class="cp-row"><div><strong>Reversements Audiotel</strong><span>L’opérateur règle PGI, puis PGI calcule et reverse votre montant net selon vos conditions contractuelles.</span></div><span class="cp-chip ok">PGI → CLIENT</span></div>
+          <div class="cp-row"><div><strong>Abonnement Audiotel Premium Pro</strong><span id="client-billing-provider-state">Architecture de paiement prête, prestataire non connecté.</span></div><span id="client-billing-provider-chip" class="cp-chip neutral">NON CONNECTÉ</span></div>
+          <div class="cp-row"><div><strong>Reversements Audiotel</strong><span>L’opérateur règle Audiotel Premium Pro, puis Audiotel Premium Pro calcule et reverse votre montant net selon vos conditions contractuelles.</span></div><span class="cp-chip ok">AUDIOTEL PREMIUM PRO → CLIENT</span></div>
         </div>
         <div class="cp-search-scopes" aria-label="Gestion de l’abonnement">
           <button id="client-billing-start" type="button" disabled>Activer mon abonnement</button>
           <button id="client-billing-manage" type="button" disabled>Gérer la facturation</button>
         </div>
-        <p class="cp-billing-trust">Le futur paiement sera traité sur une page sécurisée du prestataire de paiement. PGI ne stockera pas les données de carte bancaire.</p>
+        <p class="cp-billing-trust">Le futur paiement sera traité sur une page sécurisée du prestataire de paiement. Audiotel Premium Pro ne stockera pas les données de carte bancaire.</p>
       </article>
     </section>
 
@@ -310,8 +310,8 @@
     </section>
 
     <section id="client-service-center" class="cp-panel cp-anchor-section">
-      <div class="cp-panel-head"><div><p class="cp-kicker">SUIVI & ASSISTANCE</p><h2>Centre de service PGI</h2></div><span id="service-incident-count">0</span></div>
-      <p class="cp-muted">Un dossier unique conserve votre problème, les diagnostics PGI, les messages et l’avancement. Vous n’avez pas à réexpliquer la situation à chaque échange.</p>
+      <div class="cp-panel-head"><div><p class="cp-kicker">SUIVI & ASSISTANCE</p><h2>Centre de service Audiotel Premium Pro</h2></div><span id="service-incident-count">0</span></div>
+      <p class="cp-muted">Un dossier unique conserve votre problème, les diagnostics Audiotel Premium Pro, les messages et l’avancement. Vous n’avez pas à réexpliquer la situation à chaque échange.</p>
       <div class="csc-actions"><button id="service-incident-open" class="cp-primary" type="button">Signaler un problème</button></div>
       <div id="service-alert-list"></div>
       <div id="service-incident-list"></div>
@@ -332,7 +332,7 @@
       <div><p class="cp-kicker">PORTABILITÉ ENTRANTE</p><h2>Conserver mon numéro surtaxé</h2></div>
       <button id="portability-close" class="cp-dialog-close" type="button" aria-label="Fermer">×</button>
     </div>
-    <p class="cp-muted">Saisissez le numéro que vous utilisez déjà. PGI prépare sa portabilité sans reprendre votre ancien contrat, vos dettes, vos pénalités ni votre durée d’engagement éventuelle. Le numéro reste identique.</p>
+    <p class="cp-muted">Saisissez le numéro que vous utilisez déjà. Audiotel Premium Pro prépare sa portabilité sans reprendre votre ancien contrat, vos dettes, vos pénalités ni votre durée d’engagement éventuelle. Le numéro reste identique.</p>
     <div class="cp-form-grid">
       <label>Pays du numéro<select id="portability-country" required><option value="FR">France</option></select></label>
       <label>Numéro actuel<input id="portability-number" type="tel" inputmode="tel" autocomplete="tel" required maxlength="24" placeholder="0890… ou +33890…"></label>
@@ -351,12 +351,12 @@
       <label>Code tarifaire <span class="cp-optional">(si connu)</span><input id="portability-tariff-code" type="text" maxlength="80" placeholder="Ex. D080"></label>
     </div>
     <label>Type de numéro<select id="portability-service-family"><option value="premium_rate">Numéro surtaxé</option><option value="shared_cost">Numéro à coût partagé</option><option value="freephone">Numéro gratuit</option><option value="other">Autre numéro de service</option></select></label>
-    <label class="cp-check"><input id="portability-source-contract" type="checkbox" required><span>Je comprends que PGI ne reprend ni dette, ni pénalité, ni durée d’engagement de mon ancien contrat. Ces obligations éventuelles restent à ma charge.</span></label>
+    <label class="cp-check"><input id="portability-source-contract" type="checkbox" required><span>Je comprends qu’Audiotel Premium Pro ne reprend ni dette, ni pénalité, ni durée d’engagement de mon ancien contrat. Ces obligations éventuelles restent à ma charge.</span></label>
     <label class="cp-check"><input id="portability-owner-confirmed" type="checkbox" required><span>Je confirme être titulaire de ce numéro ou être mandaté par son titulaire.</span></label>
     <label class="cp-check"><input id="portability-authority-confirmed" type="checkbox" required><span>J’autorise l’ouverture d’une demande de portabilité auprès de l’opérateur concerné.</span></label>
     <p id="portability-message" class="cp-form-message" aria-live="polite"></p>
     <button id="portability-submit" class="cp-primary" type="submit">Envoyer ma demande</button>
-    <p class="cp-billing-trust">La demande ne coupe pas votre ligne actuelle. À la portabilité effective, le service lié au numéro est résilié chez l’ancien opérateur selon les règles applicables, sans transfert de ses obligations antérieures à PGI. Votre service chez PGI relève de vos propres conditions PGI.</p>
+    <p class="cp-billing-trust">La demande ne coupe pas votre ligne actuelle. À la portabilité effective, le service lié au numéro est résilié chez l’ancien opérateur selon les règles applicables, sans transfert de ses obligations antérieures à Audiotel Premium Pro. Votre service Audiotel Premium Pro relève de vos propres conditions contractuelles.</p>
   </form>
 </dialog>
 
