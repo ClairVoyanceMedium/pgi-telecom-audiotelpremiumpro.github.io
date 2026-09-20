@@ -112,6 +112,55 @@ function renderInsights(){
   if(!insights.length)insights.push(insight("ok","Aucun signal critique","Les indicateurs disponibles ne montrent pas d’écart significatif nécessitant une action immédiate."));
   el.innerHTML=insights.slice(0,4).join("");
 }
+function voiceMetric(label,value,note,tone){
+  return '<div class="cp-client-voice-metric '+(tone||"")+'"><span>'+esc(t(label))+'</span><strong>'+esc(value)+'</strong><small>'+esc(t(note||""))+'</small></div>';
+}
+function renderVoiceQuality(){
+  var root=$("client-voice-quality");if(!root||!portalData)return;
+  var q=portalData.voice_quality||{},calls=n(q.calls_total),connected=n(q.calls_connected),samples=n(q.quality_samples),pddSamples=n(q.pdd_samples);
+  var connection=calls?connected/calls*100:null,affected=samples?n(q.network_affected_calls)/samples*100:null,highPdd=pddSamples?n(q.high_pdd_calls)/pddSamples*100:null,sip5=calls?n(q.sip_5xx_calls)/calls*100:null;
+  root.innerHTML=[
+    voiceMetric("Taux de connexion",connection==null?"—":nf(connection,1)+" %",calls?nf(calls)+" appels analysés":"Aucun appel",connection!=null&&connection<75?"bad":connection!=null&&connection<88?"warn":"good"),
+    voiceMetric("Temps avant sonnerie",pddSamples?nf(n(q.avg_pdd_ms)/1000,2)+" s":"—",pddSamples?nf(highPdd,1)+" % au-dessus de 8 s":"Pas de mesure PDD",highPdd!=null&&highPdd>=15?"warn":"good"),
+    voiceMetric("Réseau affecté",samples?nf(affected,1)+" %":"—",samples?nf(samples)+" échantillons RTP":"Pas de mesure RTP",affected!=null&&affected>=15?"bad":affected!=null&&affected>=5?"warn":"good"),
+    voiceMetric("Qualité voix MOS",samples&&q.mos!=null?nf(q.mos,2):"—",samples?"Moyenne des échantillons":"Pas de mesure MOS",samples&&n(q.mos)<3.5?"bad":samples&&n(q.mos)<4?"warn":"good"),
+    voiceMetric("Perte de paquets",samples&&q.packet_loss_percent!=null?nf(q.packet_loss_percent,2)+" %":"—","Diagnostic réseau",samples&&n(q.packet_loss_percent)>=5?"bad":"good"),
+    voiceMetric("Jitter",samples&&q.jitter_ms!=null?nf(q.jitter_ms,1)+" ms":"—","Variation du délai",samples&&n(q.jitter_ms)>5?"warn":"good"),
+    voiceMetric("Latence",samples&&q.latency_ms!=null?nf(q.latency_ms,0)+" ms":"—","Délai média",samples&&n(q.latency_ms)>150?"bad":"good"),
+    voiceMetric("Erreurs SIP 5xx",calls?nf(sip5,1)+" %":"—",nf(q.sip_5xx_calls||0)+" appels",sip5!=null&&sip5>=10?"bad":"good")
+  ].join("");
+  var badge=$("client-voice-samples");if(badge)badge.textContent=samples?nf(samples)+" "+t("échantillons techniques"):t("Données techniques");
+}
+function diagnosticValue(label,value){return '<div><span>'+esc(t(label))+'</span><strong>'+esc(value==null||value===""?"—":value)+'</strong></div>';}
+function hangupParty(v){return v==="caller"?t("Appelant"):v==="callee"?t("Destinataire"):v==="network"?t("Réseau"):t("Indéterminé");}
+function showCallDiagnostic(id){
+  var row=calls.find(function(x){return String(x.call_id)===String(id);})||(portalData&&portalData.recent_calls||[]).find(function(x){return String(x.call_id)===String(id);});
+  if(!row)return;
+  var title=$("client-call-diagnostic-title"),grid=$("client-call-diagnostic-grid"),dialog=$("client-call-diagnostic-dialog");
+  if(title)title.textContent=t("Appel")+" #"+row.call_id+" · "+dt(row.started_at);
+  var pdd=row.post_dial_delay_ms==null?"—":nf(n(row.post_dial_delay_ms)/1000,2)+" s";
+  if(grid)grid.innerHTML=[
+    diagnosticValue("Date",dt(row.started_at)),
+    diagnosticValue("Numéro",row.display_number||row.e164||"—"),
+    diagnosticValue("État",statusLabel(row.call_status)),
+    diagnosticValue("Durée",duration(row.billable_seconds||row.conversation_seconds)),
+    diagnosticValue("Montant TTC",money(row.retail_service_amount_ttc,row.currency)),
+    diagnosticValue("Temps avant sonnerie",pdd),
+    diagnosticValue("Code SIP final",row.sip_final_code||"—"),
+    diagnosticValue("Cause de fin",row.hangup_cause||"—"),
+    diagnosticValue("Qui a raccroché",hangupParty(row.hangup_party)),
+    diagnosticValue("Codec",row.codec||"—"),
+    diagnosticValue("Réseau d’origine",row.origin_carrier||"—"),
+    diagnosticValue("Opérateur hôte",row.host_carrier||"—"),
+    diagnosticValue("Perte de paquets",row.packet_loss_percent==null?"—":nf(row.packet_loss_percent,2)+" %"),
+    diagnosticValue("Jitter",row.jitter_ms==null?"—":nf(row.jitter_ms,1)+" ms"),
+    diagnosticValue("Latence",row.latency_ms==null?"—":nf(row.latency_ms,0)+" ms"),
+    diagnosticValue("RTT",row.rtt_ms==null?"—":nf(row.rtt_ms,0)+" ms"),
+    diagnosticValue("MOS",row.mos==null?"—":nf(row.mos,2)),
+    diagnosticValue("Paquets perdus",row.packets_lost==null?"—":nf(row.packets_lost,0))
+  ].join("");
+  if(dialog&&typeof dialog.showModal==="function")dialog.showModal();
+}
 async function loadPrevious(){
   if(!portalData||!portalData.range)return;
   if(portalData.comparison_previous){
@@ -153,10 +202,10 @@ function filterDemo(rows,f){
 function renderCallRows(rows,append){
   var body=$("calls-body");if(!body)return;
   var html=rows.map(function(x){
-    return "<tr><td>"+esc(dt(x.started_at))+"</td><td>"+esc(x.display_number||x.e164||"—")+"</td><td>"+chip(x.call_status)+"</td><td>"+esc(duration(x.billable_seconds||x.conversation_seconds))+"</td><td>"+esc(money(x.retail_service_amount_ttc,x.currency))+"</td></tr>";
+    return "<tr><td>"+esc(dt(x.started_at))+"</td><td>"+esc(x.display_number||x.e164||"—")+"</td><td>"+chip(x.call_status)+"</td><td>"+esc(duration(x.billable_seconds||x.conversation_seconds))+"</td><td>"+esc(money(x.retail_service_amount_ttc,x.currency))+"</td><td><button class=\"cp-diagnostic-btn\" type=\"button\" data-call-diagnostic=\""+esc(x.call_id)+"\">"+esc(t("Voir"))+"</button></td></tr>";
   }).join("");
   if(append)body.insertAdjacentHTML("beforeend",html);
-  else body.innerHTML=html||'<tr><td colspan="5" class="cp-empty-cell">'+esc(t("Aucun appel correspondant aux filtres."))+"</td></tr>";
+  else body.innerHTML=html||'<tr><td colspan="6" class="cp-empty-cell">'+esc(t("Aucun appel correspondant aux filtres."))+"</td></tr>";
 }
 function setCallMeta(){
   var meta=$("call-filter-summary"),more=$("call-load-more"),f=callFilters();
@@ -206,11 +255,15 @@ function bindFilters(){
   ["call-filter-min-duration","call-filter-min-amount"].forEach(function(id){var el=$(id);if(el)el.addEventListener("input",function(){clearTimeout(timer);timer=setTimeout(function(){loadCalls(false);},280);});});
   var reset=$("call-filter-reset");if(reset)reset.addEventListener("click",resetFilters);
   var more=$("call-load-more");if(more)more.addEventListener("click",function(){if(nextCursor)loadCalls(true);});
+  var body=$("calls-body");if(body)body.addEventListener("click",function(event){
+    var button=event.target.closest("[data-call-diagnostic]");if(button)showCallDiagnostic(button.dataset.callDiagnostic);
+  });
 }
 function onPortalLoaded(event){
   portalData=event.detail&&event.detail.data||null;previousData=null;calls=[];nextCursor=null;
   if(!portalData)return;
   populateNumbers();
+  renderVoiceQuality();
   renderInsights();
   loadPrevious();
   loadCalls(false);
