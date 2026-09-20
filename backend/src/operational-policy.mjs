@@ -35,7 +35,7 @@ export function evaluateOperationalPolicy(intent,facts={}){
     requireTrue(facts,"regulatory_ready","REGULATORY_TRUST_REQUIRED","Trust Center réglementaire prêt requis",blockers,actions,true);
     requireTrue(facts,"arcep_2026_ready","ARCEP_2026_REQUIRED","Garde-fous ARCEP 2026 prêts requis",blockers,actions,true);
     requireTrue(facts,"destination_ready","DESTINATION_REQUIRED","Destination téléphonique testée et disponible requise",blockers,actions,true);
-    actionTrue(facts,"operator_adapter_connected","OPERATOR_CONNECTION_PENDING","Connexion opérateur réelle à effectuer avant mise en production");
+    actionTrue(facts,"operator_adapter_connected","OPERATOR_CONNECTION_PENDING","Connexion opérateur réelle à effectuer avant mise en production",actions);
   }
 
   if(intent==="port_in"){
@@ -43,19 +43,19 @@ export function evaluateOperationalPolicy(intent,facts={}){
     requireTrue(facts,"payout_terms_ready","PAYOUT_TERMS_REQUIRED","Conditions de reversement PGI requises",blockers,actions,true);
     requireTrue(facts,"kyc_verified","KYC_REQUIRED","KYC vérifié requis",blockers,actions,true);
     requireTrue(facts,"portability_dossier_ready","PORTABILITY_DOSSIER_REQUIRED","Dossier de portabilité complet requis",blockers,actions,false);
-    actionTrue(facts,"operator_adapter_connected","PORTABILITY_PROVIDER_PENDING","Connexion au fournisseur de portabilité à effectuer");
+    actionTrue(facts,"operator_adapter_connected","PORTABILITY_PROVIDER_PENDING","Connexion au fournisseur de portabilité à effectuer",actions);
   }
 
   if(intent==="payout_customer"){
     requireTrue(facts,"payout_terms_ready","PAYOUT_TERMS_REQUIRED","Conditions de reversement PGI requises",blockers,actions,true);
     requireTrue(facts,"settlement_reconciled","SETTLEMENT_RECONCILIATION_REQUIRED","Rapprochement opérateur requis avant reversement",blockers,actions,false);
-    actionTrue(facts,"payment_provider_connected","PAYMENT_PROVIDER_PENDING","Prestataire de paiement réel à connecter");
+    actionTrue(facts,"payment_provider_connected","PAYMENT_PROVIDER_PENDING","Prestataire de paiement réel à connecter",actions);
   }
 
   if(intent==="carrier_switch"){
     requireTrue(facts,"target_carrier_ready","TARGET_CARRIER_NOT_READY","Connexion opérateur cible prête requise",blockers,actions,true);
     requireTrue(facts,"rollback_ready","ROLLBACK_REQUIRED","Plan de rollback requis",blockers,actions,false);
-    actionTrue(facts,"operator_adapter_connected","OPERATOR_CONNECTION_PENDING","Adaptateur opérateur réel à connecter avant activation");
+    actionTrue(facts,"operator_adapter_connected","OPERATOR_CONNECTION_PENDING","Adaptateur opérateur réel à connecter avant activation",actions);
   }
 
   if(intent==="customer_access"){
