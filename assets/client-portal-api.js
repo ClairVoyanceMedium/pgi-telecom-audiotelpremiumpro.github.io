@@ -59,7 +59,7 @@ root.PGICustomerApi=Object.freeze({
     var q=new URLSearchParams({from:from,to:to,limit:String(limit||100)});
     if(cursor)q.set("cursor",cursor);
     filters=filters||{};
-    [["status","status"],["number","number"],["min_duration","minDuration"],["max_duration","maxDuration"],["min_amount","minAmount"],["max_amount","maxAmount"]].forEach(function(pair){
+    [["status","status"],["number_id","numberId"],["min_duration","minDuration"],["max_duration","maxDuration"],["min_amount","minAmount"],["max_amount","maxAmount"]].forEach(function(pair){
       var value=filters[pair[1]];
       if(value!=null&&value!=="")q.set(pair[0],String(value));
     });
