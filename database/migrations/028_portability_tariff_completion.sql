@@ -35,7 +35,7 @@ ALTER TABLE tenant_portability_requests
         AND operator_portability_reference IS NOT NULL
         AND completed_at IS NOT NULL
       )
-    );
+    ) NOT VALID;
 
 CREATE INDEX tenant_portability_requests_carrier_status_idx
   ON tenant_portability_requests(target_carrier_id,status,scheduled_at);
