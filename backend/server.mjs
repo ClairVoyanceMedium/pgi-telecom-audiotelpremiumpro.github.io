@@ -281,10 +281,11 @@ export function createBackend(options={}){
            (previousFrom&&(!Number.isFinite(Date.parse(previousFrom))||!Number.isFinite(Date.parse(previousTo))||Date.parse(previousTo)<Date.parse(previousFrom)))){
           const e=new Error("Invalid previous range");e.status=400;e.code="INVALID_PREVIOUS_RANGE";throw e;
         }
-        const [summary,previousSummary,analytics,experts,system,route,reconciliation]=await Promise.all([
+        const [summary,previousSummary,analytics,voiceIntelligence,experts,system,route,reconciliation]=await Promise.all([
           store.summary(range.from,range.to,market),
           previousFrom?store.summary(previousFrom,previousTo,market):Promise.resolve(null),
           store.dashboardAnalytics(range.from,range.to,market),
+          typeof store.voiceIntelligence==="function"?store.voiceIntelligence(range.from,range.to,market):Promise.resolve(null),
           store.listExperts(),
           store.systemSnapshot(),
           store.carrierRouting(),
@@ -294,6 +295,7 @@ export function createBackend(options={}){
           summary,
           previous_summary:previousSummary,
           analytics,
+          voice_intelligence:voiceIntelligence,
           experts:{data:experts},
           system:runtimeSystemSnapshot(system,eventBus,workers,config),
           route,
@@ -314,6 +316,13 @@ export function createBackend(options={}){
         const range=rangeParams(url);
         const market=url.searchParams.get("market")||null;
         return done(res,metrics,started,"dashboard.analytics",200,await store.dashboardAnalytics(range.from,range.to,market));
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/dashboard/voice-intelligence"){
+        requireRole(actor,["admin","finance","readonly"]);
+        const range=rangeParams(url);
+        const market=url.searchParams.get("market")||null;
+        return done(res,metrics,started,"dashboard.voice_intelligence",200,await store.voiceIntelligence(range.from,range.to,market));
       }
 
       if(method==="GET"&&pathname==="/api/v1/calls"){
