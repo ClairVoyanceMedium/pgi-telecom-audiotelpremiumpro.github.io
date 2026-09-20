@@ -3630,8 +3630,22 @@ export class PostgresStore{
     };
   }
 
+  async serviceOperationsHealth(){
+    const rows=await this.readSql.unsafe(
+      "SELECT"+
+      " count(*) FILTER(WHERE status NOT IN ('resolved','closed'))::int AS service_incidents_open,"+
+      " count(*) FILTER(WHERE status NOT IN ('resolved','closed') AND severity='critical')::int AS service_incidents_critical,"+
+      " count(*) FILTER(WHERE status NOT IN ('resolved','closed') AND first_responded_at IS NULL AND first_response_due_at<now())::int AS service_first_response_overdue,"+
+      " count(*) FILTER(WHERE status NOT IN ('resolved','closed') AND target_resolution_at<now())::int AS service_resolution_overdue,"+
+      " (SELECT count(*)::int FROM tenant_operational_alerts WHERE state<>'resolved' AND alert_type='routing_unavailable') AS routing_unavailable,"+
+      " (SELECT count(*)::int FROM tenant_operational_alerts WHERE state<>'resolved' AND alert_type='portability_attention') AS portability_attention"+
+      " FROM tenant_service_incidents"
+    );
+    return rows[0]||{service_incidents_open:0,service_incidents_critical:0,service_first_response_overdue:0,service_resolution_overdue:0,routing_unavailable:0,portability_attention:0};
+  }
+
   async systemSnapshot(){
-    const [counts,last,route,queue,resilienceRows]=await Promise.all([
+    const [counts,last,route,queue,resilienceRows,serviceHealth]=await Promise.all([
       this.sql.unsafe(
         "SELECT count(*)::int AS calls_total,(SELECT count(*)::int FROM experts WHERE enabled AND status='available') AS experts_available,"+
         " (SELECT count(*)::int FROM outbox_events WHERE published_at IS NULL) AS outbox_pending FROM calls"
@@ -3644,7 +3658,8 @@ export class PostgresStore{
         " (SELECT count(*)::int FROM platform_regions) AS regions_total,"+
         " (SELECT count(*)::int FROM platform_regions WHERE status IN ('ready','active')) AS regions_ready,"+
         " (SELECT count(*)::int FROM disaster_recovery_targets WHERE enabled) AS dr_targets_total"
-      )
+      ),
+      this.serviceOperationsHealth()
     ]);
     return {
       mode:this.config.mode,store:"postgres",
@@ -3652,16 +3667,18 @@ export class PostgresStore{
       cdr_lag_seconds:last[0]?Math.max(0,(Date.now()-Date.parse(last[0].ended_at))/1000):0,
       outbox_pending:counts[0].outbox_pending,event_subscribers:this.eventBus.size,carrier_route:route,
       work_queue:queue,
-      resilience:resilienceRows[0]||{regions_total:0,regions_ready:0,dr_targets_total:0}
+      resilience:resilienceRows[0]||{regions_total:0,regions_ready:0,dr_targets_total:0},
+      service_operations:serviceHealth
     };
   }
 
   async metrics(){
-    const [calls,outbox]=await Promise.all([
+    const [calls,outbox,serviceHealth]=await Promise.all([
       this.sql.unsafe("SELECT count(*)::int AS calls_total,count(*) FILTER(WHERE call_status='connected')::int AS calls_connected FROM calls"),
-      this.sql.unsafe("SELECT count(*)::int AS outbox_pending FROM outbox_events WHERE published_at IS NULL")
+      this.sql.unsafe("SELECT count(*)::int AS outbox_pending FROM outbox_events WHERE published_at IS NULL"),
+      this.serviceOperationsHealth()
     ]);
-    return {...calls[0],...outbox[0],event_subscribers:this.eventBus.size};
+    return {...calls[0],...outbox[0],...serviceHealth,event_subscribers:this.eventBus.size};
   }
 }
 
