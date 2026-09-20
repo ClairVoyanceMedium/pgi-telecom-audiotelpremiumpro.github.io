@@ -317,3 +317,11 @@ Voir `docs/PORTABILITY.md`.
 Définit les conditions commerciales de reversement d’un client : pourcentage de marge PGI, éventuel montant HT/minute et délai de paiement. Une affectation SVA externe ne peut pas devenir active sans conditions de reversement applicables.
 
 Les relevés clients sont produits par `tenant_revenue_distributions`. Pour chaque règlement opérateur rapproché, le moteur impose l’identité `reversement opérateur attribué à PGI = marge PGI + net client + montant non alloué`. Un montant non alloué bloque le reversement au lieu d’accorder implicitement 100 % au client.
+
+
+### POST /platform/tenant-number-assignments/:id/regulatory-evidence-pack
+
+Génère un Evidence Pack réglementaire privé pour une affectation SVA externe. L'opération exige une session autorisée, un jeton CSRF et une clé d'idempotence. Le pack contient un instantané horodaté du KYC, du profil réglementaire, de la chaîne de preuves, de la portabilité, des affectations opérateur, des incidents, des signalements fraude, des contrôles plateforme et de l'historique de routage.
+
+La réponse expose `integrity.pack_sha256`, `integrity.evidence_chain_head` et `integrity.evidence_links_valid`. L'export est journalisé dans `audit_log`. Le RIO brut, les secrets de portabilité, les numéros d'appelants et le contenu des appels ne sont jamais inclus.
+
