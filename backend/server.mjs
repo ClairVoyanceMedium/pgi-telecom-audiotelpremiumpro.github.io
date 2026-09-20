@@ -687,6 +687,20 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.regulatory_evidence",201,{...result.value,replayed:result.replayed});
       }
 
+      if(method==="GET"&&pathname==="/api/v1/platform/regulatory-review-alerts"){
+        requireRole(actor,["admin","finance","readonly"]);
+        const params=Object.fromEntries(url.searchParams.entries());
+        return done(res,metrics,started,"platform.regulatory_review_alerts",200,await store.listRegulatoryReviewAlerts(params));
+      }
+
+      match=routeMatch(pathname,"/api/v1/platform/regulatory-review-alerts/:id/acknowledge");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const payload={id:match.id};
+        const result=await store.idempotent(req.headers["idempotency-key"],"regulatory.review_alert.acknowledge",payload,()=>store.acknowledgeRegulatoryReviewAlert(match.id,actor));
+        return done(res,metrics,started,"platform.regulatory_review_alert_ack",200,{...result.value,replayed:result.replayed});
+      }
+
       match=routeMatch(pathname,"/api/v1/platform/tenant-number-assignments/:id/abuse-cases");
       if(method==="POST"&&match){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
