@@ -163,7 +163,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const dueSoon=new Date(Date.now()+12*3600000).toISOString();
     const dueEvidence=await store.recordSvaRegulatoryEvidence(Number(extAssignmentForRoute[0].id),{control_key:"single_service",status:"verified",source:"internal",evidence_reference:"integration:review-due",next_review_at:dueSoon},{sub:"admin"});
     assert.equal(dueEvidence.framework,"arcep_2026");
-    assert.equal(dueEvidence.profile.next_review_at,dueSoon);
+    assert.equal(Date.parse(dueEvidence.profile.next_review_at),Date.parse(dueSoon));
     const regulatoryAlerts=await store.scanRegulatoryReviews();
     const dueAlert=regulatoryAlerts.find(x=>x.framework==="arcep_2026"&&x.alert_kind==="review_due_today");
     assert.ok(dueAlert);
