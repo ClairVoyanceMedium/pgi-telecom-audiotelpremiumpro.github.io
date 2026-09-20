@@ -44,7 +44,7 @@ function demoData(range){
     series.push(row);
     Object.keys(sums).forEach(function(k){sums[k]+=Number(row[k]||0);});
   }
-  var recent=[];for(var j=0;j<20;j++){var s=new Date(to.getTime()-j*5400000),connected=j%6!==3;recent.push({call_id:j+1,display_number:j%3===0?"0892 98 76 54":"0892 12 34 56",market:"FR",currency:"EUR",started_at:s.toISOString(),call_status:connected?"connected":j%2?"abandoned":"no_answer",conversation_seconds:connected?110+j*13:0,billable_seconds:connected?110+j*13:0,retail_service_amount_ttc:connected?Math.round((1.45+j*.11)*100)/100:0});}
+  var recent=[];for(var j=0;j<20;j++){var s=new Date(to.getTime()-j*5400000),connected=j%6!==3;recent.push({call_id:j+1,display_number:j%3===0?"0892 98 76 54":"0892 12 34 56",market:"FR",currency:"EUR",started_at:s.toISOString(),ringing_at:new Date(s.getTime()+2100+(j%4)*180).toISOString(),call_status:connected?"connected":j%2?"abandoned":"failed",conversation_seconds:connected?110+j*13:0,billable_seconds:connected?110+j*13:0,retail_service_amount_ttc:connected?Math.round((1.45+j*.11)*100)/100:0,post_dial_delay_ms:2100+(j%4)*180,sip_final_code:connected?200:(j%2?487:503),hangup_cause:connected?"NORMAL_CLEARING":(j%2?"ORIGINATOR_CANCEL":"NORMAL_TEMPORARY_FAILURE"),hangup_party:connected?(j%2?"caller":"callee"):"network",codec:"PCMA",origin_carrier:j%2?"Orange":"SFR",host_carrier:"Opérateur hôte Démo",packet_loss_percent:.28+(j%3)*.11,jitter_ms:2.8+(j%4)*.4,latency_ms:38+(j%5)*3,rtt_ms:72+(j%5)*4,mos:4.25-(j%4)*.04,packets_lost:j%3,dtmf_errors:0});}
   return {
     user:{name:"Camille Martin",role:"owner"},
     tenant:{display_name:"Société Démo",default_currency:"EUR",country_code:"FR",status:"active"},
@@ -57,7 +57,9 @@ function demoData(range){
     settlements:[{id:1,currency:"EUR",period_start:"2026-08-01",period_end:"2026-08-31",net_payout_ht:428.75,status:"paid",paid_at:"2026-09-12T10:00:00Z"},{id:2,currency:"EUR",period_start:"2026-09-01",period_end:"2026-09-15",net_payout_ht:231.2,status:"payable",payment_due_date:"2026-09-30"}],
     subscriptions:[{id:1,status:"active",billing_currency:"EUR",current_period_start:"2026-09-01T00:00:00Z",current_period_end:"2026-10-01T00:00:00Z",plan_name:"Accès Audiotel",amount_minor:200,price_currency:"EUR",billing_interval:"month",last_payment_status:"paid"}],
     destinations:[{id:1,sva_number_id:1,label:"Standard principal",destination_type:"pstn",destination_uri:"tel:+33123456789",priority:10,status:"active",active_calls:1,max_concurrent_calls:25}],
-    recent_calls:recent,range:range,server_time:new Date().toISOString()
+    recent_calls:recent,
+    voice_quality:{calls_total:sums.calls_total,calls_connected:sums.calls_connected,pdd_samples:sums.calls_total,avg_pdd_ms:2380,high_pdd_calls:Math.round(sums.calls_total*.025),quality_samples:sums.calls_total,network_affected_calls:Math.round(sums.calls_total*.018),low_mos_calls:Math.round(sums.calls_total*.012),mos:4.26,packet_loss_percent:.34,jitter_ms:3.4,latency_ms:44,rtt_ms:78,sip_5xx_calls:Math.round(sums.calls_total*.008),caller_hangups:Math.round(sums.calls_connected*.52),callee_hangups:Math.round(sums.calls_connected*.43),network_hangups:Math.round(sums.calls_total*.05)},
+    range:range,server_time:new Date().toISOString()
   };
 }
 function aggregate(data){
