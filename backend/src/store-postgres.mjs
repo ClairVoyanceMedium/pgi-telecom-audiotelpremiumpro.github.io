@@ -1373,10 +1373,13 @@ export class PostgresStore{
     const take=clampInt(limit,100,1,500);
     return this.sql.unsafe(
       "INSERT INTO work_queue(queue_name,tenant_id,dedupe_key,priority,payload,available_at,max_attempts)"+
-      " SELECT 'portability',p.tenant_id,'portability:'||p.id||':auto',20,jsonb_build_object('request_id',p.id,'action','auto'),now(),20"+
+      " SELECT 'portability',p.tenant_id,'portability:'||p.id||CASE WHEN p.status='cancelled' THEN ':cancel' ELSE ':auto' END,20,"+
+      " jsonb_build_object('request_id',p.id,'action',CASE WHEN p.status='cancelled' THEN 'cancel' ELSE 'auto' END),now(),20"+
       " FROM tenant_portability_requests p"+
-      " WHERE p.status NOT IN ('ported','rejected','cancelled')"+
-      " AND p.automation_state IN ('queued','checking','submitting','operator_pending','scheduled','action_required','failed')"+
+      " WHERE ("+
+      "   (p.status NOT IN ('ported','rejected','cancelled') AND p.automation_state IN ('queued','checking','submitting','operator_pending','scheduled','action_required','failed'))"+
+      "   OR (p.status='cancelled' AND p.operator_portability_reference IS NOT NULL AND p.automation_state IN ('cancelling','action_required','failed'))"+
+      " )"+
       " AND p.automation_next_at<=now()"+
       " ORDER BY p.automation_next_at ASC,p.id ASC LIMIT $1"+
       " ON CONFLICT(queue_name,dedupe_key) WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL"+
@@ -2466,6 +2469,7 @@ export class PostgresStore{
         [id]
       ))[0]||null;
       if(operatorState?.operator_portability_reference){
+        await tx.unsafe("UPDATE tenant_portability_requests SET automation_state='cancelling',automation_last_error=NULL,automation_next_at=now() WHERE id=$1",[id]);
         await tx.unsafe(
           "INSERT INTO work_queue(queue_name,tenant_id,dedupe_key,priority,payload,available_at,max_attempts)"+
           " VALUES('portability',$1,$2,10,$3::jsonb,now(),20)"+
