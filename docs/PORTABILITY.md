@@ -31,6 +31,26 @@ Pour les numéros SVA français, le workflow exige un RIO valide avant de passer
 
 `rejected` et `cancelled` couvrent les sorties avant finalisation. Le client peut annuler tant que la demande n'est pas planifiée.
 
+## Automatisation PGI
+
+Le traitement normal est automatique côté PGI. Dès qu’un client dépose une demande, PGI crée un travail de portabilité durable dans `work_queue`. Le moteur `portability-automation.mjs` :
+
+1. sélectionne l’opérateur SVA actif et sa connexion API ;
+2. vérifie que les conditions commerciales opérateur, le KYC, l’accès SVA et les conditions de reversement client sont disponibles ;
+3. déchiffre le RIO uniquement en mémoire au moment de l’appel opérateur ;
+4. appelle automatiquement l’interface d’éligibilité de l’opérateur lorsque le contrôle de titularité ou du tarif doit être complété ;
+5. soumet ensuite la portabilité ;
+6. récupère automatiquement la référence opérateur et la date de bascule ;
+7. interroge périodiquement le statut tant que la portabilité n’est pas terminée ;
+8. appelle automatiquement `completePortabilityRequest` lorsque l’opérateur confirme l’activation ;
+9. transmet également automatiquement une annulation à l’opérateur lorsqu’une demande déjà soumise est annulée.
+
+Les appels opérateur utilisent une connexion `carrier_connections` de type `api` et un `carrier_adapter` actif. Les URL d’éligibilité, de soumission, de statut et d’annulation sont portées par les paramètres de la connexion. Les secrets restent hors base dans la variable référencée par `secret_ref`.
+
+Le moteur est résilient : verrou de travail, heartbeat, reprise après crash, retry exponentiel, dead-letter et scanner de récupération. Un dossier temporairement bloqué est réessayé automatiquement. `action_required` signifie uniquement qu’un prérequis externe manque réellement (par exemple API opérateur non encore configurée, pièce explicitement exigée par l’opérateur, KYC ou conditions commerciales absentes) ; ce n’est pas le chemin normal.
+
+Les réponses opérateur sont journalisées dans `portability_operator_events` après suppression des RIO, secrets, jetons, clés API, mots de passe et en-têtes d’autorisation. Le RIO en clair n’est jamais placé dans la file de travaux ni dans les journaux.
+
 ## Finalisation atomique
 
 Après confirmation de la bascule réelle par l'opérateur, `completePortabilityRequest` verrouille le dossier et la route `sva-primary`, puis contrôle tous les prérequis. La même transaction :
