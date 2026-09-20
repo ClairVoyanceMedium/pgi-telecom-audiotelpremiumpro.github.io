@@ -157,7 +157,7 @@ test("la palette universelle accélère la navigation",()=>{
   assert.match(commands,/ctrlKey\|\|e\.metaKey/);
   assert.match(commands,/pgi:command/);
   assert.match(commands,/Ouvrir Finance/);
-  assert.match(commands,/Exporter les appels en CSV/);
+  assert.match(commands,/Ouvrir le centre d’export/);
   assert.match(commandLoader,/import\("\.\/command-palette\.js"\)/);
   assert.doesNotMatch(index,/src="assets\/command-palette\.js"/);
   assert.match(css,/\.command-palette-btn\{/);
@@ -369,7 +369,7 @@ test("brand header polish keeps split colors, larger icon and dark period contra
 });
 
 
-test("customer portal stays separate, tenant-facing and outside the critical shell",()=>{assert.match(clientPortal,/Audiotel Premium Pro/);assert.match(clientPortal,/Espace client/);assert.match(clientPortal,/noindex,nofollow,noarchive/);for(const token of ["kpi-calls","kpi-minutes","kpi-revenue","kpi-payout","numbers-list","settlements-list","destinations-list"])assert.ok(clientPortal.includes(token),token);for(const path of ["/customer/auth/login","/customer/auth/activate","/customer/portal","/customer/calls"])assert.ok(clientPortalApi.includes(path),path);assert.match(clientPortalJs,/Exporter CSV|exportCalls/);assert.match(clientPortalCss,/--bg:#0d0f11/);assert.doesNotMatch(sw,/client\.html|client-portal/);});
+test("customer portal stays separate, tenant-facing and outside the critical shell",()=>{assert.match(clientPortal,/Audiotel Premium Pro/);assert.match(clientPortal,/Espace client/);assert.match(clientPortal,/noindex,nofollow,noarchive/);for(const token of ["kpi-calls","kpi-minutes","kpi-revenue","kpi-payout","numbers-list","settlements-list","destinations-list"])assert.ok(clientPortal.includes(token),token);for(const path of ["/customer/auth/login","/customer/auth/activate","/customer/portal","/customer/calls"])assert.ok(clientPortalApi.includes(path),path);assert.match(clientPortalJs,/exportClient|Rapport complet/);assert.match(clientPortalCss,/--bg:#0d0f11/);assert.doesNotMatch(sw,/client\.html|client-portal/);});
 
 
 test("customer portal has professional analytics and multi-export center",()=>{for(const id of ["calls-chart","minutes-chart","revenue-chart","status-donut","payout-bars","client-export-dialog"])assert.ok(clientPortal.includes('id="'+id+'"'),id);assert.match(clientPortalJs,/function renderAnalytics/);assert.match(clientPortalJs,/function exportClient/);for(const kind of ["report","calls","settlements","numbers","print"])assert.ok(clientPortal.includes('data-client-export="'+kind+'"'),kind);assert.match(clientPortalCss,/--panel:#181b1f/);});
