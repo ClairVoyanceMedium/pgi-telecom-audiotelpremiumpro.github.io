@@ -95,6 +95,11 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(billingPrep.checkout_prefill.email,"billing@example.test");
     assert.equal(billingPrep.return_paths.success,"client.html?billing=success");
 
+    await assert.rejects(
+      ()=>store.sql.unsafe("INSERT INTO tenant_number_assignments(tenant_id,sva_number_id,assignment_type,status,valid_from) SELECT t.id,s.id,'customer_service','active',now() FROM tenants t CROSS JOIN sva_numbers s WHERE t.slug='integration-external' AND s.e164='33890000001'"),
+      /active external SVA assignment requires PGI payout terms/
+    );
+
     const payoutTerms=await store.createTenantPayoutTerms(externalIdentity[0].public_id,{platform_fee_percent:20,payout_delay_days:7},{sub:"admin"});
     assert.equal(Number(payoutTerms.platform_fee_bps),2000);
     assert.equal(payoutTerms.collection_model,"pgi_collects");
