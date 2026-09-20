@@ -283,7 +283,7 @@ Point d’orchestration réservé à la future création d’une session de sous
 ### POST /customer/billing/portal-session
 Point d’orchestration réservé au futur portail de gestion de facturation. Sans prestataire connecté, la route répond `503 PAYMENT_PROVIDER_NOT_CONNECTED`.
 
-La facturation PGI et les reversements SVA restent deux flux séparés. L’abonnement suit `client → prestataire de paiement → PGI`. Les reversements SVA suivent `opérateur SVA → client` et ne transitent pas par PGI.
+La facturation d’abonnement et les reversements SVA restent deux flux séparés. L’abonnement suit `client → prestataire de paiement → PGI`. Le modèle SVA nominal suit `opérateur SVA → PGI → marge PGI → net client`. Le règlement opérateur est rapproché appel par appel, puis PGI matérialise sa marge contractuelle et la dette nette envers le client. Le net client ne devient `payable` qu’après encaissement amont et validation des garde-fous KYC, bancaires et de conformité du flux de fonds.
 
 ### GET /customer/portal?from=...&to=...
 Appel consolidé du portail client : trafic, séries journalières, numéros, reversements, abonnement, destinations de routage, qualité voix agrégée et derniers appels avec diagnostic technique. Les données sont lues dans le contexte SQL du tenant et peuvent utiliser la réplique de lecture.
@@ -312,3 +312,8 @@ Le dossier conserve l'E.164 existant, le tarif TTC/minute déclaré, sa devise e
 `POST /platform/portability/:id/complete` est l'unique finalisation. Elle exige un dossier `scheduled`, titularité et tarif vérifiés, KYC validé, client et abonnement SVA actifs, opérateur cible égal à la route `sva-primary` active et connexion prête. La création du numéro, de l'affectation client, du rattachement opérateur, de l'événement de portabilité, de l'audit et du passage à `ported` est atomique.
 
 Voir `docs/PORTABILITY.md`.
+
+### POST /platform/tenants/:id/payout-terms
+Définit les conditions commerciales de reversement d’un client : pourcentage de marge PGI, éventuel montant HT/minute et délai de paiement. Une affectation SVA externe ne peut pas devenir active sans conditions de reversement applicables.
+
+Les relevés clients sont produits par `tenant_revenue_distributions`. Pour chaque règlement opérateur rapproché, le moteur impose l’identité `reversement opérateur attribué à PGI = marge PGI + net client + montant non alloué`. Un montant non alloué bloque le reversement au lieu d’accorder implicitement 100 % au client.
