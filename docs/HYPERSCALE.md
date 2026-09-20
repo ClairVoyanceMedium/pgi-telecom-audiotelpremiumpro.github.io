@@ -364,7 +364,7 @@ Les pièces KYC, relevés opérateurs, factures, exports CDR, sauvegardes et gro
 
 La couche 1.20 ajoute un droit d'accès commercial distinct des reversements SVA. Elle s'applique uniquement aux tenants `customer` et `reseller`. Les tenants `internal` restent exemptés.
 
-Le plan `external-sva-access` contient l'entitlement `premium_rate_calls=true`. La version historique initiale est de 200 unités mineures EUR ; le prix courant passe à **300 unités mineures EUR, soit 3,00 EUR par mois, le 20 septembre 2026**. `service_plan_price_versions` conserve chaque version de prix et sa période d'effet. Un nouveau prix clôt la période de la version précédente et ajoute une nouvelle ligne ; il ne réécrit pas l'historique.
+Le plan `external-sva-access` contient l'entitlement `premium_rate_calls=true`. La version historique initiale est de 200 unités mineures EUR ; le prix courant passe à **300 unités mineures EUR, soit 3,00 EUR TTC par mois, le 20 septembre 2026**. `service_plan_price_versions` conserve chaque version de prix et sa période d'effet. Le champ `tax_behavior` est `inclusive` : `amount_minor` représente le montant final TTC payé par le client. Un nouveau prix clôt la période de la version précédente et ajoute une nouvelle ligne ; il ne réécrit pas l'historique.
 
 L'autorisation SVA est fail-closed. `pgi_tenant_has_premium_call_access` exige, pour un tenant externe actif, un abonnement actif, une période payée non expirée, le plan SVA externe et une version tarifaire valide. Cette vérification est appliquée au routage du numéro et à l'activation d'une affectation SVA.
 
