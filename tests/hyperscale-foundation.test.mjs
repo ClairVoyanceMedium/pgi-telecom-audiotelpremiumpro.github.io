@@ -228,6 +228,17 @@ test("B2B call destinations keep routing tenant-bound and expert-optional",()=>{
 test("customer portal remains tenant-scoped and separate from PGI staff auth",()=>{for(const token of ["customer_password_credentials","tenant_scoped_portal_calls","tenant_scoped_metric_rollups_daily","tenant_scoped_subscriptions","session_version"])assert.ok(customerPortalMigration.includes(token),token);assert.ok(store.includes("customerPortalOverview"));assert.ok(store.includes("withTenantReadContext"));});
 
 
+test("self-service onboarding creates a pending tenant while SVA stays fail-closed",()=>{
+  assert.ok(store.includes("async selfServiceRegister("));
+  assert.ok(store.includes("'customer','pending'"));
+  assert.ok(store.includes("'customer.self_register'"));
+  assert.ok(store.includes("registration_number"));
+  assert.ok(store.includes("customer_role:\"owner\""));
+  assert.ok(server.includes("/api/v1/customer/auth/register"));
+  assert.ok(server.includes("email_verification_required"));
+  assert.ok(subscriptionBillingMigration.includes("t.status='active' AND EXISTS"));
+});
+
 test("Google identities stay federated and tenant authorization remains separate",()=>{for(const token of ["customer_federated_identities","provider_subject","UNIQUE(customer_principal_id,provider)"])assert.ok(customerGoogleMigration.includes(token),token);assert.ok(store.includes("customerGoogleSignIn"));});
 
 
