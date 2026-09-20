@@ -304,7 +304,17 @@
 
     <section id="client-routing" class="cp-panel cp-anchor-section">
       <div class="cp-panel-head"><div><p class="cp-kicker">ROUTAGE</p><h2>Destinations de mes appels</h2></div><span>Lecture seule</span></div>
+      <div class="cp-search-scopes"><button id="routing-simulate" class="cp-ghost" type="button">Tester mon routage sans modifier</button></div>
+      <div id="routing-simulation-result" class="csc-route-result" hidden></div>
       <div id="destinations-list" class="cp-stack cp-destinations"></div>
+    </section>
+
+    <section id="client-service-center" class="cp-panel cp-anchor-section">
+      <div class="cp-panel-head"><div><p class="cp-kicker">SUIVI & ASSISTANCE</p><h2>Centre de service PGI</h2></div><span id="service-incident-count">0</span></div>
+      <p class="cp-muted">Un dossier unique conserve votre problème, les diagnostics PGI, les messages et l’avancement. Vous n’avez pas à réexpliquer la situation à chaque échange.</p>
+      <div class="csc-actions"><button id="service-incident-open" class="cp-primary" type="button">Signaler un problème</button></div>
+      <div id="service-alert-list"></div>
+      <div id="service-incident-list"></div>
     </section>
 
     <footer class="cp-footer">
@@ -347,6 +357,22 @@
     <p id="portability-message" class="cp-form-message" aria-live="polite"></p>
     <button id="portability-submit" class="cp-primary" type="submit">Envoyer ma demande</button>
     <p class="cp-billing-trust">La demande ne coupe pas votre ligne actuelle. À la portabilité effective, le service lié au numéro est résilié chez l’ancien opérateur selon les règles applicables, sans transfert de ses obligations antérieures à PGI. Votre service chez PGI relève de vos propres conditions PGI.</p>
+  </form>
+</dialog>
+
+<dialog id="client-incident-dialog" class="cp-export-dialog">
+  <form id="client-incident-form" class="cp-export-card cp-form">
+    <div class="cp-export-head"><div><p class="cp-kicker">CENTRE DE SERVICE</p><h2>Signaler un problème</h2></div><button id="incident-close" class="cp-close" type="button" aria-label="Fermer">×</button></div>
+    <p class="cp-export-note">PGI joint automatiquement au dossier un diagnostic technique non sensible pour éviter de vous redemander les mêmes informations.</p>
+    <div class="cp-form-grid">
+      <label>Catégorie<select id="incident-category"><option value="telephony">Téléphonie</option><option value="quality">Qualité d’appel</option><option value="routing">Routage</option><option value="portability">Portabilité</option><option value="billing">Facturation</option><option value="payout">Reversement</option><option value="account">Compte</option><option value="other">Autre</option></select></label>
+      <label>Priorité<select id="incident-severity"><option value="normal">Normale</option><option value="high">Haute</option><option value="critical">Critique</option><option value="low">Faible</option></select></label>
+    </div>
+    <label>Ligne concernée <span class="cp-optional">(facultatif)</span><select id="incident-number"><option value="">Toutes mes lignes</option></select></label>
+    <label>Titre<input id="incident-title" maxlength="180" required placeholder="Ex. appels qui n’aboutissent plus"></label>
+    <label>Description<textarea id="incident-description" maxlength="5000" rows="6" required placeholder="Décrivez ce que vous constatez."></textarea></label>
+    <p id="incident-message" class="cp-form-message" role="status"></p>
+    <button class="cp-primary" type="submit">Créer le dossier</button>
   </form>
 </dialog>
 
