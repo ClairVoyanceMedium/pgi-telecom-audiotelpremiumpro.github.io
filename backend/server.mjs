@@ -671,6 +671,14 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.regulatory_profile",200,{...result.value,replayed:result.replayed});
       }
 
+      match=routeMatch(pathname,"/api/v1/platform/tenant-number-assignments/:id/regulatory-evidence-pack");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin","finance","readonly"]);requireCsrf(req,actor,config);
+        const payload={id:match.id};
+        const result=await store.idempotent(req.headers["idempotency-key"],"regulatory.evidence_pack.export",payload,()=>store.regulatoryEvidencePack(match.id,actor));
+        return done(res,metrics,started,"platform.regulatory_evidence_pack",200,{...result.value,replayed:result.replayed});
+      }
+
       match=routeMatch(pathname,"/api/v1/platform/tenant-number-assignments/:id/regulatory-evidence");
       if(method==="POST"&&match){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
