@@ -3,6 +3,32 @@
 
 BEGIN;
 
+ALTER TABLE app_users
+  ADD COLUMN login_name text;
+
+CREATE UNIQUE INDEX app_users_login_name_unique
+  ON app_users(lower(login_name))
+  WHERE login_name IS NOT NULL;
+
+CREATE TABLE staff_password_credentials (
+  app_user_id bigint PRIMARY KEY REFERENCES app_users(id) ON DELETE CASCADE,
+  password_hash text NOT NULL,
+  session_version bigint NOT NULL DEFAULT 1 CHECK (session_version>0),
+  failed_attempts integer NOT NULL DEFAULT 0 CHECK (failed_attempts>=0),
+  first_failure_at timestamptz,
+  locked_until timestamptz,
+  password_changed_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX staff_password_credentials_lock_idx
+  ON staff_password_credentials(locked_until)
+  WHERE locked_until IS NOT NULL;
+
+COMMENT ON TABLE staff_password_credentials IS
+'PGI control-plane staff credentials. Passwords are stored only as password hashes; customer identities remain separate.';
+
 CREATE TABLE platform_change_requests (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   public_id uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE,
