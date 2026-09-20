@@ -49,6 +49,26 @@ test("recording publication rules require caller information and sensible retent
   assert.ok(checked.errors.some(x=>x.code==="VOICE_RECORDING_RETENTION_TOO_LONG"));
 });
 
+
+test("direct dial routes multi-digit service codes and rejects duplicates",()=>{
+  const flow=defaultVoiceFlow({destination_uri:"tel:+33123456789"});
+  flow.entry="direct";
+  flow.nodes.unshift(
+    {id:"direct",type:"direct_dial",prompt:"Saisissez votre code service.",min_digits:1,max_digits:6,timeout_seconds:6,codes:[{code:"101",label:"Commercial",destination_uri:"tel:+33111111111",next:"sales"},{code:"202",label:"Support",destination_uri:"tel:+33222222222",next:"support"}],fallback_next:"menu"},
+    {id:"sales",type:"route",destination_uri:"tel:+33111111111"},
+    {id:"support",type:"route",destination_uri:"tel:+33222222222"}
+  );
+  const checked=validateVoiceFlow(flow);
+  assert.equal(checked.valid,true,JSON.stringify(checked.errors));
+  const simulated=simulateVoiceFlow(flow,{digits:"202#",at:"2026-09-21T10:00:00+02:00"});
+  assert.equal(simulated.result?.action,"route");
+  assert.equal(simulated.result?.destination_uri,"tel:+33222222222");
+  flow.nodes[0].codes.push({code:"202",label:"Doublon",destination_uri:"tel:+33333333333",next:"sales"});
+  const duplicate=validateVoiceFlow(flow);
+  assert.equal(duplicate.valid,false);
+  assert.ok(duplicate.errors.some(x=>x.code==="VOICE_DIRECT_CODE_DUPLICATE"));
+});
+
 test("weighted routing is rejected unless weights total exactly 100",()=>{
   const flow={schema_version:1,entry:"split",default_locale:"fr-FR",nodes:[
     {id:"split",type:"weighted_split",branches:[{weight:60,next:"a"},{weight:30,next:"b"}]},
@@ -95,6 +115,8 @@ test("customer voice studio exceeds basic SVI configuration surface with safety 
     "Horaires & jours fériés",
     "Liste noire / blanche",
     "Multi-langue",
+    "Codes directs multi-chiffres",
+    "Hybride code + menu",
     "Répartition pondérée",
     "Débordement",
     "Information enregistrement",
