@@ -50,6 +50,8 @@ const pgiRevenueMigration=fs.readFileSync("database/migrations/029_pgi_collected
 const portabilityAutomationMigration=fs.readFileSync("database/migrations/031_automatic_portability_orchestration.sql","utf8");
 const portabilityAutomationSource=fs.readFileSync("backend/src/portability-automation.mjs","utf8");
 const serviceExcellenceMigration=fs.readFileSync("database/migrations/032_service_excellence.sql","utf8");
+const serviceOperationsMigration=fs.readFileSync("database/migrations/033_service_operations_queue.sql","utf8");
+const serviceIntegrityMigration=fs.readFileSync("database/migrations/034_service_incident_tenant_integrity.sql","utf8");
 const clientServiceCenter=fs.readFileSync("assets/client-service-center.js","utf8");
 const tenantServiceAdmin=fs.readFileSync("assets/tenant-service-admin.js","utf8");
 const googleIdSource=fs.readFileSync("backend/src/google-id.mjs","utf8");
@@ -163,8 +165,12 @@ if(!/automation_state/.test(portabilityAutomationMigration)||!/portability_opera
 if(!/createPortabilityQueueHandlers/.test(portabilityAutomationSource)||!/scanPortabilityAutomation/.test(postgresStore)||!/createPortabilityQueueHandlers/.test(backendServer)||!/scanPortabilityAutomation/.test(workersSource))failures.push("portability must remain automatic through the distributed work queue");
 if(!/sanitizePayload/.test(portabilityAutomationSource)||!/decryptPortabilityCredential/.test(portabilityAutomationSource)||!/PORTABILITY_OPERATOR_HTTPS_REQUIRED/.test(portabilityAutomationSource))failures.push("portability automation must protect RIO and operator credentials in production");
 if(!/tenant_service_incidents/.test(serviceExcellenceMigration)||!/tenant_service_incident_events/.test(serviceExcellenceMigration)||!/tenant_service_incident_notes/.test(serviceExcellenceMigration)||!/tenant_operational_alerts/.test(serviceExcellenceMigration))failures.push("service excellence must retain one traceable customer incident lifecycle");
+if(!/tenant_service_incidents_ops_queue_idx/.test(serviceOperationsMigration)||!/tenant_service_incident_attachments/.test(serviceOperationsMigration)||!/tenant_scoped_service_incident_attachments/.test(serviceOperationsMigration))failures.push("service operations must retain scalable queue indexes and provider-agnostic attachment linkage");
+if(!/tenant_service_incident_events_tenant_fk/.test(serviceIntegrityMigration)||!/tenant_service_incident_notes_tenant_fk/.test(serviceIntegrityMigration)||!/tenant_service_incident_attachment_tenant_guard/.test(serviceIntegrityMigration))failures.push("service incident children must retain hard database tenant integrity");
 if(!/security_barrier=true/.test(serviceExcellenceMigration)||!/tenant_scoped_service_incidents/.test(serviceExcellenceMigration)||!/tenant_scoped_operational_alerts/.test(serviceExcellenceMigration))failures.push("service excellence views must remain tenant scoped");
 if(!/scanTenantServiceIncidents/.test(postgresStore)||!/scanTenantServiceIncidents/.test(workersSource)||!/source_telecom_incident_id/.test(postgresStore))failures.push("NOC incidents must remain automatically correlated to customer service cases");
+if(!/listServiceIncidents/.test(postgresStore)||!/platform\/service-incidents/.test(backendServer)||!/serviceIncidentOutbox/.test(postgresStore))failures.push("service operations must retain a central queue and durable event outbox");
+if(!/routing_unavailable/.test(postgresStore)||!/portability_attention/.test(postgresStore))failures.push("service operations must retain proactive routing and portability attention detection");
 if(!/simulateTenantRoutingById/.test(postgresStore)||!/dry_run:true/.test(postgresStore)||!/routing\/simulate/.test(backendServer))failures.push("routing preview must remain a dry-run before real activation");
 if(!/CENTRE DE SERVICE/.test(clientServiceCenter)||!/Dossier créé/.test(clientServiceCenter)||!/Centre de service & incidents/.test(tenantServiceAdmin))failures.push("customer and admin service-center interfaces must remain available");
 if(!/platform_regions/.test(multiRegionMigration)||!/tenant_residency_policies/.test(multiRegionMigration)||!/disaster_recovery_targets/.test(multiRegionMigration)||!/region_failover_events/.test(multiRegionMigration))failures.push("multi-region DR foundation must retain region, residency and failover controls");
