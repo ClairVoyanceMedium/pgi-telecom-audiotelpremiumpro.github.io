@@ -116,6 +116,60 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(externalExpert.display_name,"External Expert");
     await store.releaseExpert(externalExpert.id);
 
+    const routingPreview=await store.simulateTenantRouting(externalIdentity[0].public_id,{});
+    assert.equal(routingPreview.dry_run,true);
+    assert.equal(routingPreview.safe_to_activate,true);
+    assert.equal(routingPreview.selected.label,"Standard principal");
+
+    const serviceIncident=await store.createTenantServiceIncident(externalIdentity[0].public_id,{
+      category:"routing",severity:"high",title:"Contrôle routage intégration",description:"Validation du centre de service PGI."
+    },{sub:"admin"});
+    assert.equal(serviceIncident.status,"investigating");
+    await store.addServiceIncidentNote(serviceIncident.public_id,{body:"Message PGI visible par le client.",customer_visible:true},{sub:"admin"});
+    const incidentDetail=await store.serviceIncidentDetail(serviceIncident.public_id);
+    assert.equal(incidentDetail.incident.title,"Contrôle routage intégration");
+    assert.equal(incidentDetail.notes.length,1);
+    assert.equal(incidentDetail.notes[0].body,"Message PGI visible par le client.");
+    assert.ok(incidentDetail.events.length>=2);
+    const serviceQueue=await store.listServiceIncidents({status:"active",severity:"high",q:"External Test",limit:10});
+    assert.ok(serviceQueue.data.some(x=>x.public_id===serviceIncident.public_id));
+    const serviceHealth=await store.serviceOperationsHealth();
+    assert.ok(Number(serviceHealth.service_incidents_open)>=1);
+    const serviceOutbox=await store.sql.unsafe(
+      "SELECT event_type,payload FROM outbox_events WHERE aggregate_type='tenant_service_incident' AND aggregate_id=$1::text ORDER BY id",
+      [serviceIncident.id]
+    );
+    assert.ok(serviceOutbox.some(x=>x.event_type==="service.incident.created"));
+    assert.ok(serviceOutbox.some(x=>x.event_type==="service.incident.note"));
+    assert.equal(serviceOutbox.some(x=>JSON.stringify(x.payload).includes("Message PGI visible")),false);
+
+    const externalTenant2=await store.sql.unsafe("SELECT id FROM tenants WHERE slug='integration-external-2' LIMIT 1");
+    await assert.rejects(
+      ()=>store.sql.unsafe(
+        "INSERT INTO tenant_service_incident_notes(incident_id,tenant_id,author_type,body) VALUES($1,$2,'staff','cross tenant must fail')",
+        [serviceIncident.id,externalTenant2[0].id]
+      ),
+      /foreign key|tenant_service_incident_notes_tenant_fk/i
+    );
+
+    await store.setCallDestinationStatus(createdDestination.id,"disabled",{sub:"admin"},"integration-routing-outage");
+    await store.sql.unsafe("UPDATE experts SET status='offline' WHERE code='EXT1'");
+    await store.scanTenantServiceIncidents();
+    let routingAlerts=await store.sql.unsafe(
+      "SELECT state FROM tenant_operational_alerts WHERE tenant_id=(SELECT id FROM tenants WHERE slug='integration-external') AND alert_type='routing_unavailable'"
+    );
+    assert.equal(routingAlerts[0].state,"open");
+    const outageHealth=await store.serviceOperationsHealth();
+    assert.ok(Number(outageHealth.routing_unavailable)>=1);
+
+    await store.setCallDestinationStatus(createdDestination.id,"active",{sub:"admin"},"integration-routing-recovery");
+    await store.sql.unsafe("UPDATE experts SET status='available' WHERE code='EXT1'");
+    await store.scanTenantServiceIncidents();
+    routingAlerts=await store.sql.unsafe(
+      "SELECT state FROM tenant_operational_alerts WHERE tenant_id=(SELECT id FROM tenants WHERE slug='integration-external') AND alert_type='routing_unavailable'"
+    );
+    assert.equal(routingAlerts[0].state,"resolved");
+
     const newPrice=await store.createSubscriptionPrice({amount_minor:350,currency:"EUR",effective_from:new Date(now.getTime()+60000).toISOString()},{sub:"admin"});
     assert.equal(Number(newPrice.amount_minor),350);
     const externalAccessAfterPriceChange=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access(t.id,NULL,now()) AS allowed FROM tenants t WHERE t.slug='integration-external'");
