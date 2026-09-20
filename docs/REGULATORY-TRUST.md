@@ -54,6 +54,21 @@ Une seconde chaîne de preuves, `sva_arcep_2026_evidence_events`, est append-onl
 
 Dans le cockpit administrateur, chaque numéro externe dispose maintenant d'une fiche « Conformité ARCEP 2026 ». Elle présente séparément les huit contrôles, leur statut courant et permet d'ajouter un nouvel événement de preuve avec source et référence. Aucun bouton ni automatisme ne transforme un contrôle en `verified` sans action explicite ; le backend exige en plus une référence de preuve pour tout statut `verified`.
 
+## Surveillance des échéances
+
+La migration `043_regulatory_review_monitoring.sql` ajoute une file d'attention réglementaire persistante. Le worker d'alertes la réévalue périodiquement et classe les situations en quatre niveaux opérationnels visibles dans le cockpit :
+
+- **Bloquant** : revue dépassée, profil actif qui n'est plus prêt, contrôle plateforme `failed/expired` ou preuve de plateforme arrivée à expiration.
+- **Aujourd'hui** : échéance dans les 24 heures.
+- **Bientôt** : échéance dans les 30 jours.
+- **Revue non planifiée** : profil techniquement prêt mais sans prochaine date de revue.
+
+Les alertes sont dédupliquées. Un administrateur peut les acquitter ; cet acquittement ne modifie ni la preuve, ni son statut, ni le routage. Une aggravation de l'état réouvre automatiquement l'alerte.
+
+La surveillance ne suspend pas automatiquement une affectation déjà active. En revanche, les fonctions de readiness continuent de bloquer une nouvelle activation lorsque la revue est dépassée ou que les contrôles requis ne sont plus prêts. Cette séparation évite qu'une simple échéance calculée provoque une coupure de production sans décision opérationnelle explicite.
+
+Lors de l'ajout d'une preuve ARCEP 2026 depuis le cockpit, l'administrateur peut définir `next_review_at`. Cette date alimente directement la surveillance proactive.
+
 ## Contrôles plateforme France
 
 Le registre `platform_regulatory_controls` prépare les preuves pour :
