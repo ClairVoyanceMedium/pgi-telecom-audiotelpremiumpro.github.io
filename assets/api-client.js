@@ -75,6 +75,10 @@ throw new Error("SECURE_RANDOM_UNAVAILABLE");
 function events(){
 return new EventSource(baseUrl()+"/events",{withCredentials:true});
 }
+function idem(path,body,key){
+if(!key)throw new Error("IDEMPOTENCY_KEY_REQUIRED");
+return request(path,{method:"POST",body:body||{},headers:{"Idempotency-Key":key}});
+}
 root.PGIApi=Object.freeze({
 health:function(){return request("/health",{timeoutMs:4000});},
 ready:function(){return request("/ready",{timeoutMs:4000});},
@@ -120,55 +124,40 @@ return request("/finance/reconciliation?"+q.toString());
 systemHealth:function(){return request("/system/health");},
 carrierRouting:function(){return request("/carrier-routing");},
 carrierSwitchOptions:function(){return request("/carrier-switches/options");},
-planCarrierSwitch:function(payload,idempotencyKey){if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");return request("/carrier-switches",{method:"POST",body:payload,headers:{"Idempotency-Key":idempotencyKey}});},
-activateCarrierSwitch:function(id,idempotencyKey){if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");return request("/carrier-switches/"+encodeURIComponent(id)+"/activate",{method:"POST",body:{},headers:{"Idempotency-Key":idempotencyKey}});},
-rollbackCarrierSwitch:function(id,idempotencyKey){if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");return request("/carrier-switches/"+encodeURIComponent(id)+"/rollback",{method:"POST",body:{},headers:{"Idempotency-Key":idempotencyKey}});},
+planCarrierSwitch:function(p,k){return idem("/carrier-switches",p,k);},
+activateCarrierSwitch:function(id,k){return idem("/carrier-switches/"+encodeURIComponent(id)+"/activate",{},k);},
+rollbackCarrierSwitch:function(id,k){return idem("/carrier-switches/"+encodeURIComponent(id)+"/rollback",{},k);},
 wholesaleOverview:function(){return request("/platform/overview");},
 subscriptionBilling:function(){return request("/platform/subscription-billing");},
-createSubscriptionPrice:function(payload,idempotencyKey){if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");return request("/platform/subscription-prices",{method:"POST",body:payload,headers:{"Idempotency-Key":idempotencyKey}});},
+createSubscriptionPrice:function(p,k){return idem("/platform/subscription-prices",p,k);},
 customerAdminSummary:function(){return request("/platform/tenants/summary");},
 tenants:function(params){
 var q=new URLSearchParams(params||{}).toString();
 return request("/platform/tenants"+(q?"?"+q:""));
 },
-createTenant:function(payload,idempotencyKey){
-if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");
-return request("/platform/tenants",{method:"POST",body:payload,headers:{"Idempotency-Key":idempotencyKey}});
-},
+createTenant:function(p,k){return idem("/platform/tenants",p,k);},
 tenantAssignments:function(params){
 var q=new URLSearchParams(params||{}).toString();
 return request("/platform/tenant-number-assignments"+(q?"?"+q:""));
 },
 tenantControlDetail:function(id){return request("/platform/tenants/"+encodeURIComponent(id)+"/control-center",{timeoutMs:10000});},
-createCallDestination:function(id,payload,idempotencyKey){if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");return request("/platform/tenants/"+encodeURIComponent(id)+"/call-destinations",{method:"POST",body:payload,headers:{"Idempotency-Key":idempotencyKey}});},
-setCallDestinationStatus:function(id,status,reason,idempotencyKey){if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");return request("/platform/call-destinations/"+encodeURIComponent(id)+"/status",{method:"POST",body:{status:status,reason:reason||""},headers:{"Idempotency-Key":idempotencyKey}});},
-setPortabilityStatus:function(id,payload,idempotencyKey){if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");return request("/platform/portability/"+encodeURIComponent(id)+"/status",{method:"POST",body:payload||{},headers:{"Idempotency-Key":idempotencyKey}});},
-completePortability:function(id,payload,idempotencyKey){if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");return request("/platform/portability/"+encodeURIComponent(id)+"/complete",{method:"POST",body:payload||{},headers:{"Idempotency-Key":idempotencyKey}});},
-setTenantStatus:function(id,status,reason,idempotencyKey){
-if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");
-return request("/platform/tenants/"+encodeURIComponent(id)+"/status",{method:"POST",body:{status:status,reason:reason||""},headers:{"Idempotency-Key":idempotencyKey}});
-},
-setTenantAssignmentStatus:function(id,status,reason,idempotencyKey){
-if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");
-return request("/platform/tenant-number-assignments/"+encodeURIComponent(id)+"/status",{method:"POST",body:{status:status,reason:reason||""},headers:{"Idempotency-Key":idempotencyKey}});
-},
+createCallDestination:function(id,p,k){return idem("/platform/tenants/"+encodeURIComponent(id)+"/call-destinations",p,k);},
+setCallDestinationStatus:function(id,status,reason,k){return idem("/platform/call-destinations/"+encodeURIComponent(id)+"/status",{status:status,reason:reason||""},k);},
+setPortabilityStatus:function(id,p,k){return idem("/platform/portability/"+encodeURIComponent(id)+"/status",p,k);},
+completePortability:function(id,p,k){return idem("/platform/portability/"+encodeURIComponent(id)+"/complete",p,k);},
+setTenantStatus:function(id,status,reason,k){return idem("/platform/tenants/"+encodeURIComponent(id)+"/status",{status:status,reason:reason||""},k);},
+setTenantAssignmentStatus:function(id,status,reason,k){return idem("/platform/tenant-number-assignments/"+encodeURIComponent(id)+"/status",{status:status,reason:reason||""},k);},
 billingAlerts:function(params){
 var q=new URLSearchParams(params||{}).toString();
 return request("/platform/billing-alerts"+(q?"?"+q:""));
 },
-acknowledgeBillingAlert:function(id,idempotencyKey){
-if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");
-return request("/platform/billing-alerts/"+encodeURIComponent(id)+"/acknowledge",{method:"POST",body:{},headers:{"Idempotency-Key":idempotencyKey}});
-},
+acknowledgeBillingAlert:function(id,k){return idem("/platform/billing-alerts/"+encodeURIComponent(id)+"/acknowledge",{},k);},
 events:events,
 baselines:function(params){
 var q=new URLSearchParams(params||{}).toString();
 return request("/metrics/baselines"+(q?"?"+q:""));
 },
 newIdempotencyKey:newIdempotencyKey,
-createBaseline:function(payload,idempotencyKey){
-if(!idempotencyKey)throw new Error("IDEMPOTENCY_KEY_REQUIRED");
-return request("/metrics/baselines",{method:"POST",body:payload,headers:{"Idempotency-Key":idempotencyKey}});
-}
+createBaseline:function(p,k){return idem("/metrics/baselines",p,k);}
 });
 })(window);
