@@ -20,6 +20,7 @@ const customerAdminFiltersMigration=fs.readFileSync("database/migrations/021_cus
 const b2bDestinationMigration=fs.readFileSync("database/migrations/022_b2b_call_destinations.sql","utf8");
 const customerPortalMigration=fs.readFileSync("database/migrations/023_customer_portal.sql","utf8");
 const customerGoogleMigration=fs.readFileSync("database/migrations/024_customer_google_identity.sql","utf8");
+const voiceIntelligenceMigration=fs.readFileSync("database/migrations/026_voice_intelligence.sql","utf8");
 const resilienceDocs=fs.readFileSync("docs/RESILIENCE.md","utf8");
 const alertRules=fs.readFileSync("infra/observability/prometheus-alerts.example.yml","utf8");
 const schema=fs.readFileSync("database/schema.sql","utf8");
@@ -223,3 +224,16 @@ test("customer portal remains tenant-scoped and separate from PGI staff auth",()
 
 
 test("Google identities stay federated and tenant authorization remains separate",()=>{for(const token of ["customer_federated_identities","provider_subject","UNIQUE(customer_principal_id,provider)"])assert.ok(customerGoogleMigration.includes(token),token);assert.ok(store.includes("customerGoogleSignIn"));});
+
+
+test("voice intelligence remains bounded, tenant-scoped and incident-aware",()=>{
+  for(const token of ["voice_carrier_health_hourly_sharded","voice_sip_code_hourly_sharded","tenant_voice_daily_sharded","telecom_incidents","tenant_scoped_portal_call_details","tenant_scoped_voice_daily"])assert.ok(voiceIntelligenceMigration.includes(token),token);
+  assert.ok(voiceIntelligenceMigration.includes("PARTITION BY HASH (tenant_bucket)"));
+  assert.ok(store.includes("writeVoiceCarrierHealthRollup"));
+  assert.ok(store.includes("writeTenantVoiceDailyRollup"));
+  assert.ok(store.includes("writeSipCodeRollup"));
+  assert.ok(store.includes("async voiceIntelligence("));
+  assert.ok(store.includes("async scanVoiceIncidents("));
+  assert.ok(workers.includes("scanVoiceIncidents"));
+  assert.ok(server.includes("/api/v1/dashboard/voice-intelligence"));
+});
