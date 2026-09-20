@@ -450,6 +450,16 @@ export class MemoryStore{
     return [...groups.values()].map(roundFinance);
   }
 
+  async effectiveMetricRange(from,to){
+    const fromMs=Date.parse(from),toMs=Date.parse(to);
+    if(!Number.isFinite(fromMs)||!Number.isFinite(toMs))throw problem(400,"INVALID_RANGE");
+    const row=this.baselines.filter(x=>x.scope==="global"&&x.scope_id==null)
+      .slice().sort((a,b)=>Date.parse(b.effective_from||b.created_at)-Date.parse(a.effective_from||a.created_at))[0]||null;
+    const baseline=row?new Date(row.effective_from||row.created_at):null;
+    const effectiveFrom=baseline&&baseline.getTime()>fromMs?baseline:new Date(fromMs);
+    return {from:effectiveFrom.toISOString(),to:new Date(toMs).toISOString(),baseline:baseline?baseline.toISOString():null,reset_applied:Boolean(baseline&&baseline.getTime()>fromMs),empty:effectiveFrom.getTime()>toMs};
+  }
+
   async listBaselines(params={}){
     const scope=params.scope||"global";
     const limit=clampInt(params.limit,20,1,100);
