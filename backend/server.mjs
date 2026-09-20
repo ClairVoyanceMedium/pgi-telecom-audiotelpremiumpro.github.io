@@ -251,19 +251,25 @@ export function createBackend(options={}){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
         const range=rangeParams(url);
-        const data=await store.customerPortalOverview(context.tenant_id,range.from,range.to);
-        return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,billing_provider:billingProviderStatus(config),server_time:new Date().toISOString()});
+        const [data,billing]=await Promise.all([
+          store.customerPortalOverview(context.tenant_id,range.from,range.to),
+          store.customerBillingPreparation(context.tenant_id)
+        ]);
+        return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,billing_offer:billing.offer,billing_summary:{subscription:billing.subscription,premium_call_access:billing.premium_call_access,checkout_prefill:billing.checkout_prefill,return_paths:billing.return_paths},billing_provider:billingProviderStatus(config),server_time:new Date().toISOString()});
       }
       if(method==="GET"&&pathname==="/api/v1/customer/billing/status"){
         requireActor(customerActor);
-        await store.customerSessionContext(customerActor);
-        return done(res,metrics,started,"customer.billing.status",200,billingProviderStatus(config));
+        const context=await store.customerSessionContext(customerActor);
+        const billing=await store.customerBillingPreparation(context.tenant_id);
+        return done(res,metrics,started,"customer.billing.status",200,{billing_provider:billingProviderStatus(config),...billing});
       }
       if(method==="POST"&&pathname==="/api/v1/customer/billing/checkout-session"){
         requireCustomerCsrf(req,customerActor,config);
-        await store.customerSessionContext(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        const billing=await store.customerBillingPreparation(context.tenant_id);
         const provider=billingProviderStatus(config);
-        return done(res,metrics,started,"customer.billing.checkout",503,{error:{code:"PAYMENT_PROVIDER_NOT_CONNECTED"},billing_provider:provider});
+        if(!billing.offer)return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:"NO_ACTIVE_BILLING_OFFER"},billing_provider:provider});
+        return done(res,metrics,started,"customer.billing.checkout",503,{error:{code:"PAYMENT_PROVIDER_NOT_CONNECTED"},billing_provider:provider,checkout:{offer:billing.offer,prefill:billing.checkout_prefill,return_paths:billing.return_paths}});
       }
       if(method==="POST"&&pathname==="/api/v1/customer/billing/portal-session"){
         requireCustomerCsrf(req,customerActor,config);
@@ -680,6 +686,15 @@ export function billingProviderStatus(config){
     checkout_available:false,
     customer_portal_available:false,
     webhook_ingest_enabled:ingestion,
+    checkout_mode:"provider_hosted",
+    customer_portal_mode:"provider_hosted",
+    payment_data_storage:"provider_only",
+    pgi_stores_card_data:false,
+    price_versioning:true,
+    event_deduplication:true,
+    event_collision_detection:true,
+    tenant_binding_validation:true,
+    automatic_access_recovery:true,
     subscription_funds_flow:"customer_to_pgi",
     sva_payout_flow:"carrier_to_customer",
     funds_held_by_pgi:false
