@@ -17,6 +17,16 @@ async function keys(fetchImpl,force=false){
   return list;
 }
 function audienceMatches(aud,clientId){return Array.isArray(aud)?aud.includes(clientId):String(aud||"")===clientId;}
+function authorizedPartyMatches(payload,clientId){
+  const aud=payload?.aud;
+  const azp=payload?.azp==null?"":String(payload.azp);
+  if(Array.isArray(aud)&&aud.length>1)return azp===clientId;
+  return !azp||azp===clientId;
+}
+function validIssuedAt(payload,nowSec){
+  const iat=Number(payload?.iat);
+  return Number.isFinite(iat)&&iat>0&&iat<=nowSec+60;
+}
 
 export async function verifyGoogleIdToken(token,clientId,{fetchImpl=fetch,now=Date.now()}={}){
   if(!clientId)throw failure("GOOGLE_AUTH_NOT_CONFIGURED",503);
@@ -33,13 +43,15 @@ export async function verifyGoogleIdToken(token,clientId,{fetchImpl=fetch,now=Da
     ok=verifier.verify(createPublicKey({key:jwk,format:"jwk"}),Buffer.from(parts[2],"base64url"));
   }catch{}
   if(!ok)throw failure("GOOGLE_ID_TOKEN_INVALID");
-  const nowSec=Math.floor(Number(now)/1000);
+  const nowSec=Math.floor(Number(now)/1000),exp=Number(payload.exp);
   if(!["accounts.google.com","https://accounts.google.com"].includes(payload.iss))throw failure("GOOGLE_ID_TOKEN_INVALID");
-  if(!audienceMatches(payload.aud,clientId))throw failure("GOOGLE_ID_TOKEN_INVALID");
-  if(!Number.isFinite(Number(payload.exp))||Number(payload.exp)<nowSec-30)throw failure("GOOGLE_ID_TOKEN_EXPIRED");
+  if(!audienceMatches(payload.aud,clientId)||!authorizedPartyMatches(payload,clientId))throw failure("GOOGLE_ID_TOKEN_INVALID");
+  if(!Number.isFinite(exp)||exp<=nowSec)throw failure("GOOGLE_ID_TOKEN_EXPIRED");
+  if(!validIssuedAt(payload,nowSec)||exp<=Number(payload.iat))throw failure("GOOGLE_ID_TOKEN_INVALID");
   if(payload.nbf!=null&&Number(payload.nbf)>nowSec+60)throw failure("GOOGLE_ID_TOKEN_INVALID");
-  if(!payload.sub||!payload.email||payload.email_verified!==true)throw failure("GOOGLE_EMAIL_NOT_VERIFIED",403);
+  if(!payload.sub||String(payload.sub).length>255||!payload.email||String(payload.email).length>320||payload.email_verified!==true)throw failure("GOOGLE_EMAIL_NOT_VERIFIED",403);
   const email=String(payload.email).trim().toLowerCase(),hd=payload.hd?String(payload.hd).trim().toLowerCase():null;
+  if(!email||!email.includes("@"))throw failure("GOOGLE_EMAIL_NOT_VERIFIED",403);
   return Object.freeze({provider:"google",subject:String(payload.sub),email,email_verified:true,display_name:String(payload.name||payload.given_name||email).slice(0,160),hosted_domain:hd,picture_url:payload.picture?String(payload.picture).slice(0,2048):null,authoritative_email:email.endsWith("@gmail.com")||Boolean(hd)});
 }
 export function resetGoogleKeyCacheForTests(){cache={expiresAt:0,keys:[]};}
