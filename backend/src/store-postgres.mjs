@@ -3176,6 +3176,73 @@ export class PostgresStore{
         " SELECT si.id FROM tenant_service_incidents si WHERE si.status IN ('resolved','closed'))"
       );
 
+      const routingAffected=await tx.unsafe(
+        "SELECT DISTINCT t.id AS tenant_id FROM tenants t"+
+        " WHERE t.tenant_type<>'internal' AND t.status='active'"+
+        " AND EXISTS(SELECT 1 FROM tenant_number_assignments a WHERE a.tenant_id=t.id AND a.status='active' AND (a.valid_from IS NULL OR a.valid_from<=now()) AND (a.valid_to IS NULL OR a.valid_to>=now()))"+
+        " AND NOT EXISTS(SELECT 1 FROM tenant_call_destinations d WHERE d.tenant_id=t.id AND d.status='active' AND (d.max_concurrent_calls IS NULL OR d.active_calls<d.max_concurrent_calls))"+
+        " AND NOT EXISTS(SELECT 1 FROM experts e WHERE e.tenant_id=t.id AND e.enabled AND e.status='available' AND e.destination_uri IS NOT NULL)"+
+        " LIMIT $1",
+        [take]
+      );
+      for(const t of routingAffected){
+        const key="routing:tenant:"+t.tenant_id,sla=serviceIncidentSla("high");
+        const incident=(await tx.unsafe(
+          "INSERT INTO tenant_service_incidents(incident_key,tenant_id,category,severity,status,source,title,description,first_response_due_at,target_resolution_at,first_responded_at,last_pgi_update_at,diagnostic_snapshot)"+
+          " VALUES($1,$2,'routing','high','investigating','system','Routage client indisponible','PGI ne détecte aucune destination ni expert actuellement disponible pour les lignes actives de ce client.',now()+make_interval(mins=>$3),now()+make_interval(mins=>$4),now(),now(),$5::jsonb)"+
+          " ON CONFLICT(incident_key) DO UPDATE SET status=CASE WHEN tenant_service_incidents.status IN ('resolved','closed') THEN 'investigating' ELSE tenant_service_incidents.status END,last_pgi_update_at=now(),diagnostic_snapshot=EXCLUDED.diagnostic_snapshot,updated_at=now()"+
+          " RETURNING id,public_id,tenant_id,(xmax=0) AS created",
+          [key,t.tenant_id,sla.response,sla.resolution,JSON.stringify({reason:"no_available_destination_or_expert"})]
+        ))[0];
+        if(incident.created){
+          await tx.unsafe(
+            "INSERT INTO tenant_service_incident_events(incident_id,tenant_id,event_type,actor_type,message,customer_visible) VALUES($1,$2,'created','system','Routage indisponible détecté automatiquement',true)",
+            [incident.id,incident.tenant_id]
+          );
+          changes.push({event:"service.incident.created",tenant_id:Number(incident.tenant_id),incident_id:String(incident.public_id),source:"routing"});
+        }
+        await tx.unsafe(
+          "INSERT INTO tenant_operational_alerts(alert_key,tenant_id,incident_id,alert_type,severity,state,title,message,customer_visible,details)"+
+          " VALUES($1,$2,$3,'routing_unavailable','critical','open','Routage indisponible','Aucune destination ni expert n’est actuellement disponible pour vos lignes actives.',true,$4::jsonb)"+
+          " ON CONFLICT(alert_key) DO UPDATE SET incident_id=EXCLUDED.incident_id,state='open',last_detected_at=now(),resolved_at=NULL,updated_at=now()",
+          ["routing:tenant:"+t.tenant_id,t.tenant_id,incident.id,JSON.stringify({auto_detected:true})]
+        );
+      }
+      const routingRecovered=await tx.unsafe(
+        "UPDATE tenant_service_incidents i SET status='resolved',resolved_at=COALESCE(resolved_at,now()),last_pgi_update_at=now(),updated_at=now()"+
+        " WHERE i.incident_key='routing:tenant:'||i.tenant_id AND i.status NOT IN ('resolved','closed')"+
+        " AND (EXISTS(SELECT 1 FROM tenant_call_destinations d WHERE d.tenant_id=i.tenant_id AND d.status='active' AND (d.max_concurrent_calls IS NULL OR d.active_calls<d.max_concurrent_calls))"+
+        " OR EXISTS(SELECT 1 FROM experts e WHERE e.tenant_id=i.tenant_id AND e.enabled AND e.status='available' AND e.destination_uri IS NOT NULL))"+
+        " RETURNING i.id,i.public_id,i.tenant_id"
+      );
+      for(const incident of routingRecovered){
+        await tx.unsafe(
+          "INSERT INTO tenant_service_incident_events(incident_id,tenant_id,event_type,actor_type,message,customer_visible) VALUES($1,$2,'resolved','system','Routage de nouveau disponible',true)",
+          [incident.id,incident.tenant_id]
+        );
+        changes.push({event:"service.incident.resolved",tenant_id:Number(incident.tenant_id),incident_id:String(incident.public_id),source:"routing"});
+      }
+      await tx.unsafe(
+        "UPDATE tenant_operational_alerts a SET state='resolved',resolved_at=now(),updated_at=now()"+
+        " WHERE a.alert_type='routing_unavailable' AND a.state<>'resolved'"+
+        " AND (EXISTS(SELECT 1 FROM tenant_call_destinations d WHERE d.tenant_id=a.tenant_id AND d.status='active' AND (d.max_concurrent_calls IS NULL OR d.active_calls<d.max_concurrent_calls))"+
+        " OR EXISTS(SELECT 1 FROM experts e WHERE e.tenant_id=a.tenant_id AND e.enabled AND e.status='available' AND e.destination_uri IS NOT NULL))"
+      );
+
+      await tx.unsafe(
+        "INSERT INTO tenant_operational_alerts(alert_key,tenant_id,alert_type,severity,state,title,message,customer_visible,due_at,details)"+
+        " SELECT 'portability:'||p.id,p.tenant_id,'portability_attention',CASE WHEN p.automation_state='failed' THEN 'critical' ELSE 'warning' END,'open',"+
+        " 'Portabilité à traiter','Une portabilité automatique nécessite une intervention PGI.',false,p.automation_next_at,"+
+        " jsonb_build_object('request_id',p.id,'number',p.requested_e164,'automation_state',p.automation_state,'last_error',p.automation_last_error)"+
+        " FROM tenant_portability_requests p WHERE p.status NOT IN ('ported','cancelled','rejected') AND p.automation_state IN ('action_required','failed')"+
+        " ON CONFLICT(alert_key) DO UPDATE SET severity=EXCLUDED.severity,state='open',message=EXCLUDED.message,due_at=EXCLUDED.due_at,details=EXCLUDED.details,last_detected_at=now(),resolved_at=NULL,updated_at=now()"
+      );
+      await tx.unsafe(
+        "UPDATE tenant_operational_alerts a SET state='resolved',resolved_at=now(),updated_at=now()"+
+        " WHERE a.alert_type='portability_attention' AND a.state<>'resolved'"+
+        " AND NOT EXISTS(SELECT 1 FROM tenant_portability_requests p WHERE ('portability:'||p.id)=a.alert_key AND p.status NOT IN ('ported','cancelled','rejected') AND p.automation_state IN ('action_required','failed'))"
+      );
+
       const responseAlerts=await tx.unsafe(
         "INSERT INTO tenant_operational_alerts(alert_key,tenant_id,incident_id,alert_type,severity,state,title,message,customer_visible,due_at,details)"+
         " SELECT 'sla:first:'||i.id,i.tenant_id,i.id,'first_response_due',CASE WHEN i.severity='critical' THEN 'critical' ELSE 'warning' END,'open',"+
@@ -3204,6 +3271,38 @@ export class PostgresStore{
     return changes;
   }
 
+  async listServiceIncidents(params={}){
+    const limit=clampInt(params.limit,50,1,250),cursor=decodeNumericCursor(params.cursor);
+    const status=params.status?String(params.status).trim().toLowerCase():null;
+    const severity=params.severity?String(params.severity).trim().toLowerCase():null;
+    const category=params.category?String(params.category).trim().toLowerCase():null;
+    const country=params.country?String(params.country).trim().toUpperCase():null;
+    const q=params.q?String(params.q).trim().slice(0,160):null;
+    if(status&&!["open","investigating","waiting_customer","monitoring","resolved","closed"].includes(status))throw problem(400,"INVALID_INCIDENT_STATUS");
+    if(severity&&!["low","normal","high","critical"].includes(severity))throw problem(400,"INVALID_INCIDENT_SEVERITY");
+    if(category&&!["telephony","portability","billing","payout","account","routing","quality","other"].includes(category))throw problem(400,"INVALID_INCIDENT_CATEGORY");
+    if(country&&!/^[A-Z]{2}$/.test(country))throw problem(400,"INVALID_COUNTRY_CODE");
+    const rows=await this.readSql.unsafe(
+      "SELECT i.id AS _cursor_id,i.public_id,i.category,i.severity,i.status,i.source,i.title,i.description,i.assigned_team,"+
+      " i.first_response_due_at,i.target_resolution_at,i.first_responded_at,i.last_customer_update_at,i.last_pgi_update_at,i.resolved_at,i.updated_at,"+
+      " (i.first_responded_at IS NULL AND i.first_response_due_at<now()) AS first_response_overdue,"+
+      " (i.status NOT IN ('resolved','closed') AND i.target_resolution_at<now()) AS resolution_overdue,"+
+      " t.public_id AS tenant_public_id,t.display_name AS tenant,t.country_code,sn.display_number,sn.e164"+
+      " FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id LEFT JOIN sva_numbers sn ON sn.id=i.sva_number_id"+
+      " WHERE t.tenant_type<>'internal'"+
+      " AND ($1::text IS NULL OR i.status=$1) AND ($2::text IS NULL OR i.severity=$2)"+
+      " AND ($3::text IS NULL OR i.category=$3) AND ($4::text IS NULL OR t.country_code=$4)"+
+      " AND ($5::text IS NULL OR t.display_name ILIKE '%'||$5||'%' OR i.title ILIKE '%'||$5||'%' OR i.description ILIKE '%'||$5||'%' OR sn.e164 ILIKE '%'||$5||'%')"+
+      " AND ($6::bigint IS NULL OR i.id<$6) ORDER BY i.id DESC LIMIT $7",
+      [status,severity,category,country,q,cursor,limit+1]
+    );
+    const hasMore=rows.length>limit,page=hasMore?rows.slice(0,limit):rows;
+    return {
+      data:page.map(row=>{const {_cursor_id,...publicRow}=row;return publicRow;}),
+      next_cursor:hasMore&&page.length?encodeNumericCursor(Number(page.at(-1)._cursor_id)):null
+    };
+  }
+
   async customerAdminSummary(){
     const rows=await this.readSql.unsafe(
       "SELECT"+
@@ -3212,9 +3311,14 @@ export class PostgresStore{
       " (SELECT count(*)::int FROM tenant_kyc_profiles k JOIN tenants t ON t.id=k.tenant_id WHERE t.tenant_type<>'internal' AND k.status='pending') AS kyc_pending,"+
       " (SELECT count(*)::int FROM tenant_admin_alerts a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.alert_type='subscription_unpaid' AND a.state<>'resolved') AS subscription_unpaid_alerts,"+
       " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND NOT premium_call_access) AS subscription_access_blocked,"+
-      " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.status='active') AS assignments_active"
+      " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.status='active') AS assignments_active,"+
+      " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND i.status NOT IN ('resolved','closed')) AS service_incidents_open,"+
+      " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND i.status NOT IN ('resolved','closed') AND i.severity='critical') AS service_incidents_critical,"+
+      " (SELECT count(*)::int FROM tenant_operational_alerts a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.state<>'resolved' AND a.alert_type IN ('first_response_due','resolution_due')) AS service_sla_attention,"+
+      " (SELECT count(*)::int FROM tenant_operational_alerts a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.state<>'resolved' AND a.alert_type='routing_unavailable') AS routing_attention,"+
+      " (SELECT count(*)::int FROM tenant_operational_alerts a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.state<>'resolved' AND a.alert_type='portability_attention') AS portability_attention"
     );
-    return rows[0]||{tenants_total:0,tenants_active:0,kyc_pending:0,subscription_unpaid_alerts:0,subscription_access_blocked:0,assignments_active:0};
+    return rows[0]||{tenants_total:0,tenants_active:0,kyc_pending:0,subscription_unpaid_alerts:0,subscription_access_blocked:0,assignments_active:0,service_incidents_open:0,service_incidents_critical:0,service_sla_attention:0,routing_attention:0,portability_attention:0};
   }
 
   async createTenantPayoutTerms(publicId,input={},actor={}){
