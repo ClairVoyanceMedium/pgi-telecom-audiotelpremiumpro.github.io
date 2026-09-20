@@ -21,7 +21,7 @@ function resolve(){
   return "en";
 }
 var locale=resolve(),pack=packs[locale]||packs.en;
-function t(text){return pack[text]||text;}
+function t(text){return pack[text]||packs.en[text]||text;}
 function apply(rootNode){
   document.documentElement.lang=locale;
   var walker=document.createTreeWalker(rootNode||document.body,NodeFilter.SHOW_TEXT);
@@ -29,5 +29,5 @@ function apply(rootNode){
   document.querySelectorAll("[placeholder]").forEach(function(el){var v=el.getAttribute("placeholder");if(pack[v])el.setAttribute("placeholder",pack[v]);});
   document.title=t("Audiotel Premium Pro — Espace client");
 }
-root.PGIClientI18n=Object.freeze({locale:locale,t:t,apply:apply,supported:Object.freeze(["fr","en","es","it","pt-PT","pt-BR","de","sv"])});
+root.PGIClientI18n=Object.freeze({locale:locale,t:t,apply:apply,supported:Object.freeze(["fr","en","es","it","pt-PT","pt-BR","de","sv"]),fallback:"en"});
 })(window);

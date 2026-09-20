@@ -8,6 +8,9 @@ const clientPortal=read("client.html");
 const clientPortalApi=read("assets/client-portal-api.js");
 const clientPortalJs=read("assets/client-portal.js");
 const clientPortalCss=read("assets/client-portal.css");
+const clientI18n=read("assets/client-i18n.js");
+const clientGoogle=read("assets/client-google.js");
+const clientConfig=read("assets/client-config.js");
 const app=read("assets/app.js");
 const api=read("assets/api-client.js");
 const dataClient=read("assets/data-client.js");
@@ -377,3 +380,6 @@ test("admin export center stays lazy and exposes calls, summary, finance and PDF
 
 
 test("customer portal exposes extended analytics and password management",()=>{for(const id of ["asr-chart","value-chart","duration-chart","client-security-dialog","client-password-form"])assert.ok(clientPortal.includes('id="'+id+'"'),id);assert.match(clientPortalApi,/changePassword/);assert.match(clientPortalJs,/function changePassword/);assert.match(clientPortalJs,/svgLine\("asr-chart"/);});
+
+
+test("client portal auto-localizes and prepares Google account creation",()=>{for(const token of ["pt-PT","pt-BR","es","it","de","sv"])assert.ok(clientI18n.includes(token),token);assert.match(clientI18n,/navigator\.languages/);assert.match(clientGoogle,/accounts\.google\.com\/gsi\/client/);assert.match(clientGoogle,/renderButton/);assert.match(clientConfig,/googleClientId/);assert.match(clientPortal,/google-login/);assert.match(clientPortal,/google-activation/);assert.match(clientPortalJs,/pending_contract/);});
