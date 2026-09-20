@@ -62,6 +62,82 @@ ON CONFLICT(tenant_bucket,bucket_date,tenant_id,market_id,currency) DO UPDATE SE
   source_generation=metric_rollups_daily_v2.source_generation+1,
   updated_at=now();
 
+CREATE TABLE IF NOT EXISTS tenant_voice_daily_sharded (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint NOT NULL REFERENCES tenants(id),
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  pdd_samples bigint NOT NULL DEFAULT 0,
+  pdd_ms_sum bigint NOT NULL DEFAULT 0,
+  high_pdd_calls bigint NOT NULL DEFAULT 0,
+  quality_samples bigint NOT NULL DEFAULT 0,
+  network_affected_calls bigint NOT NULL DEFAULT 0,
+  low_mos_calls bigint NOT NULL DEFAULT 0,
+  mos_sum numeric(22,6) NOT NULL DEFAULT 0,
+  packet_loss_sum numeric(22,6) NOT NULL DEFAULT 0,
+  jitter_ms_sum numeric(22,6) NOT NULL DEFAULT 0,
+  latency_ms_sum numeric(22,6) NOT NULL DEFAULT 0,
+  rtt_ms_sum numeric(22,6) NOT NULL DEFAULT 0,
+  sip_5xx_calls bigint NOT NULL DEFAULT 0,
+  caller_hangups bigint NOT NULL DEFAULT 0,
+  callee_hangups bigint NOT NULL DEFAULT 0,
+  network_hangups bigint NOT NULL DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(tenant_bucket,bucket_date,tenant_id,market_id)
+) PARTITION BY HASH (tenant_bucket);
+
+DO $
+DECLARE i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format(
+      'CREATE TABLE IF NOT EXISTS tenant_voice_daily_sharded_p%s PARTITION OF tenant_voice_daily_sharded FOR VALUES WITH (MODULUS 64, REMAINDER %s)',
+      i,i
+    );
+  END LOOP;
+END;
+$;
+
+CREATE INDEX IF NOT EXISTS tenant_voice_daily_tenant_date_idx
+  ON tenant_voice_daily_sharded(tenant_id,bucket_date DESC);
+
+INSERT INTO tenant_voice_daily_sharded(
+  tenant_bucket,bucket_date,tenant_id,market_id,calls_total,calls_connected,
+  pdd_samples,pdd_ms_sum,high_pdd_calls,quality_samples,network_affected_calls,low_mos_calls,
+  mos_sum,packet_loss_sum,jitter_ms_sum,latency_ms_sum,rtt_ms_sum,sip_5xx_calls,
+  caller_hangups,callee_hangups,network_hangups,updated_at
+)
+SELECT
+  c.tenant_bucket,c.started_at::date,c.tenant_id,c.market_id,
+  count(*)::bigint,count(*) FILTER(WHERE c.call_status='connected')::bigint,
+  count(*) FILTER(WHERE c.post_dial_delay_ms IS NOT NULL)::bigint,
+  COALESCE(sum(c.post_dial_delay_ms) FILTER(WHERE c.post_dial_delay_ms IS NOT NULL),0)::bigint,
+  count(*) FILTER(WHERE c.post_dial_delay_ms>8000)::bigint,
+  count(q.call_id)::bigint,
+  count(q.call_id) FILTER(WHERE COALESCE(q.rtp_packet_loss_percent,0)>=5 OR COALESCE(q.jitter_ms,0)>5 OR COALESCE(q.latency_ms,0)>150)::bigint,
+  count(q.call_id) FILTER(WHERE q.mos IS NOT NULL AND q.mos<3.5)::bigint,
+  COALESCE(sum(q.mos),0),COALESCE(sum(q.rtp_packet_loss_percent),0),COALESCE(sum(q.jitter_ms),0),
+  COALESCE(sum(q.latency_ms),0),COALESCE(sum(q.rtt_ms),0),
+  count(*) FILTER(WHERE c.sip_final_code BETWEEN 500 AND 599)::bigint,
+  count(*) FILTER(WHERE c.hangup_party='caller')::bigint,
+  count(*) FILTER(WHERE c.hangup_party='callee')::bigint,
+  count(*) FILTER(WHERE c.hangup_party='network')::bigint,
+  now()
+FROM calls c
+LEFT JOIN call_quality q ON q.call_id=c.id
+WHERE c.tenant_id IS NOT NULL AND c.market_id IS NOT NULL
+GROUP BY c.tenant_bucket,c.started_at::date,c.tenant_id,c.market_id
+ON CONFLICT(tenant_bucket,bucket_date,tenant_id,market_id) DO UPDATE SET
+  calls_total=EXCLUDED.calls_total,calls_connected=EXCLUDED.calls_connected,
+  pdd_samples=EXCLUDED.pdd_samples,pdd_ms_sum=EXCLUDED.pdd_ms_sum,high_pdd_calls=EXCLUDED.high_pdd_calls,
+  quality_samples=EXCLUDED.quality_samples,network_affected_calls=EXCLUDED.network_affected_calls,low_mos_calls=EXCLUDED.low_mos_calls,
+  mos_sum=EXCLUDED.mos_sum,packet_loss_sum=EXCLUDED.packet_loss_sum,jitter_ms_sum=EXCLUDED.jitter_ms_sum,
+  latency_ms_sum=EXCLUDED.latency_ms_sum,rtt_ms_sum=EXCLUDED.rtt_ms_sum,sip_5xx_calls=EXCLUDED.sip_5xx_calls,
+  caller_hangups=EXCLUDED.caller_hangups,callee_hangups=EXCLUDED.callee_hangups,network_hangups=EXCLUDED.network_hangups,
+  updated_at=now();
+
 CREATE TABLE IF NOT EXISTS voice_carrier_health_hourly_sharded (
   bucket_start timestamptz NOT NULL,
   market_id bigint NOT NULL REFERENCES operating_markets(id),
@@ -200,6 +276,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS telecom_incidents_open_unique
   WHERE state='open';
 CREATE INDEX IF NOT EXISTS telecom_incidents_time_idx ON telecom_incidents(started_at DESC);
 CREATE INDEX IF NOT EXISTS telecom_incidents_state_idx ON telecom_incidents(state,last_detected_at DESC);
+
+CREATE VIEW tenant_scoped_voice_daily
+WITH (security_barrier=true)
+AS
+SELECT
+  tenant_bucket,bucket_date,tenant_id,market_id,calls_total,calls_connected,
+  pdd_samples,pdd_ms_sum,high_pdd_calls,quality_samples,network_affected_calls,low_mos_calls,
+  mos_sum,packet_loss_sum,jitter_ms_sum,latency_ms_sum,rtt_ms_sum,sip_5xx_calls,
+  caller_hangups,callee_hangups,network_hangups,updated_at
+FROM tenant_voice_daily_sharded
+WHERE tenant_id=pgi_require_tenant_context();
 
 CREATE VIEW tenant_scoped_portal_call_details
 WITH (security_barrier=true)
