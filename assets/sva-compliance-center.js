@@ -1,0 +1,79 @@
+const $=s=>document.querySelector(s);
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
+const id=()=>crypto.randomUUID?crypto.randomUUID():String(Date.now())+"-"+Math.random().toString(16).slice(2);
+let data=null,busy=false,selected=null;
+
+function apiBase(){const b=String(window.PGI_CONFIG?.apiBaseUrl||"").replace(/\/$/,"");if(!b)throw Object.assign(new Error("API_NOT_CONFIGURED"),{code:"API_NOT_CONFIGURED"});return b;}
+function cookie(name){const p=encodeURIComponent(name)+"=";for(const part of String(document.cookie||"").split(";")){const v=part.trim();if(v.indexOf(p)===0){try{return decodeURIComponent(v.slice(p.length));}catch{return v.slice(p.length);}}}return "";}
+async function req(path,body){
+  const method=body===undefined?"GET":"POST",headers={Accept:"application/json"};
+  if(method==="POST"){headers["Content-Type"]="application/json";headers["Idempotency-Key"]=id();const csrf=cookie("__Host-pgi_csrf");if(csrf)headers["X-CSRF-Token"]=csrf;}
+  const r=await fetch(apiBase()+path,{method,credentials:"include",cache:"no-store",headers,body:body===undefined?undefined:JSON.stringify(body)});
+  const p=await r.json().catch(()=>null);if(!r.ok){const e=new Error(p?.error?.code||"SVA_COMPLIANCE_REQUEST_FAILED");e.code=p?.error?.code||"SVA_COMPLIANCE_REQUEST_FAILED";throw e;}return p;
+}
+function ensure(){
+  let d=$("#sva-compliance-dialog");if(d)return d;
+  const s=document.createElement("style");s.id="sva-compliance-style";s.textContent='.scd{width:min(1220px,calc(100vw - 24px));max-width:none;max-height:calc(100dvh - 24px);padding:0;border:1px solid rgba(130,150,170,.18);border-radius:22px;background:#080d13;color:#edf3f7}.scd::backdrop{background:rgba(0,0,0,.82);backdrop-filter:blur(9px)}.sch{display:flex;justify-content:space-between;align-items:center;padding:18px 20px;border-bottom:1px solid rgba(130,150,170,.11);background:#0d141d}.sch p{margin:0 0 4px;color:#8093a5;font-size:7px;font-weight:900;letter-spacing:.13em}.sch h2{margin:0;font-size:22px}.scc{border:1px solid rgba(130,150,170,.18);border-radius:11px;background:#0a1119;color:#dce8f0;width:42px;height:42px;font-size:20px}.scb{max-height:calc(100dvh - 96px);overflow:auto;padding:14px}.scgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.sccard{padding:14px;border:1px solid rgba(130,150,170,.1);border-radius:15px;background:#0b121a}.sccard h3{margin:0 0 10px;font-size:13px}.scwide{grid-column:1/-1}.sckpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}.sckpi,.scrow{padding:10px;border:1px solid rgba(130,150,170,.08);border-radius:10px;background:#071019}.sckpi span,.scnote{color:#72879a;font-size:7px}.sckpi strong{display:block;margin-top:4px;font-size:13px}.sclist{display:grid;gap:7px}.scrow{display:flex;justify-content:space-between;gap:10px;align-items:center}.scrow strong{display:block;font-size:9px}.scrow small{display:block;color:#75899b;font-size:7px;margin-top:4px;line-height:1.45}.scbadge{display:inline-flex;padding:5px 8px;border:1px solid rgba(130,150,170,.16);border-radius:999px;color:#aebfcd;font-size:6.5px;font-weight:900;text-transform:uppercase}.scbadge.ok{color:#9ce8c9;border-color:rgba(52,211,153,.28)}.scbadge.bad{color:#ffadad;border-color:rgba(239,68,68,.3)}.scbadge.warn{color:#ffd28d;border-color:rgba(245,158,11,.3)}.scbtn{min-height:38px;padding:7px 11px;border:1px solid rgba(83,204,255,.22);border-radius:9px;background:rgba(83,204,255,.06);color:#e5f8ff;font-size:8px;font-weight:900;cursor:pointer}.scform{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.scf{display:grid;gap:5px;color:#74899b;font-size:7px;font-weight:900;text-transform:uppercase}.scf input,.scf select,.scf textarea{width:100%;min-height:40px;padding:8px 9px;border:1px solid rgba(130,150,170,.14);border-radius:9px;background:#071019;color:#eef5fa;font-size:10px}.scf textarea{min-height:70px;resize:vertical}.scactions{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}.scfeedback{min-height:18px;color:#91a6b7;font-size:8px}.sctabs{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px}.sctabs button[aria-selected="true"]{border-color:rgba(83,204,255,.55);background:rgba(83,204,255,.12)}@media(max-width:900px){.scgrid{grid-template-columns:1fr}.scwide{grid-column:auto}.sckpis{grid-template-columns:repeat(3,1fr)}.scform{grid-template-columns:1fr 1fr}}@media(max-width:560px){.scd{width:100vw;max-height:94dvh;margin:auto 0 0;border-radius:22px 22px 0 0}.sckpis{grid-template-columns:1fr 1fr}.scform{grid-template-columns:1fr}.scf input,.scf select,.scf textarea{font-size:16px}}';
+  document.head.appendChild(s);
+  d=document.createElement("dialog");d.id="sva-compliance-dialog";d.className="scd";d.innerHTML='<header class="sch"><div><p>AUDIOTEL PREMIUM PRO</p><h2>SVA Compliance Center</h2></div><button class="scc" aria-label="Fermer">×</button></header><main id="sva-compliance-body" class="scb"></main>';
+  document.body.appendChild(d);d.querySelector(".scc").onclick=()=>d.close();d.addEventListener("click",e=>{if(e.target===d)d.close();});return d;
+}
+function badge(v){v=String(v||"not_started");const k=["verified","ready"].includes(v)?"ok":["failed","expired","blocked"].includes(v)?"bad":"warn";return '<span class="scbadge '+k+'">'+esc(v.replaceAll("_"," "))+'</span>';}
+function selectedNumber(){return (data?.numbers||[]).find(x=>String(x.assignment_id)===String(selected));}
+function statesFor(n){return (data?.states||[]).filter(x=>String(x.tenant_id)===String(n?.tenant_id)&&String(x.sva_number_id)===String(n?.sva_number_id));}
+function render(){
+  const b=$("#sva-compliance-body"),s=data?.summary||{},nums=data?.numbers||[],fw=data?.frameworks||[];if(!b)return;
+  if(!selected&&nums[0])selected=nums[0].assignment_id;const n=selectedNumber();
+  b.innerHTML='<p id="sc-feedback" class="scfeedback"></p><div class="scgrid"><section class="sccard scwide"><div class="sckpis">'+[
+    ["Numéros FR",s.numbers_total||0],["Prêts écosystème",s.numbers_ready||0],["Contrôles vérifiés",s.controls_verified||0],["Bloquants",s.controls_blocking||0],["Preuves",s.evidence_events||0],["Tarifs planifiés",s.tariff_changes_open||0]
+  ].map(x=>'<div class="sckpi"><span>'+esc(x[0])+'</span><strong>'+esc(x[1])+'</strong></div>').join("")+'</div><p class="scnote">Readiness technique uniquement : aucune certification ou approbation ARCEP, AF2M, APNF, DGCCRF, CNIL ou ACPR n’est revendiquée. Connexions externes : désactivées.</p></section>'+
+  '<section class="sccard"><h3>Référentiels suivis</h3><div class="sclist">'+fw.map(x=>'<div class="scrow"><div><strong>'+esc(x.authority_name)+'</strong><small>'+esc(x.framework_name)+(x.reference_version?' • '+esc(x.reference_version):'')+'</small></div><span class="scbadge">'+esc(x.category||"cadre")+'</span></div>').join("")+'</div></section>'+
+  '<section class="sccard"><h3>Numéros SVA</h3><div class="sclist">'+(nums.map(x=>'<button class="scrow" style="width:100%;color:inherit;text-align:left" data-sc-number="'+esc(x.assignment_id)+'"><div><strong>'+esc(x.display_number||x.e164)+' • '+esc(x.tenant)+'</strong><small>'+esc(x.service_category||"profil à compléter")+' • AF2M '+esc(x.af2m_reference_version||"—")+'</small></div>'+badge(x.ecosystem_ready?"ready":"blocked")+'</button>').join("")||'<p class="scnote">Aucun numéro externe français.</p>')+'</div></section>'+
+  (n?editor(n):'<section class="sccard scwide"><p class="scnote">Sélectionner un numéro.</p></section>')+'</div>';
+  b.querySelectorAll("[data-sc-number]").forEach(x=>x.onclick=()=>{selected=x.dataset.scNumber;render();});
+  bind(n);
+}
+function editor(n){
+  const controls=data.catalog||[],states=statesFor(n),by=Object.fromEntries(states.map(x=>[x.control_key,x]));
+  return '<section class="sccard scwide"><h3>'+esc(n.display_number||n.e164)+' · '+esc(n.tenant)+'</h3><div class="sctabs"><button class="scbtn" aria-selected="true">Profil SVA</button><span class="scbadge">'+esc(controls.length)+' contrôles</span>'+badge(n.ecosystem_ready?"ready":"blocked")+'</div><div class="scform">'+
+  '<label class="scf">Catégorie<select id="sc-category">'+["general","advice","connection","payment","stock_information","distance_selling","m2m","automated_content","classifieds","telephony","access_code","directory_assistance","user_matching","minors","other"].map(v=>'<option '+(n.service_category===v?'selected':'')+'>'+v+'</option>').join("")+'</select></label>'+
+  '<label class="scf">Audience<select id="sc-audience">'+["consumer","professional","mixed"].map(v=>'<option '+(n.audience===v?'selected':'')+'>'+v+'</option>').join("")+'</select></label>'+
+  '<label class="scf">Facturation<select id="sc-billing">'+["free","normal","per_minute","per_call","mixed"].map(v=>'<option '+(n.billing_mode===v?'selected':'')+'>'+v+'</option>').join("")+'</select></label>'+
+  '<label class="scf">Prix / appel TTC<input id="sc-per-call" type="number" min="0" max="24" step=".01" value="'+esc(n.per_call_price_ttc??"")+'"></label>'+
+  '<label class="scf">Durée facturable max sec<input id="sc-duration" type="number" min="1" value="'+esc(n.max_billable_duration_seconds??"")+'"></label>'+
+  '<label class="scf">Plafond mensuel TTC<input id="sc-monthly" type="number" min="1" max="300" value="'+esc(n.monthly_user_cap_ttc??300)+'"></label>'+
+  '<label class="scf">MGIT requis<select id="sc-mgit-required"><option value="true" '+(n.mgit_required!==false?'selected':'')+'>Oui</option><option value="false" '+(n.mgit_required===false?'selected':'')+'>Non</option></select></label>'+
+  '<label class="scf">Durée MGIT sec<input id="sc-mgit-duration" type="number" min="10" max="20" value="'+esc(n.mgit_duration_seconds??"")+'"></label>'+
+  '<label class="scf">Privacy notice HTTPS<input id="sc-privacy" value="'+esc(n.privacy_notice_url||"")+'"></label>'+
+  '<label class="scf">Contact consommateur<input id="sc-contact" value="'+esc(n.consumer_contact||"")+'"></label>'+
+  '<label class="scf">Médiation / référence<input id="sc-mediation" value="'+esc(n.mediation_reference||"")+'"></label>'+
+  '<label class="scf">Prochaine revue<input id="sc-review" type="date" value="'+esc(n.next_review_at?String(n.next_review_at).slice(0,10):"")+'"></label></div>'+
+  '<div class="scactions"><label class="scbadge"><input id="sc-tariff-first" type="checkbox" '+(n.mgit_tariff_first?'checked':'')+'> tarif en premier</label><label class="scbadge"><input id="sc-optout" type="checkbox" '+(n.mgit_optout_instruction?'checked':'')+'> renoncement</label><label class="scbadge"><input id="sc-no-music" type="checkbox" '+(n.mgit_no_background_music?'checked':'')+'> sans musique</label><label class="scbadge"><input id="sc-beep" type="checkbox" '+(n.mgit_beep_before_billing?'checked':'')+'> bip avant facturation</label><button class="scbtn" data-sc-save-profile>Enregistrer le profil</button></div>'+
+  '<h3 style="margin-top:18px">Contrôles multi-organismes</h3><div class="sclist">'+controls.map(x=>{const st=by[x.control_key];return '<div class="scrow"><div><strong>'+esc(x.label)+'</strong><small>'+esc(x.framework_key)+' • '+esc(x.description)+'</small></div><div class="scactions">'+badge(st?.status||"not_started")+'<button class="scbtn" data-sc-evidence="'+esc(x.control_key)+'">Preuve</button></div></div>';}).join("")+'</div>'+
+  '<h3 style="margin-top:18px">Planifier un changement tarifaire RSVA</h3><div class="scform"><label class="scf">Nouveau code tarif<input id="sc-tariff-code"></label><label class="scf">Nouveau €/min TTC<input id="sc-tariff-minute" type="number" min="0" step=".01"></label><label class="scf">Nouveau €/appel TTC<input id="sc-tariff-call" type="number" min="0" max="24" step=".01"></label><label class="scf">Date d’effet (1er du mois)<input id="sc-tariff-date" type="date"></label></div><div class="scactions"><button class="scbtn" data-sc-tariff>Planifier sans déclarer au RSVA</button></div></section>';
+}
+function feedback(t){const x=$("#sc-feedback");if(x)x.textContent=t||"";}
+async function reload(){data=await req("/platform/sva-compliance");render();}
+async function saveProfile(n){
+  if(busy)return;busy=true;feedback("Enregistrement…");
+  try{
+    const body={service_category:$("#sc-category").value,audience:$("#sc-audience").value,billing_mode:$("#sc-billing").value,per_call_price_ttc:$("#sc-per-call").value||null,max_billable_duration_seconds:$("#sc-duration").value||null,monthly_user_cap_ttc:$("#sc-monthly").value||300,mgit_required:$("#sc-mgit-required").value==="true",mgit_duration_seconds:$("#sc-mgit-duration").value||null,mgit_tariff_first:$("#sc-tariff-first").checked,mgit_optout_instruction:$("#sc-optout").checked,mgit_no_background_music:$("#sc-no-music").checked,mgit_beep_before_billing:$("#sc-beep").checked,privacy_notice_url:$("#sc-privacy").value.trim()||null,consumer_contact:$("#sc-contact").value.trim()||null,mediation_reference:$("#sc-mediation").value.trim()||null};
+    if($("#sc-review").value)body.next_review_at=new Date($("#sc-review").value+"T23:59:59").toISOString();
+    await req("/platform/tenant-number-assignments/"+n.assignment_id+"/sva-compliance-profile",body);busy=false;feedback("Profil SVA enregistré.");await reload();
+  }catch(e){busy=false;feedback(e.code||e.message);}
+}
+async function evidence(n,key){
+  const cat=(data.catalog||[]).find(x=>x.control_key===key);if(!cat)return;
+  const status=prompt("Statut pour « "+cat.label+" » : verified / pending / failed / expired / not_applicable","verified");if(!status)return;
+  const ref=prompt("Référence de preuve ou justification (obligatoire si verified)","");if(status==="verified"&&!String(ref||"").trim())return feedback("Référence de preuve obligatoire.");
+  if(status==="not_applicable"&&!cat.allow_not_applicable)return feedback("Ce contrôle ne peut pas être marqué non applicable.");
+  busy=true;feedback("Ajout de la preuve…");
+  try{await req("/platform/tenant-number-assignments/"+n.assignment_id+"/sva-compliance-evidence",{control_key:key,status,source:"internal",evidence_reference:String(ref||"").trim()||null,metadata:{reason:status==="not_applicable"?String(ref||"").trim():null,recorded_from:"sva_compliance_center"}});busy=false;feedback("Preuve ajoutée à la chaîne SHA-256.");await reload();}catch(e){busy=false;feedback(e.code||e.message);}
+}
+async function tariff(n){
+  const code=$("#sc-tariff-code").value.trim(),date=$("#sc-tariff-date").value;if(!code||!date)return feedback("Code tarif et date requis.");
+  busy=true;feedback("Planification tarifaire…");
+  try{await req("/platform/tenant-number-assignments/"+n.assignment_id+"/sva-tariff-change",{proposed_tariff_code:code,effective_on:date,proposed_service_rate_ttc_per_min:$("#sc-tariff-minute").value||null,proposed_service_price_ttc_per_call:$("#sc-tariff-call").value||null,notes:"Planifié depuis SVA Compliance Center"});busy=false;feedback("Changement planifié localement. Aucune déclaration RSVA envoyée.");await reload();}catch(e){busy=false;feedback(e.code||e.message);}
+}
+function bind(n){if(!n)return;$("#sva-compliance-body [data-sc-save-profile]")?.addEventListener("click",()=>saveProfile(n));$("#sva-compliance-body [data-sc-tariff]")?.addEventListener("click",()=>tariff(n));document.querySelectorAll("#sva-compliance-body [data-sc-evidence]").forEach(x=>x.addEventListener("click",()=>evidence(n,x.dataset.scEvidence)));}
+export async function open(){const d=ensure();if(!d.open)d.showModal();const b=$("#sva-compliance-body");b.innerHTML='<p class="scnote">Chargement du SVA Compliance Center…</p>';try{await reload();}catch(e){b.innerHTML='<p class="scnote">Centre SVA indisponible : '+esc(e.code||e.message)+'</p>';}}
