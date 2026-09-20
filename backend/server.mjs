@@ -255,7 +255,7 @@ export function createBackend(options={}){
           store.customerPortalOverview(context.tenant_id,range.from,range.to),
           store.customerBillingPreparation(context.tenant_id)
         ]);
-        return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,billing_offer:billing.offer,billing_summary:{subscription:billing.subscription,premium_call_access:billing.premium_call_access,billing_currency:billing.billing_currency,checkout_prefill:billing.checkout_prefill,return_paths:billing.return_paths},billing_provider:billingProviderStatus(config),server_time:new Date().toISOString()});
+        return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,billing_offer:billing.offer,billing_summary:{subscription:billing.subscription,premium_call_access:billing.premium_call_access,billing_currency:billing.billing_currency,pricing_state:billing.pricing_state,reference_offer:billing.reference_offer,checkout_prefill:billing.checkout_prefill,return_paths:billing.return_paths},billing_provider:billingProviderStatus(config),server_time:new Date().toISOString()});
       }
       if(method==="GET"&&pathname==="/api/v1/customer/billing/status"){
         requireActor(customerActor);
