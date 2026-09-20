@@ -6,6 +6,24 @@ const P=(v,t)=>Number(t)>0?Number(v||0)/Number(t)*100:0;
 const C=(v,a,b)=>Math.max(a,Math.min(b,Number(v)||0));
 const E=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
 const DATE=v=>{const d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat("fr-FR",{dateStyle:"short",timeStyle:"short"}).format(d):"—";};
+function ensureStyles(){
+  if(document.getElementById("voice-intelligence-styles"))return;
+  const style=document.createElement("style");style.id="voice-intelligence-styles";style.textContent=`
+.voice-overview-strip{display:grid;grid-template-columns:minmax(210px,.6fr) minmax(0,1.4fr);gap:12px;align-items:stretch;margin-bottom:14px;padding:12px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(135deg,rgba(255,255,255,.035),rgba(255,255,255,.012))}
+.voice-overview-copy{display:flex;flex-direction:column;justify-content:center;padding:7px 9px}.voice-overview-copy>strong{font-size:19px}.voice-overview-copy>span{margin-top:5px;color:var(--muted);font-size:9px}
+.voice-overview-kpis,.voice-metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.voice-metric{min-width:0;padding:11px;border:1px solid rgba(255,255,255,.075);border-radius:11px;background:rgba(255,255,255,.02)}
+.voice-metric>span,.voice-metric>small{display:block}.voice-metric>span{color:var(--muted);font-size:8px;font-weight:750}.voice-metric>strong{display:block;margin:6px 0 4px;font-size:17px;letter-spacing:-.025em}.voice-metric>small{color:#738394;font-size:8px;line-height:1.4}
+.voice-metric.good{border-color:rgba(83,191,137,.22)}.voice-metric.warn{border-color:rgba(220,166,81,.28)}.voice-metric.bad{border-color:rgba(221,92,92,.32)}
+.voice-noc-panel,.carrier-health-panel{margin-top:14px}.voice-metric-grid{grid-template-columns:repeat(5,minmax(0,1fr));margin-top:12px}.voice-noc-split{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.voice-noc-split>div,.voice-incidents{padding:12px;border:1px solid var(--line);border-radius:12px;background:rgba(0,0,0,.08)}.voice-noc-split h3,.voice-incidents h3{margin:0 0 9px;font-size:10px}
+.voice-sip-list,.voice-hangup-list{display:grid;gap:6px}.voice-sip-list>div,.voice-hangup-list>div{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:9px}
+.voice-sip-list>div:last-child,.voice-hangup-list>div:last-child{border-bottom:0}.voice-incidents{margin-top:10px}.voice-incident{display:grid;grid-template-columns:9px minmax(0,1fr) auto;gap:9px;align-items:start;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05)}.voice-incident:last-child{border-bottom:0}
+.voice-incident>i{width:8px;height:8px;margin-top:3px;border-radius:50%;background:#7b8792}.voice-incident.warning>i{background:#dca651}.voice-incident.critical>i{background:#dd5c5c}.voice-incident.resolved>i{background:#53bf89}.voice-incident strong,.voice-incident span{display:block}.voice-incident strong{font-size:9px}.voice-incident span{margin-top:3px;color:var(--muted);font-size:8px}.voice-incident>b{font-size:7px;letter-spacing:.05em}
+.voice-threshold-note{margin:10px 2px 0;color:#718090;font-size:8px;line-height:1.5}.voice-carrier-table td,.voice-carrier-table th{white-space:nowrap}.voice-health{display:inline-flex;padding:4px 7px;border-radius:999px;border:1px solid var(--line);font-size:8px;font-weight:800}
+.voice-health.good{color:#8bd9b3;border-color:rgba(83,191,137,.28)}.voice-health.warn{color:#e1ba78;border-color:rgba(220,166,81,.3)}.voice-health.bad{color:#ee9696;border-color:rgba(221,92,92,.34)}.voice-health.neutral{color:var(--muted)}.voice-action-note{display:block;max-width:150px;margin-top:5px;color:#d7aa68;font-size:7px;white-space:normal;line-height:1.35}
+@media(max-width:1100px){.voice-metric-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:760px){.voice-overview-strip{grid-template-columns:1fr}.voice-overview-kpis,.voice-metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.voice-noc-split{grid-template-columns:1fr}.voice-metric>strong{font-size:16px}}@media(max-width:390px){.voice-overview-kpis,.voice-metric-grid{grid-template-columns:1fr}}
+`;document.head.appendChild(style);
+}
 
 function summarize(rows){
   rows=rows||[];
@@ -125,6 +143,7 @@ function renderCarriers(v){
     '</tbody></table></div><p class="voice-threshold-note">Aucune bascule automatique n’est déclenchée par ce tableau. Toute activation de route reste une action administrateur contrôlée.</p></section>';
 }
 export function render(payload){
+  ensureStyles();
   const data=payload&&payload.data||{};
   const v=data.voice_intelligence||derive(payload&&payload.rows||[]);
   renderOverview(v);renderSystem(v);renderCarriers(v);
