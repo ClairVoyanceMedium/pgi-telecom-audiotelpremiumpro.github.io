@@ -75,7 +75,7 @@ test("les remises à zéro cockpit et client sont sélectives et isolées",()=>{
   assert.match(server,/CUSTOMER_METRIC_RESET_FORBIDDEN/);
   assert.match(server,/effectiveMetricRanges\(requestedRange\.from,requestedRange\.to,context\.tenant_id\)/);
   assert.match(server,/effectiveMetricRanges\(requestedRange\.from,requestedRange\.to\)/);
-  assert.match(store,/scope='tenant'/);
+  assert.match(store,/scope='global' AND tenant_id=\$2/);
   assert.match(store,/scope='global'/);
   assert.match(store,/createCustomerMetricReset/);
   assert.match(clientPortal,/id="client-metrics-reset"/);
