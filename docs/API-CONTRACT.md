@@ -388,3 +388,24 @@ L'activation d'une bascule opérateur exige une demande `carrier_switch_activati
 La réponse Control Tower `audiotel-control-tower/2` contient `assurance.risk`, `assurance.slo`, `assurance.shadow_billing` et `assurance.change_requests`.
 
 Le Digital Twin `audiotel-digital-twin/2` ajoute `database_failure`, `worker_backlog`, `settlement_mismatch` et `hyperscale_growth`.
+
+
+## SVA Compliance Center 1.30
+
+### GET /platform/sva-compliance
+
+Lecture privée `admin / finance / readonly`. Retourne les référentiels suivis, la matrice de readiness par organisme, le catalogue de contrôles, les profils SVA, les états de preuve et les changements tarifaires planifiés. La réponse indique explicitement `external_connections_active=false` et `certification_claimed=false`.
+
+### POST /platform/tenant-number-assignments/:id/sva-compliance-profile
+
+Rôle `admin`, CSRF et idempotence. Met à jour le profil SVA par numéro : catégorie, audience, mode tarifaire, limites, MGIT, information vie privée, contact consommateur, médiation et échéance de revue.
+
+### POST /platform/tenant-number-assignments/:id/sva-compliance-evidence
+
+Rôle `admin`, CSRF et idempotence. Ajoute un événement de preuve append-only SHA-256 pour un contrôle APNF/RSVA, af2m, DGCCRF, CNIL, 33700 ou conditionnel. Un contrôle `verified` exige une référence ; un `not_applicable` est refusé lorsque le catalogue ne l'autorise pas et exige une justification lorsqu'il est permis.
+
+### POST /platform/tenant-number-assignments/:id/sva-tariff-change
+
+Rôle `admin`, CSRF et idempotence. Planifie localement un changement tarifaire. La date d'effet doit être le premier jour d'un mois et respecter un délai minimal de sept jours. Cette route ne transmet aucune déclaration au RSVA.
+
+L'`activation_ready` du cockpit exige désormais Trust Center + ARCEP 2026 lorsque applicable + SVA Ecosystem Readiness.
