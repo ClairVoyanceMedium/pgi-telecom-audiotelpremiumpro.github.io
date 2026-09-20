@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-const [html,portal,customerApi,adminApi,adminUi,server,store,migration,migrationTariff,migrationRio,identity]=await Promise.all([
+const [html,portal,customerApi,adminApi,adminUi,server,store,workers,migration,migrationTariff,migrationRio,migrationAutomation,identity,automation]=await Promise.all([
   readFile(new URL("../client.html",import.meta.url),"utf8"),
   readFile(new URL("../assets/client-portal.js",import.meta.url),"utf8"),
   readFile(new URL("../assets/client-portal-api.js",import.meta.url),"utf8"),
@@ -10,10 +10,13 @@ const [html,portal,customerApi,adminApi,adminUi,server,store,migration,migration
   readFile(new URL("../assets/tenant-portability-admin.js",import.meta.url),"utf8"),
   readFile(new URL("../backend/server.mjs",import.meta.url),"utf8"),
   readFile(new URL("../backend/src/store-postgres.mjs",import.meta.url),"utf8"),
+  readFile(new URL("../backend/src/workers.mjs",import.meta.url),"utf8"),
   readFile(new URL("../database/migrations/027_customer_number_portability.sql",import.meta.url),"utf8"),
   readFile(new URL("../database/migrations/028_portability_tariff_completion.sql",import.meta.url),"utf8"),
   readFile(new URL("../database/migrations/030_portability_rio_contract_boundary.sql",import.meta.url),"utf8"),
-  readFile(new URL("../backend/src/portability-identity.mjs",import.meta.url),"utf8")
+  readFile(new URL("../database/migrations/031_automatic_portability_orchestration.sql",import.meta.url),"utf8"),
+  readFile(new URL("../backend/src/portability-identity.mjs",import.meta.url),"utf8"),
+  readFile(new URL("../backend/src/portability-automation.mjs",import.meta.url),"utf8")
 ]);
 
 test("customer portability UI is wired end to end without changing the number",()=>{
@@ -55,7 +58,7 @@ test("French SVA port-in requires a verified encrypted RIO and never transfers t
   assert.match(store,/PORTABILITY_RIO_REQUIRED/);
   assert.match(store,/PORTABILITY_RIO_VERIFICATION_REQUIRED/);
   assert.match(store,/PORTABILITY_SOURCE_CONTRACT_ACK_REQUIRED/);
-  assert.match(store,/tenant_scoped_portability_requests_v3/);
+  assert.match(store,/tenant_scoped_portability_requests_v4/);
   assert.doesNotMatch(migrationRio,/CREATE\s+OR\s+REPLACE/i);
 });
 
@@ -67,7 +70,7 @@ test("verified tariff is required and copied unchanged on completion",()=>{
   assert.doesNotMatch(migrationTariff,/CREATE\s+OR\s+REPLACE/i);
   assert.match(store,/PORTABILITY_TARIFF_VERIFICATION_REQUIRED/);
   assert.match(store,/INSERT INTO sva_numbers\(e164,display_number,tariff_code,service_rate_ttc_per_min/);
-  assert.match(store,/current\\.tariff_code,rate/);
+  assert.match(store,/current\.tariff_code,rate/);
   assert.match(store,/public_tariff_locked:true/);
   assert.match(store,/tariff_preserved:true/);
 });
@@ -89,4 +92,24 @@ test("port-in completion is a dedicated guarded atomic server action",()=>{
   assert.match(store,/INSERT INTO number_carrier_assignments/);
   assert.match(store,/INSERT INTO number_portability_events/);
   assert.match(store,/portability\.completed/);
+});
+
+test("PGI automatically orchestrates operator portability with retries and recovery",()=>{
+  assert.match(migrationAutomation,/automation_state text NOT NULL DEFAULT 'queued'/);
+  assert.match(migrationAutomation,/portability_operator_events/);
+  assert.match(migrationAutomation,/tenant_scoped_portability_requests_v4/);
+  assert.doesNotMatch(migrationAutomation,/rio_ciphertext.*tenant_scoped_portability_requests_v4/s);
+  assert.match(store,/INSERT INTO work_queue\(queue_name,tenant_id,dedupe_key,priority,payload,available_at,max_attempts\)/);
+  assert.match(store,/async scanPortabilityAutomation/);
+  assert.match(workers,/scanPortabilityAutomation/);
+  assert.match(server,/createPortabilityQueueHandlers/);
+  assert.match(automation,/createPortabilityQueueHandlers/);
+  assert.match(automation,/PORTABILITY_OPERATOR_API_NOT_READY/);
+  assert.match(automation,/portability_eligibility_url/);
+  assert.match(automation,/portability_submit_url/);
+  assert.match(automation,/portability_status_url/);
+  assert.match(automation,/portability_cancel_url/);
+  assert.match(automation,/decryptPortabilityCredential/);
+  assert.match(automation,/sanitizePayload/);
+  assert.match(automation,/store\.completePortabilityRequest/);
 });
