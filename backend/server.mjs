@@ -334,6 +334,54 @@ export function createBackend(options={}){
         return done(res,metrics,started,"customer.routing.simulate",200,await store.simulateTenantRoutingById(context.tenant_id,body));
       }
 
+      if(method==="GET"&&pathname==="/api/v1/customer/voice-studio"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        return done(res,metrics,started,"customer.voice_studio.list",200,await store.customerVoiceStudio(context.tenant_id));
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/voice-studio/services"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        if(!["owner","admin"].includes(context.customer_role)){const e=new Error("Customer role cannot configure voice services");e.status=403;e.code="VOICE_STUDIO_FORBIDDEN";throw e;}
+        const body=await readJson(req,config.bodyLimitBytes),payload={tenant_id:context.tenant_id,...body};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer.voice_service.create",payload,()=>store.createCustomerVoiceService(context.tenant_id,body,customerActor.sub));
+        return done(res,metrics,started,"customer.voice_service.create",201,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/customer/voice-studio/services/:id/draft");
+      if(method==="POST"&&match){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        if(!["owner","admin"].includes(context.customer_role)){const e=new Error("Customer role cannot configure voice services");e.status=403;e.code="VOICE_STUDIO_FORBIDDEN";throw e;}
+        const body=await readJson(req,config.bodyLimitBytes),payload={tenant_id:context.tenant_id,service_id:match.id,...body};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer.voice_service.draft",payload,()=>store.saveCustomerVoiceDraft(context.tenant_id,match.id,body,customerActor.sub));
+        return done(res,metrics,started,"customer.voice_service.draft",201,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/customer/voice-studio/services/:id/simulate");
+      if(method==="POST"&&match){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        const body=await readJson(req,config.bodyLimitBytes);
+        return done(res,metrics,started,"customer.voice_service.simulate",200,await store.simulateCustomerVoiceService(context.tenant_id,match.id,body));
+      }
+      match=routeMatch(pathname,"/api/v1/customer/voice-studio/services/:id/publish");
+      if(method==="POST"&&match){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        if(!["owner","admin"].includes(context.customer_role)){const e=new Error("Customer role cannot publish voice services");e.status=403;e.code="VOICE_STUDIO_FORBIDDEN";throw e;}
+        const payload={tenant_id:context.tenant_id,service_id:match.id};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer.voice_service.publish",payload,()=>store.publishCustomerVoiceService(context.tenant_id,match.id,customerActor.sub));
+        return done(res,metrics,started,"customer.voice_service.publish",200,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/customer/voice-studio/services/:id/rollback");
+      if(method==="POST"&&match){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        if(!["owner","admin"].includes(context.customer_role)){const e=new Error("Customer role cannot rollback voice services");e.status=403;e.code="VOICE_STUDIO_FORBIDDEN";throw e;}
+        const body=await readJson(req,config.bodyLimitBytes),payload={tenant_id:context.tenant_id,service_id:match.id,version_id:body.version_id};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer.voice_service.rollback",payload,()=>store.rollbackCustomerVoiceService(context.tenant_id,match.id,body.version_id,customerActor.sub));
+        return done(res,metrics,started,"customer.voice_service.rollback",200,{...result.value,replayed:result.replayed});
+      }
+
       if(method==="POST"&&pathname==="/api/v1/customer/metrics/reset"){
         requireCustomerCsrf(req,customerActor,config);
         const context=await store.customerSessionContext(customerActor);
