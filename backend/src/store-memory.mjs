@@ -454,7 +454,7 @@ export class MemoryStore{
     const fromMs=Date.parse(from),toMs=Date.parse(to);
     if(!Number.isFinite(fromMs)||!Number.isFinite(toMs))throw problem(400,"INVALID_RANGE");
     const keys=["calls","minutes","revenue","payout","quality"];
-    const scope=tenantId==null?"global":"tenant",id=tenantId==null?null:Number(tenantId);
+    const scope="global",id=tenantId==null?null:Number(tenantId);
     const rows=this.baselines.filter(x=>x.scope===scope&&(id==null?x.tenant_id==null:Number(x.tenant_id)===id))
       .slice().sort((a,b)=>Date.parse(b.effective_from||b.created_at)-Date.parse(a.effective_from||a.created_at));
     const latest={};
@@ -485,12 +485,11 @@ export class MemoryStore{
   }
 
   async createBaseline(payload,actor){
-    if(!["global","tenant","expert","sva_number"].includes(payload.scope))throw problem(400,"INVALID_SCOPE");
+    if(!["global","expert","sva_number"].includes(payload.scope))throw problem(400,"INVALID_SCOPE");
     const metricKey=String(payload.metric_key||"all");
     if(!["all","calls","minutes","revenue","payout","quality"].includes(metricKey))throw problem(400,"INVALID_METRIC_KEY");
     const tenantId=payload.tenant_id==null?null:Number(payload.tenant_id);
-    if(payload.scope==="tenant"&&(!Number.isInteger(tenantId)||tenantId<=0))throw problem(400,"INVALID_TENANT_CONTEXT");
-    const now=new Date().toISOString();
+        const now=new Date().toISOString();
     const row={id:this.nextBaselineId++,tenant_id:tenantId,scope:payload.scope,scope_id:payload.scope_id??null,metric_key:metricKey,reason:String(payload.reason||""),created_at:now,effective_from:now,created_by:actor?.sub||null};
     this.baselines.push(row);
     this.#audit("baseline.create",String(row.id),row);
@@ -504,7 +503,7 @@ export class MemoryStore{
     if(keys.includes("all"))keys=allowed.slice();
     keys=[...new Set(keys)];
     if(!keys.length||keys.some(x=>!allowed.includes(x)))throw problem(400,"INVALID_METRIC_SELECTION");
-    const now=new Date().toISOString(),rows=keys.map(key=>({id:this.nextBaselineId++,tenant_id:id,scope:"tenant",scope_id:null,metric_key:key,reason:"Remise à zéro depuis l’espace client",created_at:now,effective_from:now,created_by:null,created_by_customer_principal_id:customerPrincipalId||null}));
+    const now=new Date().toISOString(),rows=keys.map(key=>({id:this.nextBaselineId++,tenant_id:id,scope:"global",scope_id:null,metric_key:key,reason:"Remise à zéro depuis l’espace client",created_at:now,effective_from:now,created_by:null,created_by_customer_principal_id:customerPrincipalId||null}));
     this.baselines.push(...rows);
     this.#audit("customer.metrics.reset",String(rows[0].id),{tenant_id:id,metric_keys:keys});
     this.eventBus.publish("customer.metrics.reset",{tenant_id:id,metric_keys:keys});
