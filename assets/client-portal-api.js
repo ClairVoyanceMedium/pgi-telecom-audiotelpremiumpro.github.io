@@ -53,6 +53,9 @@ root.PGICustomerApi=Object.freeze({
   me:function(){return request("/customer/auth/me",{timeoutMs:5000});},
   logout:function(){return request("/customer/auth/logout",{method:"POST",body:{}});},
   changePassword:function(currentPassword,newPassword){return request("/customer/auth/change-password",{method:"POST",body:{current_password:currentPassword,new_password:newPassword}});},
+  billingStatus:function(){return request("/customer/billing/status",{timeoutMs:5000});},
+  createBillingCheckout:function(){return request("/customer/billing/checkout-session",{method:"POST",body:{}});},
+  createBillingPortal:function(){return request("/customer/billing/portal-session",{method:"POST",body:{}});},
   portal:function(from,to){var q=new URLSearchParams({from:from,to:to});return request("/customer/portal?"+q.toString(),{timeoutMs:12000});},
   comparison:function(from,to){var q=new URLSearchParams({from:from,to:to});return request("/customer/comparison?"+q.toString(),{timeoutMs:10000});},
   calls:function(from,to,cursor,limit,filters){
