@@ -233,6 +233,12 @@ export function createBackend(options={}){
         const data=await store.customerPortalOverview(context.tenant_id,range.from,range.to);
         return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,server_time:new Date().toISOString()});
       }
+      if(method==="GET"&&pathname==="/api/v1/customer/comparison"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        const range=rangeParams(url);
+        return done(res,metrics,started,"customer.comparison",200,await store.customerPortalComparison(context.tenant_id,range.from,range.to));
+      }
       if(method==="GET"&&pathname==="/api/v1/customer/calls"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
