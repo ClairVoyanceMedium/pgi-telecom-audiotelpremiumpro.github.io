@@ -4,7 +4,7 @@ import {readFile} from "node:fs/promises";
 import {defaultVoiceFlow,validateVoiceFlow,simulateVoiceFlow,voiceFlowChecksum} from "../backend/src/voice-studio-domain.mjs";
 
 const [migration,store,server,clientApi,clientUi,clientPortal,buildStatic,checkStatic,sizeCheck]=await Promise.all([
-  readFile(new URL("../database/migrations/035_voice_studio.sql",import.meta.url),"utf8"),
+  readFile(new URL("../database/migrations/036_voice_studio.sql",import.meta.url),"utf8"),
   readFile(new URL("../backend/src/store-postgres.mjs",import.meta.url),"utf8"),
   readFile(new URL("../backend/server.mjs",import.meta.url),"utf8"),
   readFile(new URL("../assets/client-portal-api.js",import.meta.url),"utf8"),
