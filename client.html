@@ -39,7 +39,7 @@
       </form>
       <div class="cp-auth-divider"><span>ou</span></div>
       <div id="google-login" class="cp-google" hidden aria-label="Créer ou ouvrir mon compte avec Google"></div>
-      <p class="cp-google-note">Connexion ou création de compte sécurisée avec Google.</p>
+      <p class="cp-google-note" data-google-note hidden>Connexion ou création de compte sécurisée avec Google.</p>
       <button id="google-tenant-continue" class="cp-ghost cp-google-continue" type="button" hidden>Continuer avec Google</button>
     </div>
 
@@ -54,7 +54,8 @@
         <button class="cp-primary" type="submit">Activer mon espace</button>
       </form>
       <div class="cp-auth-divider"><span>ou</span></div>
-      <div id="google-activation" class="cp-google" hidden></div>
+      <div id="google-activation" class="cp-google" hidden aria-label="Créer mon compte avec Google"></div>
+      <p class="cp-google-note" data-google-note hidden>Vous pouvez activer votre espace avec votre compte Google.</p>
     </div>
     <p class="cp-form-message" id="auth-message" role="status"></p>
   </div>
