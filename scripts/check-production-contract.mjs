@@ -52,6 +52,7 @@ const portabilityAutomationSource=fs.readFileSync("backend/src/portability-autom
 const serviceExcellenceMigration=fs.readFileSync("database/migrations/032_service_excellence.sql","utf8");
 const serviceOperationsMigration=fs.readFileSync("database/migrations/033_service_operations_queue.sql","utf8");
 const serviceIntegrityMigration=fs.readFileSync("database/migrations/034_service_incident_tenant_integrity.sql","utf8");
+const regulatoryTrustMigration=fs.readFileSync("database/migrations/037_regulatory_trust_center.sql","utf8");
 const clientServiceCenter=fs.readFileSync("assets/client-service-center.js","utf8");
 const tenantServiceAdmin=fs.readFileSync("assets/tenant-service-admin.js","utf8");
 const googleIdSource=fs.readFileSync("backend/src/google-id.mjs","utf8");
@@ -143,6 +144,9 @@ if(!/SVA_ROUTING_CONTEXT_REQUIRED/.test(backendServer)||!/resolveTelephonyRoutin
 if(!/\/api\/v1\/platform\/overview/.test(backendServer)||!/platform\.overview/.test(backendServer))failures.push("backend must expose the read-only wholesale overview");
 if(!/wholesaleOverview/.test(apiClient))failures.push("frontend API client must expose the wholesale overview");
 if(!/upstream_payout_ht/.test(postgresStore)||!/platform_fee_ht/.test(postgresStore)||!/net_payout_ht/.test(postgresStore))failures.push("wholesale overview must expose authoritative settlement totals");
+if(!/sva_regulatory_profiles/.test(regulatoryTrustMigration)||!/pgi_sva_regulatory_ready/.test(regulatoryTrustMigration)||!/zzz_tenant_number_assignments_regulatory_gate/.test(regulatoryTrustMigration))failures.push("regulatory trust center must fail closed before external SVA activation");
+if(!/sva_regulatory_evidence_events/.test(regulatoryTrustMigration)||!/sva_regulatory_evidence_no_update/.test(regulatoryTrustMigration)||!/digest\(/.test(regulatoryTrustMigration))failures.push("regulatory trust center must retain append-only cryptographic evidence");
+if(!/man_caller_authentication/.test(regulatoryTrustMigration)||!/fraud_route_traceability/.test(regulatoryTrustMigration)||!/33700_process/.test(regulatoryTrustMigration))failures.push("regulatory trust center must retain caller-authentication and abuse controls");
 if(!/tenant_payout_terms/.test(pgiRevenueMigration)||!/tenant_revenue_distributions/.test(pgiRevenueMigration)||!/pgi_collects/.test(pgiRevenueMigration))failures.push("production must retain PGI-collected SVA revenue distribution");
 if(!/tenant_number_assignments_payout_terms_gate/.test(pgiRevenueMigration)||!/pgi_tenant_has_payout_terms/.test(pgiRevenueMigration))failures.push("external SVA activation must require PGI payout terms");
 if(!/rebuildTenantRevenueDistributions/.test(postgresStore)||!/PORTABILITY_PAYOUT_TERMS_REQUIRED/.test(postgresStore))failures.push("carrier settlements and port-ins must enforce PGI revenue distribution");
