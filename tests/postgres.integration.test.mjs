@@ -131,8 +131,8 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.match(evidencePack.integrity.pack_sha256,/^[0-9a-f]{64}$/);
     assert.match(evidencePack.integrity.evidence_chain_head,/^[0-9a-f]{64}$/);
     assert.equal(evidencePack.privacy.raw_rio_included,false);
-    const packAudit=await store.sql.unsafe("SELECT details FROM audit_log WHERE action='regulatory.evidence_pack.export' AND entity_id=$1 ORDER BY id DESC LIMIT 1",[String(extAssignmentForRoute[0].id)]);
-    assert.equal(packAudit[0].details.pack_sha256,evidencePack.integrity.pack_sha256);
+    const packAudit=await store.sql.unsafe("SELECT details->>'pack_sha256' AS pack_sha256 FROM audit_log WHERE action='regulatory.evidence_pack.export' AND entity_id=$1 ORDER BY id DESC LIMIT 1",[String(extAssignmentForRoute[0].id)]);
+    assert.equal(packAudit[0].pack_sha256,evidencePack.integrity.pack_sha256);
     const createdDestination=await store.createCallDestination(externalIdentity[0].public_id,{assignment_id:Number(extAssignmentForRoute[0].id),label:"Standard principal",destination_type:"pstn",destination_uri:"tel:+33123456789",priority:10,max_concurrent_calls:25},{sub:"admin"});
     assert.equal(createdDestination.status,"testing");
     await store.setCallDestinationStatus(createdDestination.id,"active",{sub:"admin"},"integration");
