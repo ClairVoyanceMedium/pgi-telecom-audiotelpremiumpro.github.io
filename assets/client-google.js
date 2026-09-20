@@ -18,12 +18,12 @@ async function init(options){
   callback=options.callback;
   await load();
   if(!initialized){
-    root.google.accounts.id.initialize({client_id:clientId,callback:function(response){if(callback)callback(response);},auto_select:false});
+    root.google.accounts.id.initialize({client_id:clientId,callback:function(response){if(callback)callback(response);},auto_select:false,itp_support:true,use_fedcm_for_button:true,button_auto_select:false});
     initialized=true;
   }
   [options.loginElement,options.activationElement].forEach(function(el){
     if(!el)return;el.hidden=false;el.innerHTML="";
-    root.google.accounts.id.renderButton(el,{theme:"filled_black",size:"large",shape:"rectangular",text:"continue_with",width:Math.min(360,Math.max(260,el.clientWidth||340))});
+    root.google.accounts.id.renderButton(el,{type:"standard",theme:"filled_black",size:"large",shape:"rectangular",text:el===options.activationElement?"signup_with":"continue_with",logo_alignment:"left",width:Math.min(360,Math.max(260,el.clientWidth||340))});
   });
   return true;
 }
