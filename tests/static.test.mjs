@@ -30,6 +30,7 @@ const tenantServiceAdmin=read("assets/tenant-service-admin.js");
 const platformAdmin=read("assets/platform-admin-tools.js");
 const callTools=read("assets/call-tools.js");
 const callList=read("assets/call-list.js");
+const metricReset=read("assets/metric-reset.js");
 const css=read("assets/styles.css");
 const sw=read("service-worker.js");
 const manifest=read("manifest.webmanifest");
@@ -48,29 +49,40 @@ test("la marque client reste Audiotel Premium Pro et la plateforme reste multise
   assert.match(clientPortalJs,/Frais de plateforme HT/);
 });
 
-test("le cockpit garde une liste d'appels compacte et une remise à zéro sûre",()=>{
+test("le cockpit garde une liste d'appels compacte et une remise à zéro sélective",()=>{
   assert.ok(index.includes('id="reset-metrics"'));
   assert.equal((index.match(/id="reset-metrics"/g)||[]).length,1);
-  assert.ok(index.includes('id="reset-dialog"'));
   assert.ok(index.includes('id="calls-table"'));
-  assert.match(index,/y compris clients, repartiront de zéro/);
+  assert.match(index,/Remettre des métriques à zéro/);
+  assert.doesNotMatch(index,/y compris clients, repartiront de zéro/);
   assert.match(app,/renderCallTable\(tableRows,state\.marketCurrency/);
   assert.match(callTools,/import\("\.\/call-list\.js"\)/);
   assert.match(callList,/rows\.slice\(0,8\)/);
   assert.match(callList,/Afficher les /);
   assert.match(callList,/Réduire la liste/);
-  assert.match(app,/createBaseline\(\{scope:"global",reason:"Remise à zéro depuis le cockpit"\}/);
+  assert.match(app,/import\("\.\/metric-reset\.js"\)/);
+  assert.match(app,/metric_key:key/);
+  assert.match(app,/scope:"global"/);
   assert.doesNotMatch(app,/DELETE\s+FROM\s+calls/i);
 });
 
-test("la remise à zéro globale se propage aux métriques clients",()=>{
+test("les remises à zéro cockpit et client sont sélectives et isolées",()=>{
   const server=read("backend/server.mjs"),store=read("backend/src/store-postgres.mjs");
-  assert.match(server,/customer\.portal"[\s\S]*effectiveMetricRange/);
-  assert.match(server,/customer\.calls"[\s\S]*metrics_reset_at/);
-  assert.match(server,/dashboard\.bootstrap"[\s\S]*metrics_reset_at/);
-  assert.match(store,/async effectiveMetricRange/);
-  assert.match(store,/tenant_scoped_call_facts WHERE started_at >= \$1::timestamptz/);
-  assert.match(store,/tenant_scoped_portal_call_details WHERE started_at >= \$1::timestamptz/);
+  for(const key of ["calls","minutes","revenue","payout","quality"])assert.match(metricReset,new RegExp('\\["'+key+'",'));
+  for(const label of ["Appels & décroché","Minutes & durées","Chiffre d’affaires","Reversements & marge","Qualité & expérience"])assert.ok(metricReset.includes(label));
+  assert.match(metricReset,/Les CDR, règlements, contrats et traces d’audit ne sont pas supprimés/);
+  assert.match(server,/\/api\/v1\/customer\/metrics\/reset/);
+  assert.match(server,/CUSTOMER_METRIC_RESET_FORBIDDEN/);
+  assert.match(server,/effectiveMetricRanges\(requestedRange\.from,requestedRange\.to,context\.tenant_id\)/);
+  assert.match(server,/effectiveMetricRanges\(requestedRange\.from,requestedRange\.to\)/);
+  assert.match(store,/scope='tenant'/);
+  assert.match(store,/scope='global'/);
+  assert.match(store,/createCustomerMetricReset/);
+  assert.match(clientPortal,/id="client-metrics-reset"/);
+  assert.match(clientPortalApi,/resetMetrics:function/);
+  assert.match(clientPortalApi,/\/customer\/metrics\/reset/);
+  assert.match(clientPortalJs,/\["owner","admin"\]/);
+  assert.match(clientPortalJs,/resetMetrics\(keys/);
   assert.match(clientPortalJs,/metric_net_payout_by_currency/);
   assert.match(app,/invalidateAppBootstrap\(\)/);
 });
