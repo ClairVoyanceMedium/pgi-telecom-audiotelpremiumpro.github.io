@@ -1591,7 +1591,7 @@ export class PostgresStore{
         " (SELECT count(*)::bigint FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id WHERE p.plan_key='external-sva-access' AND s.status='active' AND s.current_period_end>now()) AS active_subscriptions"
       ),
       this.readSql.unsafe(
-        "SELECT v.id,p.plan_key,p.display_name,v.market_id,m.country_code AS market,v.currency,v.amount_minor,"+
+        "SELECT v.id,p.plan_key,p.display_name,v.market_id,m.country_code AS market,v.currency,v.amount_minor,v.tax_behavior,"+
         " v.billing_interval,v.interval_count,v.effective_from,v.effective_to,v.provider,v.provider_price_reference"+
         " FROM service_plan_price_versions v JOIN service_plans p ON p.id=v.service_plan_id"+
         " LEFT JOIN operating_markets m ON m.id=v.market_id"+
@@ -1600,7 +1600,7 @@ export class PostgresStore{
         " ORDER BY (v.market_id IS NULL) DESC,v.effective_from DESC LIMIT 1"
       ),
       this.readSql.unsafe(
-        "SELECT v.id,v.currency,v.amount_minor,v.billing_interval,v.interval_count,v.effective_from,v.effective_to,"+
+        "SELECT v.id,v.currency,v.amount_minor,v.tax_behavior,v.billing_interval,v.interval_count,v.effective_from,v.effective_to,"+
         " m.country_code AS market,v.provider,v.provider_price_reference"+
         " FROM service_plan_price_versions v JOIN service_plans p ON p.id=v.service_plan_id"+
         " LEFT JOIN operating_markets m ON m.id=v.market_id"+
@@ -1645,14 +1645,14 @@ export class PostgresStore{
       );
       const id=Number(created[0]?.id);
       const price=await tx.unsafe(
-        "SELECT v.id,p.plan_key,v.market_id,m.country_code AS market,v.currency,v.amount_minor,v.billing_interval,v.interval_count,"+
+        "SELECT v.id,p.plan_key,v.market_id,m.country_code AS market,v.currency,v.amount_minor,v.tax_behavior,v.billing_interval,v.interval_count,"+
         " v.effective_from,v.effective_to FROM service_plan_price_versions v JOIN service_plans p ON p.id=v.service_plan_id"+
         " LEFT JOIN operating_markets m ON m.id=v.market_id WHERE v.id=$1",
         [id]
       );
       await tx.unsafe(
         "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'subscription.price.publish','service_plan_price',$2,$3::jsonb)",
-        [actorId,String(id),JSON.stringify({plan_key:"external-sva-access",currency,amount_minor:amountMinor,market_id:marketId,effective_from:effectiveFrom})]
+        [actorId,String(id),JSON.stringify({plan_key:"external-sva-access",currency,amount_minor:amountMinor,tax_behavior:"inclusive",market_id:marketId,effective_from:effectiveFrom})]
       );
       return price;
     });
@@ -2609,7 +2609,7 @@ export class PostgresStore{
       const billingDefault=resolveBillingCurrency(tenant.country_code);
       const billingCurrency=billingDefault?.currency||tenant.default_currency;
       const offer=(await tx.unsafe(
-        "SELECT v.id AS price_version_id,p.plan_key,p.display_name AS plan_name,v.market_id,m.country_code AS market,v.currency,v.amount_minor,"+
+        "SELECT v.id AS price_version_id,p.plan_key,p.display_name AS plan_name,v.market_id,m.country_code AS market,v.currency,v.amount_minor,v.tax_behavior,"+
         " v.billing_interval,v.interval_count,v.effective_from,v.effective_to FROM service_plan_price_versions v"+
         " JOIN service_plans p ON p.id=v.service_plan_id LEFT JOIN operating_markets m ON m.id=v.market_id"+
         " WHERE p.plan_key='external-sva-access' AND p.status='active' AND v.currency=$1"+
@@ -2618,7 +2618,7 @@ export class PostgresStore{
         [billingCurrency,tenant.country_code]
       ))[0]||null;
       const referenceOffer=offer?offer:(await tx.unsafe(
-        "SELECT v.id AS price_version_id,p.plan_key,p.display_name AS plan_name,v.currency,v.amount_minor,v.billing_interval,v.interval_count,v.effective_from,v.effective_to"+
+        "SELECT v.id AS price_version_id,p.plan_key,p.display_name AS plan_name,v.currency,v.amount_minor,v.tax_behavior,v.billing_interval,v.interval_count,v.effective_from,v.effective_to"+
         " FROM service_plan_price_versions v JOIN service_plans p ON p.id=v.service_plan_id"+
         " WHERE p.plan_key='external-sva-access' AND p.status='active' AND v.market_id IS NULL AND v.currency='EUR'"+
         " AND v.effective_from<=now() AND (v.effective_to IS NULL OR v.effective_to>now()) ORDER BY v.effective_from DESC LIMIT 1"
