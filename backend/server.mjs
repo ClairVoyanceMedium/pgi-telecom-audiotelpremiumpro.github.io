@@ -723,6 +723,35 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.assignment_status",200,{...result.value,replayed:result.replayed});
       }
 
+      if(method==="GET"&&pathname==="/api/v1/platform/sva-compliance"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.sva_compliance",200,await store.svaComplianceOverview());
+      }
+
+      match=routeMatch(pathname,"/api/v1/platform/tenant-number-assignments/:id/sva-compliance-profile");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const result=await store.idempotent(req.headers["idempotency-key"],"sva.compliance.profile",{id:match.id,...body},()=>store.upsertSvaServiceComplianceProfile(match.id,body,actor));
+        return done(res,metrics,started,"platform.sva_compliance_profile",200,{...result.value,replayed:result.replayed});
+      }
+
+      match=routeMatch(pathname,"/api/v1/platform/tenant-number-assignments/:id/sva-compliance-evidence");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const result=await store.idempotent(req.headers["idempotency-key"],"sva.compliance.evidence",{id:match.id,...body},()=>store.recordSvaEcosystemEvidence(match.id,body,actor));
+        return done(res,metrics,started,"platform.sva_compliance_evidence",201,{...result.value,replayed:result.replayed});
+      }
+
+      match=routeMatch(pathname,"/api/v1/platform/tenant-number-assignments/:id/sva-tariff-change");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const result=await store.idempotent(req.headers["idempotency-key"],"sva.tariff_change.plan",{id:match.id,...body},()=>store.planSvaTariffChange(match.id,body,actor));
+        return done(res,metrics,started,"platform.sva_tariff_change",201,{...result.value,replayed:result.replayed});
+      }
+
       match=routeMatch(pathname,"/api/v1/platform/tenant-number-assignments/:id/regulatory-profile");
       if(method==="POST"&&match){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
