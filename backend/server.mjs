@@ -597,6 +597,30 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.control_tower",200,await store.controlTowerOverview());
       }
 
+      if(method==="GET"&&pathname==="/api/v1/platform/change-requests"){
+        requireRole(actor,["admin","finance","readonly"]);
+        const params=Object.fromEntries(url.searchParams.entries());
+        return done(res,metrics,started,"platform.change_requests",200,await store.listPlatformChangeRequests(params));
+      }
+
+      match=routeMatch(pathname,"/api/v1/platform/change-requests/:id/approve");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={id:match.id,reason:body.reason||""};
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.change.approve",payload,()=>store.approvePlatformChangeRequest(match.id,actor,body));
+        return done(res,metrics,started,"platform.change_approve",200,{...result.value,replayed:result.replayed});
+      }
+
+      match=routeMatch(pathname,"/api/v1/platform/change-requests/:id/reject");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={id:match.id,reason:body.reason||""};
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.change.reject",payload,()=>store.rejectPlatformChangeRequest(match.id,actor,body));
+        return done(res,metrics,started,"platform.change_reject",200,{...result.value,replayed:result.replayed});
+      }
+
       if(method==="POST"&&pathname==="/api/v1/platform/policy/evaluate"){
         requireRole(actor,["admin","finance","readonly"]);requireCsrf(req,actor,config);
         const body=await readJson(req,config.bodyLimitBytes);
