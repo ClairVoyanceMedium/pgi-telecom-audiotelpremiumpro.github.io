@@ -14,7 +14,7 @@ function dateOnly(v){if(!v)return "—";var d=new Date(v);return Number.isFinite
 function duration(s){s=Math.max(0,Math.round(n(s)));var m=Math.floor(s/60),r=s%60;return m+" min "+String(r).padStart(2,"0")+" s";}
 function statusLabel(v){var m={active:"Actif",pending:"En attente",testing:"Test",suspended:"Suspendu",closed:"Fermé",connected:"Décroché",abandoned:"Abandonné",failed:"Échoué",busy:"Occupé",no_answer:"Sans réponse",open:"En cours",reconciled:"Validé",invoiced:"Facturé",payable:"À payer",paid:"Payé",disputed:"Contesté",past_due:"Impayé",cancelled:"Résilié",ended:"Terminé"};return tr(m[String(v||"").toLowerCase()]||String(v||"—"));}
 function chip(status){var s=String(status||"").toLowerCase();var tone=["active","connected","paid","reconciled","payable"].includes(s)?"ok":["pending","testing","open","invoiced"].includes(s)?"warn":["suspended","closed","failed","past_due","disputed"].includes(s)?"bad":"neutral";return '<span class="cp-chip '+tone+'">'+esc(statusLabel(status))+"</span>";}
-function toast(message){var el=$("client-toast");el.textContent=message;el.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(function(){el.hidden=true;},2600);}
+function toast(message){var el=$("client-toast");el.textContent=tr(message);el.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(function(){el.hidden=true;},2600);}
 function setAuthMessage(message,bad){var el=$("auth-message");el.textContent=message?tr(message):"";el.classList.toggle("bad",Boolean(bad));}
 function rangeFor(key){
   var to=new Date(),from=new Date(to);
@@ -132,15 +132,15 @@ function renderSubscriptions(data){
   var connected=provider.connection_state&&provider.connection_state!=="not_connected";
   if(offer&&offer.amount_minor!=null){
     var cadence=offer.billing_interval==="year"?"an":"mois",offerPrice=money(n(offer.amount_minor)/100,offer.currency)+" / "+cadence;
-    if(offerDetail)offerDetail.textContent=offerPrice+" · tarif versionné";
+    if(offerDetail)offerDetail.textContent=offerPrice+" · "+tr("tarif versionné");
     if(offerChip){offerChip.textContent=money(n(offer.amount_minor)/100,offer.currency);offerChip.className="cp-chip ok";}
-    if(start)start.textContent="Activer mon abonnement — "+offerPrice;
+    if(start)start.textContent=tr("Activer mon abonnement")+" — "+offerPrice;
   }else{
-    if(offerDetail)offerDetail.textContent="Aucun tarif disponible pour votre pays et votre devise.";
-    if(offerChip){offerChip.textContent="INDISPONIBLE";offerChip.className="cp-chip warn";}
+    if(offerDetail)offerDetail.textContent=tr("Aucun tarif disponible pour votre pays et votre devise.");
+    if(offerChip){offerChip.textContent=tr("INDISPONIBLE");offerChip.className="cp-chip warn";}
   }
-  if(stateEl)stateEl.textContent=connected?"Prestataire de paiement configuré.":"Architecture de paiement prête, prestataire non connecté.";
-  if(chipEl){chipEl.textContent=connected?"PRÊT":"NON CONNECTÉ";chipEl.className="cp-chip "+(connected?"ok":"neutral");}
+  if(stateEl)stateEl.textContent=connected?tr("Prestataire de paiement configuré."):tr("Architecture de paiement prête, prestataire non connecté.");
+  if(chipEl){chipEl.textContent=connected?tr("PRÊT"):tr("NON CONNECTÉ");chipEl.className="cp-chip "+(connected?"ok":"neutral");}
   if(start)start.disabled=!provider.checkout_available||!offer;
   if(manage)manage.disabled=!provider.customer_portal_available||!rows.length;
 }
@@ -344,7 +344,7 @@ async function openBilling(kind){
   var action=kind==="manage"?window.PGICustomerApi.createBillingPortal:window.PGICustomerApi.createBillingCheckout;
   var button=kind==="manage"?$("client-billing-manage"):$("client-billing-start"),original=button?button.textContent:"";
   var idempotencyKey=kind==="manage"?null:window.PGICustomerApi.newIdempotencyKey();
-  state.billingBusy=true;if(button){button.disabled=true;button.textContent=kind==="manage"?"Ouverture de la facturation…":"Ouverture du paiement…";}
+  state.billingBusy=true;if(button){button.disabled=true;button.textContent=kind==="manage"?tr("Ouverture de la facturation…"):tr("Ouverture du paiement…");}
   try{
     var result=kind==="manage"?await action():await action(idempotencyKey);
     var target=result&&result.url?new URL(result.url,location.origin):null;
