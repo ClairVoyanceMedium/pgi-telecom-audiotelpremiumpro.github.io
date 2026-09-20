@@ -596,6 +596,8 @@ export class PostgresStore{
         if(sva.tenant_type!=="internal"){
           const assignments=await tx.unsafe("SELECT id FROM tenant_number_assignments WHERE tenant_id=$1 AND sva_number_id=$2 AND status='active' AND (valid_from IS NULL OR valid_from<=now()) AND (valid_to IS NULL OR valid_to>=now()) LIMIT 1",[tenantId,svaId]);
           if(!assignments.length)throw problem(423,"SVA_ASSIGNMENT_INACTIVE");
+          const payout=await tx.unsafe("SELECT pgi_tenant_has_payout_terms($1,$2,$3,now()) AS allowed",[tenantId,marketId,svaId]);
+          if(!payout[0]?.allowed)throw problem(423,"SVA_PAYOUT_TERMS_REQUIRED");
         }
       }
       if(tenantId==null)return null;
@@ -652,6 +654,8 @@ export class PostgresStore{
             [tenantId,sva.id]
           );
           if(!assignmentRows.length)throw problem(423,"SVA_ASSIGNMENT_INACTIVE");
+          const payoutRows=await tx.unsafe("SELECT pgi_tenant_has_payout_terms($1,$2,$3,now()) AS allowed",[tenantId,marketId,sva.id]);
+          if(!payoutRows[0]?.allowed)throw problem(423,"SVA_PAYOUT_TERMS_REQUIRED");
         }
       }
 
