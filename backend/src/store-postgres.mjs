@@ -4218,10 +4218,11 @@ export class PostgresStore{
   async digitalTwinSimulation(input={}){
     const scenario=String(input.scenario||"").trim().toLowerCase();
     const params=input.parameters&&typeof input.parameters==="object"&&!Array.isArray(input.parameters)?input.parameters:{};
-    const [platform,service,route,capacityRows]=await Promise.all([
+    const [platform,service,route,queue,capacityRows]=await Promise.all([
       this.wholesaleOverview(),
       this.serviceOperationsHealth(),
       this.carrierRouting(),
+      this.workQueueHealth(),
       this.readSql.unsafe(
         "SELECT"+
         " COALESCE(sum(max_concurrent_calls) FILTER(WHERE status='active'),0)::int AS destination_capacity,"+
@@ -4242,7 +4243,11 @@ export class PostgresStore{
       current_concurrent:Number(cap.current_concurrent||0),
       regions_ready:Number(scale.regions_ready||0),
       regions_total:Number(scale.regions_total||0),
-      dr_targets:Number(scale.dr_targets_total||0)
+      dr_targets:Number(scale.dr_targets_total||0),
+      read_replica_enabled:Boolean(scale.read_replica_enabled),
+      queue_pending:Number(queue.pending||0),
+      queue_dead_lettered:Number(queue.dead_lettered||0),
+      bucket_capacity:Number(scale.bucket_capacity||4096)
     };
     return simulateDigitalTwin(scenario,baseline,params);
   }
@@ -4320,7 +4325,7 @@ export class PostgresStore{
       carrier_route:route,queue,service_operations:service,regulatory:reg,scale,
       capabilities:{
         policy_intents:["activate_number","port_in","payout_customer","carrier_switch","customer_access"],
-        digital_twin_scenarios:["carrier_outage","traffic_spike","mass_portability","regulatory_expiry","billing_failure","region_failure"],
+        digital_twin_scenarios:["carrier_outage","traffic_spike","mass_portability","regulatory_expiry","billing_failure","region_failure","database_failure","worker_backlog","settlement_mismatch","hyperscale_growth"],
         external_connections_active:false,dual_control:true,shadow_billing:true,risk_engine:true,slo_snapshot:true
       }
     };
