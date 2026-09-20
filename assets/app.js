@@ -32,7 +32,7 @@ function productionDataRange(){
 return getRange();
 }
 function comparisonRange(range){
-if(state.baseline)return null;
+if(RUNTIME.mode!=="production"&&state.baseline)return null;
 var now=new Date(),effectiveTo=range.to<now?range.to:now;
 var duration=Math.max(1,effectiveTo-range.from);
 var to=new Date(range.from.getTime()-1);
@@ -291,7 +291,7 @@ var n=now.getDay()||7;from=startOfDay(now);from.setDate(now.getDate()-n+1);
 else if(state.period==="year"){from=new Date(now.getFullYear(),0,1);}
 else if(state.period==="custom"&&state.custom){from=startOfDay(state.custom.from);to=endOfDay(state.custom.to);}
 else{from=startOfDay(now);}
-if(state.baseline&&state.baseline>from)from=new Date(state.baseline);
+if(RUNTIME.mode!=="production"&&state.baseline&&state.baseline>from)from=new Date(state.baseline);
 return {from:from,to:to};
 }
 function filteredCalls(){
