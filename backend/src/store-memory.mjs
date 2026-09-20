@@ -2,6 +2,7 @@ import {createRequire} from "node:module";
 import {createHash,randomUUID} from "node:crypto";
 import {sanitizeCdrPayload,deriveCallerHash} from "./cdr-privacy.mjs";
 import {selectExpert} from "./expert-router.mjs";
+import {normalizeVoiceServiceInput,validateVoiceFlow,simulateVoiceFlow,voiceFlowChecksum} from "./voice-studio-domain.mjs";
 
 const require=createRequire(import.meta.url);
 const core=require("../../assets/core.js");
@@ -19,6 +20,9 @@ export class MemoryStore{
     ];
     this.callDestinations=[];
     this.nextDestinationId=1;
+    this.voiceServices=[];
+    this.nextVoiceServiceId=1;
+    this.nextVoiceVersionId=1;
     this.baselines=[];
     this.rawEventKeys=new Set();
     this.outbox=[];
@@ -755,6 +759,44 @@ export class MemoryStore{
   async setTenantAssignmentStatus(id,status){
     void id;void status;
     throw problem(404,"ASSIGNMENT_NOT_FOUND");
+  }
+
+  async customerVoiceStudio(tenantId){void tenantId;return {data:structuredClone(this.voiceServices)};}
+
+  async createCustomerVoiceService(tenantId,input={},actorSubject=""){
+    void tenantId;const normalized=normalizeVoiceServiceInput(input),check=validateVoiceFlow(normalized.flow),checksum=voiceFlowChecksum(check.flow);
+    const id=this.nextVoiceServiceId++,version={id:this.nextVoiceVersionId++,service_id:id,version_no:1,state:"draft",flow:check.flow,validation:{valid:check.valid,errors:check.errors,warnings:check.warnings,node_count:check.node_count,features:check.features},checksum_sha256:checksum,created_at:new Date().toISOString()};
+    const service={id,sva_number_id:normalized.sva_number_id,name:normalized.name,status:"draft",timezone:normalized.timezone,default_locale:normalized.default_locale,active_version_id:null,published_at:null,created_at:new Date().toISOString(),updated_at:new Date().toISOString(),versions:[version],events:[{event_type:"created",actor_type:"customer",actor_subject:String(actorSubject||""),occurred_at:new Date().toISOString()}]};
+    this.voiceServices.unshift(service);return structuredClone({...service,draft:version});
+  }
+
+  async saveCustomerVoiceDraft(tenantId,serviceId,input={},actorSubject=""){
+    void tenantId;const service=this.voiceServices.find(x=>x.id===Number(serviceId));if(!service)throw problem(404,"VOICE_SERVICE_NOT_FOUND");
+    const normalized=normalizeVoiceServiceInput(input),check=validateVoiceFlow(normalized.flow),checksum=voiceFlowChecksum(check.flow),versionNo=Math.max(0,...service.versions.map(x=>x.version_no))+1;
+    const version={id:this.nextVoiceVersionId++,service_id:service.id,version_no:versionNo,state:"draft",flow:check.flow,validation:{valid:check.valid,errors:check.errors,warnings:check.warnings,node_count:check.node_count,features:check.features},checksum_sha256:checksum,created_at:new Date().toISOString()};
+    service.name=normalized.name;service.sva_number_id=normalized.sva_number_id;service.timezone=normalized.timezone;service.default_locale=normalized.default_locale;service.updated_at=new Date().toISOString();service.versions.unshift(version);service.events.unshift({event_type:"draft_saved",actor_type:"customer",actor_subject:String(actorSubject||""),version_id:version.id,occurred_at:new Date().toISOString()});
+    return structuredClone({...service,draft:version,validation:version.validation});
+  }
+
+  async simulateCustomerVoiceService(tenantId,serviceId,input={}){
+    void tenantId;const service=this.voiceServices.find(x=>x.id===Number(serviceId));if(!service)throw problem(404,"VOICE_SERVICE_NOT_FOUND");
+    const flow=input.flow&&typeof input.flow==="object"?input.flow:service.versions[0]?.flow;if(!flow)throw problem(404,"VOICE_SERVICE_VERSION_NOT_FOUND");
+    const result=simulateVoiceFlow(flow,input.simulation||{});service.events.unshift({event_type:"simulated",actor_type:"customer",occurred_at:new Date().toISOString()});return result;
+  }
+
+  async publishCustomerVoiceService(tenantId,serviceId,actorSubject=""){
+    void tenantId;const service=this.voiceServices.find(x=>x.id===Number(serviceId));if(!service)throw problem(404,"VOICE_SERVICE_NOT_FOUND");
+    const version=service.versions[0];if(!version)throw problem(404,"VOICE_SERVICE_VERSION_NOT_FOUND");const check=validateVoiceFlow(version.flow);if(!check.valid)throw problem(409,"VOICE_FLOW_INVALID");
+    service.versions.forEach(x=>{if(x.state==="published")x.state="retired";});version.state="published";version.published_at=new Date().toISOString();service.active_version_id=version.id;service.status="published";service.published_at=version.published_at;service.updated_at=version.published_at;service.events.unshift({event_type:"published",actor_type:"customer",actor_subject:String(actorSubject||""),version_id:version.id,occurred_at:version.published_at});
+    return structuredClone({...service,version,validation:{valid:true,errors:[],warnings:check.warnings,node_count:check.node_count,features:check.features}});
+  }
+
+  async rollbackCustomerVoiceService(tenantId,serviceId,versionId,actorSubject=""){
+    void tenantId;const service=this.voiceServices.find(x=>x.id===Number(serviceId));if(!service)throw problem(404,"VOICE_SERVICE_NOT_FOUND");
+    const source=service.versions.find(x=>x.id===Number(versionId));if(!source)throw problem(404,"VOICE_SERVICE_VERSION_NOT_FOUND");const check=validateVoiceFlow(source.flow);if(!check.valid)throw problem(409,"VOICE_FLOW_INVALID");
+    service.versions.forEach(x=>{if(x.state==="published")x.state="retired";});const next=Math.max(...service.versions.map(x=>x.version_no))+1,version={id:this.nextVoiceVersionId++,service_id:service.id,version_no:next,state:"published",flow:structuredClone(check.flow),validation:{valid:true,errors:[],warnings:check.warnings,node_count:check.node_count,features:check.features},checksum_sha256:voiceFlowChecksum(check.flow),source_version_id:source.id,published_at:new Date().toISOString(),created_at:new Date().toISOString()};
+    service.versions.unshift(version);service.active_version_id=version.id;service.status="published";service.published_at=version.published_at;service.updated_at=version.published_at;service.events.unshift({event_type:"rolled_back",actor_type:"customer",actor_subject:String(actorSubject||""),version_id:version.id,occurred_at:version.published_at});
+    return structuredClone({...service,version});
   }
 
   async createCallDestination(publicId,input={}){void publicId;const label=String(input.label||"").trim(),destination_uri=String(input.destination_uri||"").trim();if(!label||!destination_uri)throw problem(400,"INVALID_CALL_DESTINATION");const row={id:this.nextDestinationId++,tenant_id:null,sva_number_id:null,label,destination_type:String(input.destination_type||"pstn"),destination_uri,priority:Number(input.priority||100),status:"testing",max_concurrent_calls:input.max_concurrent_calls==null?null:Number(input.max_concurrent_calls),active_calls:0};this.callDestinations.push(row);return structuredClone(row);}
