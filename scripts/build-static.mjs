@@ -34,6 +34,7 @@ const files=[
   "assets/workspace.js",
   "assets/cockpit-pro.js",
   "assets/performance-radar.js",
+  "assets/voice-intelligence.js",
   "assets/subscription-billing-ui.js",
   "assets/customer-admin.js",
   "assets/customer-admin.css",
