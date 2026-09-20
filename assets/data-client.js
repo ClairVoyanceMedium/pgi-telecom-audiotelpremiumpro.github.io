@@ -20,7 +20,7 @@
     var payoutEligibleSeconds=Number(c.payout_eligible_seconds||0);
     return {
       id:c.id,ts:ts,ivrStarted:ivr,queued:queued,ringing:c.ringing_at?new Date(c.ringing_at):null,bridged:bridged,ended:ended,
-      caller:c.caller_masked||"—",carrier:c.origin_carrier||"Inconnu",number:c.sva_number||"—",
+      caller:c.caller_masked||"—",carrier:c.origin_carrier||"Inconnu",hostCarrier:c.host_carrier||"Inconnu",number:c.sva_number||"—",
       market:c.market||"FR",currency:c.currency||"EUR",
       expert:c.expert_name||"Non attribué",expertId:c.expert_id||null,
       wait:Number(c.wait_seconds||0),conversation:Number(c.conversation_seconds||0),total:Number(c.total_seconds||0),
