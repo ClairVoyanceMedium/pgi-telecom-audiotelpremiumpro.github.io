@@ -2736,8 +2736,9 @@ export class PostgresStore{
       const portabilityRequests=await tx.unsafe(
         "SELECT id,country_code,requested_e164,display_number,service_family,current_operator_name,desired_port_date,status,ownership_status,"+
         " operator_portability_reference,scheduled_at,completed_at,rejection_reason,tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,tariff_verified_at,"+
-        " rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,created_at,updated_at"+
-        " FROM tenant_scoped_portability_requests_v3 ORDER BY created_at DESC,id DESC LIMIT 20"
+        " rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,"+
+        " automation_state,automation_last_error,automation_last_sync_at,operator_status,created_at,updated_at"+
+        " FROM tenant_scoped_portability_requests_v4 ORDER BY created_at DESC,id DESC LIMIT 20"
       );
       const recentCalls=await tx.unsafe(
         "SELECT call_id,market,currency,sva_number_id,display_number,e164,started_at,ringing_at,bridged_at,ended_at,call_status,wait_seconds,conversation_seconds,billable_seconds,"+
