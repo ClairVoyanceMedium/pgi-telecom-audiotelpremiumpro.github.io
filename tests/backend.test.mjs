@@ -1,4 +1,5 @@
 import test from "node:test";
+import fs from "node:fs";
 import assert from "node:assert/strict";
 import {createBackend,evaluateReadiness,resolveTelephonyRoutingContext} from "../backend/server.mjs";
 import {loadConfig} from "../backend/src/config.mjs";
@@ -7,6 +8,8 @@ import {selectExpert} from "../backend/src/expert-router.mjs";
 import {clientIp,routeMatch} from "../backend/src/http.mjs";
 import {sanitizeCdrPayload,deriveCallerHash} from "../backend/src/cdr-privacy.mjs";
 import {computeExpertCost} from "../backend/src/expert-finance.mjs";
+
+const backendServer=fs.readFileSync(new URL("../backend/server.mjs",import.meta.url),"utf8");
 
 function config(overrides={}){
   return {
