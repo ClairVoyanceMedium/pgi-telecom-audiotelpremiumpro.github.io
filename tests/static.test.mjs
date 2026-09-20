@@ -515,4 +515,4 @@ test("cockpit and client expose carrier-grade voice intelligence without bloatin
 });
 
 
-test("PWA cockpit uses the exact install label",()=>{const m=JSON.parse(manifest);assert.equal(m.name,"Audiotel Premium Pro");assert.equal(m.short_name,"Audiotel Premium Pro");assert.match(index,/apple-mobile-web-app-title\\\" content=\\\"Audiotel Premium Pro\\\"/);});
+test("PWA cockpit uses the exact install label",()=>{const m=JSON.parse(manifest);assert.equal(m.name,"Audiotel Premium Pro");assert.equal(m.short_name,"Audiotel Premium Pro");assert.match(index,/apple-mobile-web-app-title" content="Audiotel Premium Pro"/);});
