@@ -16,6 +16,7 @@
 <script src="assets/client-portal-api.js" defer></script>
 <script src="assets/client-portal.js" defer></script>
 <script src="assets/client-search.js" defer></script>
+<script src="assets/client-premium.js" defer></script>
 </head>
 <body>
 <a class="cp-skip" href="#client-main">Aller au contenu</a>
@@ -90,6 +91,22 @@
       </div>
     </section>
 
+    <nav class="cp-section-nav" aria-label="Navigation du tableau de bord">
+      <a href="#client-overview">Synthèse</a>
+      <a href="#client-analytics">Analyses</a>
+      <a href="#client-calls">Appels</a>
+      <a href="#client-finance">Reversements</a>
+      <a href="#client-routing">Routage</a>
+    </nav>
+
+    <section class="cp-command-bar" aria-label="État et actions">
+      <div class="cp-live-state">
+        <span class="cp-live-dot" aria-hidden="true"></span>
+        <div><strong id="client-data-status">Données prêtes</strong><span id="client-data-detail">Synchronisation du tableau de bord</span></div>
+      </div>
+      <button id="client-refresh" class="cp-ghost cp-refresh" type="button" aria-label="Actualiser les données">Actualiser</button>
+    </section>
+
     <section class="cp-search-panel" role="search" aria-label="Rechercher dans mon tableau de bord">
       <label class="cp-search-box" for="client-search">
         <span>Rechercher</span>
@@ -97,16 +114,24 @@
       </label>
       <button id="client-search-clear" class="cp-ghost cp-search-clear" type="button" hidden>Effacer</button>
       <span id="client-search-count" class="cp-search-count" aria-live="polite"></span>
+      <div class="cp-search-scopes" aria-label="Filtrer la recherche">
+        <button type="button" class="active" data-search-scope="all">Tout</button>
+        <button type="button" data-search-scope="calls">Appels</button>
+        <button type="button" data-search-scope="numbers">Numéros</button>
+        <button type="button" data-search-scope="settlements">Reversements</button>
+        <button type="button" data-search-scope="subscriptions">Contrat</button>
+        <button type="button" data-search-scope="routing">Routage</button>
+      </div>
     </section>
 
-    <section class="cp-kpis" aria-label="Indicateurs">
+    <section id="client-overview" class="cp-kpis cp-anchor-section" aria-label="Indicateurs">
       <article><span>Appels</span><strong id="kpi-calls">0</strong><small id="kpi-answer-rate">0 % décrochés</small></article>
       <article><span>Minutes facturables</span><strong id="kpi-minutes">0</strong><small>Sur la période</small></article>
       <article><span>Montant service TTC</span><strong id="kpi-revenue">0</strong><small>Volume généré par les appels</small></article>
       <article class="cp-kpi-accent"><span>Reversement net validé</span><strong id="kpi-payout">0</strong><small>Après validation des relevés</small></article>
     </section>
 
-    <section class="cp-chart-grid" aria-label="Analyses graphiques">
+    <section id="client-analytics" class="cp-chart-grid cp-anchor-section" aria-label="Analyses graphiques">
       <article class="cp-panel cp-chart-card">
         <div class="cp-panel-head"><div><p class="cp-kicker">APPELS</p><h2>Volume & décroché</h2></div><span id="traffic-total">0 appels</span></div>
         <svg id="calls-chart" class="cp-svg" viewBox="0 0 720 220" role="img" aria-label="Évolution des appels et appels décrochés"></svg>
@@ -145,20 +170,21 @@
       </article>
     </section>
 
-    <section class="cp-panel">
+    <section id="client-calls" class="cp-panel cp-anchor-section">
       <div class="cp-panel-head">
         <div><p class="cp-kicker">CONSOMMATION</p><h2>Derniers appels</h2></div>
         <button id="export-calls" class="cp-ghost" type="button">Exporter CSV</button>
       </div>
       <div class="cp-table-wrap">
         <table class="cp-table">
-          <thead><tr><th>Date</th><th>Numéro</th><th>État</th><th>Durée</th><th>Montant TTC</th></tr></thead>
+          <caption class="cp-visually-hidden">Historique des derniers appels</caption>
+          <thead><tr><th scope="col">Date</th><th scope="col">Numéro</th><th scope="col">État</th><th scope="col">Durée</th><th scope="col">Montant TTC</th></tr></thead>
           <tbody id="calls-body"></tbody>
         </table>
       </div>
     </section>
 
-    <section class="cp-grid">
+    <section id="client-finance" class="cp-grid cp-anchor-section">
       <article class="cp-panel">
         <div class="cp-panel-head"><div><p class="cp-kicker">REVERSEMENTS</p><h2>Mes règlements</h2></div></div>
         <div id="settlements-list" class="cp-stack"></div>
@@ -169,7 +195,7 @@
       </article>
     </section>
 
-    <section class="cp-panel">
+    <section id="client-routing" class="cp-panel cp-anchor-section">
       <div class="cp-panel-head"><div><p class="cp-kicker">ROUTAGE</p><h2>Destinations de mes appels</h2></div><span>Lecture seule</span></div>
       <div id="destinations-list" class="cp-stack cp-destinations"></div>
     </section>
