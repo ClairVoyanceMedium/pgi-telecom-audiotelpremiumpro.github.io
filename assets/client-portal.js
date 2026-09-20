@@ -1,6 +1,6 @@
 (function(){
 "use strict";
-var state={range:"30",data:null,user:null,demo:false,googleCredential:null,billingBusy:false,portabilityBusy:false};
+var state={range:"30",data:null,user:null,demo:false,googleCredential:null,billingBusy:false};
 var I=window.PGIClientI18n||{locale:"fr-FR",t:function(x){return x;},apply:function(){}};
 function tr(x){return I.t?I.t(x):x;}
 var $=function(id){return document.getElementById(id);};
@@ -119,24 +119,6 @@ function renderNumbers(data){
   var el=$("numbers-list"),rows=data.numbers||[];$("numbers-count").textContent=String(rows.length);
   el.innerHTML=rows.length?rows.map(function(x){return '<div class="cp-row"><div><strong>'+esc(x.display_number||x.e164)+'</strong><span>'+esc((x.market||data.tenant.country_code||"")+" · "+(x.tariff_code||"Tarif")+" · "+money(x.service_rate_ttc_per_min,x.currency)+"/min")+'</span></div><div>'+chip(x.assignment_status||x.status)+'</div></div>';}).join(""):'<p class="cp-empty">Aucun numéro attribué.</p>';
 }
-function renderPortability(data){
-  var rows=data.portability_requests||[],el=$("portability-list"),count=$("portability-count");
-  if(count)count.textContent=String(rows.length);
-  if(!el)return;
-  el.innerHTML=rows.length?rows.map(function(x){
-    var status=String(x.status||"submitted").toLowerCase();
-    var meta=[x.country_code||"",statusLabel(status)];
-    if(x.desired_port_date)meta.push("Souhaitée : "+dateOnly(x.desired_port_date));
-    if(x.scheduled_at)meta.push("Prévue : "+dt(x.scheduled_at));
-    if(x.service_rate_ttc_per_min!=null)meta.push("Tarif déclaré : "+money(x.service_rate_ttc_per_min,x.currency)+"/min");
-    if(x.tariff_verification_status==="verified")meta.push("Tarif vérifié");
-    if(x.operator_portability_reference)meta.push("Réf. opérateur : "+x.operator_portability_reference);
-    if(x.rejection_reason)meta.push("Motif : "+x.rejection_reason);
-    var cancellable=["submitted","awaiting_documents","eligibility_check","operator_pending"].includes(status);
-    var action=cancellable?'<button class="cp-portability-cancel" type="button" data-portability-cancel="'+esc(x.id)+'">Annuler</button>':"";
-    return '<div class="cp-row cp-portability-row"><div><strong>'+esc(x.display_number||x.requested_e164||"Numéro")+'</strong><span>'+esc(meta.filter(Boolean).join(" · "))+'</span></div><div class="cp-portability-actions">'+chip(status)+action+'</div></div>';
-  }).join(""):'<p class="cp-empty">Aucune demande de portabilité en cours.</p>';
-}
 function renderCalls(data){
   var rows=data.recent_calls||[];$("calls-body").innerHTML=rows.length?rows.map(function(x){return "<tr><td>"+esc(dt(x.started_at))+"</td><td>"+esc(x.display_number||x.e164||"—")+"</td><td>"+chip(x.call_status)+"</td><td>"+esc(duration(x.billable_seconds||x.conversation_seconds))+"</td><td>"+esc(money(n(x.retail_service_amount_ttc),x.currency))+"</td><td><button class=\"cp-diagnostic-btn\" type=\"button\" data-call-diagnostic=\""+esc(x.call_id)+"\">Voir</button></td></tr>";}).join(""):'<tr><td colspan="6" class="cp-empty-cell">Aucun appel sur cette période.</td></tr>';
 }
@@ -195,7 +177,7 @@ function render(data){
   $("kpi-minutes").textContent=nf(a.billable/60,1);$("kpi-revenue").textContent=money(a.revenue,a.currency);$("kpi-payout").textContent=money(a.payout,a.currency);
   $("portal-sync").textContent="Dernière consolidation : "+(a.updated?dt(a.updated):dt(data.server_time));
   $("traffic-total").textContent=nf(a.calls)+" appels";
-  renderAnalytics(data);renderNumbers(data);renderPortability(data);renderCalls(data);renderSettlements(data);renderSubscriptions(data);renderOnboarding(data);renderDestinations(data);if(I.apply)I.apply(document.body);
+  renderAnalytics(data);renderNumbers(data);renderCalls(data);renderSettlements(data);renderSubscriptions(data);renderOnboarding(data);renderDestinations(data);renderPortabilitySummary(data);if(I.apply)I.apply(document.body);
 }
 async function loadPortal(){
   var range=rangeFor(state.range),data;
@@ -252,7 +234,21 @@ async function initGoogle(){
   try{await window.PGICustomerGoogle.init({callback:function(r){handleGoogleCredential(r);},loginElement:$("google-login"),activationElement:$("google-activation")});}catch(_e){}
 }
 var COUNTRY_CODES=("AD AE AF AG AI AL AM AO AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS XK YE YT ZA ZM ZW").split(" ");
-var countriesReady=false;
+var countriesReady=false,portabilityController=null,portabilityPromise=null;
+function ensurePortability(){
+  if(portabilityController)return Promise.resolve(portabilityController);
+  if(!portabilityPromise)portabilityPromise=import("./client-portability.js").then(function(m){
+    portabilityController=m.createController({getData:function(){return state.data||{};},getDemo:function(){return state.demo;},reload:loadPortal,toast:toast,countryCodes:COUNTRY_CODES,locale:I.locale||"fr-FR"});
+    return portabilityController;
+  });
+  return portabilityPromise;
+}
+function renderPortabilitySummary(data){
+  var rows=data.portability_requests||[],count=$("portability-count"),list=$("portability-list");
+  if(count)count.textContent=String(rows.length);
+  if(rows.length)ensurePortability().then(function(x){x.render(data);}).catch(function(){});
+  else if(list)list.innerHTML='<p class="cp-empty">Aucune demande de portabilité en cours.</p>';
+}
 function localeRegion(){
   try{return new Intl.Locale((navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR").region||"FR";}catch(_e){return "FR";}
 }
@@ -264,57 +260,6 @@ function populateCountries(){
   select.innerHTML=rows.map(function(x){return '<option value="'+x.code+'">'+esc(x.label)+'</option>';}).join("");
   select.value=COUNTRY_CODES.includes(current)?current:"FR";
   countriesReady=true;updateRegistrationNumberField();
-}
-function populatePortabilityCountries(){
-  var select=$("portability-country");if(!select||select.dataset.ready==="1")return;
-  var current=((state.data&&state.data.tenant&&state.data.tenant.country_code)||localeRegion()||"FR").toUpperCase(),dn=null;
-  try{dn=new Intl.DisplayNames([(navigator.languages&&navigator.languages[0])||navigator.language||"fr"],{type:"region"});}catch(_e){}
-  var rows=COUNTRY_CODES.map(function(code){return {code:code,label:dn?dn.of(code):code};}).filter(function(x){return x.label;}).sort(function(a,b){return a.label.localeCompare(b.label,undefined,{sensitivity:"base"});});
-  select.innerHTML=rows.map(function(x){return '<option value="'+x.code+'">'+esc(x.label)+'</option>';}).join("");
-  select.value=COUNTRY_CODES.includes(current)?current:"FR";select.dataset.ready="1";
-}
-function openPortabilityDialog(){
-  populatePortabilityCountries();
-  var d=$("client-portability-dialog"),msg=$("portability-message");
-  if(msg){msg.textContent="";msg.classList.remove("bad");}
-  if(d&&typeof d.showModal==="function")d.showModal();else if(d)d.setAttribute("open","");
-}
-function closePortabilityDialog(){var d=$("client-portability-dialog");if(!d)return;if(typeof d.close==="function"&&d.open)d.close();else d.removeAttribute("open");}
-async function submitPortability(e){
-  e.preventDefault();if(state.portabilityBusy)return;
-  var msg=$("portability-message"),submit=$("portability-submit");
-  msg.textContent="";msg.classList.remove("bad");
-  if(!$("portability-owner-confirmed").checked||!$("portability-authority-confirmed").checked){msg.classList.add("bad");msg.textContent="Les deux confirmations sont nécessaires pour ouvrir le dossier.";return;}
-  var payload={
-    country_code:$("portability-country").value,
-    number:$("portability-number").value.trim(),
-    current_operator_name:$("portability-operator").value.trim(),
-    current_operator_reference:$("portability-reference").value.trim(),
-    account_holder_name:$("portability-holder").value.trim(),
-    desired_port_date:$("portability-date").value||null,
-    service_rate_ttc_per_min:Number(String($("portability-rate").value||"").replace(",",".")),
-    tariff_code:$("portability-tariff-code").value.trim(),
-    service_family:$("portability-service-family").value,
-    number_owner_confirmed:true,
-    authorization_confirmed:true
-  };
-  if(state.demo){msg.textContent="Le parcours est prêt. La demande réelle sera envoyée lorsque le backend privé sera connecté.";return;}
-  state.portabilityBusy=true;submit.disabled=true;var previous=submit.textContent;submit.textContent="Envoi en cours…";
-  try{
-    await window.PGICustomerApi.createPortability(payload,window.PGICustomerApi.newIdempotencyKey());
-    $("client-portability-form").reset();closePortabilityDialog();await loadPortal();toast("Demande de portabilité enregistrée.");
-  }catch(err){
-    var messages={INVALID_PORTABILITY_NUMBER:"Le numéro saisi n’est pas valide.",PORTABILITY_ALREADY_REQUESTED:"Une demande est déjà ouverte pour ce numéro.",NUMBER_ALREADY_MANAGED:"Ce numéro est déjà géré dans votre espace.",PORTABILITY_NUMBER_UNAVAILABLE:"Ce numéro est déjà rattaché à un autre dossier.",PORTABILITY_AUTHORIZATION_REQUIRED:"Les autorisations doivent être confirmées.",TENANT_CLOSED:"Ce compte ne peut plus ouvrir de portabilité."};
-    msg.classList.add("bad");msg.textContent=messages[err&&err.code]||"La demande de portabilité n’a pas pu être enregistrée.";
-  }finally{state.portabilityBusy=false;submit.disabled=false;submit.textContent=previous;}
-}
-async function cancelPortability(id){
-  if(state.portabilityBusy)return;
-  if(state.demo){toast("Aucune portabilité réelle n’est active en démonstration.");return;}
-  state.portabilityBusy=true;
-  try{await window.PGICustomerApi.cancelPortability(id,window.PGICustomerApi.newIdempotencyKey());await loadPortal();toast("Demande de portabilité annulée.");}
-  catch(_err){toast("Cette demande ne peut plus être annulée.");}
-  finally{state.portabilityBusy=false;}
 }
 function updateRegistrationNumberField(){
   var fr=$("register-country").value==="FR",label=$("register-number-label"),input=$("register-number");
@@ -466,10 +411,7 @@ function bind(){
   $("client-password-form").addEventListener("submit",changePassword);
   $("client-billing-start").addEventListener("click",function(){openBilling("start");});
   $("client-billing-manage").addEventListener("click",function(){openBilling("manage");});
-  $("portability-open").addEventListener("click",openPortabilityDialog);
-  $("portability-close").addEventListener("click",closePortabilityDialog);
-  $("client-portability-form").addEventListener("submit",submitPortability);
-  $("portability-list").addEventListener("click",function(e){var b=e.target.closest("[data-portability-cancel]");if(b)cancelPortability(b.dataset.portabilityCancel);});
+  $("portability-open").addEventListener("click",function(){ensurePortability().then(function(x){x.render(state.data||{portability_requests:[]});x.open();}).catch(function(){toast("Portabilité momentanément indisponible.");});});
   $("google-tenant-continue").addEventListener("click",function(){handleGoogleCredential(null,$("customer-tenant").value||"");});
   qsa("[data-client-export]").forEach(function(b){b.addEventListener("click",function(){var d=$("client-export-dialog");if(d&&d.open)d.close();exportClient(b.dataset.clientExport);});});
   qsa("[data-range]").forEach(function(btn){btn.addEventListener("click",function(){state.range=btn.dataset.range;qsa("[data-range]").forEach(function(x){x.classList.toggle("active",x===btn);});loadPortal().catch(function(){toast("Actualisation impossible");});});});
