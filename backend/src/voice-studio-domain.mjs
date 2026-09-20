@@ -15,7 +15,7 @@ function problem(code,message){const e=new Error(message||code);e.status=400;e.c
 
 export function defaultVoiceFlow(input={}){
   const locale=LOCALE.test(String(input.locale||""))?String(input.locale):"fr-FR";
-  const destination=URI.test(String(input.destination_uri||""))?String(input.destination_uri):"tel:+33100000000";
+  const destination=URI.test(String(input.destination_uri||""))?String(input.destination_uri):"";
   const overflow=URI.test(String(input.overflow_uri||""))?String(input.overflow_uri):destination;
   return {
     schema_version:1,
