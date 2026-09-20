@@ -875,6 +875,7 @@ export class PostgresStore{
         await writeQualityRollup(tx,call.id);
       }
       await writeVoiceCarrierHealthRollup(tx,call.id);
+      await writeTenantVoiceDailyRollup(tx,call.id);
       await writeSipCodeRollup(tx,call.id);
       if(financial.expectedPayoutHt!==0)await ledger(tx,call.id,sva.tenant_id,sva.market_id,sva.currency,"expected",financial.expectedPayoutHt,envelope);
       if(confirmed!=null&&confirmed!==0)await ledger(tx,call.id,sva.tenant_id,sva.market_id,sva.currency,"confirmed",confirmed,envelope);
@@ -2641,6 +2642,37 @@ async function writeVoiceCarrierHealthRollup(tx,callId){
     " caller_hangups=voice_carrier_health_hourly_sharded.caller_hangups+EXCLUDED.caller_hangups,"+
     " callee_hangups=voice_carrier_health_hourly_sharded.callee_hangups+EXCLUDED.callee_hangups,"+
     " network_hangups=voice_carrier_health_hourly_sharded.network_hangups+EXCLUDED.network_hangups,updated_at=now()",
+    [callId]
+  );
+}
+
+async function writeTenantVoiceDailyRollup(tx,callId){
+  await tx.unsafe(
+    "INSERT INTO tenant_voice_daily_sharded("+
+    " tenant_bucket,bucket_date,tenant_id,market_id,calls_total,calls_connected,pdd_samples,pdd_ms_sum,high_pdd_calls,"+
+    " quality_samples,network_affected_calls,low_mos_calls,mos_sum,packet_loss_sum,jitter_ms_sum,latency_ms_sum,rtt_ms_sum,"+
+    " sip_5xx_calls,caller_hangups,callee_hangups,network_hangups)"+
+    " SELECT c.tenant_bucket,c.started_at::date,c.tenant_id,c.market_id,1,(c.call_status='connected')::int,"+
+    " (c.post_dial_delay_ms IS NOT NULL)::int,COALESCE(c.post_dial_delay_ms,0),(COALESCE(c.post_dial_delay_ms,0)>8000)::int,"+
+    " (q.call_id IS NOT NULL)::int,"+
+    " (q.call_id IS NOT NULL AND (COALESCE(q.rtp_packet_loss_percent,0)>=5 OR COALESCE(q.jitter_ms,0)>5 OR COALESCE(q.latency_ms,0)>150))::int,"+
+    " (q.call_id IS NOT NULL AND q.mos IS NOT NULL AND q.mos<3.5)::int,COALESCE(q.mos,0),COALESCE(q.rtp_packet_loss_percent,0),"+
+    " COALESCE(q.jitter_ms,0),COALESCE(q.latency_ms,0),COALESCE(q.rtt_ms,0),(c.sip_final_code BETWEEN 500 AND 599)::int,"+
+    " (c.hangup_party='caller')::int,(c.hangup_party='callee')::int,(c.hangup_party='network')::int"+
+    " FROM calls c LEFT JOIN call_quality q ON q.call_id=c.id WHERE c.id=$1 AND c.tenant_id IS NOT NULL AND c.market_id IS NOT NULL"+
+    " ON CONFLICT(tenant_bucket,bucket_date,tenant_id,market_id) DO UPDATE SET"+
+    " calls_total=tenant_voice_daily_sharded.calls_total+1,"+
+    " calls_connected=tenant_voice_daily_sharded.calls_connected+EXCLUDED.calls_connected,"+
+    " pdd_samples=tenant_voice_daily_sharded.pdd_samples+EXCLUDED.pdd_samples,pdd_ms_sum=tenant_voice_daily_sharded.pdd_ms_sum+EXCLUDED.pdd_ms_sum,"+
+    " high_pdd_calls=tenant_voice_daily_sharded.high_pdd_calls+EXCLUDED.high_pdd_calls,"+
+    " quality_samples=tenant_voice_daily_sharded.quality_samples+EXCLUDED.quality_samples,"+
+    " network_affected_calls=tenant_voice_daily_sharded.network_affected_calls+EXCLUDED.network_affected_calls,"+
+    " low_mos_calls=tenant_voice_daily_sharded.low_mos_calls+EXCLUDED.low_mos_calls,"+
+    " mos_sum=tenant_voice_daily_sharded.mos_sum+EXCLUDED.mos_sum,packet_loss_sum=tenant_voice_daily_sharded.packet_loss_sum+EXCLUDED.packet_loss_sum,"+
+    " jitter_ms_sum=tenant_voice_daily_sharded.jitter_ms_sum+EXCLUDED.jitter_ms_sum,latency_ms_sum=tenant_voice_daily_sharded.latency_ms_sum+EXCLUDED.latency_ms_sum,"+
+    " rtt_ms_sum=tenant_voice_daily_sharded.rtt_ms_sum+EXCLUDED.rtt_ms_sum,sip_5xx_calls=tenant_voice_daily_sharded.sip_5xx_calls+EXCLUDED.sip_5xx_calls,"+
+    " caller_hangups=tenant_voice_daily_sharded.caller_hangups+EXCLUDED.caller_hangups,callee_hangups=tenant_voice_daily_sharded.callee_hangups+EXCLUDED.callee_hangups,"+
+    " network_hangups=tenant_voice_daily_sharded.network_hangups+EXCLUDED.network_hangups,updated_at=now()",
     [callId]
   );
 }
