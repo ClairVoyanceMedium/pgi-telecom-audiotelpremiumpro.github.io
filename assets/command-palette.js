@@ -5,7 +5,7 @@ var commands=[
 ["view-overview","Navigation","Ouvrir le Cockpit","Accueil et pilotage","dashboard accueil cockpit"],
 ["view-calls","Navigation","Ouvrir les Appels","CDR et détail","cdr telephone appels"],
 ["view-finance","Navigation","Ouvrir Finance","CA, reversements, rapprochement","argent marge paiement reversement"],
-["view-experts","Navigation","Ouvrir Experts","Disponibilité et performance","equipe consultants experts"],
+["view-experts","Navigation","Ouvrir Intervenants","Disponibilité et performance","équipe services intervenants postes"],
 ["view-carriers","Navigation","Ouvrir Opérateurs","SIP, routes, portabilité","operateur carrier sip route"],
 ["view-wholesale","Navigation","Ouvrir Plateforme SVA","Clients, numéros, KYC","sva wholesale clients numeros kyc"],
 ["view-system","Navigation","Ouvrir Supervision","NOC, API, CDR, résilience","systeme noc api supervision erreurs"],
