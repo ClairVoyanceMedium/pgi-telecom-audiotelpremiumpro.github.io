@@ -53,7 +53,7 @@ test("le cockpit garde une liste d'appels compacte et une remise à zéro sûre"
   assert.equal((index.match(/id="reset-metrics"/g)||[]).length,1);
   assert.ok(index.includes('id="reset-dialog"'));
   assert.ok(index.includes('id="calls-table"'));
-  assert.match(index,/Les CDR et l’historique resteront intacts/);
+  assert.match(index,/y compris clients, repartiront de zéro/);
   assert.match(app,/renderCallTable\(tableRows,state\.marketCurrency/);
   assert.match(callTools,/import\("\.\/call-list\.js"\)/);
   assert.match(callList,/rows\.slice\(0,8\)/);
@@ -61,6 +61,18 @@ test("le cockpit garde une liste d'appels compacte et une remise à zéro sûre"
   assert.match(callList,/Réduire la liste/);
   assert.match(app,/createBaseline\(\{scope:"global",reason:"Remise à zéro depuis le cockpit"\}/);
   assert.doesNotMatch(app,/DELETE\s+FROM\s+calls/i);
+});
+
+test("la remise à zéro globale se propage aux métriques clients",()=>{
+  const server=read("backend/server.mjs"),store=read("backend/src/store-postgres.mjs");
+  assert.match(server,/customer\.portal"[\s\S]*effectiveMetricRange/);
+  assert.match(server,/customer\.calls"[\s\S]*metrics_reset_at/);
+  assert.match(server,/dashboard\.bootstrap"[\s\S]*metrics_reset_at/);
+  assert.match(store,/async effectiveMetricRange/);
+  assert.match(store,/tenant_scoped_call_facts WHERE started_at >= \$1::timestamptz/);
+  assert.match(store,/tenant_scoped_portal_call_details WHERE started_at >= \$1::timestamptz/);
+  assert.match(clientPortalJs,/metric_net_payout_by_currency/);
+  assert.match(app,/invalidateAppBootstrap\(\)/);
 });
 
 test("le nom officiel et les vues principales sont présents",()=>{
