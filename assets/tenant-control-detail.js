@@ -1,13 +1,5 @@
 import {renderPortabilitySection,runPortabilityAction,portabilityError} from "./tenant-portability-admin.js";
-const $=id=>document.getElementById(id);
-const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
-const nf=v=>new Intl.NumberFormat("fr-FR",{maximumFractionDigits:0}).format(Number(v)||0);
-const money=(v,c="EUR")=>{try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:c,maximumFractionDigits:2}).format(Number(v)||0);}catch{return (Number(v)||0).toFixed(2)+" "+c;}};
-const date=v=>{if(!v)return"—";const d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeStyle:"short"}).format(d):"—";};
-const dur=v=>{v=Math.max(0,Number(v)||0);return v>=3600?Math.floor(v/3600)+" h "+Math.floor(v%3600/60)+" min":Math.floor(v/60)+" min";};
-const labels={active:"Actif",suspended:"Suspendu",pending:"En attente",closed:"Fermé",past_due:"Impayé",cancelled:"Annulé",ended:"Terminé",planned:"Planifié",testing:"Test",disabled:"Désactivé",pending_kyc:"KYC",acknowledged:"Vu",resolved:"Résolu",verified:"Vérifié",rejected:"Rejeté",expired:"Expiré",available:"Disponible",busy:"Occupé",away:"Absent",offline:"Hors ligne",submitted:"Demande reçue",awaiting_documents:"Justificatifs requis",eligibility_check:"Éligibilité",operator_pending:"Attente opérateur",scheduled:"Planifiée",ported:"Portée"};
-const lab=v=>labels[v]||v||"—";
-const chip=(v,cls)=>'<span class="td-chip '+esc(cls||v||"neutral")+'">'+esc(lab(v))+"</span>";
+import {$,esc,nf,money,date,dur,lab,chip,eventText} from "./tenant-control-utils.js";
 let currentId=null,busy=false;
 
 function ensure(){
@@ -23,7 +15,6 @@ d.addEventListener("click",handle);
 return d;
 }
 function feedback(msg,type=""){const e=$("td-feedback");if(e){e.textContent=msg||"";e.className="td-feedback "+type;}}
-function eventText(x){const d=x.details&&typeof x.details==="object"?x.details:{};const parts=[];if(x.previous_status||x.new_status)parts.push(lab(x.previous_status)+" → "+lab(x.new_status));if(x.reason)parts.push(x.reason);if(d.e164)parts.push(d.e164);return parts.join(" • ")||x.entity_type||"";}
 function render(data,carrierAdmin={}){
 const t=data.tenant||{},sub=(data.subscriptions||[])[0]||{},a=data.activity||{},kyc=t.kyc_status||"not_started";
 $("td-name").textContent=t.display_name||t.legal_name||"Client";
