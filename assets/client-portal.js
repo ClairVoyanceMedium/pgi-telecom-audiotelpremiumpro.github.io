@@ -52,14 +52,17 @@ function aggregate(data){
 }
 function svgLine(id,rows,series,options){
   var el=$(id);if(!el)return;rows=(rows||[]).slice(-62);if(!rows.length){el.innerHTML='<text x="360" y="110" text-anchor="middle" class="axis-label">Aucune donnée</text>';return;}
-  var W=720,H=220,L=34,R=12,T=15,B=25,plotW=W-L-R,plotH=H-T-B;
+  var W=720,H=220,L=34,R=12,T=28,B=25,plotW=W-L-R,plotH=H-T-B;
   options=options||{};var max=options.max||1;series.forEach(function(s){rows.forEach(function(x){max=Math.max(max,n(s.value(x)));});});
   function px(i){return L+(rows.length===1?plotW/2:i*plotW/Math.max(1,rows.length-1));}
   function py(v){return T+plotH-(n(v)/max*plotH);}
+  function fv(s,value){return s.format?s.format(value):nf(value,1);}
   var grid="";for(var g=0;g<=4;g++){var y=T+plotH*g/4;grid+='<line class="grid" x1="'+L+'" y1="'+y+'" x2="'+(W-R)+'" y2="'+y+'"/>';}
   var labels="";var step=Math.max(1,Math.ceil(rows.length/6));rows.forEach(function(x,i){if(i%step===0||i===rows.length-1){var d=new Date(x.bucket_date);labels+='<text class="axis-label" x="'+px(i)+'" y="'+(H-6)+'" text-anchor="middle">'+String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"</text>";}});
+  var legend=series.map(function(s,si){if(!s.label)return "";var x=L+si*145,klass=si?"line-secondary":"line-main";return '<line class="'+klass+'" x1="'+x+'" y1="12" x2="'+(x+18)+'" y2="12"/><text class="chart-legend" x="'+(x+24)+'" y="15">'+esc(s.label)+"</text>";}).join("");
   var paths=series.map(function(s,si){var pts=rows.map(function(x,i){return px(i)+","+py(s.value(x));}).join(" ");return '<polyline class="'+(si?"line-secondary":"line-main")+'" points="'+pts+'"/>';}).join("");
-  el.innerHTML=grid+labels+paths;
+  var hits=series.map(function(s,si){return rows.map(function(x,i){var value=n(s.value(x)),raw=String(x.bucket_date||"").slice(0,10),title=raw+" · "+(s.label||"Valeur")+" : "+fv(s,value);return '<circle class="cp-chart-hit '+(si?"secondary":"main")+'" cx="'+px(i)+'" cy="'+py(value)+'" r="7"><title>'+esc(title)+"</title></circle>";}).join("");}).join("");
+  el.innerHTML=legend+grid+labels+paths+hits;
 }
 function renderStatus(data){
   var a=(data.financial_by_currency||[]).reduce(function(o,x){o.total+=n(x.calls_total);o.connected+=n(x.calls_connected);o.abandoned+=n(x.calls_abandoned);o.failed+=n(x.calls_failed);return o;},{total:0,connected:0,abandoned:0,failed:0});
@@ -75,12 +78,12 @@ function renderPayoutChart(data){
 }
 function renderAnalytics(data){
   var rows=data.series||[],a=aggregate(data);
-  svgLine("calls-chart",rows,[{value:function(x){return x.calls_total;}},{value:function(x){return x.calls_connected;}}]);
-  svgLine("minutes-chart",rows,[{value:function(x){return n(x.billable_seconds)/60;}}]);
-  svgLine("revenue-chart",rows,[{value:function(x){return x.generated_revenue_ttc;}}]);
-  svgLine("asr-chart",rows,[{value:function(x){return n(x.calls_total)?n(x.calls_connected)/n(x.calls_total)*100:0;}},{value:function(x){return n(x.calls_total)?n(x.calls_abandoned)/n(x.calls_total)*100:0;}}],{max:100});
-  svgLine("value-chart",rows,[{value:function(x){return n(x.calls_total)?n(x.generated_revenue_ttc)/n(x.calls_total):0;}}]);
-  svgLine("duration-chart",rows,[{value:function(x){return n(x.calls_connected)?n(x.billable_seconds)/60/n(x.calls_connected):0;}}]);
+  svgLine("calls-chart",rows,[{label:"Appels",value:function(x){return x.calls_total;},format:function(v){return nf(v);}},{label:"Décrochés",value:function(x){return x.calls_connected;},format:function(v){return nf(v);}}]);
+  svgLine("minutes-chart",rows,[{label:"Minutes",value:function(x){return n(x.billable_seconds)/60;},format:function(v){return nf(v,1)+" min";}}]);
+  svgLine("revenue-chart",rows,[{label:"Montant TTC",value:function(x){return x.generated_revenue_ttc;},format:function(v){return money(v,a.currency);}}]);
+  svgLine("asr-chart",rows,[{label:"Décroché",value:function(x){return n(x.calls_total)?n(x.calls_connected)/n(x.calls_total)*100:0;},format:function(v){return nf(v,1)+" %";}},{label:"Abandons",value:function(x){return n(x.calls_total)?n(x.calls_abandoned)/n(x.calls_total)*100:0;},format:function(v){return nf(v,1)+" %";}}],{max:100});
+  svgLine("value-chart",rows,[{label:"Moyenne/appel",value:function(x){return n(x.calls_total)?n(x.generated_revenue_ttc)/n(x.calls_total):0;},format:function(v){return money(v,a.currency);}}]);
+  svgLine("duration-chart",rows,[{label:"Durée moyenne",value:function(x){return n(x.calls_connected)?n(x.billable_seconds)/60/n(x.calls_connected):0;},format:function(v){return nf(v,1)+" min";}}]);
   $("minutes-chart-total").textContent=nf(a.billable/60,1)+" min";
   $("revenue-chart-total").textContent=money(a.revenue,a.currency);
   $("asr-chart-total").textContent=nf(a.calls?a.connected/a.calls*100:0,1)+" %";
