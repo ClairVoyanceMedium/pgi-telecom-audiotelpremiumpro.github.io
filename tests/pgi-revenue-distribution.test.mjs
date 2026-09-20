@@ -48,6 +48,13 @@ test("client money cannot become payable before upstream receipt and compliance"
   assert.match(store,/funds_flow_mode IN \('platform_managed','psp_managed'\)/);
 });
 
+test("external SVA routing itself requires PGI payout terms",()=>{
+  const occurrences=(store.match(/SVA_PAYOUT_TERMS_REQUIRED/g)||[]).length;
+  assert.ok(occurrences>=2);
+  assert.match(store,/selectCallDestination/);
+  assert.match(store,/selectExpert/);
+});
+
 test("ported and newly activated external numbers require PGI payout terms",()=>{
   assert.match(store,/PORTABILITY_PAYOUT_TERMS_REQUIRED/);
   assert.match(store,/PAYOUT_TERMS_REQUIRED/);
