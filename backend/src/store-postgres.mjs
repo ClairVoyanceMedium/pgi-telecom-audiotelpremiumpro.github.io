@@ -2553,6 +2553,15 @@ export class PostgresStore{
 
       const carrier=(await tx.unsafe("SELECT id,name FROM carriers WHERE id=$1 AND kind='sva_host' AND enabled LIMIT 1",[targetCarrierId]))[0];
       if(!carrier)throw problem(409,"PORTABILITY_TARGET_CARRIER_UNAVAILABLE");
+      const commercialTerms=(await tx.unsafe(
+        "SELECT id,payout_rate_ht_per_min::float8,mobile_deduction_ht_per_min::float8,minimum_payable_seconds,billing_increment_seconds,payout_rounding,settlement_delay_days"+
+        " FROM carrier_contracts WHERE carrier_id=$1 AND sva_number_id IS NULL"+
+        " AND valid_from<=COALESCE($2::timestamptz,now())::date"+
+        " AND (valid_to IS NULL OR valid_to>=COALESCE($2::timestamptz,now())::date)"+
+        " ORDER BY valid_from DESC,id DESC LIMIT 1",
+        [targetCarrierId,current.scheduled_at]
+      ))[0]||null;
+      if(this.config.requireCarrierContract&&!commercialTerms)throw problem(409,"PORTABILITY_CARRIER_CONTRACT_REQUIRED");
       const route=(await tx.unsafe(
         "SELECT r.active_carrier_id,r.active_connection_id,cc.state AS connection_state FROM logical_carrier_routes r"+
         " LEFT JOIN carrier_connections cc ON cc.id=r.active_connection_id WHERE r.route_key='sva-primary' FOR UPDATE OF r",
