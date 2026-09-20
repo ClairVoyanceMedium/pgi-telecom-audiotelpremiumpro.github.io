@@ -154,9 +154,7 @@ setPortabilityStatus:function(id,p,k){return idem("/platform/portability/"+encod
 completePortability:function(id,p,k){return idem("/platform/portability/"+encodeURIComponent(id)+"/complete",p,k);},
 setTenantStatus:function(id,status,reason,k){return idem("/platform/tenants/"+encodeURIComponent(id)+"/status",{status:status,reason:reason||""},k);},
 setTenantAssignmentStatus:function(id,status,reason,k){return idem("/platform/tenant-number-assignments/"+encodeURIComponent(id)+"/status",{status:status,reason:reason||""},k);},
-upsertSvaRegulatoryProfile:function(id,p,k){return idem("/platform/tenant-number-assignments/"+encodeURIComponent(id)+"/regulatory-profile",p,k);},
-recordSvaRegulatoryEvidence:function(id,p,k){return idem("/platform/tenant-number-assignments/"+encodeURIComponent(id)+"/regulatory-evidence",p,k);},
-createSvaAbuseCase:function(id,p,k){return idem("/platform/tenant-number-assignments/"+encodeURIComponent(id)+"/abuse-cases",p,k);},
+
 billingAlerts:function(params){
 var q=new URLSearchParams(params||{}).toString();
 return request("/platform/billing-alerts"+(q?"?"+q:""));
