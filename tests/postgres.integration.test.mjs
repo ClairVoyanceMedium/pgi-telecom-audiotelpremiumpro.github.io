@@ -19,7 +19,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
   const bus=new EventBus();
   const store=await PostgresStore.connect(config(),bus);
   try{
-    await store.sql.unsafe("TRUNCATE TABLE settlement_call_matches,carrier_settlements,call_quality,financial_ledger,outbox_events,raw_cdr_events,calls,tenant_call_destinations,callers,expert_presence_events,metric_baselines,carrier_switches,number_carrier_assignments,carrier_connections,carrier_adapters,carrier_contracts,number_portability_events,sva_numbers,carriers,audit_log,api_idempotency_keys RESTART IDENTITY CASCADE");
+    await store.sql.unsafe("TRUNCATE TABLE platform_change_approval_events,platform_change_requests,settlement_call_matches,carrier_settlements,call_quality,financial_ledger,outbox_events,raw_cdr_events,calls,tenant_call_destinations,callers,expert_presence_events,metric_baselines,carrier_switches,number_carrier_assignments,carrier_connections,carrier_adapters,carrier_contracts,number_portability_events,sva_numbers,carriers,audit_log,api_idempotency_keys RESTART IDENTITY CASCADE");
     await store.sql.unsafe("UPDATE app_users SET expert_id=NULL; DELETE FROM experts");
     await store.sql.unsafe("INSERT INTO carriers(name,kind) VALUES('Host A','sva_host'),('Host B','sva_host')");
     await store.sql.unsafe("INSERT INTO logical_carrier_routes(route_key,description) VALUES('sva-primary','Integration test route')");
@@ -144,11 +144,15 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(accessPolicy.dry_run,true);
     assert.equal(accessPolicy.mutates_state,false);
     const tower=await store.controlTowerOverview();
-    assert.equal(tower.schema_version,"audiotel-control-tower/1");
+    assert.equal(tower.schema_version,"audiotel-control-tower/2");
+    assert.equal(tower.assurance.dual_control_required,true);
+    assert.equal(tower.assurance.risk.privacy,"aggregate_only");
+    assert.ok(Number.isInteger(tower.kpis.risk_score));
+    assert.ok(Number.isInteger(tower.kpis.slo_score));
     assert.ok(Number.isInteger(tower.readiness_score));
     assert.ok(["healthy","attention","critical"].includes(tower.status));
     const twin=await store.digitalTwinSimulation({scenario:"traffic_spike",parameters:{multiplier:3}});
-    assert.equal(twin.schema_version,"audiotel-digital-twin/1");
+    assert.equal(twin.schema_version,"audiotel-digital-twin/2");
     assert.equal(twin.dry_run,true);
     assert.equal(twin.mutates_state,false);
 
@@ -441,14 +445,40 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(carrierAdmin.route.active_carrier,"Host A");
     assert.ok(carrierAdmin.targets.some(x=>x.carrier_name==="Host B"&&x.state==="standby"));
     const target=carrierAdmin.targets.find(x=>x.carrier_name==="Host B");
-    const plannedSwitch=await store.planCarrierSwitch({route_key:"sva-primary",to_carrier_id:Number(target.carrier_id),connection_id:Number(target.connection_id),rollback_window_minutes:60,notes:"integration"},{sub:"admin"});
+    await store.sql.unsafe(
+      "INSERT INTO app_users(email,display_name,role,enabled) VALUES('four-eyes-requester@example.test','Four Eyes Requester','admin',true),('four-eyes-approver@example.test','Four Eyes Approver','admin',true) ON CONFLICT(email) DO UPDATE SET display_name=EXCLUDED.display_name,role='admin',enabled=true"
+    );
+    const staff=await store.sql.unsafe("SELECT id,email FROM app_users WHERE email IN ('four-eyes-requester@example.test','four-eyes-approver@example.test') ORDER BY email");
+    const approver=staff.find(x=>x.email==="four-eyes-approver@example.test"),requester=staff.find(x=>x.email==="four-eyes-requester@example.test");
+    assert.ok(requester&&approver);
+
+    const plannedSwitch=await store.planCarrierSwitch({route_key:"sva-primary",to_carrier_id:Number(target.carrier_id),connection_id:Number(target.connection_id),rollback_window_minutes:60,notes:"integration"},{sub:String(requester.id)});
     assert.equal(plannedSwitch.status,"ready");
+    assert.equal(plannedSwitch.change_request_status,"pending");
     const carrierAdminAfterPlan=await store.carrierAdminOverview();
     assert.ok(carrierAdminAfterPlan.recent_switches.some(x=>Number(x.id)===Number(plannedSwitch.id)));
 
-    const activatedSwitch=await store.activateCarrierSwitch(plannedSwitch.id,{sub:"admin"});
+    await assert.rejects(
+      ()=>store.activateCarrierSwitch(plannedSwitch.id,{sub:String(requester.id)}),
+      error=>error.code==="DUAL_CONTROL_APPROVAL_REQUIRED"
+    );
+    await assert.rejects(
+      ()=>store.approvePlatformChangeRequest(plannedSwitch.change_request_id,{sub:String(requester.id)},{reason:"self approval"}),
+      error=>error.code==="FOUR_EYES_SECOND_APPROVER_REQUIRED"
+    );
+    const approvedChange=await store.approvePlatformChangeRequest(plannedSwitch.change_request_id,{sub:String(approver.id)},{reason:"Independent integration approval"});
+    assert.equal(approvedChange.status,"approved");
+
+    const activatedSwitch=await store.activateCarrierSwitch(plannedSwitch.id,{sub:String(requester.id)});
     assert.equal(activatedSwitch.route.active_carrier,"Host B");
-    const rolledBackSwitch=await store.rollbackCarrierSwitch(plannedSwitch.id,{sub:"admin"});
+    const approvalEvents=await store.sql.unsafe("SELECT event_type,event_sha256,previous_sha256 FROM platform_change_approval_events WHERE change_request_id=$1 ORDER BY id",[Number(plannedSwitch.change_request_id)]);
+    assert.deepEqual(approvalEvents.map(x=>x.event_type),["requested","approved","executed"]);
+    assert.ok(approvalEvents.every(x=>/^[a-f0-9]{64}$/.test(x.event_sha256)));
+    assert.equal(approvalEvents[0].previous_sha256,null);
+    assert.equal(approvalEvents[1].previous_sha256,approvalEvents[0].event_sha256);
+    assert.equal(approvalEvents[2].previous_sha256,approvalEvents[1].event_sha256);
+
+    const rolledBackSwitch=await store.rollbackCarrierSwitch(plannedSwitch.id,{sub:String(requester.id)});
     assert.equal(rolledBackSwitch.route.active_carrier,"Host A");
     const switchAudit=await store.sql.unsafe("SELECT action FROM audit_log WHERE entity_type='carrier_switch' AND entity_id=$1 ORDER BY id",[String(plannedSwitch.id)]);
     assert.deepEqual(switchAudit.map(x=>x.action),["carrier_switch.plan","carrier_switch.activate","carrier_switch.rollback"]);
@@ -523,10 +553,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const rawCalls=await store.sql.unsafe("SELECT count(*)::int AS count FROM calls");
     assert.equal(rawCalls[0].count,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
-    assert.equal(migrations.length,43);
+    assert.equal(migrations.length,44);
     assert.equal(new Set(migrations.map(x=>x.version)).size,migrations.length);
     assert.equal(migrations[0].version,"001_baseline");
-    assert.equal(migrations.at(-1).version,"043_regulatory_review_monitoring");
+    assert.equal(migrations.at(-1).version,"044_operational_assurance");
     for(const migration of migrations)assert.match(migration.checksum,/^[a-f0-9]{64}$/);
   }finally{
     await store.close();
