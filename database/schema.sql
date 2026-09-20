@@ -331,6 +331,41 @@ CREATE TABLE call_quality (
   sampled_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE tenant_voice_daily_sharded (
+  tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),
+  bucket_date date NOT NULL,
+  tenant_id bigint NOT NULL REFERENCES tenants(id),
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  pdd_samples bigint NOT NULL DEFAULT 0,
+  pdd_ms_sum bigint NOT NULL DEFAULT 0,
+  high_pdd_calls bigint NOT NULL DEFAULT 0,
+  quality_samples bigint NOT NULL DEFAULT 0,
+  network_affected_calls bigint NOT NULL DEFAULT 0,
+  low_mos_calls bigint NOT NULL DEFAULT 0,
+  mos_sum numeric(22,6) NOT NULL DEFAULT 0,
+  packet_loss_sum numeric(22,6) NOT NULL DEFAULT 0,
+  jitter_ms_sum numeric(22,6) NOT NULL DEFAULT 0,
+  latency_ms_sum numeric(22,6) NOT NULL DEFAULT 0,
+  rtt_ms_sum numeric(22,6) NOT NULL DEFAULT 0,
+  sip_5xx_calls bigint NOT NULL DEFAULT 0,
+  caller_hangups bigint NOT NULL DEFAULT 0,
+  callee_hangups bigint NOT NULL DEFAULT 0,
+  network_hangups bigint NOT NULL DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(tenant_bucket,bucket_date,tenant_id,market_id)
+) PARTITION BY HASH (tenant_bucket);
+DO $
+DECLARE i integer;
+BEGIN
+  FOR i IN 0..63 LOOP
+    EXECUTE format('CREATE TABLE tenant_voice_daily_sharded_p%s PARTITION OF tenant_voice_daily_sharded FOR VALUES WITH (MODULUS 64, REMAINDER %s)',i,i);
+  END LOOP;
+END;
+$;
+CREATE INDEX tenant_voice_daily_tenant_date_idx ON tenant_voice_daily_sharded(tenant_id,bucket_date DESC);
+
 CREATE TABLE voice_carrier_health_hourly_sharded (
   bucket_start timestamptz NOT NULL,
   market_id bigint NOT NULL REFERENCES operating_markets(id),
