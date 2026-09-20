@@ -2266,7 +2266,8 @@ export class PostgresStore{
     const id=Number(tenantId);
     return this.withTenantReadContext(id,async tx=>{
       const tenantRows=await tx.unsafe(
-        "SELECT id,public_id,display_name,legal_name,status,country_code,preferred_locale,default_currency,timezone FROM tenants WHERE id=$1",[id]
+        "SELECT t.id,t.public_id,t.display_name,t.legal_name,t.status,t.country_code,t.preferred_locale,t.default_currency,t.timezone,"+
+        " COALESCE(k.status,'not_started') AS kyc_status,k.registration_number FROM tenants t LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id WHERE t.id=$1",[id]
       );
       const tenant=tenantRows[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
       const financial=await tx.unsafe(
