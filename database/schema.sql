@@ -264,6 +264,7 @@ CREATE TABLE calls (
   ivr_started_at timestamptz,
   queued_at timestamptz,
   bridged_at timestamptz,
+  ringing_at timestamptz,
   ended_at timestamptz NOT NULL,
 
   wait_seconds integer NOT NULL DEFAULT 0 CHECK (wait_seconds >= 0),
@@ -275,6 +276,8 @@ CREATE TABLE calls (
   call_status text NOT NULL CHECK (call_status IN ('connected','abandoned','failed','rejected','busy','cancelled')),
   sip_final_code integer,
   hangup_cause text,
+  hangup_party text CHECK (hangup_party IS NULL OR hangup_party IN ('caller','callee','network','unknown')),
+  post_dial_delay_ms integer CHECK (post_dial_delay_ms IS NULL OR post_dial_delay_ms>=0),
   codec text,
 
   service_rate_ttc_per_min numeric(10,6) NOT NULL,
@@ -305,6 +308,9 @@ CREATE UNIQUE INDEX calls_host_external_unique
 CREATE INDEX calls_started_at_idx ON calls(started_at DESC);
 CREATE INDEX calls_expert_started_idx ON calls(expert_id, started_at DESC);
 CREATE INDEX calls_origin_carrier_started_idx ON calls(origin_carrier_id, started_at DESC);
+CREATE INDEX calls_host_carrier_started_idx ON calls(host_carrier_id, started_at DESC);
+CREATE INDEX calls_sip_final_started_idx ON calls(sip_final_code, started_at DESC);
+CREATE INDEX calls_pdd_started_idx ON calls(post_dial_delay_ms, started_at DESC) WHERE post_dial_delay_ms IS NOT NULL;
 CREATE INDEX calls_status_started_idx ON calls(call_status, started_at DESC);
 CREATE INDEX calls_reconciliation_idx ON calls(reconciliation_status, started_at DESC);
 CREATE INDEX calls_caller_idx ON calls(caller_id, started_at DESC);
@@ -314,14 +320,67 @@ CREATE TABLE call_quality (
   rtp_packet_loss_percent numeric(7,4),
   jitter_ms numeric(10,3),
   latency_ms numeric(10,3),
+  rtt_ms numeric(10,3),
   mos numeric(5,3),
   packets_in bigint,
+  packets_lost bigint,
   packets_out bigint,
   bytes_in bigint,
   bytes_out bigint,
   dtmf_errors integer NOT NULL DEFAULT 0,
   sampled_at timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE TABLE voice_carrier_health_hourly_sharded (
+  bucket_start timestamptz NOT NULL,
+  market_id bigint NOT NULL REFERENCES operating_markets(id),
+  carrier_role text NOT NULL CHECK (carrier_role IN ('origin','host')),
+  carrier_id bigint NOT NULL REFERENCES carriers(id),
+  rollup_shard smallint NOT NULL CHECK (rollup_shard BETWEEN 0 AND 63),
+  calls_total bigint NOT NULL DEFAULT 0,
+  calls_connected bigint NOT NULL DEFAULT 0,
+  calls_failed bigint NOT NULL DEFAULT 0,
+  pdd_samples bigint NOT NULL DEFAULT 0,
+  pdd_ms_sum bigint NOT NULL DEFAULT 0,
+  high_pdd_calls bigint NOT NULL DEFAULT 0,
+  quality_samples bigint NOT NULL DEFAULT 0,
+  network_affected_calls bigint NOT NULL DEFAULT 0,
+  low_mos_calls bigint NOT NULL DEFAULT 0,
+  mos_sum numeric(22,6) NOT NULL DEFAULT 0,
+  packet_loss_sum numeric(22,6) NOT NULL DEFAULT 0,
+  jitter_ms_sum numeric(22,6) NOT NULL DEFAULT 0,
+  latency_ms_sum numeric(22,6) NOT NULL DEFAULT 0,
+  rtt_ms_sum numeric(22,6) NOT NULL DEFAULT 0,
+  sip_4xx_calls bigint NOT NULL DEFAULT 0,
+  sip_5xx_calls bigint NOT NULL DEFAULT 0,
+  caller_hangups bigint NOT NULL DEFAULT 0,
+  callee_hangups bigint NOT NULL DEFAULT 0,
+  network_hangups bigint NOT NULL DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(bucket_start,market_id,carrier_role,carrier_id,rollup_shard)
+);
+CREATE INDEX voice_carrier_health_market_time_idx ON voice_carrier_health_hourly_sharded(market_id,bucket_start DESC,carrier_role);
+CREATE INDEX voice_carrier_health_carrier_time_idx ON voice_carrier_health_hourly_sharded(carrier_role,carrier_id,bucket_start DESC);
+CREATE INDEX voice_carrier_health_time_brin ON voice_carrier_health_hourly_sharded USING brin(bucket_start);
+
+CREATE TABLE telecom_incidents (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  incident_type text NOT NULL,
+  severity text NOT NULL CHECK (severity IN ('warning','critical')),
+  carrier_role text CHECK (carrier_role IS NULL OR carrier_role IN ('origin','host')),
+  carrier_id bigint REFERENCES carriers(id),
+  market_id bigint REFERENCES operating_markets(id),
+  state text NOT NULL DEFAULT 'open' CHECK (state IN ('open','resolved')),
+  title text NOT NULL,
+  details jsonb NOT NULL DEFAULT '{}'::jsonb,
+  started_at timestamptz NOT NULL DEFAULT now(),
+  last_detected_at timestamptz NOT NULL DEFAULT now(),
+  resolved_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX telecom_incidents_open_unique ON telecom_incidents(incident_type,COALESCE(carrier_role,''),COALESCE(carrier_id,0),COALESCE(market_id,0)) WHERE state='open';
+CREATE INDEX telecom_incidents_time_idx ON telecom_incidents(started_at DESC);
+CREATE INDEX telecom_incidents_state_idx ON telecom_incidents(state,last_detected_at DESC);
 
 CREATE TABLE carrier_settlements (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
