@@ -335,6 +335,10 @@
       <label>Nom du titulaire <span class="cp-optional">(facultatif)</span><input id="portability-holder" type="text" maxlength="200" autocomplete="name"></label>
       <label>Date souhaitée <span class="cp-optional">(facultatif)</span><input id="portability-date" type="date"></label>
     </div>
+    <div class="cp-form-grid">
+      <label>Tarif actuel TTC par minute<input id="portability-rate" type="number" inputmode="decimal" min="0" max="10000" step="0.000001" required placeholder="0,80"></label>
+      <label>Code tarifaire <span class="cp-optional">(si connu)</span><input id="portability-tariff-code" type="text" maxlength="80" placeholder="Ex. D080"></label>
+    </div>
     <label>Type de numéro<select id="portability-service-family"><option value="premium_rate">Numéro surtaxé</option><option value="shared_cost">Numéro à coût partagé</option><option value="freephone">Numéro gratuit</option><option value="other">Autre numéro de service</option></select></label>
     <label class="cp-check"><input id="portability-owner-confirmed" type="checkbox" required><span>Je confirme être titulaire de ce numéro ou être mandaté par son titulaire.</span></label>
     <label class="cp-check"><input id="portability-authority-confirmed" type="checkbox" required><span>J’autorise l’ouverture d’une demande de portabilité auprès de l’opérateur concerné.</span></label>
