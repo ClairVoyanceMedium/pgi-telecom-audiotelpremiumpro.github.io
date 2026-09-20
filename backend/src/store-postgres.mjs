@@ -3316,7 +3316,7 @@ export class PostgresStore{
     const category=params.category?String(params.category).trim().toLowerCase():null;
     const country=params.country?String(params.country).trim().toUpperCase():null;
     const q=params.q?String(params.q).trim().slice(0,160):null;
-    if(status&&!["open","investigating","waiting_customer","monitoring","resolved","closed"].includes(status))throw problem(400,"INVALID_INCIDENT_STATUS");
+    if(status&&!["active","open","investigating","waiting_customer","monitoring","resolved","closed"].includes(status))throw problem(400,"INVALID_INCIDENT_STATUS");
     if(severity&&!["low","normal","high","critical"].includes(severity))throw problem(400,"INVALID_INCIDENT_SEVERITY");
     if(category&&!["telephony","portability","billing","payout","account","routing","quality","other"].includes(category))throw problem(400,"INVALID_INCIDENT_CATEGORY");
     if(country&&!/^[A-Z]{2}$/.test(country))throw problem(400,"INVALID_COUNTRY_CODE");
