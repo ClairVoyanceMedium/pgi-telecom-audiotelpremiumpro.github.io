@@ -1369,6 +1369,23 @@ export class PostgresStore{
     return {processed:claimed.length,published,pending:rows[0].count};
   }
 
+  async scanPortabilityAutomation(limit=100){
+    const take=clampInt(limit,100,1,500);
+    return this.sql.unsafe(
+      "INSERT INTO work_queue(queue_name,tenant_id,dedupe_key,priority,payload,available_at,max_attempts)"+
+      " SELECT 'portability',p.tenant_id,'portability:'||p.id||':auto',20,jsonb_build_object('request_id',p.id,'action','auto'),now(),20"+
+      " FROM tenant_portability_requests p"+
+      " WHERE p.status NOT IN ('ported','rejected','cancelled')"+
+      " AND p.automation_state IN ('queued','checking','submitting','operator_pending','scheduled','action_required','failed')"+
+      " AND p.automation_next_at<=now()"+
+      " ORDER BY p.automation_next_at ASC,p.id ASC LIMIT $1"+
+      " ON CONFLICT(queue_name,dedupe_key) WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL"+
+      " DO UPDATE SET available_at=LEAST(work_queue.available_at,EXCLUDED.available_at)"+
+      " RETURNING id,tenant_id,dedupe_key,available_at",
+      [take]
+    );
+  }
+
   async claimWork(queueName,workerId,limit=25,leaseSeconds=60){
     const queue=String(queueName||"").trim();
     const owner=String(workerId||"").trim();
@@ -2352,8 +2369,9 @@ export class PostgresStore{
       "SELECT id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,"+
       " account_holder_name,desired_port_date,status,ownership_status,operator_portability_reference,scheduled_at,completed_at,rejection_reason,"+
       " tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,tariff_verified_at,"+
-      " rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,created_at,updated_at"+
-      " FROM tenant_scoped_portability_requests_v3 ORDER BY created_at DESC,id DESC LIMIT 50"
+      " rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,"+
+      " automation_state,automation_last_error,automation_last_sync_at,operator_status,created_at,updated_at"+
+      " FROM tenant_scoped_portability_requests_v4 ORDER BY created_at DESC,id DESC LIMIT 50"
     ));
   }
 
@@ -2415,6 +2433,13 @@ export class PostgresStore{
         "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'portability.requested','tenant_portability_request',$2,$3::jsonb)",
         [id,String(request.id),JSON.stringify({requested_e164:e164,country_code:country,rio_verified:rioStatus==="verified",source_contract_transfer_mode:"none"})]
       );
+      await tx.unsafe(
+        "INSERT INTO work_queue(queue_name,tenant_id,dedupe_key,priority,payload,available_at,max_attempts)"+
+        " VALUES('portability',$1,$2,20,$3::jsonb,now(),20)"+
+        " ON CONFLICT(queue_name,dedupe_key) WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL"+
+        " DO UPDATE SET available_at=LEAST(work_queue.available_at,EXCLUDED.available_at)",
+        [id,"portability:"+request.id+":auto",JSON.stringify({request_id:Number(request.id),action:"auto"})]
+      );
       return request;
     });
     this.eventBus.publish("portability.requested",{tenant_id:id,request_id:Number(result.id),requested_e164:e164,country_code:country});
@@ -2436,6 +2461,21 @@ export class PostgresStore{
         "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'portability.cancel','tenant_portability_request',$2,$3::jsonb)",
         [tenant,String(id),JSON.stringify({requested_e164:request.requested_e164})]
       );
+      const operatorState=(await tx.unsafe(
+        "SELECT operator_portability_reference FROM tenant_portability_requests WHERE id=$1 LIMIT 1",
+        [id]
+      ))[0]||null;
+      if(operatorState?.operator_portability_reference){
+        await tx.unsafe(
+          "INSERT INTO work_queue(queue_name,tenant_id,dedupe_key,priority,payload,available_at,max_attempts)"+
+          " VALUES('portability',$1,$2,10,$3::jsonb,now(),20)"+
+          " ON CONFLICT(queue_name,dedupe_key) WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL"+
+          " DO UPDATE SET available_at=LEAST(work_queue.available_at,EXCLUDED.available_at)",
+          [tenant,"portability:"+id+":cancel",JSON.stringify({request_id:id,action:"cancel"})]
+        );
+      }else{
+        await tx.unsafe("UPDATE tenant_portability_requests SET automation_state='cancelled',automation_next_at=now()+interval '1 day' WHERE id=$1",[id]);
+      }
       return request;
     });
     this.eventBus.publish("portability.cancelled",{tenant_id:tenant,request_id:id,requested_e164:result.requested_e164});
