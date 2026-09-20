@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-const [html,portal,customerApi,adminApi,adminUi,server,store,migration,migrationTariff]=await Promise.all([
+const [html,portal,customerApi,adminApi,adminUi,server,store,migration,migrationTariff,migrationRio,identity]=await Promise.all([
   readFile(new URL("../client.html",import.meta.url),"utf8"),
   readFile(new URL("../assets/client-portal.js",import.meta.url),"utf8"),
   readFile(new URL("../assets/client-portal-api.js",import.meta.url),"utf8"),
@@ -11,13 +11,17 @@ const [html,portal,customerApi,adminApi,adminUi,server,store,migration,migration
   readFile(new URL("../backend/server.mjs",import.meta.url),"utf8"),
   readFile(new URL("../backend/src/store-postgres.mjs",import.meta.url),"utf8"),
   readFile(new URL("../database/migrations/027_customer_number_portability.sql",import.meta.url),"utf8"),
-  readFile(new URL("../database/migrations/028_portability_tariff_completion.sql",import.meta.url),"utf8")
+  readFile(new URL("../database/migrations/028_portability_tariff_completion.sql",import.meta.url),"utf8"),
+  readFile(new URL("../database/migrations/030_portability_rio_contract_boundary.sql",import.meta.url),"utf8"),
+  readFile(new URL("../backend/src/portability-identity.mjs",import.meta.url),"utf8")
 ]);
 
 test("customer portability UI is wired end to end without changing the number",()=>{
   assert.match(html,/id="client-portability-form"/);
   assert.match(html,/id="portability-number"/);
   assert.match(html,/id="portability-rate"/);
+  assert.match(html,/id="portability-rio"/);
+  assert.match(html,/id="portability-source-contract"/);
   assert.match(portal,/client-portability\.js/);
   assert.match(customerApi,/createPortability/);
   assert.match(customerApi,/cancelPortability/);
@@ -37,7 +41,22 @@ test("customer portability remains tenant scoped and fail closed",()=>{
 test("portability intake does not itself activate routing",()=>{
   assert.doesNotMatch(migration,/logical_carrier_routes/);
   assert.doesNotMatch(migration,/active_connection_id/);
-  assert.match(html,/Aucune bascule n’est effectuée avant confirmation et planification opérateur/);
+  assert.match(html,/La demande ne coupe pas votre ligne actuelle/);
+  assert.match(html,/sans transfert de ses obligations antérieures à PGI/);
+});
+
+test("French SVA port-in requires a verified encrypted RIO and never transfers the donor contract",()=>{
+  assert.match(migrationRio,/rio_ciphertext bytea/);
+  assert.match(migrationRio,/rio_validation_status text NOT NULL DEFAULT/);
+  assert.match(migrationRio,/source_contract_transfer_mode text NOT NULL DEFAULT/);
+  assert.match(migrationRio,/source_contract_liability_acknowledged boolean NOT NULL DEFAULT false/);
+  assert.match(identity,/aes-256-gcm/);
+  assert.match(identity,/normalizeFrenchSvaRio/);
+  assert.match(store,/PORTABILITY_RIO_REQUIRED/);
+  assert.match(store,/PORTABILITY_RIO_VERIFICATION_REQUIRED/);
+  assert.match(store,/PORTABILITY_SOURCE_CONTRACT_ACK_REQUIRED/);
+  assert.match(store,/tenant_scoped_portability_requests_v3/);
+  assert.doesNotMatch(migrationRio,/CREATE\s+OR\s+REPLACE/i);
 });
 
 test("verified tariff is required and copied unchanged on completion",()=>{
