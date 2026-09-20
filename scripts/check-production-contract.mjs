@@ -31,6 +31,7 @@ const controlTowerUi=fs.readFileSync("assets/control-tower.js","utf8");
 const operationalPolicySource=fs.readFileSync("backend/src/operational-policy.mjs","utf8");
 const digitalTwinSource=fs.readFileSync("backend/src/digital-twin.mjs","utf8");
 const serviceWorker=fs.readFileSync("service-worker.js","utf8");
+const manifestSource=fs.readFileSync("manifest.webmanifest","utf8");
 const buildStatic=fs.readFileSync("scripts/build-static.mjs","utf8");
 const security=fs.readFileSync("backend/src/security.mjs","utf8");
 const staticRelease=fs.readFileSync("scripts/static-release.sh","utf8");
@@ -261,6 +262,9 @@ if(!/import\("\.\/command-palette\.js"\)/.test(commandPaletteLoader))failures.pu
 if(serviceWorker.includes("assets/command-palette.js"))failures.push("full command palette must remain outside the PWA shell precache");
 if(serviceWorker.includes("assets/cockpit-pro.js"))failures.push("advanced cockpit analytics must remain outside the PWA shell precache");
 if(!/pgi_ui_preferences/.test(workspace)||!/pgi_operating_market/.test(workspace))failures.push("workspace preferences must remain persistent");
+if(!manifestSource.includes("Cockpit / PGI Telecom • Audiotel Premium Pro")||!indexSource.includes('apple-mobile-web-app-title" content="Cockpit / PGI Telecom • Audiotel Premium Pro"'))failures.push("PWA must retain the exact cockpit install label");
+for(const token of ["data-control-tower","data-sva-compliance","data-platform-admin"]){if(!indexSource.includes(token))failures.push("cockpit must expose visible admin center "+token);}
+if(!/\[data-control-tower\]/.test(commandPaletteLoader)||!/\[data-sva-compliance\]/.test(commandPaletteLoader))failures.push("visible admin centers must lazy-load their tools directly");
 for(const file of ["assets/data-client.js","assets/command-palette-loader.js","assets/workspace.js"]){
   if(!serviceWorker.includes(file))failures.push("PWA shell missing "+file);
 }
