@@ -47,7 +47,8 @@ test("verified tariff is required and copied unchanged on completion",()=>{
   assert.match(migrationTariff,/status <> 'ported'/);
   assert.doesNotMatch(migrationTariff,/CREATE\s+OR\s+REPLACE/i);
   assert.match(store,/PORTABILITY_TARIFF_VERIFICATION_REQUIRED/);
-  assert.match(store,/service_rate_ttc_per_min,rate/);
+  assert.match(store,/INSERT INTO sva_numbers\\(e164,display_number,tariff_code,service_rate_ttc_per_min/);
+  assert.match(store,/current\\.tariff_code,rate/);
   assert.match(store,/public_tariff_locked:true/);
   assert.match(store,/tariff_preserved:true/);
 });
