@@ -354,3 +354,10 @@ Les fonctions non indispensables au premier affichage sont séparées du shell :
 Le centre clients reste borné et serveur-first : pagination par curseur, recherche indexée, filtres statut/pays/KYC/abonnement et endpoint de synthèse dédié. Le navigateur n’a jamais besoin de charger le parc complet, même lorsque le nombre de tenants devient très important.
 
 Après cette passe, le shell critique reste sous 238 Ko et conserve plus de 27 KiB de marge sous le plafond. Ces valeurs sont surveillées automatiquement par la CI ; les plafonds et la réserve obligatoire ne doivent pas être relevés pour ajouter des fonctions ordinaires.
+
+
+## Surveillance réglementaire 1.27
+
+Le Regulatory Trust Center surveille désormais les prochaines revues et les preuves plateforme arrivant à échéance. Le cockpit distingue les éléments **bloquants**, **à traiter aujourd'hui** et **bientôt**, avec une file persistante et acquittable.
+
+Une revue peut être planifiée directement lors de l'ajout d'une preuve ARCEP 2026. Le worker d'alertes anticipe les échéances jusqu'à 30 jours et signale les revues non planifiées sur les profils déjà prêts. Il ne suspend jamais automatiquement une ligne active : l'activation reste fail-closed, tandis qu'une interruption de production exige une décision explicite.
