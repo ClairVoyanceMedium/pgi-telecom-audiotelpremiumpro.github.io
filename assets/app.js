@@ -142,7 +142,7 @@ try{
 var es=window.PGIApi.events();
 state.eventSource=es;
 es.addEventListener("call.ingested",function(){scheduleProductionSync("incremental");});
-["expert.status","expert.busy","expert.released","carrier.switched","carrier.rollback","alert"].forEach(function(name){
+["expert.status","expert.busy","expert.released","carrier.switched","carrier.rollback","alert","voice.incident","voice.incident.resolved"].forEach(function(name){
 es.addEventListener(name,function(){scheduleProductionSync("dashboard");});
 });
 ["baseline.created","subscription.unpaid"].forEach(function(n){es.addEventListener(n,function(){window.PGIDataClient.invalidateAppBootstrap();scheduleProductionSync("full");});});
@@ -206,7 +206,7 @@ state.cdrSampleTruncated=!!sample.truncated;
 }
 state.serverSummary=dashboard.summary||null;
 state.previousSummary=dashboard.previous_summary||null;
-state.serverAnalytics=dashboard.analytics||null;
+state.serverAnalytics=dashboard.analytics?Object.assign({},dashboard.analytics,{voice_intelligence:dashboard.voice_intelligence||null}):null;
 state.serverReconciliation=dashboard.reconciliation||null;
 if(state.serverSummary&&Number(state.serverSummary.currency_count||0)===1&&state.serverSummary.currency){
 state.marketCurrency=String(state.serverSummary.currency);
