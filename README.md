@@ -379,3 +379,10 @@ Aucun de ces modules n'active une connexion externe. Stripe, opérateurs, APNF/R
 La Control Tower inclut désormais un niveau d'assurance supplémentaire : **validation 4 yeux**, comptes staff PGI distincts, **Risk Engine agrégé**, **shadow billing**, SLO opérationnels et scénarios Digital Twin avancés (base principale, workers, règlements et hyperscale).
 
 Une bascule opérateur préparée ne peut plus être activée sans approbation d'un second administrateur distinct. Le rollback d'urgence reste disponible dans sa fenêtre. Les simulations restent sans mutation et aucun fournisseur externe n'est connecté.
+
+
+## SVA Compliance Center 1.30
+
+Le cockpit possède désormais un centre SVA dédié, lazy-loadé, qui complète le Trust Center et les garde-fous ARCEP 2026. Il suit séparément APNF/RSVA, af2m 2026, DGCCRF, CNIL, 33700, médiation consommation et l'évaluation conditionnelle ACPR/DSP2.
+
+Les nouvelles activations SVA externes françaises sont fail-closed tant que le profil commercial/MGIT et les preuves requises ne sont pas prêts. Les lignes déjà actives ne sont pas suspendues automatiquement. Les changements tarifaires peuvent être préparés localement avec contrôle premier jour du mois + préavis minimal de sept jours, sans envoyer de déclaration au RSVA.
