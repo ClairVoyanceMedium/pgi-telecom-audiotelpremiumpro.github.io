@@ -55,7 +55,7 @@ function demoData(range){
       {id:2,display_number:"0892 98 76 54",e164:"+33892987654",currency:"EUR",number_type:"premium",service_rate_ttc_per_min:.8,status:"active",assignment_status:"active",kyc_status:"verified",tariff_code:"D080"}
     ],
     settlements:[{id:1,currency:"EUR",period_start:"2026-08-01",period_end:"2026-08-31",net_payout_ht:428.75,status:"paid",paid_at:"2026-09-12T10:00:00Z"},{id:2,currency:"EUR",period_start:"2026-09-01",period_end:"2026-09-15",net_payout_ht:231.2,status:"payable",payment_due_date:"2026-09-30"}],
-    subscriptions:[{id:1,status:"active",billing_currency:"EUR",current_period_start:"2026-09-01T00:00:00Z",current_period_end:"2026-10-01T00:00:00Z",plan_name:"Accès Audiotel",amount_minor:200,price_currency:"EUR",billing_interval:"month",last_payment_status:"paid"}],
+    subscriptions:[{id:1,status:"active",billing_currency:"EUR",current_period_start:"2026-09-01T00:00:00Z",current_period_end:"2026-10-01T00:00:00Z",plan_name:"Accès Audiotel",amount_minor:300,price_currency:"EUR",billing_interval:"month",last_payment_status:"paid"}],
     portability_requests:[],
     destinations:[{id:1,sva_number_id:1,label:"Standard principal",destination_type:"pstn",destination_uri:"tel:+33123456789",priority:10,status:"active",active_calls:1,max_concurrent_calls:25}],
     recent_calls:recent,
