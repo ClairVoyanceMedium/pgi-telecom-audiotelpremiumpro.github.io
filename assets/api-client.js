@@ -148,6 +148,8 @@ var q=new URLSearchParams(params||{}).toString();
 return request("/platform/tenant-number-assignments"+(q?"?"+q:""));
 },
 tenantControlDetail:function(id){return request("/platform/tenants/"+encodeURIComponent(id)+"/control-center",{timeoutMs:10000});},
+tenantConsumptionReceipts:function(id){return request("/platform/tenants/"+encodeURIComponent(id)+"/consumption-receipts",{timeoutMs:10000});},
+reconcileTenantConsumptionReceipt:function(id,receipt){return request("/platform/tenants/"+encodeURIComponent(id)+"/consumption-receipts/"+encodeURIComponent(receipt)+"/reconcile",{timeoutMs:12000});},
 tenantAdminExport:id=>request("/platform/tenants/"+encodeURIComponent(id)+"/export",{method:"POST",body:{}}),
 serviceIncidents:function(params){return request("/platform/service-incidents"+qs(params));},
 serviceIncident:function(id){return request("/platform/incidents/"+encodeURIComponent(id));},
