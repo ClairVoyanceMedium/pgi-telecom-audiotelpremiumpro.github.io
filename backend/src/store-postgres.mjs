@@ -4441,8 +4441,8 @@ export class PostgresStore{
       const open=(await tx.unsafe("SELECT id,public_id FROM tenant_exit_requests WHERE tenant_id=$1 AND status NOT IN ('completed','cancelled') ORDER BY id DESC LIMIT 1",[id]))[0];
       if(open)throw problem(409,"EXIT_REQUEST_ALREADY_OPEN");
       const lines=scope==="all_services"
-        ?await tx.unsafe("SELECT a.id AS assignment_id,a.sva_number_id,sn.e164,a.status AS assignment_status,a.valid_to FROM tenant_number_assignments a JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.tenant_id=$1 AND (a.status<>'ended' OR (a.valid_to IS NOT NULL AND a.valid_to>=now()-interval '40 days')) ORDER BY a.id",[id])
-        :await tx.unsafe("SELECT a.id AS assignment_id,a.sva_number_id,sn.e164,a.status AS assignment_status,a.valid_to FROM tenant_number_assignments a JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.tenant_id=$1 AND a.id=ANY($2::bigint[]) ORDER BY a.id",[id,ids]);
+        ?await tx.unsafe("SELECT a.id AS assignment_id,a.sva_number_id,CASE WHEN sn.e164 LIKE '+%' THEN sn.e164 ELSE '+'||sn.e164 END AS e164,a.status AS assignment_status,a.valid_to FROM tenant_number_assignments a JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.tenant_id=$1 AND (a.status<>'ended' OR (a.valid_to IS NOT NULL AND a.valid_to>=now()-interval '40 days')) ORDER BY a.id",[id])
+        :await tx.unsafe("SELECT a.id AS assignment_id,a.sva_number_id,CASE WHEN sn.e164 LIKE '+%' THEN sn.e164 ELSE '+'||sn.e164 END AS e164,a.status AS assignment_status,a.valid_to FROM tenant_number_assignments a JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.tenant_id=$1 AND a.id=ANY($2::bigint[]) ORDER BY a.id",[id,ids]);
       if(scope==="selected_lines"&&lines.length!==ids.length)throw problem(404,"EXIT_LINE_NOT_FOUND");
       if(portOut&&!lines.length)throw problem(409,"EXIT_NO_PORTABLE_LINES");
       const createdCase=(await tx.unsafe(
