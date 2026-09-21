@@ -1,6 +1,14 @@
 import {esc,nf,money,date} from "./tenant-control-utils.js";
 const nf1=v=>new Intl.NumberFormat("fr-FR",{maximumFractionDigits:1}).format(Number(v)||0);
 let current=null,todayCurrent=null;
+function base(){const c=window.PGI_CONFIG||{};if(!c.apiBaseUrl)throw new Error("API_NOT_CONFIGURED");return String(c.apiBaseUrl).replace(/\/$/,"")}
+async function get(path){
+ const r=await fetch(base()+path,{credentials:"include",cache:"no-store",headers:{Accept:"application/json"}});
+ const p=await r.json().catch(()=>null);if(!r.ok){const e=new Error(p?.error?.code||"API_HTTP_"+r.status);e.code=e.message;throw e}return p;
+}
+const receipts=id=>get("/platform/tenants/"+encodeURIComponent(id)+"/consumption-receipts");
+const today=id=>get("/platform/tenants/"+encodeURIComponent(id)+"/consumption-today");
+const reconcile=(id,r)=>get("/platform/tenants/"+encodeURIComponent(id)+"/consumption-receipts/"+encodeURIComponent(r)+"/reconcile");
 function style(){
  if(document.getElementById("tenant-consumption-style"))return;
  const s=document.createElement("style");s.id="tenant-consumption-style";s.textContent=".tcc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.tcc-head p{margin:4px 0 0;color:#71869a;font-size:7.5px;line-height:1.45}.tcc-list{display:grid;gap:7px;margin-top:10px}.tcc-row{display:grid;grid-template-columns:minmax(0,1.3fr) repeat(4,minmax(80px,.7fr)) auto;gap:8px;align-items:center;padding:9px;border:1px solid rgba(128,158,192,.09);border-radius:10px;background:#0a1320}.tcc-row span,.tcc-row strong{display:block}.tcc-row span{color:#6d8499;font-size:6.5px;text-transform:uppercase}.tcc-row strong{margin-top:3px;font-size:8.5px}.tcc-result{margin-top:10px;padding:11px;border:1px solid rgba(128,158,192,.12);border-radius:11px;background:#08111d}.tcc-result.match{border-color:rgba(34,211,165,.26);background:rgba(34,211,165,.045)}.tcc-result.difference{border-color:rgba(239,68,68,.28);background:rgba(239,68,68,.045)}.tcc-status{font-size:11px;font-weight:900}.tcc-result.match .tcc-status{color:#92e9cb}.tcc-result.difference .tcc-status{color:#ffadad}.tcc-diff{margin:8px 0 0;padding-left:18px;color:#b8c9d5;font-size:7.5px;line-height:1.6}.tcc-hash{margin-top:7px;color:#678096;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:6.5px;overflow-wrap:anywhere}.tcc-copy{margin-top:8px}@media(max-width:900px){.tcc-row{grid-template-columns:1fr 1fr}.tcc-row>div:first-child{grid-column:1/-1}.tcc-row button{grid-column:1/-1;min-height:44px}}";
@@ -30,13 +38,13 @@ function renderResult(x,root){
 export async function mountConsumptionCheck(tenantId,root){
  if(!root)return;style();root.hidden=false;root.innerHTML='<div class="tcc-head"><div><h3>Contrôle consommation & preuve miroir</h3><p>Le contrôle du jour montre immédiatement les agrégats autoritatifs. Les relevés SHA comparent ensuite exactement ce que le client a figé dans son dashboard.</p></div><span class="td-chip">SHA-256</span></div><div data-consumption-today><p class="td-empty">Calcul de la consommation du jour…</p></div><div data-consumption-result></div><div class="tcc-list"><p class="td-empty">Chargement des relevés…</p></div>';
  try{
-  const [receipts,today]=await Promise.all([window.PGIApi.tenantConsumptionReceipts(tenantId),window.PGIApi.tenantConsumptionToday(tenantId)]);
+  const [receipts,today]=await Promise.all([receipts(tenantId),today(tenantId)]);
   renderToday(today,root);
   const rows=receipts.data||[],list=root.querySelector(".tcc-list");
   list.innerHTML=rows.length?rows.map(row).join(""):'<p class="td-empty">Aucun relevé de contrôle créé par ce client. Le contrôle « aujourd’hui côté serveur » reste disponible ci-dessus.</p>';
  }catch(e){root.querySelector(".tcc-list").innerHTML='<p class="td-empty">Contrôle indisponible : '+esc(e.code||e.message)+'</p>'}
  root.onclick=async e=>{
-  const b=e.target.closest("[data-consumption-reconcile]");if(b){b.disabled=true;const old=b.textContent;b.textContent="Vérification…";try{const x=await window.PGIApi.reconcileTenantConsumptionReceipt(tenantId,b.dataset.consumptionReconcile);renderResult(x,root)}catch(err){root.querySelector("[data-consumption-result]").innerHTML='<div class="tcc-result difference"><div class="tcc-status">Contrôle impossible : '+esc(err.code||err.message)+'</div></div>'}finally{b.disabled=false;b.textContent=old}return}
+  const b=e.target.closest("[data-consumption-reconcile]");if(b){b.disabled=true;const old=b.textContent;b.textContent="Vérification…";try{const x=await reconcile(tenantId,b.dataset.consumptionReconcile);renderResult(x,root)}catch(err){root.querySelector("[data-consumption-result]").innerHTML='<div class="tcc-result difference"><div class="tcc-status">Contrôle impossible : '+esc(err.code||err.message)+'</div></div>'}finally{b.disabled=false;b.textContent=old}return}
   if(e.target.closest("[data-consumption-copy]")&&current){try{await navigator.clipboard.writeText(summaryText(current));e.target.textContent="Récapitulatif copié";setTimeout(()=>e.target.textContent="Copier le récapitulatif support",1200)}catch{}}
   if(e.target.closest("[data-consumption-today-copy]")&&todayCurrent){try{await navigator.clipboard.writeText(todayText(todayCurrent));e.target.textContent="Récapitulatif copié";setTimeout(()=>e.target.textContent="Copier le récapitulatif du jour",1200)}catch{}}
  };
