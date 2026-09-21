@@ -10,6 +10,7 @@ import {securityHeaders,readJson,json,text,problemJson,routeMatch,clientIp} from
 import {normalizeFreeSwitchCdr} from "./src/cdr-freeswitch.mjs";
 import {startWorkers} from "./src/workers.mjs";
 import {createPortabilityQueueHandlers} from "./src/portability-automation.mjs";
+import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability-automation.mjs";
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
 
 export async function createDefaultBackend(){
@@ -1176,6 +1177,7 @@ export function createBackend(options={}){
 
   const queueHandlers={
     ...createPortabilityQueueHandlers({store,config}),
+    ...createOutboundPortabilityQueueHandlers({store,config}),
     ...(options.queueHandlers||{})
   };
   const workers=config.processRole==="api"
