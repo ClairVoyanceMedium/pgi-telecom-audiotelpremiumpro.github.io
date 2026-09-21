@@ -25,6 +25,7 @@ const files=[
   "assets/client-portal.js",
   "assets/client-analytics-plus.js",
   "assets/client-account-proof.js",
+  "assets/client-experience-command-center.js",
   "assets/client-portability.js",
   "assets/client-service-center.js",
   "assets/client-relations.js",
