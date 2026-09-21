@@ -450,6 +450,7 @@ function bind(){
   $("register-country").addEventListener("change",updateRegistrationNumberField);
   $("customer-logout").addEventListener("click",async function(){try{await window.PGICustomerApi.logout();}catch(_e){}state.user=null;showLogin();});
   $("export-calls").addEventListener("click",function(){exportClient("calls");});
+  $("client-relations").addEventListener("click",function(){import("./client-relations.js").then(function(m){return m.open(state.data||{});}).catch(function(){toast("Réclamations momentanément indisponibles.");});});
   $("client-export").addEventListener("click",function(){var d=$("client-export-dialog");if(d&&typeof d.showModal==="function")d.showModal();});
   $("client-security").addEventListener("click",function(){var d=$("client-security-dialog");if(d&&typeof d.showModal==="function")d.showModal();});
   $("client-metrics-reset").addEventListener("click",function(){
