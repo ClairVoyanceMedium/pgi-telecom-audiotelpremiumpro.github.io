@@ -5,6 +5,7 @@ import {
   webauthnConfigured,issueWebAuthnState,verifyWebAuthnState,
   validateWebAuthnRegistration,verifyWebAuthnAssertion,publicPasskeyOptions
 } from "../backend/src/webauthn.mjs";
+import {loadConfig} from "../backend/src/config.mjs";
 
 const cfg={sessionSecret:"s".repeat(64),webauthnRpId:"secure.example.test",webauthnOrigin:"https://secure.example.test"};
 const b64=v=>Buffer.from(v).toString("base64url");
@@ -91,4 +92,14 @@ test("options imposent ES256 et user verification",()=>{
   const assertion=publicPasskeyOptions(cfg,"customer:abc","Client",[{credential_id:"abc123",enabled:true,transports:["internal"]}],"assert");
   assert.equal(assertion.publicKey.userVerification,"required");
   assert.equal(assertion.publicKey.allowCredentials[0].id,"abc123");
+});
+
+
+test("configuration WebAuthn refuse origin et RP ID incohérents",()=>{
+  const ok=loadConfig({PGI_WEBAUTHN_RP_ID:"example.test",PGI_WEBAUTHN_ORIGIN:"https://secure.example.test"});
+  assert.equal(ok.webauthnRpId,"example.test");
+  assert.equal(ok.webauthnOrigin,"https://secure.example.test");
+  assert.throws(()=>loadConfig({PGI_WEBAUTHN_RP_ID:"example.test",PGI_WEBAUTHN_ORIGIN:"http://example.test"}),/exact HTTPS origin/);
+  assert.throws(()=>loadConfig({PGI_WEBAUTHN_RP_ID:"other.test",PGI_WEBAUTHN_ORIGIN:"https://secure.example.test"}),/match the origin host/);
+  assert.throws(()=>loadConfig({PGI_WEBAUTHN_RP_ID:"example.test"}),/configured together/);
 });
