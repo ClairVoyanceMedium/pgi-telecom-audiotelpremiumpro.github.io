@@ -4648,6 +4648,60 @@ export class PostgresStore{
     });
   }
 
+  async completeRelationExternalAction(actionPublicId,input={},actor={}){
+    const publicId=String(actionPublicId||"").trim(),actorId=numericActor(actor);
+    if(!/^[0-9a-f-]{36}$/i.test(publicId))throw problem(400,"INVALID_RELATION_ACTION_ID");
+    const outcome=String(input.outcome||"").trim().toLowerCase();
+    if(!["success","completed","scheduled","available","delivered","failed","rejected"].includes(outcome))throw problem(400,"INVALID_EXTERNAL_OUTCOME");
+    const providerReference=String(input.provider_reference||"").trim().slice(0,255)||null;
+    const safe=sanitizeRelationPayload(input);
+    return this.sql.begin(async tx=>{
+      const row=(await tx.unsafe("SELECT a.*,c.public_id AS case_public_id,c.status AS case_status FROM tenant_relation_actions a JOIN tenant_relation_cases c ON c.id=a.case_id WHERE a.public_id=$1::uuid FOR UPDATE",[publicId]))[0];
+      if(!row)throw problem(404,"RELATION_ACTION_NOT_FOUND");
+      if(row.execution_mode!=="external_confirmation")throw problem(409,"RELATION_ACTION_NOT_EXTERNAL");
+      if(!["queued","approved","executing"].includes(row.status))throw problem(409,"RELATION_ACTION_NOT_PENDING");
+      let finalStatus=["failed","rejected"].includes(outcome)?"failed":"completed",eventType="status_changed",message="Confirmation externe enregistrée";
+      if(row.action_type==="request_outbound_rio"){
+        const last4=input.rio_last4==null?null:String(input.rio_last4).slice(-4);
+        const state=outcome==="delivered"?"delivered":["available","success","completed"].includes(outcome)?"available":"unavailable";
+        await tx.unsafe("UPDATE tenant_exit_lines SET rio_status=$2,rio_last4=COALESCE($3,rio_last4),rio_delivered_at=CASE WHEN $2='delivered' THEN now() ELSE rio_delivered_at END WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[row.case_id,state,last4]);
+        eventType="status_changed";message=state==="delivered"?"RIO délivré par le canal sécurisé prévu":"Statut RIO mis à jour";
+      }else if(row.action_type==="submit_port_out"){
+        if(outcome==="scheduled"){
+          await tx.unsafe("UPDATE tenant_exit_requests SET status='scheduled',operator_reference=COALESCE($2,operator_reference),scheduled_at=COALESCE($3::timestamptz,now()),updated_at=now() WHERE case_id=$1",[row.case_id,providerReference,input.scheduled_at||null]);
+          await tx.unsafe("UPDATE tenant_exit_lines SET status='scheduled',operator_reference=COALESCE($2,operator_reference),scheduled_at=COALESCE($3::timestamptz,now()) WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[row.case_id,providerReference,input.scheduled_at||null]);
+          eventType="port_out_scheduled";message="Portabilité sortante planifiée par l’opérateur";
+        }else if(["success","completed"].includes(outcome)){
+          await tx.unsafe("UPDATE tenant_exit_requests SET status='finalizing',operator_reference=COALESCE($2,operator_reference),updated_at=now() WHERE case_id=$1",[row.case_id,providerReference]);
+          await tx.unsafe("UPDATE tenant_exit_lines SET status='completed',operator_reference=COALESCE($2,operator_reference),completed_at=now() WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[row.case_id,providerReference]);
+          eventType="port_out_completed";message="Portabilité sortante confirmée par l’opérateur";
+        }else{
+          await tx.unsafe("UPDATE tenant_exit_requests SET status='blocked',updated_at=now() WHERE case_id=$1",[row.case_id]);
+          await tx.unsafe("UPDATE tenant_exit_lines SET status='blocked' WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[row.case_id]);
+        }
+      }else if(row.action_type==="request_final_invoice"){
+        if(["success","completed","available","delivered"].includes(outcome)){
+          await tx.unsafe("UPDATE tenant_exit_requests SET final_invoice_status='ready',updated_at=now() WHERE case_id=$1",[row.case_id]);
+          if(input.final_invoice_reference)await tx.unsafe("UPDATE tenant_relation_cases SET invoice_reference=COALESCE(invoice_reference,$2),updated_at=now() WHERE id=$1",[row.case_id,String(input.final_invoice_reference).slice(0,200)]);
+          eventType="final_invoice_ready";message="Compte final disponible";
+        }
+      }else if(row.action_type==="revoke_access"&&["success","completed"].includes(outcome)){
+        const ex=(await tx.unsafe("UPDATE tenant_exit_requests SET status='completed',access_revocation_at=now(),completed_at=now(),number_quarantine_until=CASE WHEN port_out_requested THEN number_quarantine_until ELSE COALESCE(number_quarantine_until,current_date+40) END,updated_at=now() WHERE case_id=$1 RETURNING port_out_requested,number_quarantine_until",[row.case_id]))[0];
+        await tx.unsafe("UPDATE tenant_relation_cases SET status='resolved',resolved_at=now(),ai_state='done',updated_at=now() WHERE id=$1",[row.case_id]);
+        eventType="access_revoked";message="Clôture technique confirmée";
+        safe.number_quarantine_until=ex?.number_quarantine_until||null;
+      }else if(["request_port_out_report","request_port_out_cancel","request_port_out_return_back"].includes(row.action_type)){
+        if(row.action_type==="request_port_out_cancel"&&["success","completed"].includes(outcome))await tx.unsafe("UPDATE tenant_exit_lines SET status='cancelled' WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[row.case_id]);
+        eventType="status_changed";message="Option opérateur de portabilité confirmée";
+      }
+      await tx.unsafe("UPDATE tenant_relation_actions SET status=$2,result=$3::jsonb,executed_at=now() WHERE id=$1",[row.id,finalStatus,JSON.stringify({...safe,provider_reference:providerReference})]);
+      await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible,details) VALUES($1,$2,$3,'system',$4,$5,true,$6::jsonb)",[row.case_id,row.tenant_id,eventType,actorId,message,JSON.stringify({action_public_id:publicId,action_type:row.action_type,outcome,provider_reference:providerReference})]);
+      await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'customer_relation.external_confirm','tenant_relation_action',$3,$4::jsonb)",[row.tenant_id,actorId,String(row.id),JSON.stringify({public_id:publicId,action_type:row.action_type,outcome,provider_reference:providerReference})]);
+      return {public_id:publicId,status:finalStatus,outcome,provider_reference:providerReference};
+    });
+  }
+
+
   async customerProfitability(params={}){
     const period=String(params.period||"365d").toLowerCase();
     if(!["30d","90d","365d","all"].includes(period))throw problem(400,"INVALID_PROFITABILITY_PERIOD");
