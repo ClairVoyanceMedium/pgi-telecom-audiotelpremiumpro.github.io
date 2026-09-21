@@ -11,7 +11,7 @@ async function teamRequest(path,options={}){
   if(!response.ok){const code=payload?.error?.code||"API_HTTP_"+response.status;throw Object.assign(new Error(code),{code,status:response.status,payload})}
   return payload;
 }
-function idempotencyKey(){return typeof crypto!=="undefined"&&crypto.randomUUID?crypto.randomUUID():"team-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2)}
+function idempotencyKey(){if(typeof crypto!=="undefined"&&crypto.randomUUID)return crypto.randomUUID();return"10000000-1000-4000-8000-100000000000".replace(/[018]/g,c=>(c^Math.random()*16>>c/4).toString(16))}
 const api={
   team:()=>teamRequest("/customer/team"),
   invite:(payload)=>teamRequest("/customer/team/invitations",{method:"POST",body:payload,idempotencyKey:idempotencyKey()}),
