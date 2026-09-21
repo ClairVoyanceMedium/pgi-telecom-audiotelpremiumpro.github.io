@@ -26,6 +26,9 @@ test("team access changes remain append-only and auditable",()=>{
   assert.match(migration,/CREATE TABLE customer_tenant_access_events/);
   assert.match(migration,/append-only/);
   assert.match(migration,/BEFORE UPDATE OR DELETE ON customer_tenant_access_events/);
+  assert.match(migration,/tenant_scoped_customer_tenant_access_events/);
+  assert.match(migration,/security_barrier=true/);
+  assert.match(migration,/pgi_require_tenant_context\(\)/);
   assert.match(store,/invitation_created/);
   assert.match(store,/member_role_changed/);
   assert.match(store,/member_status_changed/);
