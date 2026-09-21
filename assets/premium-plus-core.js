@@ -48,7 +48,7 @@ export function setupPwa(onState){
   const state={installable:false,standalone:matchMedia("(display-mode: standalone)").matches,update:false,prompt:null,registration:null};
   const emit=()=>onState?.({...state});
   addEventListener("beforeinstallprompt",e=>{e.preventDefault();state.prompt=e;state.installable=true;emit()});
-  if("serviceWorker" in navigator)navigator.serviceWorker.getRegistration().then(r=>{state.registration=r||null;if(r?.waiting)state.update=true;if(r)r.addEventListener("updatefound",()=>{const w=r.installing;w?.addEventListener("statechange",()=>{if(w.state==="installed"&&navigator.serviceWorker.controller){state.update=true;emit()}})});emit()}).catch(()=>{});
+  if("serviceWorker" in navigator)navigator.serviceWorker.getRegistration().then(r=>r||navigator.serviceWorker.register("./service-worker.js")).then(r=>{state.registration=r||null;if(r?.waiting)state.update=true;if(r)r.addEventListener("updatefound",()=>{const w=r.installing;w?.addEventListener("statechange",()=>{if(w.state==="installed"&&navigator.serviceWorker.controller){state.update=true;emit()}})});emit()}).catch(()=>{});
   return {state,install:async()=>{if(!state.prompt)return false;await state.prompt.prompt();state.prompt=null;state.installable=false;emit();return true},check:async()=>{await state.registration?.update();emit()},activate:()=>{state.registration?.waiting?.postMessage({type:"SKIP_WAITING"})}}
 }
 export function tour(key,steps){
