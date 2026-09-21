@@ -12,7 +12,7 @@ import {startWorkers} from "./src/workers.mjs";
 import {createPortabilityQueueHandlers} from "./src/portability-automation.mjs";
 import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability-automation.mjs";
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
-import {customerPermissions,requireCustomerPermission} from "./src/customer-access.mjs";
+import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData} from "./src/customer-access.mjs";
 
 export async function createDefaultBackend(){
   const config=loadConfig();
@@ -295,11 +295,13 @@ export function createBackend(options={}){
         requireCustomerPermission(context,"overview.read");
         const requestedRange=rangeParams(url);
         const metricRanges=await store.effectiveMetricRanges(requestedRange.from,requestedRange.to,context.tenant_id);
-        const [data,billing]=await Promise.all([
+        const canFinance=hasCustomerPermission(context,"finance.read");
+        const [rawData,billing]=await Promise.all([
           store.customerPortalOverview(context.tenant_id,requestedRange.from,requestedRange.to,metricRanges),
-          store.customerBillingPreparation(context.tenant_id)
+          canFinance?store.customerBillingPreparation(context.tenant_id):Promise.resolve(null)
         ]);
-        return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,metric_resets:Object.fromEntries(Object.entries(metricRanges).map(([k,v])=>[k,v.baseline])),billing_offer:billing.offer,billing_summary:{subscription:billing.subscription,premium_call_access:billing.premium_call_access,billing_currency:billing.billing_currency,pricing_state:billing.pricing_state,reference_offer:billing.reference_offer,checkout_prefill:billing.checkout_prefill,return_paths:billing.return_paths},billing_provider:billingProviderStatus(config),server_time:new Date().toISOString()});
+        const data=scopeCustomerPortalData(context,rawData);
+        return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,metric_resets:Object.fromEntries(Object.entries(metricRanges).map(([k,v])=>[k,v.baseline])),billing_offer:billing?.offer||null,billing_summary:billing?{subscription:billing.subscription,premium_call_access:billing.premium_call_access,billing_currency:billing.billing_currency,pricing_state:billing.pricing_state,reference_offer:billing.reference_offer,checkout_prefill:billing.checkout_prefill,return_paths:billing.return_paths}:{restricted:true},billing_provider:billing?billingProviderStatus(config):{connection_state:"restricted",checkout_available:false,customer_portal_available:false},server_time:new Date().toISOString()});
       }
       if(method==="GET"&&pathname==="/api/v1/customer/team"){
         requireActor(customerActor);
