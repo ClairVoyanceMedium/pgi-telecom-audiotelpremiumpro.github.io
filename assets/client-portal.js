@@ -40,7 +40,7 @@ function demoData(range){
   var recent=[];for(var j=0;j<20;j++){var s=new Date(to.getTime()-j*5400000),connected=j%6!==3;recent.push({call_id:j+1,display_number:j%3===0?"0892 98 76 54":"0892 12 34 56",market:"FR",currency:"EUR",started_at:s.toISOString(),ringing_at:new Date(s.getTime()+2100+(j%4)*180).toISOString(),call_status:connected?"connected":j%2?"abandoned":"failed",conversation_seconds:connected?110+j*13:0,billable_seconds:connected?110+j*13:0,retail_service_amount_ttc:connected?Math.round((1.45+j*.11)*100)/100:0,post_dial_delay_ms:2100+(j%4)*180,sip_final_code:connected?200:(j%2?487:503),hangup_cause:connected?"NORMAL_CLEARING":(j%2?"ORIGINATOR_CANCEL":"NORMAL_TEMPORARY_FAILURE"),hangup_party:connected?(j%2?"caller":"callee"):"network",codec:"PCMA",origin_carrier:j%2?"Orange":"SFR",host_carrier:"Opérateur hôte Démo",packet_loss_percent:.28+(j%3)*.11,jitter_ms:2.8+(j%4)*.4,latency_ms:38+(j%5)*3,rtt_ms:72+(j%5)*4,mos:4.25-(j%4)*.04,packets_lost:j%3,dtmf_errors:0});}
   return {
     user:{name:"Camille Martin",role:"owner"},
-    tenant:{display_name:"Société Démo",default_currency:"EUR",country_code:"FR",status:"active"},
+    tenant:{display_name:"Société Démo",default_currency:"EUR",country_code:"FR",status:"active",customer_type:"business"},
     financial_by_currency:[{currency:"EUR",calls_total:sums.calls_total,calls_connected:sums.calls_connected,calls_abandoned:sums.calls_abandoned,calls_failed:sums.calls_failed,billable_seconds:sums.billable_seconds,generated_revenue_ttc:Math.round(sums.generated_revenue_ttc*100)/100,updated_at:new Date().toISOString()}],
     series:series,
     numbers:[
@@ -201,7 +201,7 @@ function showLogin(){
 }
 function showRegister(){
   $("customer-app").hidden=true;$("customer-auth").hidden=false;$("login-panel").hidden=true;$("register-panel").hidden=false;$("activation-panel").hidden=true;
-  populateCountries();
+  populateCountries();import("./client-audience.js").then(function(m){m.init()}).catch(function(){});
 }
 function showActivation(){
   $("customer-app").hidden=true;$("customer-auth").hidden=false;$("login-panel").hidden=true;$("register-panel").hidden=true;$("activation-panel").hidden=false;
@@ -221,9 +221,9 @@ async function handleGoogleCredential(response,tenantOverride){
     state.user=result.user;if(invite)history.replaceState(null,"",location.pathname);showApp();
   }catch(err){
     if(err.code==="CUSTOMER_TENANT_REQUIRED"&&err.payload&&Array.isArray(err.payload.tenants)&&err.payload.tenants.length){
-      var sel=$("customer-tenant");sel.innerHTML=err.payload.tenants.map(function(x){return '<option value="'+esc(x.id)+'">'+esc(x.name+" · "+x.role)+'</option>';}).join("");$("tenant-choice-wrap").hidden=false;$("google-tenant-continue").hidden=false;setAuthMessage(tr("Société")+" : "+tr("Confirmer"),false);return;
+      var sel=$("customer-tenant");sel.innerHTML=err.payload.tenants.map(function(x){return '<option value="'+esc(x.id)+'">'+esc(x.name+" · "+x.role)+'</option>';}).join("");$("tenant-choice-wrap").hidden=false;$("google-tenant-continue").hidden=false;setAuthMessage(tr("Compte")+" : "+tr("Confirmer"),false);return;
     }
-    var messages={GOOGLE_INVITATION_REQUIRED:"Google account requires a valid company invitation.",GOOGLE_INVITATION_EMAIL_MISMATCH:"The Google account email does not match the invitation.",GOOGLE_LINK_REQUIRES_INVITATION:"For security, this Google account must be linked through an invitation.",GOOGLE_AUTH_NOT_CONFIGURED:"Google sign-in is not configured yet."};
+    var messages={GOOGLE_INVITATION_REQUIRED:"Google account requires a valid invitation for this account.",GOOGLE_INVITATION_EMAIL_MISMATCH:"The Google account email does not match the invitation.",GOOGLE_LINK_REQUIRES_INVITATION:"For security, this Google account must be linked through an invitation.",GOOGLE_AUTH_NOT_CONFIGURED:"Google sign-in is not configured yet."};
     setAuthMessage(messages[err.code]||"Google sign-in failed.",true);
   }
 }
@@ -291,6 +291,7 @@ async function submitRegistration(e){
   var payload={
     first_name:$("register-first-name").value.trim(),
     last_name:$("register-last-name").value.trim(),
+    account_type:$("register-account-type").value,
     company_name:$("register-company").value.trim(),
     country_code:$("register-country").value,
     registration_number:$("register-number").value.trim(),
@@ -314,7 +315,8 @@ async function submitRegistration(e){
       INVALID_REGISTRATION_NUMBER:"Le numéro d’immatriculation n’est pas valide.",
       INVALID_PHONE:"Le numéro de téléphone n’est pas valide.",
       REGISTRATION_RATE_LIMITED:"Trop de créations de compte ont été tentées. Réessayez plus tard.",
-      REGISTRATION_AUTHORITY_REQUIRED:"Vous devez confirmer être autorisé à créer ce compte."
+      REGISTRATION_AUTHORITY_REQUIRED:"Vous devez confirmer être autorisé à créer ce compte.",
+      INVALID_CUSTOMER_ACCOUNT_TYPE:"Choisissez Particulier ou Professionnel / entreprise."
     };
     setAuthMessage(messages[err.code]||"Création du compte impossible. Vérifiez les informations saisies.",true);
   }
@@ -326,7 +328,7 @@ async function submitLogin(e){
     var result=await window.PGICustomerApi.login(email,password,tenant);state.user=result.user;showApp();
   }catch(err){
     if(err.code==="CUSTOMER_TENANT_REQUIRED"&&err.payload&&Array.isArray(err.payload.tenants)&&err.payload.tenants.length){
-      var sel=$("customer-tenant");sel.innerHTML=err.payload.tenants.map(function(x){return '<option value="'+esc(x.id)+'">'+esc(x.name+" · "+x.role)+'</option>';}).join("");$("tenant-choice-wrap").hidden=false;setAuthMessage("Choisissez la société à ouvrir.",false);return;
+      var sel=$("customer-tenant");sel.innerHTML=err.payload.tenants.map(function(x){return '<option value="'+esc(x.id)+'">'+esc(x.name+" · "+x.role)+'</option>';}).join("");$("tenant-choice-wrap").hidden=false;setAuthMessage("Choisissez le compte à ouvrir.",false);return;
     }
     setAuthMessage("Connexion refusée. Vérifiez vos identifiants.",true);
   }
@@ -451,7 +453,7 @@ function bind(){
     import("./metric-reset.js").then(function(m){
       m.openMetricReset({
         title:"Remettre mes statistiques à zéro",
-        note:"Choisissez uniquement les statistiques de votre société qui doivent repartir de zéro. Vos règlements, contrats et CDR restent conservés.",
+        note:"Choisissez uniquement les statistiques de votre compte qui doivent repartir de zéro. Vos règlements, contrats et CDR restent conservés.",
         onConfirm:async function(keys){
           if(state.demo){
             toast("Sélection enregistrée en démonstration. En production, seuls ces indicateurs repartiront de zéro.");
