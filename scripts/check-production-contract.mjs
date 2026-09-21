@@ -67,6 +67,12 @@ const subscriptionTaxInclusiveMigration=fs.readFileSync("database/migrations/042
 const regulatoryReviewMonitoringMigration=fs.readFileSync("database/migrations/043_regulatory_review_monitoring.sql","utf8");
 const operationalAssuranceMigration=fs.readFileSync("database/migrations/044_operational_assurance.sql","utf8");
 const svaEcosystemMigration=fs.readFileSync("database/migrations/045_sva_ecosystem_compliance.sql","utf8");
+const premiumPlusSecurityMigration=fs.readFileSync("database/migrations/046_premium_plus_security.sql","utf8");
+const webauthnSource=fs.readFileSync("backend/src/webauthn.mjs","utf8");
+const premiumPlusUi=fs.readFileSync("assets/premium-plus.js","utf8");
+const clientPremiumPlusUi=fs.readFileSync("assets/client-premium-plus.js","utf8");
+const premiumPlusCore=fs.readFileSync("assets/premium-plus-core.js","utf8");
+const passkeyClient=fs.readFileSync("assets/passkey-client.js","utf8");
 const svaComplianceUi=fs.readFileSync("assets/sva-compliance-center.js","utf8");
 const shadowBillingSource=fs.readFileSync("backend/src/shadow-billing.mjs","utf8");
 const riskEngineSource=fs.readFileSync("backend/src/risk-engine.mjs","utf8");
@@ -159,6 +165,15 @@ if(!/\/api\/v1\/customer\/portal/.test(backendServer)||!/customerPortalOverview/
 if(!/\/api\/v1\/customer\/comparison/.test(backendServer)||!/customerPortalComparison/.test(postgresStore))failures.push("customer comparison must remain tenant-scoped");
 if(!/INVALID_CALL_STATUS/.test(postgresStore)||!/min_duration/.test(postgresStore)||!/min_amount/.test(postgresStore))failures.push("customer call filters must be validated and server-side");
 if(!/__Host-pgi_customer_session/.test(security)||!/__Host-pgi_customer_csrf/.test(security))failures.push("customer portal must use cookies isolated from PGI staff sessions");
+if(!/CREATE TABLE webauthn_credentials/.test(premiumPlusSecurityMigration)||!/owner_type IN \('staff','customer'\)/.test(premiumPlusSecurityMigration)||!/customer_principal_id uuid REFERENCES customer_principals/.test(premiumPlusSecurityMigration))failures.push("Premium+ passkeys must keep staff and customer identities isolated");
+if(!/WEBAUTHN_USER_VERIFICATION_REQUIRED/.test(webauthnSource)||!/WEBAUTHN_RP_ID_MISMATCH/.test(webauthnSource)||!/WEBAUTHN_SIGNATURE_INVALID/.test(webauthnSource)||!/timingSafeEqual/.test(webauthnSource))failures.push("WebAuthn must verify RP ID origin user verification signed state and assertion signature");
+if(!/PGI_WEBAUTHN_RP_ID/.test(envExample)||!/PGI_WEBAUTHN_ORIGIN/.test(envExample)||!/PGI_WEBAUTHN_RP_ID/.test(compose)||!/PGI_WEBAUTHN_ORIGIN/.test(compose))failures.push("production contract must expose optional WebAuthn RP ID and HTTPS origin");
+if(!/\/api\/v1\/security\/passkeys/.test(backendServer)||!/\/api\/v1\/customer\/security\/passkeys/.test(backendServer)||!/PASSKEY_REAUTH_REQUIRED/.test(backendServer))failures.push("staff and customer passkey enrollment must stay server-verified and password-reauthenticated");
+if(!/navigator\.credentials\.create/.test(passkeyClient)||!/navigator\.credentials\.get/.test(passkeyClient))failures.push("browser passkey client must use the WebAuthn Credentials API");
+if(!/Notifications/.test(premiumPlusUi)||!/Confort/.test(premiumPlusUi)||!/Qualité UX/.test(premiumPlusUi)||!/Sécurité/.test(premiumPlusUi))failures.push("admin Premium+ center must retain notifications accessibility security and UX quality");
+if(!/Préférences/.test(clientPremiumPlusUi)||!/Confiance/.test(clientPremiumPlusUi)||!/pgi_client_locale/.test(fs.readFileSync("assets/client-i18n.js","utf8")))failures.push("client Premium+ must retain preferences Trust Center and explicit language choice");
+if(!/beforeinstallprompt/.test(premiumPlusCore)||!/largest-contentful-paint/.test(premiumPlusCore)||!/layout-shift/.test(premiumPlusCore)||!/durationThreshold/.test(premiumPlusCore))failures.push("Premium+ must retain install UX and local Core Web Vitals measurement");
+
 if(!/SVA_ROUTING_CONTEXT_REQUIRED/.test(backendServer)||!/resolveTelephonyRoutingContext/.test(backendServer))failures.push("production telephony must require an SVA routing context");
 if(!/\/api\/v1\/platform\/overview/.test(backendServer)||!/platform\.overview/.test(backendServer))failures.push("backend must expose the read-only wholesale overview");
 if(!/wholesaleOverview/.test(apiClient))failures.push("frontend API client must expose the wholesale overview");
