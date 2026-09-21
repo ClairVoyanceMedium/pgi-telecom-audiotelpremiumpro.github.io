@@ -1734,6 +1734,25 @@ export class PostgresStore{
     return rows[0];
   }
 
+  async scanOutboundPortabilityAutomation(limit=100){
+    limit=clampInt(limit,100,1,500);
+    const rows=await this.readSql.unsafe(
+      "SELECT public_id::text AS public_id,tenant_id,action_type FROM tenant_relation_actions"+
+      " WHERE status='queued' AND execution_mode='external_confirmation'"+
+      " AND action_type IN ('request_outbound_rio','submit_port_out','request_port_out_report','request_port_out_cancel','request_port_out_return_back')"+
+      " ORDER BY created_at,id LIMIT $1",
+      [limit]
+    );
+    const queued=[];
+    for(const row of rows){
+      const work=await this.enqueueWork("portability_outbound",{action_public_id:row.public_id},{
+        tenant_id:Number(row.tenant_id),priority:250,max_attempts:50,dedupe_key:"portability_outbound:"+row.public_id
+      });
+      queued.push({action_public_id:row.public_id,action_type:row.action_type,work_id:Number(work.id)});
+    }
+    return queued;
+  }
+
   async workQueueHealth(){
     const rows=await this.sql.unsafe(
       "SELECT"+
@@ -4663,6 +4682,9 @@ export class PostgresStore{
       return {...action,status:policy.execution_mode==="automatic"?"completed":initialStatus,result:actionResult};
     });
     this.eventBus.publish("customer_relation.agent_action",{case_id:publicId,action_type:policy.action_type,status:result.status});
+    if(result.status==="queued"&&["request_outbound_rio","submit_port_out","request_port_out_report","request_port_out_cancel","request_port_out_return_back"].includes(policy.action_type)){
+      await this.enqueueWork("portability_outbound",{action_public_id:String(result.public_id)},{tenant_id:Number(result.tenant_id),priority:250,max_attempts:50,dedupe_key:"portability_outbound:"+String(result.public_id)});
+    }
     return result;
   }
 
