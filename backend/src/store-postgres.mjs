@@ -4775,7 +4775,9 @@ export class PostgresStore{
     if(Number(queue.oldest_pending_seconds||0)>120)blockers.push({code:"QUEUE_BACKLOG_OLD",label:"Le plus ancien travail en attente dépasse 120 secondes."});
     if(!latestRestore)blockers.push({code:"RESTORE_DRILL_MISSING",label:"Aucun exercice de restauration PostgreSQL n’est enregistré."});
     else if(!restoreFresh)blockers.push({code:"RESTORE_DRILL_STALE",label:"Le dernier restore drill réussi date de plus de 30 jours."});
-    if(syntheticSuccess!=null&&syntheticSuccess<99)blockers.push({code:"SYNTHETIC_AVAILABILITY_LOW",label:"Le taux de succès synthétique sur 24 h est inférieur à 99 %."});
+    const syntheticFresh=Boolean(syn.last_checked_at&&Date.now()-Date.parse(syn.last_checked_at)<=24*3600000);
+    if(!syntheticFresh)blockers.push({code:"SYNTHETIC_PROOF_MISSING",label:"Aucune sonde synthétique récente n’est enregistrée sur les dernières 24 h."});
+    else if(syntheticSuccess!=null&&syntheticSuccess<99)blockers.push({code:"SYNTHETIC_AVAILABILITY_LOW",label:"Le taux de succès synthétique sur 24 h est inférieur à 99 %."});
     if(tableAttention.length)blockers.push({code:"POSTGRES_TABLE_ATTENTION",label:tableAttention.length+" table(s) nécessitent une revue d’index ou de vacuum."});
     return {
       schema_version:"audiotel-performance-resilience-lab/1",
