@@ -155,6 +155,7 @@ tenantCustomerRelations:function(id){return request("/platform/tenants/"+encodeU
 relationAgentContext:function(id){return request("/platform/customer-relations/"+encodeURIComponent(id)+"/agent-context",{timeoutMs:10000});},
 createRelationAgentAction:function(id,p,k){return idem("/platform/customer-relations/"+encodeURIComponent(id)+"/actions",p,k);},
 approveRelationAction:function(id,k){return idem("/platform/customer-relations/actions/"+encodeURIComponent(id)+"/approve",{},k);},
+completeRelationExternalAction:function(id,p,k){return idem("/platform/customer-relations/actions/"+encodeURIComponent(id)+"/external-confirm",p,k);},
 serviceIncident:function(id){return request("/platform/incidents/"+encodeURIComponent(id));},
 createServiceIncident:function(id,p,k){return idem("/platform/tenants/"+encodeURIComponent(id)+"/incidents",p,k);},
 updateServiceIncident:function(id,p,k){return idem("/platform/incidents/"+encodeURIComponent(id)+"/status",p,k);},
