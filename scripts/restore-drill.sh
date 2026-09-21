@@ -34,7 +34,7 @@ drill_id=""
 recording_table="$("${compose[@]}" exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres   psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc   "SELECT (to_regclass('public.disaster_recovery_drills') IS NOT NULL)::text;" 2>/dev/null || true)"
 if [ "$recording_table" = "true" ] || [ "$recording_table" = "t" ]; then
   evidence_ref="restore-drill:$(basename "$dump")"
-  drill_id="$("${compose[@]}" exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres     psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At     -v evidence="$evidence_ref" -c     "INSERT INTO disaster_recovery_drills(drill_type,source_region,target_region,status,evidence_ref) VALUES('restore','eu-primary','eu-primary','running',:'evidence') RETURNING id;" | tail -n1)"
+  drill_id="$("${compose[@]}" exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres     psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At     -v evidence="$evidence_ref" -c     "INSERT INTO disaster_recovery_drills(drill_type,source_region,target_region,status,evidence_ref) VALUES('restore','eu-primary','eu-primary','running',:'evidence') RETURNING id;" | head -n1)"
 fi
 
 finish() {
