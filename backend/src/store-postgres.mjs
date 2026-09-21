@@ -4315,6 +4315,75 @@ export class PostgresStore{
     return rows[0]||{tenants_total:0,tenants_active:0,kyc_pending:0,subscription_unpaid_alerts:0,subscription_access_blocked:0,assignments_active:0,service_incidents_open:0,service_incidents_critical:0,service_sla_attention:0,routing_attention:0,portability_attention:0};
   }
 
+  async customerProfitability(params={}){
+    const period=String(params.period||"365d").toLowerCase();
+    if(!["30d","90d","365d","all"].includes(period))throw problem(400,"INVALID_PROFITABILITY_PERIOD");
+    const requestedCurrency=params.currency?String(params.currency).trim().toUpperCase():null;
+    if(requestedCurrency&&!/^[A-Z]{3}$/.test(requestedCurrency))throw problem(400,"INVALID_CURRENCY");
+    const tenantPublicId=String(params.tenant_public_id||"").trim();
+    if(tenantPublicId&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantPublicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    const limit=clampInt(params.limit,10,1,25);
+    const days=period==="30d"?30:period==="90d"?90:period==="365d"?365:null;
+    const since=days?new Date(Date.now()-days*86400000).toISOString().slice(0,10):null;
+    let tenant=null;
+    if(tenantPublicId){
+      tenant=(await this.readSql.unsafe("SELECT id,public_id::text AS public_id,display_name,tenant_type FROM tenants WHERE public_id=$1::uuid",[tenantPublicId]))[0]||null;
+      if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+      if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+    }
+    const currencyRows=await this.readSql.unsafe(
+      "SELECT DISTINCT d.currency FROM tenant_revenue_distributions d JOIN tenants t ON t.id=d.tenant_id"+
+      " WHERE t.tenant_type<>'internal' AND ($1::date IS NULL OR d.period_end>=$1::date)"+
+      " AND ($2::bigint IS NULL OR d.tenant_id=$2) ORDER BY d.currency",
+      [since,tenant?Number(tenant.id):null]
+    );
+    const currencies=currencyRows.map(x=>String(x.currency));
+    const currency=requestedCurrency||(currencies.includes("EUR")?"EUR":currencies[0]||"EUR");
+    if(requestedCurrency&&currencies.length&&!currencies.includes(requestedCurrency))throw problem(404,"PROFITABILITY_CURRENCY_NOT_FOUND");
+    const bucket=period==="30d"?"day":period==="90d"?"week":"month";
+    const paidRatio="CASE WHEN cs.confirmed_amount_ht>0 THEN LEAST(1::numeric,GREATEST(0::numeric,cs.paid_amount_ht/cs.confirmed_amount_ht)) WHEN cs.status='paid' THEN 1::numeric ELSE 0::numeric END";
+    const baseWhere=" FROM tenant_revenue_distributions d JOIN tenants t ON t.id=d.tenant_id JOIN carrier_settlements cs ON cs.id=d.upstream_settlement_id WHERE t.tenant_type<>'internal' AND d.currency=$2 AND ($1::date IS NULL OR d.period_end>=$1::date) AND ($3::bigint IS NULL OR d.tenant_id=$3)";
+    const tenantId=tenant?Number(tenant.id):null;
+    const [summaryRows,rankingRows,trendRows]=await Promise.all([
+      this.readSql.unsafe(
+        "SELECT COALESCE(sum(d.upstream_payout_ht),0)::float8 AS upstream_payout_ht,COALESCE(sum(d.platform_fee_ht),0)::float8 AS margin_booked_ht,"+
+        " COALESCE(sum(d.platform_fee_ht*("+paidRatio+")),0)::float8 AS margin_collected_ht,COALESCE(sum(d.net_payout_ht),0)::float8 AS client_net_payout_ht,"+
+        " COALESCE(sum(d.unallocated_amount_ht),0)::float8 AS unallocated_amount_ht,count(DISTINCT d.tenant_id)::int AS customers_with_distribution"+
+        baseWhere,
+        [since,currency,tenantId]
+      ),
+      this.readSql.unsafe(
+        "SELECT t.public_id::text AS tenant_public_id,t.display_name,t.legal_name,t.country_code,"+
+        " COALESCE(sum(d.upstream_payout_ht),0)::float8 AS upstream_payout_ht,COALESCE(sum(d.platform_fee_ht),0)::float8 AS margin_booked_ht,"+
+        " COALESCE(sum(d.platform_fee_ht*("+paidRatio+")),0)::float8 AS margin_collected_ht,COALESCE(sum(d.net_payout_ht),0)::float8 AS client_net_payout_ht,"+
+        " COALESCE(sum(d.unallocated_amount_ht),0)::float8 AS unallocated_amount_ht,count(*)::int AS distribution_count"+
+        baseWhere+" GROUP BY t.id,t.public_id,t.display_name,t.legal_name,t.country_code ORDER BY margin_collected_ht DESC,margin_booked_ht DESC,t.id DESC LIMIT $4",
+        [since,currency,tenantId,limit]
+      ),
+      this.readSql.unsafe(
+        "SELECT date_trunc($4::text,d.period_end::timestamp) AS bucket,"+
+        " COALESCE(sum(d.platform_fee_ht),0)::float8 AS margin_booked_ht,COALESCE(sum(d.platform_fee_ht*("+paidRatio+")),0)::float8 AS margin_collected_ht,"+
+        " COALESCE(sum(d.net_payout_ht),0)::float8 AS client_net_payout_ht,COALESCE(sum(d.upstream_payout_ht),0)::float8 AS upstream_payout_ht"+
+        baseWhere+" GROUP BY date_trunc($4::text,d.period_end::timestamp) ORDER BY bucket",
+        [since,currency,tenantId,bucket]
+      )
+    ]);
+    const summary=summaryRows[0]||{upstream_payout_ht:0,margin_booked_ht:0,margin_collected_ht:0,client_net_payout_ht:0,unallocated_amount_ht:0,customers_with_distribution:0};
+    const top5Collected=rankingRows.slice(0,5).reduce((n,x)=>n+Number(x.margin_collected_ht||0),0);
+    const concentration=Number(summary.margin_collected_ht)>0?top5Collected/Number(summary.margin_collected_ht)*100:0;
+    return {
+      schema_version:"audiotel-customer-profitability/1",
+      period,since,currency,currencies:currencies.length?currencies:[currency],
+      accounting_basis:"tenant_revenue_distributions.platform_fee_ht",
+      cash_basis:"carrier paid amount / confirmed amount",
+      excludes:["general_platform_overhead","unconnected_subscription_cash"],
+      tenant:tenant?{public_id:tenant.public_id,display_name:tenant.display_name}:null,
+      summary:{...summary,top5_margin_collected_ht:top5Collected,top5_concentration_percent:concentration},
+      ranking:rankingRows,
+      trend:trendRows
+    };
+  }
+
   async createTenantPayoutTerms(publicId,input={},actor={}){
     publicId=String(publicId||"").trim();
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
