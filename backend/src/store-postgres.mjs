@@ -1400,6 +1400,12 @@ export class PostgresStore{
     return rows[0]||null;
   }
 
+  async staffCredentialById(appUserId){
+    const id=Number(appUserId);if(!Number.isInteger(id)||id<=0)return null;
+    const rows=await this.readSql.unsafe("SELECT u.id,u.login_name,u.enabled,c.password_hash,c.session_version,c.locked_until FROM app_users u JOIN staff_password_credentials c ON c.app_user_id=u.id WHERE u.id=$1 LIMIT 1",[id]);
+    return rows[0]||null;
+  }
+
   async recordStaffAuthFailure(appUserId,maxFailures=8,windowSeconds=900){
     const max=clampInt(maxFailures,8,2,50),window=clampInt(windowSeconds,900,60,86400);
     await this.sql.unsafe(
