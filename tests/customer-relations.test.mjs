@@ -9,6 +9,7 @@ const store=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
 const customerApi=fs.readFileSync("assets/client-portal-api.js","utf8");
 const adminUi=fs.readFileSync("assets/customer-relations.js","utf8");
 const customerUi=fs.readFileSync("assets/client-relations.js","utf8");
+const outboundAutomation=fs.readFileSync("backend/src/outbound-portability-automation.mjs","utf8");
 const mobile=fs.readFileSync("assets/client-mobile.js","utf8");
 
 test("customer relations schema is append-only and models disputes plus safe exit",()=>{
@@ -95,4 +96,15 @@ test("interfaces are lazy, mobile-accessible and explicit about non-automatic ir
   assert.match(mobile,/Réclamations & départ/);
   assert.match(fs.readFileSync("assets/client-portal.js","utf8"),/import\("\.\/client-relations\.js"\)/);
   assert.match(fs.readFileSync("assets/tenant-control-detail.js","utf8"),/import\("\.\/customer-relations\.js"\)/);
+});
+
+test("outbound carrier automation is fail-closed, idempotent and privacy-minimised",()=>{
+  assert.match(outboundAutomation,/createOutboundPortabilityQueueHandlers/);
+  assert.match(outboundAutomation,/portability_outbound_rio_request_url/);
+  assert.match(outboundAutomation,/Idempotency-Key/);
+  assert.match(outboundAutomation,/provider_direct/);
+  assert.match(outboundAutomation,/OUTBOUND_PORTABILITY_OPERATOR_HTTPS_REQUIRED/);
+  assert.match(outboundAutomation,/OUTBOUND_PORTABILITY_RIO_DIRECT_DELIVERY_REQUIRED/);
+  assert.match(outboundAutomation,/sanitize\(responseBody\)/);
+  assert.doesNotMatch(outboundAutomation,/JSON\.stringify\(result\.body\)/);
 });
