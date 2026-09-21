@@ -851,6 +851,11 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.tenant_control_center",200,await store.tenantControlDetail(match.id));
       }
 
+      match=routeMatch(pathname,"/api/v1/platform/tenants/:id/consumption-today");
+      if(method==="GET"&&match){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.tenant_consumption_today",200,await store.tenantConsumptionToday(match.id));
+      }
       match=routeMatch(pathname,"/api/v1/platform/tenants/:id/consumption-receipts");
       if(method==="GET"&&match){
         requireRole(actor,["admin","finance","readonly"]);
