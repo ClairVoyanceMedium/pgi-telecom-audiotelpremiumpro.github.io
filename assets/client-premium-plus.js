@@ -41,10 +41,9 @@ async function clientPasskey(kind){
   try{const m=await import("./passkey-client.js"),r=kind==="enroll"?await m.enroll(window.PGICustomerApi,"Passkey client",String(S.querySelector("[data-reauth]")?.value||"")):await m.verify(window.PGICustomerApi);if(kind==="enroll"&&S.querySelector("[data-reauth]"))S.querySelector("[data-reauth]").value="";if(out)out.textContent=kind==="enroll"?"Passkey enregistrée et validée par le serveur.":"MFA vérifiée à "+new Date(r.verified_at||Date.now()).toLocaleTimeString();renderSecurity()}catch(e){if(out)out.textContent=e?.code==="WEBAUTHN_NOT_CONFIGURED"?"Le domaine WebAuthn de production n’est pas encore configuré.":"Opération passkey annulée ou refusée."}
 }
 async function renderTeam(){
-  const api=window.PGICustomerApi,user=data.user||null;
-  if(!api?.team){E.innerHTML='<p class="pp-note">La gestion d’équipe nécessite le backend de production.</p>';return}
+  const user=data.user||null;
   E.innerHTML='<p class="pp-note">Chargement des accès…</p>';
-  try{const m=await import("./client-team-access.js");await m.mountTeamAccess(E,api,user)}catch(_e){E.innerHTML='<p class="pp-note">Impossible de charger la gestion d’équipe.</p>'}
+  try{const m=await import("./client-team-access.js");await m.mountTeamAccess(E,user)}catch(_e){E.innerHTML='<p class="pp-note">Impossible de charger la gestion d’équipe.</p>'}
 }
 function renderTrust(){
   const incidents=(data.service_incidents||[]).filter(i=>!["resolved","closed"].includes(i.status)).length,alerts=(data.operational_alerts||[]).length;
