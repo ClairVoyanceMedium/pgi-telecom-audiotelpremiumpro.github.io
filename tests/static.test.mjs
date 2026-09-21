@@ -404,7 +404,7 @@ test("l’administration plateforme 1.22 pilote tarifs et bascules avec confirma
 
 test("la PWA met en cache uniquement le shell critique",()=>{
   for(const file of [
-    "assets/api-client.js","assets/data-client.js","assets/client-admin-theme.css","assets/client-analytics-plus.js",
+    "assets/api-client.js","assets/data-client.js","assets/client-admin-theme.css",
     "assets/command-palette-loader.js","assets/workspace.js","assets/app.js"
   ])assert.ok(sw.includes(file),"service worker missing "+file);
   assert.doesNotMatch(sw,/assets\/demo-data\.js/);
@@ -464,7 +464,7 @@ test("brand header polish keeps split colors, larger icon and dark period contra
 });
 
 
-test("customer portal stays separate, tenant-facing and keeps only its light shell offline",()=>{assert.match(clientPortal,/Audiotel Premium Pro/);assert.match(clientPortal,/Espace client/);assert.match(clientPortal,/noindex,nofollow,noarchive/);for(const token of ["kpi-calls","kpi-minutes","kpi-revenue","kpi-payout","numbers-list","settlements-list","destinations-list"])assert.ok(clientPortal.includes(token),token);for(const path of ["/customer/auth/login","/customer/auth/activate","/customer/portal","/customer/calls"])assert.ok(clientPortalApi.includes(path),path);assert.match(clientPortalJs,/exportClient|Rapport complet/);assert.match(clientAdminTheme,/--bg:#2b1b15/);assert.match(clientAdminTheme,/--panel:#3a271f/);assert.match(sw,/client\.html/);assert.match(sw,/client-portal\.css/);assert.match(sw,/client-admin-theme\.css/);assert.doesNotMatch(sw,/client-premium-plus\.js|client-intelligence\.js|client-service-center\.js/);assert.match(sw,/endsWith\("\/client\.html"\)/);});
+test("customer portal stays separate, tenant-facing and keeps only its light shell offline",()=>{assert.match(clientPortal,/Audiotel Premium Pro/);assert.match(clientPortal,/Espace client/);assert.match(clientPortal,/noindex,nofollow,noarchive/);for(const token of ["kpi-calls","kpi-minutes","kpi-revenue","kpi-payout","numbers-list","settlements-list","destinations-list"])assert.ok(clientPortal.includes(token),token);for(const path of ["/customer/auth/login","/customer/auth/activate","/customer/portal","/customer/calls"])assert.ok(clientPortalApi.includes(path),path);assert.match(clientPortalJs,/exportClient|Rapport complet/);assert.match(clientAdminTheme,/--bg:#2b1b15/);assert.match(clientAdminTheme,/--panel:#3a271f/);assert.match(sw,/client\.html/);assert.match(sw,/client-portal\.css/);assert.match(sw,/client-admin-theme\.css/);assert.doesNotMatch(sw,/client-analytics-plus\.js|client-premium-plus\.js|client-intelligence\.js|client-service-center\.js/);assert.match(sw,/endsWith\("\/client\.html"\)/);});
 
 
 test("customer portal has professional analytics and multi-export center",()=>{for(const id of ["calls-chart","minutes-chart","revenue-chart","status-donut","payout-bars","client-export-dialog"])assert.ok(clientPortal.includes('id="'+id+'"'),id);assert.match(clientPortalJs,/function renderAnalytics/);assert.match(clientPortalJs,/function exportClient/);for(const kind of ["report","calls","settlements","numbers","copy","print"])assert.ok(clientPortal.includes('data-client-export="'+kind+'"'),kind);assert.match(clientAdminTheme,/--panel:#3a271f/);});
@@ -478,7 +478,9 @@ test("client and admin dashboards expose today with rich printable downloadable 
   assert.match(clientPortal,/data-range="today"[^>]*>Aujourd’hui</);
   assert.match(clientPortalJs,/range:"today"/);
   assert.match(clientPortalJs,/key==="today"\)from\.setHours\(0,0,0,0\)/);
-  for(const id of ["client-hour-bars","client-weekday-bars","client-number-pie","client-duration-pie","client-carrier-bars","client-export-analytics","client-export-snapshot"])assert.ok(clientPortal.includes('id="'+id+'"'),id);
+  for(const id of ["client-export-analytics","client-export-snapshot"])assert.ok(clientPortal.includes('id="'+id+'"'),id);
+  for(const id of ["client-hour-bars","client-weekday-bars","client-number-pie","client-duration-pie","client-carrier-bars"])assert.ok(clientAnalyticsPlus.includes('id="'+id+'"'),id);
+  assert.ok(clientPortal.includes('id="client-analytics-plus-mount"'));
   for(const token of ["activity_breakdown","analyticsCsv","safeSnapshot","conic-gradient"])assert.match(clientAnalyticsPlus,new RegExp(token));
   assert.match(clientAdminTheme,/print-color-adjust:exact/);
   assert.match(clientAdminTheme,/--accent:#d7a76a/);
