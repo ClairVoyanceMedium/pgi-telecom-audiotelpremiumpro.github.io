@@ -481,6 +481,7 @@ function bind(){
 async function init(){
   if(I.apply)I.apply(document.body);
   bind();
+  import("./client-mobile.js").then(function(m){m.init();}).catch(function(){});
   initGoogle();
   handleBillingReturn();
   var cfg=window.PGI_CONFIG||{};

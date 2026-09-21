@@ -7,6 +7,7 @@ const index=read("index.html");
 const clientPortal=read("client.html");
 const clientPortalApi=read("assets/client-portal-api.js");
 const clientPortalJs=read("assets/client-portal.js");
+const clientMobile=read("assets/client-mobile.js");
 const clientPortalCss=read("assets/client-portal.css");
 const clientIntelligence=read("assets/client-intelligence.js");
 const clientI18n=read("assets/client-i18n.js");
@@ -226,7 +227,7 @@ test("la palette universelle accélère la navigation",()=>{
 test("le workspace mémorise la dernière vue et période",()=>{
   assert.match(workspace,/pgi_ui_preferences/);
   assert.match(workspace,/pgi_operating_market/);
-  assert.match(workspace,/pgi_mobile_overview_expanded/);
+  assert.match(workspace,/pgi_mobile_full_v2/);
   assert.match(workspace,/restoreInto/);
   assert.match(app,/PGIWorkspace\.restoreInto/);
   assert.match(app,/PGIWorkspace\.save/);
@@ -526,4 +527,26 @@ test("advanced admin centers are visible without Ctrl K",()=>{
   assert.match(commandLoader,/\[data-sva-compliance\]/);
   assert.match(commandLoader,/\.\/control-tower\.js/);
   assert.match(commandLoader,/\.\/sva-compliance-center\.js/);
+});
+
+
+test("les petits écrans conservent toutes les fonctions admin et client",()=>{
+  assert.match(workspace,/pgi_mobile_full_v2/);
+  assert.match(workspace,/value===null\?true:value==="1"/);
+  assert.match(app,/mobileOverviewExpanded:true/);
+  for(const view of ["overview","calls","finance","wholesale"])assert.match(index,new RegExp('mobile-nav[\\s\\S]*data-view="'+view+'"'));
+  for(const view of ["experts","carriers","system","settings"])assert.match(index,new RegExp('mobile-sheet-grid[\\s\\S]*data-view="'+view+'"'));
+  for(const token of ["data-control-tower","data-sva-compliance","data-platform-admin"])assert.ok(index.includes(token),"missing mobile admin access "+token);
+
+  assert.match(clientPortalJs,/import\("\.\/client-mobile\.js"\)/);
+  assert.ok(clientMobile.includes('id="client-mobile-more"'));
+  assert.ok(clientMobile.includes('id="client-mobile-menu"'));
+  for(const anchor of ["client-overview","client-intelligence","client-analytics","client-calls","client-finance","client-routing","client-service-center"]){
+    assert.ok(clientMobile.includes('data-client-anchor="'+anchor+'"'),"missing client mobile anchor "+anchor);
+  }
+  for(const action of ["portability","export","security","refresh","logout"]){
+    assert.ok(clientMobile.includes('data-client-action="'+action+'"'),"missing client mobile action "+action);
+  }
+  assert.match(clientPortalCss,/complete-client-mobile-access-v131/);
+  assert.match(clientPortalCss,/\.cp-mobile-nav\{position:fixed/);
 });
