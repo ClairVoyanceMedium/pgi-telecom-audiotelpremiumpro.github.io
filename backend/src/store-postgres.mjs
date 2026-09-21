@@ -4322,13 +4322,17 @@ export class PostgresStore{
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     const tenant=(await this.readSql.unsafe("SELECT id,public_id,display_name,tenant_type,status,country_code,default_currency FROM tenants WHERE id=$1",[id]))[0];
     if(!tenant||tenant.tenant_type==="internal")throw problem(404,"TENANT_NOT_FOUND");
-    const [cases,exits,events,actions,evidence,holds]=await Promise.all([
+    const [cases,exits,exitLines,events,actions,evidence,holds]=await Promise.all([
       this.readSql.unsafe(
         "SELECT id,public_id,case_kind,status,priority,source,customer_capacity,title,description,disputed_amount::float8,disputed_currency,invoice_reference,payment_reference,disputed_period_start,disputed_period_end,requested_resolution,formal_complaint_at,mediation_eligible_at,legal_hold,ai_state,ai_confidence::float8,ai_policy_version,first_response_due_at,target_resolution_at,first_responded_at,last_customer_update_at,last_pgi_update_at,resolved_at,closed_at,resolution_code,resolution_summary,created_at,updated_at FROM tenant_relation_cases WHERE tenant_id=$1 ORDER BY (status IN ('resolved','closed','cancelled')) ASC,updated_at DESC,id DESC LIMIT 100",
         [id]
       ),
       this.readSql.unsafe(
         "SELECT id,public_id,case_id,exit_scope,reason_category,requested_effective_date,number_retention_preference,port_out_requested,target_operator_name,operator_reference,status,final_invoice_status,final_settlement_status,data_export_status,contract_obligations_acknowledged,customer_confirmed,scheduled_at,access_revocation_at,number_quarantine_until,completed_at,created_at,updated_at FROM tenant_exit_requests WHERE tenant_id=$1 ORDER BY created_at DESC,id DESC LIMIT 50",
+        [id]
+      ),
+      this.readSql.unsafe(
+        "SELECT l.id,l.exit_request_id,l.assignment_id,l.sva_number_id,l.e164_snapshot,l.requested_action,l.status,l.operator_reference,l.rio_status,l.rio_last4,l.rio_requested_at,l.rio_delivered_at,l.portability_service_level,l.recovery_option,l.scheduled_at,l.completed_at,l.created_at FROM tenant_exit_lines l WHERE l.tenant_id=$1 ORDER BY l.created_at,l.id LIMIT 500",
         [id]
       ),
       this.readSql.unsafe(
@@ -4348,7 +4352,7 @@ export class PostgresStore{
         [id]
       )
     ]);
-    return {schema_version:"audiotel-customer-relations/1",tenant:{public_id:tenant.public_id,display_name:tenant.display_name,status:tenant.status,country_code:tenant.country_code,default_currency:tenant.default_currency},cases,exits,events,actions,evidence,holds,agent_policy_version:RELATION_POLICY_VERSION};
+    return {schema_version:"audiotel-customer-relations/1",tenant:{public_id:tenant.public_id,display_name:tenant.display_name,status:tenant.status,country_code:tenant.country_code,default_currency:tenant.default_currency},cases,exits,exit_lines:exitLines,events,actions,evidence,holds,agent_policy_version:RELATION_POLICY_VERSION};
   }
 
   async createCustomerRelationCase(tenantId,input={},principalId){
