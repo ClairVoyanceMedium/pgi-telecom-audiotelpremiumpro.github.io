@@ -1059,6 +1059,14 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.customer_relations.action_approve",200,{...result.value,replayed:result.replayed});
       }
 
+      match=routeMatch(pathname,"/api/v1/platform/customer-relations/actions/:id/external-confirm");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes),payload={action_id:match.id,...body};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer_relation.external_confirm",payload,()=>store.completeRelationExternalAction(match.id,body,actor));
+        return done(res,metrics,started,"platform.customer_relations.external_confirm",200,{...result.value,replayed:result.replayed});
+      }
+
       if(method==="GET"&&pathname==="/api/v1/platform/billing-alerts"){
         requireRole(actor,["admin","finance","readonly"]);
         const params=Object.fromEntries(url.searchParams.entries());
