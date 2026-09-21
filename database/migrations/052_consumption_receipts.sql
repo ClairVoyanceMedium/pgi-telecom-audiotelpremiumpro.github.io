@@ -4,7 +4,7 @@ CREATE TABLE tenant_consumption_receipts (
   id bigserial PRIMARY KEY,
   public_id uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE,
   tenant_id bigint NOT NULL REFERENCES tenants(id),
-  customer_principal_id bigint REFERENCES customer_principals(id),
+  customer_principal_id uuid REFERENCES customer_principals(id),
   requested_from timestamptz NOT NULL,
   requested_to timestamptz NOT NULL,
   tenant_timezone text NOT NULL,
