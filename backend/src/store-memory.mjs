@@ -47,6 +47,7 @@ export class MemoryStore{
     this.subscriptionPrices=[{id:1,plan_key:"external-sva-access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,effective_from:"2026-09-20T19:33:00Z",effective_to:null}];
     this.subscriptionEvents=new Set();
     this.adminAlerts=[];
+    this.customerExperiencePreferencesMap=new Map();
     this.staffUsers=[{id:1,public_id:randomUUID(),login_name:"local-admin",email:"local-admin@staff.pgi.invalid",display_name:"Local Simulator",role:"admin",enabled:true,password_hash:null,session_version:1,last_login_at:null,created_at:new Date().toISOString()}];
     this.nextStaffUserId=2;
   }
@@ -962,6 +963,20 @@ export class MemoryStore{
   async activateCustomerPortalInvitation(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
   async customerPortalUsers(){return [];}
   async customerBillingPreparation(tenantId){void tenantId;return {tenant:{id:"00000000-0000-4000-8000-000000000001",name:"Société Démo",billing_email:"demo@example.test",country_code:"FR",locale:"fr-FR",currency:"EUR",timezone:"Europe/Paris",status:"pending"},offer:{price_version_id:1,plan_key:"external-sva-access",plan_name:"External SVA Access",market:null,currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1},reference_offer:{price_version_id:1,plan_key:"external-sva-access",plan_name:"External SVA Access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1},pricing_state:"local_price_ready",subscription:null,premium_call_access:false,billing_currency:{currency:"EUR",source:"country_default",catalog_version:"2026-09-20",accepted_currencies:["EUR"],local_price_configured:true},checkout_prefill:{email:"demo@example.test",locale:"fr-FR",country_code:"FR",currency:"EUR"},return_paths:{success:"client.html?billing=success",cancel:"client.html?billing=cancelled"}};}
+  async customerExperiencePreferences(tenantId,principalId){
+    const key=String(tenantId)+":"+String(principalId||"");
+    return this.customerExperiencePreferencesMap.get(key)||{alerts:{calls_below:{enabled:false,threshold:10},abandon_rate_above:{enabled:false,threshold:25},revenue_target:{enabled:false,threshold:100},drop_vs_average:{enabled:false,threshold:30}},updated_at:null};
+  }
+  async saveCustomerExperiencePreferences(tenantId,principalId,input={}){
+    const bounded=(v,min,max,fallback)=>{const n=Number(v);return Number.isFinite(n)?Math.max(min,Math.min(max,n)):fallback;},src=input.alerts||{};
+    const value={alerts:{
+      calls_below:{enabled:src.calls_below?.enabled===true,threshold:bounded(src.calls_below?.threshold,0,1000000,10)},
+      abandon_rate_above:{enabled:src.abandon_rate_above?.enabled===true,threshold:bounded(src.abandon_rate_above?.threshold,0,100,25)},
+      revenue_target:{enabled:src.revenue_target?.enabled===true,threshold:bounded(src.revenue_target?.threshold,0,100000000,100)},
+      drop_vs_average:{enabled:src.drop_vs_average?.enabled===true,threshold:bounded(src.drop_vs_average?.threshold,0,100,30)}
+    },updated_at:new Date().toISOString()};
+    this.customerExperiencePreferencesMap.set(String(tenantId)+":"+String(principalId||""),value);return value;
+  }
   async createCustomerConsumptionReceipt(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
   async customerConsumptionReceipts(){return [];}
   async tenantConsumptionReceipts(){return [];}

@@ -396,3 +396,15 @@ Le système distingue les faits autoritatifs du dossier relation client : un mon
 Le départ client est orchestré comme un processus complet : périmètre des services, lignes concernées, conservation ou portabilité des numéros, RIO sortant sécurisé, options opérateur de report/annulation/retour arrière, export des données, compte final, dernier reversement, révocation des accès et clôture. Les confirmations externes ne sont jamais simulées.
 
 Voir `docs/CUSTOMER-RELATIONS.md`.
+
+
+## Client Command Center 1.39
+
+L'espace client ajoute un centre de commande premium, chargé à la demande sans augmenter le shell critique. Il regroupe quatre fonctions qui ne nécessitent aucune connexion opérateur externe :
+
+- **Santé du service** : synthèse des contrôles internes réellement disponibles, sans prétendre connaître l'état d'un opérateur non connecté.
+- **Alertes personnelles** : seuils persistants par utilisateur pour activité du jour, abandons, objectif de montant TTC et baisse d'activité. Les alertes restent visibles dans le portail tant qu'aucun canal externe n'est branché.
+- **Projection de fin de mois** : estimation non contractuelle des appels, minutes, montant service TTC et reversement à partir du rythme observé depuis le début du mois.
+- **Parcours de mise en service** : progression explicite compte, e-mail, KYC, abonnement, numéro et routage local, avec distinction nette entre préparation interne et futur branchement opérateur.
+
+Les préférences d'alertes sont stockées par tenant et principal client dans PostgreSQL. Elles ne contiennent ni identité d'appelant ni identifiant de notification externe.

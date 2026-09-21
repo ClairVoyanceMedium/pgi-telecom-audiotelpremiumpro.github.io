@@ -299,6 +299,18 @@ export function createBackend(options={}){
         ]);
         return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,metric_resets:Object.fromEntries(Object.entries(metricRanges).map(([k,v])=>[k,v.baseline])),billing_offer:billing.offer,billing_summary:{subscription:billing.subscription,premium_call_access:billing.premium_call_access,billing_currency:billing.billing_currency,pricing_state:billing.pricing_state,reference_offer:billing.reference_offer,checkout_prefill:billing.checkout_prefill,return_paths:billing.return_paths},billing_provider:billingProviderStatus(config),server_time:new Date().toISOString()});
       }
+      if(method==="GET"&&pathname==="/api/v1/customer/experience/preferences"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        return done(res,metrics,started,"customer.experience.preferences",200,await store.customerExperiencePreferences(context.tenant_id,context.id));
+      }
+      if(method==="PUT"&&pathname==="/api/v1/customer/experience/preferences"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        const body=await readJson(req,config.bodyLimitBytes);
+        return done(res,metrics,started,"customer.experience.preferences_update",200,await store.saveCustomerExperiencePreferences(context.tenant_id,context.id,body));
+      }
+
       if(method==="GET"&&pathname==="/api/v1/customer/consumption-receipts"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
