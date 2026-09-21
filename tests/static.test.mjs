@@ -11,6 +11,7 @@ const clientMobile=read("assets/client-mobile.js");
 const clientPortalCss=read("assets/client-portal.css");
 const clientAdminTheme=read("assets/client-admin-theme.css");
 const clientAnalyticsPlus=read("assets/client-analytics-plus.js");
+const clientAccountProof=read("assets/client-account-proof.js");
 const clientIntelligence=read("assets/client-intelligence.js");
 const clientI18n=read("assets/client-i18n.js");
 const clientGoogle=read("assets/client-google.js");
@@ -28,6 +29,7 @@ const voiceIntelligence=read("assets/voice-intelligence.js");
 const subscriptionBillingUi=read("assets/subscription-billing-ui.js");
 const customerAdmin=read("assets/customer-admin.js");
 const tenantControlDetail=read("assets/tenant-control-detail.js");
+const tenantConsumptionCheck=read("assets/tenant-consumption-check.js");
 const clientServiceCenter=read("assets/client-service-center.js");
 const tenantServiceAdmin=read("assets/tenant-service-admin.js");
 const platformAdmin=read("assets/platform-admin-tools.js");
@@ -44,8 +46,9 @@ const manifest=read("manifest.webmanifest");
 const buildStatic=read("scripts/build-static.mjs");
 
 test("la marque client reste Audiotel Premium Pro et la plateforme reste multisectorielle",()=>{
+  assert.match(clientPortal,/PGI Telecom/);
   assert.match(clientPortal,/Audiotel Premium Pro/);
-  assert.doesNotMatch(clientPortal,/\bPGI\b/);
+  assert.doesNotMatch(clientPortal,/PGI • Telecom - Audiotel Premium Pro/);
   assert.doesNotMatch(clientPortal,/voyance|voyant/i);
   assert.match(clientServiceCenter,/Audiotel Premium Pro/);
   assert.match(index,/Intervenants/);
@@ -486,6 +489,31 @@ test("client and admin dashboards expose today with rich printable downloadable 
   assert.match(clientAdminTheme,/--accent:#d7a76a/);
   assert.match(clientMobile,/data-client-action="reset"/);
   assert.match(clientMobile,/client-metrics-reset/);
+});
+
+
+test("validated customer number and consumption proof stay visible, tenant-scoped and lazy",()=>{
+  assert.match(clientPortal,/PGI Telecom/);
+  assert.match(clientPortal,/Audiotel Premium Pro/);
+  assert.match(clientAnalyticsPlus,/import\("\.\/client-account-proof\.js"\)/);
+  assert.match(clientAccountProof,/assignment_status\|\|x\.status/);
+  assert.match(clientAccountProof,/===\"active\"/);
+  assert.match(clientAccountProof,/kyc_status\)===\"verified\"/);
+  assert.match(clientAccountProof,/VOTRE NUMÉRO AUDIOTEL VALIDÉ/);
+  assert.match(clientAccountProof,/Copier le numéro/);
+  assert.match(clientAccountProof,/RELEVÉ DE CONTRÔLE/);
+  assert.match(clientAccountProof,/\/customer\/consumption-receipts/);
+  assert.match(clientAccountProof,/snapshot_sha256/);
+  assert.match(tenantControlDetail,/tenant-consumption-check\.js/);
+  assert.match(tenantConsumptionCheck,/CONFORME — le relevé client correspond aux données sources/);
+  assert.match(tenantConsumptionCheck,/ÉCART DÉTECTÉ/);
+  assert.match(tenantConsumptionCheck,/\/platform\/tenants\//);
+  assert.match(tenantConsumptionCheck,/\/consumption-receipts/);
+  assert.match(tenantConsumptionCheck,/\/consumption-today/);
+  assert.match(tenantConsumptionCheck,/\/reconcile/);
+  assert.match(tenantConsumptionCheck,/AUJOURD’HUI CÔTÉ SERVEUR/);
+  assert.doesNotMatch(api,/tenantConsumptionToday|tenantConsumptionReceipts|reconcileTenantConsumptionReceipt/);
+  assert.doesNotMatch(sw,/client-account-proof\.js|tenant-consumption-check\.js/);
 });
 
 

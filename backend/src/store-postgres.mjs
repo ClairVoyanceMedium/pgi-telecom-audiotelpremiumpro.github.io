@@ -18,6 +18,69 @@ import {createRequire} from "node:module";
 const require=createRequire(import.meta.url);
 const core=require("../../assets/core.js");
 
+const CONSUMPTION_RECEIPT_SCHEMA="audiotel-consumption-receipt/1";
+const CONSUMPTION_METRIC_KEYS=["calls","minutes","revenue","payout","quality"];
+function roundMetric(value){const n=Number(value||0);return Number.isFinite(n)?Math.round(n*1e6)/1e6:0;}
+function normalizeConsumptionRanges(ranges,from,to){
+  const out={};
+  for(const key of CONSUMPTION_METRIC_KEYS){
+    const r=ranges?.[key]||{};
+    out[key]={from:r.from||from,to:r.to||to,baseline:r.baseline||null,empty:Boolean(r.empty)};
+  }
+  return out;
+}
+function consumptionSnapshot(data,from,to,ranges){
+  const financial=Array.isArray(data?.financial_by_currency)?data.financial_by_currency:[],currency=data?.tenant?.default_currency||financial[0]?.currency||"EUR";
+  let calls=0,connected=0,abandoned=0,failed=0,billable=0,updatedAt=null;
+  for(const row of financial){
+    calls+=Number(row.calls_total||0);connected+=Number(row.calls_connected||0);abandoned+=Number(row.calls_abandoned||0);failed+=Number(row.calls_failed||0);billable+=Number(row.billable_seconds||0);
+    if(row.updated_at&&(!updatedAt||Date.parse(row.updated_at)>Date.parse(updatedAt)))updatedAt=row.updated_at;
+  }
+  const revenue=financial.filter(x=>x.currency===currency).reduce((a,x)=>a+Number(x.generated_revenue_ttc||0),0);
+  const payoutRows=Array.isArray(data?.metric_net_payout_by_currency)?data.metric_net_payout_by_currency:[];
+  const payout=payoutRows.filter(x=>x.currency===currency).reduce((a,x)=>a+Number(x.net_payout_ht||0),0);
+  return {
+    schema_version:CONSUMPTION_RECEIPT_SCHEMA,
+    range:{from,to},
+    tenant_timezone:data?.tenant?.timezone||"Europe/Paris",
+    metric_ranges:normalizeConsumptionRanges(ranges,from,to),
+    metrics:{
+      currency,
+      calls_total:Math.trunc(calls),
+      calls_connected:Math.trunc(connected),
+      calls_abandoned:Math.trunc(abandoned),
+      calls_failed:Math.trunc(failed),
+      billable_seconds:roundMetric(billable),
+      generated_revenue_ttc:roundMetric(revenue),
+      net_payout_ht:roundMetric(payout)
+    },
+    source_updated_at:updatedAt||null
+  };
+}
+function consumptionSnapshotHash(snapshot){
+  const canonical={schema_version:snapshot.schema_version,range:snapshot.range,tenant_timezone:snapshot.tenant_timezone,metric_ranges:snapshot.metric_ranges,metrics:snapshot.metrics};
+  return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+}
+function publicConsumptionReceipt(row){
+  if(!row)return null;
+  const publicId=String(row.public_id);
+  return {
+    public_id:publicId,reference:"CR-"+publicId.slice(0,8).toUpperCase(),
+    requested_from:row.requested_from,requested_to:row.requested_to,tenant_timezone:row.tenant_timezone,
+    metrics:row.metrics,metric_ranges:row.metric_ranges,snapshot_sha256:row.snapshot_sha256,
+    source_updated_at:row.source_updated_at,created_at:row.created_at
+  };
+}
+function consumptionDiff(stored,current){
+  const keys=["calls_total","calls_connected","calls_abandoned","calls_failed","billable_seconds","generated_revenue_ttc","net_payout_ht"],out=[];
+  if(String(stored.currency||"")!==String(current.currency||""))out.push({metric:"currency",stored:stored.currency,current:current.currency,difference:null});
+  for(const key of keys){
+    const a=Number(stored[key]||0),b=Number(current[key]||0),d=roundMetric(b-a);
+    if(Math.abs(d)>0.000001)out.push({metric:key,stored:a,current:b,difference:d});
+  }
+  return out;
+}
+
 export class PostgresStore{
   constructor(sql,config,eventBus,readSql=null){
     this.sql=sql;
@@ -3473,6 +3536,87 @@ export class PostgresStore{
     });
     this.eventBus.publish("portability.completed",{tenant_id:Number(result.request.tenant_id),request_id:id,sva_number_id:Number(result.number?.id),requested_e164:result.request.requested_e164});
     return result;
+  }
+
+  async createCustomerConsumptionReceipt(tenantId,customerPrincipalId,from,to){
+    const id=Number(tenantId),start=Date.parse(from),end=Date.parse(to);
+    if(!Number.isFinite(start)||!Number.isFinite(end)||end<start||end-start>366*86400000)throw problem(400,"INVALID_CONSUMPTION_RANGE");
+    if(end>Date.now()+5*60000)throw problem(400,"INVALID_CONSUMPTION_RANGE");
+    const metricRanges=await this.effectiveMetricRanges(new Date(start).toISOString(),new Date(end).toISOString(),id);
+    const data=await this.customerPortalOverview(id,new Date(start).toISOString(),new Date(end).toISOString(),metricRanges);
+    const snapshot=consumptionSnapshot(data,new Date(start).toISOString(),new Date(end).toISOString(),metricRanges);
+    const digest=consumptionSnapshotHash(snapshot);
+    const rows=await this.sql.unsafe(
+      "INSERT INTO tenant_consumption_receipts(tenant_id,customer_principal_id,requested_from,requested_to,tenant_timezone,metrics,metric_ranges,snapshot_sha256,source_updated_at)"+
+      " VALUES($1,$2,$3::timestamptz,$4::timestamptz,$5,$6::jsonb,$7::jsonb,$8,$9::timestamptz)"+
+      " RETURNING public_id,requested_from,requested_to,tenant_timezone,metrics,metric_ranges,snapshot_sha256,source_updated_at,created_at",
+      [id,customerPrincipalId||null,snapshot.range.from,snapshot.range.to,snapshot.tenant_timezone,snapshot.metrics,snapshot.metric_ranges,digest,snapshot.source_updated_at]
+    );
+    await this.sql.unsafe(
+      "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'customer.consumption_receipt.created','tenant_consumption_receipt',$2,$3::jsonb)",
+      [id,String(rows[0].public_id),{snapshot_sha256:digest,requested_from:snapshot.range.from,requested_to:snapshot.range.to}]
+    );
+    return publicConsumptionReceipt(rows[0]);
+  }
+
+  async customerConsumptionReceipts(tenantId,limit=10){
+    const id=Number(tenantId),safe=Math.max(1,Math.min(25,Number(limit)||10));
+    return this.withTenantReadContext(id,async tx=>{
+      const rows=await tx.unsafe(
+        "SELECT public_id,requested_from,requested_to,tenant_timezone,metrics,metric_ranges,snapshot_sha256,source_updated_at,created_at"+
+        " FROM tenant_scoped_consumption_receipts ORDER BY created_at DESC,id DESC LIMIT $1",[safe]
+      );
+      return rows.map(publicConsumptionReceipt);
+    });
+  }
+
+  async tenantConsumptionToday(publicTenantId){
+    const rows=await this.readSql.unsafe(
+      "SELECT id,COALESCE(NULLIF(timezone,''),'Europe/Paris') AS timezone,"+
+      " (date_trunc('day',now() AT TIME ZONE COALESCE(NULLIF(timezone,''),'Europe/Paris')) AT TIME ZONE COALESCE(NULLIF(timezone,''),'Europe/Paris')) AS from_ts,"+
+      " now() AS to_ts FROM tenants WHERE public_id=$1::uuid",[String(publicTenantId||"")]
+    );
+    const tenant=rows[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+    const from=new Date(tenant.from_ts).toISOString(),to=new Date(tenant.to_ts).toISOString();
+    const metricRanges=await this.effectiveMetricRanges(from,to,Number(tenant.id));
+    const data=await this.customerPortalOverview(Number(tenant.id),from,to,metricRanges);
+    const snapshot=consumptionSnapshot(data,from,to,metricRanges);
+    return {...snapshot,snapshot_sha256:consumptionSnapshotHash(snapshot),generated_at:new Date().toISOString(),basis:"authoritative_call_facts_and_validated_tenant_distributions"};
+  }
+
+  async tenantConsumptionReceipts(publicTenantId,limit=10){
+    const tenantRows=await this.readSql.unsafe("SELECT id FROM tenants WHERE public_id=$1::uuid",[String(publicTenantId||"")]);
+    const tenant=tenantRows[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+    const safe=Math.max(1,Math.min(25,Number(limit)||10));
+    const rows=await this.readSql.unsafe(
+      "SELECT public_id,requested_from,requested_to,tenant_timezone,metrics,metric_ranges,snapshot_sha256,source_updated_at,created_at"+
+      " FROM tenant_consumption_receipts WHERE tenant_id=$1 ORDER BY created_at DESC,id DESC LIMIT $2",[Number(tenant.id),safe]
+    );
+    return rows.map(publicConsumptionReceipt);
+  }
+
+  async reconcileTenantConsumptionReceipt(publicTenantId,receiptPublicId){
+    const tenantRows=await this.readSql.unsafe("SELECT id FROM tenants WHERE public_id=$1::uuid",[String(publicTenantId||"")]);
+    const tenant=tenantRows[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+    const rows=await this.readSql.unsafe(
+      "SELECT public_id,requested_from,requested_to,tenant_timezone,metrics,metric_ranges,snapshot_sha256,source_updated_at,created_at"+
+      " FROM tenant_consumption_receipts WHERE tenant_id=$1 AND public_id=$2::uuid",[Number(tenant.id),String(receiptPublicId||"")]
+    );
+    const row=rows[0];if(!row)throw problem(404,"CONSUMPTION_RECEIPT_NOT_FOUND");
+    const from=new Date(row.requested_from).toISOString(),to=new Date(row.requested_to).toISOString();
+    const data=await this.customerPortalOverview(Number(tenant.id),from,to,row.metric_ranges);
+    const current=consumptionSnapshot(data,from,to,row.metric_ranges),currentHash=consumptionSnapshotHash(current);
+    const differences=consumptionDiff(row.metrics,current.metrics);
+    return {
+      receipt:publicConsumptionReceipt(row),
+      reconciliation:{
+        status:currentHash===row.snapshot_sha256&&differences.length===0?"match":"difference",
+        receipt_sha256:row.snapshot_sha256,current_sha256:currentHash,
+        current_metrics:current.metrics,current_source_updated_at:current.source_updated_at,
+        differences,checked_at:new Date().toISOString(),
+        basis:"authoritative_call_facts_and_validated_tenant_distributions"
+      }
+    };
   }
 
   async customerPortalOverview(tenantId,from,to,metricRanges=null){

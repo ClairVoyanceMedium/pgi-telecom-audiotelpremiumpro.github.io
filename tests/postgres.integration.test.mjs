@@ -19,7 +19,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
   const bus=new EventBus();
   const store=await PostgresStore.connect(config(),bus);
   try{
-    await store.sql.unsafe("TRUNCATE TABLE tenant_relation_actions,tenant_exit_lines,tenant_exit_requests,tenant_dispute_collection_holds,tenant_relation_evidence,tenant_relation_case_events,tenant_relation_cases,tenant_internal_notes,sva_ecosystem_evidence_events,sva_ecosystem_control_states,sva_tariff_change_plans,sva_service_compliance_profiles,platform_change_approval_events,platform_change_requests,settlement_call_matches,carrier_settlements,call_quality,financial_ledger,outbox_events,raw_cdr_events,calls,tenant_call_destinations,callers,expert_presence_events,metric_baselines,carrier_switches,number_carrier_assignments,carrier_connections,carrier_adapters,carrier_contracts,number_portability_events,sva_numbers,carriers,audit_log,api_idempotency_keys RESTART IDENTITY CASCADE");
+    await store.sql.unsafe("TRUNCATE TABLE tenant_consumption_receipts,tenant_relation_actions,tenant_exit_lines,tenant_exit_requests,tenant_dispute_collection_holds,tenant_relation_evidence,tenant_relation_case_events,tenant_relation_cases,tenant_internal_notes,sva_ecosystem_evidence_events,sva_ecosystem_control_states,sva_tariff_change_plans,sva_service_compliance_profiles,platform_change_approval_events,platform_change_requests,settlement_call_matches,carrier_settlements,call_quality,financial_ledger,outbox_events,raw_cdr_events,calls,tenant_call_destinations,callers,expert_presence_events,metric_baselines,carrier_switches,number_carrier_assignments,carrier_connections,carrier_adapters,carrier_contracts,number_portability_events,sva_numbers,carriers,audit_log,api_idempotency_keys RESTART IDENTITY CASCADE");
     await store.sql.unsafe("UPDATE app_users SET expert_id=NULL; DELETE FROM experts");
     await store.sql.unsafe("INSERT INTO carriers(name,kind) VALUES('Host A','sva_host'),('Host B','sva_host')");
     await store.sql.unsafe("INSERT INTO logical_carrier_routes(route_key,description) VALUES('sva-primary','Integration test route')");
@@ -657,7 +657,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const onboardAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access((SELECT id FROM tenants WHERE public_id=$1::uuid),NULL,now()) AS allowed",[onboarded.public_id]);
     assert.equal(onboardAccess[0].allowed,false);
 
-    const internalTenant=(await store.sql.unsafe("SELECT id FROM tenants WHERE slug='pgi-internal'"))[0];
+    const internalTenant=(await store.sql.unsafe("SELECT id,public_id::text AS public_id FROM tenants WHERE slug='pgi-internal'"))[0];
     const requestedFrom="2026-09-18T00:00:00Z",requestedTo="2026-09-19T00:00:00Z";
     let tenantRanges=await store.effectiveMetricRanges(requestedFrom,requestedTo,Number(internalTenant.id));
     const portalBeforeReset=await store.customerPortalOverview(Number(internalTenant.id),requestedFrom,requestedTo,tenantRanges);
@@ -667,6 +667,27 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     }
     assert.equal(Number(portalBeforeReset.financial_by_currency[0].generated_revenue_ttc),8);
     assert.equal(portalBeforeReset.recent_calls.length,1);
+
+    const consumptionReceipt=await store.createCustomerConsumptionReceipt(Number(internalTenant.id),null,requestedFrom,requestedTo);
+    assert.equal(Number(consumptionReceipt.metrics.calls_total),1);
+    assert.equal(Number(consumptionReceipt.metrics.generated_revenue_ttc),8);
+    assert.match(consumptionReceipt.snapshot_sha256,/^[a-f0-9]{64}$/);
+    assert.match(consumptionReceipt.reference,/^CR-[A-F0-9]{8}$/);
+    const tenantReceipts=await store.customerConsumptionReceipts(Number(internalTenant.id),10);
+    assert.equal(tenantReceipts.length,1);
+    assert.equal(tenantReceipts[0].public_id,consumptionReceipt.public_id);
+    const receiptCheck=await store.reconcileTenantConsumptionReceipt(internalTenant.public_id,consumptionReceipt.public_id);
+    assert.equal(receiptCheck.reconciliation.status,"match");
+    assert.deepEqual(receiptCheck.reconciliation.differences,[]);
+    assert.equal(receiptCheck.reconciliation.receipt_sha256,receiptCheck.reconciliation.current_sha256);
+    await assert.rejects(
+      ()=>store.sql.unsafe("UPDATE tenant_consumption_receipts SET tenant_timezone='UTC' WHERE public_id=$1::uuid",[consumptionReceipt.public_id]),
+      /tenant consumption receipts are immutable/
+    );
+    await assert.rejects(
+      ()=>store.sql.unsafe("DELETE FROM tenant_consumption_receipts WHERE public_id=$1::uuid",[consumptionReceipt.public_id]),
+      /tenant consumption receipts are immutable/
+    );
 
     const globalCallReset=await store.createBaseline({scope:"global",metric_key:"calls",reason:"integration cockpit calls reset"},{});
     const globalRanges=await store.effectiveMetricRanges(requestedFrom,requestedTo);
@@ -719,10 +740,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const rawCalls=await store.sql.unsafe("SELECT count(*)::int AS count FROM calls");
     assert.equal(rawCalls[0].count,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
-    assert.equal(migrations.length,51);
+    assert.equal(migrations.length,52);
     assert.equal(new Set(migrations.map(x=>x.version)).size,migrations.length);
     assert.equal(migrations[0].version,"001_baseline");
-    assert.equal(migrations.at(-1).version,"051_customer_relations_offboarding");
+    assert.equal(migrations.at(-1).version,"052_consumption_receipts");
     for(const migration of migrations)assert.match(migration.checksum,/^[a-f0-9]{64}$/);
   }finally{
     await store.close();

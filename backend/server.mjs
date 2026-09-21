@@ -299,6 +299,20 @@ export function createBackend(options={}){
         ]);
         return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,metric_resets:Object.fromEntries(Object.entries(metricRanges).map(([k,v])=>[k,v.baseline])),billing_offer:billing.offer,billing_summary:{subscription:billing.subscription,premium_call_access:billing.premium_call_access,billing_currency:billing.billing_currency,pricing_state:billing.pricing_state,reference_offer:billing.reference_offer,checkout_prefill:billing.checkout_prefill,return_paths:billing.return_paths},billing_provider:billingProviderStatus(config),server_time:new Date().toISOString()});
       }
+      if(method==="GET"&&pathname==="/api/v1/customer/consumption-receipts"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        return done(res,metrics,started,"customer.consumption_receipts",200,{data:await store.customerConsumptionReceipts(context.tenant_id,10)});
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/consumption-receipts"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={tenant_id:context.tenant_id,from:body.from,to:body.to};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer.consumption_receipt.create",payload,()=>store.createCustomerConsumptionReceipt(context.tenant_id,context.id,body.from,body.to));
+        return done(res,metrics,started,"customer.consumption_receipt_create",201,{...result.value,replayed:result.replayed});
+      }
+
       if(method==="GET"&&pathname==="/api/v1/customer/billing/status"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
@@ -835,6 +849,22 @@ export function createBackend(options={}){
       if(method==="GET"&&match){
         requireRole(actor,["admin","finance","readonly"]);
         return done(res,metrics,started,"platform.tenant_control_center",200,await store.tenantControlDetail(match.id));
+      }
+
+      match=routeMatch(pathname,"/api/v1/platform/tenants/:id/consumption-today");
+      if(method==="GET"&&match){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.tenant_consumption_today",200,await store.tenantConsumptionToday(match.id));
+      }
+      match=routeMatch(pathname,"/api/v1/platform/tenants/:id/consumption-receipts");
+      if(method==="GET"&&match){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.tenant_consumption_receipts",200,{data:await store.tenantConsumptionReceipts(match.id,10)});
+      }
+      match=routeMatch(pathname,"/api/v1/platform/tenants/:id/consumption-receipts/:receipt/reconcile");
+      if(method==="GET"&&match){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.tenant_consumption_reconcile",200,await store.reconcileTenantConsumptionReceipt(match.id,match.receipt));
       }
 
       match=routeMatch(pathname,"/api/v1/platform/tenants/:id/export");
