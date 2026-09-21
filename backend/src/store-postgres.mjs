@@ -3550,11 +3550,11 @@ export class PostgresStore{
       "INSERT INTO tenant_consumption_receipts(tenant_id,customer_principal_id,requested_from,requested_to,tenant_timezone,metrics,metric_ranges,snapshot_sha256,source_updated_at)"+
       " VALUES($1,$2,$3::timestamptz,$4::timestamptz,$5,$6::jsonb,$7::jsonb,$8,$9::timestamptz)"+
       " RETURNING public_id,requested_from,requested_to,tenant_timezone,metrics,metric_ranges,snapshot_sha256,source_updated_at,created_at",
-      [id,customerPrincipalId||null,snapshot.range.from,snapshot.range.to,snapshot.tenant_timezone,JSON.stringify(snapshot.metrics),JSON.stringify(snapshot.metric_ranges),digest,snapshot.source_updated_at]
+      [id,customerPrincipalId||null,snapshot.range.from,snapshot.range.to,snapshot.tenant_timezone,snapshot.metrics,snapshot.metric_ranges,digest,snapshot.source_updated_at]
     );
     await this.sql.unsafe(
       "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'customer.consumption_receipt.created','tenant_consumption_receipt',$2,$3::jsonb)",
-      [id,String(rows[0].public_id),JSON.stringify({snapshot_sha256:digest,requested_from:snapshot.range.from,requested_to:snapshot.range.to})]
+      [id,String(rows[0].public_id),{snapshot_sha256:digest,requested_from:snapshot.range.from,requested_to:snapshot.range.to}]
     );
     return publicConsumptionReceipt(rows[0]);
   }
