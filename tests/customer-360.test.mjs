@@ -4,6 +4,7 @@ import fs from "node:fs";
 
 const admin=fs.readFileSync("assets/customer-admin.js","utf8");
 const detail=fs.readFileSync("assets/tenant-control-detail.js","utf8");
+const detail360=fs.readFileSync("assets/customer-360-detail.js","utf8");
 const api=fs.readFileSync("assets/api-client.js","utf8");
 const server=fs.readFileSync("backend/server.mjs","utf8");
 const store=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
@@ -22,10 +23,11 @@ test("Customer 360 exposes recent registrations without creating a public custom
 test("Customer 360 enriches the dossier with real identities and signup metadata",()=>{
   assert.match(store,/metadata->>'phone' AS phone/);
   assert.match(store,/metadata->>'signup_source' AS signup_source/);
-  assert.match(detail,/Identité & inscription/);
-  assert.match(detail,/E-mail facturation/);
-  assert.match(detail,/Dernière connexion/);
-  assert.match(detail,/Inscrit /);
+  assert.match(detail,/renderCustomerIdentity/);
+  assert.match(detail360,/Identité & inscription/);
+  assert.match(detail360,/E-mail facturation/);
+  assert.match(detail360,/Dernière connexion/);
+  assert.match(detail360,/Inscrit /);
 });
 
 test("self-service registration blocks high-confidence duplicates",()=>{
@@ -39,6 +41,7 @@ test("administrative customer export is explicit, admin-only and audited",()=>{
   assert.match(server,/platform\.tenant_admin_export/);
   assert.match(api,/tenantAdminExport/);
   assert.match(detail,/Exporter le dossier CSV/);
+  assert.match(detail360,/downloadCustomerExport/);
   const start=store.indexOf("async tenantAdminExport("),end=store.indexOf("async operationalPolicyEvaluation(",start);
   assert.ok(start>=0&&end>start);
   const exportMethod=store.slice(start,end);
