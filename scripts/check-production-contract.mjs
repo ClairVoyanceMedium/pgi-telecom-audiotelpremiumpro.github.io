@@ -75,6 +75,10 @@ const customerProfitabilityMigration=fs.readFileSync("database/migrations/049_cu
 const customerProfitabilityUi=fs.readFileSync("assets/customer-profitability.js","utf8");
 const performanceLabMigration=fs.readFileSync("database/migrations/050_performance_resilience_lab.sql","utf8");
 const performanceLabUi=fs.readFileSync("assets/performance-resilience-lab.js","utf8");
+const customerRelationsMigration=fs.readFileSync("database/migrations/051_customer_relations_offboarding.sql","utf8");
+const customerRelationsPolicy=fs.readFileSync("backend/src/customer-relations-policy.mjs","utf8");
+const customerRelationsUi=fs.readFileSync("assets/customer-relations.js","utf8");
+const clientRelationsUi=fs.readFileSync("assets/client-relations.js","utf8");
 const performanceLoad=fs.readFileSync("scripts/performance-load.mjs","utf8");
 const syntheticProbe=fs.readFileSync("scripts/synthetic-probe.mjs","utf8");
 const resilienceDrillScript=fs.readFileSync("scripts/resilience-drill.mjs","utf8");
@@ -198,6 +202,15 @@ if(!/expired lease takeover/.test(resilienceDrillScript)||!/dead-letter isolatio
 if(!/Performance and resilience tool smoke/.test(qualityWorkflow)||!/npm run perf:load/.test(qualityWorkflow)||!/npm run resilience:drill/.test(qualityWorkflow))failures.push("Quality CI must execute Performance Lab smoke drills");
 if(!/PROUVÉ/.test(performanceLabUi)||!/Gate préproduction/.test(performanceLabUi)||!/PostgreSQL/.test(performanceLabUi))failures.push("Control Tower must surface proven throughput and preproduction blockers");
 if(!/observed_rpo_seconds/.test(restoreDrill)||!/observed_rto_seconds/.test(restoreDrill)||!/disaster_recovery_drills/.test(restoreDrill))failures.push("Restore drill must record observed RPO/RTO evidence");
+if(!/CREATE TABLE tenant_relation_cases/.test(customerRelationsMigration)||!/CREATE TABLE tenant_exit_requests/.test(customerRelationsMigration)||!/CREATE TABLE tenant_relation_actions/.test(customerRelationsMigration)||!/tenant_dispute_collection_holds/.test(customerRelationsMigration))failures.push("Customer Relations must persist disputes, scoped holds, exits and agent actions");
+if(!/security_barrier=true/.test(customerRelationsMigration)||!/tenant_scoped_relation_cases/.test(customerRelationsMigration)||!/tenant_scoped_exit_requests/.test(customerRelationsMigration))failures.push("Customer Relations customer reads must stay tenant-scoped");
+if(!/no_money_movement_without_approval:true/.test(customerRelationsPolicy)||!/no_port_out_completion_without_operator_confirmation:true/.test(customerRelationsPolicy)||!/do_not_use_rio_request_for_retention_marketing:true/.test(customerRelationsPolicy))failures.push("Customer Relations agent must retain financial, portability and RIO guardrails");
+if(!/issue_refund:\{risk_class:"high",execution_mode:"approval_required"\}/.test(customerRelationsPolicy)||!/release_number:\{risk_class:"irreversible",execution_mode:"customer_confirmation"\}/.test(customerRelationsPolicy)||!/submit_port_out:\{risk_class:"high",execution_mode:"external_confirmation"\}/.test(customerRelationsPolicy))failures.push("Customer Relations irreversible actions must not be automatic");
+if(!/sanitizeRelationPayload/.test(customerRelationsPolicy)||!/(?:rio\|password\|secret\|token)/.test(customerRelationsPolicy))failures.push("Customer Relations agent payloads must strip credentials and raw RIO material");
+if(!/\/api\/v1\/customer\/relations\/disputes/.test(backendServer)||!/\/api\/v1\/customer\/relations\/exits/.test(backendServer)||!/platform\.customer_relations\.agent_action/.test(backendServer)||!/platform\.customer_relations\.external_confirm/.test(backendServer))failures.push("Customer Relations APIs must expose customer intake and controlled agent/provider execution");
+if(!/completeRelationExternalAction/.test(postgresStore)||!/provider_confirmation_required:true/.test(postgresStore)||!/rio_last4/.test(postgresStore))failures.push("Customer Relations must require explicit provider confirmation and avoid raw outbound RIO persistence");
+if(!/Litiges, réclamations & départs/.test(customerRelationsUi)||!/Réclamations & départ/.test(clientRelationsUi))failures.push("Customer Relations must remain available in admin and customer surfaces");
+
 if(!/PGIRouteClassRateLimiting/.test(prometheusAlerts))failures.push("Prometheus alerts must detect sustained saturation limiting");
 
 
