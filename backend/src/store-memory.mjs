@@ -957,11 +957,34 @@ export class MemoryStore{
   async updateCustomerPassword(){return {ok:true};}
   async customerSessionContext(actor){
     if(!actor?.tenant_id)throw problem(401,"CUSTOMER_AUTH_REQUIRED");
-    return {id:actor.sub,email:"demo@example.test",display_name:actor.name||"Client Démo",status:"active",email_verified:false,session_version:actor.session_version||1,tenant_id:Number(actor.tenant_id),customer_role:actor.customer_role||"readonly",tenant_public_id:actor.tenant_public_id||"00000000-0000-4000-8000-000000000001",tenant_name:"Société Démo",tenant_status:"pending",authorization_version:actor.authorization_version||1,default_currency:"EUR",country_code:"FR"};
+    return {id:actor.sub,email:"demo@example.test",display_name:actor.name||"Client Démo",status:"active",email_verified:false,session_version:actor.session_version||1,tenant_id:Number(actor.tenant_id),customer_role:actor.customer_role||"readonly",permission_grants:[],permission_denials:[],tenant_public_id:actor.tenant_public_id||"00000000-0000-4000-8000-000000000001",tenant_name:"Société Démo",tenant_status:"pending",authorization_version:actor.authorization_version||1,default_currency:"EUR",country_code:"FR"};
   }
   async createCustomerPortalInvitation(publicId,input={},tokenHash){return {id:"demo-invitation",tenant_public_id:publicId,tenant_name:"Société Démo",email:input.email,role:input.role||"readonly",status:"pending",expires_at:new Date(Date.now()+72*3600000).toISOString(),token_hash:tokenHash};}
   async activateCustomerPortalInvitation(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
   async customerPortalUsers(){return [];}
+  async customerTeam(){
+    this.customerTeamMembers??=[{id:"11111111-1111-4111-8111-111111111111",email:"demo@example.test",display_name:"Client Démo",email_verified:true,last_authenticated_at:new Date().toISOString(),role:"owner",membership_status:"active",permission_grants:[],permission_denials:[],joined_at:new Date().toISOString()}];
+    this.customerTeamInvitations??=[];
+    return {members:structuredClone(this.customerTeamMembers),invitations:structuredClone(this.customerTeamInvitations.filter(x=>x.status==="pending"))};
+  }
+  async createCustomerTeamInvitation(_tenantId,input={},_tokenHash,actorPrincipalId){
+    this.customerTeamInvitations??=[];
+    const row={id:randomUUID(),email:String(input.email||"").trim().toLowerCase(),role:String(input.role||"readonly"),status:"pending",expires_at:new Date(Date.now()+72*3600000).toISOString(),created_at:new Date().toISOString(),invited_by_customer_principal_id:actorPrincipalId};
+    this.customerTeamInvitations.push(row);return structuredClone(row);
+  }
+  async updateCustomerTeamMember(_tenantId,principalId,input={},actorPrincipalId){
+    if(String(principalId)===String(actorPrincipalId))throw problem(409,"SELF_ACCESS_CHANGE_FORBIDDEN");
+    this.customerTeamMembers??=[];
+    const row=this.customerTeamMembers.find(x=>String(x.id)===String(principalId));if(!row)throw problem(404,"CUSTOMER_TEAM_MEMBER_NOT_FOUND");
+    if(row.role==="owner"&&row.membership_status==="active"&&(input.role!=="owner"||input.status!=="active"))throw problem(409,"LAST_CUSTOMER_OWNER_REQUIRED");
+    row.role=String(input.role||row.role);row.membership_status=String(input.status||row.membership_status);return structuredClone(row);
+  }
+  async revokeCustomerTeamInvitation(_tenantId,invitationId){
+    this.customerTeamInvitations??=[];
+    const row=this.customerTeamInvitations.find(x=>String(x.id)===String(invitationId));if(!row)throw problem(404,"CUSTOMER_INVITATION_NOT_FOUND");
+    if(row.status!=="pending")throw problem(409,"CUSTOMER_INVITATION_NOT_PENDING");
+    row.status="revoked";return structuredClone(row);
+  }
   async customerBillingPreparation(tenantId){void tenantId;return {tenant:{id:"00000000-0000-4000-8000-000000000001",name:"Société Démo",billing_email:"demo@example.test",country_code:"FR",locale:"fr-FR",currency:"EUR",timezone:"Europe/Paris",status:"pending"},offer:{price_version_id:1,plan_key:"external-sva-access",plan_name:"External SVA Access",market:null,currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1},reference_offer:{price_version_id:1,plan_key:"external-sva-access",plan_name:"External SVA Access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1},pricing_state:"local_price_ready",subscription:null,premium_call_access:false,billing_currency:{currency:"EUR",source:"country_default",catalog_version:"2026-09-20",accepted_currencies:["EUR"],local_price_configured:true},checkout_prefill:{email:"demo@example.test",locale:"fr-FR",country_code:"FR",currency:"EUR"},return_paths:{success:"client.html?billing=success",cancel:"client.html?billing=cancelled"}};}
   async customerExperiencePreferences(tenantId,principalId){
     const key=String(tenantId)+":"+String(principalId||"");
