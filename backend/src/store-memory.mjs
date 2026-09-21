@@ -981,6 +981,7 @@ export class MemoryStore{
   async createRelationAgentAction(){throw problem(409,"CUSTOMER_RELATIONS_DEMO_ONLY");}
   async approveRelationAction(){throw problem(409,"CUSTOMER_RELATIONS_DEMO_ONLY");}
   async confirmCustomerRelationAction(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
+  async completeRelationExternalAction(){throw problem(409,"CUSTOMER_RELATIONS_DEMO_ONLY");}
 
   async customerProfitability(params={}){void params;return {schema_version:"audiotel-customer-profitability/1",period:"365d",since:null,currency:"EUR",currencies:["EUR"],accounting_basis:"tenant_revenue_distributions.platform_fee_ht",cash_basis:"carrier paid amount / confirmed amount",excludes:["general_platform_overhead","unconnected_subscription_cash"],tenant:null,summary:{upstream_payout_ht:0,margin_booked_ht:0,margin_collected_ht:0,client_net_payout_ht:0,unallocated_amount_ht:0,customers_with_distribution:0,top5_margin_collected_ht:0,top5_concentration_percent:0},ranking:[],trend:[]};}
 
