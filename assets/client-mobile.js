@@ -2,7 +2,7 @@ let ready=false;
 const $=id=>document.getElementById(id);
 function close(d,next){if(d&&d.open)d.close();if(typeof next==="function")setTimeout(next,0)}
 function go(d,id){const el=$(id);if(el)close(d,()=>el.scrollIntoView({behavior:"smooth",block:"start"}))}
-function act(d,name){const map={portability:"portability-open",relations:"client-relations",export:"client-export",reset:"client-metrics-reset",security:"client-security",refresh:"client-refresh",logout:"customer-logout"},target=$(map[name]);close(d,()=>{if(target)target.click()})}
+function act(d,name){const map={portability:"portability-open",relations:"client-relations",export:"client-export",reset:"client-metrics-reset",security:"client-security",refresh:"client-refresh",logout:"customer-logout"},target=$(map[name]);close(d,()=>{if(target&&!target.hidden)target.click()})}
 export function init(){
   if(ready)return;
   const host=$("customer-app");if(!host)return;ready=true;
@@ -12,4 +12,6 @@ export function init(){
   host.querySelectorAll("[data-client-mobile-close]").forEach(b=>b.addEventListener("click",()=>close(d)));
   host.querySelectorAll("[data-client-anchor]").forEach(b=>b.addEventListener("click",()=>go(d,b.getAttribute("data-client-anchor"))));
   host.querySelectorAll("[data-client-action]").forEach(b=>b.addEventListener("click",()=>act(d,b.getAttribute("data-client-action"))));
+  const syncReset=()=>{const b=host.querySelector('[data-client-action="reset"]'),target=$("client-metrics-reset");if(b)b.hidden=!target||target.hidden;};
+  document.addEventListener("pgi:portal-loaded",syncReset);syncReset();
 }
