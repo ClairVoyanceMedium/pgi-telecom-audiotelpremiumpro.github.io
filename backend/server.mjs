@@ -10,6 +10,7 @@ import {securityHeaders,readJson,json,text,problemJson,routeMatch,clientIp} from
 import {normalizeFreeSwitchCdr} from "./src/cdr-freeswitch.mjs";
 import {startWorkers} from "./src/workers.mjs";
 import {createPortabilityQueueHandlers} from "./src/portability-automation.mjs";
+import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
 
 export async function createDefaultBackend(){
   const config=loadConfig();
@@ -232,6 +233,34 @@ export function createBackend(options={}){
 
       const actor=authenticate(req,config);
       const customerActor=authenticateCustomer(req,config);
+      if(method==="GET"&&pathname==="/api/v1/customer/security/passkeys"){
+        requireActor(customerActor);
+        return done(res,metrics,started,"customer.security.passkeys",200,{configured:webauthnConfigured(config),data:await store.listWebauthnCredentials("customer",customerActor.sub)});
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/security/passkeys/register-options"){
+        requireCustomerCsrf(req,customerActor,config);
+        const credentials=await store.listWebauthnCredentials("customer",customerActor.sub);
+        return done(res,metrics,started,"customer.security.passkey_options",200,publicPasskeyOptions(config,"customer:"+customerActor.sub,customerActor.name,credentials,"register"));
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/security/passkeys/register"){
+        requireCustomerCsrf(req,customerActor,config);
+        const body=await readJson(req,config.bodyLimitBytes),subject="customer:"+customerActor.sub,state=verifyWebAuthnState(config,body.state,"register",subject),credential=validateWebAuthnRegistration(config,body,state);
+        return done(res,metrics,started,"customer.security.passkey_register",201,{credential:await store.registerWebauthnCredential("customer",customerActor.sub,credential)});
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/security/passkeys/assert-options"){
+        requireCustomerCsrf(req,customerActor,config);
+        const credentials=await store.listWebauthnCredentials("customer",customerActor.sub);
+        if(!credentials.some(x=>x.enabled!==false)){const e=new Error("No passkey");e.status=409;e.code="WEBAUTHN_CREDENTIAL_REQUIRED";throw e;}
+        return done(res,metrics,started,"customer.security.passkey_assert_options",200,publicPasskeyOptions(config,"customer:"+customerActor.sub,customerActor.name,credentials,"assert"));
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/security/passkeys/verify"){
+        requireCustomerCsrf(req,customerActor,config);
+        const body=await readJson(req,config.bodyLimitBytes),subject="customer:"+customerActor.sub,state=verifyWebAuthnState(config,body.state,"assert",subject),credential=await store.webauthnCredential("customer",customerActor.sub,body.credential_id);
+        if(!credential){const e=new Error("Passkey not found");e.status=404;e.code="WEBAUTHN_CREDENTIAL_NOT_FOUND";throw e;}
+        const verified=verifyWebAuthnAssertion(config,body,state,credential);await store.markWebauthnVerified(credential.id,verified.sign_count);
+        return done(res,metrics,started,"customer.security.passkey_verify",200,{verified:true,verified_at:new Date().toISOString()});
+      }
+
       if(method==="POST"&&pathname==="/api/v1/customer/auth/logout"){
         requireCustomerCsrf(req,customerActor,config);
         return done(res,metrics,started,"customer.auth.logout",200,{ok:true},{"Set-Cookie":clearCustomerSessionCookies()});
@@ -412,6 +441,30 @@ export function createBackend(options={}){
         if(range.empty)return done(res,metrics,started,"customer.calls",200,{data:[],next_cursor:null,metric_reset_at:range.baseline});
         const params={...Object.fromEntries(url.searchParams.entries()),from:range.from,to:range.to};
         return done(res,metrics,started,"customer.calls",200,{...await store.customerPortalCalls(context.tenant_id,params),metric_reset_at:range.baseline});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/security/passkeys"){
+        requireActor(actor);
+        return done(res,metrics,started,"security.passkeys",200,{configured:webauthnConfigured(config),data:await store.listWebauthnCredentials("staff",actor.sub)});
+      }
+      if(method==="POST"&&pathname==="/api/v1/security/passkeys/register-options"){
+        requireCsrf(req,actor,config);const credentials=await store.listWebauthnCredentials("staff",actor.sub);
+        return done(res,metrics,started,"security.passkey_options",200,publicPasskeyOptions(config,"staff:"+actor.sub,actor.name,credentials,"register"));
+      }
+      if(method==="POST"&&pathname==="/api/v1/security/passkeys/register"){
+        requireCsrf(req,actor,config);const body=await readJson(req,config.bodyLimitBytes),subject="staff:"+actor.sub,state=verifyWebAuthnState(config,body.state,"register",subject),credential=validateWebAuthnRegistration(config,body,state);
+        return done(res,metrics,started,"security.passkey_register",201,{credential:await store.registerWebauthnCredential("staff",actor.sub,credential)});
+      }
+      if(method==="POST"&&pathname==="/api/v1/security/passkeys/assert-options"){
+        requireCsrf(req,actor,config);const credentials=await store.listWebauthnCredentials("staff",actor.sub);
+        if(!credentials.some(x=>x.enabled!==false)){const e=new Error("No passkey");e.status=409;e.code="WEBAUTHN_CREDENTIAL_REQUIRED";throw e;}
+        return done(res,metrics,started,"security.passkey_assert_options",200,publicPasskeyOptions(config,"staff:"+actor.sub,actor.name,credentials,"assert"));
+      }
+      if(method==="POST"&&pathname==="/api/v1/security/passkeys/verify"){
+        requireCsrf(req,actor,config);const body=await readJson(req,config.bodyLimitBytes),subject="staff:"+actor.sub,state=verifyWebAuthnState(config,body.state,"assert",subject),credential=await store.webauthnCredential("staff",actor.sub,body.credential_id);
+        if(!credential){const e=new Error("Passkey not found");e.status=404;e.code="WEBAUTHN_CREDENTIAL_NOT_FOUND";throw e;}
+        const verified=verifyWebAuthnAssertion(config,body,state,credential);await store.markWebauthnVerified(credential.id,verified.sign_count);
+        return done(res,metrics,started,"security.passkey_verify",200,{verified:true,verified_at:new Date().toISOString()});
       }
 
       if(method==="POST"&&pathname==="/api/v1/auth/logout"){
