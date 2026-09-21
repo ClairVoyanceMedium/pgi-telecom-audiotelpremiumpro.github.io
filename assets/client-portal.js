@@ -163,7 +163,7 @@ function renderDestinations(data){
 }
 function render(data){
   window.PGIClientPortalData=data;state.data=data;state.user=data.user||state.user;
-  $("tenant-name").textContent=(data.tenant&&data.tenant.display_name)||"Mon entreprise";
+  $("tenant-name").textContent=(data.tenant&&data.tenant.display_name)||"Mon compte";
   $("tenant-meta").textContent=[data.tenant&&data.tenant.country_code,data.tenant&&data.tenant.default_currency,state.demo?"Démonstration":null].filter(Boolean).join(" · ");
   $("customer-user-name").textContent=(state.user&&state.user.name)||"Utilisateur";
   $("customer-user-role").textContent=statusLabel((state.user&&state.user.role)||"readonly");
@@ -369,7 +369,7 @@ async function copyPlainText(text){
   var ok=document.execCommand("copy");ta.remove();if(!ok)throw new Error("COPY_FAILED");
 }
 async function buildClientReportRows(data){
-  var a=aggregate(data),calls=await fetchCallsForExport(),rows=[["RAPPORT AUDIOTEL PREMIUM PRO"],["Société",(data.tenant&&data.tenant.display_name)||""],["Période",data.range&&data.range.from||"",data.range&&data.range.to||""],["Appels",a.calls],["Appels décrochés",a.connected],["Minutes facturables",n(a.billable)/60],["Montant service TTC",a.revenue,a.currency],["Reversement net validé",a.payout,a.currency],[],["MÉTRIQUES DU TABLEAU DE BORD"]];
+  var a=aggregate(data),calls=await fetchCallsForExport(),rows=[["RAPPORT AUDIOTEL PREMIUM PRO"],["Titulaire / activité",(data.tenant&&data.tenant.display_name)||""],["Période",data.range&&data.range.from||"",data.range&&data.range.to||""],["Appels",a.calls],["Appels décrochés",a.connected],["Minutes facturables",n(a.billable)/60],["Montant service TTC",a.revenue,a.currency],["Reversement net validé",a.payout,a.currency],[],["MÉTRIQUES DU TABLEAU DE BORD"]];
   rows=rows.concat(clientMetricRows());
   rows.push([],["NUMÉROS"],["Numéro","Tarif","État"]);
   (data.numbers||[]).forEach(function(x){rows.push([x.display_number||x.e164,x.tariff_code,statusLabel(x.assignment_status||x.status)]);});
