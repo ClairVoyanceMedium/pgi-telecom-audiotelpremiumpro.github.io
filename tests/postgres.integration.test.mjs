@@ -662,6 +662,9 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     let tenantRanges=await store.effectiveMetricRanges(requestedFrom,requestedTo,Number(internalTenant.id));
     const portalBeforeReset=await store.customerPortalOverview(Number(internalTenant.id),requestedFrom,requestedTo,tenantRanges);
     assert.equal(Number(portalBeforeReset.financial_by_currency[0].calls_total),1);
+    for(const dimension of ["hour","weekday","number","duration"]){
+      assert.ok(portalBeforeReset.activity_breakdown.some(x=>x.dimension===dimension&&Number(x.calls)>=1),dimension+" activity breakdown");
+    }
     assert.equal(Number(portalBeforeReset.financial_by_currency[0].generated_revenue_ttc),8);
     assert.equal(portalBeforeReset.recent_calls.length,1);
 
