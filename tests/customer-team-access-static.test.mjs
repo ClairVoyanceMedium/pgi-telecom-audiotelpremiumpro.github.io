@@ -6,6 +6,7 @@ const server=fs.readFileSync("backend/server.mjs","utf8");
 const store=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
 const premium=fs.readFileSync("assets/client-premium-plus.js","utf8");
 const api=fs.readFileSync("assets/client-portal-api.js","utf8");
+const visibility=fs.readFileSync("assets/client-access-visibility.js","utf8");
 const teamUi=fs.readFileSync("assets/client-team-access.js","utf8");
 const migration=fs.readFileSync("database/migrations/054_customer_team_access.sql","utf8");
 const worker=fs.readFileSync("service-worker.js","utf8");
@@ -34,7 +35,7 @@ test("team access changes remain append-only and auditable",()=>{
 test("team UI is Premium+ lazy content, not critical PWA shell",()=>{
   assert.match(premium,/label:"Équipe"/);
   assert.match(premium,/import\("\.\/client-team-access\.js"\)/);
-  assert.doesNotMatch(worker,/assets\/client-team-access\.js/);
+  assert.doesNotMatch(worker,/assets\/client-team-access\.js|assets\/client-access-visibility\.js/);
   assert.match(api,/team:function/);
   assert.match(api,/inviteTeamMember:function/);
   assert.match(api,/updateTeamMember:function/);
