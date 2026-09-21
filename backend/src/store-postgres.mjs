@@ -3565,7 +3565,7 @@ export class PostgresStore{
       const rows=await tx.unsafe(
         "INSERT INTO customer_experience_preferences(tenant_id,customer_principal_id,alert_preferences,updated_at) VALUES($1,$2::uuid,$3::jsonb,now())"+
         " ON CONFLICT(tenant_id,customer_principal_id) DO UPDATE SET alert_preferences=EXCLUDED.alert_preferences,updated_at=now() RETURNING alert_preferences,updated_at",
-        [id,principal,JSON.stringify(alerts)]
+        [id,principal,alerts]
       );
       return {alerts:rows[0].alert_preferences,updated_at:rows[0].updated_at};
     });
