@@ -89,6 +89,7 @@ sv:{"nouveau client":"ny kund","Créer mon compte professionnel":"Skapa mitt fö
 Object.keys(signupPacks).forEach(function(key){Object.assign(packs[key],signupPacks[key]);});
 
 function resolve(){
+  try{var chosen=localStorage.getItem("pgi_client_locale");if(chosen&&packs[chosen])return chosen;}catch(_e){}
   var list=(navigator.languages&&navigator.languages.length?navigator.languages:[navigator.language||"en"]).map(String);
   for(var i=0;i<list.length;i++){
     var raw=list[i].replace("_","-"),low=raw.toLowerCase();
@@ -108,5 +109,5 @@ function apply(rootNode){
   document.querySelectorAll("[placeholder]").forEach(function(el){var v=el.getAttribute("placeholder"),translated=t(v);if(translated!==v)el.setAttribute("placeholder",translated);});
   document.title=t("Audiotel Premium Pro — Espace client");
 }
-root.PGIClientI18n=Object.freeze({locale:locale,t:t,apply:apply,supported:Object.freeze(["fr","en","es","it","pt-PT","pt-BR","de","sv"]),fallback:"en"});
+function setLocale(v){if(!packs[v])return false;try{localStorage.setItem("pgi_client_locale",v);}catch(_e){}location.reload();return true;}root.PGIClientI18n=Object.freeze({locale:locale,t:t,apply:apply,setLocale:setLocale,supported:Object.freeze(["fr","en","es","it","pt-PT","pt-BR","de","sv"]),fallback:"en"});
 })(window);
