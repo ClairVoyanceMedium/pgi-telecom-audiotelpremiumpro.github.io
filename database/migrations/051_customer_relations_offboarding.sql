@@ -183,6 +183,15 @@ CREATE TABLE tenant_exit_lines (
   status text NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending','eligibility_check','waiting_provider','scheduled','completed','cancelled','blocked')),
   operator_reference text,
+  rio_status text NOT NULL DEFAULT 'not_requested'
+    CHECK (rio_status IN ('not_requested','requested','available','delivered','unavailable','not_required')),
+  rio_last4 char(4),
+  rio_requested_at timestamptz,
+  rio_delivered_at timestamptz,
+  portability_service_level text NOT NULL DEFAULT 'standard'
+    CHECK (portability_service_level IN ('standard','enhanced')),
+  recovery_option text NOT NULL DEFAULT 'none'
+    CHECK (recovery_option IN ('none','report','cancel','return_back')),
   scheduled_at timestamptz,
   completed_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -198,7 +207,8 @@ CREATE TABLE tenant_relation_actions (
     CHECK (action_type IN (
       'collect_evidence','reconcile_billing','draft_response','respond_customer','request_customer_info','prepare_mediation',
       'place_dispute_hold','release_dispute_hold','propose_credit','issue_credit',
-      'propose_refund','issue_refund','prepare_exit','check_portability','submit_port_out',
+      'propose_refund','issue_refund','prepare_exit','check_portability','request_outbound_rio','submit_port_out',
+      'request_port_out_report','request_port_out_cancel','request_port_out_return_back',
       'schedule_exit','generate_data_export','cancel_subscription','release_number',
       'revoke_access','resolve_case','close_case'
     )),
