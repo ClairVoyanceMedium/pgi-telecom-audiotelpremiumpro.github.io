@@ -1,6 +1,10 @@
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
 const money=(v,c="EUR")=>v==null?"—":new Intl.NumberFormat("fr-FR",{style:"currency",currency:c,maximumFractionDigits:2}).format(Number(v)||0);
 const date=v=>v?new Intl.DateTimeFormat("fr-FR",{dateStyle:"short",timeStyle:"short"}).format(new Date(v)):"—";
+function crBase(){const b=String(window.PGI_CONFIG?.apiBaseUrl||"").replace(/\/$/,"");if(!b)throw new Error("API_NOT_CONFIGURED");return b;}
+function crCookie(name){const p=encodeURIComponent(name)+"=";for(const x of String(document.cookie||"").split(";")){const v=x.trim();if(v.startsWith(p))return decodeURIComponent(v.slice(p.length));}return "";}
+async function crRequest(path,options={}){const method=String(options.method||"GET").toUpperCase(),headers={Accept:"application/json",...(options.body?{"Content-Type":"application/json"}:{}),...(options.headers||{})};if(!["GET","HEAD","OPTIONS"].includes(method)){const csrf=crCookie("__Host-pgi_csrf");if(csrf)headers["X-CSRF-Token"]=csrf;}const r=await fetch(crBase()+path,{method,credentials:"include",cache:"no-store",headers,body:options.body?JSON.stringify(options.body):undefined});const p=await r.json().catch(()=>null);if(!r.ok){const e=new Error(p?.error?.code||"API_HTTP_"+r.status);e.code=p?.error?.code||"API_HTTP_"+r.status;throw e;}return p;}
+function crIdem(path,body){return crRequest(path,{method:"POST",body:body||{},headers:{"Idempotency-Key":window.PGIApi.newIdempotencyKey()}});}
 const label=v=>String(v||"—").replace(/_/g," ");
 function style(){
  if(document.getElementById("customer-relations-style"))return;
@@ -33,16 +37,16 @@ function tenantHtml(data){
 }
 async function act(root,caseId,actionType){
  const p={action_type:actionType,confidence:1,explanation:"Action demandée depuis le Dossier Client 360.",payload:{}};
- const r=await window.PGIApi.createRelationAgentAction(caseId,p,window.PGIApi.newIdempotencyKey());
+ const r=await crIdem("/platform/customer-relations/"+encodeURIComponent(caseId)+"/actions",p);
  return r;
 }
 export async function mountTenantRelations(tenantPublicId,root){
  if(!root||!tenantPublicId)return;style();root.hidden=false;root.classList.add("cr");
- const load=async()=>{root.innerHTML='<p class="cr-empty">Chargement de la relation client…</p>';try{const data=await window.PGIApi.tenantCustomerRelations(tenantPublicId);root.innerHTML=tenantHtml(data);}catch(e){root.innerHTML='<p class="cr-empty">Relation client indisponible : '+esc(e.code||e.message||"erreur")+'</p>';}};
+ const load=async()=>{root.innerHTML='<p class="cr-empty">Chargement de la relation client…</p>';try{const data=await crRequest("/platform/tenants/"+encodeURIComponent(tenantPublicId)+"/customer-relations");root.innerHTML=tenantHtml(data);}catch(e){root.innerHTML='<p class="cr-empty">Relation client indisponible : '+esc(e.code||e.message||"erreur")+'</p>';}};
  root.addEventListener("click",async e=>{
    const a=e.target.closest("[data-cr-action]");if(a){a.disabled=true;try{await act(root,a.dataset.case,a.dataset.crAction);await load();}catch(err){alert(err.code||"Action impossible");}finally{a.disabled=false;}return;}
-   const send=e.target.closest("[data-cr-send]");if(send){const ta=root.querySelector('[data-cr-message="'+CSS.escape(send.dataset.crSend)+'"]'),message=ta?.value.trim();if(!message)return;send.disabled=true;try{await window.PGIApi.createRelationAgentAction(send.dataset.crSend,{action_type:"respond_customer",confidence:1,explanation:"Réponse envoyée depuis le cockpit.",payload:{message}},window.PGIApi.newIdempotencyKey());await load();}catch(err){alert(err.code||"Réponse impossible");}finally{send.disabled=false;}return;}
-   const ap=e.target.closest("[data-cr-approve]");if(ap){ap.disabled=true;try{await window.PGIApi.approveRelationAction(ap.dataset.crApprove,window.PGIApi.newIdempotencyKey());await load();}catch(err){alert(err.code||"Validation impossible");}finally{ap.disabled=false;}}
+   const send=e.target.closest("[data-cr-send]");if(send){const ta=root.querySelector('[data-cr-message="'+CSS.escape(send.dataset.crSend)+'"]'),message=ta?.value.trim();if(!message)return;send.disabled=true;try{await crIdem("/platform/customer-relations/"+encodeURIComponent(send.dataset.crSend)+"/actions",{action_type:"respond_customer",confidence:1,explanation:"Réponse envoyée depuis le cockpit.",payload:{message}});await load();}catch(err){alert(err.code||"Réponse impossible");}finally{send.disabled=false;}return;}
+   const ap=e.target.closest("[data-cr-approve]");if(ap){ap.disabled=true;try{await crIdem("/platform/customer-relations/actions/"+encodeURIComponent(ap.dataset.crApprove)+"/approve",{});await load();}catch(err){alert(err.code||"Validation impossible");}finally{ap.disabled=false;}}
  });
  await load();
 }
@@ -52,5 +56,5 @@ function fleetHtml(data){
 }
 export async function mountFleetRelations(host){
  if(!host)return;style();let root=document.getElementById("ca-customer-relations");if(!root){root=document.createElement("article");root.id="ca-customer-relations";root.className="ca-card cr-fleet cr";const grid=host.querySelector(".ca-grid");if(grid)grid.before(root);else host.appendChild(root);}
- try{root.innerHTML= fleetHtml(await window.PGIApi.customerRelationsQueue({status:"active",limit:"50"}));}catch(e){root.innerHTML='<p class="cr-empty">File relation client indisponible.</p>';}
+ try{root.innerHTML= fleetHtml(await crRequest("/platform/customer-relations/queue?status=active&limit=50"));}catch(e){root.innerHTML='<p class="cr-empty">File relation client indisponible.</p>';}
 }
