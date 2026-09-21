@@ -5,7 +5,6 @@ import fs from "node:fs";
 const migration=fs.readFileSync("database/migrations/048_customer_internal_notes.sql","utf8");
 const server=fs.readFileSync("backend/server.mjs","utf8");
 const store=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
-const api=fs.readFileSync("assets/api-client.js","utf8");
 const detail=fs.readFileSync("assets/tenant-control-detail.js","utf8");
 const notesUi=fs.readFileSync("assets/customer-internal-notes.js","utf8");
 const clientApi=fs.readFileSync("assets/client-portal-api.js","utf8");
@@ -41,10 +40,10 @@ test("note bodies are not duplicated into audit or customer export",()=>{
 });
 
 test("Customer 360 exposes notes while customer portal has no note capability",()=>{
-  assert.match(api,/tenantInternalNotes/);
-  assert.match(api,/addTenantInternalNote/);
-  assert.match(api,/archiveTenantInternalNote/);
   assert.match(detail,/customer-internal-notes\.js/);
+  assert.match(notesUi,/\/platform\/tenants\//);
+  assert.match(notesUi,/internal-notes/);
+  assert.match(notesUi,/tenant-internal-notes/);
   assert.match(notesUi,/Notes internes/);
   assert.match(notesUi,/Privé • jamais visible par le client/);
   assert.match(notesUi,/data-internal-note-add/);
