@@ -47,12 +47,13 @@ function renderApp(){
 function grade(k,v){if(v==null)return"En mesure";if(k==="lcp")return v<=2500?"Bon":v<=4000?"À améliorer":"Lent";if(k==="cls")return v<=.1?"Bon":v<=.25?"À améliorer":"Instable";return v<=200?"Bon":v<=500?"À améliorer":"Lent"}
 function renderQuality(){q.innerHTML='<p class="pp-note">Mesures locales de l’expérience réellement ressentie sur cet appareil. Elles ne sont pas envoyées à un tiers.</p><div class="pp-grid">'+metric("LCP",vitals.lcp==null?"—":vitals.lcp+" ms",grade("lcp",vitals.lcp),"Chargement du contenu principal")+metric("CLS",vitals.cls.toFixed(3),grade("cls",vitals.cls),"Stabilité visuelle")+metric("INP",vitals.inp==null?"—":vitals.inp+" ms",grade("inp",vitals.inp),"Réactivité aux interactions")+'</div>'}
 function metric(label,value,state,note){return '<div class="pp-card"><span>'+label+'</span><strong>'+value+' · '+state+'</strong><small>'+note+'</small></div>'}
+const guideMobile=matchMedia("(max-width:820px)").matches;
 const guide=tour("pgi_admin_guide_v1",[
  {selector:".command-deck",title:"Cockpit",text:"Votre synthèse opérationnelle et financière."},
- {selector:'[data-view="calls"]',title:"Appels",text:"CDR, filtres, détails et exports."},
- {selector:'[data-view="finance"]',title:"Finance",text:"Reversements, rapprochement et suivi."},
- {selector:'[data-view="wholesale"]',title:"Plateforme SVA",text:"Clients, numéros, KYC et exploitation."},
- {selector:'[data-view="system"]',title:"Supervision",text:"API, SIP, CDR, résilience et NOC."}
+ {selector:guideMobile?'.mobile-nav [data-view="calls"]':'.nav-list [data-view="calls"]',title:"Appels",text:"CDR, filtres, détails et exports."},
+ {selector:guideMobile?'.mobile-nav [data-view="finance"]':'.nav-list [data-view="finance"]',title:"Finance",text:"Reversements, rapprochement et suivi."},
+ {selector:guideMobile?'.mobile-nav [data-view="wholesale"]':'.nav-list [data-view="wholesale"]',title:"Plateforme SVA",text:"Clients, numéros, KYC et exploitation."},
+ {selector:guideMobile?"#mobile-more":'.nav-list [data-view="system"]',title:guideMobile?"Toutes les fonctions":"Supervision",text:guideMobile?"Le menu Plus donne accès aux intervenants, opérateurs, supervision, paramètres et centres avancés.":"API, SIP, CDR, résilience et NOC."}
 ]);
 button();vitals=setupVitals(v=>{vitals=v;if(d.open)renderQuality()});pwa=setupPwa(()=>{if(d.open)renderApp()});collect();setInterval(collect,30000);
 setTimeout(()=>{if(!guide.isDone())guide.start()},1400);
