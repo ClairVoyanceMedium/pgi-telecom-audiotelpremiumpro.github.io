@@ -9,6 +9,8 @@ const clientPortalApi=read("assets/client-portal-api.js");
 const clientPortalJs=read("assets/client-portal.js");
 const clientMobile=read("assets/client-mobile.js");
 const clientPortalCss=read("assets/client-portal.css");
+const clientAdminTheme=read("assets/client-admin-theme.css");
+const clientAnalyticsPlus=read("assets/client-analytics-plus.js");
 const clientIntelligence=read("assets/client-intelligence.js");
 const clientI18n=read("assets/client-i18n.js");
 const clientGoogle=read("assets/client-google.js");
@@ -402,7 +404,7 @@ test("l’administration plateforme 1.22 pilote tarifs et bascules avec confirma
 
 test("la PWA met en cache uniquement le shell critique",()=>{
   for(const file of [
-    "assets/api-client.js","assets/data-client.js",
+    "assets/api-client.js","assets/data-client.js","assets/client-admin-theme.css","assets/client-analytics-plus.js",
     "assets/command-palette-loader.js","assets/workspace.js","assets/app.js"
   ])assert.ok(sw.includes(file),"service worker missing "+file);
   assert.doesNotMatch(sw,/assets\/demo-data\.js/);
@@ -410,7 +412,7 @@ test("la PWA met en cache uniquement le shell critique",()=>{
   assert.match(app,/loadDemoCalls/);
   assert.doesNotMatch(sw,/assets\/command-palette\.js/);
   assert.doesNotMatch(sw,/assets\/customer-admin\.css/);
-  assert.match(sw,/pgi-v43/);
+  assert.match(sw,/pgi-v44/);
 });
 
 test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiques",()=>{
@@ -422,7 +424,7 @@ test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiqu
   assert.match(css,/\.auth-brand-logo\{/);
   assert.match(sw,/audiotel-brand-icon-v33\.png/);
   assert.match(sw,/audiotel-brand-logo-v33\.png/);
-  assert.match(sw,/pgi-v43/);
+  assert.match(sw,/pgi-v44/);
   assert.match(buildStatic,/audiotel-brand-logo-v33\.png/);
   assert.doesNotMatch(css,/brand-mark|command-brand-emblem|auth-brand-lockup|auth-brand-emblem/);
   assert.doesNotMatch(sw,/favicon\.svg/);
@@ -458,18 +460,31 @@ test("brand header polish keeps split colors, larger icon and dark period contra
   assert.match(css,/\.product-name-pgi\{color:#f4e8dc\}/);
   assert.match(css,/\.product-name-audiotel\{color:#e0ad6d\}/);
   assert.match(css,/\.periods\{[\s\S]*rgba\(31,22,18,.96\)/);
-  assert.match(sw,/pgi-v43/);
+  assert.match(sw,/pgi-v44/);
 });
 
 
-test("customer portal stays separate, tenant-facing and keeps only its light shell offline",()=>{assert.match(clientPortal,/Audiotel Premium Pro/);assert.match(clientPortal,/Espace client/);assert.match(clientPortal,/noindex,nofollow,noarchive/);for(const token of ["kpi-calls","kpi-minutes","kpi-revenue","kpi-payout","numbers-list","settlements-list","destinations-list"])assert.ok(clientPortal.includes(token),token);for(const path of ["/customer/auth/login","/customer/auth/activate","/customer/portal","/customer/calls"])assert.ok(clientPortalApi.includes(path),path);assert.match(clientPortalJs,/exportClient|Rapport complet/);assert.match(clientPortalCss,/--bg:#0d0f11/);assert.match(sw,/client\.html/);assert.match(sw,/client-portal\.css/);assert.doesNotMatch(sw,/client-premium-plus\.js|client-intelligence\.js|client-service-center\.js/);assert.match(sw,/endsWith\("\/client\.html"\)/);});
+test("customer portal stays separate, tenant-facing and keeps only its light shell offline",()=>{assert.match(clientPortal,/Audiotel Premium Pro/);assert.match(clientPortal,/Espace client/);assert.match(clientPortal,/noindex,nofollow,noarchive/);for(const token of ["kpi-calls","kpi-minutes","kpi-revenue","kpi-payout","numbers-list","settlements-list","destinations-list"])assert.ok(clientPortal.includes(token),token);for(const path of ["/customer/auth/login","/customer/auth/activate","/customer/portal","/customer/calls"])assert.ok(clientPortalApi.includes(path),path);assert.match(clientPortalJs,/exportClient|Rapport complet/);assert.match(clientAdminTheme,/--bg:#2b1b15/);assert.match(clientAdminTheme,/--panel:#3a271f/);assert.match(sw,/client\.html/);assert.match(sw,/client-portal\.css/);assert.match(sw,/client-admin-theme\.css/);assert.doesNotMatch(sw,/client-premium-plus\.js|client-intelligence\.js|client-service-center\.js/);assert.match(sw,/endsWith\("\/client\.html"\)/);});
 
 
-test("customer portal has professional analytics and multi-export center",()=>{for(const id of ["calls-chart","minutes-chart","revenue-chart","status-donut","payout-bars","client-export-dialog"])assert.ok(clientPortal.includes('id="'+id+'"'),id);assert.match(clientPortalJs,/function renderAnalytics/);assert.match(clientPortalJs,/function exportClient/);for(const kind of ["report","calls","settlements","numbers","copy","print"])assert.ok(clientPortal.includes('data-client-export="'+kind+'"'),kind);assert.match(clientPortalCss,/--panel:#181b1f/);});
+test("customer portal has professional analytics and multi-export center",()=>{for(const id of ["calls-chart","minutes-chart","revenue-chart","status-donut","payout-bars","client-export-dialog"])assert.ok(clientPortal.includes('id="'+id+'"'),id);assert.match(clientPortalJs,/function renderAnalytics/);assert.match(clientPortalJs,/function exportClient/);for(const kind of ["report","calls","settlements","numbers","copy","print"])assert.ok(clientPortal.includes('data-client-export="'+kind+'"'),kind);assert.match(clientAdminTheme,/--panel:#3a271f/);});
 test("admin export center exposes complete download copy and PDF actions",()=>{assert.match(callTools,/export function openExports/);assert.match(callTools,/Centre d’export PGI/);assert.match(callTools,/Rapport complet CSV/);assert.match(callTools,/Copier le rapport complet/);assert.match(callTools,/adminMetricRows/);assert.match(callTools,/print-overview/);assert.match(commands,/Ouvrir le centre d’export/);assert.match(app,/m\.openExports/);assert.doesNotMatch(sw,/call-tools\.js/);});
 
 
 test("customer portal exposes extended analytics and password management",()=>{for(const id of ["asr-chart","value-chart","duration-chart","client-security-dialog","client-password-form"])assert.ok(clientPortal.includes('id="'+id+'"'),id);assert.match(clientPortalApi,/changePassword/);assert.match(clientPortalJs,/function changePassword/);assert.match(clientPortalJs,/svgLine\("asr-chart"/);});
+
+test("client and admin dashboards expose today with rich printable downloadable analytics",()=>{
+  assert.match(index,/data-period="today"[^>]*>Aujourd’hui</);
+  assert.match(clientPortal,/data-range="today"[^>]*>Aujourd’hui</);
+  assert.match(clientPortalJs,/range:"today"/);
+  assert.match(clientPortalJs,/key==="today"\)from\.setHours\(0,0,0,0\)/);
+  for(const id of ["client-hour-bars","client-weekday-bars","client-number-pie","client-duration-pie","client-carrier-bars","client-export-analytics","client-export-snapshot"])assert.ok(clientPortal.includes('id="'+id+'"'),id);
+  for(const token of ["activity_breakdown","analyticsCsv","safeSnapshot","conic-gradient"])assert.match(clientAnalyticsPlus,new RegExp(token));
+  assert.match(clientAdminTheme,/print-color-adjust:exact/);
+  assert.match(clientAdminTheme,/--accent:#d7a76a/);
+  assert.match(clientMobile,/data-client-action="reset"/);
+  assert.match(clientMobile,/client-metrics-reset/);
+});
 
 
 test("client portal supports autonomous professional email registration",()=>{
@@ -577,7 +592,7 @@ test("Premium+ reste lazy, accessible et complet sur petit écran",()=>{
 });
 
 test("la PWA Premium+ gère le portail client et les mises à jour sans forcer le reload",()=>{
-  assert.match(sw,/pgi-v43/);
+  assert.match(sw,/pgi-v44/);
   assert.match(sw,/client\.html/);
   assert.match(sw,/SKIP_WAITING/);
   assert.doesNotMatch(sw,/c\.addAll\(S\)\)\.then\(\(\)=>self\.skipWaiting\(\)\)/);
