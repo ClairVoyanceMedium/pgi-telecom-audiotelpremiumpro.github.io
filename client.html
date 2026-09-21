@@ -34,11 +34,11 @@
 <div id="login-panel">
 <p class="cp-kicker">ACCÈS CLIENT</p>
 <h1>Suivez votre activité Audiotel</h1>
-<p class="cp-muted">Vos numéros, appels, consommation et reversements dans un espace réservé à votre société.</p>
+<p class="cp-muted">Vos numéros, appels, consommation et reversements dans un espace personnel et sécurisé.</p>
 <form id="customer-login-form" class="cp-form">
 <label>Adresse e-mail<input id="customer-email" name="email" type="email" autocomplete="username" required maxlength="320"></label>
 <label>Mot de passe<input id="customer-password" name="password" type="password" autocomplete="current-password" required minlength="12"></label>
-<label id="tenant-choice-wrap" hidden>Société<select id="customer-tenant" name="tenant"></select></label>
+<label id="tenant-choice-wrap" hidden>Compte<select id="customer-tenant" name="tenant"></select></label>
 <button class="cp-primary" type="submit">Se connecter</button>
 </form>
 <div class="cp-auth-divider"><span>ou</span></div>
@@ -46,22 +46,24 @@
 <p class="cp-google-note" data-google-note hidden>Connexion ou création de compte sécurisée avec Google.</p>
 <button id="google-tenant-continue" class="cp-ghost cp-google-continue" type="button" hidden>Continuer avec Google</button>
 <div class="cp-auth-divider"><span>nouveau client</span></div>
-<button id="show-register" class="cp-ghost cp-register-open" type="button">Créer mon compte professionnel</button>
+<button id="show-register" class="cp-ghost cp-register-open" type="button">Créer mon compte</button>
 </div>
 
 <div id="register-panel" hidden>
 <p class="cp-kicker">INSCRIPTION</p>
-<h1>Créez votre espace professionnel</h1>
-<p class="cp-muted">L’ouverture du compte est autonome. Le SIRET est facultatif et l’accès SVA reste protégé jusqu’aux validations nécessaires.</p>
+<h1>Créez votre espace client</h1>
+<p class="cp-muted">Particulier ou entreprise : le parcours s’adapte à votre profil. L’accès SVA reste protégé jusqu’aux validations nécessaires.</p>
 <form id="customer-register-form" class="cp-form">
+<label>Type de compte<select id="register-account-type" name="account_type" required><option value="" selected disabled>Choisir</option><option value="individual">Particulier</option><option value="business">Professionnel ou entreprise</option></select></label>
+<p id="register-profile-note" class="cp-muted">Choisissez le profil correspondant au titulaire du compte.</p>
 <div class="cp-form-grid">
 <label>Prénom<input id="register-first-name" name="first_name" type="text" autocomplete="given-name" required maxlength="80"></label>
 <label>Nom<input id="register-last-name" name="last_name" type="text" autocomplete="family-name" required maxlength="80"></label>
 </div>
-<label>Société ou activité <span class="cp-optional">(facultatif)</span><input id="register-company" name="company_name" type="text" autocomplete="organization" maxlength="200"></label>
+<label id="register-business-company-wrap" hidden>Société ou activité <span class="cp-optional">(facultatif)</span><input id="register-company" name="company_name" type="text" autocomplete="organization" maxlength="200" disabled></label>
 <div class="cp-form-grid">
 <label>Pays<select id="register-country" name="country_code" autocomplete="country" required><option value="FR">France</option></select></label>
-<label><span id="register-number-label">SIRET</span> <span class="cp-optional">(facultatif)</span><input id="register-number" name="registration_number" type="text" inputmode="numeric" autocomplete="off" maxlength="64" placeholder="14 chiffres"></label>
+<label id="register-business-number-wrap" hidden><span id="register-number-label">SIRET</span> <span class="cp-optional">(facultatif)</span><input id="register-number" name="registration_number" type="text" inputmode="numeric" autocomplete="off" maxlength="64" placeholder="14 chiffres" disabled></label>
 </div>
 <label>Téléphone <span class="cp-optional">(facultatif)</span><input id="register-phone" name="phone" type="tel" autocomplete="tel" maxlength="40"></label>
 <label>Adresse e-mail<input id="register-email" name="email" type="email" autocomplete="email" required maxlength="320"></label>
@@ -69,7 +71,7 @@
 <label>Mot de passe<input id="register-password" name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="256"></label>
 <label>Confirmer<input id="register-password-confirm" type="password" autocomplete="new-password" required minlength="12" maxlength="256"></label>
 </div>
-<label class="cp-check"><input id="register-authority" type="checkbox" required><span>Je confirme être autorisé à créer ce compte pour cette activité.</span></label>
+<label class="cp-check"><input id="register-authority" type="checkbox" required><span id="register-authority-text">Je confirme l’exactitude des informations fournies pour ce compte.</span></label>
 <label class="cp-honeypot" aria-hidden="true">Site web<input id="register-website" type="text" tabindex="-1" autocomplete="off"></label>
 <button class="cp-primary" type="submit">Créer mon compte</button>
 </form>
@@ -383,7 +385,7 @@
 <dialog id="client-export-dialog" class="cp-export-dialog">
 <form method="dialog" class="cp-export-card">
 <div class="cp-export-head"><div><p class="cp-kicker">EXPORTS</p><h2>Exporter mes données</h2></div><button class="cp-close" value="cancel" aria-label="Fermer">×</button></div>
-<p class="cp-export-note">Téléchargement, copie et impression utilisent uniquement les données de votre société et de la période sélectionnée.</p>
+<p class="cp-export-note">Téléchargement, copie et impression utilisent uniquement les données de votre compte et de la période sélectionnée.</p>
 <div class="cp-export-grid">
 <button type="button" data-client-export="report"><strong>Rapport complet CSV</strong><span>Toutes les métriques visibles, numéros, reversements et appels</span></button>
 <button type="button" data-client-export="calls"><strong>Appels CSV</strong><span>Historique détaillé, jusqu’à 1 000 appels</span></button>

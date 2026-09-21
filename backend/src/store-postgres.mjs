@@ -2883,15 +2883,20 @@ export class PostgresStore{
     const phone=String(input.phone||"").trim().slice(0,40);
     const localeInput=String(input.preferred_locale||"").trim().slice(0,35);
     const timezoneInput=String(input.timezone||"").trim().slice(0,80);
+    const accountTypeInput=String(input.account_type||"").trim().toLowerCase();
+    const accountType=accountTypeInput||((companyName||registrationRaw)?"business":"individual");
     const authorityConfirmed=input.authority_confirmed===true;
     if(firstName.length<1||lastName.length<1)throw problem(400,"CUSTOMER_NAME_REQUIRED");
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw problem(400,"INVALID_CUSTOMER_EMAIL");
     if(!/^[A-Z]{2}$/.test(country))throw problem(400,"INVALID_COUNTRY_CODE");
     if(String(passwordHash||"").length<20)throw problem(400,"INVALID_PASSWORD_HASH");
+    if(!["individual","business"].includes(accountType))throw problem(400,"INVALID_CUSTOMER_ACCOUNT_TYPE");
     if(!authorityConfirmed)throw problem(400,"REGISTRATION_AUTHORITY_REQUIRED");
     if(localeInput&&!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(localeInput))throw problem(400,"INVALID_TENANT_LOCALE");
     if(timezoneInput&&!/^[A-Za-z0-9_+\-/]+(?:\/[A-Za-z0-9_+\-]+)*$/.test(timezoneInput))throw problem(400,"INVALID_TENANT_TIMEZONE");
-    let registrationNumber=registrationRaw.replace(/\s+/g,"");
+    const effectiveCompanyName=accountType==="business"?companyName:"";
+    const effectiveRegistrationRaw=accountType==="business"?registrationRaw:"";
+    let registrationNumber=effectiveRegistrationRaw.replace(/\s+/g,"");
     if(country==="FR"&&registrationNumber){
       registrationNumber=registrationNumber.replace(/\D/g,"");
       if(!/^\d{14}$/.test(registrationNumber))throw problem(400,"INVALID_SIRET");
@@ -2900,7 +2905,7 @@ export class PostgresStore{
     }
     if(phone&&!/^[+0-9 ()\.\-]{6,40}$/.test(phone))throw problem(400,"INVALID_PHONE");
     const displayName=(firstName+" "+lastName).trim();
-    const tenantName=companyName||displayName;
+    const tenantName=accountType==="business"?(effectiveCompanyName||displayName):displayName;
     const slugBase=tenantName.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,48)||"client";
     const result=await this.sql.begin(async tx=>{
       await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",[email]);
@@ -2923,12 +2928,12 @@ export class PostgresStore{
         "INSERT INTO tenants(slug,display_name,legal_name,tenant_type,status,country_code,billing_email,preferred_locale,default_currency,timezone)"+
         " VALUES($1||'-'||substr(replace(gen_random_uuid()::text,'-',''),1,8),$2,$3,'customer','pending',$4,$5,$6,$7,$8)"+
         " RETURNING id,public_id,display_name,status,authorization_version",
-        [slugBase,tenantName,companyName||tenantName,country,email,locale,currency,timezone]
+        [slugBase,tenantName,effectiveCompanyName||tenantName,country,email,locale,currency,timezone]
       ))[0];
       await tx.unsafe(
         "INSERT INTO tenant_kyc_profiles(tenant_id,entity_type,registration_country,registration_number,status,metadata)"+
         " VALUES($1,$2,$3,$4,'pending',$5::jsonb) ON CONFLICT(tenant_id) DO NOTHING",
-        [tenant.id,companyName||registrationNumber?"company":"individual",country,registrationNumber||null,JSON.stringify({source:"self_service",registration_optional:true})]
+        [tenant.id,accountType==="individual"?"individual":"company",country,registrationNumber||null,JSON.stringify({source:"self_service",registration_optional:true,account_type:accountType})]
       );
       await tx.unsafe(
         "INSERT INTO tenant_market_profiles(tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region)"+
@@ -2939,7 +2944,7 @@ export class PostgresStore{
       let principal=(await tx.unsafe(
         "INSERT INTO customer_principals(email,display_name,status,preferred_locale,timezone,email_verified,metadata)"+
         " VALUES($1,$2,'active',$3,$4,false,$5::jsonb) RETURNING id,email,display_name,status,email_verified,session_version",
-        [email,displayName,locale,timezone,JSON.stringify({first_name:firstName,last_name:lastName,phone:phone||null,signup_source:"self_service_email",authority_confirmed:true})]
+        [email,displayName,locale,timezone,JSON.stringify({first_name:firstName,last_name:lastName,phone:phone||null,signup_source:"self_service_email",account_type:accountType,authority_confirmed:true})]
       ))[0];
       await tx.unsafe(
         "INSERT INTO customer_password_credentials(customer_principal_id,password_hash,status) VALUES($1::uuid,$2,'active')",
@@ -2951,11 +2956,11 @@ export class PostgresStore{
       );
       await tx.unsafe(
         "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'customer.self_register','tenant',$2,$3::jsonb)",
-        [tenant.id,String(tenant.id),JSON.stringify({customer_principal_id:principal.id,country_code:country,billing_currency:currency,billing_currency_source:"country_default",registration_number_supplied:Boolean(registrationNumber),authority_confirmed:true})]
+        [tenant.id,String(tenant.id),JSON.stringify({customer_principal_id:principal.id,country_code:country,account_type:accountType,billing_currency:currency,billing_currency_source:"country_default",registration_number_supplied:Boolean(registrationNumber),authority_confirmed:true})]
       );
       await tx.unsafe(
         "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'customer.self_registered','tenant',$2,$3::jsonb)",
-        [tenant.id,String(tenant.id),JSON.stringify({tenant_public_id:tenant.public_id,customer_principal_id:principal.id,email,country_code:country})]
+        [tenant.id,String(tenant.id),JSON.stringify({tenant_public_id:tenant.public_id,customer_principal_id:principal.id,email,country_code:country,account_type:accountType})]
       );
       principal=(await tx.unsafe("SELECT id,email,display_name,status,email_verified,session_version FROM customer_principals WHERE id=$1::uuid",[principal.id]))[0];
       const refreshedTenant=(await tx.unsafe("SELECT id,public_id,display_name,status,authorization_version FROM tenants WHERE id=$1",[tenant.id]))[0];
@@ -3797,7 +3802,7 @@ export class PostgresStore{
     return this.withTenantReadContext(id,async tx=>{
       const tenantRows=await tx.unsafe(
         "SELECT t.id,t.public_id,t.display_name,t.legal_name,t.status,t.country_code,t.preferred_locale,t.default_currency,t.timezone,"+
-        " COALESCE(k.status,'not_started') AS kyc_status,k.registration_number FROM tenants t LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id WHERE t.id=$1",[id]
+        " CASE WHEN k.entity_type='individual' THEN 'individual' ELSE 'business' END AS customer_type,COALESCE(k.status,'not_started') AS kyc_status,k.registration_number FROM tenants t LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id WHERE t.id=$1",[id]
       );
       const tenant=tenantRows[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
       const financial=await tx.unsafe(

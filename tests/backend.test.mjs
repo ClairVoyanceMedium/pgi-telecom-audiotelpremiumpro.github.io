@@ -163,7 +163,7 @@ test("customer can self-register by email without Google",async()=>{
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
-        first_name:"Camille",last_name:"Martin",company_name:"Cabinet Martin",country_code:"FR",
+        first_name:"Camille",last_name:"Martin",account_type:"business",company_name:"Cabinet Martin",country_code:"FR",
         registration_number:"",phone:"+33600000000",email:"camille@example.test",
         password:"long-password-12345",authority_confirmed:true,website:"",preferred_locale:"fr-FR",timezone:"Europe/Paris"
       })

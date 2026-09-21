@@ -944,11 +944,13 @@ export class MemoryStore{
 
   async selfServiceRegister(input={},passwordHash){
     const first=String(input.first_name||"").trim(),last=String(input.last_name||"").trim(),email=String(input.email||"").trim().toLowerCase();
+    const company=String(input.company_name||"").trim(),registration=String(input.registration_number||"").trim(),accountTypeInput=String(input.account_type||"").trim().toLowerCase(),accountType=accountTypeInput||((company||registration)?"business":"individual");
     if(!first||!last)throw problem(400,"CUSTOMER_NAME_REQUIRED");
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw problem(400,"INVALID_CUSTOMER_EMAIL");
     if(String(passwordHash||"").length<20)throw problem(400,"INVALID_PASSWORD_HASH");
+    if(!["individual","business"].includes(accountType))throw problem(400,"INVALID_CUSTOMER_ACCOUNT_TYPE");
     if(input.authority_confirmed!==true)throw problem(400,"REGISTRATION_AUTHORITY_REQUIRED");
-    return {id:randomUUID(),email,display_name:(first+" "+last).trim(),status:"active",email_verified:false,session_version:1,tenant_id:1,tenant_public_id:"00000000-0000-4000-8000-000000000001",tenant_name:String(input.company_name||"").trim()||(first+" "+last).trim(),tenant_status:"pending",customer_role:"owner",authorization_version:1};
+    return {id:randomUUID(),email,display_name:(first+" "+last).trim(),status:"active",email_verified:false,session_version:1,tenant_id:1,tenant_public_id:"00000000-0000-4000-8000-000000000001",tenant_name:accountType==="business"?(company||(first+" "+last).trim()):(first+" "+last).trim(),tenant_status:"pending",customer_role:"owner",authorization_version:1,customer_type:accountType};
   }
   async customerGoogleSignIn(){throw problem(403,"GOOGLE_INVITATION_REQUIRED");}
   async customerAuthLookup(){return null;}
@@ -1005,7 +1007,7 @@ export class MemoryStore{
   async tenantConsumptionReceipts(){return [];}
   async tenantConsumptionToday(){return {schema_version:"audiotel-consumption-receipt/1",range:{from:new Date().toISOString(),to:new Date().toISOString()},tenant_timezone:"Europe/Paris",metric_ranges:{},metrics:{currency:"EUR",calls_total:0,calls_connected:0,calls_abandoned:0,calls_failed:0,billable_seconds:0,generated_revenue_ttc:0,net_payout_ht:0},snapshot_sha256:"0".repeat(64),generated_at:new Date().toISOString(),basis:"demo"};}
   async reconcileTenantConsumptionReceipt(){throw problem(404,"CONSUMPTION_RECEIPT_NOT_FOUND");}
-  async customerPortalOverview(tenantId,from,to){void tenantId;const voice=await this.voiceIntelligence(from,to);return {tenant:{display_name:"Société Démo",default_currency:"EUR",status:"active"},financial_by_currency:[],series:[],activity_breakdown:[],numbers:[],settlements:[],subscriptions:[],destinations:[],service_incidents:[],operational_alerts:[],recent_calls:[],voice_quality:voice.summary,range:{from,to}};}
+  async customerPortalOverview(tenantId,from,to){void tenantId;const voice=await this.voiceIntelligence(from,to);return {tenant:{display_name:"Société Démo",default_currency:"EUR",status:"active",customer_type:"business"},financial_by_currency:[],series:[],activity_breakdown:[],numbers:[],settlements:[],subscriptions:[],destinations:[],service_incidents:[],operational_alerts:[],recent_calls:[],voice_quality:voice.summary,range:{from,to}};}
   async customerServiceIncidents(_tenantId,params={}){if(params.incident_id)throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");return {data:[],alerts:[]};}
   async createCustomerServiceIncident(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
   async addCustomerServiceIncidentNote(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}

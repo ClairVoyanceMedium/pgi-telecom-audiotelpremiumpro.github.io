@@ -22,6 +22,7 @@ const required = [
   "assets/client-voice-studio.js",
   "assets/client-search.js",
   "assets/client-premium.js",
+  "assets/client-audience.js",
   "assets/client-premium-plus.js",
   "assets/passkey-client.js",
   "assets/premium-plus-core.js",
