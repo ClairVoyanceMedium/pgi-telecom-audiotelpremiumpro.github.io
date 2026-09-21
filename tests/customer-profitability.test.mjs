@@ -6,7 +6,7 @@ const migration=fs.readFileSync("database/migrations/049_customer_profitability.
 const server=fs.readFileSync("backend/server.mjs","utf8");
 const store=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
 const ui=fs.readFileSync("assets/customer-profitability.js","utf8");
-const customerAdmin=fs.readFileSync("assets/customer-admin.js","utf8");
+const billingUi=fs.readFileSync("assets/subscription-billing-ui.js","utf8");
 const detail=fs.readFileSync("assets/tenant-control-detail.js","utf8");
 
 test("profitability uses the authoritative PGI commercial margin",()=>{
@@ -30,8 +30,8 @@ test("profitability never mixes currencies in the ranking",()=>{
 test("cockpit exposes top customers and per-customer profitability lazily",()=>{
   assert.match(server,/\/api\/v1\/platform\/customer-profitability/);
   assert.match(server,/requireRole\(actor,\["admin","finance","readonly"\]\)/);
-  assert.match(customerAdmin,/ca-profitability/);
-  assert.match(customerAdmin,/customer-profitability\.js/);
+  assert.match(billingUi,/customer-profitability\.js/);
+  assert.match(ui,/ca-profitability/);
   assert.match(detail,/td-profitability/);
   assert.match(detail,/mountTenantProfitability/);
   assert.match(ui,/Clients qui rapportent le plus/);
