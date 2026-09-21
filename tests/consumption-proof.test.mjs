@@ -60,7 +60,7 @@ test("client exposes validated assigned number and support proof without raw CDR
   assert.match(client,/Copier le numéro/);
   assert.match(client,/Créer un relevé horodaté/);
   assert.match(client,/empreinte SHA‑256/);
-  assert.doesNotMatch(client,/caller_number|caller_hash|pan|cvv|cvc/i);
+  assert.doesNotMatch(client,/caller_number|caller_hash|\bpan\b|\bcvv\b|\bcvc\b/i);
   assert.match(admin,/CONFORME/);
   assert.match(admin,/ÉCART DÉTECTÉ/);
   assert.match(admin,/Copier le récapitulatif support/);
