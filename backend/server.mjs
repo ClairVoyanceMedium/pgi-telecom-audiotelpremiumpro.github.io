@@ -721,6 +721,12 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.tenants",200,await store.listTenants(params));
       }
 
+      if(method==="POST"&&pathname==="/api/v1/platform/tenants/duplicates"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        return done(res,metrics,started,"platform.tenant_duplicates",200,await store.tenantDuplicateCandidates(body));
+      }
+
       if(method==="POST"&&pathname==="/api/v1/platform/tenants"){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
         const body=await readJson(req,config.bodyLimitBytes);
@@ -753,6 +759,12 @@ export function createBackend(options={}){
       if(method==="GET"&&match){
         requireRole(actor,["admin","finance","readonly"]);
         return done(res,metrics,started,"platform.tenant_control_center",200,await store.tenantControlDetail(match.id));
+      }
+
+      match=routeMatch(pathname,"/api/v1/platform/tenants/:id/export");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        return done(res,metrics,started,"platform.tenant_admin_export",200,await store.tenantAdminExport(match.id,actor));
       }
 
       match=routeMatch(pathname,"/api/v1/platform/tenants/:id/payout-terms");
