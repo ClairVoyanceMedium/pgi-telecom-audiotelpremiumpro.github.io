@@ -141,14 +141,14 @@ tenants:function(params){
 var q=new URLSearchParams(params||{}).toString();
 return request("/platform/tenants"+(q?"?"+q:""));
 },
-tenantDuplicateCandidates:function(p){return request("/platform/tenants/duplicates",{method:"POST",body:p||{}});},
+tenantDuplicateCandidates:p=>request("/platform/tenants/duplicates",{method:"POST",body:p}),
 createTenant:function(p,k){return idem("/platform/tenants",p,k);},
 tenantAssignments:function(params){
 var q=new URLSearchParams(params||{}).toString();
 return request("/platform/tenant-number-assignments"+(q?"?"+q:""));
 },
 tenantControlDetail:function(id){return request("/platform/tenants/"+encodeURIComponent(id)+"/control-center",{timeoutMs:10000});},
-tenantAdminExport:function(id){return request("/platform/tenants/"+encodeURIComponent(id)+"/export",{method:"POST",body:{},timeoutMs:15000});},
+tenantAdminExport:id=>request("/platform/tenants/"+encodeURIComponent(id)+"/export",{method:"POST",body:{}}),
 serviceIncidents:function(params){return request("/platform/service-incidents"+qs(params));},
 serviceIncident:function(id){return request("/platform/incidents/"+encodeURIComponent(id));},
 createServiceIncident:function(id,p,k){return idem("/platform/tenants/"+encodeURIComponent(id)+"/incidents",p,k);},
