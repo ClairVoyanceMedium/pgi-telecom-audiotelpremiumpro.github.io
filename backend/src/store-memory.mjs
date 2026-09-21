@@ -826,6 +826,10 @@ export class MemoryStore{
     throw problem(404,"TENANT_NOT_FOUND");
   }
 
+  async tenantInternalNotes(publicId){void publicId;return {data:[]};}
+  async createTenantInternalNote(publicId,input={},actor={}){void publicId;void input;void actor;throw problem(404,"TENANT_NOT_FOUND");}
+  async archiveTenantInternalNote(id,actor={}){void id;void actor;throw problem(404,"INTERNAL_NOTE_NOT_FOUND");}
+
   async tenantAdminExport(publicId,actor={}){
     void publicId;void actor;
     throw problem(404,"TENANT_NOT_FOUND");
