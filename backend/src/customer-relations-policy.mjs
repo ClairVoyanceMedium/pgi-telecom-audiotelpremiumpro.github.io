@@ -58,6 +58,22 @@ export function relationNextActions(c={},exitRequest=null){
   return [...new Set(actions)].map(relationActionPolicy);
 }
 
+export function sanitizeRelationPayload(value,depth=0){
+  if(depth>4)return null;
+  if(value==null||typeof value==="boolean"||typeof value==="number")return value;
+  if(typeof value==="string")return value.slice(0,4000);
+  if(Array.isArray(value))return value.slice(0,100).map(x=>sanitizeRelationPayload(x,depth+1));
+  if(typeof value==="object"){
+    const out={};
+    for(const [key,val] of Object.entries(value).slice(0,100)){
+      if(/(?:rio|password|secret|token|authorization|cookie|card|pan|cvv|cvc)/i.test(key))continue;
+      out[key]=sanitizeRelationPayload(val,depth+1);
+    }
+    return out;
+  }
+  return null;
+}
+
 export function safeAgentContext(c={},evidence=[],actions=[],exitRequest=null){
   return {
     policy_version:RELATION_POLICY_VERSION,
