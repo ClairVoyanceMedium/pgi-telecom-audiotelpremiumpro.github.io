@@ -15,6 +15,11 @@ export async function processOutboundPortabilityWork(item,{store,config,env=proc
   const actionType=String(lines[0].action_type||"");
   if(!OUTBOUND_ACTIONS.has(actionType))return;
   if(lines[0].action_status!=="queued")return;
+  const actionPayload=obj(lines[0].payload);
+  if(lines.length>1&&!Number(actionPayload.exit_line_id)){
+    await markActionWaiting(store,lines[0],{code:"OUTBOUND_PORTABILITY_LINE_SCOPE_REQUIRED",line_count:lines.length});
+    return;
+  }
 
   const confirmations=[];
   for(const line of lines){
