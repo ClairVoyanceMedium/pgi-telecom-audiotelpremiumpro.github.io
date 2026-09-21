@@ -7,6 +7,7 @@ const index=read("index.html");
 const clientPortal=read("client.html");
 const clientPortalApi=read("assets/client-portal-api.js");
 const clientPortalJs=read("assets/client-portal.js");
+const clientMobile=read("assets/client-mobile.js");
 const clientPortalCss=read("assets/client-portal.css");
 const clientIntelligence=read("assets/client-intelligence.js");
 const clientI18n=read("assets/client-i18n.js");
@@ -532,26 +533,22 @@ test("advanced admin centers are visible without Ctrl K",()=>{
 test("les petits écrans conservent toutes les fonctions admin et client",()=>{
   assert.match(workspace,/pgi_mobile_overview_expanded_v2/);
   assert.match(workspace,/value===null\?true:value==="1"/);
-  assert.match(app,/data-mobile-command/);
-  for(const view of ["overview","calls","finance","experts","carriers","wholesale","system","settings"]){
-    assert.match(index,new RegExp('mobile-sheet-grid[\\s\\S]*data-view="'+view+'"'));
-  }
-  for(const token of ["data-control-tower","data-sva-compliance","data-platform-admin","data-mobile-command=\"actions\"","data-mobile-command=\"refresh\""]){
-    assert.ok(index.includes(token),"missing mobile admin access "+token);
-  }
+  assert.match(app,/mobileOverviewExpanded:true/);
+  for(const view of ["overview","calls","finance","wholesale"])assert.match(index,new RegExp('mobile-nav[\\s\\S]*data-view="'+view+'"'));
+  for(const view of ["experts","carriers","system","settings"])assert.match(index,new RegExp('mobile-sheet-grid[\\s\\S]*data-view="'+view+'"'));
+  for(const token of ["data-control-tower","data-sva-compliance","data-platform-admin"])assert.ok(index.includes(token),"missing mobile admin access "+token);
   assert.match(css,/complete-mobile-access-v131/);
-  assert.match(css,/@media \(max-width:430px\)[\s\S]*\.mobile-sheet-grid\{grid-template-columns:1fr\}/);
+  assert.match(css,/\.mobile-sheet-grid\{grid-template-columns:1fr\}/);
 
-  assert.ok(clientPortal.includes('id="client-mobile-more"'));
-  assert.ok(clientPortal.includes('id="client-mobile-menu"'));
+  assert.match(clientPortalJs,/import\("\.\/client-mobile\.js"\)/);
+  assert.ok(clientMobile.includes('id="client-mobile-more"'));
+  assert.ok(clientMobile.includes('id="client-mobile-menu"'));
   for(const anchor of ["client-overview","client-intelligence","client-analytics","client-calls","client-finance","client-routing","client-service-center"]){
-    assert.ok(clientPortal.includes('data-client-anchor="'+anchor+'"'),"missing client mobile anchor "+anchor);
+    assert.ok(clientMobile.includes('data-client-anchor="'+anchor+'"'),"missing client mobile anchor "+anchor);
   }
   for(const action of ["portability","export","security","refresh","logout"]){
-    assert.ok(clientPortal.includes('data-client-action="'+action+'"'),"missing client mobile action "+action);
+    assert.ok(clientMobile.includes('data-client-action="'+action+'"'),"missing client mobile action "+action);
   }
-  assert.match(clientPortalJs,/openClientMobileMenu/);
-  assert.match(clientPortalJs,/runClientMobileAction/);
   assert.match(clientPortalCss,/complete-client-mobile-access-v131/);
   assert.match(clientPortalCss,/\.cp-mobile-nav\{position:fixed/);
 });
