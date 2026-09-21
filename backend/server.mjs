@@ -244,7 +244,9 @@ export function createBackend(options={}){
       }
       if(method==="POST"&&pathname==="/api/v1/customer/security/passkeys/register"){
         requireCustomerCsrf(req,customerActor,config);
-        const body=await readJson(req,config.bodyLimitBytes),subject="customer:"+customerActor.sub,state=verifyWebAuthnState(config,body.state,"register",subject),credential=validateWebAuthnRegistration(config,body,state);
+        const body=await readJson(req,config.bodyLimitBytes),context=await store.customerSessionContext(customerActor),auth=await store.customerAuthLookup(context.email);
+        if(!auth?.password_hash||!verifyPassword(String(body.current_password||""),auth.password_hash)){const e=new Error("Password reauthentication required");e.status=401;e.code="PASSKEY_REAUTH_REQUIRED";throw e;}
+        const subject="customer:"+customerActor.sub,state=verifyWebAuthnState(config,body.state,"register",subject),credential=validateWebAuthnRegistration(config,body,state);
         return done(res,metrics,started,"customer.security.passkey_register",201,{credential:await store.registerWebauthnCredential("customer",customerActor.sub,credential)});
       }
       if(method==="POST"&&pathname==="/api/v1/customer/security/passkeys/assert-options"){
@@ -452,7 +454,10 @@ export function createBackend(options={}){
         return done(res,metrics,started,"security.passkey_options",200,publicPasskeyOptions(config,"staff:"+actor.sub,actor.name,credentials,"register"));
       }
       if(method==="POST"&&pathname==="/api/v1/security/passkeys/register"){
-        requireCsrf(req,actor,config);const body=await readJson(req,config.bodyLimitBytes),subject="staff:"+actor.sub,state=verifyWebAuthnState(config,body.state,"register",subject),credential=validateWebAuthnRegistration(config,body,state);
+        requireCsrf(req,actor,config);const body=await readJson(req,config.bodyLimitBytes),stored=typeof store.staffCredentialById==="function"?await store.staffCredentialById(actor.sub):null;
+        const reauthOk=stored?.password_hash?verifyPassword(String(body.current_password||""),stored.password_hash):verifyPassword(String(body.current_password||""),config.adminPasswordHash);
+        if(!reauthOk){const e=new Error("Password reauthentication required");e.status=401;e.code="PASSKEY_REAUTH_REQUIRED";throw e;}
+        const subject="staff:"+actor.sub,state=verifyWebAuthnState(config,body.state,"register",subject),credential=validateWebAuthnRegistration(config,body,state);
         return done(res,metrics,started,"security.passkey_register",201,{credential:await store.registerWebauthnCredential("staff",actor.sub,credential)});
       }
       if(method==="POST"&&pathname==="/api/v1/security/passkeys/assert-options"){
