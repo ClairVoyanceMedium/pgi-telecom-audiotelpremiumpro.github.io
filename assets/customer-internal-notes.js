@@ -6,6 +6,7 @@ function style(){
   s.textContent=".tin-form{display:grid;gap:7px}.tin-form textarea{width:100%;min-height:88px;resize:vertical;padding:9px;border:1px solid rgba(128,158,192,.16);border-radius:10px;background:#07101b;color:#e2eef6;font:inherit;box-sizing:border-box}.tin-note{padding:9px;border:1px solid rgba(128,158,192,.09);border-radius:10px;background:#0a1320;margin-top:7px}.tin-note p{white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 7px;color:#d6e6f0;font-size:8px;line-height:1.45}.tin-note small{color:#6d8499;font-size:7px}.tin-note-foot{display:flex;align-items:center;justify-content:space-between;gap:8px}.tin-private{color:#f6d48e;font-size:7px}";
   document.head.appendChild(s);
 }
+function noteStatus(root,msg,type=""){const el=root.querySelector("[data-internal-note-status]");if(el){el.textContent=msg||"";el.className="td-feedback "+type;}}
 function draw(root,rows){
   const list=root.querySelector("[data-internal-notes-list]");
   if(!list)return;
@@ -22,14 +23,16 @@ async function load(id,root){
 export async function mountInternalNotes(id,root){
   if(!root||!window.PGIApi?.tenantInternalNotes)return;
   style();root.dataset.tenantId=id;
-  root.innerHTML='<div class="td-section-head"><div><h3>Notes internes</h3><span class="tin-private">Privé • jamais visible par le client</span></div></div><div class="tin-form"><textarea maxlength="2000" data-internal-note-body placeholder="Ajouter une note privée sur ce client…"></textarea><div><button class="td-btn success" type="button" data-internal-note-add>Ajouter la note</button></div></div><div data-internal-notes-list><p class="td-empty">Chargement…</p></div>';
+  root.innerHTML='<div class="td-section-head"><div><h3>Notes internes</h3><span class="tin-private">Privé • jamais visible par le client</span></div></div><div class="tin-form"><textarea maxlength="2000" data-internal-note-body placeholder="Ajouter une note privée sur ce client…"></textarea><div><button class="td-btn success" type="button" data-internal-note-add>Ajouter la note</button></div></div><p data-internal-note-status class="td-feedback" role="status" aria-live="polite"></p><div data-internal-notes-list><p class="td-empty">Chargement…</p></div>';
   root.onclick=async e=>{
     const add=e.target.closest("[data-internal-note-add]");
     if(add){
       const area=root.querySelector("[data-internal-note-body]"),body=area?.value.trim()||"";
       if(!body){area?.focus();return;}
       add.disabled=true;
-      try{await window.PGIApi.addTenantInternalNote(id,{body},window.PGIApi.newIdempotencyKey());area.value="";await load(id,root);}
+      noteStatus(root,"Enregistrement…");
+      try{await window.PGIApi.addTenantInternalNote(id,{body},window.PGIApi.newIdempotencyKey());area.value="";await load(id,root);noteStatus(root,"Note interne ajoutée.","ok");}
+      catch(err){noteStatus(root,err?.code||"Impossible d’ajouter la note.","error");}
       finally{add.disabled=false;}
       return;
     }
@@ -37,7 +40,9 @@ export async function mountInternalNotes(id,root){
     if(archive){
       if(!confirm("Archiver cette note interne ? Elle restera traçable dans l’audit."))return;
       archive.disabled=true;
-      try{await window.PGIApi.archiveTenantInternalNote(archive.dataset.internalNoteArchive,window.PGIApi.newIdempotencyKey());await load(id,root);}
+      noteStatus(root,"Archivage…");
+      try{await window.PGIApi.archiveTenantInternalNote(archive.dataset.internalNoteArchive,window.PGIApi.newIdempotencyKey());await load(id,root);noteStatus(root,"Note archivée.","ok");}
+      catch(err){noteStatus(root,err?.code||"Impossible d’archiver la note.","error");}
       finally{archive.disabled=false;}
     }
   };
