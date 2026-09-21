@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#121416">
+<meta name="theme-color" content="#2b1b15">
 <meta name="robots" content="noindex,nofollow,noarchive">
 <meta name="referrer" content="no-referrer">
 <title>Audiotel Premium Pro — Espace client</title>
 <link rel="icon" type="image/png" href="assets/audiotel-brand-icon-v33.png">
 <link rel="stylesheet" href="assets/client-portal.css">
+<link rel="stylesheet" href="assets/client-admin-theme.css">
 <script src="assets/config.js" defer></script>
 <script src="assets/client-config.js" defer></script>
 <script src="assets/client-i18n.js" defer></script>
@@ -17,6 +18,7 @@
 <script src="assets/client-premium.js" defer></script>
 <script src="assets/client-intelligence.js" defer></script>
 <script src="assets/client-portal.js" defer></script>
+<script type="module" src="assets/client-analytics-plus.js"></script>
 <script src="assets/client-search.js" defer></script>
 </head>
 <body>
@@ -115,8 +117,9 @@
 <p id="portal-sync">Dernière consolidation : —</p>
 </div>
 <div class="cp-periods" aria-label="Période">
+<button type="button" class="active" data-range="today">Aujourd’hui</button>
 <button type="button" data-range="7">7 jours</button>
-<button type="button" class="active" data-range="30">30 jours</button>
+<button type="button" data-range="30">30 jours</button>
 <button type="button" data-range="month">Mois</button>
 <button type="button" data-range="year">Année</button>
 </div>
@@ -234,6 +237,7 @@
 <div class="cp-panel-head"><div><p class="cp-kicker">QUALITÉ DE TRAFIC</p><h2>Issue des appels</h2></div></div>
 <div class="cp-status-wrap"><div id="status-donut" class="cp-donut"><div><strong id="status-total">0</strong><small>appels</small></div></div><div id="status-legend" class="cp-legend"></div></div>
 </article>
+<div id="client-analytics-plus-mount" class="cp-analytics-plus-mount"></div>
 <article class="cp-panel cp-chart-card cp-chart-wide">
 <div class="cp-panel-head"><div><p class="cp-kicker">REVERSEMENTS</p><h2>Historique des montants nets</h2></div><span>Dernières périodes</span></div>
 <div id="payout-bars" class="cp-hbars"></div>
@@ -385,7 +389,9 @@
 <button type="button" data-client-export="settlements"><strong>Reversements CSV</strong><span>Périodes, statut et net client</span></button>
 <button type="button" data-client-export="numbers"><strong>Numéros CSV</strong><span>Lignes, tarif et état</span></button>
 <button type="button" data-client-export="copy"><strong>Copier le rapport complet</strong><span>Métriques et données prêtes à coller</span></button>
-<button type="button" data-client-export="print"><strong>Imprimer / PDF</strong><span>Rapport visuel du tableau de bord</span></button>
+<button type="button" id="client-export-analytics"><strong>Analyses CSV</strong><span>Heures, jours, numéros, durées et opérateurs</span></button>
+<button type="button" id="client-export-snapshot"><strong>Instantané JSON</strong><span>Données visibles de la période, prêtes à archiver</span></button>
+<button type="button" data-client-export="print"><strong>Imprimer / PDF</strong><span>Rapport visuel complet avec graphiques et camemberts</span></button>
 </div>
 </form>
 </dialog>

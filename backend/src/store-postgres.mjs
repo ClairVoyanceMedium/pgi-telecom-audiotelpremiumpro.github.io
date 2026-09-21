@@ -3522,6 +3522,28 @@ export class PostgresStore{
         " FROM tenant_scoped_portal_call_details WHERE started_at >= $1::timestamptz AND started_at <= $2::timestamptz",
         [qualityFrom,to]
       );
+      const activityBreakdown=await tx.unsafe(
+        "WITH base AS MATERIALIZED ("+
+        " SELECT sva_number_id,COALESCE(display_number,e164,'Numéro') AS number_label,COALESCE(origin_carrier,'Autre') AS carrier,"+
+        " call_status,COALESCE(conversation_seconds,0) AS conversation_seconds,COALESCE(billable_seconds,0) AS billable_seconds,"+
+        " started_at AT TIME ZONE $3 AS local_started"+
+        " FROM tenant_scoped_portal_call_details WHERE started_at >= $1::timestamptz AND started_at <= $2::timestamptz"+
+        "), roll AS ("+
+        " SELECT 'hour'::text AS dimension,LPAD(EXTRACT(HOUR FROM local_started)::int::text,2,'0') AS key,"+
+        " LPAD(EXTRACT(HOUR FROM local_started)::int::text,2,'0')||'h' AS label,count(*)::bigint AS calls,"+
+        " count(*) FILTER(WHERE call_status='connected')::bigint AS connected,COALESCE(sum(billable_seconds),0)::float8 AS billable_seconds FROM base GROUP BY 2,3"+
+        " UNION ALL SELECT 'weekday',EXTRACT(ISODOW FROM local_started)::int::text,"+
+        " CASE EXTRACT(ISODOW FROM local_started)::int WHEN 1 THEN 'Lun' WHEN 2 THEN 'Mar' WHEN 3 THEN 'Mer' WHEN 4 THEN 'Jeu' WHEN 5 THEN 'Ven' WHEN 6 THEN 'Sam' ELSE 'Dim' END,"+
+        " count(*)::bigint,count(*) FILTER(WHERE call_status='connected')::bigint,COALESCE(sum(billable_seconds),0)::float8 FROM base GROUP BY 2,3"+
+        " UNION ALL SELECT 'number',COALESCE(sva_number_id::text,number_label),number_label,count(*)::bigint,"+
+        " count(*) FILTER(WHERE call_status='connected')::bigint,COALESCE(sum(billable_seconds),0)::float8 FROM base GROUP BY 2,3"+
+        " UNION ALL SELECT 'duration',CASE WHEN conversation_seconds<60 THEN '1' WHEN conversation_seconds<180 THEN '2' WHEN conversation_seconds<300 THEN '3' ELSE '4' END,"+
+        " CASE WHEN conversation_seconds<60 THEN '< 1 min' WHEN conversation_seconds<180 THEN '1–3 min' WHEN conversation_seconds<300 THEN '3–5 min' ELSE '5 min et +' END,"+
+        " count(*)::bigint,count(*) FILTER(WHERE call_status='connected')::bigint,COALESCE(sum(billable_seconds),0)::float8 FROM base GROUP BY 2,3"+
+        " UNION ALL SELECT 'carrier',carrier,carrier,count(*)::bigint,count(*) FILTER(WHERE call_status='connected')::bigint,COALESCE(sum(billable_seconds),0)::float8 FROM base GROUP BY carrier"+
+        ") SELECT dimension,key,label,calls,connected,billable_seconds FROM roll ORDER BY dimension,key",
+        [callsFrom,to,tenant.timezone||"Europe/Paris"]
+      );
       const metricPayout=await tx.unsafe(
         "SELECT d.currency,COALESCE(sum(dc.net_payout_ht),0)::float8 AS net_payout_ht"+
         " FROM tenant_revenue_distribution_calls dc"+
@@ -3574,7 +3596,7 @@ export class PostgresStore{
         " FROM tenant_scoped_portal_call_details WHERE started_at>=$1::timestamptz AND started_at<=$2::timestamptz"+
         " ORDER BY started_at DESC,call_id DESC LIMIT 20",[callsFrom,to]
       );
-      return {tenant,financial_by_currency:financial,metric_net_payout_by_currency:metricPayout,series,numbers,settlements,subscriptions,portability_requests:portabilityRequests,destinations,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,recent_calls:recentCalls,voice_quality:voiceQuality[0]||null,range:{from,to},metric_ranges:mr};
+      return {tenant,financial_by_currency:financial,metric_net_payout_by_currency:metricPayout,series,activity_breakdown:activityBreakdown,numbers,settlements,subscriptions,portability_requests:portabilityRequests,destinations,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,recent_calls:recentCalls,voice_quality:voiceQuality[0]||null,range:{from,to},metric_ranges:mr};
     });
   }
 
