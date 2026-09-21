@@ -75,7 +75,8 @@ function init(){
     setBusy(true);
     setState("loading","Synchronisation","Actualisation des données en cours.");
   });
-  document.addEventListener("pgi:portal-loaded",function(){
+  document.addEventListener("pgi:portal-loaded",function(e){
+    window.PGI_PREMIUM_PORTAL_DATA=e&&e.detail?e.detail.data||{}:{};
     lastLoadedAt=new Date();
     setBusy(false);
     networkState();
