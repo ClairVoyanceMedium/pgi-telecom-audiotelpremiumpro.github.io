@@ -38,7 +38,7 @@ test("team access changes remain append-only and auditable",()=>{
 });
 
 test("team UI is Premium+ lazy content, not critical PWA shell",()=>{
-  assert.match(premium,/label:"Équipe"/);
+  assert.match(premium,/\{id:"team",label:"Accès"\}/);
   assert.match(premium,/import\("\.\/client-team-access\.js"\)/);
   assert.doesNotMatch(worker,/assets\/client-team-access\.js|assets\/client-access-visibility\.js/);
   assert.doesNotMatch(api,/\/customer\/team/);
