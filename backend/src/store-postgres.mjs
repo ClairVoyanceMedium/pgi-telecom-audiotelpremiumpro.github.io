@@ -3279,7 +3279,8 @@ export class PostgresStore{
         " VALUES($1,'member_status_changed',$2::uuid,$3::uuid,$4,$5,$6,$7)",
         [id,target,actor,current.role,role,current.membership_status,status]
       );
-      return {...updated,email:current.email,display_name:current.display_name};
+      const authorization=(await tx.unsafe("SELECT authorization_version FROM tenants WHERE id=$1",[id]))[0];
+      return {...updated,email:current.email,display_name:current.display_name,authorization_version:Number(authorization?.authorization_version||0)};
     });
   }
 
