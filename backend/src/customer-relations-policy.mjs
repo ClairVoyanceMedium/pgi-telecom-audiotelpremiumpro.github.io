@@ -98,7 +98,7 @@ export function safeAgentContext(c={},evidence=[],actions=[],exitRequest=null,ev
       target_resolution_at:c.target_resolution_at||null
     },
     evidence:(evidence||[]).map(x=>({id:x.id,evidence_kind:x.evidence_kind,source_table:x.source_table,source_id:x.source_id,external_reference:x.external_reference,content_sha256:x.content_sha256,created_at:x.created_at})),
-    actions:(actions||[]).map(x=>({public_id:x.public_id,action_type:x.action_type,risk_class:x.risk_class,execution_mode:x.execution_mode,status:x.status,confidence:x.confidence,explanation:x.explanation,created_at:x.created_at})),
+    actions:(actions||[]).map(x=>({public_id:x.public_id,exit_line_id:x.exit_line_id==null?null:Number(x.exit_line_id),action_type:x.action_type,risk_class:x.risk_class,execution_mode:x.execution_mode,status:x.status,confidence:x.confidence,explanation:x.explanation,created_at:x.created_at})),
     timeline:(events||[]).slice(-100).map(x=>({event_type:x.event_type,actor_type:x.actor_type,message:x.message||null,customer_visible:x.customer_visible!==false,occurred_at:x.occurred_at})),
     exit_request:exitRequest?{
       public_id:exitRequest.public_id,status:exitRequest.status,exit_scope:exitRequest.exit_scope,
