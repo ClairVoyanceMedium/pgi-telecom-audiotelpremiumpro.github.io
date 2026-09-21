@@ -178,7 +178,8 @@ function render(data){
   $("tenant-meta").textContent=[data.tenant&&data.tenant.country_code,data.tenant&&data.tenant.default_currency,state.demo?"Démonstration":null].filter(Boolean).join(" · ");
   $("customer-user-name").textContent=(state.user&&state.user.name)||"Utilisateur";
   $("customer-user-role").textContent=statusLabel((state.user&&state.user.role)||"readonly");
-  applyAccessVisibility(data);\n  var resetButton=$("client-metrics-reset"),canReset=state.demo||["owner","admin"].includes(String((state.user&&state.user.role)||"").toLowerCase());
+  applyAccessVisibility(data);
+  var resetButton=$("client-metrics-reset"),canReset=state.demo||["owner","admin"].includes(String((state.user&&state.user.role)||"").toLowerCase());
   if(resetButton)resetButton.hidden=!canReset;
   var a=aggregate(data),rate=a.calls?a.connected/a.calls*100:0;
   $("kpi-calls").textContent=nf(a.calls);$("kpi-answer-rate").textContent=nf(rate,1)+" % décrochés";
