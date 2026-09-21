@@ -328,7 +328,10 @@ export function createBackend(options={}){
         requireCustomerPermission(context,"team.manage");
         const body=await readJson(req,config.bodyLimitBytes);
         if(String(body.role||"").trim().toLowerCase()==="owner"&&context.customer_role!=="owner"){const e=new Error("Only an owner can grant ownership");e.status=403;e.code="CUSTOMER_OWNER_REQUIRED";throw e;}
-        return done(res,metrics,started,"customer.team.member_update",200,await store.updateCustomerTeamMember(context.tenant_id,match.id,body,context.id));
+        const updated=await store.updateCustomerTeamMember(context.tenant_id,match.id,body,context.id);
+        const nextAuthorization=Number(updated.authorization_version||context.authorization_version);
+        const issued=issueSession({secret:config.sessionSecret,user:{id:context.id,role:"customer",name:context.display_name||customerActor.name,actor_type:"customer",tenant_id:Number(context.tenant_id),tenant_public_id:context.tenant_public_id,customer_role:context.customer_role,authorization_version:nextAuthorization,session_version:Number(context.session_version)},ttlSeconds:config.sessionTtlSeconds});
+        return done(res,metrics,started,"customer.team.member_update",200,updated,{"Set-Cookie":[customerSessionCookie(issued.token,config.sessionTtlSeconds),customerCsrfCookie(issued.csrf,config.sessionTtlSeconds)]});
       }
       match=routeMatch(pathname,"/api/v1/customer/team/invitations/:id/revoke");
       if(method==="POST"&&match){
