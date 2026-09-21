@@ -4435,21 +4435,34 @@ export class PostgresStore{
         [createdCase.id,id,scope,reason,effective,portOut?"port_out":pref,portOut,targetOperator,acknowledged?"preparing":"waiting_customer",acknowledged]
       ))[0];
       const action=portOut?"port_out":pref==="release"?"release":"keep_until_exit";
-      for(const line of lines)await tx.unsafe("INSERT INTO tenant_exit_lines(exit_request_id,tenant_id,assignment_id,sva_number_id,e164_snapshot,requested_action,portability_service_level,rio_delivery_channel) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",[exit.id,id,line.assignment_id,line.sva_number_id,line.e164,action,String(line.e164||"").startsWith("+338")?"enhanced":"standard",portOut?"provider_direct":"not_required"]);
+      const createdLines=[];
+      for(const line of lines){
+        const createdLine=(await tx.unsafe("INSERT INTO tenant_exit_lines(exit_request_id,tenant_id,assignment_id,sva_number_id,e164_snapshot,requested_action,portability_service_level,rio_delivery_channel) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id",[exit.id,id,line.assignment_id,line.sva_number_id,line.e164,action,String(line.e164||"").startsWith("+338")?"enhanced":"standard",portOut?"provider_direct":"not_required"]))[0];
+        createdLines.push({...line,exit_line_id:Number(createdLine.id)});
+      }
       await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_customer_principal_id,message,customer_visible,details) VALUES($1,$2,'created','customer',$3::uuid,'Demande de départ enregistrée',true,$4::jsonb)",[createdCase.id,id,principal,JSON.stringify({exit_scope:scope,port_out_requested:portOut,lines:lines.length,contract_obligations_acknowledged:acknowledged})]);
       await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'customer_exit.create','tenant_exit_request',$2,$3::jsonb)",[id,String(exit.id),JSON.stringify({public_id:exit.public_id,case_public_id:createdCase.public_id,port_out_requested:portOut,lines:lines.length,reason_category:reason})]);
       await tx.unsafe("INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'customer_exit.created','tenant_exit_request',$2,$3::jsonb)",[id,String(exit.id),JSON.stringify({exit_public_id:exit.public_id,case_public_id:createdCase.public_id,port_out_requested:portOut,line_count:lines.length})]);
-      return {case:createdCase,exit,lines:lines.map(x=>({assignment_id:Number(x.assignment_id),e164:x.e164,requested_action:action}))};
+      return {case:createdCase,exit,lines:createdLines.map(x=>({exit_line_id:x.exit_line_id,assignment_id:Number(x.assignment_id),e164:x.e164,requested_action:action}))};
     });
     this.eventBus.publish("customer_exit.created",{tenant_id:id,case_id:String(result.case.public_id),exit_id:String(result.exit.public_id),port_out_requested:portOut});
     const orchestration=[];
-    const startupActions=portOut?["prepare_exit","generate_data_export","check_portability","request_outbound_rio"]:["prepare_exit","generate_data_export"];
-    for(const actionType of startupActions){
+    for(const actionType of ["prepare_exit","generate_data_export",...(portOut?["check_portability"]:[])]){
       try{
         const action=await this.createRelationAgentAction(result.case.public_id,{action_type:actionType,confidence:1,explanation:"Orchestration automatique déclenchée par la demande explicite du client.",payload:{}},{});
         orchestration.push({action_type:actionType,status:action.status,public_id:action.public_id});
       }catch(error){
         orchestration.push({action_type:actionType,status:"blocked",code:error?.code||error?.message||"ACTION_FAILED"});
+      }
+    }
+    if(portOut){
+      for(const line of result.lines){
+        try{
+          const action=await this.createRelationAgentAction(result.case.public_id,{action_type:"request_outbound_rio",confidence:1,explanation:"Demande sécurisée du RIO pour le numéro sélectionné.",payload:{exit_line_id:line.exit_line_id}},{});
+          orchestration.push({action_type:"request_outbound_rio",exit_line_id:line.exit_line_id,status:action.status,public_id:action.public_id});
+        }catch(error){
+          orchestration.push({action_type:"request_outbound_rio",exit_line_id:line.exit_line_id,status:"blocked",code:error?.code||error?.message||"ACTION_FAILED"});
+        }
       }
     }
     return {...result,orchestration};
@@ -4616,10 +4629,11 @@ export class PostgresStore{
         await tx.unsafe("UPDATE tenant_relation_actions SET status='completed',result=$2::jsonb,executed_at=now() WHERE id=$1",[action.id,JSON.stringify(actionResult)]);
       }else if(policy.execution_mode==="external_confirmation"){
         if(policy.action_type==="request_outbound_rio"){
-          const portabilityLines=await tx.unsafe("SELECT id,portability_eligibility_status FROM tenant_exit_lines WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out' FOR UPDATE",[relation.id]);
+          const targetLineId=Number(payload.exit_line_id)||null;
+          const portabilityLines=await tx.unsafe("SELECT id,portability_eligibility_status FROM tenant_exit_lines WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out' AND ($2::bigint IS NULL OR id=$2) FOR UPDATE",[relation.id,targetLineId]);
           if(!portabilityLines.length)throw problem(409,"PORT_OUT_LINES_REQUIRED");
           if(portabilityLines.some(x=>x.portability_eligibility_status!=="eligible"))throw problem(409,"PORT_OUT_ELIGIBILITY_REQUIRED");
-          await tx.unsafe("UPDATE tenant_exit_lines SET rio_status=CASE WHEN rio_status IN ('not_requested','unavailable') THEN 'requested' ELSE rio_status END,rio_requested_at=COALESCE(rio_requested_at,now()) WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[relation.id]);
+          await tx.unsafe("UPDATE tenant_exit_lines SET rio_status=CASE WHEN rio_status IN ('not_requested','unavailable') THEN 'requested' ELSE rio_status END,rio_requested_at=COALESCE(rio_requested_at,now()) WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out' AND ($2::bigint IS NULL OR id=$2)",[relation.id,targetLineId]);
           await tx.unsafe("UPDATE tenant_exit_requests SET status='waiting_provider',updated_at=now() WHERE case_id=$1 AND status NOT IN ('completed','cancelled')",[relation.id]);
         }else if(policy.action_type==="submit_port_out"){
           const ex=(await tx.unsafe("SELECT id,port_out_requested,customer_confirmed FROM tenant_exit_requests WHERE case_id=$1 FOR UPDATE",[relation.id]))[0];
@@ -4708,12 +4722,14 @@ export class PostgresStore{
       if(!["queued","approved","executing"].includes(row.status))throw problem(409,"RELATION_ACTION_NOT_PENDING");
       let finalStatus=["failed","rejected"].includes(outcome)?"failed":"completed",eventType="status_changed",message="Confirmation externe enregistrée";
       if(row.action_type==="request_outbound_rio"){
+        const actionPayload=typeof row.payload==="string"?JSON.parse(row.payload||"{}"):(row.payload||{});
+        const targetLineId=Number(actionPayload.exit_line_id)||null;
         const last4=input.rio_last4==null?null:String(input.rio_last4).slice(-4);
         const deliveryChannel=String(input.delivery_channel||"provider_direct").trim().toLowerCase();
         if(!["provider_direct","secure_portal","verified_email","manual_secure","not_required"].includes(deliveryChannel))throw problem(400,"INVALID_RIO_DELIVERY_CHANNEL");
         const deliveryReference=String(input.delivery_reference||providerReference||"").trim().slice(0,255)||null;
         const state=outcome==="delivered"?"delivered":["available","success","completed"].includes(outcome)?"available":"unavailable";
-        await tx.unsafe("UPDATE tenant_exit_lines SET rio_status=$2,rio_last4=COALESCE($3,rio_last4),rio_delivered_at=CASE WHEN $2='delivered' THEN now() ELSE rio_delivered_at END,rio_delivery_channel=$4,rio_delivery_reference=COALESCE($5,rio_delivery_reference) WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[row.case_id,state,last4,deliveryChannel,deliveryReference]);
+        await tx.unsafe("UPDATE tenant_exit_lines SET rio_status=$2,rio_last4=COALESCE($3,rio_last4),rio_delivered_at=CASE WHEN $2='delivered' THEN now() ELSE rio_delivered_at END,rio_delivery_channel=$4,rio_delivery_reference=COALESCE($5,rio_delivery_reference) WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out' AND ($6::bigint IS NULL OR id=$6)",[row.case_id,state,last4,deliveryChannel,deliveryReference,targetLineId]);
         eventType="status_changed";message=state==="delivered"?"RIO délivré par le canal sécurisé prévu":"Statut RIO mis à jour";
       }else if(row.action_type==="submit_port_out"){
         if(outcome==="scheduled"){
