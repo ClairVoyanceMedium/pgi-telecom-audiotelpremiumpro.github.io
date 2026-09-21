@@ -3181,7 +3181,7 @@ export class PostgresStore{
     return this.withTenantReadContext(id,async tx=>{
       const [members,invitations]=await Promise.all([
         tx.unsafe(
-          "SELECT p.id,p.email,p.display_name,p.email_verified,p.last_authenticated_at,m.role,m.status AS membership_status,m.permission_grants,m.permission_denials,m.joined_at,m.updated_at"+
+          "SELECT p.id,p.email,p.display_name,p.email_verified,p.last_authenticated_at,m.role,m.status AS membership_status,m.joined_at,m.updated_at"+
           " FROM customer_tenant_memberships m JOIN customer_principals p ON p.id=m.customer_principal_id"+
           " WHERE m.tenant_id=$1 ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,p.display_name,p.email",[id]
         ),
@@ -3266,7 +3266,7 @@ export class PostgresStore{
       const updated=(await tx.unsafe(
         "UPDATE customer_tenant_memberships SET role=$3,status=$4,updated_at=now()"+
         " WHERE tenant_id=$1 AND customer_principal_id=$2::uuid"+
-        " RETURNING customer_principal_id,role,status AS membership_status,permission_grants,permission_denials,joined_at,updated_at",
+        " RETURNING customer_principal_id,role,status AS membership_status,joined_at,updated_at",
         [id,target,role,status]
       ))[0];
       if(current.role!==role)await tx.unsafe(
