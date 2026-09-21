@@ -409,3 +409,14 @@ Rôle `admin`, CSRF et idempotence. Ajoute un événement de preuve append-only 
 Rôle `admin`, CSRF et idempotence. Planifie localement un changement tarifaire. La date d'effet doit être le premier jour d'un mois et respecter un délai minimal de sept jours. Cette route ne transmet aucune déclaration au RSVA.
 
 L'`activation_ready` du cockpit exige désormais Trust Center + ARCEP 2026 lorsque applicable + SVA Ecosystem Readiness.
+
+
+## Consumption control receipts
+
+`POST /customer/consumption-receipts` creates an immutable aggregate receipt for the exact dashboard period currently displayed by the authenticated tenant. The receipt records the effective metric baselines, aggregate calls/minutes/revenue/validated payout, tenant timezone and a SHA-256 digest. It never stores raw caller identity, card data or a full CDR payload.
+
+`GET /customer/consumption-receipts` returns the tenant's recent receipts.
+
+`GET /platform/tenants/:id/consumption-receipts` lets authorized staff inspect the same receipts. `GET /platform/tenants/:id/consumption-receipts/:receipt/reconcile` recomputes the receipt using the authoritative call facts and validated tenant distributions with the original period and metric baselines, then returns `match` or `difference` with metric-level differences.
+
+A receipt is evidence of what the dashboard aggregate represented when it was created. A later reconciliation can legitimately report a difference if authoritative source data for the frozen period changed later, for example because a late CDR arrived or a validated settlement state changed.
