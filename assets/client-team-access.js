@@ -50,11 +50,11 @@ export async function mountTeamAccess(pane,user,flash){
   pane.querySelector("[data-team-invite]")?.addEventListener("click",async()=>{
     const email=pane.querySelector("[data-team-email]").value.trim(),role=pane.querySelector("[data-team-role]").value,out=pane.querySelector("[data-team-result]");
     if(!email){out.textContent="Adresse e-mail requise.";return}
-    try{const r=await api.invite({email,role});await mountTeamAccess(pane,api,user,{activation_path:r.activation_path||""})}catch(e){out.textContent=e.code==="CUSTOMER_PERMISSION_DENIED"?"Vous n’avez pas le droit de gérer l’équipe.":"Invitation impossible."}
+    try{const r=await api.invite({email,role});await mountTeamAccess(pane,user,{activation_path:r.activation_path||""})}catch(e){out.textContent=e.code==="CUSTOMER_PERMISSION_DENIED"?"Vous n’avez pas le droit de gérer l’équipe.":"Invitation impossible."}
   });
   pane.querySelectorAll("[data-member-save]").forEach(b=>b.addEventListener("click",async()=>{
     const id=b.dataset.memberSave,role=pane.querySelector('[data-member-role="'+CSS.escape(id)+'"]').value,status=pane.querySelector('[data-member-status="'+CSS.escape(id)+'"]').value;
-    try{await api.update(id,{role,status});await mountTeamAccess(pane,api,user)}catch(e){alert(e.code==="LAST_CUSTOMER_OWNER_REQUIRED"?"Le dernier propriétaire actif ne peut pas être rétrogradé ou révoqué.":"Modification impossible.")}
+    try{await api.update(id,{role,status});await mountTeamAccess(pane,user)}catch(e){alert(e.code==="LAST_CUSTOMER_OWNER_REQUIRED"?"Le dernier propriétaire actif ne peut pas être rétrogradé ou révoqué.":"Modification impossible.")}
   }));
-  pane.querySelectorAll("[data-invite-revoke]").forEach(b=>b.addEventListener("click",async()=>{try{await api.revoke(b.dataset.inviteRevoke);await mountTeamAccess(pane,api,user)}catch(_e){}}));
+  pane.querySelectorAll("[data-invite-revoke]").forEach(b=>b.addEventListener("click",async()=>{try{await api.revoke(b.dataset.inviteRevoke);await mountTeamAccess(pane,user)}catch(_e){}}));
 }
