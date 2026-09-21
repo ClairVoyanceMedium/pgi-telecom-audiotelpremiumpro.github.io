@@ -1,4 +1,4 @@
-export function applyClientAccessVisibility(data={},demo=false){
+export function a(data={},demo=false){
   const permissions=data.user?.permissions||[],all=demo||permissions.includes("*"),can=p=>all||permissions.includes(p);
   const byId=id=>document.getElementById(id);
   const hideId=(id,hidden)=>{const el=byId(id);if(el)el.hidden=hidden};
