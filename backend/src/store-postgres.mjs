@@ -4332,7 +4332,7 @@ export class PostgresStore{
         [id]
       ),
       this.readSql.unsafe(
-        "SELECT l.id,l.exit_request_id,l.assignment_id,l.sva_number_id,l.e164_snapshot,l.requested_action,l.status,l.operator_reference,l.rio_status,l.rio_last4,l.rio_requested_at,l.rio_delivered_at,l.portability_service_level,l.recovery_option,l.scheduled_at,l.completed_at,l.created_at FROM tenant_exit_lines l WHERE l.tenant_id=$1 ORDER BY l.created_at,l.id LIMIT 500",
+        "SELECT l.id,l.exit_request_id,l.assignment_id,l.sva_number_id,l.e164_snapshot,l.requested_action,l.status,l.operator_reference,l.rio_status,l.rio_last4,l.rio_requested_at,l.rio_delivered_at,l.rio_delivery_channel,l.rio_delivery_reference,l.portability_eligibility_status,l.portability_eligibility_reason,l.portability_eligibility_checked_at,l.portability_service_level,l.recovery_option,l.scheduled_at,l.completed_at,l.created_at FROM tenant_exit_lines l WHERE l.tenant_id=$1 ORDER BY l.created_at,l.id LIMIT 500",
         [id]
       ),
       this.readSql.unsafe(
@@ -4422,8 +4422,8 @@ export class PostgresStore{
       const open=(await tx.unsafe("SELECT id,public_id FROM tenant_exit_requests WHERE tenant_id=$1 AND status NOT IN ('completed','cancelled') ORDER BY id DESC LIMIT 1",[id]))[0];
       if(open)throw problem(409,"EXIT_REQUEST_ALREADY_OPEN");
       const lines=scope==="all_services"
-        ?await tx.unsafe("SELECT a.id AS assignment_id,a.sva_number_id,sn.e164 FROM tenant_number_assignments a JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.tenant_id=$1 AND a.status<>'ended' ORDER BY a.id",[id])
-        :await tx.unsafe("SELECT a.id AS assignment_id,a.sva_number_id,sn.e164 FROM tenant_number_assignments a JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.tenant_id=$1 AND a.id=ANY($2::bigint[]) ORDER BY a.id",[id,ids]);
+        ?await tx.unsafe("SELECT a.id AS assignment_id,a.sva_number_id,sn.e164,a.status AS assignment_status,a.valid_to FROM tenant_number_assignments a JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.tenant_id=$1 AND (a.status<>'ended' OR (a.valid_to IS NOT NULL AND a.valid_to>=now()-interval '40 days')) ORDER BY a.id",[id])
+        :await tx.unsafe("SELECT a.id AS assignment_id,a.sva_number_id,sn.e164,a.status AS assignment_status,a.valid_to FROM tenant_number_assignments a JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.tenant_id=$1 AND a.id=ANY($2::bigint[]) ORDER BY a.id",[id,ids]);
       if(scope==="selected_lines"&&lines.length!==ids.length)throw problem(404,"EXIT_LINE_NOT_FOUND");
       if(portOut&&!lines.length)throw problem(409,"EXIT_NO_PORTABLE_LINES");
       const createdCase=(await tx.unsafe(
@@ -4435,14 +4435,24 @@ export class PostgresStore{
         [createdCase.id,id,scope,reason,effective,portOut?"port_out":pref,portOut,targetOperator,acknowledged?"preparing":"waiting_customer",acknowledged]
       ))[0];
       const action=portOut?"port_out":pref==="release"?"release":"keep_until_exit";
-      for(const line of lines)await tx.unsafe("INSERT INTO tenant_exit_lines(exit_request_id,tenant_id,assignment_id,sva_number_id,e164_snapshot,requested_action) VALUES($1,$2,$3,$4,$5,$6)",[exit.id,id,line.assignment_id,line.sva_number_id,line.e164,action]);
+      for(const line of lines)await tx.unsafe("INSERT INTO tenant_exit_lines(exit_request_id,tenant_id,assignment_id,sva_number_id,e164_snapshot,requested_action,portability_service_level,rio_delivery_channel) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",[exit.id,id,line.assignment_id,line.sva_number_id,line.e164,action,String(line.e164||"").startsWith("+338")?"enhanced":"standard",portOut?"provider_direct":"not_required"]);
       await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_customer_principal_id,message,customer_visible,details) VALUES($1,$2,'created','customer',$3::uuid,'Demande de départ enregistrée',true,$4::jsonb)",[createdCase.id,id,principal,JSON.stringify({exit_scope:scope,port_out_requested:portOut,lines:lines.length,contract_obligations_acknowledged:acknowledged})]);
       await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'customer_exit.create','tenant_exit_request',$2,$3::jsonb)",[id,String(exit.id),JSON.stringify({public_id:exit.public_id,case_public_id:createdCase.public_id,port_out_requested:portOut,lines:lines.length,reason_category:reason})]);
       await tx.unsafe("INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'customer_exit.created','tenant_exit_request',$2,$3::jsonb)",[id,String(exit.id),JSON.stringify({exit_public_id:exit.public_id,case_public_id:createdCase.public_id,port_out_requested:portOut,line_count:lines.length})]);
       return {case:createdCase,exit,lines:lines.map(x=>({assignment_id:Number(x.assignment_id),e164:x.e164,requested_action:action}))};
     });
     this.eventBus.publish("customer_exit.created",{tenant_id:id,case_id:String(result.case.public_id),exit_id:String(result.exit.public_id),port_out_requested:portOut});
-    return result;
+    const orchestration=[];
+    const startupActions=portOut?["prepare_exit","generate_data_export","check_portability","request_outbound_rio"]:["prepare_exit","generate_data_export"];
+    for(const actionType of startupActions){
+      try{
+        const action=await this.createRelationAgentAction(result.case.public_id,{action_type:actionType,confidence:1,explanation:"Orchestration automatique déclenchée par la demande explicite du client.",payload:{}},{});
+        orchestration.push({action_type:actionType,status:action.status,public_id:action.public_id});
+      }catch(error){
+        orchestration.push({action_type:actionType,status:"blocked",code:error?.code||error?.message||"ACTION_FAILED"});
+      }
+    }
+    return {...result,orchestration};
   }
 
   async addCustomerRelationMessage(tenantId,casePublicId,body,principalId){
@@ -4550,8 +4560,29 @@ export class PostgresStore{
           const changed=await tx.unsafe("UPDATE tenant_exit_requests SET data_export_status=CASE WHEN data_export_status='not_requested' THEN 'requested' ELSE data_export_status END,updated_at=now() WHERE case_id=$1 RETURNING public_id,data_export_status",[relation.id]);
           actionResult={exit:changed[0]||null,export_generated:false};
         }else if(policy.action_type==="check_portability"){
-          const lines=await tx.unsafe("UPDATE tenant_exit_lines SET status=CASE WHEN status='pending' THEN 'eligibility_check' ELSE status END WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) RETURNING id,e164_snapshot,status",[relation.id]);
-          actionResult={line_count:lines.length,lines};
+          const lines=await tx.unsafe(
+            "WITH checked AS ("+
+            " SELECT l.id,l.e164_snapshot,l.requested_action,a.status AS assignment_status,a.valid_to,"+
+            " CASE WHEN l.requested_action<>'port_out' THEN true"+
+            "      WHEN a.status IN ('active','suspended','testing') THEN true"+
+            "      WHEN a.status='ended' AND a.valid_to IS NOT NULL AND a.valid_to>=now()-interval '40 days' THEN true"+
+            "      ELSE false END AS eligible,"+
+            " CASE WHEN l.requested_action<>'port_out' THEN 'not_requested'"+
+            "      WHEN a.status IN ('active','suspended','testing') THEN 'active_or_recoverable'"+
+            "      WHEN a.status='ended' AND a.valid_to IS NOT NULL AND a.valid_to>=now()-interval '40 days' THEN 'within_40_day_recovery_window'"+
+            "      ELSE 'number_not_portable_or_recovery_window_expired' END AS reason"+
+            " FROM tenant_exit_lines l JOIN tenant_number_assignments a ON a.id=l.assignment_id"+
+            " WHERE l.exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1)"+
+            ") UPDATE tenant_exit_lines l SET status=CASE WHEN c.eligible THEN 'eligibility_check' ELSE 'blocked' END,"+
+            " portability_eligibility_status=CASE WHEN c.eligible THEN 'eligible' ELSE CASE WHEN c.assignment_status='ended' THEN 'expired' ELSE 'ineligible' END END,"+
+            " portability_eligibility_reason=c.reason,portability_eligibility_checked_at=now(),"+
+            " portability_service_level=CASE WHEN l.e164_snapshot LIKE '+338%' THEN 'enhanced' ELSE l.portability_service_level END"+
+            " FROM checked c WHERE l.id=c.id RETURNING l.id,l.e164_snapshot,l.status,l.portability_eligibility_status,l.portability_eligibility_reason,l.portability_service_level",
+            [relation.id]
+          );
+          const blocked=lines.filter(x=>x.portability_eligibility_status!=="eligible");
+          if(blocked.length)await tx.unsafe("UPDATE tenant_exit_requests SET status='blocked',updated_at=now() WHERE case_id=$1",[relation.id]);
+          actionResult={line_count:lines.length,eligible:blocked.length===0,blocked_count:blocked.length,lines};
         }else if(policy.action_type==="collect_evidence"){
           if(relation.invoice_reference)await tx.unsafe("INSERT INTO tenant_relation_evidence(case_id,tenant_id,evidence_kind,external_reference,metadata) SELECT $1,$2,'invoice',$3,$4::jsonb WHERE NOT EXISTS (SELECT 1 FROM tenant_relation_evidence WHERE case_id=$1 AND evidence_kind='invoice' AND external_reference=$3)",[relation.id,relation.tenant_id,relation.invoice_reference,JSON.stringify({source:"customer_reference"})]);
           const dist=await tx.unsafe("SELECT id FROM tenant_revenue_distributions WHERE tenant_id=$1 AND ($2::date IS NULL OR period_end>=$2::date) AND ($3::date IS NULL OR period_start<=$3::date) AND ($4::text IS NULL OR currency=$4) ORDER BY period_end DESC,id DESC LIMIT 100",[relation.tenant_id,relation.disputed_period_start,relation.disputed_period_end,relation.disputed_currency]);
@@ -4585,12 +4616,19 @@ export class PostgresStore{
         await tx.unsafe("UPDATE tenant_relation_actions SET status='completed',result=$2::jsonb,executed_at=now() WHERE id=$1",[action.id,JSON.stringify(actionResult)]);
       }else if(policy.execution_mode==="external_confirmation"){
         if(policy.action_type==="request_outbound_rio"){
-          await tx.unsafe("UPDATE tenant_exit_lines SET rio_status=CASE WHEN rio_status IN ('not_requested','unavailable') THEN 'requested' ELSE rio_status END,rio_requested_at=COALESCE(rio_requested_at,now()) WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1)",[relation.id]);
+          const portabilityLines=await tx.unsafe("SELECT id,portability_eligibility_status FROM tenant_exit_lines WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out' FOR UPDATE",[relation.id]);
+          if(!portabilityLines.length)throw problem(409,"PORT_OUT_LINES_REQUIRED");
+          if(portabilityLines.some(x=>x.portability_eligibility_status!=="eligible"))throw problem(409,"PORT_OUT_ELIGIBILITY_REQUIRED");
+          await tx.unsafe("UPDATE tenant_exit_lines SET rio_status=CASE WHEN rio_status IN ('not_requested','unavailable') THEN 'requested' ELSE rio_status END,rio_requested_at=COALESCE(rio_requested_at,now()) WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[relation.id]);
           await tx.unsafe("UPDATE tenant_exit_requests SET status='waiting_provider',updated_at=now() WHERE case_id=$1 AND status NOT IN ('completed','cancelled')",[relation.id]);
         }else if(policy.action_type==="submit_port_out"){
           const ex=(await tx.unsafe("SELECT id,port_out_requested,customer_confirmed FROM tenant_exit_requests WHERE case_id=$1 FOR UPDATE",[relation.id]))[0];
           if(!ex||!ex.port_out_requested)throw problem(409,"PORT_OUT_NOT_REQUESTED");
           if(!ex.customer_confirmed)throw problem(409,"EXIT_CUSTOMER_CONFIRMATION_REQUIRED");
+          const portLines=await tx.unsafe("SELECT id,portability_eligibility_status,rio_status FROM tenant_exit_lines WHERE exit_request_id=$1 AND requested_action='port_out' FOR UPDATE",[ex.id]);
+          if(!portLines.length)throw problem(409,"PORT_OUT_LINES_REQUIRED");
+          if(portLines.some(x=>x.portability_eligibility_status!=="eligible"))throw problem(409,"PORT_OUT_ELIGIBILITY_REQUIRED");
+          if(portLines.some(x=>!["available","delivered","not_required"].includes(x.rio_status)))throw problem(409,"PORT_OUT_RIO_REQUIRED");
           await tx.unsafe("UPDATE tenant_exit_requests SET status='waiting_provider',updated_at=now() WHERE id=$1",[ex.id]);
           await tx.unsafe("UPDATE tenant_exit_lines SET status=CASE WHEN requested_action='port_out' THEN 'waiting_provider' ELSE status END WHERE exit_request_id=$1",[ex.id]);
           await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible) VALUES($1,$2,'port_out_submitted','agent',$3,'Demande de portabilité sortante mise en file auprès du fournisseur.',true)",[relation.id,relation.tenant_id,actorId]);
