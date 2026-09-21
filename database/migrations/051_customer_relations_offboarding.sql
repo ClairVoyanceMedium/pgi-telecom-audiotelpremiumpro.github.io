@@ -37,7 +37,7 @@ CREATE TABLE tenant_relation_cases (
     CHECK (ai_state IN ('queued','analyzing','ready','action_required','blocked','done')),
   ai_confidence numeric(5,4) CHECK (ai_confidence IS NULL OR (ai_confidence>=0 AND ai_confidence<=1)),
   ai_policy_version text NOT NULL DEFAULT 'customer-relations/1',
-  first_response_due_at timestamptz NOT NULL DEFAULT (now()+interval '1 business day'),
+  first_response_due_at timestamptz NOT NULL DEFAULT (now()+interval '24 hours'),
   target_resolution_at timestamptz NOT NULL DEFAULT (now()+interval '10 days'),
   first_responded_at timestamptz,
   last_customer_update_at timestamptz,
