@@ -3213,7 +3213,12 @@ export class PostgresStore{
         " WHERE m.tenant_id=$1 AND p.email_normalized=$2 AND m.status IN ('active','suspended') LIMIT 1",[id,email]
       ))[0];
       if(existing)throw problem(409,"CUSTOMER_ALREADY_MEMBER");
-      await tx.unsafe("UPDATE customer_tenant_invitations SET status='revoked' WHERE tenant_id=$1 AND email_normalized=$2 AND status='pending'",[id,email]);
+      const superseded=await tx.unsafe("UPDATE customer_tenant_invitations SET status='revoked' WHERE tenant_id=$1 AND email_normalized=$2 AND status='pending' RETURNING id,email,role",[id,email]);
+      for(const previous of superseded)await tx.unsafe(
+        "INSERT INTO customer_tenant_access_events(tenant_id,event_type,invitation_id,actor_customer_principal_id,previous_role,new_role,previous_status,new_status,details)"+
+        " VALUES($1,'invitation_revoked',$2::uuid,$3::uuid,$4,$4,'pending','revoked',$5::jsonb)",
+        [id,previous.id,actor,previous.role,JSON.stringify({email:previous.email,reason:"superseded"})]
+      );
       const row=(await tx.unsafe(
         "INSERT INTO customer_tenant_invitations(tenant_id,email,role,token_hash,status,expires_at,invited_by_customer_principal_id)"+
         " VALUES($1,$2,$3,$4,'pending',now()+make_interval(hours=>$5),$6::uuid)"+
@@ -3288,6 +3293,11 @@ export class PostgresStore{
       ))[0];
       if(!current)throw problem(404,"CUSTOMER_INVITATION_NOT_FOUND");
       if(current.status!=="pending")throw problem(409,"CUSTOMER_INVITATION_NOT_PENDING");
+      const actorMembership=(await tx.unsafe(
+        "SELECT role,status FROM customer_tenant_memberships WHERE tenant_id=$1 AND customer_principal_id=$2::uuid FOR UPDATE",[id,actor]
+      ))[0];
+      if(!actorMembership||actorMembership.status!=="active")throw problem(403,"CUSTOMER_PERMISSION_DENIED");
+      if(current.role==="owner"&&actorMembership.role!=="owner")throw problem(403,"CUSTOMER_OWNER_REQUIRED");
       const updated=(await tx.unsafe(
         "UPDATE customer_tenant_invitations SET status='revoked' WHERE tenant_id=$1 AND id=$2::uuid RETURNING id,email,role,status,expires_at,created_at",
         [id,invite]
