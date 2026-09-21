@@ -249,3 +249,11 @@ body{
   .cp-table-wrap{overflow:visible!important}
   .cp-table{min-width:0!important}
 }
+
+.cp-mini-columns{display:grid;grid-template-columns:repeat(auto-fit,minmax(14px,1fr));gap:5px;align-items:end;min-height:205px;padding:8px 2px 0}
+.cp-mini-col{min-width:0;height:190px;display:grid;grid-template-rows:1fr 18px;gap:5px;align-items:end}
+.cp-mini-col>i{height:160px;display:flex;align-items:flex-end;overflow:hidden;border-radius:5px 5px 3px 3px;background:#211510;border:1px solid rgba(103,73,58,.56)}
+.cp-mini-col>i>b{width:100%;display:block;border-radius:4px 4px 2px 2px;background:linear-gradient(180deg,var(--accent),var(--accent2));box-shadow:0 -4px 14px rgba(215,167,106,.12)}
+.cp-mini-col>small{display:block;color:#9f8774;font-size:7px;text-align:center;white-space:nowrap}
+@media(max-width:560px){.cp-mini-columns{gap:3px}.cp-mini-col>small{font-size:6px}.cp-mini-col{height:165px}.cp-mini-col>i{height:138px}}
+@media print{.cp-mini-col>i{background:#eee!important;border-color:#bbb!important}.cp-mini-col>i>b{background:#8a5b36!important}.cp-mini-col>small{color:#333!important}}
