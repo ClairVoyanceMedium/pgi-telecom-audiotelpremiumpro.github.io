@@ -161,24 +161,13 @@ function renderDestinations(data){
   var rows=data.destinations||[],el=$("destinations-list");
   el.innerHTML=rows.length?rows.map(function(x){var line=x.sva_number_id?numbers[String(x.sva_number_id)]||"Numéro attribué":"Tous les numéros";var cap=x.max_concurrent_calls?" · "+n(x.active_calls)+"/"+n(x.max_concurrent_calls)+" appels":" · "+n(x.active_calls)+" appel(s)";return '<div class="cp-row"><div><strong>'+esc(x.label)+'</strong><span>'+esc(line+" · "+x.destination_type+" · "+x.destination_uri+cap)+'</span></div>'+chip(x.status)+'</div>';}).join(""):'<p class="cp-empty">Aucune destination affichée.</p>';
 }
-function applyAccessVisibility(data){
-  var permissions=(data.user&&data.user.permissions)||[],all=state.demo||permissions.indexOf("*")>=0;
-  function can(p){return all||permissions.indexOf(p)>=0}
-  function hideId(id,hidden){var el=$(id);if(el)el.hidden=hidden}
-  function hideCard(childId,hidden){var el=$(childId),card=el&&el.closest("article");if(card)card.hidden=hidden}
-  function hideNav(href,hidden){var el=document.querySelector('.cp-section-nav a[href="'+href+'"]');if(el)el.hidden=hidden}
-  var finance=!can("finance.read"),routing=!can("routing.read"),incidents=!can("incidents.read");
-  hideId("client-finance",finance);hideNav("#client-finance",finance);hideCard("kpi-revenue",finance);hideCard("kpi-payout",finance);hideCard("revenue-chart",finance);hideCard("payout-bars",finance);
-  hideId("client-routing",routing);hideNav("#client-routing",routing);hideCard("numbers-list",routing);hideCard("portability-open",routing);
-  hideId("client-service-center",incidents);
-}
 function render(data){
   window.PGIClientPortalData=data;state.data=data;state.user=data.user||state.user;
   $("tenant-name").textContent=(data.tenant&&data.tenant.display_name)||"Mon entreprise";
   $("tenant-meta").textContent=[data.tenant&&data.tenant.country_code,data.tenant&&data.tenant.default_currency,state.demo?"Démonstration":null].filter(Boolean).join(" · ");
   $("customer-user-name").textContent=(state.user&&state.user.name)||"Utilisateur";
   $("customer-user-role").textContent=statusLabel((state.user&&state.user.role)||"readonly");
-  applyAccessVisibility(data);
+  void import("./client-access-visibility.js").then(function(m){m.applyClientAccessVisibility(data,state.demo);}).catch(function(){});
   var resetButton=$("client-metrics-reset"),canReset=state.demo||["owner","admin"].includes(String((state.user&&state.user.role)||"").toLowerCase());
   if(resetButton)resetButton.hidden=!canReset;
   var a=aggregate(data),rate=a.calls?a.connected/a.calls*100:0;
