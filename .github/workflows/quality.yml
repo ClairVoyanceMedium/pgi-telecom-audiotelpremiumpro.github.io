@@ -43,6 +43,30 @@ jobs:
       - name: Verify repository
         run: npm run verify
 
+      - name: Performance and resilience tool smoke
+        env:
+          PGI_BACKEND_MODE: simulator
+          PGI_BACKEND_HOST: 127.0.0.1
+          PGI_BACKEND_PORT: 18080
+          PGI_PERF_TARGET: http://127.0.0.1:18080
+          PGI_SYNTHETIC_TARGET: http://127.0.0.1:18080
+          PGI_PERF_DURATION_SECONDS: 3
+          PGI_PERF_CONCURRENCY: 5
+          PGI_PERF_P95_MS: 1500
+          PGI_PERF_ERROR_RATE: 0
+        run: |
+          node backend/server.mjs > /tmp/pgi-perf-backend.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18080/api/v1/ready >/dev/null; then break; fi
+            sleep 0.2
+          done
+          curl -fsS http://127.0.0.1:18080/api/v1/ready >/dev/null
+          npm run perf:load
+          npm run perf:synthetic
+          npm run resilience:drill
+
       - name: Validate PostgreSQL schema and smoke tests
         env:
           PGPASSWORD: pgi_test
