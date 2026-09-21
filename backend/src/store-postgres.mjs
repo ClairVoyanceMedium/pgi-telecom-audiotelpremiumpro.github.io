@@ -4521,7 +4521,7 @@ export class PostgresStore{
       const relation=(await tx.unsafe("SELECT * FROM tenant_relation_cases WHERE public_id=$1::uuid FOR UPDATE",[publicId]))[0];
       if(!relation)throw problem(404,"RELATION_CASE_NOT_FOUND");
       if(["closed","cancelled"].includes(relation.status))throw problem(409,"RELATION_CASE_CLOSED");
-      const initialStatus=policy.execution_mode==="automatic"?"executing":"proposed";
+      const initialStatus=policy.execution_mode==="automatic"?"executing":policy.execution_mode==="external_confirmation"?"queued":"proposed";
       const action=(await tx.unsafe(
         "INSERT INTO tenant_relation_actions(case_id,tenant_id,action_type,risk_class,execution_mode,status,proposed_by,proposed_by_user_id,confidence,explanation,payload) VALUES($1,$2,$3,$4,$5,$6,'agent',$7,$8,$9,$10::jsonb) RETURNING id,public_id,case_id,tenant_id,action_type,risk_class,execution_mode,status,confidence::float8,explanation,payload,created_at",
         [relation.id,relation.tenant_id,policy.action_type,policy.risk_class,policy.execution_mode,initialStatus,actorId,confidence,explanation,JSON.stringify(payload)]
@@ -4553,6 +4553,12 @@ export class PostgresStore{
         }else if(policy.action_type==="reconcile_billing"){
           const rows=await tx.unsafe("SELECT currency,COALESCE(sum(upstream_payout_ht),0)::float8 AS upstream_payout_ht,COALESCE(sum(platform_fee_ht),0)::float8 AS platform_fee_ht,COALESCE(sum(net_payout_ht),0)::float8 AS net_payout_ht,COALESCE(sum(unallocated_amount_ht),0)::float8 AS unallocated_amount_ht,count(*)::int AS distributions FROM tenant_revenue_distributions WHERE tenant_id=$1 AND ($2::date IS NULL OR period_end>=$2::date) AND ($3::date IS NULL OR period_start<=$3::date) AND ($4::text IS NULL OR currency=$4) GROUP BY currency ORDER BY currency",[relation.tenant_id,relation.disputed_period_start,relation.disputed_period_end,relation.disputed_currency]);
           actionResult={authoritative_distribution_summary:rows,subscription_invoice_provider_connected:false};
+        }else if(policy.action_type==="reconcile_final_settlement"){
+          const rows=await tx.unsafe("SELECT currency,count(*)::int AS distributions,count(*) FILTER(WHERE status='paid')::int AS paid,count(*) FILTER(WHERE status NOT IN ('paid','cancelled'))::int AS open,COALESCE(sum(net_payout_ht) FILTER(WHERE status<>'cancelled'),0)::float8 AS net_payout_ht,COALESCE(sum(net_payout_ht) FILTER(WHERE status='paid'),0)::float8 AS paid_payout_ht FROM tenant_revenue_distributions WHERE tenant_id=$1 GROUP BY currency ORDER BY currency",[relation.tenant_id]);
+          const open=rows.reduce((n,x)=>n+Number(x.open||0),0);
+          if(open===0)await tx.unsafe("UPDATE tenant_exit_requests SET final_settlement_status='settled',updated_at=now() WHERE case_id=$1",[relation.id]);
+          else await tx.unsafe("UPDATE tenant_exit_requests SET final_settlement_status='pending',updated_at=now() WHERE case_id=$1",[relation.id]);
+          actionResult={currencies:rows,open_distributions:open,settled:open===0};
         }else if(policy.action_type==="respond_customer"||policy.action_type==="request_customer_info"){
           const message=String(payload.message||"").trim();
           if(!message||message.length>8000)throw problem(400,"RELATION_RESPONSE_REQUIRED");
@@ -4570,6 +4576,26 @@ export class PostgresStore{
           actionResult={stored:true,note:"Action de préparation enregistrée pour l’agent."};
         }
         await tx.unsafe("UPDATE tenant_relation_actions SET status='completed',result=$2::jsonb,executed_at=now() WHERE id=$1",[action.id,JSON.stringify(actionResult)]);
+      }else if(policy.execution_mode==="external_confirmation"){
+        if(policy.action_type==="request_outbound_rio"){
+          await tx.unsafe("UPDATE tenant_exit_lines SET rio_status=CASE WHEN rio_status IN ('not_requested','unavailable') THEN 'requested' ELSE rio_status END,rio_requested_at=COALESCE(rio_requested_at,now()) WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1)",[relation.id]);
+          await tx.unsafe("UPDATE tenant_exit_requests SET status='waiting_provider',updated_at=now() WHERE case_id=$1 AND status NOT IN ('completed','cancelled')",[relation.id]);
+        }else if(policy.action_type==="submit_port_out"){
+          const ex=(await tx.unsafe("SELECT id,port_out_requested,customer_confirmed FROM tenant_exit_requests WHERE case_id=$1 FOR UPDATE",[relation.id]))[0];
+          if(!ex||!ex.port_out_requested)throw problem(409,"PORT_OUT_NOT_REQUESTED");
+          if(!ex.customer_confirmed)throw problem(409,"EXIT_CUSTOMER_CONFIRMATION_REQUIRED");
+          await tx.unsafe("UPDATE tenant_exit_requests SET status='waiting_provider',updated_at=now() WHERE id=$1",[ex.id]);
+          await tx.unsafe("UPDATE tenant_exit_lines SET status=CASE WHEN requested_action='port_out' THEN 'waiting_provider' ELSE status END WHERE exit_request_id=$1",[ex.id]);
+          await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible) VALUES($1,$2,'port_out_submitted','agent',$3,'Demande de portabilité sortante mise en file auprès du fournisseur.',true)",[relation.id,relation.tenant_id,actorId]);
+        }else if(["request_port_out_report","request_port_out_cancel","request_port_out_return_back"].includes(policy.action_type)){
+          const option=policy.action_type==="request_port_out_report"?"report":policy.action_type==="request_port_out_cancel"?"cancel":"return_back";
+          await tx.unsafe("UPDATE tenant_exit_lines SET recovery_option=$2,status='waiting_provider' WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[relation.id,option]);
+          await tx.unsafe("UPDATE tenant_exit_requests SET status='waiting_provider',updated_at=now() WHERE case_id=$1 AND status NOT IN ('completed','cancelled')",[relation.id]);
+        }else if(policy.action_type==="request_final_invoice"){
+          await tx.unsafe("UPDATE tenant_exit_requests SET final_invoice_status='pending',updated_at=now() WHERE case_id=$1",[relation.id]);
+        }
+        actionResult={provider_confirmation_required:true,queued:true};
+        await tx.unsafe("UPDATE tenant_relation_actions SET status='queued',result=$2::jsonb WHERE id=$1",[action.id,JSON.stringify(actionResult)]);
       }
       await tx.unsafe("UPDATE tenant_relation_cases SET ai_state=$2,ai_confidence=COALESCE($3,ai_confidence),last_pgi_update_at=now(),updated_at=now() WHERE id=$1",[relation.id,policy.execution_mode==="automatic"?"ready":"action_required",confidence]);
       await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible,details) VALUES($1,$2,'agent_analysis','agent',$3,$4,false,$5::jsonb)",[relation.id,relation.tenant_id,actorId,explanation||("Action agent : "+policy.action_type),JSON.stringify({action_type:policy.action_type,risk_class:policy.risk_class,execution_mode:policy.execution_mode})]);
