@@ -60,6 +60,7 @@ export function startWorkers({store,eventBus,config,queueHandlers={}}){
       if(typeof store.scanVoiceIncidents==="function")await store.scanVoiceIncidents();
       if(typeof store.scanTenantServiceIncidents==="function")await store.scanTenantServiceIncidents(250);
       if(typeof store.scanPortabilityAutomation==="function")await store.scanPortabilityAutomation(100);
+      if(typeof store.scanOutboundPortabilityAutomation==="function")await store.scanOutboundPortabilityAutomation(100);
       stats.lastAlertsSuccessAt=new Date().toISOString();
     }catch{
       stats.alertsErrors++;

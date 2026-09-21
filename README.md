@@ -386,3 +386,13 @@ Une bascule opérateur préparée ne peut plus être activée sans approbation d
 Le cockpit possède désormais un centre SVA dédié, lazy-loadé, qui complète le Trust Center et les garde-fous ARCEP 2026. Il suit séparément APNF/RSVA, af2m 2026, DGCCRF, CNIL, 33700, médiation consommation et l'évaluation conditionnelle ACPR/DSP2.
 
 Les nouvelles activations SVA externes françaises sont fail-closed tant que le profil commercial/MGIT et les preuves requises ne sont pas prêts. Les lignes déjà actives ne sont pas suspendues automatiquement. Les changements tarifaires peuvent être préparés localement avec contrôle premier jour du mois + préavis minimal de sept jours, sans envoyer de déclaration au RSVA.
+
+## Customer Relations 1.35
+
+Audiotel Premium Pro dispose désormais d'un module complet de réclamations, litiges financiers et départs clients, accessible depuis le portail client, le mobile et le Dossier Client 360.
+
+Le système distingue les faits autoritatifs du dossier relation client : un montant contesté peut être isolé sans créer artificiellement un avoir, ChatGPT peut rassembler les preuves, réconcilier les données, demander des précisions et répondre au client, tandis qu'un remboursement ou une action irréversible reste soumis à son garde-fou.
+
+Le départ client est orchestré comme un processus complet : périmètre des services, lignes concernées, conservation ou portabilité des numéros, RIO sortant sécurisé, options opérateur de report/annulation/retour arrière, export des données, compte final, dernier reversement, révocation des accès et clôture. Les confirmations externes ne sont jamais simulées.
+
+Voir `docs/CUSTOMER-RELATIONS.md`.

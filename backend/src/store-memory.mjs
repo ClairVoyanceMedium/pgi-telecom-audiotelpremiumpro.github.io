@@ -760,6 +760,7 @@ export class MemoryStore{
     return {id:row.id,state:"retry",attempts:row.attempts,retry_in_seconds:Math.round(delay)};
   }
 
+  async scanOutboundPortabilityAutomation(){return [];}
   async workQueueHealth(){
     const pending=this.workQueue.filter(x=>!x.completed_at&&!x.failed_at&&!x.dead_lettered_at);
     const oldest=pending.length?Math.max(0,(Date.now()-Math.min(...pending.map(x=>Date.parse(x.created_at))))/1000):0;
@@ -969,6 +970,19 @@ export class MemoryStore{
   async customerPortalCalls(){return {data:[],next_cursor:null};}
 
   async listServiceIncidents(){return {data:[],next_cursor:null};}
+
+  async customerRelationsOverview(){return {schema_version:"audiotel-customer-relations/1",tenant:null,cases:[],exits:[],events:[],actions:[],evidence:[],holds:[],agent_policy_version:"customer-relations/1"};}
+  async createCustomerRelationCase(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
+  async createCustomerExitRequest(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
+  async addCustomerRelationMessage(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
+  async cancelCustomerRelationCase(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
+  async tenantCustomerRelations(){return this.customerRelationsOverview();}
+  async listCustomerRelationsQueue(){return {data:[]};}
+  async relationAgentContext(){throw problem(404,"RELATION_CASE_NOT_FOUND");}
+  async createRelationAgentAction(){throw problem(409,"CUSTOMER_RELATIONS_DEMO_ONLY");}
+  async approveRelationAction(){throw problem(409,"CUSTOMER_RELATIONS_DEMO_ONLY");}
+  async confirmCustomerRelationAction(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
+  async completeRelationExternalAction(){throw problem(409,"CUSTOMER_RELATIONS_DEMO_ONLY");}
 
   async customerProfitability(params={}){void params;return {schema_version:"audiotel-customer-profitability/1",period:"365d",since:null,currency:"EUR",currencies:["EUR"],accounting_basis:"tenant_revenue_distributions.platform_fee_ht",cash_basis:"carrier paid amount / confirmed amount",excludes:["general_platform_overhead","unconnected_subscription_cash"],tenant:null,summary:{upstream_payout_ht:0,margin_booked_ht:0,margin_collected_ht:0,client_net_payout_ht:0,unallocated_amount_ht:0,customers_with_distribution:0,top5_margin_collected_ht:0,top5_concentration_percent:0},ranking:[],trend:[]};}
 

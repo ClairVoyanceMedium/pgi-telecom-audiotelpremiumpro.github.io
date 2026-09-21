@@ -12,6 +12,7 @@ import {simulateDigitalTwin} from "./digital-twin.mjs";
 import {assessShadowBilling} from "./shadow-billing.mjs";
 import {assessOperationalRisk} from "./risk-engine.mjs";
 import {assessOperationalSlo} from "./slo-assurance.mjs";
+import {relationCaseDeadlines,relationNextActions,relationActionPolicy,sanitizeRelationPayload,safeAgentContext,RELATION_POLICY_VERSION} from "./customer-relations-policy.mjs";
 import {createRequire} from "node:module";
 
 const require=createRequire(import.meta.url);
@@ -1731,6 +1732,25 @@ export class PostgresStore{
       [queue,tenantId,dedupe,priority,JSON.stringify(payload||{}),availableAt,maxAttempts,options.trace_id?String(options.trace_id).slice(0,64):null]
     );
     return rows[0];
+  }
+
+  async scanOutboundPortabilityAutomation(limit=100){
+    limit=clampInt(limit,100,1,500);
+    const rows=await this.readSql.unsafe(
+      "SELECT public_id::text AS public_id,tenant_id,action_type FROM tenant_relation_actions"+
+      " WHERE status='queued' AND execution_mode='external_confirmation'"+
+      " AND action_type IN ('request_outbound_rio','submit_port_out','request_port_out_report','request_port_out_cancel','request_port_out_return_back')"+
+      " ORDER BY created_at,id LIMIT $1",
+      [limit]
+    );
+    const queued=[];
+    for(const row of rows){
+      const work=await this.enqueueWork("portability_outbound",{action_public_id:row.public_id},{
+        tenant_id:Number(row.tenant_id),priority:250,max_attempts:50,dedupe_key:"portability_outbound:"+row.public_id
+      });
+      queued.push({action_public_id:row.public_id,action_type:row.action_type,work_id:Number(work.id)});
+    }
+    return queued;
   }
 
   async workQueueHealth(){
@@ -3512,7 +3532,7 @@ export class PostgresStore{
         [payoutFrom,to,id]
       );
       const numbers=await tx.unsafe(
-        "SELECT n.id,n.display_number,n.e164,n.tariff_code,n.currency,n.number_type,n.service_rate_ttc_per_min::float8,n.status,n.activated_at,"+
+        "SELECT n.id,a.id AS assignment_id,n.display_number,n.e164,n.tariff_code,n.currency,n.number_type,n.service_rate_ttc_per_min::float8,n.status,n.activated_at,"+
         " a.assignment_type,a.status AS assignment_status,a.kyc_status,a.valid_from,a.valid_to"+
         " FROM tenant_scoped_sva_numbers n LEFT JOIN tenant_scoped_number_assignments a ON a.sva_number_id=n.id"+
         " ORDER BY n.status,n.display_number LIMIT 100"
@@ -4314,6 +4334,497 @@ export class PostgresStore{
     );
     return rows[0]||{tenants_total:0,tenants_active:0,kyc_pending:0,subscription_unpaid_alerts:0,subscription_access_blocked:0,assignments_active:0,service_incidents_open:0,service_incidents_critical:0,service_sla_attention:0,routing_attention:0,portability_attention:0};
   }
+
+
+  async customerRelationsOverview(tenantId,options={}){
+    const id=Number(tenantId),admin=options.admin===true;
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    const tenant=(await this.readSql.unsafe("SELECT id,public_id,display_name,tenant_type,status,country_code,default_currency FROM tenants WHERE id=$1",[id]))[0];
+    if(!tenant||tenant.tenant_type==="internal")throw problem(404,"TENANT_NOT_FOUND");
+    const [cases,exits,exitLines,events,actions,evidence,holds]=await Promise.all([
+      this.readSql.unsafe(
+        "SELECT id,public_id,case_kind,status,priority,source,customer_capacity,title,description,disputed_amount::float8,disputed_currency,invoice_reference,payment_reference,disputed_period_start,disputed_period_end,requested_resolution,formal_complaint_at,mediation_eligible_at,legal_hold,ai_state,ai_confidence::float8,ai_policy_version,first_response_due_at,target_resolution_at,first_responded_at,last_customer_update_at,last_pgi_update_at,resolved_at,closed_at,resolution_code,resolution_summary,created_at,updated_at FROM tenant_relation_cases WHERE tenant_id=$1 ORDER BY (status IN ('resolved','closed','cancelled')) ASC,updated_at DESC,id DESC LIMIT 100",
+        [id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,public_id,case_id,exit_scope,reason_category,requested_effective_date,number_retention_preference,port_out_requested,target_operator_name,operator_reference,status,final_invoice_status,final_settlement_status,data_export_status,contract_obligations_acknowledged,customer_confirmed,scheduled_at,access_revocation_at,number_quarantine_until,completed_at,created_at,updated_at FROM tenant_exit_requests WHERE tenant_id=$1 ORDER BY created_at DESC,id DESC LIMIT 50",
+        [id]
+      ),
+      this.readSql.unsafe(
+        "SELECT l.id,l.exit_request_id,l.assignment_id,l.sva_number_id,l.e164_snapshot,l.requested_action,l.status,l.operator_reference,l.rio_status,l.rio_last4,l.rio_requested_at,l.rio_delivered_at,l.rio_delivery_channel,l.rio_delivery_reference,l.portability_eligibility_status,l.portability_eligibility_reason,l.portability_eligibility_checked_at,l.portability_service_level,l.recovery_option,l.scheduled_at,l.completed_at,l.created_at FROM tenant_exit_lines l WHERE l.tenant_id=$1 ORDER BY l.created_at,l.id LIMIT 500",
+        [id]
+      ),
+      this.readSql.unsafe(
+        "SELECT e.id,e.case_id,e.event_type,e.actor_type,e.message,e.customer_visible,e.details,e.occurred_at FROM tenant_relation_case_events e WHERE e.tenant_id=$1 AND ($2::boolean OR e.customer_visible=true) ORDER BY e.occurred_at,e.id LIMIT 500",
+        [id,admin]
+      ),
+      admin?this.readSql.unsafe(
+        "SELECT id,public_id,case_id,exit_line_id,action_type,risk_class,execution_mode,status,proposed_by,confidence::float8,explanation,payload,result,approved_at,executed_at,created_at FROM tenant_relation_actions WHERE tenant_id=$1 ORDER BY created_at DESC,id DESC LIMIT 250",
+        [id]
+      ):Promise.resolve([]),
+      admin?this.readSql.unsafe(
+        "SELECT id,case_id,evidence_kind,source_table,source_id,external_reference,content_sha256,metadata,created_at FROM tenant_relation_evidence WHERE tenant_id=$1 ORDER BY created_at DESC,id DESC LIMIT 250",
+        [id]
+      ):Promise.resolve([]),
+      this.readSql.unsafe(
+        "SELECT id,case_id,amount::float8,currency,scope,invoice_reference,status,reason,created_by_type,released_at,created_at FROM tenant_dispute_collection_holds WHERE tenant_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100",
+        [id]
+      )
+    ]);
+    return {schema_version:"audiotel-customer-relations/1",tenant:{public_id:tenant.public_id,display_name:tenant.display_name,status:tenant.status,country_code:tenant.country_code,default_currency:tenant.default_currency},cases,exits,exit_lines:exitLines,events,actions,evidence,holds,agent_policy_version:RELATION_POLICY_VERSION};
+  }
+
+  async createCustomerRelationCase(tenantId,input={},principalId){
+    const id=Number(tenantId),principal=String(principalId||"").trim();
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(principal))throw problem(401,"CUSTOMER_AUTH_REQUIRED");
+    const kind=String(input.case_kind||"billing_dispute").trim().toLowerCase();
+    if(!["billing_dispute","payout_dispute","service_complaint","other"].includes(kind))throw problem(400,"INVALID_RELATION_CASE_KIND");
+    const priority=String(input.priority||"normal").trim().toLowerCase();
+    if(!["low","normal","high","critical"].includes(priority))throw problem(400,"INVALID_RELATION_PRIORITY");
+    const capacity=String(input.customer_capacity||"unknown").trim().toLowerCase();
+    if(!["business","consumer","unknown"].includes(capacity))throw problem(400,"INVALID_CUSTOMER_CAPACITY");
+    const title=String(input.title||"").trim(),description=String(input.description||"").trim();
+    if(title.length<3||title.length>180||description.length<3||description.length>8000)throw problem(400,"INVALID_RELATION_CONTENT");
+    const amount=input.disputed_amount==null||input.disputed_amount===""?null:Number(input.disputed_amount);
+    if(amount!=null&&(!Number.isFinite(amount)||amount<0||amount>1e12))throw problem(400,"INVALID_DISPUTED_AMOUNT");
+    const currency=amount==null?null:String(input.disputed_currency||"").trim().toUpperCase();
+    if(amount!=null&&!/^[A-Z]{3}$/.test(currency))throw problem(400,"INVALID_CURRENCY");
+    const invoice=String(input.invoice_reference||"").trim().slice(0,200)||null;
+    const payment=String(input.payment_reference||"").trim().slice(0,200)||null;
+    const requested=String(input.requested_resolution||"").trim().slice(0,2000)||null;
+    const start=input.disputed_period_start?String(input.disputed_period_start):null,end=input.disputed_period_end?String(input.disputed_period_end):null;
+    const deadlines=relationCaseDeadlines(kind,priority,capacity,new Date());
+    const row=await this.sql.begin(async tx=>{
+      const tenant=(await tx.unsafe("SELECT id,tenant_type,status FROM tenants WHERE id=$1 FOR UPDATE",[id]))[0];
+      if(!tenant||tenant.tenant_type==="internal")throw problem(404,"TENANT_NOT_FOUND");
+      if(tenant.status==="closed")throw problem(409,"TENANT_CLOSED");
+      const created=(await tx.unsafe(
+        "INSERT INTO tenant_relation_cases(tenant_id,case_kind,status,priority,source,customer_capacity,title,description,created_by_customer_principal_id,disputed_amount,disputed_currency,invoice_reference,payment_reference,disputed_period_start,disputed_period_end,requested_resolution,formal_complaint_at,mediation_eligible_at,first_response_due_at,target_resolution_at,last_customer_update_at,ai_policy_version) VALUES($1,$2,'open',$3,'customer',$4,$5,$6,$7::uuid,$8,$9,$10,$11,$12::date,$13::date,$14,now(),$15::timestamptz,$16::timestamptz,$17::timestamptz,now(),$18) RETURNING id,public_id,tenant_id,case_kind,status,priority,customer_capacity,title,description,disputed_amount::float8,disputed_currency,invoice_reference,payment_reference,formal_complaint_at,mediation_eligible_at,first_response_due_at,target_resolution_at,ai_state,created_at",
+        [id,kind,priority,capacity,title,description,principal,amount,currency,invoice,payment,start,end,requested,deadlines.mediation_eligible_at,deadlines.first_response_due_at,deadlines.target_resolution_at,RELATION_POLICY_VERSION]
+      ))[0];
+      await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_customer_principal_id,message,customer_visible,details) VALUES($1,$2,'created','customer',$3::uuid,'Réclamation enregistrée',true,$4::jsonb)",[created.id,id,principal,JSON.stringify({case_kind:kind,priority})]);
+      if(["billing_dispute","payout_dispute"].includes(kind)&&amount>0){
+        await tx.unsafe("INSERT INTO tenant_dispute_collection_holds(case_id,tenant_id,amount,currency,scope,invoice_reference,status,reason,created_by_type) VALUES($1,$2,$3,$4,'disputed_amount_only',$5,'active','Montant signalé comme contesté, à isoler des automatismes de recouvrement jusqu’à décision.','system') ON CONFLICT (case_id) WHERE status='active' DO NOTHING",[created.id,id,amount,currency,invoice]);
+        await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,message,customer_visible,details) VALUES($1,$2,'hold_placed','system','Montant contesté identifié dans le dossier',true,$3::jsonb)",[created.id,id,JSON.stringify({amount,currency,scope:"disputed_amount_only"})]);
+      }
+      await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'customer_relation.create','tenant_relation_case',$2,$3::jsonb)",[id,String(created.id),JSON.stringify({public_id:created.public_id,case_kind:kind,priority,source:"customer",amount:amount||null,currency})]);
+      await tx.unsafe("INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'customer_relation.created','tenant_relation_case',$2,$3::jsonb)",[id,String(created.id),JSON.stringify({case_public_id:created.public_id,case_kind:kind,priority})]);
+      return created;
+    });
+    this.eventBus.publish("customer_relation.created",{tenant_id:id,case_id:String(row.public_id),case_kind:kind,priority});
+    return row;
+  }
+
+  async createCustomerExitRequest(tenantId,input={},principalId){
+    const id=Number(tenantId),principal=String(principalId||"").trim();
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(principal))throw problem(401,"CUSTOMER_AUTH_REQUIRED");
+    const scope=String(input.exit_scope||"all_services").trim().toLowerCase();
+    if(!["all_services","selected_lines"].includes(scope))throw problem(400,"INVALID_EXIT_SCOPE");
+    const reason=String(input.reason_category||"unspecified").trim().toLowerCase();
+    if(!["price","service","quality","competition","business_closed","other","unspecified"].includes(reason))throw problem(400,"INVALID_EXIT_REASON");
+    const pref=String(input.number_retention_preference||"undecided").trim().toLowerCase();
+    if(!["port_out","release","undecided"].includes(pref))throw problem(400,"INVALID_NUMBER_RETENTION");
+    const portOut=Boolean(input.port_out_requested||pref==="port_out");
+    const effective=input.requested_effective_date?String(input.requested_effective_date):null;
+    const targetOperator=String(input.target_operator_name||"").trim().slice(0,180)||null;
+    const acknowledged=input.contract_obligations_acknowledged===true;
+    const description=String(input.description||"Demande de départ du client.").trim().slice(0,8000);
+    const ids=Array.isArray(input.assignment_ids)?[...new Set(input.assignment_ids.map(Number).filter(x=>Number.isInteger(x)&&x>0))].slice(0,200):[];
+    if(scope==="selected_lines"&&!ids.length)throw problem(400,"EXIT_LINES_REQUIRED");
+    const kind=portOut?"port_out":"contract_termination",deadlines=relationCaseDeadlines(kind,"normal","business",new Date());
+    const result=await this.sql.begin(async tx=>{
+      const tenant=(await tx.unsafe("SELECT id,tenant_type,status,display_name FROM tenants WHERE id=$1 FOR UPDATE",[id]))[0];
+      if(!tenant||tenant.tenant_type==="internal")throw problem(404,"TENANT_NOT_FOUND");
+      if(tenant.status==="closed")throw problem(409,"TENANT_CLOSED");
+      const open=(await tx.unsafe("SELECT id,public_id FROM tenant_exit_requests WHERE tenant_id=$1 AND status NOT IN ('completed','cancelled') ORDER BY id DESC LIMIT 1",[id]))[0];
+      if(open)throw problem(409,"EXIT_REQUEST_ALREADY_OPEN");
+      const lines=scope==="all_services"
+        ?await tx.unsafe("SELECT a.id AS assignment_id,a.sva_number_id,CASE WHEN sn.e164 LIKE '+%' THEN sn.e164 ELSE '+'||sn.e164 END AS e164,a.status AS assignment_status,a.valid_to FROM tenant_number_assignments a JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.tenant_id=$1 AND (a.status<>'ended' OR (a.valid_to IS NOT NULL AND a.valid_to>=now()-interval '40 days')) ORDER BY a.id",[id])
+        :await tx.unsafe("SELECT a.id AS assignment_id,a.sva_number_id,CASE WHEN sn.e164 LIKE '+%' THEN sn.e164 ELSE '+'||sn.e164 END AS e164,a.status AS assignment_status,a.valid_to FROM tenant_number_assignments a JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.tenant_id=$1 AND a.id=ANY($2::bigint[]) ORDER BY a.id",[id,ids]);
+      if(scope==="selected_lines"&&lines.length!==ids.length)throw problem(404,"EXIT_LINE_NOT_FOUND");
+      if(portOut&&!lines.length)throw problem(409,"EXIT_NO_PORTABLE_LINES");
+      const createdCase=(await tx.unsafe(
+        "INSERT INTO tenant_relation_cases(tenant_id,case_kind,status,priority,source,customer_capacity,title,description,created_by_customer_principal_id,requested_resolution,first_response_due_at,target_resolution_at,last_customer_update_at,ai_policy_version) VALUES($1,$2,'open','normal','customer','business',$3,$4,$5::uuid,$6,$7::timestamptz,$8::timestamptz,now(),$9) RETURNING id,public_id,case_kind,status,title,created_at",
+        [id,kind,portOut?"Départ avec portabilité sortante":"Résiliation / départ",description,principal,portOut?"Conserver les numéros sélectionnés chez le nouvel opérateur":"Clôturer les services demandés",deadlines.first_response_due_at,deadlines.target_resolution_at,RELATION_POLICY_VERSION]
+      ))[0];
+      const exit=(await tx.unsafe(
+        "INSERT INTO tenant_exit_requests(case_id,tenant_id,exit_scope,reason_category,requested_effective_date,number_retention_preference,port_out_requested,target_operator_name,status,contract_obligations_acknowledged,customer_confirmed,data_export_status) VALUES($1,$2,$3,$4,$5::date,$6,$7,$8,$9,$10,true,'requested') RETURNING id,public_id,case_id,tenant_id,exit_scope,reason_category,requested_effective_date,number_retention_preference,port_out_requested,target_operator_name,status,final_invoice_status,final_settlement_status,data_export_status,contract_obligations_acknowledged,customer_confirmed,created_at",
+        [createdCase.id,id,scope,reason,effective,portOut?"port_out":pref,portOut,targetOperator,acknowledged?"preparing":"waiting_customer",acknowledged]
+      ))[0];
+      const action=portOut?"port_out":pref==="release"?"release":"keep_until_exit";
+      const createdLines=[];
+      for(const line of lines){
+        const createdLine=(await tx.unsafe("INSERT INTO tenant_exit_lines(exit_request_id,tenant_id,assignment_id,sva_number_id,e164_snapshot,requested_action,portability_service_level,rio_delivery_channel) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id",[exit.id,id,line.assignment_id,line.sva_number_id,line.e164,action,String(line.e164||"").startsWith("+338")?"enhanced":"standard",portOut?"provider_direct":"not_required"]))[0];
+        createdLines.push({...line,exit_line_id:Number(createdLine.id)});
+      }
+      await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_customer_principal_id,message,customer_visible,details) VALUES($1,$2,'created','customer',$3::uuid,'Demande de départ enregistrée',true,$4::jsonb)",[createdCase.id,id,principal,JSON.stringify({exit_scope:scope,port_out_requested:portOut,lines:lines.length,contract_obligations_acknowledged:acknowledged})]);
+      await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'customer_exit.create','tenant_exit_request',$2,$3::jsonb)",[id,String(exit.id),JSON.stringify({public_id:exit.public_id,case_public_id:createdCase.public_id,port_out_requested:portOut,lines:lines.length,reason_category:reason})]);
+      await tx.unsafe("INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'customer_exit.created','tenant_exit_request',$2,$3::jsonb)",[id,String(exit.id),JSON.stringify({exit_public_id:exit.public_id,case_public_id:createdCase.public_id,port_out_requested:portOut,line_count:lines.length})]);
+      return {case:createdCase,exit,lines:createdLines.map(x=>({exit_line_id:x.exit_line_id,assignment_id:Number(x.assignment_id),e164:x.e164,requested_action:action}))};
+    });
+    this.eventBus.publish("customer_exit.created",{tenant_id:id,case_id:String(result.case.public_id),exit_id:String(result.exit.public_id),port_out_requested:portOut});
+    const orchestration=[];
+    for(const actionType of ["prepare_exit","generate_data_export",...(portOut?["check_portability"]:[])]){
+      try{
+        const action=await this.createRelationAgentAction(result.case.public_id,{action_type:actionType,confidence:1,explanation:"Orchestration automatique déclenchée par la demande explicite du client.",payload:{}},{});
+        orchestration.push({action_type:actionType,status:action.status,public_id:action.public_id});
+      }catch(error){
+        orchestration.push({action_type:actionType,status:"blocked",code:error?.code||error?.message||"ACTION_FAILED"});
+      }
+    }
+    if(portOut){
+      for(const line of result.lines){
+        try{
+          const action=await this.createRelationAgentAction(result.case.public_id,{action_type:"request_outbound_rio",confidence:1,explanation:"Demande sécurisée du RIO pour le numéro sélectionné.",payload:{exit_line_id:line.exit_line_id}},{});
+          orchestration.push({action_type:"request_outbound_rio",exit_line_id:line.exit_line_id,status:action.status,public_id:action.public_id});
+        }catch(error){
+          orchestration.push({action_type:"request_outbound_rio",exit_line_id:line.exit_line_id,status:"blocked",code:error?.code||error?.message||"ACTION_FAILED"});
+        }
+      }
+    }
+    return {...result,orchestration};
+  }
+
+  async addCustomerRelationMessage(tenantId,casePublicId,body,principalId){
+    const id=Number(tenantId),publicId=String(casePublicId||"").trim(),principal=String(principalId||"").trim(),message=String(body||"").trim();
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    if(!/^[0-9a-f-]{36}$/i.test(publicId))throw problem(400,"INVALID_RELATION_CASE_ID");
+    if(!/^[0-9a-f-]{36}$/i.test(principal))throw problem(401,"CUSTOMER_AUTH_REQUIRED");
+    if(!message||message.length>8000)throw problem(400,"INVALID_RELATION_MESSAGE");
+    const row=await this.sql.begin(async tx=>{
+      const relation=(await tx.unsafe("SELECT id,status FROM tenant_relation_cases WHERE public_id=$1::uuid AND tenant_id=$2 FOR UPDATE",[publicId,id]))[0];
+      if(!relation)throw problem(404,"RELATION_CASE_NOT_FOUND");
+      if(["closed","cancelled"].includes(relation.status))throw problem(409,"RELATION_CASE_CLOSED");
+      const event=(await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_customer_principal_id,message,customer_visible) VALUES($1,$2,'customer_message','customer',$3::uuid,$4,true) RETURNING id,event_type,actor_type,message,customer_visible,occurred_at",[relation.id,id,principal,message]))[0];
+      await tx.unsafe("UPDATE tenant_relation_cases SET status=CASE WHEN status='waiting_customer' THEN 'investigating' ELSE status END,last_customer_update_at=now(),ai_state='queued',updated_at=now() WHERE id=$1",[relation.id]);
+      await tx.unsafe("INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'customer_relation.message','tenant_relation_case',$2,$3::jsonb)",[id,String(relation.id),JSON.stringify({case_public_id:publicId,source:"customer"})]);
+      return event;
+    });
+    this.eventBus.publish("customer_relation.message",{tenant_id:id,case_id:publicId,source:"customer"});
+    return row;
+  }
+
+  async cancelCustomerRelationCase(tenantId,casePublicId,principalId){
+    const id=Number(tenantId),publicId=String(casePublicId||"").trim(),principal=String(principalId||"").trim();
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    if(!/^[0-9a-f-]{36}$/i.test(publicId)||!/^[0-9a-f-]{36}$/i.test(principal))throw problem(400,"INVALID_RELATION_CASE_ID");
+    return this.sql.begin(async tx=>{
+      const relation=(await tx.unsafe("SELECT id,status FROM tenant_relation_cases WHERE public_id=$1::uuid AND tenant_id=$2 FOR UPDATE",[publicId,id]))[0];
+      if(!relation)throw problem(404,"RELATION_CASE_NOT_FOUND");
+      if(["resolved","closed","cancelled"].includes(relation.status))return {public_id:publicId,status:relation.status};
+      const exit=(await tx.unsafe("SELECT id,status FROM tenant_exit_requests WHERE case_id=$1 FOR UPDATE",[relation.id]))[0];
+      if(exit&&["scheduled","finalizing","completed"].includes(exit.status))throw problem(409,"EXIT_CANCELLATION_TOO_LATE");
+      const irreversible=(await tx.unsafe("SELECT 1 FROM tenant_relation_actions WHERE case_id=$1 AND status='completed' AND risk_class='irreversible' LIMIT 1",[relation.id]))[0];
+      if(irreversible)throw problem(409,"RELATION_IRREVERSIBLE_ACTION_DONE");
+      await tx.unsafe("UPDATE tenant_relation_cases SET status='cancelled',closed_at=now(),ai_state='done',updated_at=now() WHERE id=$1",[relation.id]);
+      await tx.unsafe("UPDATE tenant_exit_requests SET status='cancelled',updated_at=now() WHERE case_id=$1 AND status NOT IN ('completed','cancelled')",[relation.id]);
+      await tx.unsafe("UPDATE tenant_dispute_collection_holds SET status='released',released_at=now() WHERE case_id=$1 AND status='active'",[relation.id]);
+      await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_customer_principal_id,message,customer_visible) VALUES($1,$2,'cancelled','customer',$3::uuid,'Dossier annulé par le client',true)",[relation.id,id,principal]);
+      return {public_id:publicId,status:"cancelled"};
+    });
+  }
+
+  async tenantCustomerRelations(publicTenantId){
+    const publicId=String(publicTenantId||"").trim();
+    if(!/^[0-9a-f-]{36}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    const tenant=(await this.readSql.unsafe("SELECT id,tenant_type FROM tenants WHERE public_id=$1::uuid",[publicId]))[0];
+    if(!tenant||tenant.tenant_type==="internal")throw problem(404,"TENANT_NOT_FOUND");
+    return this.customerRelationsOverview(Number(tenant.id),{admin:true});
+  }
+
+  async listCustomerRelationsQueue(params={}){
+    const limit=clampInt(params.limit,50,1,250),kind=params.case_kind?String(params.case_kind).trim().toLowerCase():null,status=params.status?String(params.status).trim().toLowerCase():null;
+    if(kind&&!["billing_dispute","payout_dispute","service_complaint","contract_termination","port_out","data_request","other"].includes(kind))throw problem(400,"INVALID_RELATION_CASE_KIND");
+    const q=params.q?String(params.q).trim().slice(0,160):null;
+    const rows=await this.readSql.unsafe(
+      "SELECT c.public_id,c.case_kind,c.status,c.priority,c.title,c.disputed_amount::float8,c.disputed_currency,c.invoice_reference,c.customer_capacity,c.ai_state,c.first_response_due_at,c.target_resolution_at,(c.first_responded_at IS NULL AND c.first_response_due_at<now()) AS first_response_overdue,(c.status NOT IN ('resolved','closed','cancelled') AND c.target_resolution_at<now()) AS resolution_overdue,c.updated_at,t.public_id AS tenant_public_id,t.display_name AS tenant,t.country_code,e.public_id AS exit_public_id,e.status AS exit_status,e.port_out_requested,e.requested_effective_date FROM tenant_relation_cases c JOIN tenants t ON t.id=c.tenant_id LEFT JOIN tenant_exit_requests e ON e.case_id=c.id WHERE t.tenant_type<>'internal' AND ($1::text IS NULL OR c.case_kind=$1) AND ($2::text IS NULL OR ($2='active' AND c.status NOT IN ('resolved','closed','cancelled')) OR c.status=$2) AND ($3::text IS NULL OR t.display_name ILIKE '%'||$3||'%' OR c.title ILIKE '%'||$3||'%' OR COALESCE(c.invoice_reference,'') ILIKE '%'||$3||'%') ORDER BY (c.status IN ('resolved','closed','cancelled')) ASC,c.priority='critical' DESC,c.priority='high' DESC,c.target_resolution_at,c.id DESC LIMIT $4",
+      [kind,status,q,limit]
+    );
+    return {data:rows};
+  }
+
+  async relationAgentContext(casePublicId){
+    const publicId=String(casePublicId||"").trim();
+    if(!/^[0-9a-f-]{36}$/i.test(publicId))throw problem(400,"INVALID_RELATION_CASE_ID");
+    const c=(await this.readSql.unsafe("SELECT c.*,c.disputed_amount::float8 AS disputed_amount,t.public_id AS tenant_public_id,t.display_name AS tenant FROM tenant_relation_cases c JOIN tenants t ON t.id=c.tenant_id WHERE c.public_id=$1::uuid",[publicId]))[0];
+    if(!c)throw problem(404,"RELATION_CASE_NOT_FOUND");
+    const [evidence,actions,exit,events]=await Promise.all([
+      this.readSql.unsafe("SELECT id,evidence_kind,source_table,source_id,external_reference,content_sha256,created_at FROM tenant_relation_evidence WHERE case_id=$1 ORDER BY created_at,id LIMIT 250",[c.id]),
+      this.readSql.unsafe("SELECT id,public_id,exit_line_id,action_type,risk_class,execution_mode,status,confidence::float8,explanation,created_at,approved_at,executed_at FROM tenant_relation_actions WHERE case_id=$1 ORDER BY created_at,id LIMIT 250",[c.id]),
+      this.readSql.unsafe("SELECT * FROM tenant_exit_requests WHERE case_id=$1 LIMIT 1",[c.id]).then(x=>x[0]||null),
+      this.readSql.unsafe("SELECT event_type,actor_type,message,customer_visible,occurred_at FROM tenant_relation_case_events WHERE case_id=$1 ORDER BY occurred_at,id LIMIT 500",[c.id])
+    ]);
+    return {...safeAgentContext(c,evidence,actions,exit,events),tenant:{public_id:c.tenant_public_id,display_name:c.tenant},next_actions:relationNextActions(c,exit)};
+  }
+
+  async createRelationAgentAction(casePublicId,input={},actor={}){
+    const publicId=String(casePublicId||"").trim();
+    if(!/^[0-9a-f-]{36}$/i.test(publicId))throw problem(400,"INVALID_RELATION_CASE_ID");
+    const policy=relationActionPolicy(input.action_type),actorId=numericActor(actor);
+    const confidence=input.confidence==null?null:Number(input.confidence);
+    if(confidence!=null&&(!Number.isFinite(confidence)||confidence<0||confidence>1))throw problem(400,"INVALID_AGENT_CONFIDENCE");
+    const explanation=String(input.explanation||"").trim().slice(0,4000)||null,payload=sanitizeRelationPayload(input.payload||{});
+    const requestedExitLineId=Number(payload.exit_line_id)||null;
+    if(payload.exit_line_id!=null&&(!Number.isInteger(requestedExitLineId)||requestedExitLineId<=0))throw problem(400,"INVALID_EXIT_LINE_ID");
+    const result=await this.sql.begin(async tx=>{
+      const relation=(await tx.unsafe("SELECT * FROM tenant_relation_cases WHERE public_id=$1::uuid FOR UPDATE",[publicId]))[0];
+      if(!relation)throw problem(404,"RELATION_CASE_NOT_FOUND");
+      if(["closed","cancelled"].includes(relation.status))throw problem(409,"RELATION_CASE_CLOSED");
+      if(requestedExitLineId){
+        const scoped=(await tx.unsafe("SELECT l.id FROM tenant_exit_lines l JOIN tenant_exit_requests e ON e.id=l.exit_request_id WHERE l.id=$1 AND e.case_id=$2 LIMIT 1",[requestedExitLineId,relation.id]))[0];
+        if(!scoped)throw problem(409,"EXIT_LINE_CASE_MISMATCH");
+      }
+      const initialStatus=policy.execution_mode==="automatic"?"executing":policy.execution_mode==="external_confirmation"?"queued":"proposed";
+      const action=(await tx.unsafe(
+        "INSERT INTO tenant_relation_actions(case_id,tenant_id,exit_line_id,action_type,risk_class,execution_mode,status,proposed_by,proposed_by_user_id,confidence,explanation,payload) VALUES($1,$2,$3,$4,$5,$6,$7,'agent',$8,$9,$10,$11::jsonb) RETURNING id,public_id,case_id,tenant_id,exit_line_id,action_type,risk_class,execution_mode,status,confidence::float8,explanation,payload,created_at",
+        [relation.id,relation.tenant_id,requestedExitLineId,policy.action_type,policy.risk_class,policy.execution_mode,initialStatus,actorId,confidence,explanation,JSON.stringify(payload)]
+      ))[0];
+      let actionResult={};
+      if(policy.execution_mode==="automatic"){
+        if(policy.action_type==="place_dispute_hold"){
+          if(!(Number(relation.disputed_amount)>0)&&!payload.amount)throw problem(409,"DISPUTED_AMOUNT_REQUIRED");
+          const amount=payload.amount==null?Number(relation.disputed_amount):Number(payload.amount),currency=String(payload.currency||relation.disputed_currency||"").toUpperCase();
+          if(!Number.isFinite(amount)||amount<=0||!/^[A-Z]{3}$/.test(currency))throw problem(400,"INVALID_DISPUTE_HOLD");
+          await tx.unsafe("INSERT INTO tenant_dispute_collection_holds(case_id,tenant_id,amount,currency,scope,invoice_reference,status,reason,created_by_type) VALUES($1,$2,$3,$4,'disputed_amount_only',$5,'active',$6,'agent') ON CONFLICT (case_id) WHERE status='active' DO NOTHING",[relation.id,relation.tenant_id,amount,currency,relation.invoice_reference,explanation||"Montant contesté"]);
+          actionResult={hold:"active",amount,currency};
+          await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible,details) VALUES($1,$2,'hold_placed','agent',$3,'Montant contesté isolé des automatismes internes',true,$4::jsonb)",[relation.id,relation.tenant_id,actorId,JSON.stringify(actionResult)]);
+        }else if(policy.action_type==="prepare_exit"){
+          const changed=await tx.unsafe("UPDATE tenant_exit_requests SET status=CASE WHEN status IN ('requested','waiting_customer') THEN 'preparing' ELSE status END,updated_at=now() WHERE case_id=$1 RETURNING public_id,status",[relation.id]);
+          actionResult={exit:changed[0]||null};
+          await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible) VALUES($1,$2,'exit_prepared','agent',$3,'Préparation de sortie engagée',true)",[relation.id,relation.tenant_id,actorId]);
+        }else if(policy.action_type==="generate_data_export"){
+          const changed=await tx.unsafe("UPDATE tenant_exit_requests SET data_export_status=CASE WHEN data_export_status='not_requested' THEN 'requested' ELSE data_export_status END,updated_at=now() WHERE case_id=$1 RETURNING public_id,data_export_status",[relation.id]);
+          actionResult={exit:changed[0]||null,export_generated:false};
+        }else if(policy.action_type==="check_portability"){
+          const lines=await tx.unsafe(
+            "WITH checked AS ("+
+            " SELECT l.id,l.e164_snapshot,l.requested_action,a.status AS assignment_status,a.valid_to,"+
+            " CASE WHEN l.requested_action<>'port_out' THEN true"+
+            "      WHEN a.status IN ('active','suspended','testing') THEN true"+
+            "      WHEN a.status='ended' AND a.valid_to IS NOT NULL AND a.valid_to>=now()-interval '40 days' THEN true"+
+            "      ELSE false END AS eligible,"+
+            " CASE WHEN l.requested_action<>'port_out' THEN 'not_requested'"+
+            "      WHEN a.status IN ('active','suspended','testing') THEN 'active_or_recoverable'"+
+            "      WHEN a.status='ended' AND a.valid_to IS NOT NULL AND a.valid_to>=now()-interval '40 days' THEN 'within_40_day_recovery_window'"+
+            "      ELSE 'number_not_portable_or_recovery_window_expired' END AS reason"+
+            " FROM tenant_exit_lines l JOIN tenant_number_assignments a ON a.id=l.assignment_id"+
+            " WHERE l.exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1)"+
+            ") UPDATE tenant_exit_lines l SET status=CASE WHEN c.eligible THEN 'eligibility_check' ELSE 'blocked' END,"+
+            " portability_eligibility_status=CASE WHEN c.eligible THEN 'eligible' ELSE CASE WHEN c.assignment_status='ended' THEN 'expired' ELSE 'ineligible' END END,"+
+            " portability_eligibility_reason=c.reason,portability_eligibility_checked_at=now(),"+
+            " portability_service_level=CASE WHEN l.e164_snapshot LIKE '+338%' THEN 'enhanced' ELSE l.portability_service_level END"+
+            " FROM checked c WHERE l.id=c.id RETURNING l.id,l.e164_snapshot,l.status,l.portability_eligibility_status,l.portability_eligibility_reason,l.portability_service_level",
+            [relation.id]
+          );
+          const blocked=lines.filter(x=>x.portability_eligibility_status!=="eligible");
+          if(blocked.length)await tx.unsafe("UPDATE tenant_exit_requests SET status='blocked',updated_at=now() WHERE case_id=$1",[relation.id]);
+          actionResult={line_count:lines.length,eligible:blocked.length===0,blocked_count:blocked.length,lines};
+        }else if(policy.action_type==="collect_evidence"){
+          if(relation.invoice_reference)await tx.unsafe("INSERT INTO tenant_relation_evidence(case_id,tenant_id,evidence_kind,external_reference,metadata) SELECT $1,$2,'invoice',$3,$4::jsonb WHERE NOT EXISTS (SELECT 1 FROM tenant_relation_evidence WHERE case_id=$1 AND evidence_kind='invoice' AND external_reference=$3)",[relation.id,relation.tenant_id,relation.invoice_reference,JSON.stringify({source:"customer_reference"})]);
+          const dist=await tx.unsafe("SELECT id FROM tenant_revenue_distributions WHERE tenant_id=$1 AND ($2::date IS NULL OR period_end>=$2::date) AND ($3::date IS NULL OR period_start<=$3::date) AND ($4::text IS NULL OR currency=$4) ORDER BY period_end DESC,id DESC LIMIT 100",[relation.tenant_id,relation.disputed_period_start,relation.disputed_period_end,relation.disputed_currency]);
+          for(const x of dist)await tx.unsafe("INSERT INTO tenant_relation_evidence(case_id,tenant_id,evidence_kind,source_table,source_id,metadata) SELECT $1,$2,'settlement','tenant_revenue_distributions',$3,$4::jsonb WHERE NOT EXISTS (SELECT 1 FROM tenant_relation_evidence WHERE case_id=$1 AND source_table='tenant_revenue_distributions' AND source_id=$3)",[relation.id,relation.tenant_id,String(x.id),JSON.stringify({authoritative:true})]);
+          actionResult={distribution_evidence:dist.length,invoice_reference_linked:Boolean(relation.invoice_reference)};
+        }else if(policy.action_type==="reconcile_billing"){
+          const rows=await tx.unsafe("SELECT currency,COALESCE(sum(upstream_payout_ht),0)::float8 AS upstream_payout_ht,COALESCE(sum(platform_fee_ht),0)::float8 AS platform_fee_ht,COALESCE(sum(net_payout_ht),0)::float8 AS net_payout_ht,COALESCE(sum(unallocated_amount_ht),0)::float8 AS unallocated_amount_ht,count(*)::int AS distributions FROM tenant_revenue_distributions WHERE tenant_id=$1 AND ($2::date IS NULL OR period_end>=$2::date) AND ($3::date IS NULL OR period_start<=$3::date) AND ($4::text IS NULL OR currency=$4) GROUP BY currency ORDER BY currency",[relation.tenant_id,relation.disputed_period_start,relation.disputed_period_end,relation.disputed_currency]);
+          actionResult={authoritative_distribution_summary:rows,subscription_invoice_provider_connected:false};
+        }else if(policy.action_type==="reconcile_final_settlement"){
+          const rows=await tx.unsafe("SELECT currency,count(*)::int AS distributions,count(*) FILTER(WHERE status='paid')::int AS paid,count(*) FILTER(WHERE status NOT IN ('paid','cancelled'))::int AS open,COALESCE(sum(net_payout_ht) FILTER(WHERE status<>'cancelled'),0)::float8 AS net_payout_ht,COALESCE(sum(net_payout_ht) FILTER(WHERE status='paid'),0)::float8 AS paid_payout_ht FROM tenant_revenue_distributions WHERE tenant_id=$1 GROUP BY currency ORDER BY currency",[relation.tenant_id]);
+          const open=rows.reduce((n,x)=>n+Number(x.open||0),0);
+          if(open===0)await tx.unsafe("UPDATE tenant_exit_requests SET final_settlement_status='settled',updated_at=now() WHERE case_id=$1",[relation.id]);
+          else await tx.unsafe("UPDATE tenant_exit_requests SET final_settlement_status='pending',updated_at=now() WHERE case_id=$1",[relation.id]);
+          actionResult={currencies:rows,open_distributions:open,settled:open===0};
+        }else if(policy.action_type==="respond_customer"||policy.action_type==="request_customer_info"){
+          const message=String(payload.message||"").trim();
+          if(!message||message.length>8000)throw problem(400,"RELATION_RESPONSE_REQUIRED");
+          const label=policy.action_type==="request_customer_info"?"Information complémentaire demandée":"Réponse du service client";
+          await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible,details) VALUES($1,$2,'staff_message','agent',$3,$4,true,$5::jsonb)",[relation.id,relation.tenant_id,actorId,message,JSON.stringify({label,action_type:policy.action_type})]);
+          await tx.unsafe("UPDATE tenant_relation_cases SET first_responded_at=COALESCE(first_responded_at,now()),last_pgi_update_at=now(),status=CASE WHEN $2='request_customer_info' THEN 'waiting_customer' WHEN status IN ('open','triage') THEN 'investigating' ELSE status END,updated_at=now() WHERE id=$1",[relation.id,policy.action_type]);
+          actionResult={message_sent:true,customer_visible:true};
+        }else if(policy.action_type==="prepare_mediation"){
+          if(relation.customer_capacity!=="consumer")throw problem(409,"MEDIATION_CONSUMER_ONLY");
+          const eligibleAt=relation.mediation_eligible_at?new Date(relation.mediation_eligible_at):null;
+          const eligible=Boolean(eligibleAt&&eligibleAt.getTime()<=Date.now());
+          actionResult={eligible,eligible_at:relation.mediation_eligible_at||null,formal_complaint_at:relation.formal_complaint_at||null,submitted:false};
+          if(eligible)await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible,details) VALUES($1,$2,'mediation_ready','agent',$3,'Le dossier remplit le délai interne de préparation à la médiation. La saisine reste à effectuer auprès du médiateur compétent.',true,$4::jsonb)",[relation.id,relation.tenant_id,actorId,JSON.stringify(actionResult)]);
+        }else{
+          actionResult={stored:true,note:"Action de préparation enregistrée pour l’agent."};
+        }
+        await tx.unsafe("UPDATE tenant_relation_actions SET status='completed',result=$2::jsonb,executed_at=now() WHERE id=$1",[action.id,JSON.stringify(actionResult)]);
+      }else if(policy.execution_mode==="external_confirmation"){
+        if(policy.action_type==="request_outbound_rio"){
+          const targetLineId=Number(action.exit_line_id)||null;
+          const portabilityLines=await tx.unsafe("SELECT id,portability_eligibility_status FROM tenant_exit_lines WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out' AND ($2::bigint IS NULL OR id=$2) FOR UPDATE",[relation.id,targetLineId]);
+          if(!portabilityLines.length)throw problem(409,"PORT_OUT_LINES_REQUIRED");
+          if(portabilityLines.some(x=>x.portability_eligibility_status!=="eligible"))throw problem(409,"PORT_OUT_ELIGIBILITY_REQUIRED");
+          await tx.unsafe("UPDATE tenant_exit_lines SET rio_status=CASE WHEN rio_status IN ('not_requested','unavailable') THEN 'requested' ELSE rio_status END,rio_requested_at=COALESCE(rio_requested_at,now()) WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out' AND ($2::bigint IS NULL OR id=$2)",[relation.id,targetLineId]);
+          await tx.unsafe("UPDATE tenant_exit_requests SET status='waiting_provider',updated_at=now() WHERE case_id=$1 AND status NOT IN ('completed','cancelled')",[relation.id]);
+        }else if(policy.action_type==="submit_port_out"){
+          const ex=(await tx.unsafe("SELECT id,port_out_requested,customer_confirmed FROM tenant_exit_requests WHERE case_id=$1 FOR UPDATE",[relation.id]))[0];
+          if(!ex||!ex.port_out_requested)throw problem(409,"PORT_OUT_NOT_REQUESTED");
+          if(!ex.customer_confirmed)throw problem(409,"EXIT_CUSTOMER_CONFIRMATION_REQUIRED");
+          const targetLineId=Number(action.exit_line_id)||null;
+          const portLines=await tx.unsafe("SELECT id,portability_eligibility_status,rio_status FROM tenant_exit_lines WHERE exit_request_id=$1 AND requested_action='port_out' AND ($2::bigint IS NULL OR id=$2) FOR UPDATE",[ex.id,targetLineId]);
+          if(!portLines.length)throw problem(409,"PORT_OUT_LINES_REQUIRED");
+          if(portLines.length>1&&!targetLineId)throw problem(409,"PORT_OUT_LINE_SCOPE_REQUIRED");
+          if(portLines.some(x=>x.portability_eligibility_status!=="eligible"))throw problem(409,"PORT_OUT_ELIGIBILITY_REQUIRED");
+          if(portLines.some(x=>!["delivered","not_required"].includes(x.rio_status)))throw problem(409,"PORT_OUT_RIO_DELIVERY_REQUIRED");
+          await tx.unsafe("UPDATE tenant_exit_requests SET status='waiting_provider',updated_at=now() WHERE id=$1",[ex.id]);
+          await tx.unsafe("UPDATE tenant_exit_lines SET status='waiting_provider' WHERE exit_request_id=$1 AND requested_action='port_out' AND ($2::bigint IS NULL OR id=$2)",[ex.id,targetLineId]);
+          await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible,details) VALUES($1,$2,'port_out_submitted','agent',$3,'Demande de portabilité sortante mise en file auprès du fournisseur.',true,$4::jsonb)",[relation.id,relation.tenant_id,actorId,JSON.stringify({exit_line_id:targetLineId})]);
+        }else if(["request_port_out_report","request_port_out_cancel","request_port_out_return_back"].includes(policy.action_type)){
+          const option=policy.action_type==="request_port_out_report"?"report":policy.action_type==="request_port_out_cancel"?"cancel":"return_back";
+          await tx.unsafe("UPDATE tenant_exit_lines SET recovery_option=$2,status='waiting_provider' WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[relation.id,option]);
+          await tx.unsafe("UPDATE tenant_exit_requests SET status='waiting_provider',updated_at=now() WHERE case_id=$1 AND status NOT IN ('completed','cancelled')",[relation.id]);
+        }else if(policy.action_type==="request_final_invoice"){
+          await tx.unsafe("UPDATE tenant_exit_requests SET final_invoice_status='pending',updated_at=now() WHERE case_id=$1",[relation.id]);
+        }
+        actionResult={provider_confirmation_required:true,queued:true};
+        await tx.unsafe("UPDATE tenant_relation_actions SET status='queued',result=$2::jsonb WHERE id=$1",[action.id,JSON.stringify(actionResult)]);
+      }
+      await tx.unsafe("UPDATE tenant_relation_cases SET ai_state=$2,ai_confidence=COALESCE($3,ai_confidence),last_pgi_update_at=now(),updated_at=now() WHERE id=$1",[relation.id,policy.execution_mode==="automatic"?"ready":"action_required",confidence]);
+      await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible,details) VALUES($1,$2,'agent_analysis','agent',$3,$4,false,$5::jsonb)",[relation.id,relation.tenant_id,actorId,explanation||("Action agent : "+policy.action_type),JSON.stringify({action_type:policy.action_type,risk_class:policy.risk_class,execution_mode:policy.execution_mode})]);
+      await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'customer_relation.agent_action','tenant_relation_case',$3,$4::jsonb)",[relation.tenant_id,actorId,String(relation.id),JSON.stringify({case_public_id:publicId,action_public_id:action.public_id,action_type:policy.action_type,risk_class:policy.risk_class,execution_mode:policy.execution_mode})]);
+      await tx.unsafe("INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'customer_relation.agent_action','tenant_relation_case',$2,$3::jsonb)",[relation.tenant_id,String(relation.id),JSON.stringify({case_public_id:publicId,action_public_id:action.public_id,action_type:policy.action_type,risk_class:policy.risk_class,execution_mode:policy.execution_mode,status:policy.execution_mode==="automatic"?"completed":initialStatus})]);
+      return {...action,status:policy.execution_mode==="automatic"?"completed":initialStatus,result:actionResult};
+    });
+    this.eventBus.publish("customer_relation.agent_action",{case_id:publicId,action_type:policy.action_type,status:result.status});
+    if(result.status==="queued"&&["request_outbound_rio","submit_port_out","request_port_out_report","request_port_out_cancel","request_port_out_return_back"].includes(policy.action_type)){
+      await this.enqueueWork("portability_outbound",{action_public_id:String(result.public_id)},{tenant_id:Number(result.tenant_id),priority:250,max_attempts:50,dedupe_key:"portability_outbound:"+String(result.public_id)});
+    }
+    return result;
+  }
+
+  async approveRelationAction(actionPublicId,actor={}){
+    const publicId=String(actionPublicId||"").trim(),actorId=numericActor(actor);
+    if(!/^[0-9a-f-]{36}$/i.test(publicId))throw problem(400,"INVALID_RELATION_ACTION_ID");
+    return this.sql.begin(async tx=>{
+      const row=(await tx.unsafe("SELECT a.*,c.public_id AS case_public_id,c.status AS case_status FROM tenant_relation_actions a JOIN tenant_relation_cases c ON c.id=a.case_id WHERE a.public_id=$1::uuid FOR UPDATE",[publicId]))[0];
+      if(!row)throw problem(404,"RELATION_ACTION_NOT_FOUND");
+      if(row.execution_mode!=="approval_required")throw problem(409,"RELATION_ACTION_NOT_STAFF_APPROVABLE");
+      if(row.status!=="proposed")throw problem(409,"RELATION_ACTION_NOT_PENDING");
+      let result={approved:true,external_execution_required:false};
+      if(row.action_type==="release_dispute_hold"){
+        await tx.unsafe("UPDATE tenant_dispute_collection_holds SET status='released',released_at=now() WHERE case_id=$1 AND status='active'",[row.case_id]);
+      }else if(row.action_type==="resolve_case"){
+        await tx.unsafe("UPDATE tenant_relation_cases SET status='resolved',resolved_at=now(),ai_state='done',last_pgi_update_at=now(),updated_at=now() WHERE id=$1",[row.case_id]);
+        await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible) VALUES($1,$2,'resolved','staff',$3,'Dossier résolu',true)",[row.case_id,row.tenant_id,actorId]);
+      }else if(row.action_type==="close_case"){
+        if(row.case_status!=="resolved")throw problem(409,"RELATION_CASE_MUST_BE_RESOLVED");
+        await tx.unsafe("UPDATE tenant_relation_cases SET status='closed',closed_at=now(),updated_at=now() WHERE id=$1",[row.case_id]);
+        await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible) VALUES($1,$2,'closed','staff',$3,'Dossier clôturé',true)",[row.case_id,row.tenant_id,actorId]);
+      }else if(["issue_credit","issue_refund"].includes(row.action_type)){
+        result={approved:true,external_execution_required:true,reason:"PAYMENT_PROVIDER_ACTION_REQUIRED"};
+      }
+      await tx.unsafe("UPDATE tenant_relation_actions SET status=$2,approved_by_user_id=$3,approved_at=now(),result=$4::jsonb,executed_at=CASE WHEN $2='completed' THEN now() ELSE executed_at END WHERE id=$1",[row.id,result.external_execution_required?"approved":"completed",actorId,JSON.stringify(result)]);
+      await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible,details) VALUES($1,$2,'decision_approved','staff',$3,$4,true,$5::jsonb)",[row.case_id,row.tenant_id,actorId,"Action approuvée : "+row.action_type,JSON.stringify({action_public_id:publicId,external_execution_required:result.external_execution_required})]);
+      await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'customer_relation.action_approve','tenant_relation_action',$3,$4::jsonb)",[row.tenant_id,actorId,String(row.id),JSON.stringify({public_id:publicId,action_type:row.action_type,external_execution_required:result.external_execution_required})]);
+      return {public_id:publicId,status:result.external_execution_required?"approved":"completed",...result};
+    });
+  }
+
+  async confirmCustomerRelationAction(tenantId,actionPublicId,principalId){
+    const id=Number(tenantId),publicId=String(actionPublicId||"").trim(),principal=String(principalId||"").trim();
+    if(!Number.isInteger(id)||id<=0||!/^[0-9a-f-]{36}$/i.test(publicId)||!/^[0-9a-f-]{36}$/i.test(principal))throw problem(400,"INVALID_RELATION_ACTION");
+    return this.sql.begin(async tx=>{
+      const row=(await tx.unsafe("SELECT a.*,c.public_id AS case_public_id FROM tenant_relation_actions a JOIN tenant_relation_cases c ON c.id=a.case_id WHERE a.public_id=$1::uuid AND a.tenant_id=$2 FOR UPDATE",[publicId,id]))[0];
+      if(!row)throw problem(404,"RELATION_ACTION_NOT_FOUND");
+      if(row.execution_mode!=="customer_confirmation"||row.status!=="proposed")throw problem(409,"RELATION_ACTION_NOT_CONFIRMABLE");
+      await tx.unsafe("UPDATE tenant_relation_actions SET status='approved',approved_at=now(),result=$2::jsonb WHERE id=$1",[row.id,JSON.stringify({customer_confirmed:true,external_execution_required:true})]);
+      await tx.unsafe("UPDATE tenant_exit_requests SET customer_confirmed=true,status=CASE WHEN status='waiting_customer' THEN 'preparing' ELSE status END,updated_at=now() WHERE case_id=$1",[row.case_id]);
+      await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_customer_principal_id,message,customer_visible,details) VALUES($1,$2,'decision_approved','customer',$3::uuid,'Action confirmée par le client',true,$4::jsonb)",[row.case_id,id,principal,JSON.stringify({action_public_id:publicId,action_type:row.action_type})]);
+      return {public_id:publicId,status:"approved",external_execution_required:true};
+    });
+  }
+
+  async completeRelationExternalAction(actionPublicId,input={},actor={}){
+    const publicId=String(actionPublicId||"").trim(),actorId=numericActor(actor);
+    if(!/^[0-9a-f-]{36}$/i.test(publicId))throw problem(400,"INVALID_RELATION_ACTION_ID");
+    const outcome=String(input.outcome||"").trim().toLowerCase();
+    if(!["success","completed","scheduled","available","delivered","failed","rejected"].includes(outcome))throw problem(400,"INVALID_EXTERNAL_OUTCOME");
+    const providerReference=String(input.provider_reference||"").trim().slice(0,255)||null;
+    const safe=sanitizeRelationPayload(input);
+    const completed=await this.sql.begin(async tx=>{
+      const row=(await tx.unsafe("SELECT a.*,c.public_id AS case_public_id,c.status AS case_status FROM tenant_relation_actions a JOIN tenant_relation_cases c ON c.id=a.case_id WHERE a.public_id=$1::uuid FOR UPDATE",[publicId]))[0];
+      if(!row)throw problem(404,"RELATION_ACTION_NOT_FOUND");
+      if(row.execution_mode!=="external_confirmation")throw problem(409,"RELATION_ACTION_NOT_EXTERNAL");
+      if(!["queued","approved","executing"].includes(row.status))throw problem(409,"RELATION_ACTION_NOT_PENDING");
+      let finalStatus=["failed","rejected"].includes(outcome)?"failed":"completed",eventType="status_changed",message="Confirmation externe enregistrée";
+      if(row.action_type==="request_outbound_rio"){
+        const targetLineId=Number(row.exit_line_id)||null;
+        const last4=input.rio_last4==null?null:String(input.rio_last4).slice(-4);
+        const deliveryChannel=String(input.delivery_channel||"provider_direct").trim().toLowerCase();
+        if(!["provider_direct","secure_portal","verified_email","manual_secure","not_required"].includes(deliveryChannel))throw problem(400,"INVALID_RIO_DELIVERY_CHANNEL");
+        const deliveryReference=String(input.delivery_reference||providerReference||"").trim().slice(0,255)||null;
+        const state=outcome==="delivered"?"delivered":["available","success","completed"].includes(outcome)?"available":"unavailable";
+        await tx.unsafe("UPDATE tenant_exit_lines SET rio_status=$2,rio_last4=COALESCE($3,rio_last4),rio_delivered_at=CASE WHEN $2='delivered' THEN now() ELSE rio_delivered_at END,rio_delivery_channel=$4,rio_delivery_reference=COALESCE($5,rio_delivery_reference) WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out' AND ($6::bigint IS NULL OR id=$6)",[row.case_id,state,last4,deliveryChannel,deliveryReference,targetLineId]);
+        eventType="status_changed";message=state==="delivered"?"RIO délivré par le canal sécurisé prévu":"Statut RIO mis à jour";
+      }else if(row.action_type==="submit_port_out"){
+        const targetLineId=Number(row.exit_line_id)||null;
+        const portLines=await tx.unsafe("SELECT id,status FROM tenant_exit_lines WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out' FOR UPDATE",[row.case_id]);
+        if(portLines.length>1&&!targetLineId)throw problem(409,"PORT_OUT_LINE_SCOPE_REQUIRED");
+        if(outcome==="scheduled"){
+          await tx.unsafe("UPDATE tenant_exit_lines SET status='scheduled',operator_reference=COALESCE($2,operator_reference),scheduled_at=COALESCE($3::timestamptz,now()) WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out' AND ($4::bigint IS NULL OR id=$4)",[row.case_id,providerReference,input.scheduled_at||null,targetLineId]);
+          const states=await tx.unsafe("SELECT status FROM tenant_exit_lines WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[row.case_id]);
+          const allScheduled=states.every(x=>["scheduled","completed"].includes(x.status));
+          await tx.unsafe("UPDATE tenant_exit_requests SET status=CASE WHEN $2 THEN 'scheduled' ELSE 'waiting_provider' END,operator_reference=COALESCE($3,operator_reference),scheduled_at=CASE WHEN $2 THEN COALESCE($4::timestamptz,scheduled_at,now()) ELSE scheduled_at END,updated_at=now() WHERE case_id=$1",[row.case_id,allScheduled,providerReference,input.scheduled_at||null]);
+          eventType="port_out_scheduled";message="Portabilité sortante planifiée par l’opérateur";
+        }else if(["success","completed"].includes(outcome)){
+          await tx.unsafe("UPDATE tenant_exit_lines SET status='completed',operator_reference=COALESCE($2,operator_reference),completed_at=now() WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out' AND ($3::bigint IS NULL OR id=$3)",[row.case_id,providerReference,targetLineId]);
+          await tx.unsafe(
+            "UPDATE tenant_number_assignments a SET status='ended',valid_to=COALESCE(valid_to,now())"+
+            " FROM tenant_exit_lines l JOIN tenant_exit_requests e ON e.id=l.exit_request_id"+
+            " WHERE e.case_id=$1 AND l.assignment_id=a.id AND l.requested_action='port_out' AND l.status='completed' AND ($2::bigint IS NULL OR l.id=$2)",
+            [row.case_id,targetLineId]
+          );
+          const states=await tx.unsafe("SELECT status FROM tenant_exit_lines WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[row.case_id]);
+          const allCompleted=states.length>0&&states.every(x=>x.status==="completed");
+          await tx.unsafe("UPDATE tenant_exit_requests SET status=CASE WHEN $2 THEN 'finalizing' ELSE 'waiting_provider' END,operator_reference=COALESCE($3,operator_reference),updated_at=now() WHERE case_id=$1",[row.case_id,allCompleted,providerReference]);
+          eventType="port_out_completed";message=allCompleted?"Portabilité sortante confirmée pour tous les numéros":"Portabilité sortante confirmée pour le numéro";
+        }else{
+          await tx.unsafe("UPDATE tenant_exit_requests SET status='blocked',updated_at=now() WHERE case_id=$1",[row.case_id]);
+          await tx.unsafe("UPDATE tenant_exit_lines SET status='blocked' WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out' AND ($2::bigint IS NULL OR id=$2)",[row.case_id,targetLineId]);
+        }
+      }else if(row.action_type==="request_final_invoice"){
+        if(["success","completed","available","delivered"].includes(outcome)){
+          await tx.unsafe("UPDATE tenant_exit_requests SET final_invoice_status='ready',updated_at=now() WHERE case_id=$1",[row.case_id]);
+          if(input.final_invoice_reference)await tx.unsafe("UPDATE tenant_relation_cases SET invoice_reference=COALESCE(invoice_reference,$2),updated_at=now() WHERE id=$1",[row.case_id,String(input.final_invoice_reference).slice(0,200)]);
+          eventType="final_invoice_ready";message="Compte final disponible";
+        }
+      }else if(row.action_type==="revoke_access"&&["success","completed"].includes(outcome)){
+        const ex=(await tx.unsafe("UPDATE tenant_exit_requests SET status='completed',access_revocation_at=now(),completed_at=now(),number_quarantine_until=CASE WHEN port_out_requested THEN number_quarantine_until ELSE COALESCE(number_quarantine_until,current_date+40) END,updated_at=now() WHERE case_id=$1 RETURNING port_out_requested,number_quarantine_until",[row.case_id]))[0];
+        await tx.unsafe("UPDATE tenant_relation_cases SET status='resolved',resolved_at=now(),ai_state='done',updated_at=now() WHERE id=$1",[row.case_id]);
+        eventType="access_revoked";message="Clôture technique confirmée";
+        safe.number_quarantine_until=ex?.number_quarantine_until||null;
+      }else if(["request_port_out_report","request_port_out_cancel","request_port_out_return_back"].includes(row.action_type)){
+        if(row.action_type==="request_port_out_cancel"&&["success","completed"].includes(outcome))await tx.unsafe("UPDATE tenant_exit_lines SET status='cancelled' WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[row.case_id]);
+        eventType="status_changed";message="Option opérateur de portabilité confirmée";
+      }
+      await tx.unsafe("UPDATE tenant_relation_actions SET status=$2,result=$3::jsonb,executed_at=now() WHERE id=$1",[row.id,finalStatus,JSON.stringify({...safe,provider_reference:providerReference})]);
+      await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible,details) VALUES($1,$2,$3,'system',$4,$5,true,$6::jsonb)",[row.case_id,row.tenant_id,eventType,actorId,message,JSON.stringify({action_public_id:publicId,action_type:row.action_type,outcome,provider_reference:providerReference})]);
+      await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'customer_relation.external_confirm','tenant_relation_action',$3,$4::jsonb)",[row.tenant_id,actorId,String(row.id),JSON.stringify({public_id:publicId,action_type:row.action_type,outcome,provider_reference:providerReference})]);
+      return {public_id:publicId,status:finalStatus,outcome,provider_reference:providerReference,action_type:row.action_type,case_public_id:row.case_public_id,tenant_id:Number(row.tenant_id),exit_line_id:Number(row.exit_line_id)||null};
+    });
+    if(completed.status==="completed"&&completed.action_type==="request_outbound_rio"&&completed.outcome==="delivered"){
+      const next=await this.createRelationAgentAction(completed.case_public_id,{action_type:"submit_port_out",confidence:1,explanation:"Portabilité sortante automatiquement transmise après confirmation du RIO.",payload:{exit_line_id:completed.exit_line_id}},{});
+      completed.next_action={action_type:"submit_port_out",public_id:next.public_id,status:next.status,exit_line_id:completed.exit_line_id};
+    }else if(completed.status==="completed"&&completed.action_type==="submit_port_out"&&["success","completed"].includes(completed.outcome)){
+      const exitState=(await this.readSql.unsafe("SELECT status FROM tenant_exit_requests WHERE case_id=(SELECT id FROM tenant_relation_cases WHERE public_id=$1::uuid) LIMIT 1",[completed.case_public_id]))[0];
+      if(exitState?.status==="finalizing"){
+        const follow=[];
+        for(const actionType of ["request_final_invoice","reconcile_final_settlement"]){
+          try{
+            const next=await this.createRelationAgentAction(completed.case_public_id,{action_type:actionType,confidence:1,explanation:"Finalisation automatique après confirmation du portage.",payload:{}},{});
+            follow.push({action_type:actionType,public_id:next.public_id,status:next.status});
+          }catch(error){follow.push({action_type:actionType,status:"blocked",code:error?.code||error?.message||"ACTION_FAILED"});}
+        }
+        completed.next_actions=follow;
+      }
+    }
+    return completed;
+  }
+
 
   async customerProfitability(params={}){
     const period=String(params.period||"365d").toLowerCase();
