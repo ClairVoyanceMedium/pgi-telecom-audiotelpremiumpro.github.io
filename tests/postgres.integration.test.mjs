@@ -389,9 +389,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
       action_type:"collect_evidence",confidence:.99,explanation:"Rassembler les références autoritatives.",payload:{rio:"must-not-persist",safe:"ok"}
     },{sub:"admin"});
     assert.equal(evidenceAction.status,"completed");
-    const storedAgentPayload=await store.sql.unsafe("SELECT payload FROM tenant_relation_actions WHERE public_id=$1::uuid",[evidenceAction.public_id]);
-    assert.equal(storedAgentPayload[0].payload.rio,undefined);
-    assert.equal(storedAgentPayload[0].payload.safe,"ok");
+    const storedAgentPayload=await store.sql.unsafe("SELECT payload::text AS payload_json FROM tenant_relation_actions WHERE public_id=$1::uuid",[evidenceAction.public_id]);
+    const storedPayload=JSON.parse(storedAgentPayload[0].payload_json);
+    assert.equal(storedPayload.rio,undefined);
+    assert.equal(storedPayload.safe,"ok");
     const refundProposal=await store.createRelationAgentAction(dispute.public_id,{
       action_type:"issue_refund",confidence:.9,explanation:"Remboursement proposé après analyse.",payload:{amount:12.34,currency:"EUR"}
     },{sub:"admin"});
@@ -410,15 +411,17 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(exitOverview.exits.length,1);
     assert.equal(exitOverview.exit_lines.length,1);
     assert.equal(exitOverview.exit_lines[0].requested_action,"port_out");
-    const rioAction=await store.createRelationAgentAction(exit.case.public_id,{
-      action_type:"request_outbound_rio",confidence:1,explanation:"Demande sécurisée du RIO.",payload:{}
-    },{sub:"admin"});
+    assert.ok(exit.orchestration.some(x=>x.action_type==="check_portability"&&x.status==="completed"));
+    const rioAction=exit.orchestration.find(x=>x.action_type==="request_outbound_rio");
+    assert.ok(rioAction);
     assert.equal(rioAction.status,"queued");
     const rioConfirm=await store.completeRelationExternalAction(rioAction.public_id,{
-      outcome:"delivered",provider_reference:"rio-ref-1",rio_last4:"1234"
+      outcome:"delivered",provider_reference:"rio-ref-1",rio_last4:"1234",delivery_channel:"provider_direct",delivery_reference:"provider-secure-delivery-1"
     },{sub:"admin"});
     assert.equal(rioConfirm.status,"completed");
     const postRio=await store.customerRelationsOverview(Number(externalTenantRow.id),{admin:true});
+    assert.equal(postRio.exit_lines[0].portability_eligibility_status,"eligible");
+    assert.equal(postRio.exit_lines[0].portability_service_level,"enhanced");
     assert.equal(postRio.exit_lines[0].rio_status,"delivered");
     assert.equal(postRio.exit_lines[0].rio_last4,"1234");
     const agentContext=await store.relationAgentContext(exit.case.public_id);
