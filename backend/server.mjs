@@ -365,6 +365,54 @@ export function createBackend(options={}){
         const result=await store.idempotent(req.headers["idempotency-key"],"customer.service_incident.note",payload,()=>store.addCustomerServiceIncidentNote(context.tenant_id,match.id,body.body,customerActor.sub));
         return done(res,metrics,started,"customer.incidents.note",201,{...result.value,replayed:result.replayed});
       }
+      if(method==="GET"&&pathname==="/api/v1/customer/relations"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        return done(res,metrics,started,"customer.relations.overview",200,await store.customerRelationsOverview(context.tenant_id));
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/relations/disputes"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        if(!["owner","admin"].includes(context.customer_role))throw Object.assign(new Error("Customer role cannot open financial/legal cases"),{status:403,code:"CUSTOMER_RELATIONS_FORBIDDEN"});
+        const body=await readJson(req,config.bodyLimitBytes),payload={tenant_id:context.tenant_id,...body};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer.relation.create",payload,()=>store.createCustomerRelationCase(context.tenant_id,body,customerActor.sub));
+        return done(res,metrics,started,"customer.relations.create",201,{...result.value,replayed:result.replayed});
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/relations/exits"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        if(!["owner","admin"].includes(context.customer_role))throw Object.assign(new Error("Customer role cannot request account exit"),{status:403,code:"CUSTOMER_RELATIONS_FORBIDDEN"});
+        const body=await readJson(req,config.bodyLimitBytes),payload={tenant_id:context.tenant_id,...body};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer.exit.create",payload,()=>store.createCustomerExitRequest(context.tenant_id,body,customerActor.sub));
+        return done(res,metrics,started,"customer.exit.create",201,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/customer/relations/:id/messages");
+      if(method==="POST"&&match){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        const body=await readJson(req,config.bodyLimitBytes),payload={tenant_id:context.tenant_id,case_id:match.id,body:body.body};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer.relation.message",payload,()=>store.addCustomerRelationMessage(context.tenant_id,match.id,body.body,customerActor.sub));
+        return done(res,metrics,started,"customer.relations.message",201,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/customer/relations/:id/cancel");
+      if(method==="POST"&&match){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        if(!["owner","admin"].includes(context.customer_role))throw Object.assign(new Error("Customer role cannot cancel legal cases"),{status:403,code:"CUSTOMER_RELATIONS_FORBIDDEN"});
+        const payload={tenant_id:context.tenant_id,case_id:match.id};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer.relation.cancel",payload,()=>store.cancelCustomerRelationCase(context.tenant_id,match.id,customerActor.sub));
+        return done(res,metrics,started,"customer.relations.cancel",200,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/customer/relations/actions/:id/confirm");
+      if(method==="POST"&&match){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        if(!["owner","admin"].includes(context.customer_role))throw Object.assign(new Error("Customer role cannot confirm legal actions"),{status:403,code:"CUSTOMER_RELATIONS_FORBIDDEN"});
+        const payload={tenant_id:context.tenant_id,action_id:match.id};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer.relation.action.confirm",payload,()=>store.confirmCustomerRelationAction(context.tenant_id,match.id,customerActor.sub));
+        return done(res,metrics,started,"customer.relations.action_confirm",200,{...result.value,replayed:result.replayed});
+      }
+
       if(method==="POST"&&pathname==="/api/v1/customer/routing/simulate"){
         requireCustomerCsrf(req,customerActor,config);
         const context=await store.customerSessionContext(customerActor);
@@ -979,6 +1027,36 @@ export function createBackend(options={}){
         requireRole(actor,["admin","readonly"]);requireCsrf(req,actor,config);
         const body=await readJson(req,config.bodyLimitBytes);
         return done(res,metrics,started,"platform.routing.simulate",200,await store.simulateTenantRouting(match.id,body));
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/platform/customer-relations/queue"){
+        requireRole(actor,["admin","finance","readonly"]);
+        const params=Object.fromEntries(url.searchParams.entries());
+        return done(res,metrics,started,"platform.customer_relations.queue",200,await store.listCustomerRelationsQueue(params));
+      }
+      match=routeMatch(pathname,"/api/v1/platform/tenants/:id/customer-relations");
+      if(method==="GET"&&match){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.customer_relations.tenant",200,await store.tenantCustomerRelations(match.id));
+      }
+      match=routeMatch(pathname,"/api/v1/platform/customer-relations/:id/agent-context");
+      if(method==="GET"&&match){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.customer_relations.agent_context",200,await store.relationAgentContext(match.id));
+      }
+      match=routeMatch(pathname,"/api/v1/platform/customer-relations/:id/actions");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin","finance"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes),payload={case_id:match.id,...body};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer_relation.agent_action",payload,()=>store.createRelationAgentAction(match.id,body,actor));
+        return done(res,metrics,started,"platform.customer_relations.agent_action",201,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/platform/customer-relations/actions/:id/approve");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin","finance"]);requireCsrf(req,actor,config);
+        const payload={action_id:match.id};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer_relation.action_approve",payload,()=>store.approveRelationAction(match.id,actor));
+        return done(res,metrics,started,"platform.customer_relations.action_approve",200,{...result.value,replayed:result.replayed});
       }
 
       if(method==="GET"&&pathname==="/api/v1/platform/billing-alerts"){
