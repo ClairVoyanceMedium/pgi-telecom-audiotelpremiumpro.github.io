@@ -203,7 +203,8 @@ function normalizeResult(line,body){
     if(rawRio&&!delivered&&!available)throw coded("OUTBOUND_PORTABILITY_RIO_DIRECT_DELIVERY_REQUIRED");
     const last4=text(body.rio_last4)||(rawRio?rawRio.slice(-4):null);
     if(rejected)return {pending:false,outcome:"failed",state,provider_reference:providerReference,rio_last4:last4};
-    if(delivered||available)return {pending:false,outcome:delivered?"delivered":"available",state,provider_reference:providerReference,rio_last4:last4,delivery_channel:text(body.delivery_channel)||"provider_direct",delivery_reference:text(body.delivery_reference)||providerReference};
+    if(delivered)return {pending:false,outcome:"delivered",state,provider_reference:providerReference,rio_last4:last4,delivery_channel:text(body.delivery_channel)||"provider_direct",delivery_reference:text(body.delivery_reference)||providerReference};
+    if(available)return {pending:true,state:"available_waiting_secure_delivery",provider_reference:providerReference};
     return {pending:true,state:state||"pending",provider_reference:providerReference};
   }
 
