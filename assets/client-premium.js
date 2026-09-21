@@ -90,6 +90,7 @@ function init(){
   initSectionNav();
   networkState();
   setTimeout(function(){import("./client-premium-plus.js").catch(function(){});},700);
+  setTimeout(function(){import("./client-experience-command-center.js").catch(function(){});},900);
 }
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init,{once:true});else init();
 })();
