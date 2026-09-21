@@ -374,6 +374,16 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
       "INSERT INTO customer_tenant_memberships(tenant_id,customer_principal_id,role,status) VALUES($1,$2::uuid,'owner','active')",
       [Number(externalTenantRow.id),relationPrincipal.id]
     );
+    const experienceDefaults=await store.customerExperiencePreferences(Number(externalTenantRow.id),relationPrincipal.id);
+    assert.equal(experienceDefaults.alerts.calls_below.enabled,false);
+    const experienceSaved=await store.saveCustomerExperiencePreferences(Number(externalTenantRow.id),relationPrincipal.id,{alerts:{
+      calls_below:{enabled:true,threshold:12},
+      abandon_rate_above:{enabled:true,threshold:22},
+      revenue_target:{enabled:true,threshold:250},
+      drop_vs_average:{enabled:true,threshold:35}
+    }});
+    assert.equal(experienceSaved.alerts.calls_below.threshold,12);
+    assert.equal((await store.customerExperiencePreferences(Number(externalTenantRow.id),relationPrincipal.id)).alerts.revenue_target.threshold,250);
     const dispute=await store.createCustomerRelationCase(Number(externalTenantRow.id),{
       case_kind:"billing_dispute",priority:"high",customer_capacity:"business",
       title:"Contest facture intégration",description:"Le client conteste une partie déterminée du montant.",
@@ -740,10 +750,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const rawCalls=await store.sql.unsafe("SELECT count(*)::int AS count FROM calls");
     assert.equal(rawCalls[0].count,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
-    assert.equal(migrations.length,52);
+    assert.equal(migrations.length,53);
     assert.equal(new Set(migrations.map(x=>x.version)).size,migrations.length);
     assert.equal(migrations[0].version,"001_baseline");
-    assert.equal(migrations.at(-1).version,"052_consumption_receipts");
+    assert.equal(migrations.at(-1).version,"053_customer_experience_preferences");
     for(const migration of migrations)assert.match(migration.checksum,/^[a-f0-9]{64}$/);
   }finally{
     await store.close();
