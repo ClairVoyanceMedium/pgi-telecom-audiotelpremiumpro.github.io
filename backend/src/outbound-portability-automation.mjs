@@ -15,8 +15,7 @@ export async function processOutboundPortabilityWork(item,{store,config,env=proc
   const actionType=String(lines[0].action_type||"");
   if(!OUTBOUND_ACTIONS.has(actionType))return;
   if(lines[0].action_status!=="queued")return;
-  const actionPayload=obj(lines[0].payload);
-  if(lines.length>1&&!Number(actionPayload.exit_line_id)){
+  if(lines.length>1&&!Number(lines[0].exit_line_id)){
     await markActionWaiting(store,lines[0],{code:"OUTBOUND_PORTABILITY_LINE_SCOPE_REQUIRED",line_count:lines.length});
     return;
   }
@@ -63,7 +62,7 @@ export async function processOutboundPortabilityWork(item,{store,config,env=proc
 
 async function loadActionLines(store,publicId){
   return store.sql.unsafe(
-    "SELECT a.id AS action_id,a.public_id::text AS action_public_id,a.action_type,a.status AS action_status,a.payload,"+
+    "SELECT a.id AS action_id,a.public_id::text AS action_public_id,a.action_type,a.status AS action_status,a.exit_line_id,a.payload,"+
     " c.id AS case_id,c.public_id::text AS case_public_id,c.tenant_id,t.public_id::text AS tenant_public_id,"+
     " e.id AS exit_request_id,e.public_id::text AS exit_public_id,e.requested_effective_date,e.target_operator_name,e.status AS exit_status,"+
     " l.id AS exit_line_id,l.e164_snapshot,l.status AS line_status,l.operator_reference,l.rio_status,l.portability_eligibility_status,l.portability_service_level,l.recovery_option,"+
@@ -83,7 +82,7 @@ async function loadActionLines(store,publicId){
     " ) api ON true"+
     " WHERE a.public_id=$1::uuid AND a.execution_mode='external_confirmation' AND a.status='queued'"+
     " AND l.requested_action='port_out'"+
-    " AND ((a.payload->>'exit_line_id') IS NULL OR l.id=(a.payload->>'exit_line_id')::bigint)"+
+    " AND (a.exit_line_id IS NULL OR l.id=a.exit_line_id)"+
     " ORDER BY l.id",
     [publicId]
   );
