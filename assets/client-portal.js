@@ -1,6 +1,6 @@
 (function(){
 "use strict";
-var state={range:"30",data:null,user:null,demo:false,googleCredential:null,billingBusy:false};
+var state={range:"today",data:null,user:null,demo:false,googleCredential:null,billingBusy:false};
 var I=window.PGIClientI18n||{locale:"fr-FR",t:function(x){return x;},apply:function(){}};
 function tr(x){return I.t?I.t(x):x;}
 var $=function(id){return document.getElementById(id);};
@@ -16,14 +16,7 @@ function statusLabel(v){var m={active:"Actif",pending:"En attente",testing:"Test
 function chip(status){var s=String(status||"").toLowerCase();var tone=["active","connected","paid","reconciled","payable","ported"].includes(s)?"ok":["pending","testing","open","invoiced","submitted","awaiting_documents","eligibility_check","operator_pending","scheduled","blocked_terms","blocked_compliance"].includes(s)?"warn":["suspended","closed","failed","past_due","disputed","rejected"].includes(s)?"bad":"neutral";return '<span class="cp-chip '+tone+'">'+esc(statusLabel(status))+"</span>";}
 function toast(message){var el=$("client-toast");el.textContent=tr(message);el.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(function(){el.hidden=true;},2600);}
 function setAuthMessage(message,bad){var el=$("auth-message");el.textContent=message?tr(message):"";el.classList.toggle("bad",Boolean(bad));}
-function rangeFor(key){
-  var to=new Date(),from=new Date(to);
-  if(key==="7")from=new Date(to.getTime()-7*86400000);
-  else if(key==="30")from=new Date(to.getTime()-30*86400000);
-  else if(key==="month"){from=new Date(to);from.setDate(1);from.setHours(0,0,0,0);}
-  else if(key==="year"){from=new Date(to);from.setMonth(0,1);from.setHours(0,0,0,0);}
-  return {from:from.toISOString(),to:to.toISOString()};
-}
+function rangeFor(key){var to=new Date,from=new Date(to);if(key==="today")from.setHours(0,0,0,0);else if(key==="7")from=new Date(to-7*86400000);else if(key==="30")from=new Date(to-30*86400000);else if(key==="month"){from.setDate(1);from.setHours(0,0,0,0)}else if(key==="year"){from.setMonth(0,1);from.setHours(0,0,0,0)}return {from:from.toISOString(),to:to.toISOString()}}
 function previousRangeFor(range){
   var from=new Date(range.from),to=new Date(range.to),span=Math.max(86400000,to-from);
   return {from:new Date(from.getTime()-span).toISOString(),to:new Date(from.getTime()-1).toISOString()};
@@ -94,8 +87,8 @@ function renderStatus(data){
   var a=(data.financial_by_currency||[]).reduce(function(o,x){o.total+=n(x.calls_total);o.connected+=n(x.calls_connected);o.abandoned+=n(x.calls_abandoned);o.failed+=n(x.calls_failed);return o;},{total:0,connected:0,abandoned:0,failed:0});
   var total=Math.max(1,a.total),p1=a.connected/total*100,p2=a.abandoned/total*100;
   $("status-total").textContent=nf(a.total);
-  $("status-donut").style.background="conic-gradient(#d9dde1 0 "+p1+"%,#7d858d "+p1+"% "+(p1+p2)+"%,#4a5057 "+(p1+p2)+"% 100%)";
-  var rows=[["#d9dde1","Décrochés",a.connected],["#7d858d","Abandonnés",a.abandoned],["#4a5057","Échoués",a.failed]];
+  $("status-donut").style.background="conic-gradient(var(--ok) 0 "+p1+"%,var(--warn) "+p1+"% "+(p1+p2)+"%,var(--bad) "+(p1+p2)+"% 100%)";
+  var rows=[["var(--ok)","Décrochés",a.connected],["var(--warn)","Abandonnés",a.abandoned],["var(--bad)","Échoués",a.failed]];
   $("status-legend").innerHTML=rows.map(function(x){return '<div><i style="background:'+x[0]+'"></i><span>'+x[1]+'</span><strong>'+nf(x[2])+'</strong></div>';}).join("");
 }
 function renderPayoutChart(data){
@@ -169,7 +162,7 @@ function renderDestinations(data){
   el.innerHTML=rows.length?rows.map(function(x){var line=x.sva_number_id?numbers[String(x.sva_number_id)]||"Numéro attribué":"Tous les numéros";var cap=x.max_concurrent_calls?" · "+n(x.active_calls)+"/"+n(x.max_concurrent_calls)+" appels":" · "+n(x.active_calls)+" appel(s)";return '<div class="cp-row"><div><strong>'+esc(x.label)+'</strong><span>'+esc(line+" · "+x.destination_type+" · "+x.destination_uri+cap)+'</span></div>'+chip(x.status)+'</div>';}).join(""):'<p class="cp-empty">Aucune destination affichée.</p>';
 }
 function render(data){
-  state.data=data;state.user=data.user||state.user;
+  window.PGIClientPortalData=data;state.data=data;state.user=data.user||state.user;
   $("tenant-name").textContent=(data.tenant&&data.tenant.display_name)||"Mon entreprise";
   $("tenant-meta").textContent=[data.tenant&&data.tenant.country_code,data.tenant&&data.tenant.default_currency,state.demo?"Démonstration":null].filter(Boolean).join(" · ");
   $("customer-user-name").textContent=(state.user&&state.user.name)||"Utilisateur";
