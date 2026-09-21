@@ -1,3 +1,23 @@
+function apiBase(){const c=window.PGI_CONFIG||{};if(!c.apiBaseUrl)throw Object.assign(new Error("API_NOT_CONFIGURED"),{code:"API_NOT_CONFIGURED"});return String(c.apiBaseUrl).replace(/\/$/,"")}
+function cookie(name){const p=encodeURIComponent(name)+"=";for(const raw of String(document.cookie||"").split(";")){const x=raw.trim();if(x.startsWith(p))try{return decodeURIComponent(x.slice(p.length))}catch(_e){return x.slice(p.length)}}return""}
+function timeout(ms){if(typeof AbortSignal!=="undefined"&&typeof AbortSignal.timeout==="function")return AbortSignal.timeout(ms);const c=new AbortController();setTimeout(()=>c.abort(),ms);return c.signal}
+async function teamRequest(path,options={}){
+  const method=String(options.method||"GET").toUpperCase(),headers={Accept:"application/json"};
+  if(options.body!=null)headers["Content-Type"]="application/json";
+  if(options.idempotencyKey)headers["Idempotency-Key"]=String(options.idempotencyKey);
+  if(!["GET","HEAD","OPTIONS"].includes(method)){const csrf=cookie("__Host-pgi_customer_csrf");if(csrf)headers["X-CSRF-Token"]=csrf}
+  const response=await fetch(apiBase()+path,{method,credentials:"include",cache:"no-store",headers,body:options.body==null?undefined:JSON.stringify(options.body),signal:timeout(8000)});
+  let payload=null;try{payload=await response.json()}catch(_e){}
+  if(!response.ok){const code=payload?.error?.code||"API_HTTP_"+response.status;throw Object.assign(new Error(code),{code,status:response.status,payload})}
+  return payload;
+}
+function idempotencyKey(){return crypto?.randomUUID?crypto.randomUUID():"team-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2)}
+const api={
+  team:()=>teamRequest("/customer/team"),
+  invite:(payload)=>teamRequest("/customer/team/invitations",{method:"POST",body:payload,idempotencyKey:idempotencyKey()}),
+  update:(id,payload)=>teamRequest("/customer/team/members/"+encodeURIComponent(id),{method:"PATCH",body:payload}),
+  revoke:(id)=>teamRequest("/customer/team/invitations/"+encodeURIComponent(id)+"/revoke",{method:"POST",body:{}})
+};
 const ROLE_LABELS={owner:"Propriétaire",admin:"Administrateur",finance:"Finance",operator:"Opérations",analyst:"Analyste",readonly:"Lecture seule"};
 const ROLE_HELP={
   owner:"Tous les droits, y compris la gestion des accès.",
@@ -11,7 +31,7 @@ function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;",
 function roleOptions(current,allowOwner=true){return Object.keys(ROLE_LABELS).filter(r=>allowOwner||r!=="owner").map(r=>'<option value="'+r+'"'+(r===current?" selected":"")+'>'+ROLE_LABELS[r]+'</option>').join("")}
 function canManage(user){return Array.isArray(user?.permissions)&&(user.permissions.includes("*")||user.permissions.includes("team.manage"))}
 function statusLabel(s){return ({active:"Actif",suspended:"Suspendu",revoked:"Révoqué",pending:"Invitation en attente",expired:"Expirée"})[s]||s||"—"}
-export async function mountTeamAccess(pane,api,user,flash){
+export async function mountTeamAccess(pane,user,flash){
   pane.innerHTML='<p class="pp-note">Chargement de votre équipe…</p>';
   let state;
   try{state=await api.team()}catch(e){pane.innerHTML='<p class="pp-note">Impossible de charger les accès de l’équipe.</p>';return}
@@ -30,11 +50,11 @@ export async function mountTeamAccess(pane,api,user,flash){
   pane.querySelector("[data-team-invite]")?.addEventListener("click",async()=>{
     const email=pane.querySelector("[data-team-email]").value.trim(),role=pane.querySelector("[data-team-role]").value,out=pane.querySelector("[data-team-result]");
     if(!email){out.textContent="Adresse e-mail requise.";return}
-    try{const r=await api.inviteTeamMember({email,role},api.newIdempotencyKey());await mountTeamAccess(pane,api,user,{activation_path:r.activation_path||""})}catch(e){out.textContent=e.code==="CUSTOMER_PERMISSION_DENIED"?"Vous n’avez pas le droit de gérer l’équipe.":"Invitation impossible."}
+    try{const r=await api.invite({email,role});await mountTeamAccess(pane,api,user,{activation_path:r.activation_path||""})}catch(e){out.textContent=e.code==="CUSTOMER_PERMISSION_DENIED"?"Vous n’avez pas le droit de gérer l’équipe.":"Invitation impossible."}
   });
   pane.querySelectorAll("[data-member-save]").forEach(b=>b.addEventListener("click",async()=>{
     const id=b.dataset.memberSave,role=pane.querySelector('[data-member-role="'+CSS.escape(id)+'"]').value,status=pane.querySelector('[data-member-status="'+CSS.escape(id)+'"]').value;
-    try{await api.updateTeamMember(id,{role,status});await mountTeamAccess(pane,api,user)}catch(e){alert(e.code==="LAST_CUSTOMER_OWNER_REQUIRED"?"Le dernier propriétaire actif ne peut pas être rétrogradé ou révoqué.":"Modification impossible.")}
+    try{await api.update(id,{role,status});await mountTeamAccess(pane,api,user)}catch(e){alert(e.code==="LAST_CUSTOMER_OWNER_REQUIRED"?"Le dernier propriétaire actif ne peut pas être rétrogradé ou révoqué.":"Modification impossible.")}
   }));
-  pane.querySelectorAll("[data-invite-revoke]").forEach(b=>b.addEventListener("click",async()=>{try{await api.revokeTeamInvitation(b.dataset.inviteRevoke);await mountTeamAccess(pane,api,user)}catch(_e){}}));
+  pane.querySelectorAll("[data-invite-revoke]").forEach(b=>b.addEventListener("click",async()=>{try{await api.revoke(b.dataset.inviteRevoke);await mountTeamAccess(pane,api,user)}catch(_e){}}));
 }
