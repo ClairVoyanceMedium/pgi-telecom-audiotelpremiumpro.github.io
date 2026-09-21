@@ -77,6 +77,7 @@ const performanceLabMigration=fs.readFileSync("database/migrations/050_performan
 const performanceLabUi=fs.readFileSync("assets/performance-resilience-lab.js","utf8");
 const customerRelationsMigration=fs.readFileSync("database/migrations/051_customer_relations_offboarding.sql","utf8");
 const customerRelationsPolicy=fs.readFileSync("backend/src/customer-relations-policy.mjs","utf8");
+const outboundPortabilityAutomation=fs.readFileSync("backend/src/outbound-portability-automation.mjs","utf8");
 const customerRelationsUi=fs.readFileSync("assets/customer-relations.js","utf8");
 const clientRelationsUi=fs.readFileSync("assets/client-relations.js","utf8");
 const performanceLoad=fs.readFileSync("scripts/performance-load.mjs","utf8");
@@ -209,6 +210,10 @@ if(!/issue_refund:\{risk_class:"high",execution_mode:"approval_required"\}/.test
 if(!/sanitizeRelationPayload/.test(customerRelationsPolicy)||!/(?:rio\|password\|secret\|token)/.test(customerRelationsPolicy))failures.push("Customer Relations agent payloads must strip credentials and raw RIO material");
 if(!/\/api\/v1\/customer\/relations\/disputes/.test(backendServer)||!/\/api\/v1\/customer\/relations\/exits/.test(backendServer)||!/platform\.customer_relations\.agent_action/.test(backendServer)||!/platform\.customer_relations\.external_confirm/.test(backendServer))failures.push("Customer Relations APIs must expose customer intake and controlled agent/provider execution");
 if(!/completeRelationExternalAction/.test(postgresStore)||!/provider_confirmation_required:true/.test(postgresStore)||!/rio_last4/.test(postgresStore))failures.push("Customer Relations must require explicit provider confirmation and avoid raw outbound RIO persistence");
+if(!/createOutboundPortabilityQueueHandlers/.test(outboundPortabilityAutomation)||!/portability_outbound_rio_request_url/.test(outboundPortabilityAutomation)||!/Idempotency-Key/.test(outboundPortabilityAutomation)||!/provider_direct/.test(outboundPortabilityAutomation))failures.push("outbound portability must remain automatic, idempotent and use secure direct RIO delivery");
+if(!/scanOutboundPortabilityAutomation/.test(postgresStore)||!/scanOutboundPortabilityAutomation/.test(workersSource)||!/createOutboundPortabilityQueueHandlers/.test(backendServer))failures.push("outbound portability queue must recover automatically after restart or operator adapter setup");
+if(/result\.body|JSON\.stringify\(result\.body\)/.test(outboundPortabilityAutomation))failures.push("outbound portability must never persist raw operator responses");
+
 if(!/Litiges, réclamations & départs/.test(customerRelationsUi)||!/Réclamations & départ/.test(clientRelationsUi))failures.push("Customer Relations must remain available in admin and customer surfaces");
 
 if(!/PGIRouteClassRateLimiting/.test(prometheusAlerts))failures.push("Prometheus alerts must detect sustained saturation limiting");
