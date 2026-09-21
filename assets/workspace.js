@@ -62,13 +62,13 @@
 
   function readMobileOverview(){
     try{
-      var value=localStorage.getItem("pgi_mobile_overview_expanded");
-      return value==="1";
-    }catch(e){return false;}
+      var value=localStorage.getItem("pgi_mobile_overview_expanded_v2");
+      return value===null?true:value==="1";
+    }catch(e){return true;}
   }
 
   function saveMobileOverview(expanded){
-    try{localStorage.setItem("pgi_mobile_overview_expanded",expanded?"1":"0");}catch(e){}
+    try{localStorage.setItem("pgi_mobile_overview_expanded_v2",expanded?"1":"0");}catch(e){}
   }
 
   root.PGIWorkspace=Object.freeze({
