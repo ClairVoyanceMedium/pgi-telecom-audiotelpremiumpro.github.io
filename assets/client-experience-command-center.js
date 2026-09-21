@@ -7,6 +7,14 @@ let data=null,prefs={alerts:structuredClone(DEFAULTS)},monthData=null,dialog=nul
 
 function cfg(){return window.PGI_CONFIG||{}}
 function demo(){const c=cfg();return c.mode==="demo"||!c.apiBaseUrl}
+function cookie(name){const p=encodeURIComponent(name)+"=";for(const raw of String(document.cookie||"").split(";")){const x=raw.trim();if(x.startsWith(p))try{return decodeURIComponent(x.slice(p.length))}catch{return x.slice(p.length)}}return ""}
+async function preferenceRequest(method="GET",body){
+  const c=cfg(),base=String(c.apiBaseUrl||"").replace(/\/$/,""),headers={Accept:"application/json"};
+  if(body)headers["Content-Type"]="application/json";
+  if(method!=="GET"){const csrf=cookie("__Host-pgi_customer_csrf");if(csrf)headers["X-CSRF-Token"]=csrf}
+  const r=await fetch(base+"/customer/experience/preferences",{method,credentials:"include",cache:"no-store",headers,body:body?JSON.stringify(body):undefined});
+  const p=await r.json().catch(()=>null);if(!r.ok){const e=new Error(p?.error?.code||"API_HTTP_"+r.status);e.code=e.message;throw e}return p;
+}
 function aggregate(x){
   const rows=x?.financial_by_currency||[],currency=x?.tenant?.default_currency||rows[0]?.currency||"EUR";
   let calls=0,connected=0,abandoned=0,billable=0,revenue=0;
@@ -104,7 +112,7 @@ function normalize(p){
 async function loadPrefs(){
   if(loadedPrefs)return;loadedPrefs=true;
   if(demo()){try{prefs=normalize(JSON.parse(localStorage.getItem("pgi-client-alert-preferences")||"null"))}catch{prefs=normalize(null)};render(data);return}
-  try{prefs=normalize(await window.PGICustomerApi.experiencePreferences());render(data)}catch{prefs=normalize(null)}
+  try{prefs=normalize(await preferenceRequest());render(data)}catch{prefs=normalize(null)}
 }
 function monthStartIso(now){const d=new Date(now);return new Date(d.getFullYear(),d.getMonth(),1).toISOString()}
 async function loadMonth(x){
@@ -129,7 +137,7 @@ async function savePrefs(e){
   }};
   try{
     if(demo()){localStorage.setItem("pgi-client-alert-preferences",JSON.stringify(payload));prefs=normalize(payload)}
-    else prefs=normalize(await window.PGICustomerApi.saveExperiencePreferences(payload));
+    else prefs=normalize(await preferenceRequest("PUT",payload));
     dialog.close();render(data);
   }catch(err){msg.textContent="Enregistrement impossible : "+(err?.code||"ERREUR")}
   finally{busy=false}
