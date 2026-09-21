@@ -4658,13 +4658,15 @@ export class PostgresStore{
           const ex=(await tx.unsafe("SELECT id,port_out_requested,customer_confirmed FROM tenant_exit_requests WHERE case_id=$1 FOR UPDATE",[relation.id]))[0];
           if(!ex||!ex.port_out_requested)throw problem(409,"PORT_OUT_NOT_REQUESTED");
           if(!ex.customer_confirmed)throw problem(409,"EXIT_CUSTOMER_CONFIRMATION_REQUIRED");
-          const portLines=await tx.unsafe("SELECT id,portability_eligibility_status,rio_status FROM tenant_exit_lines WHERE exit_request_id=$1 AND requested_action='port_out' FOR UPDATE",[ex.id]);
+          const targetLineId=Number(payload.exit_line_id)||null;
+          const portLines=await tx.unsafe("SELECT id,portability_eligibility_status,rio_status FROM tenant_exit_lines WHERE exit_request_id=$1 AND requested_action='port_out' AND ($2::bigint IS NULL OR id=$2) FOR UPDATE",[ex.id,targetLineId]);
           if(!portLines.length)throw problem(409,"PORT_OUT_LINES_REQUIRED");
+          if(portLines.length>1&&!targetLineId)throw problem(409,"PORT_OUT_LINE_SCOPE_REQUIRED");
           if(portLines.some(x=>x.portability_eligibility_status!=="eligible"))throw problem(409,"PORT_OUT_ELIGIBILITY_REQUIRED");
           if(portLines.some(x=>!["available","delivered","not_required"].includes(x.rio_status)))throw problem(409,"PORT_OUT_RIO_REQUIRED");
           await tx.unsafe("UPDATE tenant_exit_requests SET status='waiting_provider',updated_at=now() WHERE id=$1",[ex.id]);
-          await tx.unsafe("UPDATE tenant_exit_lines SET status=CASE WHEN requested_action='port_out' THEN 'waiting_provider' ELSE status END WHERE exit_request_id=$1",[ex.id]);
-          await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible) VALUES($1,$2,'port_out_submitted','agent',$3,'Demande de portabilité sortante mise en file auprès du fournisseur.',true)",[relation.id,relation.tenant_id,actorId]);
+          await tx.unsafe("UPDATE tenant_exit_lines SET status='waiting_provider' WHERE exit_request_id=$1 AND requested_action='port_out' AND ($2::bigint IS NULL OR id=$2)",[ex.id,targetLineId]);
+          await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible,details) VALUES($1,$2,'port_out_submitted','agent',$3,'Demande de portabilité sortante mise en file auprès du fournisseur.',true,$4::jsonb)",[relation.id,relation.tenant_id,actorId,JSON.stringify({exit_line_id:targetLineId})]);
         }else if(["request_port_out_report","request_port_out_cancel","request_port_out_return_back"].includes(policy.action_type)){
           const option=policy.action_type==="request_port_out_report"?"report":policy.action_type==="request_port_out_cancel"?"cancel":"return_back";
           await tx.unsafe("UPDATE tenant_exit_lines SET recovery_option=$2,status='waiting_provider' WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[relation.id,option]);
@@ -4737,7 +4739,7 @@ export class PostgresStore{
     if(!["success","completed","scheduled","available","delivered","failed","rejected"].includes(outcome))throw problem(400,"INVALID_EXTERNAL_OUTCOME");
     const providerReference=String(input.provider_reference||"").trim().slice(0,255)||null;
     const safe=sanitizeRelationPayload(input);
-    return this.sql.begin(async tx=>{
+    const completed=await this.sql.begin(async tx=>{
       const row=(await tx.unsafe("SELECT a.*,c.public_id AS case_public_id,c.status AS case_status FROM tenant_relation_actions a JOIN tenant_relation_cases c ON c.id=a.case_id WHERE a.public_id=$1::uuid FOR UPDATE",[publicId]))[0];
       if(!row)throw problem(404,"RELATION_ACTION_NOT_FOUND");
       if(row.execution_mode!=="external_confirmation")throw problem(409,"RELATION_ACTION_NOT_EXTERNAL");
@@ -4754,17 +4756,25 @@ export class PostgresStore{
         await tx.unsafe("UPDATE tenant_exit_lines SET rio_status=$2,rio_last4=COALESCE($3,rio_last4),rio_delivered_at=CASE WHEN $2='delivered' THEN now() ELSE rio_delivered_at END,rio_delivery_channel=$4,rio_delivery_reference=COALESCE($5,rio_delivery_reference) WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out' AND ($6::bigint IS NULL OR id=$6)",[row.case_id,state,last4,deliveryChannel,deliveryReference,targetLineId]);
         eventType="status_changed";message=state==="delivered"?"RIO délivré par le canal sécurisé prévu":"Statut RIO mis à jour";
       }else if(row.action_type==="submit_port_out"){
+        const actionPayload=typeof row.payload==="string"?JSON.parse(row.payload||"{}"):(row.payload||{});
+        const targetLineId=Number(actionPayload.exit_line_id)||null;
+        const portLines=await tx.unsafe("SELECT id,status FROM tenant_exit_lines WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out' FOR UPDATE",[row.case_id]);
+        if(portLines.length>1&&!targetLineId)throw problem(409,"PORT_OUT_LINE_SCOPE_REQUIRED");
         if(outcome==="scheduled"){
-          await tx.unsafe("UPDATE tenant_exit_requests SET status='scheduled',operator_reference=COALESCE($2,operator_reference),scheduled_at=COALESCE($3::timestamptz,now()),updated_at=now() WHERE case_id=$1",[row.case_id,providerReference,input.scheduled_at||null]);
-          await tx.unsafe("UPDATE tenant_exit_lines SET status='scheduled',operator_reference=COALESCE($2,operator_reference),scheduled_at=COALESCE($3::timestamptz,now()) WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[row.case_id,providerReference,input.scheduled_at||null]);
+          await tx.unsafe("UPDATE tenant_exit_lines SET status='scheduled',operator_reference=COALESCE($2,operator_reference),scheduled_at=COALESCE($3::timestamptz,now()) WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out' AND ($4::bigint IS NULL OR id=$4)",[row.case_id,providerReference,input.scheduled_at||null,targetLineId]);
+          const states=await tx.unsafe("SELECT status FROM tenant_exit_lines WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[row.case_id]);
+          const allScheduled=states.every(x=>["scheduled","completed"].includes(x.status));
+          await tx.unsafe("UPDATE tenant_exit_requests SET status=CASE WHEN $2 THEN 'scheduled' ELSE 'waiting_provider' END,operator_reference=COALESCE($3,operator_reference),scheduled_at=CASE WHEN $2 THEN COALESCE($4::timestamptz,scheduled_at,now()) ELSE scheduled_at END,updated_at=now() WHERE case_id=$1",[row.case_id,allScheduled,providerReference,input.scheduled_at||null]);
           eventType="port_out_scheduled";message="Portabilité sortante planifiée par l’opérateur";
         }else if(["success","completed"].includes(outcome)){
-          await tx.unsafe("UPDATE tenant_exit_requests SET status='finalizing',operator_reference=COALESCE($2,operator_reference),updated_at=now() WHERE case_id=$1",[row.case_id,providerReference]);
-          await tx.unsafe("UPDATE tenant_exit_lines SET status='completed',operator_reference=COALESCE($2,operator_reference),completed_at=now() WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[row.case_id,providerReference]);
-          eventType="port_out_completed";message="Portabilité sortante confirmée par l’opérateur";
+          await tx.unsafe("UPDATE tenant_exit_lines SET status='completed',operator_reference=COALESCE($2,operator_reference),completed_at=now() WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out' AND ($3::bigint IS NULL OR id=$3)",[row.case_id,providerReference,targetLineId]);
+          const states=await tx.unsafe("SELECT status FROM tenant_exit_lines WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[row.case_id]);
+          const allCompleted=states.length>0&&states.every(x=>x.status==="completed");
+          await tx.unsafe("UPDATE tenant_exit_requests SET status=CASE WHEN $2 THEN 'finalizing' ELSE 'waiting_provider' END,operator_reference=COALESCE($3,operator_reference),updated_at=now() WHERE case_id=$1",[row.case_id,allCompleted,providerReference]);
+          eventType="port_out_completed";message=allCompleted?"Portabilité sortante confirmée pour tous les numéros":"Portabilité sortante confirmée pour le numéro";
         }else{
           await tx.unsafe("UPDATE tenant_exit_requests SET status='blocked',updated_at=now() WHERE case_id=$1",[row.case_id]);
-          await tx.unsafe("UPDATE tenant_exit_lines SET status='blocked' WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[row.case_id]);
+          await tx.unsafe("UPDATE tenant_exit_lines SET status='blocked' WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out' AND ($2::bigint IS NULL OR id=$2)",[row.case_id,targetLineId]);
         }
       }else if(row.action_type==="request_final_invoice"){
         if(["success","completed","available","delivered"].includes(outcome)){
@@ -4784,8 +4794,26 @@ export class PostgresStore{
       await tx.unsafe("UPDATE tenant_relation_actions SET status=$2,result=$3::jsonb,executed_at=now() WHERE id=$1",[row.id,finalStatus,JSON.stringify({...safe,provider_reference:providerReference})]);
       await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible,details) VALUES($1,$2,$3,'system',$4,$5,true,$6::jsonb)",[row.case_id,row.tenant_id,eventType,actorId,message,JSON.stringify({action_public_id:publicId,action_type:row.action_type,outcome,provider_reference:providerReference})]);
       await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'customer_relation.external_confirm','tenant_relation_action',$3,$4::jsonb)",[row.tenant_id,actorId,String(row.id),JSON.stringify({public_id:publicId,action_type:row.action_type,outcome,provider_reference:providerReference})]);
-      return {public_id:publicId,status:finalStatus,outcome,provider_reference:providerReference};
+      const actionPayload=typeof row.payload==="string"?JSON.parse(row.payload||"{}"):(row.payload||{});
+      return {public_id:publicId,status:finalStatus,outcome,provider_reference:providerReference,action_type:row.action_type,case_public_id:row.case_public_id,tenant_id:Number(row.tenant_id),exit_line_id:Number(actionPayload.exit_line_id)||null};
     });
+    if(completed.status==="completed"&&completed.action_type==="request_outbound_rio"&&["available","delivered"].includes(completed.outcome)){
+      const next=await this.createRelationAgentAction(completed.case_public_id,{action_type:"submit_port_out",confidence:1,explanation:"Portabilité sortante automatiquement transmise après confirmation du RIO.",payload:{exit_line_id:completed.exit_line_id}},{});
+      completed.next_action={action_type:"submit_port_out",public_id:next.public_id,status:next.status,exit_line_id:completed.exit_line_id};
+    }else if(completed.status==="completed"&&completed.action_type==="submit_port_out"&&["success","completed"].includes(completed.outcome)){
+      const exitState=(await this.readSql.unsafe("SELECT status FROM tenant_exit_requests WHERE case_id=(SELECT id FROM tenant_relation_cases WHERE public_id=$1::uuid) LIMIT 1",[completed.case_public_id]))[0];
+      if(exitState?.status==="finalizing"){
+        const follow=[];
+        for(const actionType of ["request_final_invoice","reconcile_final_settlement"]){
+          try{
+            const next=await this.createRelationAgentAction(completed.case_public_id,{action_type:actionType,confidence:1,explanation:"Finalisation automatique après confirmation du portage.",payload:{}},{});
+            follow.push({action_type:actionType,public_id:next.public_id,status:next.status});
+          }catch(error){follow.push({action_type:actionType,status:"blocked",code:error?.code||error?.message||"ACTION_FAILED"});}
+        }
+        completed.next_actions=follow;
+      }
+    }
+    return completed;
   }
 
 
