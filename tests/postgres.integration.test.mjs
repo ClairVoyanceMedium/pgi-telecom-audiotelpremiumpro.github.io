@@ -19,7 +19,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
   const bus=new EventBus();
   const store=await PostgresStore.connect(config(),bus);
   try{
-    await store.sql.unsafe("TRUNCATE TABLE tenant_internal_notes,sva_ecosystem_evidence_events,sva_ecosystem_control_states,sva_tariff_change_plans,sva_service_compliance_profiles,platform_change_approval_events,platform_change_requests,settlement_call_matches,carrier_settlements,call_quality,financial_ledger,outbox_events,raw_cdr_events,calls,tenant_call_destinations,callers,expert_presence_events,metric_baselines,carrier_switches,number_carrier_assignments,carrier_connections,carrier_adapters,carrier_contracts,number_portability_events,sva_numbers,carriers,audit_log,api_idempotency_keys RESTART IDENTITY CASCADE");
+    await store.sql.unsafe("TRUNCATE TABLE tenant_relation_actions,tenant_exit_lines,tenant_exit_requests,tenant_dispute_collection_holds,tenant_relation_evidence,tenant_relation_case_events,tenant_relation_cases,tenant_internal_notes,sva_ecosystem_evidence_events,sva_ecosystem_control_states,sva_tariff_change_plans,sva_service_compliance_profiles,platform_change_approval_events,platform_change_requests,settlement_call_matches,carrier_settlements,call_quality,financial_ledger,outbox_events,raw_cdr_events,calls,tenant_call_destinations,callers,expert_presence_events,metric_baselines,carrier_switches,number_carrier_assignments,carrier_connections,carrier_adapters,carrier_contracts,number_portability_events,sva_numbers,carriers,audit_log,api_idempotency_keys RESTART IDENTITY CASCADE");
     await store.sql.unsafe("UPDATE app_users SET expert_id=NULL; DELETE FROM experts");
     await store.sql.unsafe("INSERT INTO carriers(name,kind) VALUES('Host A','sva_host'),('Host B','sva_host')");
     await store.sql.unsafe("INSERT INTO logical_carrier_routes(route_key,description) VALUES('sva-primary','Integration test route')");
@@ -366,6 +366,65 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.ok(Array.isArray(controlDetail.audit));
     assert.ok(Array.isArray(controlDetail.controls));
 
+    const externalTenantRow=(await store.sql.unsafe("SELECT id FROM tenants WHERE slug='integration-external' LIMIT 1"))[0];
+    const relationPrincipal=(await store.sql.unsafe(
+      "INSERT INTO customer_principals(email,display_name,status,email_verified) VALUES('relations-integration@example.test','Relations Integration','active',true) RETURNING id::text AS id"
+    ))[0];
+    await store.sql.unsafe(
+      "INSERT INTO customer_tenant_memberships(tenant_id,customer_principal_id,role,status) VALUES($1,$2::uuid,'owner','active')",
+      [Number(externalTenantRow.id),relationPrincipal.id]
+    );
+    const dispute=await store.createCustomerRelationCase(Number(externalTenantRow.id),{
+      case_kind:"billing_dispute",priority:"high",customer_capacity:"business",
+      title:"Contest facture intégration",description:"Le client conteste une partie déterminée du montant.",
+      disputed_amount:12.34,disputed_currency:"EUR",invoice_reference:"INV-INTEGRATION-001",
+      requested_resolution:"Vérifier le calcul et expliquer la différence."
+    },relationPrincipal.id);
+    assert.equal(dispute.case_kind,"billing_dispute");
+    const relationView=await store.customerRelationsOverview(Number(externalTenantRow.id));
+    assert.equal(relationView.cases.length,1);
+    assert.equal(relationView.holds.length,1);
+    assert.equal(Number(relationView.holds[0].amount),12.34);
+    const evidenceAction=await store.createRelationAgentAction(dispute.public_id,{
+      action_type:"collect_evidence",confidence:.99,explanation:"Rassembler les références autoritatives.",payload:{rio:"must-not-persist",safe:"ok"}
+    },{sub:"admin"});
+    assert.equal(evidenceAction.status,"completed");
+    const storedAgentPayload=await store.sql.unsafe("SELECT payload FROM tenant_relation_actions WHERE public_id=$1::uuid",[evidenceAction.public_id]);
+    assert.equal(storedAgentPayload[0].payload.rio,undefined);
+    assert.equal(storedAgentPayload[0].payload.safe,"ok");
+    const refundProposal=await store.createRelationAgentAction(dispute.public_id,{
+      action_type:"issue_refund",confidence:.9,explanation:"Remboursement proposé après analyse.",payload:{amount:12.34,currency:"EUR"}
+    },{sub:"admin"});
+    assert.equal(refundProposal.status,"proposed");
+    const approvedRefund=await store.approveRelationAction(refundProposal.public_id,{sub:"admin"});
+    assert.equal(approvedRefund.status,"approved");
+    assert.equal(approvedRefund.external_execution_required,true);
+
+    const exit=await store.createCustomerExitRequest(Number(externalTenantRow.id),{
+      exit_scope:"selected_lines",reason_category:"competition",requested_effective_date:"2026-10-15",
+      number_retention_preference:"port_out",port_out_requested:true,target_operator_name:"Nouvel opérateur",
+      contract_obligations_acknowledged:true,assignment_ids:[Number(extAssignmentForRoute[0].id)]
+    },relationPrincipal.id);
+    assert.equal(exit.exit.port_out_requested,true);
+    const exitOverview=await store.customerRelationsOverview(Number(externalTenantRow.id),{admin:true});
+    assert.equal(exitOverview.exits.length,1);
+    assert.equal(exitOverview.exit_lines.length,1);
+    assert.equal(exitOverview.exit_lines[0].requested_action,"port_out");
+    const rioAction=await store.createRelationAgentAction(exit.case.public_id,{
+      action_type:"request_outbound_rio",confidence:1,explanation:"Demande sécurisée du RIO.",payload:{}
+    },{sub:"admin"});
+    assert.equal(rioAction.status,"queued");
+    const rioConfirm=await store.completeRelationExternalAction(rioAction.public_id,{
+      outcome:"delivered",provider_reference:"rio-ref-1",rio_last4:"1234"
+    },{sub:"admin"});
+    assert.equal(rioConfirm.status,"completed");
+    const postRio=await store.customerRelationsOverview(Number(externalTenantRow.id),{admin:true});
+    assert.equal(postRio.exit_lines[0].rio_status,"delivered");
+    assert.equal(postRio.exit_lines[0].rio_last4,"1234");
+    const agentContext=await store.relationAgentContext(exit.case.public_id);
+    assert.equal(agentContext.guardrails.no_port_out_completion_without_operator_confirmation,true);
+    assert.equal(JSON.stringify(agentContext).includes("1234"),false);
+
     let extAssignments=await store.listTenantAssignments({tenant_public_id:externalIdentity[0].public_id,limit:10});
     assert.equal(extAssignments.data.length,1);
     const assignmentId=Number(extAssignments.data[0].id);
@@ -646,10 +705,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const rawCalls=await store.sql.unsafe("SELECT count(*)::int AS count FROM calls");
     assert.equal(rawCalls[0].count,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
-    assert.equal(migrations.length,50);
+    assert.equal(migrations.length,51);
     assert.equal(new Set(migrations.map(x=>x.version)).size,migrations.length);
     assert.equal(migrations[0].version,"001_baseline");
-    assert.equal(migrations.at(-1).version,"050_performance_resilience_lab");
+    assert.equal(migrations.at(-1).version,"051_customer_relations_offboarding");
     for(const migration of migrations)assert.match(migration.checksum,/^[a-f0-9]{64}$/);
   }finally{
     await store.close();
