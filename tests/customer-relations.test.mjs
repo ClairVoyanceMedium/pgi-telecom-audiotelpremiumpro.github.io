@@ -108,3 +108,11 @@ test("outbound carrier automation is fail-closed, idempotent and privacy-minimis
   assert.match(outboundAutomation,/sanitize\(responseBody\)/);
   assert.doesNotMatch(outboundAutomation,/JSON\.stringify\(result\.body\)/);
 });
+
+test("RIO confirmation automatically chains to a line-scoped port-out",()=>{
+  assert.match(store,/Portabilité sortante automatiquement transmise après confirmation du RIO/);
+  assert.match(store,/payload:\{exit_line_id:completed\.exit_line_id\}/);
+  assert.match(store,/PORT_OUT_LINE_SCOPE_REQUIRED/);
+  assert.match(store,/request_final_invoice/);
+  assert.match(store,/reconcile_final_settlement/);
+});
