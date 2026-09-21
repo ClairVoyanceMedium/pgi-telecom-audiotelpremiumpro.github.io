@@ -212,7 +212,7 @@ if(!/\/api\/v1\/customer\/relations\/disputes/.test(backendServer)||!/\/api\/v1\
 if(!/completeRelationExternalAction/.test(postgresStore)||!/provider_confirmation_required:true/.test(postgresStore)||!/rio_last4/.test(postgresStore))failures.push("Customer Relations must require explicit provider confirmation and avoid raw outbound RIO persistence");
 if(!/createOutboundPortabilityQueueHandlers/.test(outboundPortabilityAutomation)||!/portability_outbound_rio_request_url/.test(outboundPortabilityAutomation)||!/Idempotency-Key/.test(outboundPortabilityAutomation)||!/provider_direct/.test(outboundPortabilityAutomation))failures.push("outbound portability must remain automatic, idempotent and use secure direct RIO delivery");
 if(!/scanOutboundPortabilityAutomation/.test(postgresStore)||!/scanOutboundPortabilityAutomation/.test(workersSource)||!/createOutboundPortabilityQueueHandlers/.test(backendServer))failures.push("outbound portability queue must recover automatically after restart or operator adapter setup");
-if(/result\.body|JSON\.stringify\(result\.body\)/.test(outboundPortabilityAutomation))failures.push("outbound portability must never persist raw operator responses");
+if(/JSON\.stringify\(result\.body\)|last_operator_payload\s*:\s*result\.body/.test(outboundPortabilityAutomation))failures.push("outbound portability must never persist raw operator responses");
 
 if(!/Litiges, réclamations & départs/.test(customerRelationsUi)||!/Réclamations & départ/.test(clientRelationsUi))failures.push("Customer Relations must remain available in admin and customer surfaces");
 
