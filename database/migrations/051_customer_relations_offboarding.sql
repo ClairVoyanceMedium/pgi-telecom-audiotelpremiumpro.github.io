@@ -209,7 +209,7 @@ CREATE TABLE tenant_relation_actions (
       'place_dispute_hold','release_dispute_hold','propose_credit','issue_credit',
       'propose_refund','issue_refund','prepare_exit','check_portability','request_outbound_rio','submit_port_out',
       'request_port_out_report','request_port_out_cancel','request_port_out_return_back',
-      'schedule_exit','generate_data_export','cancel_subscription','release_number',
+      'schedule_exit','generate_data_export','request_final_invoice','reconcile_final_settlement','cancel_subscription','release_number',
       'revoke_access','resolve_case','close_case'
     )),
   risk_class text NOT NULL
