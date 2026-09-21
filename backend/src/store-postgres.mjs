@@ -3513,7 +3513,7 @@ export class PostgresStore{
         [payoutFrom,to,id]
       );
       const numbers=await tx.unsafe(
-        "SELECT n.id,n.display_number,n.e164,n.tariff_code,n.currency,n.number_type,n.service_rate_ttc_per_min::float8,n.status,n.activated_at,"+
+        "SELECT n.id,a.id AS assignment_id,n.display_number,n.e164,n.tariff_code,n.currency,n.number_type,n.service_rate_ttc_per_min::float8,n.status,n.activated_at,"+
         " a.assignment_type,a.status AS assignment_status,a.kyc_status,a.valid_from,a.valid_to"+
         " FROM tenant_scoped_sva_numbers n LEFT JOIN tenant_scoped_number_assignments a ON a.sva_number_id=n.id"+
         " ORDER BY n.status,n.display_number LIMIT 100"
