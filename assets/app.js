@@ -2,7 +2,7 @@
 "use strict";
 var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
 var CONFIG={serviceRate:.8,payoutRate:.46,expertCostPerMin:.18,fixedCostPerCall:.03};
-var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,pendingSyncMode:"dashboard",scheduledSyncMode:"dashboard",hiddenAt:null,lastSyncAt:null,activeView:"overview",system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:false};
+var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,pendingSyncMode:"dashboard",scheduledSyncMode:"dashboard",hiddenAt:null,lastSyncAt:null,activeView:"overview",system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:true};
 var titles={overview:"Cockpit",calls:"Appels",finance:"Finance",experts:"Intervenants",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Supervision",settings:"Paramètres"};var experts=["Accueil","Service commercial","Support client","Service technique","Prise de rendez-vous","Comptabilité"];
 var carriers=["Orange","SFR","Bouygues","Free"];
 var number089="0890 80 24 24";
@@ -1306,6 +1306,11 @@ if(more)more.addEventListener("click",function(){
 var d=$("mobile-menu-dialog");
 if(d&&typeof d.showModal==="function")d.showModal();
 });
+qsa("[data-mobile-command]").forEach(function(b){b.addEventListener("click",function(){
+var command=b.getAttribute("data-mobile-command");
+if(command==="actions"){var trigger=$("command-palette-btn");if(trigger)trigger.click();}
+if(command==="refresh")refreshData({forceMeta:true});
+});});
 ["call-search","call-expert","call-carrier","call-status"].forEach(function(id){
 var el=$(id);if(!el)return;
 el.addEventListener(id==="call-search"?"input":"change",function(){
