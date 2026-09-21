@@ -4553,6 +4553,19 @@ export class PostgresStore{
         }else if(policy.action_type==="reconcile_billing"){
           const rows=await tx.unsafe("SELECT currency,COALESCE(sum(upstream_payout_ht),0)::float8 AS upstream_payout_ht,COALESCE(sum(platform_fee_ht),0)::float8 AS platform_fee_ht,COALESCE(sum(net_payout_ht),0)::float8 AS net_payout_ht,COALESCE(sum(unallocated_amount_ht),0)::float8 AS unallocated_amount_ht,count(*)::int AS distributions FROM tenant_revenue_distributions WHERE tenant_id=$1 AND ($2::date IS NULL OR period_end>=$2::date) AND ($3::date IS NULL OR period_start<=$3::date) AND ($4::text IS NULL OR currency=$4) GROUP BY currency ORDER BY currency",[relation.tenant_id,relation.disputed_period_start,relation.disputed_period_end,relation.disputed_currency]);
           actionResult={authoritative_distribution_summary:rows,subscription_invoice_provider_connected:false};
+        }else if(policy.action_type==="respond_customer"||policy.action_type==="request_customer_info"){
+          const message=String(payload.message||"").trim();
+          if(!message||message.length>8000)throw problem(400,"RELATION_RESPONSE_REQUIRED");
+          const label=policy.action_type==="request_customer_info"?"Information complémentaire demandée":"Réponse du service client";
+          await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible,details) VALUES($1,$2,'staff_message','agent',$3,$4,true,$5::jsonb)",[relation.id,relation.tenant_id,actorId,message,JSON.stringify({label,action_type:policy.action_type})]);
+          await tx.unsafe("UPDATE tenant_relation_cases SET first_responded_at=COALESCE(first_responded_at,now()),last_pgi_update_at=now(),status=CASE WHEN $2='request_customer_info' THEN 'waiting_customer' WHEN status IN ('open','triage') THEN 'investigating' ELSE status END,updated_at=now() WHERE id=$1",[relation.id,policy.action_type]);
+          actionResult={message_sent:true,customer_visible:true};
+        }else if(policy.action_type==="prepare_mediation"){
+          if(relation.customer_capacity!=="consumer")throw problem(409,"MEDIATION_CONSUMER_ONLY");
+          const eligibleAt=relation.mediation_eligible_at?new Date(relation.mediation_eligible_at):null;
+          const eligible=Boolean(eligibleAt&&eligibleAt.getTime()<=Date.now());
+          actionResult={eligible,eligible_at:relation.mediation_eligible_at||null,formal_complaint_at:relation.formal_complaint_at||null,submitted:false};
+          if(eligible)await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible,details) VALUES($1,$2,'mediation_ready','agent',$3,'Le dossier remplit le délai interne de préparation à la médiation. La saisine reste à effectuer auprès du médiateur compétent.',true,$4::jsonb)",[relation.id,relation.tenant_id,actorId,JSON.stringify(actionResult)]);
         }else{
           actionResult={stored:true,note:"Action de préparation enregistrée pour l’agent."};
         }
