@@ -26,6 +26,14 @@ CREATE INDEX customer_tenant_invitations_pending_tenant_idx
   ON customer_tenant_invitations(tenant_id,created_at DESC)
   WHERE status='pending';
 
+CREATE VIEW tenant_scoped_customer_tenant_access_events
+WITH (security_barrier=true)
+AS
+SELECT id,tenant_id,event_type,target_customer_principal_id,invitation_id,actor_customer_principal_id,
+       previous_role,new_role,previous_status,new_status,details,created_at
+FROM customer_tenant_access_events
+WHERE tenant_id=pgi_require_tenant_context();
+
 CREATE FUNCTION prevent_customer_tenant_access_event_mutation()
 RETURNS trigger
 LANGUAGE plpgsql
