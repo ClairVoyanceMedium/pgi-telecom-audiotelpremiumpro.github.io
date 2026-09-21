@@ -69,6 +69,8 @@ const operationalAssuranceMigration=fs.readFileSync("database/migrations/044_ope
 const svaEcosystemMigration=fs.readFileSync("database/migrations/045_sva_ecosystem_compliance.sql","utf8");
 const premiumPlusSecurityMigration=fs.readFileSync("database/migrations/046_premium_plus_security.sql","utf8");
 const customer360Migration=fs.readFileSync("database/migrations/047_customer_360.sql","utf8");
+const customerInternalNotesMigration=fs.readFileSync("database/migrations/048_customer_internal_notes.sql","utf8");
+const customerInternalNotesUi=fs.readFileSync("assets/customer-internal-notes.js","utf8");
 const webauthnSource=fs.readFileSync("backend/src/webauthn.mjs","utf8");
 const premiumPlusUi=fs.readFileSync("assets/premium-plus.js","utf8");
 const clientPremiumPlusUi=fs.readFileSync("assets/client-premium-plus.js","utf8");
@@ -170,6 +172,12 @@ if(!/tenants_external_created_idx/.test(customer360Migration)||!/tenant_kyc_regi
 if(!/\/api\/v1\/platform\/tenants\/duplicates/.test(backendServer)||!/tenantDuplicateCandidates/.test(apiClient))failures.push("Customer 360 must expose server-side duplicate detection");
 if(!/\/api\/v1\/platform\/tenants\/:id\/export/.test(backendServer)||!/tenantAdminExport/.test(postgresStore)||!/tenant\.admin_export/.test(postgresStore))failures.push("Customer 360 exports must be admin-gated and audited");
 if(!/NOUVELLES INSCRIPTIONS/.test(customerAdmin)||!/created_since/.test(customerAdmin))failures.push("Customer admin must surface recent self-service registrations");
+if(!/CREATE TABLE tenant_internal_notes/.test(customerInternalNotesMigration)||!/archived_at timestamptz/.test(customerInternalNotesMigration)||!/Private PGI staff notes/.test(customerInternalNotesMigration))failures.push("Customer internal notes must stay private, persistent and soft-archivable");
+if(!/\/api\/v1\/platform\/tenants\/:id\/internal-notes/.test(backendServer)||!/tenantInternalNotes/.test(apiClient)||!/addTenantInternalNote/.test(apiClient)||!/archiveTenantInternalNote/.test(apiClient))failures.push("Customer internal notes must use dedicated admin APIs");
+if(!/body_logged:false/.test(postgresStore)||!/tenant\.internal_note\.create/.test(postgresStore)||!/tenant\.internal_note\.archive/.test(postgresStore))failures.push("Customer internal notes must be audited without copying note bodies");
+if(!/Privé • jamais visible par le client/.test(customerInternalNotesUi)||!/customer-internal-notes\.js/.test(fs.readFileSync("assets/tenant-control-detail.js","utf8")))failures.push("Customer 360 must expose a clearly private internal-note module");
+if(/customer-internal-notes|tenantInternalNotes|addTenantInternalNote|archiveTenantInternalNote/.test(fs.readFileSync("assets/client-portal-api.js","utf8")+fs.readFileSync("assets/client-portal.js","utf8")))failures.push("Customer portal must not expose internal-note APIs");
+
 if(!/CREATE TABLE webauthn_credentials/.test(premiumPlusSecurityMigration)||!/owner_type IN \('staff','customer'\)/.test(premiumPlusSecurityMigration)||!/customer_principal_id uuid REFERENCES customer_principals/.test(premiumPlusSecurityMigration))failures.push("Premium+ passkeys must keep staff and customer identities isolated");
 if(!/WEBAUTHN_USER_VERIFICATION_REQUIRED/.test(webauthnSource)||!/WEBAUTHN_RP_ID_MISMATCH/.test(webauthnSource)||!/WEBAUTHN_SIGNATURE_INVALID/.test(webauthnSource)||!/timingSafeEqual/.test(webauthnSource))failures.push("WebAuthn must verify RP ID origin user verification signed state and assertion signature");
 if(!/PGI_WEBAUTHN_RP_ID/.test(envExample)||!/PGI_WEBAUTHN_ORIGIN/.test(envExample)||!/PGI_WEBAUTHN_RP_ID/.test(compose)||!/PGI_WEBAUTHN_ORIGIN/.test(compose))failures.push("production contract must expose optional WebAuthn RP ID and HTTPS origin");
