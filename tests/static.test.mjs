@@ -508,6 +508,8 @@ test("validated customer number and consumption proof stay visible, tenant-scope
   assert.match(tenantConsumptionCheck,/CONFORME — le relevé client correspond aux données sources/);
   assert.match(tenantConsumptionCheck,/ÉCART DÉTECTÉ/);
   assert.match(tenantConsumptionCheck,/reconcileTenantConsumptionReceipt/);
+  assert.match(tenantConsumptionCheck,/tenantConsumptionToday/);
+  assert.match(tenantConsumptionCheck,/AUJOURD’HUI CÔTÉ SERVEUR/);
   assert.match(api,/tenantConsumptionReceipts:function/);
   assert.match(api,/reconcileTenantConsumptionReceipt:function/);
   assert.doesNotMatch(sw,/client-account-proof\.js|tenant-consumption-check\.js/);
