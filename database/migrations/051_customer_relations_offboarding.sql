@@ -196,7 +196,7 @@ CREATE TABLE tenant_relation_actions (
   tenant_id bigint NOT NULL REFERENCES tenants(id),
   action_type text NOT NULL
     CHECK (action_type IN (
-      'collect_evidence','reconcile_billing','draft_response','request_customer_info',
+      'collect_evidence','reconcile_billing','draft_response','respond_customer','request_customer_info','prepare_mediation',
       'place_dispute_hold','release_dispute_hold','propose_credit','issue_credit',
       'propose_refund','issue_refund','prepare_exit','check_portability','submit_port_out',
       'schedule_exit','generate_data_export','cancel_subscription','release_number',
