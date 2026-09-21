@@ -1,6 +1,6 @@
 import http from "node:http";
 import {pathToFileURL} from "node:url";
-import {randomUUID,randomBytes,createHash} from "node:crypto";
+import {randomUUID,randomBytes,createHash,createHmac} from "node:crypto";
 import {verifyGoogleIdToken} from "./src/google-id.mjs";
 import {loadConfig} from "./src/config.mjs";
 import {EventBus} from "./src/event-bus.mjs";
@@ -316,9 +316,11 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes);
         const requestedRole=String(body.role||"readonly").trim().toLowerCase();
         if(requestedRole==="owner"&&context.customer_role!=="owner"){const e=new Error("Only an owner can invite another owner");e.status=403;e.code="CUSTOMER_OWNER_REQUIRED";throw e;}
-        const token=randomBytes(32).toString("base64url"),tokenHash=createHash("sha256").update(token).digest("hex");
+        const invitationIdempotencyKey=String(req.headers["idempotency-key"]||"").trim();
+        if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(invitationIdempotencyKey)){const e=new Error("Invitation idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
+        const token=createHmac("sha256",config.sessionSecret).update("customer-team-invite:"+invitationIdempotencyKey).digest("base64url"),tokenHash=createHash("sha256").update(token).digest("hex");
         const payload={tenant_id:context.tenant_id,email:String(body.email||"").trim().toLowerCase(),role:requestedRole};
-        const result=await store.idempotent(req.headers["idempotency-key"],"customer.team.invitation.create",payload,()=>store.createCustomerTeamInvitation(context.tenant_id,{...body,role:requestedRole},tokenHash,context.id));
+        const result=await store.idempotent(invitationIdempotencyKey,"customer.team.invitation.create",payload,()=>store.createCustomerTeamInvitation(context.tenant_id,{...body,role:requestedRole},tokenHash,context.id));
         return done(res,metrics,started,"customer.team.invitation_create",201,{...result.value,activation_path:"client.html?invite="+encodeURIComponent(token),replayed:result.replayed});
       }
       match=routeMatch(pathname,"/api/v1/customer/team/members/:id");
