@@ -1306,11 +1306,6 @@ if(more)more.addEventListener("click",function(){
 var d=$("mobile-menu-dialog");
 if(d&&typeof d.showModal==="function")d.showModal();
 });
-qsa("[data-mobile-command]").forEach(function(b){b.addEventListener("click",function(){
-var command=b.getAttribute("data-mobile-command");
-if(command==="actions"){var trigger=$("command-palette-btn");if(trigger)trigger.click();}
-if(command==="refresh")refreshData({forceMeta:true});
-});});
 ["call-search","call-expert","call-carrier","call-status"].forEach(function(id){
 var el=$(id);if(!el)return;
 el.addEventListener(id==="call-search"?"input":"change",function(){
