@@ -1,8 +1,8 @@
 import{style,read,write,applyDisplay,displayCss,dialog,pane,setupVitals,setupPwa,tour,esc}from"./premium-plus-core.js";
 const K="pgi_client_premium_plus_v1",D={contrast:false,motion:true,density:"comfortable",text:"normal",home:"client-overview"},prefs=read(K,D),I=window.PGIClientI18n;
 style("pgi-client-premium-plus-style",displayCss());applyDisplay(prefs);
-const tabs=[{id:"notifications",label:"Notifications"},{id:"preferences",label:"Préférences"},{id:"security",label:"Sécurité"},{id:"trust",label:"Confiance"},{id:"app",label:"Application"},{id:"quality",label:"Qualité UX"}];
-const d=dialog("client-premium-plus","Mon espace",tabs),N=pane(d,"notifications"),P=pane(d,"preferences"),S=pane(d,"security"),T=pane(d,"trust"),A=pane(d,"app"),Q=pane(d,"quality");
+const tabs=[{id:"notifications",label:"Notifications"},{id:"preferences",label:"Préférences"},{id:"security",label:"Sécurité"},{id:"team",label:"Équipe"},{id:"trust",label:"Confiance"},{id:"app",label:"Application"},{id:"quality",label:"Qualité UX"}];
+const d=dialog("client-premium-plus","Mon espace",tabs),N=pane(d,"notifications"),P=pane(d,"preferences"),S=pane(d,"security"),E=pane(d,"team"),T=pane(d,"trust"),A=pane(d,"app"),Q=pane(d,"quality");
 let data=window.PGI_PREMIUM_PORTAL_DATA||{},vitals={lcp:null,cls:0,inp:null},pwa=null,notes=[],homeApplied=false;
 function tr(x){return I?.t?I.t(x):x}function save(){write(K,prefs);applyDisplay(prefs)}
 function launchers(){
@@ -22,7 +22,7 @@ function render(){
   N.innerHTML='<p class="pp-note">Vos alertes opérationnelles, incidents, abonnement et portabilité dans un seul endroit.</p><div class="pp-list">'+(notes.length?notes.map(x=>'<div class="pp-item" data-tone="'+x.tone+'"><strong>'+esc(x.title)+'</strong><p>'+esc(x.text)+'</p></div>').join(""):'<div class="pp-item"><strong>Aucune action urgente</strong><p>Aucun signal client ne demande actuellement votre attention.</p></div>')+'</div>';
   P.innerHTML='<p class="pp-note">Les préférences d’affichage restent sur cet appareil.</p>'+row("Langue","Choisissez la langue de l’espace client.",'<select data-locale>'+["fr","en","es","it","pt-PT","pt-BR","de","sv"].map(x=>'<option value="'+x+'">'+x+'</option>').join("")+'</select>')+row("Texte agrandi","Améliore la lisibilité.",sw("text",prefs.text==="large"))+row("Contraste renforcé","Accentue les séparations et textes secondaires.",sw("contrast",prefs.contrast))+row("Réduire les animations","Évite les mouvements non nécessaires.",sw("motion",prefs.motion===false))+row("Densité","Adaptez l’espace entre les informations.",'<select data-density><option value="comfortable">Confortable</option><option value="compact">Compacte</option></select>')+row("Page préférée","Section à retrouver rapidement après connexion.",'<select data-home><option value="client-overview">Synthèse</option><option value="client-calls">Appels</option><option value="client-finance">Reversements</option><option value="client-routing">Routage</option></select>');
   const loc=P.querySelector("[data-locale]");loc.value=I?.locale||"fr";loc.onchange=e=>I?.setLocale?I.setLocale(e.target.value):null;P.querySelector("[data-density]").value=prefs.density;P.querySelector("[data-density]").onchange=e=>{prefs.density=e.target.value;save()};P.querySelector("[data-home]").value=prefs.home;P.querySelector("[data-home]").onchange=e=>{prefs.home=e.target.value;save()};P.querySelectorAll("[data-pref]").forEach(b=>b.onclick=()=>{const k=b.dataset.pref;if(k==="text")prefs.text=prefs.text==="large"?"normal":"large";if(k==="contrast")prefs.contrast=!prefs.contrast;if(k==="motion")prefs.motion=prefs.motion===false;save();render()});
-  renderSecurity();renderTrust();renderApp();renderQuality()
+  renderSecurity();void renderTeam();renderTrust();renderApp();renderQuality()
 }
 function row(t,n,c){return '<div class="pp-row"><label><strong>'+tr(t)+'</strong><small>'+tr(n)+'</small></label>'+c+'</div>'}function sw(k,v){return '<button class="pp-switch" data-pref="'+k+'" aria-pressed="'+v+'"></button>'}
 function renderSecurity(){
@@ -39,6 +39,11 @@ function renderSecurity(){
 async function clientPasskey(kind){
   const out=S.querySelector("[data-security-status]");if(out)out.textContent="Validation biométrique en cours…";
   try{const m=await import("./passkey-client.js"),r=kind==="enroll"?await m.enroll(window.PGICustomerApi,"Passkey client",String(S.querySelector("[data-reauth]")?.value||"")):await m.verify(window.PGICustomerApi);if(kind==="enroll"&&S.querySelector("[data-reauth]"))S.querySelector("[data-reauth]").value="";if(out)out.textContent=kind==="enroll"?"Passkey enregistrée et validée par le serveur.":"MFA vérifiée à "+new Date(r.verified_at||Date.now()).toLocaleTimeString();renderSecurity()}catch(e){if(out)out.textContent=e?.code==="WEBAUTHN_NOT_CONFIGURED"?"Le domaine WebAuthn de production n’est pas encore configuré.":"Opération passkey annulée ou refusée."}
+}
+async function renderTeam(){
+  const user=data.user||null;
+  E.innerHTML='<p class="pp-note">Chargement des accès…</p>';
+  try{const m=await import("./client-team-access.js");await m.mountTeamAccess(E,user)}catch(_e){E.innerHTML='<p class="pp-note">Impossible de charger la gestion d’équipe.</p>'}
 }
 function renderTrust(){
   const incidents=(data.service_incidents||[]).filter(i=>!["resolved","closed"].includes(i.status)).length,alerts=(data.operational_alerts||[]).length;

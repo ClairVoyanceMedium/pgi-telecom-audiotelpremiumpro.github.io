@@ -3070,7 +3070,7 @@ export class PostgresStore{
     if(!actor?.sub||!actor?.tenant_id)throw problem(401,"CUSTOMER_AUTH_REQUIRED");
     const rows=await this.sql.unsafe(
       "SELECT p.id,p.email,p.display_name,p.status,p.preferred_locale,p.timezone,p.email_verified,p.session_version,"+
-      " m.tenant_id,m.role AS customer_role,m.status AS membership_status,t.public_id AS tenant_public_id,t.slug,t.display_name AS tenant_name,"+
+      " m.tenant_id,m.role AS customer_role,m.status AS membership_status,m.permission_grants,m.permission_denials,t.public_id AS tenant_public_id,t.slug,t.display_name AS tenant_name,"+
       " t.status AS tenant_status,t.authorization_version,t.default_currency,t.country_code"+
       " FROM customer_principals p JOIN customer_tenant_memberships m ON m.customer_principal_id=p.id"+
       " JOIN tenants t ON t.id=m.tenant_id WHERE p.id=$1::uuid AND m.tenant_id=$2 LIMIT 1",
@@ -3173,6 +3173,143 @@ export class PostgresStore{
       " WHERE t.public_id=$1::uuid AND t.tenant_type<>'internal' ORDER BY p.display_name,p.email",[publicId]
     );
     return rows;
+  }
+
+  async customerTeam(tenantId){
+    const id=Number(tenantId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    return this.withTenantReadContext(id,async tx=>{
+      const [members,invitations]=await Promise.all([
+        tx.unsafe(
+          "SELECT p.id,p.email,p.display_name,p.email_verified,p.last_authenticated_at,m.role,m.status AS membership_status,m.joined_at,m.updated_at"+
+          " FROM customer_tenant_memberships m JOIN customer_principals p ON p.id=m.customer_principal_id"+
+          " WHERE m.tenant_id=$1 ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,p.display_name,p.email",[id]
+        ),
+        tx.unsafe(
+          "SELECT id,email,role,status,expires_at,created_at FROM customer_tenant_invitations"+
+          " WHERE tenant_id=$1 AND status='pending' AND expires_at>now() ORDER BY created_at DESC,id DESC",[id]
+        )
+      ]);
+      return {members,invitations};
+    });
+  }
+
+  async createCustomerTeamInvitation(tenantId,input={},tokenHash,actorPrincipalId){
+    const id=Number(tenantId),email=String(input.email||"").trim().toLowerCase(),role=String(input.role||"readonly").trim().toLowerCase();
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>320)throw problem(400,"INVALID_CUSTOMER_EMAIL");
+    if(!["owner","admin","finance","operator","analyst","readonly"].includes(role))throw problem(400,"INVALID_CUSTOMER_ROLE");
+    if(!/^[a-f0-9]{64}$/.test(String(tokenHash||"")))throw problem(400,"INVALID_INVITATION_TOKEN_HASH");
+    const actor=String(actorPrincipalId||"");
+    if(!/^[0-9a-f-]{36}$/i.test(actor))throw problem(400,"INVALID_CUSTOMER_PRINCIPAL_ID");
+    const ttlHours=Math.max(1,Math.min(168,Number(input.expires_in_hours)||72));
+    return this.sql.begin(async tx=>{
+      const tenant=(await tx.unsafe("SELECT id,tenant_type,status FROM tenants WHERE id=$1 FOR UPDATE",[id]))[0];
+      if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+      if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+      if(tenant.status==="closed")throw problem(409,"TENANT_CLOSED");
+      const existing=(await tx.unsafe(
+        "SELECT m.customer_principal_id FROM customer_tenant_memberships m JOIN customer_principals p ON p.id=m.customer_principal_id"+
+        " WHERE m.tenant_id=$1 AND p.email_normalized=$2 AND m.status IN ('active','suspended') LIMIT 1",[id,email]
+      ))[0];
+      if(existing)throw problem(409,"CUSTOMER_ALREADY_MEMBER");
+      const superseded=await tx.unsafe("UPDATE customer_tenant_invitations SET status='revoked' WHERE tenant_id=$1 AND email_normalized=$2 AND status='pending' RETURNING id,email,role",[id,email]);
+      for(const previous of superseded)await tx.unsafe(
+        "INSERT INTO customer_tenant_access_events(tenant_id,event_type,invitation_id,actor_customer_principal_id,previous_role,new_role,previous_status,new_status,details)"+
+        " VALUES($1,'invitation_revoked',$2::uuid,$3::uuid,$4,$4,'pending','revoked',$5::jsonb)",
+        [id,previous.id,actor,previous.role,JSON.stringify({email:previous.email,reason:"superseded"})]
+      );
+      const row=(await tx.unsafe(
+        "INSERT INTO customer_tenant_invitations(tenant_id,email,role,token_hash,status,expires_at,invited_by_customer_principal_id)"+
+        " VALUES($1,$2,$3,$4,'pending',now()+make_interval(hours=>$5),$6::uuid)"+
+        " RETURNING id,email,role,status,expires_at,created_at",
+        [id,email,role,String(tokenHash),ttlHours,actor]
+      ))[0];
+      await tx.unsafe(
+        "INSERT INTO customer_tenant_access_events(tenant_id,event_type,invitation_id,actor_customer_principal_id,new_role,new_status,details)"+
+        " VALUES($1,'invitation_created',$2::uuid,$3::uuid,$4,'pending',$5::jsonb)",
+        [id,row.id,actor,role,JSON.stringify({email})]
+      );
+      return row;
+    });
+  }
+
+  async updateCustomerTeamMember(tenantId,principalId,input={},actorPrincipalId){
+    const id=Number(tenantId),target=String(principalId||""),actor=String(actorPrincipalId||"");
+    const role=String(input.role||"").trim().toLowerCase(),status=String(input.status||"").trim().toLowerCase();
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    if(!/^[0-9a-f-]{36}$/i.test(target)||!/^[0-9a-f-]{36}$/i.test(actor))throw problem(400,"INVALID_CUSTOMER_PRINCIPAL_ID");
+    if(!["owner","admin","finance","operator","analyst","readonly"].includes(role))throw problem(400,"INVALID_CUSTOMER_ROLE");
+    if(!["active","suspended","revoked"].includes(status))throw problem(400,"INVALID_CUSTOMER_MEMBERSHIP_STATUS");
+    if(target===actor)throw problem(409,"SELF_ACCESS_CHANGE_FORBIDDEN");
+    return this.sql.begin(async tx=>{
+      const tenant=(await tx.unsafe("SELECT id,tenant_type,status FROM tenants WHERE id=$1 FOR UPDATE",[id]))[0];
+      if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+      if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+      const actorMembership=(await tx.unsafe(
+        "SELECT role,status FROM customer_tenant_memberships WHERE tenant_id=$1 AND customer_principal_id=$2::uuid FOR UPDATE",[id,actor]
+      ))[0];
+      if(!actorMembership||actorMembership.status!=="active")throw problem(403,"CUSTOMER_PERMISSION_DENIED");
+      const current=(await tx.unsafe(
+        "SELECT m.customer_principal_id,p.email,p.display_name,m.role,m.status AS membership_status FROM customer_tenant_memberships m"+
+        " JOIN customer_principals p ON p.id=m.customer_principal_id WHERE m.tenant_id=$1 AND m.customer_principal_id=$2::uuid FOR UPDATE",[id,target]
+      ))[0];
+      if(!current)throw problem(404,"CUSTOMER_TEAM_MEMBER_NOT_FOUND");
+      if((current.role==="owner"||role==="owner")&&actorMembership.role!=="owner")throw problem(403,"CUSTOMER_OWNER_REQUIRED");
+      if(current.role==="owner"&&current.membership_status==="active"&&(role!=="owner"||status!=="active")){
+        const owners=(await tx.unsafe(
+          "SELECT count(*)::int AS count FROM customer_tenant_memberships WHERE tenant_id=$1 AND role='owner' AND status='active'",[id]
+        ))[0];
+        if(Number(owners?.count||0)<=1)throw problem(409,"LAST_CUSTOMER_OWNER_REQUIRED");
+      }
+      if(current.role===role&&current.membership_status===status)return {...current,role,membership_status:status};
+      const updated=(await tx.unsafe(
+        "UPDATE customer_tenant_memberships SET role=$3,status=$4,updated_at=now()"+
+        " WHERE tenant_id=$1 AND customer_principal_id=$2::uuid"+
+        " RETURNING customer_principal_id,role,status AS membership_status,joined_at,updated_at",
+        [id,target,role,status]
+      ))[0];
+      if(current.role!==role)await tx.unsafe(
+        "INSERT INTO customer_tenant_access_events(tenant_id,event_type,target_customer_principal_id,actor_customer_principal_id,previous_role,new_role,previous_status,new_status)"+
+        " VALUES($1,'member_role_changed',$2::uuid,$3::uuid,$4,$5,$6,$7)",
+        [id,target,actor,current.role,role,current.membership_status,status]
+      );
+      if(current.membership_status!==status)await tx.unsafe(
+        "INSERT INTO customer_tenant_access_events(tenant_id,event_type,target_customer_principal_id,actor_customer_principal_id,previous_role,new_role,previous_status,new_status)"+
+        " VALUES($1,'member_status_changed',$2::uuid,$3::uuid,$4,$5,$6,$7)",
+        [id,target,actor,current.role,role,current.membership_status,status]
+      );
+      const authorization=(await tx.unsafe("SELECT authorization_version FROM tenants WHERE id=$1",[id]))[0];
+      return {...updated,email:current.email,display_name:current.display_name,authorization_version:Number(authorization?.authorization_version||0)};
+    });
+  }
+
+  async revokeCustomerTeamInvitation(tenantId,invitationId,actorPrincipalId){
+    const id=Number(tenantId),invite=String(invitationId||""),actor=String(actorPrincipalId||"");
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    if(!/^[0-9a-f-]{36}$/i.test(invite)||!/^[0-9a-f-]{36}$/i.test(actor))throw problem(400,"INVALID_CUSTOMER_INVITATION_ID");
+    return this.sql.begin(async tx=>{
+      const current=(await tx.unsafe(
+        "SELECT id,email,role,status FROM customer_tenant_invitations WHERE tenant_id=$1 AND id=$2::uuid FOR UPDATE",[id,invite]
+      ))[0];
+      if(!current)throw problem(404,"CUSTOMER_INVITATION_NOT_FOUND");
+      if(current.status!=="pending")throw problem(409,"CUSTOMER_INVITATION_NOT_PENDING");
+      const actorMembership=(await tx.unsafe(
+        "SELECT role,status FROM customer_tenant_memberships WHERE tenant_id=$1 AND customer_principal_id=$2::uuid FOR UPDATE",[id,actor]
+      ))[0];
+      if(!actorMembership||actorMembership.status!=="active")throw problem(403,"CUSTOMER_PERMISSION_DENIED");
+      if(current.role==="owner"&&actorMembership.role!=="owner")throw problem(403,"CUSTOMER_OWNER_REQUIRED");
+      const updated=(await tx.unsafe(
+        "UPDATE customer_tenant_invitations SET status='revoked' WHERE tenant_id=$1 AND id=$2::uuid RETURNING id,email,role,status,expires_at,created_at",
+        [id,invite]
+      ))[0];
+      await tx.unsafe(
+        "INSERT INTO customer_tenant_access_events(tenant_id,event_type,invitation_id,actor_customer_principal_id,previous_role,new_role,previous_status,new_status,details)"+
+        " VALUES($1,'invitation_revoked',$2::uuid,$3::uuid,$4,$4,'pending','revoked',$5::jsonb)",
+        [id,invite,actor,current.role,JSON.stringify({email:current.email})]
+      );
+      return updated;
+    });
   }
 
   async customerBillingPreparation(tenantId){

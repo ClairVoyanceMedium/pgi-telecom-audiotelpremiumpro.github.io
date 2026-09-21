@@ -1,6 +1,6 @@
 import http from "node:http";
 import {pathToFileURL} from "node:url";
-import {randomUUID,randomBytes,createHash} from "node:crypto";
+import {randomUUID,randomBytes,createHash,createHmac} from "node:crypto";
 import {verifyGoogleIdToken} from "./src/google-id.mjs";
 import {loadConfig} from "./src/config.mjs";
 import {EventBus} from "./src/event-bus.mjs";
@@ -12,6 +12,7 @@ import {startWorkers} from "./src/workers.mjs";
 import {createPortabilityQueueHandlers} from "./src/portability-automation.mjs";
 import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability-automation.mjs";
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
+import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData} from "./src/customer-access.mjs";
 
 export async function createDefaultBackend(){
   const config=loadConfig();
@@ -291,14 +292,57 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/customer/portal"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"overview.read");
         const requestedRange=rangeParams(url);
         const metricRanges=await store.effectiveMetricRanges(requestedRange.from,requestedRange.to,context.tenant_id);
-        const [data,billing]=await Promise.all([
+        const canFinance=hasCustomerPermission(context,"finance.read");
+        const [rawData,billing]=await Promise.all([
           store.customerPortalOverview(context.tenant_id,requestedRange.from,requestedRange.to,metricRanges),
-          store.customerBillingPreparation(context.tenant_id)
+          canFinance?store.customerBillingPreparation(context.tenant_id):Promise.resolve(null)
         ]);
-        return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,metric_resets:Object.fromEntries(Object.entries(metricRanges).map(([k,v])=>[k,v.baseline])),billing_offer:billing.offer,billing_summary:{subscription:billing.subscription,premium_call_access:billing.premium_call_access,billing_currency:billing.billing_currency,pricing_state:billing.pricing_state,reference_offer:billing.reference_offer,checkout_prefill:billing.checkout_prefill,return_paths:billing.return_paths},billing_provider:billingProviderStatus(config),server_time:new Date().toISOString()});
+        const data=scopeCustomerPortalData(context,rawData);
+        return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,metric_resets:Object.fromEntries(Object.entries(metricRanges).map(([k,v])=>[k,v.baseline])),billing_offer:billing?.offer||null,billing_summary:billing?{subscription:billing.subscription,premium_call_access:billing.premium_call_access,billing_currency:billing.billing_currency,pricing_state:billing.pricing_state,reference_offer:billing.reference_offer,checkout_prefill:billing.checkout_prefill,return_paths:billing.return_paths}:{restricted:true},billing_provider:billing?billingProviderStatus(config):{connection_state:"restricted",checkout_available:false,customer_portal_available:false},server_time:new Date().toISOString()});
       }
+      if(method==="GET"&&pathname==="/api/v1/customer/team"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"team.read");
+        return done(res,metrics,started,"customer.team",200,await store.customerTeam(context.tenant_id));
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/team/invitations"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"team.manage");
+        const body=await readJson(req,config.bodyLimitBytes);
+        const requestedRole=String(body.role||"readonly").trim().toLowerCase();
+        if(requestedRole==="owner"&&context.customer_role!=="owner"){const e=new Error("Only an owner can invite another owner");e.status=403;e.code="CUSTOMER_OWNER_REQUIRED";throw e;}
+        const invitationIdempotencyKey=String(req.headers["idempotency-key"]||"").trim();
+        if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(invitationIdempotencyKey)){const e=new Error("Invitation idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
+        const token=createHmac("sha256",config.sessionSecret).update("customer-team-invite:"+invitationIdempotencyKey).digest("base64url"),tokenHash=createHash("sha256").update(token).digest("hex");
+        const payload={tenant_id:context.tenant_id,email:String(body.email||"").trim().toLowerCase(),role:requestedRole};
+        const result=await store.idempotent(invitationIdempotencyKey,"customer.team.invitation.create",payload,()=>store.createCustomerTeamInvitation(context.tenant_id,{...body,role:requestedRole},tokenHash,context.id));
+        return done(res,metrics,started,"customer.team.invitation_create",201,{...result.value,activation_path:"client.html?invite="+encodeURIComponent(token),replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/customer/team/members/:id");
+      if(method==="PATCH"&&match){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"team.manage");
+        const body=await readJson(req,config.bodyLimitBytes);
+        if(String(body.role||"").trim().toLowerCase()==="owner"&&context.customer_role!=="owner"){const e=new Error("Only an owner can grant ownership");e.status=403;e.code="CUSTOMER_OWNER_REQUIRED";throw e;}
+        const updated=await store.updateCustomerTeamMember(context.tenant_id,match.id,body,context.id);
+        const nextAuthorization=Number(updated.authorization_version||context.authorization_version);
+        const issued=issueSession({secret:config.sessionSecret,user:{id:context.id,role:"customer",name:context.display_name||customerActor.name,actor_type:"customer",tenant_id:Number(context.tenant_id),tenant_public_id:context.tenant_public_id,customer_role:context.customer_role,authorization_version:nextAuthorization,session_version:Number(context.session_version)},ttlSeconds:config.sessionTtlSeconds});
+        return done(res,metrics,started,"customer.team.member_update",200,updated,{"Set-Cookie":[customerSessionCookie(issued.token,config.sessionTtlSeconds),customerCsrfCookie(issued.csrf,config.sessionTtlSeconds)]});
+      }
+      match=routeMatch(pathname,"/api/v1/customer/team/invitations/:id/revoke");
+      if(method==="POST"&&match){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"team.manage");
+        return done(res,metrics,started,"customer.team.invitation_revoke",200,await store.revokeCustomerTeamInvitation(context.tenant_id,match.id,context.id));
+      }
+
       if(method==="GET"&&pathname==="/api/v1/customer/experience/preferences"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
@@ -328,6 +372,7 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/customer/billing/status"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"finance.read");
         const billing=await store.customerBillingPreparation(context.tenant_id);
         return done(res,metrics,started,"customer.billing.status",200,{billing_provider:billingProviderStatus(config),...billing});
       }
@@ -336,6 +381,7 @@ export function createBackend(options={}){
         const checkoutIdempotencyKey=String(req.headers["idempotency-key"]||"").trim();
         if(!checkoutIdempotencyKey||checkoutIdempotencyKey.length>200){const e=new Error("Checkout idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
         const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"billing.manage");
         const billing=await store.customerBillingPreparation(context.tenant_id);
         const provider=billingProviderStatus(config);
         if(!billing.offer)return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:"NO_ACTIVE_BILLING_OFFER"},billing_provider:provider});
@@ -343,7 +389,8 @@ export function createBackend(options={}){
       }
       if(method==="POST"&&pathname==="/api/v1/customer/billing/portal-session"){
         requireCustomerCsrf(req,customerActor,config);
-        await store.customerSessionContext(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"billing.manage");
         const provider=billingProviderStatus(config);
         return done(res,metrics,started,"customer.billing.portal",503,{error:{code:"PAYMENT_PROVIDER_NOT_CONNECTED"},billing_provider:provider});
       }
@@ -372,12 +419,14 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/customer/incidents"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"incidents.read");
         const params=Object.fromEntries(url.searchParams.entries());
         return done(res,metrics,started,"customer.incidents.list",200,await store.customerServiceIncidents(context.tenant_id,params));
       }
       if(method==="POST"&&pathname==="/api/v1/customer/incidents"){
         requireCustomerCsrf(req,customerActor,config);
         const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"incidents.write");
         const body=await readJson(req,config.bodyLimitBytes);
         const payload={tenant_id:context.tenant_id,...body};
         const result=await store.idempotent(req.headers["idempotency-key"],"customer.service_incident.create",payload,()=>store.createCustomerServiceIncident(context.tenant_id,body,customerActor.sub));
@@ -387,6 +436,7 @@ export function createBackend(options={}){
       if(method==="POST"&&match){
         requireCustomerCsrf(req,customerActor,config);
         const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"incidents.write");
         const body=await readJson(req,config.bodyLimitBytes);
         const payload={tenant_id:context.tenant_id,incident_id:match.id,body:body.body};
         const result=await store.idempotent(req.headers["idempotency-key"],"customer.service_incident.note",payload,()=>store.addCustomerServiceIncidentNote(context.tenant_id,match.id,body.body,customerActor.sub));
@@ -443,6 +493,7 @@ export function createBackend(options={}){
       if(method==="POST"&&pathname==="/api/v1/customer/routing/simulate"){
         requireCustomerCsrf(req,customerActor,config);
         const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"routing.read");
         const body=await readJson(req,config.bodyLimitBytes);
         return done(res,metrics,started,"customer.routing.simulate",200,await store.simulateTenantRoutingById(context.tenant_id,body));
       }
@@ -508,6 +559,7 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/customer/comparison"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"analytics.read");
         const requestedRange=rangeParams(url);
         const metricRanges=await store.effectiveMetricRanges(requestedRange.from,requestedRange.to,context.tenant_id);
         return done(res,metrics,started,"customer.comparison",200,{...await store.customerPortalComparison(context.tenant_id,requestedRange.from,requestedRange.to,metricRanges),metric_resets:Object.fromEntries(Object.entries(metricRanges).map(([k,v])=>[k,v.baseline]))});
@@ -515,6 +567,7 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/customer/calls"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"calls.read");
         const requestedRange=rangeParams(url);
         const range=(await store.effectiveMetricRanges(requestedRange.from,requestedRange.to,context.tenant_id)).calls;
         if(range.empty)return done(res,metrics,started,"customer.calls",200,{data:[],next_cursor:null,metric_reset_at:range.baseline});
@@ -1575,7 +1628,7 @@ function rangeParams(url){
 }
 function publicActor(a){return {id:a.sub,role:a.role,name:a.name,expert_id:a.expert_id||null};}
 function publicCustomerActor(a,context){
-  return {id:a.sub,role:context.customer_role,name:context.display_name||a.name,email:context.email,email_verified:context.email_verified===true,tenant:{id:context.tenant_public_id,name:context.tenant_name,status:context.tenant_status,currency:context.default_currency,country_code:context.country_code}};
+  return {id:a.sub,role:context.customer_role,name:context.display_name||a.name,email:context.email,email_verified:context.email_verified===true,permissions:customerPermissions(context),tenant:{id:context.tenant_public_id,name:context.tenant_name,status:context.tenant_status,currency:context.default_currency,country_code:context.country_code}};
 }
 function rateLimit(req,config,buckets,metrics){
   const key=clientIp(req);
