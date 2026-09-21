@@ -970,6 +970,8 @@ export class MemoryStore{
 
   async listServiceIncidents(){return {data:[],next_cursor:null};}
 
+  async customerProfitability(params={}){void params;return {schema_version:"audiotel-customer-profitability/1",period:"365d",since:null,currency:"EUR",currencies:["EUR"],accounting_basis:"tenant_revenue_distributions.platform_fee_ht",cash_basis:"carrier paid amount / confirmed amount",excludes:["general_platform_overhead","unconnected_subscription_cash"],tenant:null,summary:{upstream_payout_ht:0,margin_booked_ht:0,margin_collected_ht:0,client_net_payout_ht:0,unallocated_amount_ht:0,customers_with_distribution:0,top5_margin_collected_ht:0,top5_concentration_percent:0},ranking:[],trend:[]};}
+
   async customerAdminSummary(){
     return {tenants_total:0,tenants_active:0,tenants_new_24h:0,tenants_new_7d:0,latest_tenant_created_at:null,kyc_pending:0,subscription_unpaid_alerts:0,subscription_access_blocked:0,assignments_active:0,service_incidents_open:0,service_incidents_critical:0,service_sla_attention:0,routing_attention:0,portability_attention:0};
   }
