@@ -1270,7 +1270,7 @@ export class PostgresStore{
     keys=[...new Set(keys)];
     if(!keys.length||keys.some(x=>!allowed.includes(x)))throw problem(400,"INVALID_METRIC_SELECTION");
     const principal=String(customerPrincipalId||"");
-    if(!/^[0-9a-f-]{36}$/i.test(principal))throw problem(400,"INVALID_CUSTOMER_PRINCIPAL");
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(principal))throw problem(400,"INVALID_CUSTOMER_PRINCIPAL");
     const rows=await this.sql.begin(async tx=>{
       const created=[];
       for(const key of keys){
@@ -3541,7 +3541,7 @@ export class PostgresStore{
   async customerExperiencePreferences(tenantId,principalId){
     const id=Number(tenantId),principal=String(principalId||"");
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
-    if(!/^[0-9a-f-]{36}$/i.test(principal))throw problem(400,"INVALID_CUSTOMER_PRINCIPAL");
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(principal))throw problem(400,"INVALID_CUSTOMER_PRINCIPAL");
     return this.withTenantReadContext(id,async tx=>{
       const rows=await tx.unsafe("SELECT alert_preferences,updated_at FROM tenant_scoped_customer_experience_preferences WHERE customer_principal_id=$1::uuid LIMIT 1",[principal]);
       return rows[0]?{alerts:rows[0].alert_preferences||{},updated_at:rows[0].updated_at}:{alerts:{calls_below:{enabled:false,threshold:10},abandon_rate_above:{enabled:false,threshold:25},revenue_target:{enabled:false,threshold:100},drop_vs_average:{enabled:false,threshold:30}},updated_at:null};
@@ -3551,7 +3551,7 @@ export class PostgresStore{
   async saveCustomerExperiencePreferences(tenantId,principalId,input={}){
     const id=Number(tenantId),principal=String(principalId||""),src=input.alerts||{};
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
-    if(!/^[0-9a-f-]{36}$/i.test(principal))throw problem(400,"INVALID_CUSTOMER_PRINCIPAL");
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(principal))throw problem(400,"INVALID_CUSTOMER_PRINCIPAL");
     const bounded=(v,min,max,fallback)=>{const n=Number(v);return Number.isFinite(n)?Math.max(min,Math.min(max,n)):fallback;};
     const alerts={
       calls_below:{enabled:src.calls_below?.enabled===true,threshold:bounded(src.calls_below?.threshold,0,1000000,10)},
@@ -4690,7 +4690,7 @@ export class PostgresStore{
     const id=Number(tenantId),publicId=String(casePublicId||"").trim(),principal=String(principalId||"").trim(),message=String(body||"").trim();
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     if(!/^[0-9a-f-]{36}$/i.test(publicId))throw problem(400,"INVALID_RELATION_CASE_ID");
-    if(!/^[0-9a-f-]{36}$/i.test(principal))throw problem(401,"CUSTOMER_AUTH_REQUIRED");
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(principal))throw problem(401,"CUSTOMER_AUTH_REQUIRED");
     if(!message||message.length>8000)throw problem(400,"INVALID_RELATION_MESSAGE");
     const row=await this.sql.begin(async tx=>{
       const relation=(await tx.unsafe("SELECT id,status FROM tenant_relation_cases WHERE public_id=$1::uuid AND tenant_id=$2 FOR UPDATE",[publicId,id]))[0];
@@ -4708,7 +4708,7 @@ export class PostgresStore{
   async cancelCustomerRelationCase(tenantId,casePublicId,principalId){
     const id=Number(tenantId),publicId=String(casePublicId||"").trim(),principal=String(principalId||"").trim();
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
-    if(!/^[0-9a-f-]{36}$/i.test(publicId)||!/^[0-9a-f-]{36}$/i.test(principal))throw problem(400,"INVALID_RELATION_CASE_ID");
+    if(!/^[0-9a-f-]{36}$/i.test(publicId)||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(principal))throw problem(400,"INVALID_RELATION_CASE_ID");
     return this.sql.begin(async tx=>{
       const relation=(await tx.unsafe("SELECT id,status FROM tenant_relation_cases WHERE public_id=$1::uuid AND tenant_id=$2 FOR UPDATE",[publicId,id]))[0];
       if(!relation)throw problem(404,"RELATION_CASE_NOT_FOUND");
@@ -4925,7 +4925,7 @@ export class PostgresStore{
 
   async confirmCustomerRelationAction(tenantId,actionPublicId,principalId){
     const id=Number(tenantId),publicId=String(actionPublicId||"").trim(),principal=String(principalId||"").trim();
-    if(!Number.isInteger(id)||id<=0||!/^[0-9a-f-]{36}$/i.test(publicId)||!/^[0-9a-f-]{36}$/i.test(principal))throw problem(400,"INVALID_RELATION_ACTION");
+    if(!Number.isInteger(id)||id<=0||!/^[0-9a-f-]{36}$/i.test(publicId)||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(principal))throw problem(400,"INVALID_RELATION_ACTION");
     return this.sql.begin(async tx=>{
       const row=(await tx.unsafe("SELECT a.*,c.public_id AS case_public_id FROM tenant_relation_actions a JOIN tenant_relation_cases c ON c.id=a.case_id WHERE a.public_id=$1::uuid AND a.tenant_id=$2 FOR UPDATE",[publicId,id]))[0];
       if(!row)throw problem(404,"RELATION_ACTION_NOT_FOUND");
