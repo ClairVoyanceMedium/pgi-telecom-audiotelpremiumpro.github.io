@@ -1938,6 +1938,32 @@ export class PostgresStore{
     return result;
   }
 
+  async tenantDuplicateCandidates(input={}){
+    const email=String(input.email||input.billing_email||"").trim().toLowerCase().slice(0,320);
+    const name=String(input.company_name||input.legal_name||input.display_name||"").trim().slice(0,200);
+    const country=String(input.country_code||"").trim().toUpperCase();
+    const registration=String(input.registration_number||"").trim().replace(/\s+/g,"").slice(0,64);
+    const phone=String(input.phone||"").trim().replace(/[^0-9+]/g,"").slice(0,40);
+    if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw problem(400,"INVALID_CUSTOMER_EMAIL");
+    if(country&&!/^[A-Z]{2}$/.test(country))throw problem(400,"INVALID_COUNTRY_CODE");
+    if(!email&&!name&&!registration&&!phone)return {data:[]};
+    const rows=await this.readSql.unsafe(
+      "SELECT DISTINCT t.public_id,t.display_name,t.legal_name,t.country_code,t.billing_email,t.status,t.created_at,k.registration_number,"+
+      " (lower(btrim(COALESCE(t.billing_email,'')))=$1 OR EXISTS (SELECT 1 FROM customer_tenant_memberships cm JOIN customer_principals cp ON cp.id=cm.customer_principal_id WHERE cm.tenant_id=t.id AND cp.email_normalized=$1)) AS email_match,"+
+      " ($2<>'' AND (lower(btrim(t.display_name))=lower(btrim($2)) OR lower(btrim(COALESCE(t.legal_name,'')))=lower(btrim($2))) AND ($3='' OR t.country_code=$3)) AS name_match,"+
+      " ($4<>'' AND k.registration_number=$4 AND ($3='' OR k.registration_country=$3)) AS registration_match,"+
+      " ($5<>'' AND EXISTS (SELECT 1 FROM customer_tenant_memberships cm JOIN customer_principals cp ON cp.id=cm.customer_principal_id WHERE cm.tenant_id=t.id AND regexp_replace(COALESCE(cp.metadata->>'phone',''),'[^0-9+]','','g')=$5)) AS phone_match"+
+      " FROM tenants t LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id WHERE t.tenant_type<>'internal' AND ("+
+      " ($1<>'' AND (lower(btrim(COALESCE(t.billing_email,'')))=$1 OR EXISTS (SELECT 1 FROM customer_tenant_memberships cm JOIN customer_principals cp ON cp.id=cm.customer_principal_id WHERE cm.tenant_id=t.id AND cp.email_normalized=$1)))"+
+      " OR ($2<>'' AND (lower(btrim(t.display_name))=lower(btrim($2)) OR lower(btrim(COALESCE(t.legal_name,'')))=lower(btrim($2))) AND ($3='' OR t.country_code=$3))"+
+      " OR ($4<>'' AND k.registration_number=$4 AND ($3='' OR k.registration_country=$3))"+
+      " OR ($5<>'' AND EXISTS (SELECT 1 FROM customer_tenant_memberships cm JOIN customer_principals cp ON cp.id=cm.customer_principal_id WHERE cm.tenant_id=t.id AND regexp_replace(COALESCE(cp.metadata->>'phone',''),'[^0-9+]','','g')=$5))"+
+      " ) ORDER BY t.created_at DESC LIMIT 10",
+      [email,name,country,registration,phone]
+    );
+    return {data:rows.map(row=>({...row,reasons:["email_match","registration_match","phone_match","name_match"].filter(k=>row[k]).map(k=>k.replace("_match",""))}))};
+  }
+
   async createTenant(payload={},actor={}){
     const displayName=String(payload.display_name||"").trim().slice(0,160);
     const legalName=String(payload.legal_name||displayName).trim().slice(0,200);
@@ -2008,6 +2034,8 @@ export class PostgresStore{
     if(billing&&!["active","unpaid","blocked"].includes(billing))throw problem(400,"INVALID_BILLING_FILTER");
     const kyc=params.kyc?String(params.kyc).trim().toLowerCase():null;
     if(kyc&&!["verified","pending","rejected","expired","not_started"].includes(kyc))throw problem(400,"INVALID_KYC_FILTER");
+    const createdSince=params.created_since?new Date(String(params.created_since)):null;
+    if(createdSince&&!Number.isFinite(createdSince.getTime()))throw problem(400,"INVALID_CREATED_SINCE");
     const rows=await this.readSql.unsafe(
       "WITH page AS ("+
       " SELECT t.id,t.public_id,t.slug,t.display_name,t.legal_name,t.tenant_type,t.status,t.country_code,t.billing_email,"+
@@ -2021,7 +2049,7 @@ export class PostgresStore{
       " OR ($4='blocked' AND t.status='suspended'))"+
       " AND ($5::text IS NULL OR EXISTS (SELECT 1 FROM tenant_number_assignments ta JOIN sva_numbers sn ON sn.id=ta.sva_number_id WHERE ta.tenant_id=t.id AND sn.e164 LIKE $5||'%'))"+
       " AND ($6::text IS NULL OR ($6='not_started' AND NOT EXISTS (SELECT 1 FROM tenant_kyc_profiles kf WHERE kf.tenant_id=t.id)) OR EXISTS (SELECT 1 FROM tenant_kyc_profiles kf WHERE kf.tenant_id=t.id AND kf.status=$6))"+
-      " AND ($7::bigint IS NULL OR t.id<$7) ORDER BY t.id DESC LIMIT $8"+
+      " AND ($7::bigint IS NULL OR t.id<$7) AND ($8::timestamptz IS NULL OR t.created_at>=$8) ORDER BY t.id DESC LIMIT $9"+
       ") SELECT page.id AS _cursor_id,page.public_id,page.slug,page.display_name,page.legal_name,page.tenant_type,page.status,page.country_code,page.billing_email,"+
       " page.preferred_locale,page.default_currency,page.timezone,page.home_region,page.capacity_tier,COALESCE(k.status,'not_started') AS kyc_status,page.created_at,"+
       " COALESCE(a.assignment_count,0)::int AS number_assignments,COALESCE(a.active_assignments,0)::int AS active_assignments,"+
@@ -2031,7 +2059,7 @@ export class PostgresStore{
       " LEFT JOIN LATERAL (SELECT count(*) AS assignment_count,count(*) FILTER (WHERE status='active') AS active_assignments FROM tenant_number_assignments a WHERE a.tenant_id=page.id) a ON true"+
       " LEFT JOIN LATERAL (SELECT x.status,x.current_period_end,x.last_payment_status,x.cancel_at_period_end,x.billing_provider FROM tenant_subscriptions x JOIN service_plans sp ON sp.id=x.service_plan_id WHERE x.tenant_id=page.id AND sp.plan_key='external-sva-access' ORDER BY x.created_at DESC,x.id DESC LIMIT 1) s ON true"+
       " ORDER BY page.id DESC",
-      [q||null,status,country,billing,number||null,kyc,cursor,limit+1]
+      [q||null,status,country,billing,number||null,kyc,cursor,createdSince?createdSince.toISOString():null,limit+1]
     );
     const hasMore=rows.length>limit;
     const page=hasMore?rows.slice(0,limit):rows;
@@ -2795,6 +2823,13 @@ export class PostgresStore{
       await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",[email]);
       const existing=(await tx.unsafe("SELECT id FROM customer_principals WHERE email_normalized=$1 LIMIT 1",[email]))[0];
       if(existing)throw problem(409,"CUSTOMER_ACCOUNT_EXISTS");
+      if(registrationNumber){
+        const duplicateRegistration=(await tx.unsafe(
+          "SELECT t.public_id,t.display_name FROM tenant_kyc_profiles k JOIN tenants t ON t.id=k.tenant_id WHERE t.tenant_type<>'internal' AND k.registration_country=$1 AND k.registration_number=$2 LIMIT 1",
+          [country,registrationNumber]
+        ))[0];
+        if(duplicateRegistration)throw problem(409,"CUSTOMER_REGISTRATION_EXISTS");
+      }
       const market=(await tx.unsafe("SELECT id,default_locale,default_currency,timezone,data_region FROM operating_markets WHERE country_code=$1 LIMIT 1",[country]))[0]||null;
       const billingDefault=resolveBillingCurrency(country);
       if(!billingDefault)throw problem(400,"BILLING_CURRENCY_NOT_CONFIGURED");
@@ -4264,6 +4299,9 @@ export class PostgresStore{
       "SELECT"+
       " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal') AS tenants_total,"+
       " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal' AND status='active') AS tenants_active,"+
+      " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal' AND created_at>=now()-interval '24 hours') AS tenants_new_24h,"+
+      " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal' AND created_at>=now()-interval '7 days') AS tenants_new_7d,"+
+      " (SELECT max(created_at) FROM tenants WHERE tenant_type<>'internal') AS latest_tenant_created_at,"+
       " (SELECT count(*)::int FROM tenant_kyc_profiles k JOIN tenants t ON t.id=k.tenant_id WHERE t.tenant_type<>'internal' AND k.status='pending') AS kyc_pending,"+
       " (SELECT count(*)::int FROM tenant_admin_alerts a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.alert_type='subscription_unpaid' AND a.state<>'resolved') AS subscription_unpaid_alerts,"+
       " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND NOT premium_call_access) AS subscription_access_blocked,"+
@@ -4352,7 +4390,7 @@ export class PostgresStore{
     const tenant=base[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
     if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
     const id=Number(tenant.id);
-    const [subs,lines,portability,destinations,experts,alerts,settlements,payoutTerms,controls,audit,activity,serviceIncidents,operationalAlerts]=await Promise.all([
+    const [subs,lines,portability,destinations,experts,alerts,settlements,payoutTerms,controls,audit,activity,serviceIncidents,operationalAlerts,users,invitations]=await Promise.all([
       this.readSql.unsafe(
         "SELECT s.id,s.status,s.billing_currency,s.starts_at,s.current_period_start,s.current_period_end,s.ends_at,"+
         " s.billing_provider,s.provider_customer_reference,s.provider_subscription_reference,s.cancel_at_period_end,s.last_payment_status,s.last_event_at,"+
@@ -4417,14 +4455,55 @@ export class PostgresStore{
       this.readSql.unsafe(
         "SELECT id,incident_id,alert_type,severity,state,title,message,due_at,customer_visible,last_detected_at"+
         " FROM tenant_operational_alerts WHERE tenant_id=$1 AND state<>'resolved' ORDER BY last_detected_at DESC,id DESC LIMIT 50",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT p.id,p.email,p.display_name,p.status,p.preferred_locale,p.timezone,p.email_verified,p.last_authenticated_at,p.created_at,p.updated_at,"+
+        " m.role,m.status AS membership_status,p.metadata->>'first_name' AS first_name,p.metadata->>'last_name' AS last_name,p.metadata->>'phone' AS phone,p.metadata->>'signup_source' AS signup_source"+
+        " FROM customer_tenant_memberships m JOIN customer_principals p ON p.id=m.customer_principal_id WHERE m.tenant_id=$1 ORDER BY (m.role='owner') DESC,p.created_at,p.id LIMIT 100",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,email,role,status,expires_at,accepted_at,created_at FROM customer_tenant_invitations WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 100",[id]
       )
     ]);
     const access=await this.readSql.unsafe("SELECT pgi_tenant_has_premium_call_access($1,NULL,now()) AS allowed",[id]);
     return {
       tenant:{...tenant,premium_call_access:Boolean(access[0]?.allowed)},
-      subscriptions:subs,lines,portability,destinations,experts,alerts,settlements,payout_terms:payoutTerms,controls,audit,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,
+      subscriptions:subs,lines,portability,destinations,experts,alerts,settlements,payout_terms:payoutTerms,controls,audit,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,users,invitations,
       activity:activity[0]||{calls_30d:0,connected_30d:0,billable_seconds_30d:0,revenue_ttc_30d:0,margin_ht_30d:0,last_call_at:null}
     };
+  }
+
+  async tenantAdminExport(publicId,actor={}){
+    const detail=await this.tenantControlDetail(publicId);
+    const t=detail.tenant||{};
+    const safe={
+      schema_version:"audiotel-customer-admin-export/1",
+      generated_at:new Date().toISOString(),
+      tenant:{
+        public_id:t.public_id,display_name:t.display_name,legal_name:t.legal_name,status:t.status,country_code:t.country_code,
+        billing_email:t.billing_email,preferred_locale:t.preferred_locale,default_currency:t.default_currency,timezone:t.timezone,
+        created_at:t.created_at,updated_at:t.updated_at,kyc_status:t.kyc_status,registration_country:t.registration_country,
+        registration_number:t.registration_number,legal_representative_verified:t.legal_representative_verified,bank_account_verified:t.bank_account_verified
+      },
+      users:(detail.users||[]).map(u=>({
+        id:u.id,email:u.email,display_name:u.display_name,status:u.status,role:u.role,membership_status:u.membership_status,
+        email_verified:u.email_verified,phone:u.phone||null,preferred_locale:u.preferred_locale,timezone:u.timezone,
+        signup_source:u.signup_source||null,created_at:u.created_at,last_authenticated_at:u.last_authenticated_at
+      })),
+      invitations:(detail.invitations||[]).map(i=>({id:i.id,email:i.email,role:i.role,status:i.status,created_at:i.created_at,expires_at:i.expires_at,accepted_at:i.accepted_at})),
+      subscriptions:(detail.subscriptions||[]).map(s=>({id:s.id,status:s.status,plan_name:s.plan_name,billing_currency:s.billing_currency,current_period_start:s.current_period_start,current_period_end:s.current_period_end,last_payment_status:s.last_payment_status})),
+      lines:(detail.lines||[]).map(l=>({id:l.id,display_number:l.display_number,e164:l.e164,market:l.market,status:l.status,kyc_status:l.kyc_status,regulatory_assignor:l.regulatory_assignor})),
+      portability:(detail.portability||[]).map(p=>({id:p.id,country_code:p.country_code,requested_e164:p.requested_e164,status:p.status,current_operator_name:p.current_operator_name,desired_port_date:p.desired_port_date,created_at:p.created_at,completed_at:p.completed_at})),
+      settlements:(detail.settlements||[]).map(s=>({id:s.id,market:s.market,currency:s.currency,period_start:s.period_start,period_end:s.period_end,net_payout_ht:s.net_payout_ht,status:s.status,payment_due_date:s.payment_due_date,paid_at:s.paid_at})),
+      activity:detail.activity||{}
+    };
+    const actorId=numericActor(actor);
+    await this.sql.unsafe(
+      "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'tenant.admin_export','tenant',$3,$4::jsonb)",
+      [Number(t.id),actorId,String(t.id),JSON.stringify({format:"csv",schema_version:safe.schema_version,scope:"customer_360"})]
+    );
+    this.eventBus.publish("tenant.admin_export",{tenant_public_id:publicId,actor_user_id:actorId});
+    return safe;
   }
 
   async operationalPolicyEvaluation(input={}){
