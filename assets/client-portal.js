@@ -441,31 +441,7 @@ async function changePassword(e){
     msg.textContent=err.code==="INVALID_CURRENT_PASSWORD"?"Le mot de passe actuel est incorrect.":err.code==="PASSWORD_UNCHANGED"?"Choisissez un nouveau mot de passe différent.":"Modification impossible.";
   }
 }
-function closeClientMobileMenu(next){
-  var d=$("client-mobile-menu");
-  if(d&&d.open)d.close();
-  if(typeof next==="function")setTimeout(next,0);
-}
-function openClientMobileMenu(){
-  var d=$("client-mobile-menu");
-  if(d&&typeof d.showModal==="function")d.showModal();
-}
-function goClientSection(id){
-  var el=$(id);
-  if(!el)return;
-  closeClientMobileMenu(function(){el.scrollIntoView({behavior:"smooth",block:"start"});});
-}
-function runClientMobileAction(action){
-  var map={export:"client-export",security:"client-security",refresh:"client-refresh",portability:"portability-open",logout:"customer-logout"};
-  var target=map[action]?$(map[action]):null;
-  closeClientMobileMenu(function(){if(target)target.click();});
-}
 function bind(){
-  var mobileMore=$("client-mobile-more");
-  if(mobileMore)mobileMore.addEventListener("click",openClientMobileMenu);
-  qsa("[data-client-mobile-close]").forEach(function(b){b.addEventListener("click",function(){closeClientMobileMenu();});});
-  qsa("[data-client-anchor]").forEach(function(b){b.addEventListener("click",function(){goClientSection(b.getAttribute("data-client-anchor"));});});
-  qsa("[data-client-action]").forEach(function(b){b.addEventListener("click",function(){runClientMobileAction(b.getAttribute("data-client-action"));});});
   $("customer-login-form").addEventListener("submit",submitLogin);
   $("customer-register-form").addEventListener("submit",submitRegistration);
   $("customer-activation-form").addEventListener("submit",submitActivation);
@@ -505,6 +481,7 @@ function bind(){
 async function init(){
   if(I.apply)I.apply(document.body);
   bind();
+  import("./client-mobile.js").then(function(m){m.init();}).catch(function(){});
   initGoogle();
   handleBillingReturn();
   var cfg=window.PGI_CONFIG||{};
