@@ -42,9 +42,10 @@ export function createBackend(options={}){
 
   const metrics={
     requests:0,errors:0,rateLimited:0,authFailures:0,authRateLimited:0,
-    startedAt:Date.now(),byStatus:new Map(),byRoute:new Map(),latencyByRoute:new Map()
+    startedAt:Date.now(),byStatus:new Map(),byRoute:new Map(),latencyByRoute:new Map(),rateLimitedByClass:new Map()
   };
   const rateBuckets=new Map();
+  const classRateBuckets=new Map();
   const authBuckets=new Map();
   const registrationBuckets=new Map();
   const sseClients=new Set();
@@ -75,6 +76,7 @@ export function createBackend(options={}){
       const url=new URL(req.url||"/","http://localhost");
       const pathname=url.pathname;
       const method=(req.method||"GET").toUpperCase();
+      routeClassRateLimit(req,config,classRateBuckets,metrics,pathname,method);
       let match=null;
 
       if(method==="GET"&&pathname==="/api/v1/health"){
@@ -658,6 +660,25 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/platform/control-tower"){
         requireRole(actor,["admin","finance","readonly"]);
         return done(res,metrics,started,"platform.control_tower",200,await store.controlTowerOverview());
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/platform/performance-lab"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.performance_lab",200,await store.performanceResilienceLab());
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/platform/performance-lab/runs"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const result=await store.idempotent(req.headers["idempotency-key"],"performance_lab.run.record",body,()=>store.recordPerformanceLabRun(body,actor));
+        return done(res,metrics,started,"platform.performance_lab_run",201,{...result.value,replayed:result.replayed});
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/platform/performance-lab/synthetic"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const result=await store.idempotent(req.headers["idempotency-key"],"performance_lab.synthetic.record",body,()=>store.recordSyntheticProbe(body));
+        return done(res,metrics,started,"platform.performance_lab_synthetic",201,{...result.value,replayed:result.replayed});
       }
 
       if(method==="GET"&&pathname==="/api/v1/platform/staff-users"){
@@ -1442,6 +1463,26 @@ function rateLimit(req,config,buckets,metrics){
     for(const [k,v] of buckets)if(v.minute<minute-2)buckets.delete(k);
   }
 }
+function routeClassRateLimit(req,config,buckets,metrics,pathname,method){
+  let scope=null,limit=0;
+  const authPath=pathname.startsWith("/api/v1/auth/")||pathname.startsWith("/api/v1/customer/auth/");
+  if(!authPath&&method!=="GET"&&method!=="HEAD"&&method!=="OPTIONS"){
+    scope="write";limit=Number(config.writeRateLimitPerMinute||120);
+  }else if(method==="GET"&&/(?:analytics|control-tower|customer-profitability|performance-lab|digital-twin|evidence-pack|regulatory)/.test(pathname)){
+    scope="heavy_read";limit=Number(config.heavyReadRateLimitPerMinute||60);
+  }
+  if(!scope||limit<=0)return;
+  const minute=Math.floor(Date.now()/60000),key=clientIp(req)+"|"+scope,current=buckets.get(key);
+  if(!current||current.minute!==minute)buckets.set(key,{minute,count:1});
+  else{
+    current.count++;
+    if(current.count>limit){
+      metrics.rateLimited++;bump(metrics.rateLimitedByClass,scope);
+      const e=new Error("Route class rate limit exceeded");e.status=429;e.code="ROUTE_RATE_LIMITED";e.expose=true;throw e;
+    }
+  }
+  if(buckets.size>10000&&Math.random()<.01)for(const [k,v] of buckets)if(v.minute<minute-2)buckets.delete(k);
+}
 function done(res,metrics,started,route,status,payload,headers={}){
   res.pgiRoute=route;
   bump(metrics.byStatus,status);bump(metrics.byRoute,route);
@@ -1517,6 +1558,8 @@ async function metricsResponse(res,metrics,store,workers){
     "# TYPE pgi_process_uptime_seconds gauge",
     "pgi_process_uptime_seconds "+((Date.now()-metrics.startedAt)/1000).toFixed(3)
   ];
+  lines.push("# TYPE pgi_rate_limited_class_total counter");
+  for(const [scope,count] of metrics.rateLimitedByClass)lines.push('pgi_rate_limited_class_total{class="'+promLabel(scope)+'"} '+count);
   lines.push("# TYPE pgi_http_responses_total counter");
   for(const [status,count] of metrics.byStatus){
     lines.push('pgi_http_responses_total{status="'+promLabel(status)+'"} '+count);
