@@ -3,7 +3,7 @@ const K="pgi_client_premium_plus_v1",D={contrast:false,motion:true,density:"comf
 style("pgi-client-premium-plus-style",displayCss());applyDisplay(prefs);
 const tabs=[{id:"notifications",label:"Notifications"},{id:"preferences",label:"Préférences"},{id:"security",label:"Sécurité"},{id:"trust",label:"Confiance"},{id:"app",label:"Application"},{id:"quality",label:"Qualité UX"}];
 const d=dialog("client-premium-plus","Mon espace",tabs),N=pane(d,"notifications"),P=pane(d,"preferences"),S=pane(d,"security"),T=pane(d,"trust"),A=pane(d,"app"),Q=pane(d,"quality");
-let data={},vitals={lcp:null,cls:0,inp:null},pwa=null,notes=[],homeApplied=false;
+let data=window.PGI_PREMIUM_PORTAL_DATA||{},vitals={lcp:null,cls:0,inp:null},pwa=null,notes=[],homeApplied=false;
 function tr(x){return I?.t?I.t(x):x}function save(){write(K,prefs);applyDisplay(prefs)}
 function launchers(){
   const account=document.querySelector(".cp-account");if(account&&!document.getElementById("client-premium-open")){const b=document.createElement("button");b.id="client-premium-open";b.className="cp-ghost pp-btn";b.type="button";b.innerHTML='Mon espace<span class="pp-badge" hidden>0</span>';b.onclick=open;account.insertBefore(b,document.getElementById("customer-logout"))}
@@ -54,5 +54,7 @@ const guide=tour("pgi_client_guide_v1",[
  {selector:"#client-routing",title:"Routage",text:"Numéros, destinations et portabilité."},
  {selector:"#client-service-center",title:"Assistance",text:"Incidents et échanges avec l’équipe Audiotel Premium Pro."}
 ]);
-document.addEventListener("pgi:portal-loaded",e=>{data=e.detail?.data||{};collect();launchers();if(!guide.isDone())setTimeout(()=>guide.start(),900);else if(!homeApplied){homeApplied=true;setTimeout(()=>document.getElementById(prefs.home)?.scrollIntoView({behavior:"smooth",block:"start"}),250)}});
-addEventListener("load",()=>launchers(),{once:true});setTimeout(launchers,500);vitals=setupVitals(v=>{vitals=v;if(d.open)renderQuality()});pwa=setupPwa(()=>{if(d.open)renderApp()});
+function applyClientHome(){if(homeApplied)return;homeApplied=true;setTimeout(()=>document.getElementById(prefs.home)?.scrollIntoView({behavior:"smooth",block:"start"}),250)}
+function hydrate(next){data=next||{};collect();launchers();if(!guide.isDone())setTimeout(()=>guide.start(),900);else applyClientHome()}
+document.addEventListener("pgi:portal-loaded",e=>hydrate(e.detail?.data||{}));
+addEventListener("load",()=>launchers(),{once:true});setTimeout(launchers,500);if(window.PGI_PREMIUM_PORTAL_DATA)hydrate(window.PGI_PREMIUM_PORTAL_DATA);vitals=setupVitals(v=>{vitals=v;if(d.open)renderQuality()});pwa=setupPwa(()=>{if(d.open)renderApp()});
