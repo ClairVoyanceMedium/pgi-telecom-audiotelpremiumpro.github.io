@@ -116,3 +116,10 @@ test("RIO confirmation automatically chains to a line-scoped port-out",()=>{
   assert.match(store,/request_final_invoice/);
   assert.match(store,/reconcile_final_settlement/);
 });
+
+test("service stays assigned until confirmed port-out and RIO must be securely delivered",()=>{
+  assert.match(store,/PORT_OUT_RIO_DELIVERY_REQUIRED/);
+  assert.match(store,/status='ended',valid_to=COALESCE\(valid_to,now\(\)\)/);
+  assert.match(outboundAutomation,/available_waiting_secure_delivery/);
+  assert.match(outboundAutomation,/OUTBOUND_PORTABILITY_LINE_SCOPE_REQUIRED/);
+});
