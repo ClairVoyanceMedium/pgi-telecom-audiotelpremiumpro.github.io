@@ -21,6 +21,10 @@ export function loadConfig(env=process.env){
   const databaseSsl=(env.PGI_DATABASE_SSL||"disable").toLowerCase();
   const releaseId=env.PGI_RELEASE_ID||"";
   const googleClientId=String(env.PGI_GOOGLE_CLIENT_ID||"").trim();
+  const webauthnRpId=String(env.PGI_WEBAUTHN_RP_ID||"").trim().toLowerCase();
+  const webauthnOrigin=String(env.PGI_WEBAUTHN_ORIGIN||"").trim();
+  if((webauthnRpId&&!webauthnOrigin)||(!webauthnRpId&&webauthnOrigin))throw new Error("PGI_WEBAUTHN_RP_ID and PGI_WEBAUTHN_ORIGIN must be configured together");
+  if(webauthnOrigin&&!/^https:\/\//i.test(webauthnOrigin))throw new Error("PGI_WEBAUTHN_ORIGIN must use HTTPS");
   if(!["disable","require"].includes(databaseSsl))throw new Error("PGI_DATABASE_SSL must be disable or require");
 
   if(mode==="production"){
@@ -37,7 +41,7 @@ export function loadConfig(env=process.env){
   }
 
   return Object.freeze({
-    mode,authMode,host,port,releaseId,googleClientId,
+    mode,authMode,host,port,releaseId,googleClientId,webauthnRpId,webauthnOrigin,
     sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),
