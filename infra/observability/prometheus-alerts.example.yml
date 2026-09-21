@@ -41,6 +41,15 @@ groups:
         annotations:
           summary: "API p95 latency above 500 ms"
 
+      - alert: PGIRouteClassRateLimiting
+        expr: sum(rate(pgi_rate_limited_class_total[5m])) by (class) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Route-class saturation guard is actively limiting traffic"
+          description: "A heavy-read or write class is being rate-limited; review demand, abuse, and capacity before raising limits."
+
       - alert: PGICdrLagCritical
         expr: pgi_cdr_lag_seconds > 900
         for: 5m

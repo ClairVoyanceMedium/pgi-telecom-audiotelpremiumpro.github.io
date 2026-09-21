@@ -16,7 +16,7 @@ function config(overrides={}){
   return {
     mode:"simulator",authMode:"disabled",host:"127.0.0.1",port:0,
     sessionSecret:"",adminPasswordHash:"",ingestToken:"",
-    adminUsername:"admin",sessionTtlSeconds:3600,bodyLimitBytes:262144,rateLimitPerMinute:10000,
+    adminUsername:"admin",sessionTtlSeconds:3600,bodyLimitBytes:262144,rateLimitPerMinute:10000,heavyReadRateLimitPerMinute:10000,writeRateLimitPerMinute:10000,
     authMaxFailures:8,authFailureWindowSeconds:900,
     serviceRateTtcPerMin:.8,payoutRateHtPerMin:.46,expertCostHtPerMin:.18,reconciliationToleranceHt:.01,
     version:"test",...overrides
@@ -69,6 +69,20 @@ test("traceparent is propagated with the same trace id",async()=>{
     assert.equal(r.headers.get("x-trace-id"),traceId);
     assert.match(r.headers.get("traceparent")||"",new RegExp("^00-"+traceId+"-[0-9a-f]{16}-01$"));
   });
+});
+
+test("heavy control-plane reads have an independent saturation guard",async()=>{
+  const app=createBackend({config:config({heavyReadRateLimitPerMinute:2,rateLimitPerMinute:10000})});
+  const address=await app.listen(),base=`http://127.0.0.1:${address.port}`;
+  try{
+    const headers={"X-Forwarded-For":"203.0.113.42"};
+    let r=await fetch(base+"/api/v1/dashboard/analytics",{headers});assert.equal(r.status,200);
+    r=await fetch(base+"/api/v1/dashboard/analytics",{headers});assert.equal(r.status,200);
+    r=await fetch(base+"/api/v1/dashboard/analytics",{headers});
+    assert.equal(r.status,429);assert.equal((await r.json()).error.code,"ROUTE_RATE_LIMITED");
+    r=await fetch(base+"/api/v1/health",{headers});assert.equal(r.status,200);
+    r=await fetch(base+"/metrics");assert.match(await r.text(),/pgi_rate_limited_class_total\{class="heavy_read"\} 1/);
+  }finally{await app.close();}
 });
 
 test("admin login has a dedicated per-client brute-force limit",async()=>{

@@ -4722,6 +4722,145 @@ export class PostgresStore{
     return simulateDigitalTwin(scenario,baseline,params);
   }
 
+  async performanceResilienceLab(){
+    const [queue,dbRows,tableRows,drTargets,drills,runs,syntheticRows]=await Promise.all([
+      this.workQueueHealth(),
+      this.readSql.unsafe(
+        "SELECT current_database() AS database_name,pg_database_size(current_database())::bigint AS database_bytes,"+
+        " current_setting('max_connections')::int AS max_connections,"+
+        " (SELECT count(*)::int FROM pg_stat_activity WHERE datname=current_database()) AS connections_total,"+
+        " (SELECT count(*)::int FROM pg_stat_activity WHERE datname=current_database() AND state='active') AS connections_active,"+
+        " (SELECT count(*)::int FROM pg_stat_activity WHERE datname=current_database() AND state='idle in transaction') AS connections_idle_in_transaction"
+      ),
+      this.readSql.unsafe(
+        "SELECT relname,n_live_tup::bigint AS live_rows,n_dead_tup::bigint AS dead_rows,seq_scan::bigint,idx_scan::bigint,"+
+        " CASE WHEN n_live_tup>0 THEN round((n_dead_tup::numeric/n_live_tup::numeric)*100,2)::float8 ELSE 0::float8 END AS dead_row_percent"+
+        " FROM pg_stat_user_tables WHERE schemaname='public' ORDER BY n_live_tup DESC,relname LIMIT 20"
+      ),
+      this.readSql.unsafe(
+        "SELECT component_key,region_key,rpo_seconds,rto_seconds,replication_mode,criticality,enabled,updated_at"+
+        " FROM disaster_recovery_targets WHERE enabled ORDER BY criticality,component_key,region_key"
+      ),
+      this.readSql.unsafe(
+        "SELECT id,drill_type,source_region,target_region,started_at,completed_at,status,observed_rpo_seconds,observed_rto_seconds,evidence_ref"+
+        " FROM disaster_recovery_drills ORDER BY started_at DESC,id DESC LIMIT 20"
+      ),
+      this.readSql.unsafe(
+        "SELECT id,run_type,scenario,target,status,started_at,completed_at,requests_total,errors_total,error_rate::float8,p50_ms::float8,p95_ms::float8,p99_ms::float8,requests_per_second::float8,virtual_users,thresholds,evidence_ref"+
+        " FROM performance_lab_runs ORDER BY completed_at DESC,id DESC LIMIT 30"
+      ),
+      this.readSql.unsafe(
+        "SELECT count(*)::int AS checks_24h,count(*) FILTER(WHERE success)::int AS successes_24h,"+
+        " COALESCE(avg(latency_ms),0)::float8 AS avg_latency_ms,COALESCE(max(latency_ms),0)::float8 AS max_latency_ms,"+
+        " max(checked_at) AS last_checked_at,max(checked_at) FILTER(WHERE NOT success) AS last_failure_at"+
+        " FROM synthetic_probe_results WHERE checked_at>=now()-interval '24 hours'"
+      )
+    ]);
+    const db=dbRows[0]||{},syn=syntheticRows[0]||{};
+    const maxConnections=Number(db.max_connections||0),connections=Number(db.connections_total||0);
+    const dbHeadroom=maxConnections>0?Math.max(0,(maxConnections-connections)/maxConnections*100):0;
+    const recentLoad=runs.find(x=>["load","stress","spike","soak"].includes(x.run_type))||null;
+    const recentPassedLoad=runs.find(x=>["load","stress","spike","soak"].includes(x.run_type)&&x.status==="passed")||null;
+    const latestRestore=drills.find(x=>x.drill_type==="restore")||null;
+    const syntheticSuccess=Number(syn.checks_24h)>0?Number(syn.successes_24h)/Number(syn.checks_24h)*100:null;
+    const tableAttention=tableRows.filter(x=>Number(x.live_rows)>1000&&((Number(x.idx_scan)===0&&Number(x.seq_scan)>20)||Number(x.dead_row_percent)>20));
+    const evidenceFresh=recentPassedLoad&&Date.now()-Date.parse(recentPassedLoad.completed_at)<=30*86400000;
+    const restoreFresh=latestRestore?.status==="passed"&&Date.now()-Date.parse(latestRestore.completed_at)<=30*86400000;
+    const blockers=[];
+    if(!recentPassedLoad)blockers.push({code:"LOAD_PROOF_MISSING",label:"Aucun test de charge réussi n’est encore enregistré."});
+    else if(!evidenceFresh)blockers.push({code:"LOAD_PROOF_STALE",label:"Le dernier test de charge réussi date de plus de 30 jours."});
+    if(dbHeadroom<30)blockers.push({code:"DB_CONNECTION_HEADROOM_LOW",label:"La réserve de connexions PostgreSQL est inférieure à 30 %."});
+    if(Number(queue.dead_lettered||0)>0)blockers.push({code:"DEAD_LETTERS_PRESENT",label:"La file contient des dead letters."});
+    if(Number(queue.oldest_pending_seconds||0)>120)blockers.push({code:"QUEUE_BACKLOG_OLD",label:"Le plus ancien travail en attente dépasse 120 secondes."});
+    if(!latestRestore)blockers.push({code:"RESTORE_DRILL_MISSING",label:"Aucun exercice de restauration PostgreSQL n’est enregistré."});
+    else if(!restoreFresh)blockers.push({code:"RESTORE_DRILL_STALE",label:"Le dernier restore drill réussi date de plus de 30 jours."});
+    const syntheticFresh=Boolean(syn.last_checked_at&&Date.now()-Date.parse(syn.last_checked_at)<=24*3600000);
+    if(!syntheticFresh)blockers.push({code:"SYNTHETIC_PROOF_MISSING",label:"Aucune sonde synthétique récente n’est enregistrée sur les dernières 24 h."});
+    else if(syntheticSuccess!=null&&syntheticSuccess<99)blockers.push({code:"SYNTHETIC_AVAILABILITY_LOW",label:"Le taux de succès synthétique sur 24 h est inférieur à 99 %."});
+    if(tableAttention.length)blockers.push({code:"POSTGRES_TABLE_ATTENTION",label:tableAttention.length+" table(s) nécessitent une revue d’index ou de vacuum."});
+    return {
+      schema_version:"audiotel-performance-resilience-lab/1",
+      generated_at:new Date().toISOString(),
+      capacity_proof:recentPassedLoad?(evidenceFresh?"fresh":"stale"):"unproven",
+      preproduction_gate:{ready:blockers.length===0,blockers},
+      database:{
+        name:db.database_name||null,size_bytes:Number(db.database_bytes||0),max_connections:maxConnections,
+        connections_total:connections,connections_active:Number(db.connections_active||0),
+        connections_idle_in_transaction:Number(db.connections_idle_in_transaction||0),
+        connection_headroom_percent:Number(dbHeadroom.toFixed(1)),
+        pool_max:Number(this.config.databasePoolMax||0),read_pool_max:Number(this.config.databaseReadPoolMax||0),
+        tables:tableRows,attention:tableAttention
+      },
+      queue,
+      synthetic:{
+        checks_24h:Number(syn.checks_24h||0),successes_24h:Number(syn.successes_24h||0),
+        success_percent:syntheticSuccess==null?null:Number(syntheticSuccess.toFixed(2)),
+        avg_latency_ms:Number(syn.avg_latency_ms||0),max_latency_ms:Number(syn.max_latency_ms||0),
+        last_checked_at:syn.last_checked_at||null,last_failure_at:syn.last_failure_at||null
+      },
+      load:{latest:recentLoad,latest_passed:recentPassedLoad,runs},
+      disaster_recovery:{targets:drTargets,latest_restore:latestRestore,drills},
+      rate_limits:{
+        global_per_minute:Number(this.config.rateLimitPerMinute||0),
+        heavy_read_per_minute:Number(this.config.heavyReadRateLimitPerMinute||0),
+        write_per_minute:Number(this.config.writeRateLimitPerMinute||0)
+      },
+      claims:{capacity_guaranteed:false,external_connections_active:false}
+    };
+  }
+
+  async recordPerformanceLabRun(input={},actor={}){
+    const runType=String(input.run_type||"").trim().toLowerCase();
+    if(!["load","stress","spike","soak","synthetic","chaos","restore"].includes(runType))throw problem(400,"INVALID_PERFORMANCE_RUN_TYPE");
+    const scenario=String(input.scenario||"").trim().slice(0,120);
+    if(scenario.length<2)throw problem(400,"INVALID_PERFORMANCE_SCENARIO");
+    const status=String(input.status||"").trim().toLowerCase();
+    if(!["passed","failed","aborted","informational"].includes(status))throw problem(400,"INVALID_PERFORMANCE_STATUS");
+    const started=new Date(String(input.started_at||"")),completed=new Date(String(input.completed_at||""));
+    if(!Number.isFinite(started.getTime())||!Number.isFinite(completed.getTime())||completed<started)throw problem(400,"INVALID_PERFORMANCE_WINDOW");
+    const nonNegative=(v,name)=>{const n=Number(v??0);if(!Number.isFinite(n)||n<0)throw problem(400,name);return n;};
+    const requests=Math.trunc(nonNegative(input.requests_total,"INVALID_PERFORMANCE_REQUESTS"));
+    const errors=Math.trunc(nonNegative(input.errors_total,"INVALID_PERFORMANCE_ERRORS"));
+    const errorRate=nonNegative(input.error_rate,"INVALID_PERFORMANCE_ERROR_RATE");
+    if(errorRate>1||errors>requests&&requests>0)throw problem(400,"INVALID_PERFORMANCE_ERROR_RATE");
+    const metric=name=>input[name]==null?null:nonNegative(input[name],"INVALID_PERFORMANCE_METRIC");
+    let target=input.target==null?null:String(input.target).trim().slice(0,240);
+    if(target){try{const u=new URL(target);target=u.origin+u.pathname;}catch{target=target.replace(/[?#].*$/,"");}}
+    const thresholds=input.thresholds&&typeof input.thresholds==="object"&&!Array.isArray(input.thresholds)?input.thresholds:{};
+    const details=input.details&&typeof input.details==="object"&&!Array.isArray(input.details)?input.details:{};
+    if(JSON.stringify(thresholds).length>8000||JSON.stringify(details).length>16000)throw problem(400,"PERFORMANCE_DETAILS_TOO_LARGE");
+    const actorId=numericActor(actor);
+    const rows=await this.sql.unsafe(
+      "INSERT INTO performance_lab_runs(run_type,scenario,target,status,started_at,completed_at,requests_total,errors_total,error_rate,p50_ms,p95_ms,p99_ms,requests_per_second,virtual_users,thresholds,details,evidence_ref,created_by)"+
+      " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17,$18)"+
+      " RETURNING id,run_type,scenario,target,status,started_at,completed_at,requests_total,errors_total,error_rate::float8,p50_ms::float8,p95_ms::float8,p99_ms::float8,requests_per_second::float8,virtual_users,evidence_ref,created_at",
+      [runType,scenario,target,status,started.toISOString(),completed.toISOString(),requests,errors,errorRate,metric("p50_ms"),metric("p95_ms"),metric("p99_ms"),metric("requests_per_second"),input.virtual_users==null?null:Math.max(0,Math.trunc(Number(input.virtual_users)||0)),JSON.stringify(thresholds),JSON.stringify(details),input.evidence_ref?String(input.evidence_ref).slice(0,500):null,actorId]
+    );
+    await this.sql.unsafe(
+      "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'performance_lab.run.record','performance_lab_run',$2,$3::jsonb)",
+      [actorId,String(rows[0].id),JSON.stringify({run_type:runType,scenario,status,requests_total:requests,error_rate:errorRate})]
+    );
+    return rows[0];
+  }
+
+  async recordSyntheticProbe(input={}){
+    const key=String(input.probe_key||"").trim().toLowerCase();
+    if(!/^[a-z0-9_.-]{2,80}$/.test(key))throw problem(400,"INVALID_SYNTHETIC_PROBE_KEY");
+    const success=input.success===true;
+    const latency=Number(input.latency_ms);
+    if(!Number.isFinite(latency)||latency<0||latency>600000)throw problem(400,"INVALID_SYNTHETIC_LATENCY");
+    const status=input.http_status==null?null:Number(input.http_status);
+    if(status!=null&&(!Number.isInteger(status)||status<100||status>599))throw problem(400,"INVALID_SYNTHETIC_HTTP_STATUS");
+    const details=input.details&&typeof input.details==="object"&&!Array.isArray(input.details)?input.details:{};
+    if(JSON.stringify(details).length>8000)throw problem(400,"SYNTHETIC_DETAILS_TOO_LARGE");
+    const rows=await this.sql.unsafe(
+      "INSERT INTO synthetic_probe_results(probe_key,success,latency_ms,http_status,release_id,error_code,details) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)"+
+      " RETURNING id,probe_key,checked_at,success,latency_ms::float8,http_status,release_id,error_code",
+      [key,success,latency,status,input.release_id?String(input.release_id).slice(0,80):null,input.error_code?String(input.error_code).slice(0,120):null,JSON.stringify(details)]
+    );
+    return rows[0];
+  }
+
   async controlTowerOverview(){
     const [platform,service,route,queue,capacityRows,portabilityRows,shadowRows,riskRows,lastRows,changeRows]=await Promise.all([
       this.wholesaleOverview(),

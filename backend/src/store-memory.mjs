@@ -1017,6 +1017,21 @@ export class MemoryStore{
     return simulateDigitalTwin(input.scenario,baseline,input.parameters||{});
   }
 
+  async performanceResilienceLab(){
+    const queue=await this.workQueueHealth();
+    return {
+      schema_version:"audiotel-performance-resilience-lab/1",generated_at:new Date().toISOString(),
+      capacity_proof:"unproven",preproduction_gate:{ready:false,blockers:[{code:"LOAD_PROOF_MISSING",label:"Aucun test de charge réel enregistré en mode démonstration."}]},
+      database:{name:"memory",size_bytes:0,max_connections:0,connections_total:0,connections_active:0,connections_idle_in_transaction:0,connection_headroom_percent:100,pool_max:0,read_pool_max:0,tables:[],attention:[]},
+      queue,synthetic:{checks_24h:0,successes_24h:0,success_percent:null,avg_latency_ms:0,max_latency_ms:0,last_checked_at:null,last_failure_at:null},
+      load:{latest:null,latest_passed:null,runs:[]},disaster_recovery:{targets:[],latest_restore:null,drills:[]},
+      rate_limits:{global_per_minute:Number(this.config.rateLimitPerMinute||0),heavy_read_per_minute:Number(this.config.heavyReadRateLimitPerMinute||0),write_per_minute:Number(this.config.writeRateLimitPerMinute||0)},
+      claims:{capacity_guaranteed:false,external_connections_active:false}
+    };
+  }
+  async recordPerformanceLabRun(input={},actor={}){void input;void actor;throw problem(409,"PERFORMANCE_LAB_PERSISTENCE_REQUIRED");}
+  async recordSyntheticProbe(input={}){void input;throw problem(409,"PERFORMANCE_LAB_PERSISTENCE_REQUIRED");}
+
   async controlTowerOverview(){
     const queue=await this.workQueueHealth(),service=await this.serviceOperationsHealth();
     const risk=assessOperationalRisk({calls_7d:this.calls.length,failed_7d:this.calls.filter(x=>!["connected","abandoned"].includes(x.call_status)).length,expected_7d:this.calls.reduce((a,x)=>a+Number(x.expected_payout_ht||0),0),variance_7d:this.calls.reduce((a,x)=>a+Math.abs(Number(x.reconciliation_variance_ht||0)),0),calls_last_hour:this.calls.filter(x=>Date.parse(x.started_at)>=Date.now()-3600000).length,avg_hourly_7d:this.calls.length/168,service_critical:0,regulatory_blocking:0,queue_dead_lettered:queue.dead_lettered});

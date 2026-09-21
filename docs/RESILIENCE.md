@@ -146,3 +146,26 @@ Les gros documents sont référencés dans `object_assets` et stockés hors Post
 Chaque objet peut porter une classification, une région de stockage, un checksum SHA-256, une portée de chiffrement, une date de rétention et un legal hold.
 
 Cette séparation limite la croissance de PostgreSQL et permet des politiques de cycle de vie propres au stockage objet.
+
+
+## Performance & Resilience Lab
+
+Le Control Tower expose un gate de préproduction fondé sur des preuves mesurées, jamais sur une capacité déclarative.
+
+Le gate vérifie notamment :
+
+- un test de charge réussi datant de moins de 30 jours ;
+- une sonde synthétique health/readiness sur les dernières 24 heures ;
+- un restore drill réussi datant de moins de 30 jours ;
+- l'absence de dead letters ;
+- l'âge maximal du backlog de work queue ;
+- la réserve de connexions PostgreSQL ;
+- les tables nécessitant une revue simple d'index/vacuum.
+
+`npm run perf:load` exécute uniquement des requêtes GET. Toute cible distante nécessite `PGI_PERF_ALLOW_REMOTE=true`. Les seuils p95 et taux d'erreur sont configurables et le résultat peut être enregistré dans le Performance Lab.
+
+`npm run perf:synthetic` vérifie health/readiness. Une cible distante doit être en HTTPS.
+
+`npm run resilience:drill` utilise uniquement le store simulateur et vérifie la reprise d'un lease expiré, l'isolation en dead-letter et la reprise du traitement après incident.
+
+Le débit affiché comme « PROUVÉ » correspond au dernier test réussi enregistré. Il ne constitue pas une garantie de capacité future : toute modification majeure d'infrastructure, de schéma ou de charge doit déclencher un nouveau test.

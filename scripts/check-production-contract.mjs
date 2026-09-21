@@ -73,6 +73,12 @@ const customerInternalNotesMigration=fs.readFileSync("database/migrations/048_cu
 const customerInternalNotesUi=fs.readFileSync("assets/customer-internal-notes.js","utf8");
 const customerProfitabilityMigration=fs.readFileSync("database/migrations/049_customer_profitability.sql","utf8");
 const customerProfitabilityUi=fs.readFileSync("assets/customer-profitability.js","utf8");
+const performanceLabMigration=fs.readFileSync("database/migrations/050_performance_resilience_lab.sql","utf8");
+const performanceLabUi=fs.readFileSync("assets/performance-resilience-lab.js","utf8");
+const performanceLoad=fs.readFileSync("scripts/performance-load.mjs","utf8");
+const syntheticProbe=fs.readFileSync("scripts/synthetic-probe.mjs","utf8");
+const resilienceDrillScript=fs.readFileSync("scripts/resilience-drill.mjs","utf8");
+const qualityWorkflow=fs.readFileSync(".github/workflows/quality.yml","utf8");
 const webauthnSource=fs.readFileSync("backend/src/webauthn.mjs","utf8");
 const premiumPlusUi=fs.readFileSync("assets/premium-plus.js","utf8");
 const clientPremiumPlusUi=fs.readFileSync("assets/client-premium-plus.js","utf8");
@@ -183,6 +189,16 @@ if(!/tenant_revenue_distributions_profitability_idx/.test(customerProfitabilityM
 if(!/\/api\/v1\/platform\/customer-profitability/.test(backendServer)||!/customerProfitability/.test(postgresStore)||!/platform_fee_ht/.test(postgresStore)||!/paid_amount_ht\/cs\.confirmed_amount_ht/.test(postgresStore))failures.push("Customer profitability must use PGI margin and actual upstream paid ratio");
 if(!/Marge PGI encaissée/.test(customerProfitabilityUi)||!/Clients qui rapportent le plus/.test(customerProfitabilityUi)||!/Répartition du reversement opérateur/.test(customerProfitabilityUi))failures.push("Customer cockpit must expose professional profitability ranking and composition");
 if(!/general_platform_overhead/.test(postgresStore)||!/unconnected_subscription_cash/.test(postgresStore))failures.push("Profitability API must disclose excluded overhead and unconnected subscription cash");
+if(!/CREATE TABLE performance_lab_runs/.test(performanceLabMigration)||!/CREATE TABLE synthetic_probe_results/.test(performanceLabMigration))failures.push("Performance Lab must persist measured load and synthetic evidence");
+if(!/\/api\/v1\/platform\/performance-lab/.test(backendServer)||!/performanceResilienceLab/.test(postgresStore)||!/capacity_proof/.test(postgresStore)||!/preproduction_gate/.test(postgresStore))failures.push("Performance Lab must expose evidence-backed preproduction readiness");
+if(!/PGI_HEAVY_READ_RATE_LIMIT_PER_MINUTE/.test(envExample)||!/PGI_WRITE_RATE_LIMIT_PER_MINUTE/.test(envExample)||!/PGI_HEAVY_READ_RATE_LIMIT_PER_MINUTE/.test(compose)||!/PGI_WRITE_RATE_LIMIT_PER_MINUTE/.test(compose)||!/routeClassRateLimit/.test(backendServer)||!/pgi_rate_limited_class_total/.test(backendServer))failures.push("Production must keep route-class saturation guards");
+if(!/PGI_PERF_ALLOW_REMOTE=true/.test(performanceLoad)||!/method:"GET"/.test(performanceLoad)||!/p95_ms/.test(performanceLoad)||!/p99_ms/.test(performanceLoad))failures.push("Load harness must be opt-in for remote targets and measure p95/p99");
+if(!/api\.health/.test(syntheticProbe)||!/api\.ready/.test(syntheticProbe)||!/https:\/\//.test(syntheticProbe))failures.push("Synthetic probe must validate health/readiness and require HTTPS remotely");
+if(!/expired lease takeover/.test(resilienceDrillScript)||!/dead-letter isolation/.test(resilienceDrillScript)||!/post-failure progress/.test(resilienceDrillScript))failures.push("Resilience drill must validate lease takeover, dead-letter isolation and recovery");
+if(!/Performance and resilience tool smoke/.test(qualityWorkflow)||!/npm run perf:load/.test(qualityWorkflow)||!/npm run resilience:drill/.test(qualityWorkflow))failures.push("Quality CI must execute Performance Lab smoke drills");
+if(!/PROUVÉ/.test(performanceLabUi)||!/Gate préproduction/.test(performanceLabUi)||!/PostgreSQL/.test(performanceLabUi))failures.push("Control Tower must surface proven throughput and preproduction blockers");
+if(!/observed_rpo_seconds/.test(restoreDrill)||!/observed_rto_seconds/.test(restoreDrill)||!/disaster_recovery_drills/.test(restoreDrill))failures.push("Restore drill must record observed RPO/RTO evidence");
+if(!/PGIRouteClassRateLimiting/.test(prometheusAlerts))failures.push("Prometheus alerts must detect sustained saturation limiting");
 
 
 if(!/CREATE TABLE webauthn_credentials/.test(premiumPlusSecurityMigration)||!/owner_type IN \('staff','customer'\)/.test(premiumPlusSecurityMigration)||!/customer_principal_id uuid REFERENCES customer_principals/.test(premiumPlusSecurityMigration))failures.push("Premium+ passkeys must keep staff and customer identities isolated");
