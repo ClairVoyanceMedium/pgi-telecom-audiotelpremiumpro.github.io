@@ -36,10 +36,12 @@ test("team UI is Premium+ lazy content, not critical PWA shell",()=>{
   assert.match(premium,/label:"Équipe"/);
   assert.match(premium,/import\("\.\/client-team-access\.js"\)/);
   assert.doesNotMatch(worker,/assets\/client-team-access\.js|assets\/client-access-visibility\.js/);
-  assert.match(api,/team:function/);
-  assert.match(api,/inviteTeamMember:function/);
-  assert.match(api,/updateTeamMember:function/);
-  assert.match(api,/revokeTeamInvitation:function/);
+  assert.doesNotMatch(api,/\/customer\/team/);
+  assert.match(teamUi,/\/customer\/team/);
+  assert.match(teamUi,/Idempotency-Key/);
+  assert.match(visibility,/finance\.read/);
+  assert.match(visibility,/routing\.read/);
+  assert.match(visibility,/incidents\.read/);
   assert.match(teamUi,/Aucun e-mail automatique n’a été envoyé/);
   assert.match(teamUi,/Copier le lien/);
   assert.doesNotMatch(teamUi,/activationLink=activationLink/);
