@@ -19,7 +19,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
   const bus=new EventBus();
   const store=await PostgresStore.connect(config(),bus);
   try{
-    await store.sql.unsafe("TRUNCATE TABLE sva_ecosystem_evidence_events,sva_ecosystem_control_states,sva_tariff_change_plans,sva_service_compliance_profiles,platform_change_approval_events,platform_change_requests,settlement_call_matches,carrier_settlements,call_quality,financial_ledger,outbox_events,raw_cdr_events,calls,tenant_call_destinations,callers,expert_presence_events,metric_baselines,carrier_switches,number_carrier_assignments,carrier_connections,carrier_adapters,carrier_contracts,number_portability_events,sva_numbers,carriers,audit_log,api_idempotency_keys RESTART IDENTITY CASCADE");
+    await store.sql.unsafe("TRUNCATE TABLE tenant_internal_notes,sva_ecosystem_evidence_events,sva_ecosystem_control_states,sva_tariff_change_plans,sva_service_compliance_profiles,platform_change_approval_events,platform_change_requests,settlement_call_matches,carrier_settlements,call_quality,financial_ledger,outbox_events,raw_cdr_events,calls,tenant_call_destinations,callers,expert_presence_events,metric_baselines,carrier_switches,number_carrier_assignments,carrier_connections,carrier_adapters,carrier_contracts,number_portability_events,sva_numbers,carriers,audit_log,api_idempotency_keys RESTART IDENTITY CASCADE");
     await store.sql.unsafe("UPDATE app_users SET expert_id=NULL; DELETE FROM experts");
     await store.sql.unsafe("INSERT INTO carriers(name,kind) VALUES('Host A','sva_host'),('Host B','sva_host')");
     await store.sql.unsafe("INSERT INTO logical_carrier_routes(route_key,description) VALUES('sva-primary','Integration test route')");
@@ -602,15 +602,28 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const visibleSystemAfterReset=await store.systemSnapshot();
     assert.equal(Number(visibleSystemAfterReset.calls_total),0);
 
+    const privateNoteBody="Note interne intégration confidentielle";
+    const privateNote=await store.createTenantInternalNote(externalIdentity[0].public_id,{body:privateNoteBody},{sub:"admin"});
+    assert.equal(privateNote.body,privateNoteBody);
+    const privateNotes=await store.tenantInternalNotes(externalIdentity[0].public_id);
+    assert.equal(privateNotes.data.length,1);
+    assert.equal(privateNotes.data[0].body,privateNoteBody);
+    const privateAudit=await store.sql.unsafe("SELECT action,details FROM audit_log WHERE entity_type='tenant_internal_note' AND entity_id=$1 ORDER BY id DESC LIMIT 1",[String(privateNote.id)]);
+    assert.equal(privateAudit[0].action,"tenant.internal_note.create");
+    assert.equal(JSON.stringify(privateAudit[0].details).includes(privateNoteBody),false);
+    const archivedPrivateNote=await store.archiveTenantInternalNote(privateNote.id,{sub:"admin"});
+    assert.equal(archivedPrivateNote.changed,true);
+    assert.equal((await store.tenantInternalNotes(externalIdentity[0].public_id)).data.length,0);
+
     const metrics=await store.metrics();
     assert.equal(metrics.calls_total,1);
     const rawCalls=await store.sql.unsafe("SELECT count(*)::int AS count FROM calls");
     assert.equal(rawCalls[0].count,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
-    assert.equal(migrations.length,47);
+    assert.equal(migrations.length,48);
     assert.equal(new Set(migrations.map(x=>x.version)).size,migrations.length);
     assert.equal(migrations[0].version,"001_baseline");
-    assert.equal(migrations.at(-1).version,"047_customer_360");
+    assert.equal(migrations.at(-1).version,"048_customer_internal_notes");
     for(const migration of migrations)assert.match(migration.checksum,/^[a-f0-9]{64}$/);
   }finally{
     await store.close();
