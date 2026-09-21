@@ -17,6 +17,8 @@ test("customer team access stays server-authorized",()=>{
   assert.match(server,/CUSTOMER_OWNER_REQUIRED/);
   assert.match(server,/customerSessionCookie\(issued\.token/);
   assert.match(server,/scopeCustomerPortalData\(context,rawData\)/);
+  assert.match(server,/createHmac\("sha256",config\.sessionSecret\)/);
+  assert.match(server,/invitationIdempotencyKey/);
   assert.match(store,/LAST_CUSTOMER_OWNER_REQUIRED/);
   assert.match(store,/SELF_ACCESS_CHANGE_FORBIDDEN/);
   assert.match(store,/permission_grants,m\.permission_denials/);
@@ -48,4 +50,5 @@ test("team UI is Premium+ lazy content, not critical PWA shell",()=>{
   assert.match(teamUi,/Aucun e-mail automatique n’a été envoyé/);
   assert.match(teamUi,/Copier le lien/);
   assert.doesNotMatch(teamUi,/activationLink=activationLink/);
+  assert.doesNotMatch(teamUi,/mountTeamAccess\(pane,api/);
 });
