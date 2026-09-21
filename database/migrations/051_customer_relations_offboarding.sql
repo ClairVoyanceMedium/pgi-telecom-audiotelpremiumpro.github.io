@@ -210,6 +210,7 @@ CREATE TABLE tenant_relation_actions (
   public_id uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE,
   case_id bigint NOT NULL REFERENCES tenant_relation_cases(id) ON DELETE CASCADE,
   tenant_id bigint NOT NULL REFERENCES tenants(id),
+  exit_line_id bigint REFERENCES tenant_exit_lines(id) ON DELETE CASCADE,
   action_type text NOT NULL
     CHECK (action_type IN (
       'collect_evidence','reconcile_billing','draft_response','respond_customer','request_customer_info','prepare_mediation',
@@ -240,6 +241,9 @@ CREATE TABLE tenant_relation_actions (
 
 CREATE INDEX tenant_relation_actions_case_idx
   ON tenant_relation_actions(case_id,created_at DESC,id DESC);
+CREATE INDEX tenant_relation_actions_exit_line_idx
+  ON tenant_relation_actions(exit_line_id,created_at DESC,id DESC)
+  WHERE exit_line_id IS NOT NULL;
 CREATE INDEX tenant_relation_actions_pending_idx
   ON tenant_relation_actions(status,risk_class,created_at,id)
   WHERE status IN ('proposed','approved','queued','executing');
