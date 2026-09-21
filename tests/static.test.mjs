@@ -227,7 +227,7 @@ test("la palette universelle accélère la navigation",()=>{
 test("le workspace mémorise la dernière vue et période",()=>{
   assert.match(workspace,/pgi_ui_preferences/);
   assert.match(workspace,/pgi_operating_market/);
-  assert.match(workspace,/pgi_mobile_overview_expanded/);
+  assert.match(workspace,/pgi_mobile_full_v2/);
   assert.match(workspace,/restoreInto/);
   assert.match(app,/PGIWorkspace\.restoreInto/);
   assert.match(app,/PGIWorkspace\.save/);
