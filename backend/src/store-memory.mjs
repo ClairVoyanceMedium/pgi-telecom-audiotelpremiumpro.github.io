@@ -760,6 +760,7 @@ export class MemoryStore{
     return {id:row.id,state:"retry",attempts:row.attempts,retry_in_seconds:Math.round(delay)};
   }
 
+  async scanOutboundPortabilityAutomation(){return [];}
   async workQueueHealth(){
     const pending=this.workQueue.filter(x=>!x.completed_at&&!x.failed_at&&!x.dead_lettered_at);
     const oldest=pending.length?Math.max(0,(Date.now()-Math.min(...pending.map(x=>Date.parse(x.created_at))))/1000):0;
