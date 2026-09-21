@@ -13,7 +13,7 @@ const worker=fs.readFileSync("service-worker.js","utf8");
 test("customer team access stays server-authorized",()=>{
   assert.match(server,/\/api\/v1\/customer\/team/);
   assert.match(server,/requireCustomerPermission\(context,"team\.manage"\)/);
-  assert.match(server,/CUSTOMER_OWNER_REQUIRED/);
+  assert.match(server,/CUSTOMER_OWNER_REQUIRED/);\n  assert.match(server,/customerSessionCookie\(issued\.token/);\n  assert.match(server,/scopeCustomerPortalData\(context,rawData\)/);
   assert.match(store,/LAST_CUSTOMER_OWNER_REQUIRED/);
   assert.match(store,/SELF_ACCESS_CHANGE_FORBIDDEN/);
   assert.match(store,/permission_grants,m\.permission_denials/);
@@ -38,5 +38,5 @@ test("team UI is Premium+ lazy content, not critical PWA shell",()=>{
   assert.match(api,/updateTeamMember:function/);
   assert.match(api,/revokeTeamInvitation:function/);
   assert.match(teamUi,/Aucun e-mail automatique n’a été envoyé/);
-  assert.match(teamUi,/Copier le lien/);
+  assert.match(teamUi,/Copier le lien/);\n  assert.doesNotMatch(teamUi,/activationLink=activationLink/);
 });
