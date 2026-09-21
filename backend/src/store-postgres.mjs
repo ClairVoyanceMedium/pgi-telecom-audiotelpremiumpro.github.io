@@ -4663,7 +4663,7 @@ export class PostgresStore{
           if(!portLines.length)throw problem(409,"PORT_OUT_LINES_REQUIRED");
           if(portLines.length>1&&!targetLineId)throw problem(409,"PORT_OUT_LINE_SCOPE_REQUIRED");
           if(portLines.some(x=>x.portability_eligibility_status!=="eligible"))throw problem(409,"PORT_OUT_ELIGIBILITY_REQUIRED");
-          if(portLines.some(x=>!["available","delivered","not_required"].includes(x.rio_status)))throw problem(409,"PORT_OUT_RIO_REQUIRED");
+          if(portLines.some(x=>!["delivered","not_required"].includes(x.rio_status)))throw problem(409,"PORT_OUT_RIO_DELIVERY_REQUIRED");
           await tx.unsafe("UPDATE tenant_exit_requests SET status='waiting_provider',updated_at=now() WHERE id=$1",[ex.id]);
           await tx.unsafe("UPDATE tenant_exit_lines SET status='waiting_provider' WHERE exit_request_id=$1 AND requested_action='port_out' AND ($2::bigint IS NULL OR id=$2)",[ex.id,targetLineId]);
           await tx.unsafe("INSERT INTO tenant_relation_case_events(case_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible,details) VALUES($1,$2,'port_out_submitted','agent',$3,'Demande de portabilité sortante mise en file auprès du fournisseur.',true,$4::jsonb)",[relation.id,relation.tenant_id,actorId,JSON.stringify({exit_line_id:targetLineId})]);
@@ -4768,6 +4768,12 @@ export class PostgresStore{
           eventType="port_out_scheduled";message="Portabilité sortante planifiée par l’opérateur";
         }else if(["success","completed"].includes(outcome)){
           await tx.unsafe("UPDATE tenant_exit_lines SET status='completed',operator_reference=COALESCE($2,operator_reference),completed_at=now() WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out' AND ($3::bigint IS NULL OR id=$3)",[row.case_id,providerReference,targetLineId]);
+          await tx.unsafe(
+            "UPDATE tenant_number_assignments a SET status='ended',valid_to=COALESCE(valid_to,now())"+
+            " FROM tenant_exit_lines l JOIN tenant_exit_requests e ON e.id=l.exit_request_id"+
+            " WHERE e.case_id=$1 AND l.assignment_id=a.id AND l.requested_action='port_out' AND l.status='completed' AND ($2::bigint IS NULL OR l.id=$2)",
+            [row.case_id,targetLineId]
+          );
           const states=await tx.unsafe("SELECT status FROM tenant_exit_lines WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[row.case_id]);
           const allCompleted=states.length>0&&states.every(x=>x.status==="completed");
           await tx.unsafe("UPDATE tenant_exit_requests SET status=CASE WHEN $2 THEN 'finalizing' ELSE 'waiting_provider' END,operator_reference=COALESCE($3,operator_reference),updated_at=now() WHERE case_id=$1",[row.case_id,allCompleted,providerReference]);
@@ -4797,7 +4803,7 @@ export class PostgresStore{
       const actionPayload=typeof row.payload==="string"?JSON.parse(row.payload||"{}"):(row.payload||{});
       return {public_id:publicId,status:finalStatus,outcome,provider_reference:providerReference,action_type:row.action_type,case_public_id:row.case_public_id,tenant_id:Number(row.tenant_id),exit_line_id:Number(actionPayload.exit_line_id)||null};
     });
-    if(completed.status==="completed"&&completed.action_type==="request_outbound_rio"&&["available","delivered"].includes(completed.outcome)){
+    if(completed.status==="completed"&&completed.action_type==="request_outbound_rio"&&completed.outcome==="delivered"){
       const next=await this.createRelationAgentAction(completed.case_public_id,{action_type:"submit_port_out",confidence:1,explanation:"Portabilité sortante automatiquement transmise après confirmation du RIO.",payload:{exit_line_id:completed.exit_line_id}},{});
       completed.next_action={action_type:"submit_port_out",public_id:next.public_id,status:next.status,exit_line_id:completed.exit_line_id};
     }else if(completed.status==="completed"&&completed.action_type==="submit_port_out"&&["success","completed"].includes(completed.outcome)){
