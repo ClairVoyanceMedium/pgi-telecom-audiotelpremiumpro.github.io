@@ -188,6 +188,32 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(accessPolicy.decision,"ALLOWED");
     assert.equal(accessPolicy.dry_run,true);
     assert.equal(accessPolicy.mutates_state,false);
+    const labBefore=await store.performanceResilienceLab();
+    assert.equal(labBefore.schema_version,"audiotel-performance-resilience-lab/1");
+    assert.equal(labBefore.capacity_proof,"unproven");
+    assert.equal(labBefore.preproduction_gate.ready,false);
+    assert.ok(labBefore.preproduction_gate.blockers.some(x=>x.code==="LOAD_PROOF_MISSING"));
+
+    const perfStarted=new Date(Date.now()-60000).toISOString(),perfCompleted=new Date().toISOString();
+    const perfRun=await store.recordPerformanceLabRun({
+      run_type:"load",scenario:"integration-safe-read",target:"https://example.test/api/v1/health?secret=hidden",
+      status:"passed",started_at:perfStarted,completed_at:perfCompleted,requests_total:1000,errors_total:0,error_rate:0,
+      p50_ms:40,p95_ms:120,p99_ms:180,requests_per_second:50,virtual_users:20,
+      thresholds:{p95_ms:500,error_rate:.01},details:{safe:true}
+    },{sub:"admin"});
+    assert.equal(perfRun.status,"passed");
+    assert.equal(perfRun.target,"https://example.test/api/v1/health");
+    await store.recordSyntheticProbe({probe_key:"api.health",success:true,latency_ms:32,http_status:200,release_id:"integration"});
+    await store.sql.unsafe(
+      "INSERT INTO disaster_recovery_drills(drill_type,source_region,target_region,started_at,completed_at,status,observed_rpo_seconds,observed_rto_seconds,evidence_ref) VALUES('restore','eu-primary','eu-primary',now()-interval '2 minutes',now(),'passed',30,90,'integration:restore')"
+    );
+    const labAfter=await store.performanceResilienceLab();
+    assert.equal(labAfter.capacity_proof,"fresh");
+    assert.equal(labAfter.load.latest_passed.id,perfRun.id);
+    assert.equal(labAfter.synthetic.success_percent,100);
+    assert.ok(Number(labAfter.database.connection_headroom_percent)>=0);
+    assert.equal(labAfter.disaster_recovery.latest_restore.status,"passed");
+
     const tower=await store.controlTowerOverview();
     assert.equal(tower.schema_version,"audiotel-control-tower/2");
     assert.equal(tower.assurance.dual_control_required,true);
@@ -620,10 +646,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const rawCalls=await store.sql.unsafe("SELECT count(*)::int AS count FROM calls");
     assert.equal(rawCalls[0].count,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
-    assert.equal(migrations.length,49);
+    assert.equal(migrations.length,50);
     assert.equal(new Set(migrations.map(x=>x.version)).size,migrations.length);
     assert.equal(migrations[0].version,"001_baseline");
-    assert.equal(migrations.at(-1).version,"049_customer_profitability");
+    assert.equal(migrations.at(-1).version,"050_performance_resilience_lab");
     for(const migration of migrations)assert.match(migration.checksum,/^[a-f0-9]{64}$/);
   }finally{
     await store.close();
