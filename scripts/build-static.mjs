@@ -28,6 +28,7 @@ const files=[
   "assets/client-search.js",
   "assets/client-premium.js",
   "assets/client-premium-plus.js",
+  "assets/passkey-client.js",
   "assets/premium-plus-core.js",
   "assets/premium-plus.js",
   "assets/client-intelligence.js",
