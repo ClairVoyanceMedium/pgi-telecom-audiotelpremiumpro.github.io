@@ -71,6 +71,8 @@ const premiumPlusSecurityMigration=fs.readFileSync("database/migrations/046_prem
 const customer360Migration=fs.readFileSync("database/migrations/047_customer_360.sql","utf8");
 const customerInternalNotesMigration=fs.readFileSync("database/migrations/048_customer_internal_notes.sql","utf8");
 const customerInternalNotesUi=fs.readFileSync("assets/customer-internal-notes.js","utf8");
+const customerProfitabilityMigration=fs.readFileSync("database/migrations/049_customer_profitability.sql","utf8");
+const customerProfitabilityUi=fs.readFileSync("assets/customer-profitability.js","utf8");
 const webauthnSource=fs.readFileSync("backend/src/webauthn.mjs","utf8");
 const premiumPlusUi=fs.readFileSync("assets/premium-plus.js","utf8");
 const clientPremiumPlusUi=fs.readFileSync("assets/client-premium-plus.js","utf8");
@@ -177,6 +179,11 @@ if(!/\/api\/v1\/platform\/tenants\/:id\/internal-notes/.test(backendServer)||!/t
 if(!/body_logged:false/.test(postgresStore)||!/tenant\.internal_note\.create/.test(postgresStore)||!/tenant\.internal_note\.archive/.test(postgresStore))failures.push("Customer internal notes must be audited without copying note bodies");
 if(!/Privé • jamais visible par le client/.test(customerInternalNotesUi)||!/customer-internal-notes\.js/.test(fs.readFileSync("assets/tenant-control-detail.js","utf8")))failures.push("Customer 360 must expose a clearly private internal-note module");
 if(/customer-internal-notes|tenantInternalNotes|addTenantInternalNote|archiveTenantInternalNote/.test(fs.readFileSync("assets/client-portal-api.js","utf8")+fs.readFileSync("assets/client-portal.js","utf8")))failures.push("Customer portal must not expose internal-note APIs");
+if(!/tenant_revenue_distributions_profitability_idx/.test(customerProfitabilityMigration)||!/INCLUDE \(platform_fee_ht,net_payout_ht,upstream_payout_ht/.test(customerProfitabilityMigration))failures.push("Customer profitability must keep an indexed authoritative margin path");
+if(!/\/api\/v1\/platform\/customer-profitability/.test(backendServer)||!/customerProfitability/.test(postgresStore)||!/platform_fee_ht/.test(postgresStore)||!/paid_amount_ht\/cs\.confirmed_amount_ht/.test(postgresStore))failures.push("Customer profitability must use PGI margin and actual upstream paid ratio");
+if(!/Marge PGI encaissée/.test(customerProfitabilityUi)||!/Clients qui rapportent le plus/.test(customerProfitabilityUi)||!/Répartition du reversement opérateur/.test(customerProfitabilityUi))failures.push("Customer cockpit must expose professional profitability ranking and composition");
+if(!/general_platform_overhead/.test(postgresStore)||!/unconnected_subscription_cash/.test(postgresStore))failures.push("Profitability API must disclose excluded overhead and unconnected subscription cash");
+
 
 if(!/CREATE TABLE webauthn_credentials/.test(premiumPlusSecurityMigration)||!/owner_type IN \('staff','customer'\)/.test(premiumPlusSecurityMigration)||!/customer_principal_id uuid REFERENCES customer_principals/.test(premiumPlusSecurityMigration))failures.push("Premium+ passkeys must keep staff and customer identities isolated");
 if(!/WEBAUTHN_USER_VERIFICATION_REQUIRED/.test(webauthnSource)||!/WEBAUTHN_RP_ID_MISMATCH/.test(webauthnSource)||!/WEBAUTHN_SIGNATURE_INVALID/.test(webauthnSource)||!/timingSafeEqual/.test(webauthnSource))failures.push("WebAuthn must verify RP ID origin user verification signed state and assertion signature");
