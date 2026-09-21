@@ -3570,6 +3570,20 @@ export class PostgresStore{
     });
   }
 
+  async tenantConsumptionToday(publicTenantId){
+    const rows=await this.readSql.unsafe(
+      "SELECT id,COALESCE(NULLIF(timezone,''),'Europe/Paris') AS timezone,"+
+      " (date_trunc('day',now() AT TIME ZONE COALESCE(NULLIF(timezone,''),'Europe/Paris')) AT TIME ZONE COALESCE(NULLIF(timezone,''),'Europe/Paris')) AS from_ts,"+
+      " now() AS to_ts FROM tenants WHERE public_id=$1::uuid",[String(publicTenantId||"")]
+    );
+    const tenant=rows[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+    const from=new Date(tenant.from_ts).toISOString(),to=new Date(tenant.to_ts).toISOString();
+    const metricRanges=await this.effectiveMetricRanges(from,to,Number(tenant.id));
+    const data=await this.customerPortalOverview(Number(tenant.id),from,to,metricRanges);
+    const snapshot=consumptionSnapshot(data,from,to,metricRanges);
+    return {...snapshot,snapshot_sha256:consumptionSnapshotHash(snapshot),generated_at:new Date().toISOString(),basis:"authoritative_call_facts_and_validated_tenant_distributions"};
+  }
+
   async tenantConsumptionReceipts(publicTenantId,limit=10){
     const tenantRows=await this.readSql.unsafe("SELECT id FROM tenants WHERE public_id=$1::uuid",[String(publicTenantId||"")]);
     const tenant=tenantRows[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
