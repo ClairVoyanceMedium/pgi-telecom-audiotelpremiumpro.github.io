@@ -419,6 +419,11 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
       outcome:"delivered",provider_reference:"rio-ref-1",rio_last4:"1234",delivery_channel:"provider_direct",delivery_reference:"provider-secure-delivery-1"
     },{sub:"admin"});
     assert.equal(rioConfirm.status,"completed");
+    assert.equal(rioConfirm.next_action.action_type,"submit_port_out");
+    assert.equal(rioConfirm.next_action.status,"queued");
+    assert.equal(Number(rioConfirm.next_action.exit_line_id),Number(exit.lines[0].exit_line_id));
+    const outboundWork=await store.sql.unsafe("SELECT queue_name,payload FROM work_queue WHERE queue_name='portability_outbound' AND payload->>'action_public_id'=$1 ORDER BY id DESC LIMIT 1",[rioConfirm.next_action.public_id]);
+    assert.equal(outboundWork.length,1);
     const postRio=await store.customerRelationsOverview(Number(externalTenantRow.id),{admin:true});
     assert.equal(postRio.exit_lines[0].portability_eligibility_status,"eligible");
     assert.equal(postRio.exit_lines[0].portability_service_level,"enhanced");
