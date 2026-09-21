@@ -4728,10 +4728,9 @@ export class PostgresStore{
       this.readSql.unsafe(
         "SELECT current_database() AS database_name,pg_database_size(current_database())::bigint AS database_bytes,"+
         " current_setting('max_connections')::int AS max_connections,"+
-        " count(*) FILTER(WHERE datname=current_database())::int AS connections_total,"+
-        " count(*) FILTER(WHERE datname=current_database() AND state='active')::int AS connections_active,"+
-        " count(*) FILTER(WHERE datname=current_database() AND state='idle in transaction')::int AS connections_idle_in_transaction"+
-        " FROM pg_stat_activity"
+        " (SELECT count(*)::int FROM pg_stat_activity WHERE datname=current_database()) AS connections_total,"+
+        " (SELECT count(*)::int FROM pg_stat_activity WHERE datname=current_database() AND state='active') AS connections_active,"+
+        " (SELECT count(*)::int FROM pg_stat_activity WHERE datname=current_database() AND state='idle in transaction') AS connections_idle_in_transaction"
       ),
       this.readSql.unsafe(
         "SELECT relname,n_live_tup::bigint AS live_rows,n_dead_tup::bigint AS dead_rows,seq_scan::bigint,idx_scan::bigint,"+
