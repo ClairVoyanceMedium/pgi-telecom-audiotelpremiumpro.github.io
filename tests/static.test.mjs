@@ -580,7 +580,7 @@ test("la PWA Premium+ gère le portail client et les mises à jour sans forcer l
   assert.match(sw,/pgi-v43/);
   assert.match(sw,/client\.html/);
   assert.match(sw,/SKIP_WAITING/);
-  assert.doesNotMatch(sw,/install[\s\S]{0,180}skipWaiting\(\)/);
-  assert.match(premiumPlusCore,/registration\?\.waiting/);
+  assert.doesNotMatch(sw,/c\.addAll\(S\)\)\.then\(\(\)=>self\.skipWaiting\(\)\)/);
+  assert.match(premiumPlusCore,/r\?\.waiting/);
   assert.match(premiumPlusCore,/postMessage\(\{type:"SKIP_WAITING"\}\)/);
 });
