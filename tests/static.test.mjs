@@ -507,11 +507,12 @@ test("validated customer number and consumption proof stay visible, tenant-scope
   assert.match(tenantControlDetail,/tenant-consumption-check\.js/);
   assert.match(tenantConsumptionCheck,/CONFORME — le relevé client correspond aux données sources/);
   assert.match(tenantConsumptionCheck,/ÉCART DÉTECTÉ/);
-  assert.match(tenantConsumptionCheck,/reconcileTenantConsumptionReceipt/);
-  assert.match(tenantConsumptionCheck,/tenantConsumptionToday/);
+  assert.match(tenantConsumptionCheck,/\/platform\/tenants\//);
+  assert.match(tenantConsumptionCheck,/\/consumption-receipts/);
+  assert.match(tenantConsumptionCheck,/\/consumption-today/);
+  assert.match(tenantConsumptionCheck,/\/reconcile/);
   assert.match(tenantConsumptionCheck,/AUJOURD’HUI CÔTÉ SERVEUR/);
-  assert.match(api,/tenantConsumptionReceipts:function/);
-  assert.match(api,/reconcileTenantConsumptionReceipt:function/);
+  assert.doesNotMatch(api,/tenantConsumptionToday|tenantConsumptionReceipts|reconcileTenantConsumptionReceipt/);
   assert.doesNotMatch(sw,/client-account-proof\.js|tenant-consumption-check\.js/);
 });
 
