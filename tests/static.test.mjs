@@ -32,6 +32,10 @@ const platformAdmin=read("assets/platform-admin-tools.js");
 const callTools=read("assets/call-tools.js");
 const callList=read("assets/call-list.js");
 const metricReset=read("assets/metric-reset.js");
+const premiumPlusCore=read("assets/premium-plus-core.js");
+const premiumPlus=read("assets/premium-plus.js");
+const clientPremiumPlus=read("assets/client-premium-plus.js");
+const passkeyClient=read("assets/passkey-client.js");
 const css=read("assets/styles.css");
 const sw=read("service-worker.js");
 const manifest=read("manifest.webmanifest");
@@ -406,7 +410,7 @@ test("la PWA met en cache uniquement le shell critique",()=>{
   assert.match(app,/loadDemoCalls/);
   assert.doesNotMatch(sw,/assets\/command-palette\.js/);
   assert.doesNotMatch(sw,/assets\/customer-admin\.css/);
-  assert.match(sw,/pgi-v42/);
+  assert.match(sw,/pgi-v43/);
 });
 
 test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiques",()=>{
@@ -418,7 +422,7 @@ test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiqu
   assert.match(css,/\.auth-brand-logo\{/);
   assert.match(sw,/audiotel-brand-icon-v33\.png/);
   assert.match(sw,/audiotel-brand-logo-v33\.png/);
-  assert.match(sw,/pgi-v42/);
+  assert.match(sw,/pgi-v43/);
   assert.match(buildStatic,/audiotel-brand-logo-v33\.png/);
   assert.doesNotMatch(css,/brand-mark|command-brand-emblem|auth-brand-lockup|auth-brand-emblem/);
   assert.doesNotMatch(sw,/favicon\.svg/);
@@ -454,11 +458,11 @@ test("brand header polish keeps split colors, larger icon and dark period contra
   assert.match(css,/\.product-name-pgi\{color:#f4e8dc\}/);
   assert.match(css,/\.product-name-audiotel\{color:#e0ad6d\}/);
   assert.match(css,/\.periods\{[\s\S]*rgba\(31,22,18,.96\)/);
-  assert.match(sw,/pgi-v42/);
+  assert.match(sw,/pgi-v43/);
 });
 
 
-test("customer portal stays separate, tenant-facing and outside the critical shell",()=>{assert.match(clientPortal,/Audiotel Premium Pro/);assert.match(clientPortal,/Espace client/);assert.match(clientPortal,/noindex,nofollow,noarchive/);for(const token of ["kpi-calls","kpi-minutes","kpi-revenue","kpi-payout","numbers-list","settlements-list","destinations-list"])assert.ok(clientPortal.includes(token),token);for(const path of ["/customer/auth/login","/customer/auth/activate","/customer/portal","/customer/calls"])assert.ok(clientPortalApi.includes(path),path);assert.match(clientPortalJs,/exportClient|Rapport complet/);assert.match(clientPortalCss,/--bg:#0d0f11/);assert.doesNotMatch(sw,/client\.html|client-portal/);});
+test("customer portal stays separate, tenant-facing and keeps only its light shell offline",()=>{assert.match(clientPortal,/Audiotel Premium Pro/);assert.match(clientPortal,/Espace client/);assert.match(clientPortal,/noindex,nofollow,noarchive/);for(const token of ["kpi-calls","kpi-minutes","kpi-revenue","kpi-payout","numbers-list","settlements-list","destinations-list"])assert.ok(clientPortal.includes(token),token);for(const path of ["/customer/auth/login","/customer/auth/activate","/customer/portal","/customer/calls"])assert.ok(clientPortalApi.includes(path),path);assert.match(clientPortalJs,/exportClient|Rapport complet/);assert.match(clientPortalCss,/--bg:#0d0f11/);assert.match(sw,/client\.html/);assert.match(sw,/client-portal\.css/);assert.doesNotMatch(sw,/client-premium-plus\.js|client-intelligence\.js|client-service-center\.js/);assert.match(sw,/endsWith\("\/client\.html"\)/);});
 
 
 test("customer portal has professional analytics and multi-export center",()=>{for(const id of ["calls-chart","minutes-chart","revenue-chart","status-donut","payout-bars","client-export-dialog"])assert.ok(clientPortal.includes('id="'+id+'"'),id);assert.match(clientPortalJs,/function renderAnalytics/);assert.match(clientPortalJs,/function exportClient/);for(const kind of ["report","calls","settlements","numbers","copy","print"])assert.ok(clientPortal.includes('data-client-export="'+kind+'"'),kind);assert.match(clientPortalCss,/--panel:#181b1f/);});
@@ -532,7 +536,7 @@ test("advanced admin centers are visible without Ctrl K",()=>{
 
 test("les petits écrans conservent toutes les fonctions admin et client",()=>{
   assert.match(workspace,/pgi_mobile_full_v2/);
-  assert.match(workspace,/value===null\?true:value==="1"/);
+  assert.match(workspace,/v===null\|\|v==="1"/);
   assert.match(app,/mobileOverviewExpanded:true/);
   for(const view of ["overview","calls","finance","wholesale"])assert.match(index,new RegExp('mobile-nav[\\s\\S]*data-view="'+view+'"'));
   for(const view of ["experts","carriers","system","settings"])assert.match(index,new RegExp('mobile-sheet-grid[\\s\\S]*data-view="'+view+'"'));
@@ -549,4 +553,34 @@ test("les petits écrans conservent toutes les fonctions admin et client",()=>{
   }
   assert.match(clientPortalCss,/complete-client-mobile-access-v131/);
   assert.match(clientPortalCss,/\.cp-mobile-nav\{position:fixed/);
+});
+
+
+test("Premium+ reste lazy, accessible et complet sur petit écran",()=>{
+  assert.match(commandLoader,/premium-plus\.js/);
+  assert.match(read("assets/client-premium.js"),/client-premium-plus\.js/);
+  for(const token of ["data-pgi-contrast","data-pgi-motion","data-pgi-density","data-pgi-text","@media(max-width:640px)"])assert.ok(premiumPlusCore.includes(token),token);
+  assert.match(premiumPlusCore,/beforeinstallprompt/);
+  assert.match(premiumPlusCore,/largest-contentful-paint/);
+  assert.match(premiumPlusCore,/layout-shift/);
+  assert.match(premiumPlusCore,/durationThreshold/);
+  for(const label of ["Notifications","Confort","Sécurité","Guide","Application","Qualité UX"])assert.ok(premiumPlus.includes(label),label);
+  for(const label of ["Notifications","Préférences","Sécurité","Confiance","Application","Qualité UX"])assert.ok(clientPremiumPlus.includes(label),label);
+  assert.match(clientPremiumPlus,/operational_alerts/);
+  assert.match(clientPremiumPlus,/service_incidents/);
+  assert.match(clientPremiumPlus,/client-service-center/);
+  assert.match(clientI18n,/pgi_client_locale/);
+  assert.match(clientI18n,/setLocale/);
+  assert.match(passkeyClient,/navigator\.credentials\.create/);
+  assert.match(passkeyClient,/navigator\.credentials\.get/);
+  assert.doesNotMatch(sw,/premium-plus\.js|client-premium-plus\.js|passkey-client\.js/);
+});
+
+test("la PWA Premium+ gère le portail client et les mises à jour sans forcer le reload",()=>{
+  assert.match(sw,/pgi-v43/);
+  assert.match(sw,/client\.html/);
+  assert.match(sw,/SKIP_WAITING/);
+  assert.doesNotMatch(sw,/install[\s\S]{0,180}skipWaiting\(\)/);
+  assert.match(premiumPlusCore,/registration\?\.waiting/);
+  assert.match(premiumPlusCore,/postMessage\(\{type:"SKIP_WAITING"\}\)/);
 });
