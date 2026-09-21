@@ -392,7 +392,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const storedAgentPayload=await store.sql.unsafe("SELECT payload::text AS payload_json FROM tenant_relation_actions WHERE public_id=$1::uuid",[evidenceAction.public_id]);
     const storedPayload=JSON.parse(storedAgentPayload[0].payload_json);
     assert.equal(storedPayload.rio,undefined);
-    assert.equal(storedPayload.safe,"ok");
+    assert.equal(storedAgentPayload[0].payload_json.includes("must-not-persist"),false);
     const refundProposal=await store.createRelationAgentAction(dispute.public_id,{
       action_type:"issue_refund",confidence:.9,explanation:"Remboursement proposé après analyse.",payload:{amount:12.34,currency:"EUR"}
     },{sub:"admin"});
@@ -415,6 +415,8 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const rioAction=exit.orchestration.find(x=>x.action_type==="request_outbound_rio");
     assert.ok(rioAction);
     assert.equal(rioAction.status,"queued");
+    const rioActionScope=await store.sql.unsafe("SELECT exit_line_id FROM tenant_relation_actions WHERE public_id=$1::uuid",[rioAction.public_id]);
+    assert.equal(Number(rioActionScope[0].exit_line_id),Number(exit.lines[0].exit_line_id));
     const rioConfirm=await store.completeRelationExternalAction(rioAction.public_id,{
       outcome:"delivered",provider_reference:"rio-ref-1",rio_last4:"1234",delivery_channel:"provider_direct",delivery_reference:"provider-secure-delivery-1"
     },{sub:"admin"});
