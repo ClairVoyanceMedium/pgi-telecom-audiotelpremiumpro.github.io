@@ -42,7 +42,7 @@ END;
 $$;
 
 CREATE TRIGGER tenant_consumption_receipts_immutable
-BEFORE UPDATE ON tenant_consumption_receipts
+BEFORE UPDATE OR DELETE ON tenant_consumption_receipts
 FOR EACH ROW EXECUTE FUNCTION pgi_consumption_receipt_immutable();
 
 COMMENT ON TABLE tenant_consumption_receipts IS
