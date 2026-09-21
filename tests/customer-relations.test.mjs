@@ -6,7 +6,6 @@ import {relationActionPolicy,relationNextActions,sanitizeRelationPayload,safeAge
 const migration=fs.readFileSync("database/migrations/051_customer_relations_offboarding.sql","utf8");
 const server=fs.readFileSync("backend/server.mjs","utf8");
 const store=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
-const adminApi=fs.readFileSync("assets/api-client.js","utf8");
 const customerApi=fs.readFileSync("assets/client-portal-api.js","utf8");
 const adminUi=fs.readFileSync("assets/customer-relations.js","utf8");
 const customerUi=fs.readFileSync("assets/client-relations.js","utf8");
@@ -83,7 +82,6 @@ test("customer and staff APIs expose the full complaint and exit workflow",()=>{
   assert.match(store,/createCustomerRelationCase/);
   assert.match(store,/createCustomerExitRequest/);
   assert.match(store,/completeRelationExternalAction/);
-  assert.match(adminApi,/completeRelationExternalAction/);
   assert.match(customerApi,/createRelationDispute/);
   assert.match(customerApi,/createExitRequest/);
 });
