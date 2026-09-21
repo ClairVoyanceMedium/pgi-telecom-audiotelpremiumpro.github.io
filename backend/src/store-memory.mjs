@@ -804,6 +804,7 @@ export class MemoryStore{
     return {duplicate:false,subscription_id:1,tenant_id:null,status:String(payload.status||"active")};
   }
 
+  async tenantDuplicateCandidates(input={}){void input;return {data:[]};}
   async createTenant(payload={}){
     const name=String(payload.display_name||"").trim();
     if(name.length<2)throw problem(400,"TENANT_DISPLAY_NAME_REQUIRED");
@@ -822,6 +823,11 @@ export class MemoryStore{
 
   async tenantControlDetail(publicId){
     void publicId;
+    throw problem(404,"TENANT_NOT_FOUND");
+  }
+
+  async tenantAdminExport(publicId,actor={}){
+    void publicId;void actor;
     throw problem(404,"TENANT_NOT_FOUND");
   }
 
@@ -961,7 +967,7 @@ export class MemoryStore{
   async listServiceIncidents(){return {data:[],next_cursor:null};}
 
   async customerAdminSummary(){
-    return {tenants_total:0,tenants_active:0,kyc_pending:0,subscription_unpaid_alerts:0,subscription_access_blocked:0,assignments_active:0,service_incidents_open:0,service_incidents_critical:0,service_sla_attention:0,routing_attention:0,portability_attention:0};
+    return {tenants_total:0,tenants_active:0,tenants_new_24h:0,tenants_new_7d:0,latest_tenant_created_at:null,kyc_pending:0,subscription_unpaid_alerts:0,subscription_access_blocked:0,assignments_active:0,service_incidents_open:0,service_incidents_critical:0,service_sla_attention:0,routing_attention:0,portability_attention:0};
   }
 
   async svaComplianceOverview(){
