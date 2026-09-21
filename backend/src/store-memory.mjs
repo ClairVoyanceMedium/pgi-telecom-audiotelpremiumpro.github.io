@@ -965,6 +965,7 @@ export class MemoryStore{
   async createCustomerConsumptionReceipt(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
   async customerConsumptionReceipts(){return [];}
   async tenantConsumptionReceipts(){return [];}
+  async tenantConsumptionToday(){return {schema_version:"audiotel-consumption-receipt/1",range:{from:new Date().toISOString(),to:new Date().toISOString()},tenant_timezone:"Europe/Paris",metric_ranges:{},metrics:{currency:"EUR",calls_total:0,calls_connected:0,calls_abandoned:0,calls_failed:0,billable_seconds:0,generated_revenue_ttc:0,net_payout_ht:0},snapshot_sha256:"0".repeat(64),generated_at:new Date().toISOString(),basis:"demo"};}
   async reconcileTenantConsumptionReceipt(){throw problem(404,"CONSUMPTION_RECEIPT_NOT_FOUND");}
   async customerPortalOverview(tenantId,from,to){void tenantId;const voice=await this.voiceIntelligence(from,to);return {tenant:{display_name:"Société Démo",default_currency:"EUR",status:"active"},financial_by_currency:[],series:[],activity_breakdown:[],numbers:[],settlements:[],subscriptions:[],destinations:[],service_incidents:[],operational_alerts:[],recent_calls:[],voice_quality:voice.summary,range:{from,to}};}
   async customerServiceIncidents(_tenantId,params={}){if(params.incident_id)throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");return {data:[],alerts:[]};}
