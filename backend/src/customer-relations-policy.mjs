@@ -22,6 +22,8 @@ const POLICIES=Object.freeze({
   request_port_out_return_back:{risk_class:"high",execution_mode:"external_confirmation"},
   schedule_exit:{risk_class:"high",execution_mode:"customer_confirmation"},
   generate_data_export:{risk_class:"low",execution_mode:"automatic"},
+  request_final_invoice:{risk_class:"medium",execution_mode:"external_confirmation"},
+  reconcile_final_settlement:{risk_class:"low",execution_mode:"automatic"},
   cancel_subscription:{risk_class:"high",execution_mode:"customer_confirmation"},
   release_number:{risk_class:"irreversible",execution_mode:"customer_confirmation"},
   revoke_access:{risk_class:"irreversible",execution_mode:"external_confirmation"},
@@ -55,7 +57,7 @@ export function relationNextActions(c={},exitRequest=null){
     if(Number(c.disputed_amount)>0)actions.push("place_dispute_hold");
     actions.push("draft_response");
   }else if(["contract_termination","port_out"].includes(kind)){
-    actions.push("prepare_exit","generate_data_export");
+    actions.push("prepare_exit","generate_data_export","request_final_invoice","reconcile_final_settlement");
     if(kind==="port_out"||exitRequest?.port_out_requested)actions.push("check_portability","request_outbound_rio");
     actions.push("draft_response");
   }else{
