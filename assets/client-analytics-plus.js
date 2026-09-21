@@ -115,3 +115,5 @@ function bind(){
 document.addEventListener("pgi:portal-loaded",e=>render(e.detail?.data||{}));
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",bind,{once:true});else bind();
 if(window.PGIClientPortalData)render(window.PGIClientPortalData);
+
+void import("./client-account-proof.js").catch(()=>{});
