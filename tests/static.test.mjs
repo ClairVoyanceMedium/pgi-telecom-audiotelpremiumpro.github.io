@@ -531,7 +531,7 @@ test("advanced admin centers are visible without Ctrl K",()=>{
 
 
 test("les petits écrans conservent toutes les fonctions admin et client",()=>{
-  assert.match(workspace,/pgi_mobile_overview_expanded_v2/);
+  assert.match(workspace,/pgi_mobile_full_v2/);
   assert.match(workspace,/value===null\?true:value==="1"/);
   assert.match(app,/mobileOverviewExpanded:true/);
   for(const view of ["overview","calls","finance","wholesale"])assert.match(index,new RegExp('mobile-nav[\\s\\S]*data-view="'+view+'"'));
