@@ -24,7 +24,11 @@ export function loadConfig(env=process.env){
   const webauthnRpId=String(env.PGI_WEBAUTHN_RP_ID||"").trim().toLowerCase();
   const webauthnOrigin=String(env.PGI_WEBAUTHN_ORIGIN||"").trim();
   if((webauthnRpId&&!webauthnOrigin)||(!webauthnRpId&&webauthnOrigin))throw new Error("PGI_WEBAUTHN_RP_ID and PGI_WEBAUTHN_ORIGIN must be configured together");
-  if(webauthnOrigin&&!/^https:\/\//i.test(webauthnOrigin))throw new Error("PGI_WEBAUTHN_ORIGIN must use HTTPS");
+  if(webauthnOrigin){
+    let parsed;try{parsed=new URL(webauthnOrigin);}catch{throw new Error("PGI_WEBAUTHN_ORIGIN invalid");}
+    if(parsed.protocol!=="https:"||parsed.origin!==webauthnOrigin||parsed.username||parsed.password)throw new Error("PGI_WEBAUTHN_ORIGIN must be an exact HTTPS origin");
+    if(parsed.hostname!==webauthnRpId&&!parsed.hostname.endsWith("."+webauthnRpId))throw new Error("PGI_WEBAUTHN_RP_ID must match the origin host or a parent domain");
+  }
   if(!["disable","require"].includes(databaseSsl))throw new Error("PGI_DATABASE_SSL must be disable or require");
 
   if(mode==="production"){
