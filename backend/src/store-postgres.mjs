@@ -3538,6 +3538,39 @@ export class PostgresStore{
     return result;
   }
 
+  async customerExperiencePreferences(tenantId,principalId){
+    const id=Number(tenantId),principal=String(principalId||"");
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    if(!/^[0-9a-f-]{36}$/i.test(principal))throw problem(400,"INVALID_CUSTOMER_PRINCIPAL");
+    return this.withTenantReadContext(id,async tx=>{
+      const rows=await tx.unsafe("SELECT alert_preferences,updated_at FROM tenant_scoped_customer_experience_preferences WHERE customer_principal_id=$1::uuid LIMIT 1",[principal]);
+      return rows[0]?{alerts:rows[0].alert_preferences||{},updated_at:rows[0].updated_at}:{alerts:{calls_below:{enabled:false,threshold:10},abandon_rate_above:{enabled:false,threshold:25},revenue_target:{enabled:false,threshold:100},drop_vs_average:{enabled:false,threshold:30}},updated_at:null};
+    });
+  }
+
+  async saveCustomerExperiencePreferences(tenantId,principalId,input={}){
+    const id=Number(tenantId),principal=String(principalId||""),src=input.alerts||{};
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    if(!/^[0-9a-f-]{36}$/i.test(principal))throw problem(400,"INVALID_CUSTOMER_PRINCIPAL");
+    const bounded=(v,min,max,fallback)=>{const n=Number(v);return Number.isFinite(n)?Math.max(min,Math.min(max,n)):fallback;};
+    const alerts={
+      calls_below:{enabled:src.calls_below?.enabled===true,threshold:bounded(src.calls_below?.threshold,0,1000000,10)},
+      abandon_rate_above:{enabled:src.abandon_rate_above?.enabled===true,threshold:bounded(src.abandon_rate_above?.threshold,0,100,25)},
+      revenue_target:{enabled:src.revenue_target?.enabled===true,threshold:bounded(src.revenue_target?.threshold,0,100000000,100)},
+      drop_vs_average:{enabled:src.drop_vs_average?.enabled===true,threshold:bounded(src.drop_vs_average?.threshold,0,100,30)}
+    };
+    return this.withTenantContext(id,async tx=>{
+      const membership=(await tx.unsafe("SELECT 1 AS ok FROM customer_tenant_memberships WHERE tenant_id=$1 AND customer_principal_id=$2::uuid AND status='active' LIMIT 1",[id,principal]))[0];
+      if(!membership)throw problem(403,"CUSTOMER_MEMBERSHIP_REQUIRED");
+      const rows=await tx.unsafe(
+        "INSERT INTO customer_experience_preferences(tenant_id,customer_principal_id,alert_preferences,updated_at) VALUES($1,$2::uuid,$3::jsonb,now())"+
+        " ON CONFLICT(tenant_id,customer_principal_id) DO UPDATE SET alert_preferences=EXCLUDED.alert_preferences,updated_at=now() RETURNING alert_preferences,updated_at",
+        [id,principal,JSON.stringify(alerts)]
+      );
+      return {alerts:rows[0].alert_preferences,updated_at:rows[0].updated_at};
+    });
+  }
+
   async createCustomerConsumptionReceipt(tenantId,customerPrincipalId,from,to){
     const id=Number(tenantId),start=Date.parse(from),end=Date.parse(to);
     if(!Number.isFinite(start)||!Number.isFinite(end)||end<start||end-start>366*86400000)throw problem(400,"INVALID_CONSUMPTION_RANGE");
