@@ -24,6 +24,6 @@ export function render(summary={},tenantCount=0,provider={}){
   const view=$("view-wholesale"),root=$("customer-admin-root");
   if(view&&view.classList.contains("active")&&root&&window.PGIApi){
     if(!adminModule)adminModule=import("./customer-admin.js");
-    adminModule.then(m=>m.render()).catch(()=>{});
+    adminModule.then(m=>m.render()).then(()=>import("./customer-profitability.js")).then(m=>m.mountFleetProfitability(root)).catch(()=>{});
   }
 }

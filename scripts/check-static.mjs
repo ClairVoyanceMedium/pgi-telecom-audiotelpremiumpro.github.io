@@ -36,6 +36,7 @@ const required = [
   "assets/voice-intelligence.js",
   "assets/subscription-billing-ui.js",
   "assets/customer-admin.js",
+  "assets/customer-profitability.js",
   "assets/customer-admin.css",
   "assets/tenant-control-detail.js",
   "assets/tenant-control-utils.js",
