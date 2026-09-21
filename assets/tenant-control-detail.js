@@ -38,7 +38,9 @@ renderPortabilitySection(data.portability||[],carrierAdmin)+
 '<section class="td-section"><div class="td-section-head"><h3>Intervenants / services / postes</h3><span>'+nf((data.experts||[]).length)+'</span></div><div class="td-experts">'+(experts||'<p class="td-empty">Aucun intervenant ou service configuré.</p>')+'</div></section>'+
 '<div class="td-two"><section class="td-section"><div class="td-section-head"><h3>Alertes</h3></div>'+(alerts||'<p class="td-empty">Aucune alerte non résolue.</p>')+'</section><section class="td-section"><div class="td-section-head"><h3>Reversements récents</h3></div><div class="td-table-wrap"><table class="td-table"><thead><tr><th>Pays</th><th>Période</th><th>Amont</th><th>Frais</th><th>Net</th><th>Statut</th></tr></thead><tbody>'+(settlements||'<tr><td colspan="6">Aucun reversement.</td></tr>')+'</tbody></table></div></section></div>'+
 renderServiceOperations(data)+
+'<section class="td-section" id="td-internal-notes" hidden></section>'+
 '<section class="td-section"><div class="td-section-head"><h3>Historique & audit</h3><span>80 derniers événements</span></div><div class="td-timeline">'+(events||'<p class="td-empty">Aucun événement.</p>')+'</div></section>';
+void import("./customer-internal-notes.js").then(m=>m.mountInternalNotes(currentId,$("td-internal-notes"))).catch(()=>{});
 }
 async function refresh(){
 if(!currentId||busy)return;busy=true;const body=$("td-body");if(body)body.innerHTML='<div class="td-loading">Chargement du dossier client…</div>';

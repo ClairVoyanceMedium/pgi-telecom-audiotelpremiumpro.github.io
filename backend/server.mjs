@@ -767,6 +767,26 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.tenant_admin_export",200,await store.tenantAdminExport(match.id,actor));
       }
 
+      match=routeMatch(pathname,"/api/v1/platform/tenants/:id/internal-notes");
+      if(method==="GET"&&match){
+        requireRole(actor,["admin"]);
+        return done(res,metrics,started,"platform.tenant_internal_notes",200,await store.tenantInternalNotes(match.id));
+      }
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={tenant:match.id,body_hash:createHash("sha256").update(String(body.body||"")).digest("hex")};
+        const result=await store.idempotent(req.headers["idempotency-key"],"tenant.internal_note.create",payload,()=>store.createTenantInternalNote(match.id,body,actor));
+        return done(res,metrics,started,"platform.tenant_internal_note_create",201,{...result.value,replayed:result.replayed});
+      }
+
+      match=routeMatch(pathname,"/api/v1/platform/tenant-internal-notes/:id/archive");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const result=await store.idempotent(req.headers["idempotency-key"],"tenant.internal_note.archive",{id:match.id},()=>store.archiveTenantInternalNote(match.id,actor));
+        return done(res,metrics,started,"platform.tenant_internal_note_archive",200,{...result.value,replayed:result.replayed});
+      }
+
       match=routeMatch(pathname,"/api/v1/platform/tenants/:id/payout-terms");
       if(method==="POST"&&match){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);

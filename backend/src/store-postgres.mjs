@@ -4473,6 +4473,69 @@ export class PostgresStore{
     };
   }
 
+  async tenantInternalNotes(publicId){
+    publicId=String(publicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    const tenant=(await this.readSql.unsafe("SELECT id,tenant_type FROM tenants WHERE public_id=$1::uuid",[publicId]))[0];
+    if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+    if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+    const rows=await this.readSql.unsafe(
+      "SELECT n.id,n.body,n.created_at,u.display_name AS author_name FROM tenant_internal_notes n"+
+      " LEFT JOIN app_users u ON u.id=n.author_user_id WHERE n.tenant_id=$1 AND n.archived_at IS NULL ORDER BY n.created_at DESC,n.id DESC LIMIT 100",
+      [tenant.id]
+    );
+    return {data:rows};
+  }
+
+  async createTenantInternalNote(publicId,input={},actor={}){
+    publicId=String(publicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    const body=String(input.body||"").trim();
+    if(!body||body.length>2000)throw problem(400,"INVALID_INTERNAL_NOTE");
+    const actorId=numericActor(actor);
+    const row=await this.sql.begin(async tx=>{
+      const tenant=(await tx.unsafe("SELECT id,tenant_type FROM tenants WHERE public_id=$1::uuid FOR SHARE",[publicId]))[0];
+      if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+      if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+      const note=(await tx.unsafe(
+        "INSERT INTO tenant_internal_notes(tenant_id,body,author_user_id) VALUES($1,$2,$3) RETURNING id,tenant_id,body,created_at",
+        [tenant.id,body,actorId]
+      ))[0];
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'tenant.internal_note.create','tenant_internal_note',$3,$4::jsonb)",
+        [tenant.id,actorId,String(note.id),JSON.stringify({private:true,body_logged:false})]
+      );
+      return note;
+    });
+    this.eventBus.publish("tenant.internal_note.changed",{tenant_public_id:publicId,note_id:Number(row.id),action:"created"});
+    return row;
+  }
+
+  async archiveTenantInternalNote(id,actor={}){
+    id=Number(id);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_INTERNAL_NOTE_ID");
+    const actorId=numericActor(actor);
+    const result=await this.sql.begin(async tx=>{
+      const note=(await tx.unsafe(
+        "SELECT n.id,n.tenant_id,n.archived_at,t.public_id,t.tenant_type FROM tenant_internal_notes n JOIN tenants t ON t.id=n.tenant_id WHERE n.id=$1 FOR UPDATE OF n",
+        [id]
+      ))[0];
+      if(!note)throw problem(404,"INTERNAL_NOTE_NOT_FOUND");
+      if(note.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+      if(note.archived_at)return {id:note.id,tenant_public_id:note.public_id,archived_at:note.archived_at,changed:false};
+      const updated=(await tx.unsafe(
+        "UPDATE tenant_internal_notes SET archived_at=now(),archived_by=$2 WHERE id=$1 RETURNING id,archived_at",
+        [id,actorId]
+      ))[0];
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'tenant.internal_note.archive','tenant_internal_note',$3,$4::jsonb)",
+        [note.tenant_id,actorId,String(id),JSON.stringify({private:true,body_logged:false})]
+      );
+      return {...updated,tenant_public_id:note.public_id,changed:true};
+    });
+    if(result.changed)this.eventBus.publish("tenant.internal_note.changed",{tenant_public_id:result.tenant_public_id,note_id:id,action:"archived"});
+    return result;
+  }
+
   async tenantAdminExport(publicId,actor={}){
     const detail=await this.tenantControlDetail(publicId);
     const t=detail.tenant||{};
