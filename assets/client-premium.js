@@ -88,6 +88,7 @@ function init(){
   window.addEventListener("offline",networkState);
   initSectionNav();
   networkState();
+  setTimeout(function(){import("./client-premium-plus.js").catch(function(){});},700);
 }
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init,{once:true});else init();
 })();
