@@ -1,8 +1,8 @@
 import{style,read,write,applyDisplay,displayCss,dialog,pane,setupVitals,setupPwa,tour,esc}from"./premium-plus-core.js";
 const K="pgi_premium_plus_v1",D={contrast:false,motion:true,density:"comfortable",text:"normal"},prefs=read(K,D);
 style("pgi-premium-plus-style",displayCss());applyDisplay(prefs);
-const tabs=[{id:"notifications",label:"Notifications"},{id:"comfort",label:"Confort"},{id:"guide",label:"Guide"},{id:"app",label:"Application"},{id:"quality",label:"Qualité UX"}];
-const d=dialog("pgi-premium-plus","Premium+",tabs),n=pane(d,"notifications"),c=pane(d,"comfort"),g=pane(d,"guide"),a=pane(d,"app"),q=pane(d,"quality");
+const tabs=[{id:"notifications",label:"Notifications"},{id:"comfort",label:"Confort"},{id:"security",label:"Sécurité"},{id:"guide",label:"Guide"},{id:"app",label:"Application"},{id:"quality",label:"Qualité UX"}];
+const d=dialog("pgi-premium-plus","Premium+",tabs),n=pane(d,"notifications"),c=pane(d,"comfort"),s=pane(d,"security"),g=pane(d,"guide"),a=pane(d,"app"),q=pane(d,"quality");
 let notifications=[],vitals={lcp:null,cls:0,inp:null},pwa=null;
 function save(){write(K,prefs);applyDisplay(prefs)}
 function button(){
@@ -22,9 +22,24 @@ function render(){
   c.innerHTML='<p class="pp-note">Ces réglages restent sur cet appareil et ne modifient aucune donnée métier.</p>'+row("Texte agrandi","Améliore la lisibilité sur téléphone.",'<button class="pp-switch" data-pref="text" aria-pressed="'+(prefs.text==="large")+'"></button>')+row("Contraste renforcé","Renforce les bordures et textes secondaires.",'<button class="pp-switch" data-pref="contrast" aria-pressed="'+prefs.contrast+'"></button>')+row("Animations","Désactivez-les si vous préférez une interface plus stable.",'<button class="pp-switch" data-pref="motion" aria-pressed="'+(prefs.motion===false)+'"></button>')+row("Densité", "Choisissez le niveau d’espace entre les informations.",'<select data-density><option value="comfortable">Confortable</option><option value="compact">Compacte</option></select>');
   c.querySelector("[data-density]").value=prefs.density;c.querySelectorAll("[data-pref]").forEach(b=>b.onclick=()=>{const k=b.dataset.pref;if(k==="text")prefs.text=prefs.text==="large"?"normal":"large";if(k==="contrast")prefs.contrast=!prefs.contrast;if(k==="motion")prefs.motion=prefs.motion===false;save();render()});c.querySelector("[data-density]").onchange=e=>{prefs.density=e.target.value;save()};
   g.innerHTML='<div class="pp-card"><span>Prise en main</span><strong>Visite guidée du cockpit</strong><small>Retrouvez rapidement le cockpit, les appels, la finance, la plateforme SVA et la supervision.</small><button data-guide style="margin-top:10px;min-height:42px">Lancer le guide</button></div>';g.querySelector("[data-guide]").onclick=()=>{d.close();guide.start()};
-  renderApp();renderQuality()
+  renderSecurity();renderApp();renderQuality()
 }
 function row(title,text,control){return '<div class="pp-row"><label><strong>'+title+'</strong><small>'+text+'</small></label>'+control+'</div>'}
+function renderSecurity(){
+  const supported=!!(window.PublicKeyCredential&&navigator.credentials),api=window.PGIApi;
+  s.innerHTML='<div class="pp-card"><span>Authentification forte</span><strong>État du serveur en cours de lecture</strong><small>Les passkeys utilisent WebAuthn avec vérification du domaine, du RP ID, de la signature et de la présence utilisateur.</small></div>';
+  if(!supported){s.innerHTML+=row("Passkey","Ce navigateur ou cet appareil ne fournit pas WebAuthn.",'<button disabled>Indisponible</button>');return}
+  if(!api?.passkeys){s.innerHTML+=row("Passkey","Le backend de sécurité n’est pas disponible sur cette version.",'<button disabled>Non connecté</button>');return}
+  api.passkeys().then(x=>{
+    const count=(x.data||[]).filter(v=>v.enabled!==false).length,configured=x.configured===true;
+    s.innerHTML='<div class="pp-grid"><div class="pp-card"><span>WebAuthn</span><strong>'+(configured?"Serveur configuré":"En attente du domaine production")+'</strong><small>Aucune passkey n’est considérée active si le serveur n’a pas validé l’origine HTTPS et le RP ID.</small></div><div class="pp-card"><span>Passkeys actives</span><strong>'+count+'</strong><small>Identifiants enregistrés pour votre compte administrateur.</small></div></div>'+row("Ajouter une passkey","Empreinte, reconnaissance biométrique ou clé de sécurité selon l’appareil.",'<button data-enroll '+(!configured?"disabled":"")+'>Ajouter</button>')+row("Vérification MFA","Effectue un step-up cryptographique avec une passkey enregistrée.",'<button data-verify '+(!configured||!count?"disabled":"")+'>Vérifier</button>')+'<p class="pp-note" data-security-status></p>';
+    s.querySelector("[data-enroll]")?.addEventListener("click",()=>passkey("enroll"));s.querySelector("[data-verify]")?.addEventListener("click",()=>passkey("verify"));
+  }).catch(()=>{s.innerHTML='<div class="pp-card"><span>WebAuthn</span><strong>Backend production non connecté</strong><small>Le module est prêt mais aucune passkey n’est annoncée active tant que le serveur sécurisé n’est pas disponible.</small></div>'})
+}
+async function passkey(kind){
+  const out=s.querySelector("[data-security-status]");if(out)out.textContent="Validation biométrique en cours…";
+  try{const m=await import("./passkey-client.js"),r=kind==="enroll"?await m.enroll(window.PGIApi,"Passkey administrateur"):await m.verify(window.PGIApi);if(out)out.textContent=kind==="enroll"?"Passkey enregistrée et validée par le serveur.":"MFA vérifiée à "+new Date(r.verified_at||Date.now()).toLocaleTimeString();renderSecurity()}catch(e){if(out)out.textContent=e?.code==="WEBAUTHN_NOT_CONFIGURED"?"Le domaine WebAuthn de production n’est pas encore configuré.":"Opération passkey annulée ou refusée."}
+}
 function renderApp(){
   const s=pwa?.state||{};a.innerHTML='<div class="pp-grid"><div class="pp-card"><span>Mode application</span><strong>'+(s.standalone?"Installée":s.installable?"Installation disponible":"Navigateur")+'</strong><small>PGI reste utilisable comme PWA et peut recevoir les nouvelles versions proprement.</small></div><div class="pp-card"><span>Mise à jour</span><strong>'+(s.update?"Disponible":"À jour")+'</strong><small>Le service worker contrôle les nouvelles versions sans toucher aux données métier.</small></div></div><div class="pp-row"><label><strong>Vérifier les mises à jour</strong><small>Recherche une nouvelle version de l’interface.</small></label><button data-check>Vérifier</button></div>'+(s.installable?'<div class="pp-row"><label><strong>Installer l’application</strong><small>Ajoute PGI sur l’écran d’accueil.</small></label><button data-install>Installer</button></div>':"")+(s.update?'<div class="pp-row"><label><strong>Activer la mise à jour</strong><small>La page sera rechargée sur la nouvelle version.</small></label><button data-update>Mettre à jour</button></div>':"");
   a.querySelector("[data-check]")?.addEventListener("click",()=>pwa.check());a.querySelector("[data-install]")?.addEventListener("click",()=>pwa.install());a.querySelector("[data-update]")?.addEventListener("click",()=>pwa.activate())
