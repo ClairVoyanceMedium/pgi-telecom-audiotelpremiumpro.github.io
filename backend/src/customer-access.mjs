@@ -2,8 +2,8 @@ export const CUSTOMER_ROLES=Object.freeze(["owner","admin","finance","operator",
 
 const ROLE_PERMISSIONS=Object.freeze({
   owner:["*"],
-  admin:["overview.read","calls.read","analytics.read","finance.read","finance.export","routing.read","incidents.read","incidents.write","team.read","team.manage","security.manage"],
-  finance:["overview.read","calls.read","analytics.read","finance.read","finance.export","team.read"],
+  admin:["overview.read","calls.read","analytics.read","finance.read","finance.export","billing.manage","routing.read","incidents.read","incidents.write","team.read","team.manage","security.manage"],
+  finance:["overview.read","calls.read","analytics.read","finance.read","finance.export","billing.manage","team.read"],
   operator:["overview.read","calls.read","analytics.read","routing.read","incidents.read","incidents.write","team.read"],
   analyst:["overview.read","calls.read","analytics.read","finance.read","team.read"],
   readonly:["overview.read","calls.read","analytics.read","finance.read","routing.read","incidents.read","team.read"]
