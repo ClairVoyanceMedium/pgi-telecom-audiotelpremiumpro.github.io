@@ -48,6 +48,9 @@ test("customer creates its own receipt while staff reconciliation remains role-g
   const adminSlice=server.slice(adminAt,adminAt+1600);
   assert.match(adminSlice,/requireRole\(actor,\["admin","finance","readonly"\]\)/);
   assert.match(adminSlice,/reconcileTenantConsumptionReceipt/);
+  assert.match(server,/\/api\/v1\/platform\/tenants\/:id\/consumption-today/);
+  assert.match(store,/async tenantConsumptionToday/);
+  assert.match(store,/date_trunc\('day',now\(\) AT TIME ZONE/);
 });
 
 test("client exposes validated assigned number and support proof without raw CDR data",()=>{
@@ -61,6 +64,8 @@ test("client exposes validated assigned number and support proof without raw CDR
   assert.match(client,/Créer un relevé horodaté/);
   assert.match(client,/empreinte SHA‑256/);
   assert.doesNotMatch(client,/caller_number|caller_hash|\bpan\b|\bcvv\b|\bcvc\b/i);
+  assert.match(admin,/AUJOURD’HUI CÔTÉ SERVEUR/);
+  assert.match(admin,/tenantConsumptionToday/);
   assert.match(admin,/CONFORME/);
   assert.match(admin,/ÉCART DÉTECTÉ/);
   assert.match(admin,/Copier le récapitulatif support/);
