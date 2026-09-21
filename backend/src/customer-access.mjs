@@ -24,6 +24,24 @@ export function hasCustomerPermission(context,permission){
   return permissions.includes("*")||permissions.includes(String(permission||""));
 }
 
+export function scopeCustomerPortalData(context,data={}){
+  const allowed=permission=>hasCustomerPermission(context,permission),out={...data};
+  if(!allowed("finance.read")){
+    out.financial_by_currency=(data.financial_by_currency||[]).map(row=>{const {generated_revenue_ttc,...rest}=row;return rest;});
+    out.metric_net_payout_by_currency=[];
+    out.series=(data.series||[]).map(row=>{const {generated_revenue_ttc,...rest}=row;return rest;});
+    out.settlements=[];
+    out.subscriptions=(data.subscriptions||[]).map(row=>{const {amount_minor,price_currency,billing_currency,...rest}=row;return rest;});
+  }
+  if(!allowed("routing.read")){
+    out.numbers=[];out.destinations=[];out.portability_requests=[];
+  }
+  if(!allowed("incidents.read")){
+    out.service_incidents=[];out.operational_alerts=[];
+  }
+  return out;
+}
+
 export function requireCustomerPermission(context,permission){
   if(hasCustomerPermission(context,permission))return true;
   const error=new Error("Customer permission denied");
