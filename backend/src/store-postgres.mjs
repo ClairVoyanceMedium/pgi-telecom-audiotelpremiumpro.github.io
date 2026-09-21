@@ -4709,8 +4709,11 @@ export class PostgresStore{
       let finalStatus=["failed","rejected"].includes(outcome)?"failed":"completed",eventType="status_changed",message="Confirmation externe enregistrée";
       if(row.action_type==="request_outbound_rio"){
         const last4=input.rio_last4==null?null:String(input.rio_last4).slice(-4);
+        const deliveryChannel=String(input.delivery_channel||"provider_direct").trim().toLowerCase();
+        if(!["provider_direct","secure_portal","verified_email","manual_secure","not_required"].includes(deliveryChannel))throw problem(400,"INVALID_RIO_DELIVERY_CHANNEL");
+        const deliveryReference=String(input.delivery_reference||providerReference||"").trim().slice(0,255)||null;
         const state=outcome==="delivered"?"delivered":["available","success","completed"].includes(outcome)?"available":"unavailable";
-        await tx.unsafe("UPDATE tenant_exit_lines SET rio_status=$2,rio_last4=COALESCE($3,rio_last4),rio_delivered_at=CASE WHEN $2='delivered' THEN now() ELSE rio_delivered_at END WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[row.case_id,state,last4]);
+        await tx.unsafe("UPDATE tenant_exit_lines SET rio_status=$2,rio_last4=COALESCE($3,rio_last4),rio_delivered_at=CASE WHEN $2='delivered' THEN now() ELSE rio_delivered_at END,rio_delivery_channel=$4,rio_delivery_reference=COALESCE($5,rio_delivery_reference) WHERE exit_request_id IN (SELECT id FROM tenant_exit_requests WHERE case_id=$1) AND requested_action='port_out'",[row.case_id,state,last4,deliveryChannel,deliveryReference]);
         eventType="status_changed";message=state==="delivered"?"RIO délivré par le canal sécurisé prévu":"Statut RIO mis à jour";
       }else if(row.action_type==="submit_port_out"){
         if(outcome==="scheduled"){
