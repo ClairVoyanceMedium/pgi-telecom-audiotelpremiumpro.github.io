@@ -83,6 +83,11 @@ root.PGIApi=Object.freeze({
 health:function(){return request("/health",{timeoutMs:4000});},
 ready:function(){return request("/ready",{timeoutMs:4000});},
 me:function(){return request("/auth/me",{timeoutMs:4000});},
+passkeys:function(){return request("/security/passkeys",{timeoutMs:5000});},
+passkeyRegisterOptions:function(){return request("/security/passkeys/register-options",{method:"POST",body:{}});},
+passkeyRegister:function(body){return request("/security/passkeys/register",{method:"POST",body:body});},
+passkeyAssertOptions:function(){return request("/security/passkeys/assert-options",{method:"POST",body:{}});},
+passkeyVerify:function(body){return request("/security/passkeys/verify",{method:"POST",body:body});},
 appBootstrap:function(){return request("/app/bootstrap",{timeoutMs:8000});},
 dashboardBootstrap:function(from,to,market,previousFrom,previousTo){
 var q=new URLSearchParams({from:from,to:to});

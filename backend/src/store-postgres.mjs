@@ -1400,6 +1400,12 @@ export class PostgresStore{
     return rows[0]||null;
   }
 
+  async staffCredentialById(appUserId){
+    const id=Number(appUserId);if(!Number.isInteger(id)||id<=0)return null;
+    const rows=await this.readSql.unsafe("SELECT u.id,u.login_name,u.enabled,c.password_hash,c.session_version,c.locked_until FROM app_users u JOIN staff_password_credentials c ON c.app_user_id=u.id WHERE u.id=$1 LIMIT 1",[id]);
+    return rows[0]||null;
+  }
+
   async recordStaffAuthFailure(appUserId,maxFailures=8,windowSeconds=900){
     const max=clampInt(maxFailures,8,2,50),window=clampInt(windowSeconds,900,60,86400);
     await this.sql.unsafe(
@@ -3978,6 +3984,39 @@ export class PostgresStore{
       return {...updated,version};
     });
     this.eventBus.publish("voice_service.rolled_back",{tenant_id:id,service_id:sid,version_id:Number(result.active_version_id),source_version_id:vid});return result;
+  }
+
+
+  async listWebauthnCredentials(ownerType,ownerId){
+    if(ownerType==="staff"){
+      const id=Number(ownerId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_WEBAUTHN_OWNER");
+      return this.readSql.unsafe("SELECT id,public_id::text AS public_id,credential_id,sign_count,transports,label,enabled,created_at,last_verified_at FROM webauthn_credentials WHERE owner_type='staff' AND staff_user_id=$1 ORDER BY enabled DESC,id",[id]);
+    }
+    const id=String(ownerId||"");if(!id)throw problem(400,"INVALID_WEBAUTHN_OWNER");
+    return this.readSql.unsafe("SELECT id,public_id::text AS public_id,credential_id,sign_count,transports,label,enabled,created_at,last_verified_at FROM webauthn_credentials WHERE owner_type='customer' AND customer_principal_id=$1::uuid ORDER BY enabled DESC,id",[id]);
+  }
+
+  async registerWebauthnCredential(ownerType,ownerId,input={}){
+    const transports=Array.isArray(input.transports)?input.transports.slice(0,8):[],label=String(input.label||"Passkey").slice(0,120);
+    try{
+      const rows=ownerType==="staff"
+        ?await this.sql.unsafe("INSERT INTO webauthn_credentials(owner_type,staff_user_id,credential_id,public_key_spki,sign_count,transports,label) VALUES('staff',$1,$2,$3,$4,$5::jsonb,$6) RETURNING id,public_id::text AS public_id,credential_id,sign_count,transports,label,enabled,created_at",[Number(ownerId),input.credential_id,input.public_key_spki,Number(input.sign_count||0),JSON.stringify(transports),label])
+        :await this.sql.unsafe("INSERT INTO webauthn_credentials(owner_type,customer_principal_id,credential_id,public_key_spki,sign_count,transports,label) VALUES('customer',$1::uuid,$2,$3,$4,$5::jsonb,$6) RETURNING id,public_id::text AS public_id,credential_id,sign_count,transports,label,enabled,created_at",[String(ownerId),input.credential_id,input.public_key_spki,Number(input.sign_count||0),JSON.stringify(transports),label]);
+      return rows[0];
+    }catch(error){if(String(error?.code)==="23505")throw problem(409,"WEBAUTHN_CREDENTIAL_EXISTS");throw error;}
+  }
+
+  async webauthnCredential(ownerType,ownerId,credentialId){
+    const rows=ownerType==="staff"
+      ?await this.readSql.unsafe("SELECT id,credential_id,public_key_spki,sign_count,transports,label,enabled FROM webauthn_credentials WHERE owner_type='staff' AND staff_user_id=$1 AND credential_id=$2 AND enabled=true LIMIT 1",[Number(ownerId),String(credentialId)])
+      :await this.readSql.unsafe("SELECT id,credential_id,public_key_spki,sign_count,transports,label,enabled FROM webauthn_credentials WHERE owner_type='customer' AND customer_principal_id=$1::uuid AND credential_id=$2 AND enabled=true LIMIT 1",[String(ownerId),String(credentialId)]);
+    return rows[0]||null;
+  }
+
+  async markWebauthnVerified(id,signCount){
+    const next=Math.max(0,Number(signCount||0));
+    const rows=await this.sql.unsafe("UPDATE webauthn_credentials SET sign_count=CASE WHEN $2>0 THEN $2 ELSE sign_count END,last_verified_at=now(),updated_at=now() WHERE id=$1 RETURNING id,public_id::text AS public_id,last_verified_at,sign_count",[Number(id),next]);
+    if(!rows[0])throw problem(404,"WEBAUTHN_CREDENTIAL_NOT_FOUND");return rows[0];
   }
 
   async simulateTenantRouting(publicTenantId,input={}){

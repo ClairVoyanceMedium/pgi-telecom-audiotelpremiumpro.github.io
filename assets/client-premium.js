@@ -75,7 +75,8 @@ function init(){
     setBusy(true);
     setState("loading","Synchronisation","Actualisation des données en cours.");
   });
-  document.addEventListener("pgi:portal-loaded",function(){
+  document.addEventListener("pgi:portal-loaded",function(e){
+    window.PGI_PREMIUM_PORTAL_DATA=e&&e.detail?e.detail.data||{}:{};
     lastLoadedAt=new Date();
     setBusy(false);
     networkState();
@@ -88,6 +89,7 @@ function init(){
   window.addEventListener("offline",networkState);
   initSectionNav();
   networkState();
+  setTimeout(function(){import("./client-premium-plus.js").catch(function(){});},700);
 }
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init,{once:true});else init();
 })();

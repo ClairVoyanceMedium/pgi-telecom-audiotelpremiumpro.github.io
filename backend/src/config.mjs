@@ -21,6 +21,14 @@ export function loadConfig(env=process.env){
   const databaseSsl=(env.PGI_DATABASE_SSL||"disable").toLowerCase();
   const releaseId=env.PGI_RELEASE_ID||"";
   const googleClientId=String(env.PGI_GOOGLE_CLIENT_ID||"").trim();
+  const webauthnRpId=String(env.PGI_WEBAUTHN_RP_ID||"").trim().toLowerCase();
+  const webauthnOrigin=String(env.PGI_WEBAUTHN_ORIGIN||"").trim();
+  if((webauthnRpId&&!webauthnOrigin)||(!webauthnRpId&&webauthnOrigin))throw new Error("PGI_WEBAUTHN_RP_ID and PGI_WEBAUTHN_ORIGIN must be configured together");
+  if(webauthnOrigin){
+    let parsed;try{parsed=new URL(webauthnOrigin);}catch{throw new Error("PGI_WEBAUTHN_ORIGIN invalid");}
+    if(parsed.protocol!=="https:"||parsed.origin!==webauthnOrigin||parsed.username||parsed.password)throw new Error("PGI_WEBAUTHN_ORIGIN must be an exact HTTPS origin");
+    if(parsed.hostname!==webauthnRpId&&!parsed.hostname.endsWith("."+webauthnRpId))throw new Error("PGI_WEBAUTHN_RP_ID must match the origin host or a parent domain");
+  }
   if(!["disable","require"].includes(databaseSsl))throw new Error("PGI_DATABASE_SSL must be disable or require");
 
   if(mode==="production"){
@@ -37,7 +45,7 @@ export function loadConfig(env=process.env){
   }
 
   return Object.freeze({
-    mode,authMode,host,port,releaseId,googleClientId,
+    mode,authMode,host,port,releaseId,googleClientId,webauthnRpId,webauthnOrigin,
     sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),
@@ -63,7 +71,7 @@ export function loadConfig(env=process.env){
     expertCostHtPerMin:number(env.PGI_EXPERT_COST_HT_PER_MIN,0.18,0,100,"PGI_EXPERT_COST_HT_PER_MIN"),
     technicalCostHtPerCall:number(env.PGI_TECHNICAL_COST_HT_PER_CALL,0,0,100,"PGI_TECHNICAL_COST_HT_PER_CALL"),
     reconciliationToleranceHt:number(env.PGI_RECONCILIATION_TOLERANCE_HT,0.01,0,100,"PGI_RECONCILIATION_TOLERANCE_HT"),
-    version:env.PGI_VERSION||"1.23.0"
+    version:env.PGI_VERSION||"1.30.1"
   });
 }
 

@@ -118,6 +118,24 @@ else
   echo "OK   password hash format"
 fi
 
+# WebAuthn is optional before the production hostname is known, but must be configured atomically.
+if { [ -n "${PGI_WEBAUTHN_RP_ID:-}" ] && [ -z "${PGI_WEBAUTHN_ORIGIN:-}" ]; } || { [ -z "${PGI_WEBAUTHN_RP_ID:-}" ] && [ -n "${PGI_WEBAUTHN_ORIGIN:-}" ]; }; then
+  echo "FAIL WebAuthn configuration pair incomplete: set both PGI_WEBAUTHN_RP_ID and PGI_WEBAUTHN_ORIGIN"
+  fail=1
+elif [ -n "${PGI_WEBAUTHN_ORIGIN:-}" ]; then
+  if [[ ! "${PGI_WEBAUTHN_ORIGIN}" =~ ^https://[^/]+$ ]]; then
+    echo "FAIL PGI_WEBAUTHN_ORIGIN must be an exact HTTPS origin without a path"
+    fail=1
+  elif [[ "${PGI_WEBAUTHN_RP_ID:-}" == http://* || "${PGI_WEBAUTHN_RP_ID:-}" == https://* || "${PGI_WEBAUTHN_RP_ID:-}" == */* ]]; then
+    echo "FAIL PGI_WEBAUTHN_RP_ID must be a hostname without scheme or path"
+    fail=1
+  else
+    echo "OK   WebAuthn configuration pair"
+  fi
+else
+  echo "INFO WebAuthn disabled until the production HTTPS hostname is configured"
+fi
+
 if [ "${PGI_REQUIRE_OPERATOR:-false}" = "true" ]; then
   if [ "${PGI_REQUIRE_CARRIER_CONTRACT:-false}" != "true" ]; then
     echo "FAIL PGI_REQUIRE_CARRIER_CONTRACT must be true for operator go-live"

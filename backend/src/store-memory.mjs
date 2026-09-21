@@ -577,6 +577,7 @@ export class MemoryStore{
     return this.staffUsers.map(({password_hash,...x})=>({...structuredClone(x),password_login_enabled:Boolean(password_hash),password_changed_at:null,locked_until:null}));
   }
 
+  async staffCredentialById(appUserId){const id=Number(appUserId);const u=this.staffUsers?.find?.(x=>Number(x.id)===id);return u?.password_hash?structuredClone(u):null;}
   async createStaffUser(input={},passwordHash,actor={}){
     const login=String(input.login_name||"").trim(),email=String(input.email||"").trim().toLowerCase(),display=String(input.display_name||"").trim(),role=String(input.role||"readonly").trim().toLowerCase();
     if(login.length<3||login.length>120||!/^[A-Za-z0-9._@+-]+$/.test(login))throw problem(400,"INVALID_STAFF_LOGIN");
@@ -1054,6 +1055,12 @@ export class MemoryStore{
       }
     };
   }
+
+
+  async listWebauthnCredentials(ownerType,ownerId){this._passkeys=this._passkeys||[];return structuredClone(this._passkeys.filter(x=>x.owner_type===ownerType&&String(x.owner_id)===String(ownerId)).map(({public_key_spki,...x})=>x));}
+  async registerWebauthnCredential(ownerType,ownerId,input={}){this._passkeys=this._passkeys||[];if(this._passkeys.some(x=>x.credential_id===input.credential_id))throw problem(409,"WEBAUTHN_CREDENTIAL_EXISTS");const row={id:this._passkeys.length+1,public_id:randomUUID(),owner_type:ownerType,owner_id:String(ownerId),credential_id:input.credential_id,public_key_spki:input.public_key_spki,sign_count:Number(input.sign_count||0),transports:input.transports||[],label:input.label||"Passkey",enabled:true,created_at:new Date().toISOString(),last_verified_at:null};this._passkeys.push(row);const{public_key_spki,...safe}=row;return structuredClone(safe);}
+  async webauthnCredential(ownerType,ownerId,credentialId){this._passkeys=this._passkeys||[];return structuredClone(this._passkeys.find(x=>x.owner_type===ownerType&&String(x.owner_id)===String(ownerId)&&x.credential_id===credentialId&&x.enabled)||null);}
+  async markWebauthnVerified(id,signCount){this._passkeys=this._passkeys||[];const x=this._passkeys.find(v=>v.id===Number(id));if(!x)throw problem(404,"WEBAUTHN_CREDENTIAL_NOT_FOUND");if(Number(signCount)>0)x.sign_count=Number(signCount);x.last_verified_at=new Date().toISOString();return{id:x.id,public_id:x.public_id,last_verified_at:x.last_verified_at,sign_count:x.sign_count};}
 
   async serviceOperationsHealth(){return {service_incidents_open:0,service_incidents_critical:0,service_first_response_overdue:0,service_resolution_overdue:0,routing_unavailable:0,portability_attention:0};}
 
