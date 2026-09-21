@@ -188,6 +188,13 @@ CREATE TABLE tenant_exit_lines (
   rio_last4 char(4),
   rio_requested_at timestamptz,
   rio_delivered_at timestamptz,
+  rio_delivery_channel text NOT NULL DEFAULT 'provider_direct'
+    CHECK (rio_delivery_channel IN ('provider_direct','secure_portal','verified_email','manual_secure','not_required')),
+  rio_delivery_reference text,
+  portability_eligibility_status text NOT NULL DEFAULT 'pending'
+    CHECK (portability_eligibility_status IN ('pending','eligible','ineligible','expired','blocked')),
+  portability_eligibility_reason text,
+  portability_eligibility_checked_at timestamptz,
   portability_service_level text NOT NULL DEFAULT 'standard'
     CHECK (portability_service_level IN ('standard','enhanced')),
   recovery_option text NOT NULL DEFAULT 'none'
