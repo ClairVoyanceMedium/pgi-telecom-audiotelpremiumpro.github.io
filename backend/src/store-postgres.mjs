@@ -3946,17 +3946,27 @@ export class PostgresStore{
       );
       const tenant=tenantRows[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
       const financial=await tx.unsafe(
-        "SELECT currency,"+
-        " count(*) FILTER(WHERE started_at >= $2::timestamptz)::bigint AS calls_total,"+
-        " count(*) FILTER(WHERE started_at >= $2::timestamptz AND call_status='connected')::bigint AS calls_connected,"+
-        " count(*) FILTER(WHERE started_at >= $2::timestamptz AND call_status='abandoned')::bigint AS calls_abandoned,"+
-        " count(*) FILTER(WHERE started_at >= $2::timestamptz AND call_status NOT IN ('connected','abandoned'))::bigint AS calls_failed,"+
-        " COALESCE(sum(conversation_seconds) FILTER(WHERE started_at >= $3::timestamptz),0)::float8 AS conversation_seconds,"+
-        " COALESCE(sum(billable_seconds) FILTER(WHERE started_at >= $3::timestamptz),0)::float8 AS billable_seconds,"+
-        " COALESCE(sum(retail_service_amount_ttc) FILTER(WHERE started_at >= $4::timestamptz),0)::float8 AS generated_revenue_ttc,"+
-        " COALESCE(sum(expected_payout_ht) FILTER(WHERE started_at >= $5::timestamptz),0)::float8 AS expected_payout_ht,max(ended_at) AS updated_at"+
-        " FROM tenant_scoped_call_facts WHERE started_at >= $1::timestamptz AND started_at <= $6::timestamptz"+
-        " GROUP BY currency ORDER BY currency",[earliestFrom,callsFrom,minutesFrom,revenueFrom,payoutFrom,to]
+        "SELECT f.currency,"+
+        " count(*) FILTER(WHERE f.started_at >= $2::timestamptz)::bigint AS calls_total,"+
+        " count(*) FILTER(WHERE f.started_at >= $2::timestamptz AND f.call_status='connected')::bigint AS calls_connected,"+
+        " count(*) FILTER(WHERE f.started_at >= $2::timestamptz AND f.call_status='abandoned')::bigint AS calls_abandoned,"+
+        " count(*) FILTER(WHERE f.started_at >= $2::timestamptz AND f.call_status NOT IN ('connected','abandoned'))::bigint AS calls_failed,"+
+        " COALESCE(sum(f.conversation_seconds) FILTER(WHERE f.started_at >= $3::timestamptz),0)::float8 AS conversation_seconds,"+
+        " COALESCE(sum(f.billable_seconds) FILTER(WHERE f.started_at >= $3::timestamptz),0)::float8 AS billable_seconds,"+
+        " COALESCE(sum(f.retail_service_amount_ttc) FILTER(WHERE f.started_at >= $4::timestamptz),0)::float8 AS generated_revenue_ttc,"+
+        " COALESCE(sum(f.expected_payout_ht) FILTER(WHERE f.started_at >= $5::timestamptz),0)::float8 AS expected_payout_ht,"+
+        " COALESCE(sum(CASE WHEN pt.id IS NULL THEN 0 ELSE GREATEST(0,f.expected_payout_ht-LEAST(f.expected_payout_ht,"+
+        " f.expected_payout_ht*pt.platform_fee_bps/10000.0+pt.platform_fee_ht_per_min*(f.billable_seconds/60.0))) END)"+
+        " FILTER(WHERE f.started_at >= $5::timestamptz),0)::float8 AS estimated_client_net_ht,max(f.ended_at) AS updated_at"+
+        " FROM tenant_scoped_call_facts f LEFT JOIN LATERAL ("+
+        " SELECT p.id,p.platform_fee_bps,p.platform_fee_ht_per_min::float8 FROM tenant_payout_terms p"+
+        " WHERE p.tenant_id=$7 AND p.status='active' AND p.effective_from<=f.started_at"+
+        " AND (p.effective_to IS NULL OR p.effective_to>f.started_at)"+
+        " AND (p.market_id IS NULL OR p.market_id=f.market_id) AND (p.sva_number_id IS NULL OR p.sva_number_id=f.sva_number_id)"+
+        " ORDER BY (p.sva_number_id IS NOT NULL) DESC,(p.market_id IS NOT NULL) DESC,p.effective_from DESC,p.id DESC LIMIT 1"+
+        " ) pt ON TRUE"+
+        " WHERE f.started_at >= $1::timestamptz AND f.started_at <= $6::timestamptz"+
+        " GROUP BY f.currency ORDER BY f.currency",[earliestFrom,callsFrom,minutesFrom,revenueFrom,payoutFrom,to,id]
       );
       const series=await tx.unsafe(
         "SELECT started_at::date AS bucket_date,"+
