@@ -68,6 +68,10 @@ root.PGICustomerApi=Object.freeze({
   createPortability:function(payload,idempotencyKey){return request("/customer/portability",{method:"POST",body:payload,idempotencyKey:idempotencyKey});},
   cancelPortability:function(id,idempotencyKey){return request("/customer/portability/"+encodeURIComponent(id)+"/cancel",{method:"POST",body:{},idempotencyKey:idempotencyKey});},
   portal:function(from,to){var q=new URLSearchParams({from:from,to:to});return request("/customer/portal?"+q.toString(),{timeoutMs:12000});},
+  events:function(){
+    if(typeof EventSource==="undefined")throw new Error("EVENTSOURCE_UNAVAILABLE");
+    return new EventSource(baseUrl()+"/customer/events",{withCredentials:true});
+  },
   resetMetrics:function(metricKeys,idempotencyKey){return request("/customer/metrics/reset",{method:"POST",body:{metric_keys:metricKeys},idempotencyKey:idempotencyKey});},
   incidents:function(id){var q=id?"?incident_id="+encodeURIComponent(id):"";return request("/customer/incidents"+q,{timeoutMs:8000});},
   relations:function(){return request("/customer/relations",{timeoutMs:10000});},
