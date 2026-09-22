@@ -55,7 +55,9 @@ form.addEventListener("submit",e=>{
     phone:String(document.getElementById("order-phone")?.value||"").trim().slice(0,40),
     service_intent:String(document.getElementById("order-service-intent")?.value||"")
   };
-  try{sessionStorage.setItem(KEY,JSON.stringify(intent))}catch(_e){}
+  try{sessionStorage.setItem(KEY,JSON.stringify(intent))}
+  catch(_e){const s=document.getElementById("order-status");if(s)s.hidden=false;return}
+  const b=form.querySelector('button[type="submit"]');if(b)b.disabled=true;
   location.href="../client.html?register=1";
 });
 syncType();

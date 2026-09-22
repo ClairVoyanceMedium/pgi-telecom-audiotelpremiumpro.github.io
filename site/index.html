@@ -249,7 +249,9 @@
       <label>Téléphone <span>(facultatif)</span><input id="order-phone" name="phone" type="tel" autocomplete="tel" maxlength="40"></label>
       <label>Votre besoin principal<select id="order-service-intent" name="service_intent" required><option value="" selected disabled>Choisir</option><option value="new_number">Obtenir un nouveau numéro</option><option value="portability">Étudier la portabilité de mon numéro</option><option value="advice">Je souhaite être orienté</option></select></label>
       <button class="btn order-submit" type="submit">Continuer ma demande <span>→</span></button>
+      <p id="order-status" class="order-status" role="alert" hidden>Impossible de transférer la demande dans cette session. Autorisez le stockage de session puis réessayez.</p>
       <p class="order-privacy">Les informations saisies ici sont transférées uniquement dans votre navigateur vers l’étape d’inscription. Aucun mot de passe n’est demandé sur cette page.</p>
+      <noscript><p class="order-status bad">JavaScript doit être activé pour transférer cette demande vers l’espace client sécurisé.</p></noscript>
     </form>
   </div>
 </section>

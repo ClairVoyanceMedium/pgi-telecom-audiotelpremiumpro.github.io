@@ -10,6 +10,7 @@ test("production config accepts Vercel Git commit SHA",()=>{
     PGI_AUTH_MODE:"session",
     PORT:"3000",
     DATABASE_URL:"postgresql://user:password@example.neon.tech/pgi?sslmode=require",
+    VERCEL:"1",
     VERCEL_GIT_COMMIT_SHA:"b".repeat(40),
     PGI_STATIC_DIR:"/app/dist",
     PGI_SESSION_SECRET:secret,
@@ -23,6 +24,8 @@ test("production config accepts Vercel Git commit SHA",()=>{
   assert.equal(config.port,3000);
   assert.equal(config.releaseId,"b".repeat(40));
   assert.match(config.databaseUrl,/neon\.tech/);
+  assert.equal(config.trustProxy,true);
+  assert.equal(config.protectMachineEndpoints,true);
 });
 
 test("Vercel container is API-only and never migrates on cold start",()=>{
@@ -31,6 +34,8 @@ test("Vercel container is API-only and never migrates on cold start",()=>{
   assert.ok(docker.includes('CMD ["sh","scripts/start-vercel.sh"]'));
   assert.match(docker,/ENV PGI_PROCESS_ROLE=api/);
   assert.match(docker,/ENV PGI_DATABASE_SSL=require/);
+  assert.match(docker,/ENV PGI_TRUST_PROXY=true/);
+  assert.match(docker,/ENV PGI_PROTECT_MACHINE_ENDPOINTS=true/);
   assert.match(start,/VERCEL_GIT_COMMIT_SHA/);
   assert.match(start,/PGI_PROCESS_ROLE=api/);
   assert.match(start,/DATABASE_URL/);
@@ -38,4 +43,12 @@ test("Vercel container is API-only and never migrates on cold start",()=>{
   assert.doesNotMatch(start,/bootstrap-database\.mjs/);
   assert.doesNotMatch(start,/backend\/migrate\.mjs/);
   assert.doesNotMatch(docker,/DATABASE_PUBLIC_URL/);
+  const build=fs.readFileSync("scripts/build-static.mjs","utf8");
+  const server=fs.readFileSync("backend/server.mjs","utf8");
+  assert.match(build,/VERCEL_PROJECT_PRODUCTION_URL/);
+  assert.match(build,/marketingRoot/);
+  assert.match(build,/cockpit\.html/);
+  assert.match(build,/Sitemap:/);
+  assert.match(server,/pathname==="\/api\/v1\/ready"\)\{\s*authorizeMachineEndpoint\(req,config\)/);
+  assert.match(server,/pathname==="\/metrics"\)\{\s*authorizeMachineEndpoint\(req,config\)/);
 });

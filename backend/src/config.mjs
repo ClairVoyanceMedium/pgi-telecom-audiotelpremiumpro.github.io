@@ -21,6 +21,16 @@ export function loadConfig(env=process.env){
   const databaseSsl=(env.PGI_DATABASE_SSL||"disable").toLowerCase();
   const releaseId=env.PGI_RELEASE_ID||env.RAILWAY_GIT_COMMIT_SHA||env.VERCEL_GIT_COMMIT_SHA||"";
   const staticDir=String(env.PGI_STATIC_DIR||"").trim();
+  const trustProxy=booleanValue(
+    env.PGI_TRUST_PROXY,
+    env.VERCEL==="1"||Boolean(env.RAILWAY_ENVIRONMENT||env.RAILWAY_PROJECT_ID),
+    "PGI_TRUST_PROXY"
+  );
+  const protectMachineEndpoints=booleanValue(
+    env.PGI_PROTECT_MACHINE_ENDPOINTS,
+    env.VERCEL==="1",
+    "PGI_PROTECT_MACHINE_ENDPOINTS"
+  );
   const googleClientId=String(env.PGI_GOOGLE_CLIENT_ID||"").trim();
   const webauthnRpId=String(env.PGI_WEBAUTHN_RP_ID||"").trim().toLowerCase();
   const webauthnOrigin=String(env.PGI_WEBAUTHN_ORIGIN||"").trim();
@@ -46,7 +56,7 @@ export function loadConfig(env=process.env){
   }
 
   return Object.freeze({
-    mode,authMode,host,port,releaseId,staticDir,googleClientId,webauthnRpId,webauthnOrigin,
+    mode,authMode,host,port,releaseId,staticDir,trustProxy,protectMachineEndpoints,googleClientId,webauthnRpId,webauthnOrigin,
     sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),

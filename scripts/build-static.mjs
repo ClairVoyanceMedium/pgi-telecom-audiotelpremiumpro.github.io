@@ -85,6 +85,55 @@ for(const file of files){
   fs.copyFileSync(src,dst);
 }
 
+// The customer-facing site owns the production root. Keep the staff cockpit on a
+// dedicated, non-indexed URL instead of exposing it as the homepage.
+fs.copyFileSync(path.join(root,"index.html"),path.join(dist,"cockpit.html"));
+const publicBaseUrl=resolvePublicBaseUrl();
+const marketingSource=fs.readFileSync(path.join(root,"site","index.html"),"utf8");
+const marketingSite=applyPublicMetadata(marketingSource,publicBaseUrl);
+const marketingRoot=applyPublicMetadata(
+  marketingSource
+    .replaceAll("../assets/","assets/")
+    .replaceAll("../client.html","client.html")
+    .replace('href="site.css"','href="site/site.css"')
+    .replace('src="site.js"','src="site/site.js"'),
+  publicBaseUrl
+);
+fs.writeFileSync(path.join(dist,"site","index.html"),marketingSite,"utf8");
+fs.writeFileSync(path.join(dist,"index.html"),marketingRoot,"utf8");
+
+if(publicBaseUrl){
+  fs.writeFileSync(
+    path.join(dist,"robots.txt"),
+    [
+      "User-agent: *",
+      "Allow: /",
+      "Disallow: /client.html",
+      "Disallow: /cockpit",
+      "Disallow: /cockpit.html",
+      "Disallow: /backend/",
+      "Disallow: /docs/",
+      "",
+      "Sitemap: "+publicBaseUrl+"/sitemap.xml",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(dist,"sitemap.xml"),
+    '<?xml version="1.0" encoding="UTF-8"?>\n'+
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'+
+    '  <url>\n'+
+    '    <loc>'+escapeXml(publicBaseUrl+"/")+'</loc>\n'+
+    '    <lastmod>'+new Date().toISOString().slice(0,10)+'</lastmod>\n'+
+    '    <changefreq>weekly</changefreq>\n'+
+    '    <priority>1.0</priority>\n'+
+    '  </url>\n'+
+    '</urlset>\n',
+    "utf8"
+  );
+}
+
 const mode=process.env.PGI_RUNTIME_MODE||"demo";
 const apiBaseUrl=process.env.PGI_API_BASE_URL||"";
 const googleClientId=String(process.env.PGI_GOOGLE_CLIENT_ID||"").trim();
@@ -119,3 +168,34 @@ console.log("Static build ready:",dist);
 console.log("Runtime mode:",mode);
 console.log("API base:",apiBaseUrl||"(not configured)");
 console.log("Release:",releaseId||"(demo)");
+
+
+function resolvePublicBaseUrl(){
+  const raw=String(
+    process.env.PGI_PUBLIC_BASE_URL||
+    process.env.VERCEL_PROJECT_PRODUCTION_URL||
+    process.env.VERCEL_URL||
+    ""
+  ).trim();
+  if(!raw)return "";
+  const value=/^https?:\/\//i.test(raw)?raw:"https://"+raw;
+  let url;
+  try{url=new URL(value);}catch{throw new Error("Invalid public base URL");}
+  if(!["http:","https:"].includes(url.protocol))throw new Error("Public base URL must use HTTP(S)");
+  return (url.origin+url.pathname).replace(/\/+$/,"");
+}
+
+function applyPublicMetadata(html,baseUrl){
+  if(!baseUrl)return html;
+  const canonical=baseUrl+"/";
+  const image=baseUrl+"/assets/audiotel-brand-logo-v33.png";
+  return html
+    .replace(/<link rel="canonical" href="[^"]*">/,'<link rel="canonical" href="'+canonical+'">')
+    .replace(/<meta property="og:url" content="[^"]*">/,'<meta property="og:url" content="'+canonical+'">')
+    .replace(/<meta property="og:image" content="[^"]*">/,'<meta property="og:image" content="'+image+'">')
+    .replace(/"url":"[^"]*"/,'"url":"'+canonical+'"');
+}
+
+function escapeXml(value){
+  return String(value).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&apos;"}[ch]));
+}
