@@ -7,6 +7,7 @@ const store=read("backend/src/store-postgres.mjs");
 const access=read("backend/src/customer-access.mjs");
 const adminHtml=read("index.html");
 const adminJs=read("assets/app.js");
+const cockpitPro=read("assets/cockpit-pro.js");
 const jackpot=read("assets/live-revenue-jackpot.js");
 const clientHtml=read("client.html");
 const clientPremium=read("assets/client-premium.js");
@@ -36,9 +37,10 @@ test("client live finance stays permission-gated and explicitly provisional",()=
 });
 
 test("staff cockpit exposes upstream, client net and PGI margin live without calling them settled",()=>{
-  assert.match(adminJs,/live-revenue-jackpot\.js/);
-  assert.match(adminJs,/pgi:live-finance/);
-  assert.match(adminJs,/call_destination\.busy/);
+  assert.doesNotMatch(adminJs,/live-revenue-jackpot\.js/);
+  assert.match(cockpitPro,/live-revenue-jackpot\.js/);
+  assert.match(jackpot,/PGIApi\.summary/);
+  assert.match(jackpot,/setInterval\(sync,5000\)/);
   for(const id of ["live-jackpot","live-jackpot-client","live-jackpot-margin","live-jackpot-detail"])
     assert.ok(jackpot.includes('id="'+id+'"'),id);
   assert.match(jackpot,/REVERSEMENT OPÉRATEUR ESTIMÉ/);
