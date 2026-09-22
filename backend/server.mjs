@@ -89,6 +89,7 @@ export function createBackend(options={}){
         });
       }
       if(method==="GET"&&pathname==="/api/v1/ready"){
+        authorizeMachineEndpoint(req,config);
         const snapshot=await store.systemSnapshot();
         const readiness=evaluateReadiness(snapshot,workers,config);
         return done(res,metrics,started,"ready",readiness.ready?200:503,{
@@ -98,6 +99,7 @@ export function createBackend(options={}){
         });
       }
       if(method==="GET"&&pathname==="/metrics"){
+        authorizeMachineEndpoint(req,config);
         res.pgiRoute="metrics";
         return metricsResponse(res,metrics,store,workers);
       }
@@ -1458,7 +1460,7 @@ function requireCustomerCsrf(req,actor,config){
 }
 function authorizeTelephony(req,config){
   if(config.mode==="simulator"&&!config.telephonyUser&&!config.telephonyPassword){
-    if(!isLoopback(clientIp(req))){const e=new Error("Telephony endpoint restricted to loopback");e.status=403;e.code="TELEPHONY_FORBIDDEN";throw e;}
+    if(!isLoopback(clientIp(req,config.trustProxy))){const e=new Error("Telephony endpoint restricted to loopback");e.status=403;e.code="TELEPHONY_FORBIDDEN";throw e;}
     return;
   }
   const header=String(req.headers.authorization||"");
@@ -1482,13 +1484,20 @@ function authorizeBilling(req,config){
 
 function authorizeIngest(req,config){
   if(config.mode==="simulator"&&!config.ingestToken){
-    if(!isLoopback(clientIp(req))){const e=new Error("Ingest restricted to loopback");e.status=403;e.code="INGEST_FORBIDDEN";throw e;}
+    if(!isLoopback(clientIp(req,config.trustProxy))){const e=new Error("Ingest restricted to loopback");e.status=403;e.code="INGEST_FORBIDDEN";throw e;}
     return;
   }
   const token=String(req.headers["x-pgi-ingest-token"]||"");
   if(!config.ingestToken||!constantTimeTokenEqual(token,config.ingestToken)){
     const e=new Error("Invalid ingest token");e.status=401;e.code="INGEST_AUTH_FAILED";throw e;
   }
+}
+
+function authorizeMachineEndpoint(req,config){
+  if(!config.protectMachineEndpoints)return;
+  const socketIp=String(req.socket?.remoteAddress||"");
+  if(isLoopback(socketIp))return;
+  authorizeIngest(req,config);
 }
 function isLoopback(ip){return ip==="127.0.0.1"||ip==="::1"||ip==="::ffff:127.0.0.1";}
 function requireSameOriginBrowser(req){
@@ -1508,7 +1517,7 @@ function requireSameOriginBrowser(req){
   }
 }
 function enforceAuthLoginRate(req,config,buckets,metrics){
-  const key=clientIp(req);
+  const key=clientIp(req,config.trustProxy);
   const now=Date.now();
   const windowMs=Number(config.authFailureWindowSeconds||900)*1000;
   const current=buckets.get(key);
@@ -1523,7 +1532,7 @@ function enforceAuthLoginRate(req,config,buckets,metrics){
   return key;
 }
 function enforceRegistrationRate(req,config,buckets){
-  const key=clientIp(req),now=Date.now(),windowMs=Math.max(300000,Number(config.authFailureWindowSeconds||900)*1000);
+  const key=clientIp(req,config.trustProxy),now=Date.now(),windowMs=Math.max(300000,Number(config.authFailureWindowSeconds||900)*1000);
   let current=buckets.get(key);
   if(!current||now-current.startedAt>=windowMs){current={startedAt:now,count:0};buckets.set(key,current);}
   current.count++;
@@ -1636,7 +1645,7 @@ function publicCustomerActor(a,context){
   return {id:a.sub,role:context.customer_role,name:context.display_name||a.name,email:context.email,email_verified:context.email_verified===true,permissions:customerPermissions(context),tenant:{id:context.tenant_public_id,name:context.tenant_name,status:context.tenant_status,currency:context.default_currency,country_code:context.country_code}};
 }
 function rateLimit(req,config,buckets,metrics){
-  const key=clientIp(req);
+  const key=clientIp(req,config.trustProxy);
   const minute=Math.floor(Date.now()/60000);
   const current=buckets.get(key);
   if(!current||current.minute!==minute)buckets.set(key,{minute,count:1});
@@ -1660,7 +1669,7 @@ function routeClassRateLimit(req,config,buckets,metrics,pathname,method){
     scope="heavy_read";limit=Number(config.heavyReadRateLimitPerMinute||60);
   }
   if(!scope||limit<=0)return;
-  const minute=Math.floor(Date.now()/60000),key=clientIp(req)+"|"+scope,current=buckets.get(key);
+  const minute=Math.floor(Date.now()/60000),key=clientIp(req,config.trustProxy)+"|"+scope,current=buckets.get(key);
   if(!current||current.minute!==minute)buckets.set(key,{minute,count:1});
   else{
     current.count++;
