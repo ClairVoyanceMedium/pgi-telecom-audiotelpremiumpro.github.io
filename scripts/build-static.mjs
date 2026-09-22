@@ -106,7 +106,9 @@ const seoPages=[
   "audiotel-coaching",
   "audiotel-professionnels",
   "reversement-audiotel",
-  "numero-sva"
+  "numero-sva",
+  "comparateur-audiotel",
+  "guide-audiotel-sva"
 ];
 for(const slug of seoPages){
   const source=fs.readFileSync(path.join(root,"site","seo",slug+".html"),"utf8");
