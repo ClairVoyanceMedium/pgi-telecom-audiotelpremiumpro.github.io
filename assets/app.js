@@ -166,7 +166,7 @@ try{
 var es=window.PGIApi.events();
 state.eventSource=es;
 es.addEventListener("call.ingested",function(){scheduleProductionSync("incremental");});
-["expert.status","expert.busy","expert.released","carrier.switched","carrier.rollback","alert","voice.incident","voice.incident.resolved"].forEach(function(name){
+["expert.status","expert.busy","expert.released","call_destination.busy","call_destination.released","carrier.switched","carrier.rollback","alert","voice.incident","voice.incident.resolved"].forEach(function(name){
 es.addEventListener(name,function(){scheduleProductionSync("dashboard");});
 });
 ["baseline.created","subscription.unpaid"].forEach(function(n){es.addEventListener(n,function(){window.PGIDataClient.invalidateAppBootstrap();scheduleProductionSync("full");});});
