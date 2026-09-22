@@ -1,6 +1,6 @@
 (function(){
 "use strict";
-var state={range:"today",data:null,user:null,demo:false,googleCredential:null,billingBusy:false,liveTickTimer:null,liveRefreshTimer:null,liveBaseAt:0,liveEventSource:null,liveReconnectTimer:null};
+var state={range:"today",data:null,user:null,demo:false,googleCredential:null,billingBusy:false};
 var I=window.PGIClientI18n||{locale:"fr-FR",t:function(x){return x;},apply:function(){}};
 function tr(x){return I.t?I.t(x):x;}
 var $=function(id){return document.getElementById(id);};
@@ -41,8 +41,7 @@ function demoData(range){
   return {
     user:{name:"Camille Martin",role:"owner"},
     tenant:{display_name:"Société Démo",default_currency:"EUR",country_code:"FR",status:"active"},
-    financial_by_currency:[{currency:"EUR",calls_total:sums.calls_total,calls_connected:sums.calls_connected,calls_abandoned:sums.calls_abandoned,calls_failed:sums.calls_failed,billable_seconds:sums.billable_seconds,generated_revenue_ttc:Math.round(sums.generated_revenue_ttc*100)/100,expected_payout_ht:Math.round(sums.generated_revenue_ttc*.56*100)/100,estimated_client_net_ht:Math.round(sums.generated_revenue_ttc*.42*100)/100,updated_at:new Date().toISOString()}],
-    live_financial_by_currency:[{currency:"EUR",active_calls:1,estimated_service_revenue_ttc:3.2,estimated_upstream_payout_ht:2.12,estimated_client_net_ht:1.84,service_rate_ttc_per_second:.013333,upstream_rate_ht_per_second:.007667,client_rate_ht_per_second:.006133}],
+    financial_by_currency:[{currency:"EUR",calls_total:sums.calls_total,calls_connected:sums.calls_connected,calls_abandoned:sums.calls_abandoned,calls_failed:sums.calls_failed,billable_seconds:sums.billable_seconds,generated_revenue_ttc:Math.round(sums.generated_revenue_ttc*100)/100,updated_at:new Date().toISOString()}],
     series:series,
     numbers:[
       {id:1,display_number:"0892 12 34 56",e164:"+33892123456",currency:"EUR",number_type:"premium",service_rate_ttc_per_min:.8,status:"active",assignment_status:"active",kyc_status:"verified",tariff_code:"D080"},
@@ -64,12 +63,11 @@ function aggregate(data){
   var currency=(data.tenant&&data.tenant.default_currency)||((rows[0]&&rows[0].currency)||"EUR");
   var moneyRows=rows.filter(function(x){return x.currency===currency;});
   var revenue=moneyRows.reduce(function(a,x){return a+n(x.generated_revenue_ttc);},0);
-  var estimatedClientNet=moneyRows.reduce(function(a,x){return a+n(x.estimated_client_net_ht);},0);
   var payoutRows=data.metric_net_payout_by_currency;
   var payout=Array.isArray(payoutRows)
     ?payoutRows.filter(function(x){return x.currency===currency;}).reduce(function(a,x){return a+n(x.net_payout_ht);},0)
     :(data.settlements||[]).filter(function(x){return x.currency===currency&&["reconciled","invoiced","payable","paid"].includes(String(x.status));}).reduce(function(a,x){return a+n(x.net_payout_ht);},0);
-  return {calls:calls,connected:connected,billable:billable,currency:currency,revenue:revenue,payout:payout,estimatedClientNet:estimatedClientNet,updated:updated};
+  return {calls:calls,connected:connected,billable:billable,currency:currency,revenue:revenue,payout:payout,updated:updated};
 }
 function svgLine(id,rows,series,options){
   var el=$(id);if(!el)return;rows=(rows||[]).slice(-62);if(!rows.length){el.innerHTML='<text x="360" y="110" text-anchor="middle" class="axis-label">Aucune donnée</text>';return;}
@@ -163,74 +161,6 @@ function renderDestinations(data){
   var rows=data.destinations||[],el=$("destinations-list");
   el.innerHTML=rows.length?rows.map(function(x){var line=x.sva_number_id?numbers[String(x.sva_number_id)]||"Numéro attribué":"Tous les numéros";var cap=x.max_concurrent_calls?" · "+n(x.active_calls)+"/"+n(x.max_concurrent_calls)+" appels":" · "+n(x.active_calls)+" appel(s)";return '<div class="cp-row"><div><strong>'+esc(x.label)+'</strong><span>'+esc(line+" · "+x.destination_type+" · "+x.destination_uri+cap)+'</span></div>'+chip(x.status)+'</div>';}).join(""):'<p class="cp-empty">Aucune destination affichée.</p>';
 }
-function stopLiveEvents(){
-  clearTimeout(state.liveReconnectTimer);state.liveReconnectTimer=null;
-  if(state.liveEventSource){try{state.liveEventSource.close();}catch(_e){}state.liveEventSource=null;}
-}
-function scheduleLivePortalRefresh(delay){
-  clearTimeout(state.liveRefreshTimer);
-  state.liveRefreshTimer=setTimeout(function(){loadPortal().catch(function(){});},Math.max(50,Number(delay)||250));
-}
-function startLiveEvents(){
-  if(state.demo||state.liveEventSource||!window.PGICustomerApi||typeof window.PGICustomerApi.events!=="function")return;
-  try{
-    var es=window.PGICustomerApi.events();state.liveEventSource=es;
-    ["live_call.started","live_call.ended","call.ingested"].forEach(function(name){
-      es.addEventListener(name,function(){scheduleLivePortalRefresh(180);});
-    });
-    es.onerror=function(){
-      if(es.readyState===EventSource.CLOSED){
-        try{es.close();}catch(_e){}
-        if(state.liveEventSource===es)state.liveEventSource=null;
-        clearTimeout(state.liveReconnectTimer);
-        state.liveReconnectTimer=setTimeout(startLiveEvents,5000);
-        scheduleLivePortalRefresh(12000);
-      }
-    };
-  }catch(_e){
-    state.liveEventSource=null;
-    clearTimeout(state.liveReconnectTimer);
-    state.liveReconnectTimer=setTimeout(startLiveEvents,10000);
-  }
-}
-function liveFinancialRow(data,currency){
-  return (data.live_financial_by_currency||[]).find(function(x){return String(x.currency||"")===String(currency||"");})||null;
-}
-function liveFinancialNow(data,currency){
-  var row=liveFinancialRow(data,currency);
-  if(!row)return {active:0,net:0,upstream:0,revenue:0,rate:0};
-  var baseAt=state.liveBaseAt||Date.parse(data.server_time||"")||Date.now();
-  var elapsed=Math.max(0,Math.min(90,(Date.now()-baseAt)/1000));
-  return {
-    active:n(row.active_calls),
-    net:n(row.estimated_client_net_ht)+elapsed*n(row.client_rate_ht_per_second),
-    upstream:n(row.estimated_upstream_payout_ht)+elapsed*n(row.upstream_rate_ht_per_second),
-    revenue:n(row.estimated_service_revenue_ttc)+elapsed*n(row.service_rate_ttc_per_second),
-    rate:n(row.client_rate_ht_per_second)
-  };
-}
-function paintLiveFinancial(){
-  if(!state.data)return;
-  var a=aggregate(state.data),live=liveFinancialNow(state.data,a.currency),root=$("client-live-money");
-  if(root)root.dataset.active=live.active>0?"true":"false";
-  if($("client-live-amount"))$("client-live-amount").textContent=money(live.net,a.currency);
-  if($("client-live-calls"))$("client-live-calls").textContent=live.active?nf(live.active)+" appel"+(live.active>1?"s":"")+" en cours":"Aucun appel en cours";
-  if($("client-live-rate"))$("client-live-rate").textContent=live.active?"+"+money(live.rate,a.currency)+" / seconde estimée":"Le prochain appel activera le compteur";
-  if($("client-period-payout-estimate"))$("client-period-payout-estimate").textContent=money(a.estimatedClientNet+live.net,a.currency);
-}
-function armLiveFinancial(data){
-  clearInterval(state.liveTickTimer);clearTimeout(state.liveRefreshTimer);
-  state.liveBaseAt=Date.parse(data&&data.server_time||"")||Date.now();
-  paintLiveFinancial();
-  state.liveTickTimer=setInterval(paintLiveFinancial,500);
-  if(!state.demo)startLiveEvents();
-  var a=aggregate(data),row=liveFinancialRow(data,a.currency),hasLive=n(row&&row.active_calls)>0;
-  if(!state.demo){
-    var fallbackDelay=hasLive?15000:(state.liveEventSource?120000:30000);
-    state.liveRefreshTimer=setTimeout(function(){loadPortal().catch(function(){});},fallbackDelay);
-  }
-}
-
 function render(data){
   window.PGIClientPortalData=data;state.data=data;state.user=data.user||state.user;
   $("tenant-name").textContent=(data.tenant&&data.tenant.display_name)||"Mon compte";
@@ -244,7 +174,6 @@ function render(data){
   $("kpi-calls").textContent=nf(a.calls);$("kpi-answer-rate").textContent=nf(rate,1)+" % décrochés";
   $("kpi-minutes").textContent=nf(a.billable/60,1);$("kpi-revenue").textContent=money(a.revenue,a.currency);$("kpi-payout").textContent=money(a.payout,a.currency);
   $("portal-sync").textContent="Dernière consolidation : "+(a.updated?dt(a.updated):dt(data.server_time));
-  armLiveFinancial(data);
   $("traffic-total").textContent=nf(a.calls)+" appels";
   renderAnalytics(data);renderNumbers(data);renderCalls(data);renderSettlements(data);renderSubscriptions(data);renderOnboarding(data);renderDestinations(data);renderPortabilitySummary(data);renderVoiceStudio(data);renderServiceCenter(data);if(I.apply)I.apply(document.body);
 }
@@ -264,12 +193,11 @@ async function loadPortal(){
     throw error;
   }
 }
-window.PGIClientPortalReload=loadPortal;
+window.PGIReload=loadPortal;
 function showApp(){
-  $("customer-auth").hidden=true;$("customer-app").hidden=false;startLiveEvents();loadPortal().catch(function(e){toast("Chargement impossible : "+(e.code||e.message));});
+  $("customer-auth").hidden=true;$("customer-app").hidden=false;loadPortal().catch(function(e){toast("Chargement impossible : "+(e.code||e.message));});
 }
 function showLogin(){
-  stopLiveEvents();clearInterval(state.liveTickTimer);clearTimeout(state.liveRefreshTimer);
   $("customer-app").hidden=true;$("customer-auth").hidden=false;$("login-panel").hidden=false;$("register-panel").hidden=true;$("activation-panel").hidden=true;
 }
 function showRegister(){
@@ -517,8 +445,7 @@ function bind(){
   $("show-register").addEventListener("click",showRegister);
   $("show-login").addEventListener("click",showLogin);
   $("register-country").addEventListener("change",updateRegistrationNumberField);
-  $("customer-logout").addEventListener("click",async function(){try{await window.PGICustomerApi.logout();}catch(_e){}stopLiveEvents();clearInterval(state.liveTickTimer);clearTimeout(state.liveRefreshTimer);state.user=null;showLogin();});
-  $("client-live-recalc").addEventListener("click",function(){loadPortal().then(function(){toast("Estimation en direct recalculée.");}).catch(function(){toast("Actualisation impossible");});});
+  $("customer-logout").addEventListener("click",async function(){try{await window.PGICustomerApi.logout();}catch(_e){}state.user=null;showLogin();});
   $("export-calls").addEventListener("click",function(){exportClient("calls");});
   $("client-relations").addEventListener("click",function(){import("./client-relations.js").then(function(m){return m.open(state.data||{});}).catch(function(){toast("Réclamations momentanément indisponibles.");});});
   $("client-export").addEventListener("click",function(){var d=$("client-export-dialog");if(d&&typeof d.showModal==="function")d.showModal();});
