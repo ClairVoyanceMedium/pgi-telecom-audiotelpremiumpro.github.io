@@ -7,6 +7,7 @@ const store=read("backend/src/store-postgres.mjs");
 const access=read("backend/src/customer-access.mjs");
 const adminHtml=read("index.html");
 const adminJs=read("assets/app.js");
+const jackpot=read("assets/live-revenue-jackpot.js");
 const clientHtml=read("client.html");
 const clientPremium=read("assets/client-premium.js");
 const marketing=read("site/index.html");
@@ -35,13 +36,15 @@ test("client live finance stays permission-gated and explicitly provisional",()=
 });
 
 test("staff cockpit exposes upstream, client net and PGI margin live without calling them settled",()=>{
-  for(const id of ["live-jackpot","live-jackpot-client","live-jackpot-margin","live-jackpot-detail"])
-    assert.ok(adminHtml.includes('id="'+id+'"'),id);
-  assert.match(adminHtml,/REVERSEMENT OPÉRATEUR ESTIMÉ/);
-  assert.match(adminJs,/function renderLiveJackpot/);
-  assert.match(adminJs,/live_upstream_rate_per_second/);
+  assert.match(adminJs,/live-revenue-jackpot\.js/);
+  assert.match(adminJs,/pgi:live-finance/);
   assert.match(adminJs,/call_destination\.busy/);
-  assert.match(adminJs,/estimation avant CDR et rapprochement/);
+  for(const id of ["live-jackpot","live-jackpot-client","live-jackpot-margin","live-jackpot-detail"])
+    assert.ok(jackpot.includes('id="'+id+'"'),id);
+  assert.match(jackpot,/REVERSEMENT OPÉRATEUR ESTIMÉ/);
+  assert.match(jackpot,/live_upstream_rate_per_second/);
+  assert.match(jackpot,/estimation avant CDR et rapprochement/);
+  assert.doesNotMatch(adminHtml,/id="live-jackpot"/);
 });
 
 test("public trust copy never invents an ARCEP approval and keeps the low-price referral rationale",()=>{
