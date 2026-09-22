@@ -59,6 +59,24 @@ test("la marque client reste Audiotel Premium Pro et la plateforme reste multise
   assert.match(clientPortalJs,/Frais de plateforme HT/);
 });
 
+test("les cockpits affichent les reversements en direct sans les confondre avec les montants consolidés",()=>{
+  const server=read("backend/server.mjs"),store=read("backend/src/store-postgres.mjs"),site=read("site/index.html");
+  for(const id of ["client-live-money","client-live-amount","client-period-payout-estimate","client-live-recalc"])assert.ok(clientPortal.includes('id="'+id+'"'),"missing client #"+id);
+  for(const id of ["live-jackpot-card","live-jackpot","live-jackpot-period"])assert.ok(index.includes('id="'+id+'"'),"missing admin #"+id);
+  assert.match(clientPortalJs,/live_financial_by_currency/);
+  assert.match(clientPortalJs,/client_rate_ht_per_second/);
+  assert.match(clientPortalJs,/startLiveEvents/);
+  assert.match(clientPortalApi,/new EventSource\(baseUrl\(\)\+"\/customer\/events"/);
+  assert.match(server,/\/api\/v1\/customer\/events/);
+  assert.match(server,/live_call\.started/);
+  assert.match(server,/live_call\.ended/);
+  assert.match(store,/liveFinancialSnapshot/);
+  assert.match(store,/tenant_scoped_live_call_financial_sessions/);
+  assert.match(site,/Des prix bas soutenus par le bouche-à-oreille/);
+  assert.match(site,/objectif de maintenir des tarifs bas/);
+  assert.doesNotMatch(site,/tarif garanti|prix garanti/i);
+});
+
 test("le cockpit garde une liste d'appels compacte et une remise à zéro sélective",()=>{
   assert.ok(index.includes('id="reset-metrics"'));
   assert.equal((index.match(/id="reset-metrics"/g)||[]).length,1);
