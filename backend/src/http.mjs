@@ -6,6 +6,8 @@ export function securityHeaders(res,requestId){
   res.setHeader("Referrer-Policy","no-referrer");
   res.setHeader("Permissions-Policy","camera=(), microphone=(), geolocation=()");
   res.setHeader("Cross-Origin-Resource-Policy","same-origin");
+  res.setHeader("Cross-Origin-Opener-Policy","same-origin-allow-popups");
+  res.setHeader("X-Permitted-Cross-Domain-Policies","none");
   res.setHeader("Origin-Agent-Cluster","?1");
   res.setHeader("Cache-Control","no-store");
   res.setHeader("X-Request-Id",requestId||randomUUID());
