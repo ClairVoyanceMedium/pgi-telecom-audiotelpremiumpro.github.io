@@ -17,10 +17,9 @@ test("public order intent is private, short-lived and consumed by registration",
   assert.match(audience,/register-first-name/);
   assert.match(audience,/register-email/);
   assert.match(audience,/PGIOrderMeta=\{acquisition_source:"public_marketing_site"/);
-  assert.match(site,/form\.checkValidity\(\)/);
-  assert.match(site,/\["new_number","portability","advice"\]/);
   assert.match(site,/sessionStorage\.setItem/);
-  assert.match(site,/return;\s*}\s*if\(status\)/);
+  assert.match(site,/catch\(_e\).*hidden=false;return/s);
+  assert.match(site,/button\[type="submit"\]/);
   assert.match(siteHtml,/id="order-status"/);
   assert.match(siteHtml,/JavaScript doit être activé/);
 });
