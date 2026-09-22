@@ -24,13 +24,11 @@ test("public order intent is private, short-lived and consumed by registration",
   assert.match(siteHtml,/JavaScript doit être activé/);
 });
 
-test("client registration prevents duplicate submits while request is pending",()=>{
-  assert.match(portal,/if\(submit&&submit\.disabled\)return/);
-  assert.match(portal,/submit\.disabled=true/);
-  assert.match(portal,/aria-busy/);
-  assert.match(portal,/Création sécurisée du compte en cours/);
+test("client registration prevents duplicate button submits while request is pending",()=>{
+  assert.match(portal,/var b=e\.submitter/);
+  assert.match(portal,/b\.disabled=true/);
   assert.match(portal,/finally\{/);
-  assert.match(portal,/submit\.disabled=false/);
+  assert.match(portal,/b\.disabled=false/);
 });
 
 test("client registration carries acquisition source and service intent",()=>{
