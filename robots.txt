@@ -1,2 +1,8 @@
 User-agent: *
-Disallow: /
+Allow: /site/
+Disallow: /client.html
+Disallow: /index.html
+Disallow: /backend/
+Disallow: /docs/
+
+Sitemap: https://clairvoyancemedium.github.io/pgi-telecom-audiotelpremiumpro.github.io/sitemap.xml
