@@ -21,6 +21,8 @@ const files=[
   "robots.txt",
   ".nojekyll",
   "assets/styles.css",
+  "assets/live-revenue-jackpot.js",
+  "assets/live-revenue-jackpot.css",
   "assets/client-portal.css",
   "assets/client-admin-theme.css",
   "assets/client-config.js",
