@@ -1,7 +1,7 @@
 (function(){
 "use strict";
 
-var refresh=null,status=null,detail=null,main=null,lastLoadedAt=null,liveTimer=null,liveData={base:0,rate:0,asOf:0,currency:"EUR",active:0,mixed:false};
+var refresh=null,status=null,detail=null,main=null,lastLoadedAt=null,liveTimer=null,liveSyncTimer=null,liveSyncBusy=false,liveData={base:0,rate:0,asOf:0,currency:"EUR",active:0,mixed:false};
 
 function $(id){return document.getElementById(id);}
 function formatTime(date){
@@ -90,6 +90,10 @@ function init(){
   if(refresh)refresh.addEventListener("click",refreshPortal);
   var liveRefresh=$("client-live-refresh");if(liveRefresh)liveRefresh.addEventListener("click",refreshPortal);
   if(!liveTimer)liveTimer=setInterval(liveTick,1000);
+  if(!liveSyncTimer)liveSyncTimer=setInterval(function(){
+    if(document.hidden||navigator.onLine===false||liveSyncBusy)return;
+    liveSyncBusy=true;Promise.resolve(refreshPortal()).finally(function(){setTimeout(function(){liveSyncBusy=false},1000)});
+  },15000);
 
   document.addEventListener("pgi:portal-loading",function(){
     setBusy(true);
