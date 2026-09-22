@@ -211,3 +211,12 @@ html{scroll-padding-top:150px}
   .cp-mobile-sheet-grid{grid-template-columns:1fr}
 }
 @media print{.cp-mobile-nav,.cp-mobile-menu-dialog{display:none!important}}
+
+/* v1.55 — reversement client en direct */
+.cp-live-earnings{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(250px,.75fr);gap:18px;align-items:center;margin:0 0 18px;padding:20px;border:1px solid rgba(255,255,255,.12);border-radius:18px;background:linear-gradient(135deg,rgba(255,255,255,.055),rgba(255,255,255,.018))}
+.cp-live-earnings-copy h2{margin:3px 0 7px}.cp-live-earnings-copy p:last-child{margin:0;opacity:.72;max-width:760px}
+.cp-live-earnings-meter{display:grid;gap:7px;padding:16px;border-radius:15px;background:rgba(0,0,0,.13)}
+.cp-live-earnings-meter>span{font-size:12px;font-weight:750;letter-spacing:.05em;opacity:.72}
+.cp-live-earnings-meter>strong{font-size:clamp(30px,7vw,52px);line-height:1;font-variant-numeric:tabular-nums}
+.cp-live-earnings-meter>small{opacity:.72}.cp-live-earnings-meter .cp-ghost{justify-self:start;margin-top:5px}
+@media(max-width:760px){.cp-live-earnings{grid-template-columns:1fr}.cp-live-earnings-meter{padding:14px}}
