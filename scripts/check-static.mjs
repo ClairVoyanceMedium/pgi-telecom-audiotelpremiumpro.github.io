@@ -5,6 +5,10 @@ const root = process.cwd();
 const required = [
   "index.html",
   "client.html",
+  "site/index.html",
+  "site/site.css",
+  "site/site.js",
+  "sitemap.xml",
   "assets/styles.css",
   "assets/client-portal.css",
   "assets/client-admin-theme.css",

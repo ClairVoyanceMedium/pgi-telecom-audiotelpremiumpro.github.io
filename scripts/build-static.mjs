@@ -11,6 +11,10 @@ fs.mkdirSync(path.join(dist,"assets"),{recursive:true});
 const files=[
   "index.html",
   "client.html",
+  "site/index.html",
+  "site/site.css",
+  "site/site.js",
+  "sitemap.xml",
   "manifest.webmanifest",
   "service-worker.js",
   "robots.txt",
