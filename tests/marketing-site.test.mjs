@@ -11,7 +11,7 @@ const cockpit=fs.readFileSync("index.html","utf8");
 const client=fs.readFileSync("client.html","utf8");
 
 test("public site targets both individuals and professionals",()=>{
-  assert.match(html,/PARTICULIERS · INDÉPENDANTS · ENTREPRISES/);
+  assert.match(html,/AUDIOTEL · SVA · PARTICULIERS · PROFESSIONNELS/);
   assert.match(html,/Demander un compte particulier/);
   assert.match(html,/Demander un compte professionnel/);
   assert.match(html,/Simple pour un particulier\. Complète pour une entreprise\./);
@@ -37,7 +37,7 @@ test("calculator uses transparent minutes times rate arithmetic",()=>{
 });
 
 test("marketing surface is indexable while private surfaces remain noindex",()=>{
-  assert.match(html,/name="robots" content="index,follow,max-image-preview:large"/);
+  assert.match(html,/name="robots" content="index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1"/);
   assert.match(cockpit,/name="robots" content="noindex,nofollow,noarchive"/);
   assert.match(client,/name="robots" content="noindex,nofollow,noarchive"/);
   assert.match(robots,/Allow: \/site\//);
