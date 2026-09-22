@@ -20,5 +20,17 @@ function apply(s={}){
   live={upstream:Number(s.live_upstream_estimate_ht||0),margin:Number(s.live_platform_margin_estimate_ht||0),client:Number(s.live_client_net_estimate_ht||0),upstreamRate:Number(s.live_upstream_rate_per_second||0),marginRate:Number(s.live_platform_margin_rate_per_second||0),clientRate:Number(s.live_client_net_rate_per_second||0),asOf:Date.parse(s.live_estimate_as_of||"")||Date.now(),currency:String(s.live_estimate_currency||"EUR"),mixed:Boolean(s.live_estimate_mixed_currency),calls:Number(s.live_calls||0)};tick();
 }
 window.addEventListener("pgi:live-finance",e=>apply(e.detail||{}));
+let syncBusy=false;
+async function sync(){
+  if(syncBusy||document.hidden||!window.PGIApi||window.PGI_CONFIG?.mode!=="production")return;
+  syncBusy=true;
+  try{
+    const to=new Date(),from=new Date(to.getTime()-120000),market=window.PGIWorkspace?.readMarket?.()||null;
+    apply(await window.PGIApi.summary(from.toISOString(),to.toISOString(),market));
+  }catch(_e){}finally{syncBusy=false}
+}
 apply(window.PGILiveFinanceSummary||{});
+sync();
 setInterval(tick,1000);
+setInterval(sync,5000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)sync()});
