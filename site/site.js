@@ -41,11 +41,8 @@ document.querySelectorAll("[data-order-type]").forEach(link=>link.addEventListen
 }));
 form.addEventListener("submit",e=>{
   e.preventDefault();
-  if(!form.checkValidity()){form.reportValidity();return}
   const type=form.querySelector('input[name="order_account_type"]:checked')?.value||"";
   if(!["individual","business"].includes(type))return;
-  const serviceIntent=String(document.getElementById("order-service-intent")?.value||"");
-  if(!["new_number","portability","advice"].includes(serviceIntent))return;
   const intent={
     version:1,
     created_at:Date.now(),
@@ -56,27 +53,12 @@ form.addEventListener("submit",e=>{
     company_name:type==="business"?String(company?.value||"").trim().slice(0,200):"",
     email:String(document.getElementById("order-email")?.value||"").trim().slice(0,320),
     phone:String(document.getElementById("order-phone")?.value||"").trim().slice(0,40),
-    service_intent:serviceIntent
+    service_intent:String(document.getElementById("order-service-intent")?.value||"")
   };
-  const status=document.getElementById("order-status");
-  try{
-    sessionStorage.setItem(KEY,JSON.stringify(intent));
-  }catch(_e){
-    if(status){
-      status.hidden=false;
-      status.classList.add("bad");
-      status.textContent="Votre navigateur bloque le transfert sécurisé de cette demande. Autorisez le stockage de session puis réessayez.";
-    }
-    return;
-  }
-  if(status){
-    status.hidden=false;
-    status.classList.remove("bad");
-    status.textContent="Informations enregistrées pour cette session. Ouverture de l’espace client…";
-  }
-  const submit=form.querySelector('button[type="submit"]');
-  if(submit){submit.disabled=true;submit.setAttribute("aria-busy","true")}
-  location.assign("../client.html?register=1");
+  try{sessionStorage.setItem(KEY,JSON.stringify(intent))}
+  catch(_e){const s=document.getElementById("order-status");if(s)s.hidden=false;return}
+  const b=form.querySelector('button[type="submit"]');if(b)b.disabled=true;
+  location.href="../client.html?register=1";
 });
 syncType();
 })();
