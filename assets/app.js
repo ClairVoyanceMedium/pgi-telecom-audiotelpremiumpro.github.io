@@ -2,7 +2,7 @@
 "use strict";
 var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
 var CONFIG={serviceRate:.8,payoutRate:.46,expertCostPerMin:.18,fixedCostPerCall:.03};
-var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,pendingSyncMode:"dashboard",scheduledSyncMode:"dashboard",hiddenAt:null,lastSyncAt:null,activeView:"overview",system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:true};
+var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0,upstreamBase:0,platformMarginBase:0,clientNetBase:0,upstreamRate:0,platformMarginRate:0,clientNetRate:0,asOf:0,currency:"EUR",mixed:false},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,pendingSyncMode:"dashboard",scheduledSyncMode:"dashboard",hiddenAt:null,lastSyncAt:null,activeView:"overview",system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:true};
 var titles={overview:"Cockpit",calls:"Appels",finance:"Finance",experts:"Intervenants",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Supervision",settings:"Paramètres"};var experts=["Accueil","Service commercial","Support client","Service technique","Prise de rendez-vous","Comptabilité"];
 var carriers=["Orange","SFR","Bouygues","Free"];
 var number089="0890 80 24 24";
@@ -42,6 +42,30 @@ function setProductionLive(summary){
 state.live.calls=Number(summary&&summary.live_calls||0);
 state.live.available=Number(summary&&summary.active_experts||0);
 state.live.queue=Number(summary&&summary.queue_depth||0);
+state.live.upstreamBase=Number(summary&&summary.live_upstream_estimate_ht||0);
+state.live.platformMarginBase=Number(summary&&summary.live_platform_margin_estimate_ht||0);
+state.live.clientNetBase=Number(summary&&summary.live_client_net_estimate_ht||0);
+state.live.upstreamRate=Number(summary&&summary.live_upstream_rate_per_second||0);
+state.live.platformMarginRate=Number(summary&&summary.live_platform_margin_rate_per_second||0);
+state.live.clientNetRate=Number(summary&&summary.live_client_net_rate_per_second||0);
+state.live.asOf=Date.parse(summary&&summary.live_estimate_as_of||"")||Date.now();
+state.live.currency=String(summary&&summary.live_estimate_currency||state.marketCurrency||"EUR");
+state.live.mixed=Boolean(summary&&summary.live_estimate_mixed_currency);
+}
+function projectedLive(base,rate){
+var elapsed=state.live.asOf?Math.max(0,(Date.now()-state.live.asOf)/1000):0;
+return Math.max(0,Number(base||0)+Number(rate||0)*elapsed);
+}
+function renderLiveJackpot(){
+var mixed=state.live.mixed;
+var upstream=projectedLive(state.live.upstreamBase,state.live.upstreamRate);
+var clientNet=projectedLive(state.live.clientNetBase,state.live.clientNetRate);
+var margin=projectedLive(state.live.platformMarginBase,state.live.platformMarginRate);
+var currency=state.live.currency||state.marketCurrency||"EUR";
+setText("live-jackpot",mixed?"Multi-devises":moneyIn(upstream,currency,"fr-FR"));
+setText("live-jackpot-client",mixed?"—":moneyIn(clientNet,currency,"fr-FR"));
+setText("live-jackpot-margin",mixed?"—":moneyIn(margin,currency,"fr-FR"));
+setText("live-jackpot-detail",nfmt(state.live.calls||0)+" appel(s) en cours · estimation avant CDR et rapprochement");
 }
 function syncMarketSelector(data){
 var markets=data&&Array.isArray(data.markets)?data.markets:[];
@@ -411,6 +435,7 @@ setText("fin-gap",monetaryLabel(a.gap,mixed));
 setText("live-calls",String(state.live.calls||0));
 setText("live-available",String(state.live.available||0));
 setText("live-queue",String(state.live.queue||0));
+renderLiveJackpot();
 var trend=$("ca-trend");
 if(trend){
 var pct=revenueTrendPercent(rows);
@@ -1446,6 +1471,7 @@ navigator.serviceWorker.register("./service-worker.js").catch(function(){});
 }
 function clock(){
 setText("footer-clock",new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeStyle:"medium"}).format(new Date()));
+renderLiveJackpot();
 }
 window.addEventListener("error",recordRuntimeError);
 window.addEventListener("unhandledrejection",recordRuntimeError);
