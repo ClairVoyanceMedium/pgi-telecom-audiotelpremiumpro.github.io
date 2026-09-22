@@ -6,7 +6,7 @@ const read=file=>fs.readFileSync(file,"utf8");
 const index=read("index.html");
 const clientPortal=read("client.html");
 const clientPortalApi=read("assets/client-portal-api.js");
-const clientPortalJs=read("assets/client-portal.js");
+const clientPortalJs=read("assets/client-portal.js");\nconst clientLiveFinance=read("assets/client-live-finance.js");\nconst adminLiveFinance=read("assets/live-finance.js");
 const clientMobile=read("assets/client-mobile.js");
 const clientPortalCss=read("assets/client-portal.css");
 const clientAdminTheme=read("assets/client-admin-theme.css");
@@ -61,19 +61,22 @@ test("la marque client reste Audiotel Premium Pro et la plateforme reste multise
 
 test("les cockpits affichent les reversements en direct sans les confondre avec les montants consolidés",()=>{
   const server=read("backend/server.mjs"),store=read("backend/src/store-postgres.mjs"),site=read("site/index.html");
-  for(const id of ["client-live-money","client-live-amount","client-period-payout-estimate","client-live-recalc"])assert.ok(clientPortal.includes('id="'+id+'"'),"missing client #"+id);
-  for(const id of ["live-jackpot-card","live-jackpot","live-jackpot-period"])assert.ok(index.includes('id="'+id+'"'),"missing admin #"+id);
-  assert.match(clientPortalJs,/live_financial_by_currency/);
-  assert.match(clientPortalJs,/client_rate_ht_per_second/);
-  assert.match(clientPortalJs,/startLiveEvents/);
-  assert.match(clientPortalApi,/new EventSource\(baseUrl\(\)\+"\/customer\/events"/);
+  assert.match(clientPortal,/client-live-finance\.js/);
+  assert.match(index,/live-finance\.js/);
+  for(const id of ["client-live-money","client-live-amount","client-period-payout-estimate","client-live-recalc"])assert.ok(clientLiveFinance.includes('id="'+id+'"'),"missing client live #"+id);
+  for(const id of ["live-jackpot-card","live-jackpot","live-jackpot-period"])assert.ok(adminLiveFinance.includes('id="'+id+'"'),"missing admin live #"+id);
+  assert.match(clientLiveFinance,/live_financial_by_currency/);
+  assert.match(clientLiveFinance,/client_rate_ht_per_second/);
+  assert.match(clientLiveFinance,/\/customer\/events/);
+  assert.match(adminLiveFinance,/live_upstream_payout_ht/);
+  assert.match(adminLiveFinance,/live_upstream_rate_ht_per_second/);
   assert.match(server,/\/api\/v1\/customer\/events/);
   assert.match(server,/live_call\.started/);
   assert.match(server,/live_call\.ended/);
   assert.match(store,/liveFinancialSnapshot/);
   assert.match(store,/tenant_scoped_live_call_financial_sessions/);
   assert.match(site,/Des prix bas soutenus par le bouche-à-oreille/);
-  assert.match(site,/objectif de maintenir des tarifs bas/);
+  assert.match(site,/préserver des tarifs bas/);
   assert.doesNotMatch(site,/tarif garanti|prix garanti/i);
 });
 
