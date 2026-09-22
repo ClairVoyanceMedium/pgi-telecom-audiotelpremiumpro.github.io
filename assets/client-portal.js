@@ -302,7 +302,7 @@ async function submitRegistration(e){
     website:$("register-website").value,
     preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",
     timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC")
-  };Object.assign(payload,window.PGIOrderMeta||{});
+  };
   try{
     var result=await window.PGICustomerApi.register(payload);
     state.user=result.user;
@@ -482,10 +482,9 @@ async function init(){
   handleBillingReturn();
   var cfg=window.PGI_CONFIG||{};
   state.demo=cfg.mode==="demo"||!cfg.apiBaseUrl;
-  var params=new URLSearchParams(location.search);
-  if(params.get("register")==="1"){showRegister();return;}
+  if(location.search.includes("register=1")){showRegister();return;}
   if(state.demo){showApp();return;}
-  if(params.get("invite")){showActivation();return;}
+  if(location.search.includes("invite=")){showActivation();return;}
   try{var me=await window.PGICustomerApi.me();state.user=me.user;showApp();}catch(_e){showLogin();}
 }
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init,{once:true});else init();
