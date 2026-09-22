@@ -285,8 +285,7 @@ function updateRegistrationNumberField(){
 }
 async function submitRegistration(e){
   e.preventDefault();setAuthMessage("");
-  var form=e.currentTarget||$("customer-register-form"),submit=form&&form.querySelector('button[type="submit"]');
-  if(submit&&submit.disabled)return;
+  var b=e.submitter;
   var password=$("register-password").value,confirm=$("register-password-confirm").value;
   if(password!==confirm){setAuthMessage("Les deux mots de passe sont différents.",true);return;}
   if(password.length<12){setAuthMessage("Le mot de passe doit contenir au moins 12 caractères.",true);return;}
@@ -305,9 +304,7 @@ async function submitRegistration(e){
     preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",
     timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC")
   };
-  if(submit){submit.disabled=true;submit.setAttribute("aria-busy","true");}
-  if(form)form.setAttribute("aria-busy","true");
-  setAuthMessage("Création sécurisée du compte en cours…",false);
+  if(b)b.disabled=true;
   try{
     var result=await window.PGICustomerApi.register(payload);
     state.user=result.user;
@@ -324,8 +321,7 @@ async function submitRegistration(e){
     };
     setAuthMessage(messages[err.code]||"Création du compte impossible.",true);
   }finally{
-    if(submit){submit.disabled=false;submit.removeAttribute("aria-busy");}
-    if(form)form.removeAttribute("aria-busy");
+    if(b)b.disabled=false;
   }
 }
 async function submitLogin(e){
