@@ -510,10 +510,13 @@ export class MemoryStore{
     };
     this.calls.unshift(call);
     const live=this.liveFinancialSessions.find(x=>x.external_call_id===call.external_call_id&&x.status==="active");
-    if(live){live.status="ended";live.ended_at=call.ended_at;}
+    if(live){
+      live.status="ended";live.ended_at=call.ended_at;
+      this.eventBus.publish("live_call.ended",{id:live.id,external_call_id:call.external_call_id,tenant_id:live.tenant_id,market_id:live.market_id,currency:live.currency,status:"ended",source:"cdr"});
+    }
     this.#outbox("call.ingested","call",String(call.id),{external_call_id:call.external_call_id});
     this.#audit("cdr.ingest",String(call.id),{source:envelope.source});
-    this.eventBus.publish("call.ingested",{id:call.id,status:call.call_status});
+    this.eventBus.publish("call.ingested",{id:call.id,status:call.call_status,tenant_id:live?.tenant_id||1,market_id:live?.market_id||null,currency:live?.currency||"EUR"});
     return {duplicate:false,call:{...call}};
   }
 
