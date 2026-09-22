@@ -193,6 +193,7 @@ async function loadPortal(){
     throw error;
   }
 }
+window.PGIReload=loadPortal;
 function showApp(){
   $("customer-auth").hidden=true;$("customer-app").hidden=false;loadPortal().catch(function(e){toast("Chargement impossible : "+(e.code||e.message));});
 }

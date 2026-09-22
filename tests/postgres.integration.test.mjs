@@ -106,6 +106,37 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(Number(payoutTerms.platform_fee_bps),2000);
     assert.equal(payoutTerms.collection_model,"pgi_collects");
 
+    const liveCarrierContract=await store.sql.unsafe(
+      "INSERT INTO carrier_contracts(carrier_id,sva_number_id,valid_from,payout_rate_ht_per_min,mobile_deduction_ht_per_min,minimum_payable_seconds,billing_increment_seconds,payout_rounding)"+
+      " SELECT c.id,s.id,'2026-01-01',0.55,0.05,0,1,'ceil' FROM carriers c CROSS JOIN sva_numbers s"+
+      " WHERE c.name='Host A' AND s.e164='33890000001' RETURNING id"
+    );
+    const liveTenant=(await store.sql.unsafe("SELECT id FROM tenants WHERE slug='integration-external' LIMIT 1"))[0];
+    const liveSession=await store.startLiveCallFinancial({
+      external_call_id:"integration-live-financial-1",
+      sva_number:"33890000001",
+      billable_started_at:new Date().toISOString(),
+      origin_type:"fixed"
+    });
+    assert.equal(liveSession.status,"active");
+    assert.equal(liveSession.currency,"EUR");
+    assert.equal(Number(liveSession.upstream_payout_rate_ht_per_min),0.55);
+    assert.equal(Number(liveSession.net_client_rate_ht_per_min),0.44);
+    const liveBefore=await store.liveFinancialSnapshot(Number(liveTenant.id),null);
+    assert.equal(liveBefore.active_calls,1);
+    const liveBeforeEur=liveBefore.by_currency.find(x=>x.currency==="EUR");
+    assert.ok(liveBeforeEur);
+    assert.ok(Number(liveBeforeEur.client_rate_ht_per_second)>0);
+    await new Promise(resolve=>setTimeout(resolve,40));
+    const liveAfter=await store.liveFinancialSnapshot(Number(liveTenant.id),null);
+    const liveAfterEur=liveAfter.by_currency.find(x=>x.currency==="EUR");
+    assert.ok(Number(liveAfterEur.estimated_client_net_ht)>Number(liveBeforeEur.estimated_client_net_ht));
+    assert.ok(Number(liveAfterEur.estimated_upstream_payout_ht)>Number(liveBeforeEur.estimated_upstream_payout_ht));
+    const stoppedLive=await store.stopLiveCallFinancial("integration-live-financial-1","ended");
+    assert.equal(stoppedLive.status,"ended");
+    assert.equal((await store.liveFinancialSnapshot(Number(liveTenant.id),null)).active_calls,0);
+    await store.sql.unsafe("DELETE FROM carrier_contracts WHERE id=$1",[Number(liveCarrierContract[0].id)]);
+
     await assert.rejects(
       ()=>store.sql.unsafe("INSERT INTO tenant_number_assignments(tenant_id,sva_number_id,assignment_type,status,valid_from,regulatory_assignor_carrier_id,upstream_assignment_reference) SELECT t.id,s.id,'customer_service','active',now(),c.id,'integration-upstream-001' FROM tenants t CROSS JOIN sva_numbers s CROSS JOIN carriers c WHERE t.slug='integration-external' AND s.e164='33890000001' AND c.name='Host A'"),
       /verified regulatory trust profile required/
@@ -750,10 +781,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const rawCalls=await store.sql.unsafe("SELECT count(*)::int AS count FROM calls");
     assert.equal(rawCalls[0].count,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
-    assert.equal(migrations.length,54);
+    assert.equal(migrations.length,55);
     assert.equal(new Set(migrations.map(x=>x.version)).size,migrations.length);
     assert.equal(migrations[0].version,"001_baseline");
-    assert.equal(migrations.at(-1).version,"054_customer_team_access");
+    assert.equal(migrations.at(-1).version,"055_live_call_financial_realtime");
     for(const migration of migrations)assert.match(migration.checksum,/^[a-f0-9]{64}$/);
   }finally{
     await store.close();

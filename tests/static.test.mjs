@@ -7,6 +7,8 @@ const index=read("index.html");
 const clientPortal=read("client.html");
 const clientPortalApi=read("assets/client-portal-api.js");
 const clientPortalJs=read("assets/client-portal.js");
+const clientLiveFinance=read("assets/client-live-finance.js");
+const adminLiveFinance=read("assets/live-finance.js");
 const clientMobile=read("assets/client-mobile.js");
 const clientPortalCss=read("assets/client-portal.css");
 const clientAdminTheme=read("assets/client-admin-theme.css");
@@ -57,6 +59,27 @@ test("la marque client reste Audiotel Premium Pro et la plateforme reste multise
   assert.match(tenantControlDetail,/Intervenants \/ services \/ postes/);
   assert.doesNotMatch(tenantControlDetail,/Agents \/ postes optionnels/);
   assert.match(clientPortalJs,/Frais de plateforme HT/);
+});
+
+test("les cockpits affichent les reversements en direct sans les confondre avec les montants consolidés",()=>{
+  const server=read("backend/server.mjs"),store=read("backend/src/store-postgres.mjs"),site=read("site/index.html");
+  assert.match(clientPortal,/client-live-finance\.js/);
+  assert.match(index,/live-finance\.js/);
+  for(const id of ["client-live-money","client-live-amount","client-period-payout-estimate","client-live-recalc"])assert.ok(clientLiveFinance.includes('id="'+id+'"'),"missing client live #"+id);
+  for(const id of ["live-jackpot-card","live-jackpot","live-jackpot-period"])assert.ok(adminLiveFinance.includes('id="'+id+'"'),"missing admin live #"+id);
+  assert.match(clientLiveFinance,/live_financial_by_currency/);
+  assert.match(clientLiveFinance,/client_rate_ht_per_second/);
+  assert.match(clientLiveFinance,/\/customer\/events/);
+  assert.match(adminLiveFinance,/live_upstream_payout_ht/);
+  assert.match(adminLiveFinance,/live_upstream_rate_ht_per_second/);
+  assert.match(server,/\/api\/v1\/customer\/events/);
+  assert.match(server,/live_call\.started/);
+  assert.match(server,/live_call\.ended/);
+  assert.match(store,/liveFinancialSnapshot/);
+  assert.match(store,/tenant_scoped_live_call_financial_sessions/);
+  assert.match(site,/Des prix bas soutenus par le bouche-à-oreille/);
+  assert.match(site,/préserver des tarifs bas/);
+  assert.doesNotMatch(site,/tarif garanti|prix garanti/i);
 });
 
 test("le cockpit garde une liste d'appels compacte et une remise à zéro sélective",()=>{

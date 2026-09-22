@@ -27,8 +27,9 @@ export function hasCustomerPermission(context,permission){
 export function scopeCustomerPortalData(context,data={}){
   const allowed=permission=>hasCustomerPermission(context,permission),out={...data};
   if(!allowed("finance.read")){
-    out.financial_by_currency=(data.financial_by_currency||[]).map(row=>{const {generated_revenue_ttc,...rest}=row;return rest;});
+    out.financial_by_currency=(data.financial_by_currency||[]).map(row=>{const {generated_revenue_ttc,expected_payout_ht,...rest}=row;return rest;});
     out.metric_net_payout_by_currency=[];
+    out.live_financial_by_currency=[];
     out.series=(data.series||[]).map(row=>{const {generated_revenue_ttc,...rest}=row;return rest;});
     out.settlements=[];
     out.subscriptions=(data.subscriptions||[]).map(row=>{const {amount_minor,price_currency,billing_currency,...rest}=row;return rest;});

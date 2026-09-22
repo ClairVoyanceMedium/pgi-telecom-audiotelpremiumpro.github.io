@@ -24,6 +24,7 @@ export class MemoryStore{
       {id:4,code:"TECH",display_name:"Service technique",destination_uri:"loopback/9104",status:"available",enabled:true,active_calls:0,last_assigned_at:null}
     ];
     this.callDestinations=[];
+    this.liveFinancialSessions=[];
     this.nextDestinationId=1;
     this.voiceServices=[];
     this.nextVoiceServiceId=1;
@@ -132,6 +133,8 @@ export class MemoryStore{
     const rows=this.#range(from,to);
     const mapped=rows.map(toCoreRow);
     const a=core.aggregateCalls(mapped);
+    const live=await this.liveFinancialSnapshot();
+    const liveSingle=live.currency_count===1?live.by_currency[0]||null:null;
     return {
       generated_revenue_ttc:a.generatedRevenueTtc,
       expected_payout_ht:a.expectedPayoutHt,
@@ -148,9 +151,42 @@ export class MemoryStore{
       acd_seconds:a.acdSeconds,
       asr_percent:a.asrPercent,
       active_experts:this.experts.filter(x=>x.status==="available").length,
-      live_calls:this.experts.reduce((s,x)=>s+Number(x.active_calls||0),0),
-      queue_depth:0
+      live_calls:Math.max(this.experts.reduce((s,x)=>s+Number(x.active_calls||0),0),live.active_calls),
+      queue_depth:0,
+      live_currency_count:live.currency_count,
+      live_mixed_currency:live.currency_count>1,
+      live_currency:liveSingle?.currency||null,
+      live_upstream_payout_ht:liveSingle?.estimated_upstream_payout_ht??null,
+      live_client_net_ht:liveSingle?.estimated_client_net_ht??null,
+      live_service_revenue_ttc:liveSingle?.estimated_service_revenue_ttc??null,
+      live_upstream_rate_ht_per_second:liveSingle?.upstream_rate_ht_per_second??null,
+      live_client_rate_ht_per_second:liveSingle?.client_rate_ht_per_second??null,
+      live_service_rate_ttc_per_second:liveSingle?.service_rate_ttc_per_second??null,
+      live_as_of:live.as_of,
+      live_financial_by_currency:live.by_currency
     };
+  }
+
+  async liveFinancialSnapshot(tenantId=null,market=null){
+    void tenantId;void market;
+    const now=Date.now(),groups=new Map();
+    for(const row of this.liveFinancialSessions){
+      if(row.status!=="active")continue;
+      const elapsed=Math.max(0,Math.min(86400,(now-Date.parse(row.billable_started_at))/1000));
+      if(!Number.isFinite(elapsed)||elapsed>86400)continue;
+      const currency=row.currency||"EUR";
+      if(!groups.has(currency))groups.set(currency,{currency,active_calls:0,estimated_service_revenue_ttc:0,estimated_upstream_payout_ht:0,estimated_client_net_ht:0,service_rate_ttc_per_second:0,upstream_rate_ht_per_second:0,client_rate_ht_per_second:0});
+      const g=groups.get(currency);
+      g.active_calls++;
+      g.estimated_service_revenue_ttc+=elapsed/60*Number(row.service_rate_ttc_per_min||0);
+      g.estimated_upstream_payout_ht+=elapsed/60*Number(row.upstream_payout_rate_ht_per_min||0);
+      g.estimated_client_net_ht+=elapsed/60*Number(row.net_client_rate_ht_per_min||0);
+      g.service_rate_ttc_per_second+=Number(row.service_rate_ttc_per_min||0)/60;
+      g.upstream_rate_ht_per_second+=Number(row.upstream_payout_rate_ht_per_min||0)/60;
+      g.client_rate_ht_per_second+=Number(row.net_client_rate_ht_per_min||0)/60;
+    }
+    const byCurrency=[...groups.values()].map(roundFinance);
+    return {as_of:new Date(now).toISOString(),active_calls:byCurrency.reduce((a,x)=>a+Number(x.active_calls||0),0),currency_count:byCurrency.length,by_currency:byCurrency};
   }
 
   async dashboardAnalytics(from,to,market=null){
@@ -344,6 +380,39 @@ export class MemoryStore{
     if(active){active.active_calls++;active.last_assigned_at=new Date().toISOString();return {...active,route_kind:"destination",call_destination_id:active.id,expert_id:null};}
     const expert=await this.selectExpert(context);return expert?{...expert,route_kind:"expert",call_destination_id:null,expert_id:expert.id,label:expert.display_name}:null;
   }
+  async startLiveCallFinancial(payload={}){
+    const externalCallId=String(payload.external_call_id||"").trim();
+    if(!externalCallId||externalCallId.length>240)throw problem(400,"INVALID_EXTERNAL_CALL_ID");
+    const at=String(payload.billable_started_at||payload.started_at||new Date().toISOString());
+    if(!Number.isFinite(Date.parse(at)))throw problem(400,"INVALID_LIVE_CALL_START");
+    let row=this.liveFinancialSessions.find(x=>x.external_call_id===externalCallId);
+    if(!row){
+      const upstream=Math.max(0,Number(this.config.payoutRateHtPerMin||0));
+      const feeRate=upstream*.10;
+      row={
+        id:this.liveFinancialSessions.length+1,external_call_id:externalCallId,tenant_id:1,market_id:null,
+        sva_number_id:1,currency:"EUR",billable_started_at:new Date(at).toISOString(),ended_at:null,status:"active",
+        origin_type:["fixed","mobile"].includes(String(payload.origin_type||""))?String(payload.origin_type):"unknown",
+        service_rate_ttc_per_min:Number(this.config.serviceRateTtcPerMin||0),
+        upstream_payout_rate_ht_per_min:upstream,platform_fee_bps:1000,platform_fee_ht_per_min:0,
+        net_client_rate_ht_per_min:upstream-feeRate,payout_terms_id:1
+      };
+      this.liveFinancialSessions.push(row);
+      this.eventBus.publish("live_call.started",{id:row.id,tenant_id:row.tenant_id,currency:row.currency});
+    }
+    return structuredClone(row);
+  }
+
+  async stopLiveCallFinancial(externalCallId,status="ended",endedAt=null){
+    const id=String(externalCallId||"").trim();
+    if(!id)throw problem(400,"INVALID_EXTERNAL_CALL_ID");
+    const row=this.liveFinancialSessions.find(x=>x.external_call_id===id);
+    if(!row||row.status!=="active")return {external_call_id:id,status:status==="cancelled"?"cancelled":"ended",already_closed:true};
+    row.status=status==="cancelled"?"cancelled":"ended";row.ended_at=new Date(endedAt||Date.now()).toISOString();
+    this.eventBus.publish("live_call.ended",{id:row.id,tenant_id:row.tenant_id,currency:row.currency,status:row.status});
+    return structuredClone(row);
+  }
+
   async releaseCallDestination(id){const row=this.callDestinations.find(x=>x.id===Number(id));if(!row)throw problem(404,"CALL_DESTINATION_NOT_FOUND");row.active_calls=Math.max(0,Number(row.active_calls||0)-1);return {...row};}
 
   async selectExpert(context={}){
@@ -440,9 +509,14 @@ export class MemoryStore{
       quality:p.quality||null
     };
     this.calls.unshift(call);
+    const live=this.liveFinancialSessions.find(x=>x.external_call_id===call.external_call_id&&x.status==="active");
+    if(live){
+      live.status="ended";live.ended_at=call.ended_at;
+      this.eventBus.publish("live_call.ended",{id:live.id,external_call_id:call.external_call_id,tenant_id:live.tenant_id,market_id:live.market_id,currency:live.currency,status:"ended",source:"cdr"});
+    }
     this.#outbox("call.ingested","call",String(call.id),{external_call_id:call.external_call_id});
     this.#audit("cdr.ingest",String(call.id),{source:envelope.source});
-    this.eventBus.publish("call.ingested",{id:call.id,status:call.call_status});
+    this.eventBus.publish("call.ingested",{id:call.id,status:call.call_status,tenant_id:live?.tenant_id||1,market_id:live?.market_id||null,currency:live?.currency||"EUR"});
     return {duplicate:false,call:{...call}};
   }
 
@@ -1007,7 +1081,7 @@ export class MemoryStore{
   async tenantConsumptionReceipts(){return [];}
   async tenantConsumptionToday(){return {schema_version:"audiotel-consumption-receipt/1",range:{from:new Date().toISOString(),to:new Date().toISOString()},tenant_timezone:"Europe/Paris",metric_ranges:{},metrics:{currency:"EUR",calls_total:0,calls_connected:0,calls_abandoned:0,calls_failed:0,billable_seconds:0,generated_revenue_ttc:0,net_payout_ht:0},snapshot_sha256:"0".repeat(64),generated_at:new Date().toISOString(),basis:"demo"};}
   async reconcileTenantConsumptionReceipt(){throw problem(404,"CONSUMPTION_RECEIPT_NOT_FOUND");}
-  async customerPortalOverview(tenantId,from,to){void tenantId;const voice=await this.voiceIntelligence(from,to);return {tenant:{display_name:"Société Démo",default_currency:"EUR",status:"active",customer_type:"business"},financial_by_currency:[],series:[],activity_breakdown:[],numbers:[],settlements:[],subscriptions:[],destinations:[],service_incidents:[],operational_alerts:[],recent_calls:[],voice_quality:voice.summary,range:{from,to}};}
+  async customerPortalOverview(tenantId,from,to){void tenantId;const voice=await this.voiceIntelligence(from,to),live=await this.liveFinancialSnapshot();return {tenant:{display_name:"Société Démo",default_currency:"EUR",status:"active",customer_type:"business"},financial_by_currency:[],live_financial_by_currency:live.by_currency,series:[],activity_breakdown:[],numbers:[],settlements:[],subscriptions:[],destinations:[],service_incidents:[],operational_alerts:[],recent_calls:[],voice_quality:voice.summary,range:{from,to}};}
   async customerServiceIncidents(_tenantId,params={}){if(params.incident_id)throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");return {data:[],alerts:[]};}
   async createCustomerServiceIncident(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
   async addCustomerServiceIncidentNote(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}

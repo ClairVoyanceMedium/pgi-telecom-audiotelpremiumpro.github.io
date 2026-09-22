@@ -166,21 +166,63 @@ export class PostgresStore{
       " FROM combined",
       [from,to,market||null]
     );
-    const presence=await this.readSql.unsafe(
-      "SELECT count(*) FILTER (WHERE status='available' AND enabled)::int AS active_experts,"+
-      " COALESCE(sum(active_calls),0)::int AS live_calls FROM experts"
-    );
+    const [presence,liveFinancial]=await Promise.all([
+      this.readSql.unsafe(
+        "SELECT count(*) FILTER (WHERE status='available' AND enabled)::int AS active_experts,"+
+        " COALESCE(sum(active_calls),0)::int AS live_calls FROM experts"
+      ),
+      this.liveFinancialSnapshot(null,null)
+    ]);
     const r=numberFields(rows[0],[
       "calls_total","calls_connected","calls_abandoned","calls_failed","currency_count"
     ]);
     const p=numberFields(presence[0],["active_experts","live_calls"]);
+    const liveSingle=liveFinancial.currency_count===1?liveFinancial.by_currency[0]||null:null;
     return {
       ...r,
       mixed_currency:r.currency_count>1,
       asr_percent:r.calls_total?r.calls_connected/r.calls_total*100:0,
       active_experts:p.active_experts,
-      live_calls:p.live_calls,
-      queue_depth:0
+      live_calls:Math.max(p.live_calls,liveFinancial.active_calls),
+      queue_depth:0,
+      live_currency_count:liveFinancial.currency_count,
+      live_mixed_currency:liveFinancial.currency_count>1,
+      live_currency:liveSingle?.currency||null,
+      live_upstream_payout_ht:liveSingle?.estimated_upstream_payout_ht??null,
+      live_client_net_ht:liveSingle?.estimated_client_net_ht??null,
+      live_service_revenue_ttc:liveSingle?.estimated_service_revenue_ttc??null,
+      live_upstream_rate_ht_per_second:liveSingle?.upstream_rate_ht_per_second??null,
+      live_client_rate_ht_per_second:liveSingle?.client_rate_ht_per_second??null,
+      live_service_rate_ttc_per_second:liveSingle?.service_rate_ttc_per_second??null,
+      live_as_of:liveFinancial.as_of,
+      live_financial_by_currency:liveFinancial.by_currency
+    };
+  }
+
+  async liveFinancialSnapshot(tenantId=null,market=null){
+    const rows=await this.readSql.unsafe(
+      "SELECT l.currency,count(*)::int AS active_calls,"+
+      " COALESCE(sum(LEAST(86400,GREATEST(0,EXTRACT(EPOCH FROM (now()-l.billable_started_at))))/60.0*l.service_rate_ttc_per_min),0)::float8 AS estimated_service_revenue_ttc,"+
+      " COALESCE(sum(LEAST(86400,GREATEST(0,EXTRACT(EPOCH FROM (now()-l.billable_started_at))))/60.0*l.upstream_payout_rate_ht_per_min),0)::float8 AS estimated_upstream_payout_ht,"+
+      " COALESCE(sum(LEAST(86400,GREATEST(0,EXTRACT(EPOCH FROM (now()-l.billable_started_at))))/60.0*l.net_client_rate_ht_per_min),0)::float8 AS estimated_client_net_ht,"+
+      " COALESCE(sum(l.service_rate_ttc_per_min)/60.0,0)::float8 AS service_rate_ttc_per_second,"+
+      " COALESCE(sum(l.upstream_payout_rate_ht_per_min)/60.0,0)::float8 AS upstream_rate_ht_per_second,"+
+      " COALESCE(sum(l.net_client_rate_ht_per_min)/60.0,0)::float8 AS client_rate_ht_per_second"+
+      " FROM live_call_financial_sessions l LEFT JOIN operating_markets m ON m.id=l.market_id"+
+      " WHERE l.status='active' AND l.billable_started_at>now()-interval '24 hours'"+
+      " AND ($1::bigint IS NULL OR l.tenant_id=$1) AND ($2::text IS NULL OR m.country_code=$2)"+
+      " GROUP BY l.currency ORDER BY l.currency",
+      [tenantId==null?null:Number(tenantId),market||null]
+    );
+    const byCurrency=rows.map(row=>numberFields(row,[
+      "active_calls","estimated_service_revenue_ttc","estimated_upstream_payout_ht","estimated_client_net_ht",
+      "service_rate_ttc_per_second","upstream_rate_ht_per_second","client_rate_ht_per_second"
+    ]));
+    return {
+      as_of:new Date().toISOString(),
+      active_calls:byCurrency.reduce((sum,row)=>sum+Number(row.active_calls||0),0),
+      currency_count:byCurrency.length,
+      by_currency:byCurrency
     };
   }
 
@@ -688,6 +730,95 @@ export class PostgresStore{
     return legacy?{...legacy,route_kind:"expert",call_destination_id:null,expert_id:Number(legacy.id),label:legacy.display_name}:null;
   }
 
+  async startLiveCallFinancial(payload={}){
+    const externalCallId=String(payload.external_call_id||"").trim();
+    const svaNumber=String(payload.sva_number||"").trim();
+    const billableStartedAt=String(payload.billable_started_at||payload.started_at||new Date().toISOString());
+    const originType=["fixed","mobile"].includes(String(payload.origin_type||"").toLowerCase())?String(payload.origin_type).toLowerCase():"unknown";
+    if(!externalCallId||externalCallId.length>240)throw problem(400,"INVALID_EXTERNAL_CALL_ID");
+    if(!svaNumber||svaNumber.length>64)throw problem(400,"INVALID_SVA_NUMBER");
+    if(!Number.isFinite(Date.parse(billableStartedAt)))throw problem(400,"INVALID_LIVE_CALL_START");
+    const session=await this.sql.begin(async tx=>{
+      const svaRows=await tx.unsafe(
+        "SELECT sn.id,sn.tenant_id,sn.market_id,sn.currency,sn.service_rate_ttc_per_min::float8,t.tenant_type"+
+        " FROM sva_numbers sn LEFT JOIN tenants t ON t.id=sn.tenant_id LEFT JOIN sva_number_aliases a ON a.sva_number_id=sn.id AND a.enabled"+
+        " WHERE (sn.e164=$1 OR sn.display_number=$1 OR a.alias=$1) AND sn.status IN ('active','porting')"+
+        " ORDER BY CASE WHEN sn.e164=$1 THEN 0 WHEN sn.display_number=$1 THEN 1 ELSE 2 END LIMIT 1",
+        [svaNumber]
+      );
+      const sva=svaRows[0];
+      if(!sva)throw problem(404,"SVA_NUMBER_NOT_ROUTABLE");
+      if(sva.tenant_id==null)throw problem(409,"SVA_TENANT_NOT_CONFIGURED");
+      const hostRows=await tx.unsafe(
+        "SELECT c.id FROM logical_carrier_routes r JOIN carriers c ON c.id=r.active_carrier_id WHERE r.route_key='sva-primary' LIMIT 1"
+      );
+      const host=hostRows[0]||null;
+      if(this.config.requireCarrierContract&&!host)throw problem(409,"HOST_CARRIER_NOT_CONFIGURED");
+      const contractRows=host?await tx.unsafe(
+        "SELECT payout_rate_ht_per_min::float8,mobile_deduction_ht_per_min::float8 FROM carrier_contracts"+
+        " WHERE carrier_id=$1 AND (sva_number_id IS NULL OR sva_number_id=$2)"+
+        " AND valid_from <= $3::timestamptz::date AND (valid_to IS NULL OR valid_to >= $3::timestamptz::date)"+
+        " ORDER BY (sva_number_id IS NOT NULL) DESC,valid_from DESC,id DESC LIMIT 1",
+        [host.id,sva.id,billableStartedAt]
+      ):[];
+      const contract=contractRows[0]||null;
+      if(this.config.requireCarrierContract&&!contract)throw problem(409,"CARRIER_CONTRACT_NOT_CONFIGURED");
+      const termRows=await tx.unsafe(
+        "SELECT id,platform_fee_bps,platform_fee_ht_per_min::float8 FROM tenant_payout_terms"+
+        " WHERE tenant_id=$1 AND status='active' AND effective_from<=$4::timestamptz"+
+        " AND (effective_to IS NULL OR effective_to>$4::timestamptz)"+
+        " AND (market_id IS NULL OR market_id=$2) AND (sva_number_id IS NULL OR sva_number_id=$3)"+
+        " ORDER BY (sva_number_id IS NOT NULL) DESC,(market_id IS NOT NULL) DESC,effective_from DESC,id DESC LIMIT 1",
+        [sva.tenant_id,sva.market_id,sva.id,billableStartedAt]
+      );
+      const terms=termRows[0]||null;
+      if(sva.tenant_type!=="internal"&&!terms)throw problem(423,"SVA_PAYOUT_TERMS_REQUIRED");
+      const serviceRate=Math.max(0,Number(sva.service_rate_ttc_per_min??this.config.serviceRateTtcPerMin)||0);
+      const basePayout=Math.max(0,Number(contract?.payout_rate_ht_per_min??this.config.payoutRateHtPerMin)||0);
+      const mobileDeduction=originType==="mobile"?Math.max(0,Number(contract?.mobile_deduction_ht_per_min||0)):0;
+      const upstreamRate=Math.max(0,basePayout-mobileDeduction);
+      const bps=Math.min(10000,Math.max(0,Number(terms?.platform_fee_bps||0)));
+      const feePerMinute=Math.max(0,Number(terms?.platform_fee_ht_per_min||0));
+      const platformFeeRate=Math.min(upstreamRate,upstreamRate*bps/10000+feePerMinute);
+      const clientRate=terms?Math.max(0,upstreamRate-platformFeeRate):0;
+      const inserted=await tx.unsafe(
+        "INSERT INTO live_call_financial_sessions(external_call_id,tenant_id,market_id,sva_number_id,currency,billable_started_at,status,origin_type,"+
+        " service_rate_ttc_per_min,upstream_payout_rate_ht_per_min,platform_fee_bps,platform_fee_ht_per_min,net_client_rate_ht_per_min,payout_terms_id)"+
+        " VALUES($1,$2,$3,$4,$5,$6::timestamptz,'active',$7,$8,$9,$10,$11,$12,$13)"+
+        " ON CONFLICT(external_call_id) DO NOTHING"+
+        " RETURNING id,external_call_id,tenant_id,market_id,sva_number_id,currency,billable_started_at,status,origin_type,"+
+        " service_rate_ttc_per_min::float8,upstream_payout_rate_ht_per_min::float8,net_client_rate_ht_per_min::float8",
+        [externalCallId,sva.tenant_id,sva.market_id,sva.id,String(sva.currency||"EUR"),billableStartedAt,originType,serviceRate,upstreamRate,bps,feePerMinute,clientRate,terms?.id||null]
+      );
+      if(inserted[0])return inserted[0];
+      const existing=await tx.unsafe(
+        "SELECT id,external_call_id,tenant_id,market_id,sva_number_id,currency,billable_started_at,status,origin_type,"+
+        " service_rate_ttc_per_min::float8,upstream_payout_rate_ht_per_min::float8,net_client_rate_ht_per_min::float8"+
+        " FROM live_call_financial_sessions WHERE external_call_id=$1 LIMIT 1",[externalCallId]
+      );
+      return existing[0];
+    });
+    if(session?.status==="active")this.eventBus.publish("live_call.started",{id:session.id,tenant_id:session.tenant_id,market_id:session.market_id,currency:session.currency});
+    return session;
+  }
+
+  async stopLiveCallFinancial(externalCallId,status="ended",endedAt=null){
+    const id=String(externalCallId||"").trim();
+    if(!id||id.length>240)throw problem(400,"INVALID_EXTERNAL_CALL_ID");
+    const finalStatus=status==="cancelled"?"cancelled":"ended";
+    const at=endedAt==null?new Date().toISOString():String(endedAt);
+    if(!Number.isFinite(Date.parse(at)))throw problem(400,"INVALID_LIVE_CALL_END");
+    const rows=await this.sql.unsafe(
+      "UPDATE live_call_financial_sessions SET status=$2,ended_at=GREATEST(billable_started_at,$3::timestamptz),updated_at=now()"+
+      " WHERE external_call_id=$1 AND status='active'"+
+      " RETURNING id,external_call_id,tenant_id,market_id,currency,status,ended_at",
+      [id,finalStatus,at]
+    );
+    const row=rows[0]||null;
+    if(row)this.eventBus.publish("live_call.ended",{id:row.id,tenant_id:row.tenant_id,market_id:row.market_id,currency:row.currency,status:row.status});
+    return row||{external_call_id:id,status:finalStatus,already_closed:true};
+  }
+
   async releaseCallDestination(id){
     id=Number(id);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_CALL_DESTINATION_ID");
     const rows=await this.sql.unsafe("UPDATE tenant_call_destinations SET active_calls=GREATEST(active_calls-1,0),updated_at=now() WHERE id=$1 RETURNING id,tenant_id,label,destination_type,destination_uri,status,active_calls,last_assigned_at",[id]);
@@ -934,6 +1065,12 @@ export class PostgresStore{
         [call.id]
       );
 
+      await tx.unsafe(
+        "UPDATE live_call_financial_sessions SET status='ended',ended_at=GREATEST(billable_started_at,$2::timestamptz),updated_at=now()"+
+        " WHERE external_call_id=$1 AND status='active'",
+        [String(p.external_call_id),p.ended_at]
+      );
+
       await writeHourlyRollup(tx,call.id);
       await writeTenantDailyRollup(tx,call.id);
       await writeDashboardDimensionRollups(tx,call.id);
@@ -968,10 +1105,13 @@ export class PostgresStore{
         [sva.tenant_id||null,String(call.id),JSON.stringify({source:envelope.source})]
       );
       await tx.unsafe("UPDATE raw_cdr_events SET processing_status='processed',processed_at=now() WHERE id=$1",[inserted[0].id]);
-      return {duplicate:false,call_id:call.id};
+      return {duplicate:false,call_id:call.id,tenant_id:sva.tenant_id||null,market_id:sva.market_id||null,currency:String(sva.currency||"EUR")};
     });
 
-    if(!result.duplicate)this.eventBus.publish("call.ingested",{id:result.call_id});
+    if(!result.duplicate){
+      this.eventBus.publish("live_call.ended",{external_call_id:p.external_call_id,tenant_id:result.tenant_id,market_id:result.market_id,currency:result.currency,status:"ended",source:"cdr"});
+      this.eventBus.publish("call.ingested",{id:result.call_id,tenant_id:result.tenant_id,market_id:result.market_id,currency:result.currency});
+    }
     return result;
   }
 
@@ -3809,16 +3949,27 @@ export class PostgresStore{
       );
       const tenant=tenantRows[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
       const financial=await tx.unsafe(
-        "SELECT currency,"+
-        " count(*) FILTER(WHERE started_at >= $2::timestamptz)::bigint AS calls_total,"+
-        " count(*) FILTER(WHERE started_at >= $2::timestamptz AND call_status='connected')::bigint AS calls_connected,"+
-        " count(*) FILTER(WHERE started_at >= $2::timestamptz AND call_status='abandoned')::bigint AS calls_abandoned,"+
-        " count(*) FILTER(WHERE started_at >= $2::timestamptz AND call_status NOT IN ('connected','abandoned'))::bigint AS calls_failed,"+
-        " COALESCE(sum(conversation_seconds) FILTER(WHERE started_at >= $3::timestamptz),0)::float8 AS conversation_seconds,"+
-        " COALESCE(sum(billable_seconds) FILTER(WHERE started_at >= $3::timestamptz),0)::float8 AS billable_seconds,"+
-        " COALESCE(sum(retail_service_amount_ttc) FILTER(WHERE started_at >= $4::timestamptz),0)::float8 AS generated_revenue_ttc,max(ended_at) AS updated_at"+
-        " FROM tenant_scoped_call_facts WHERE started_at >= $1::timestamptz AND started_at <= $5::timestamptz"+
-        " GROUP BY currency ORDER BY currency",[earliestFrom,callsFrom,minutesFrom,revenueFrom,to]
+        "SELECT f.currency,"+
+        " count(*) FILTER(WHERE f.started_at >= $2::timestamptz)::bigint AS calls_total,"+
+        " count(*) FILTER(WHERE f.started_at >= $2::timestamptz AND f.call_status='connected')::bigint AS calls_connected,"+
+        " count(*) FILTER(WHERE f.started_at >= $2::timestamptz AND f.call_status='abandoned')::bigint AS calls_abandoned,"+
+        " count(*) FILTER(WHERE f.started_at >= $2::timestamptz AND f.call_status NOT IN ('connected','abandoned'))::bigint AS calls_failed,"+
+        " COALESCE(sum(f.conversation_seconds) FILTER(WHERE f.started_at >= $3::timestamptz),0)::float8 AS conversation_seconds,"+
+        " COALESCE(sum(f.billable_seconds) FILTER(WHERE f.started_at >= $3::timestamptz),0)::float8 AS billable_seconds,"+
+        " COALESCE(sum(f.retail_service_amount_ttc) FILTER(WHERE f.started_at >= $4::timestamptz),0)::float8 AS generated_revenue_ttc,"+
+        " COALESCE(sum(f.expected_payout_ht) FILTER(WHERE f.started_at >= $5::timestamptz),0)::float8 AS expected_payout_ht,"+
+        " COALESCE(sum(CASE WHEN pt.id IS NULL THEN 0 ELSE GREATEST(0,f.expected_payout_ht-LEAST(f.expected_payout_ht,"+
+        " f.expected_payout_ht*pt.platform_fee_bps/10000.0+pt.platform_fee_ht_per_min*(f.billable_seconds/60.0))) END)"+
+        " FILTER(WHERE f.started_at >= $5::timestamptz),0)::float8 AS estimated_client_net_ht,max(f.ended_at) AS updated_at"+
+        " FROM tenant_scoped_call_facts f LEFT JOIN LATERAL ("+
+        " SELECT p.id,p.platform_fee_bps,p.platform_fee_ht_per_min::float8 FROM tenant_payout_terms p"+
+        " WHERE p.tenant_id=$7 AND p.status='active' AND p.effective_from<=f.started_at"+
+        " AND (p.effective_to IS NULL OR p.effective_to>f.started_at)"+
+        " AND (p.market_id IS NULL OR p.market_id=f.market_id) AND (p.sva_number_id IS NULL OR p.sva_number_id=f.sva_number_id)"+
+        " ORDER BY (p.sva_number_id IS NOT NULL) DESC,(p.market_id IS NOT NULL) DESC,p.effective_from DESC,p.id DESC LIMIT 1"+
+        " ) pt ON TRUE"+
+        " WHERE f.started_at >= $1::timestamptz AND f.started_at <= $6::timestamptz"+
+        " GROUP BY f.currency ORDER BY f.currency",[earliestFrom,callsFrom,minutesFrom,revenueFrom,payoutFrom,to,id]
       );
       const series=await tx.unsafe(
         "SELECT started_at::date AS bucket_date,"+
@@ -3875,6 +4026,17 @@ export class PostgresStore{
         " AND d.status IN ('reconciled','payable','paid') GROUP BY d.currency ORDER BY d.currency",
         [payoutFrom,to,id]
       );
+      const liveFinancial=await tx.unsafe(
+        "SELECT currency,count(*)::int AS active_calls,"+
+        " COALESCE(sum(LEAST(86400,GREATEST(0,EXTRACT(EPOCH FROM (now()-billable_started_at))))/60.0*service_rate_ttc_per_min),0)::float8 AS estimated_service_revenue_ttc,"+
+        " COALESCE(sum(LEAST(86400,GREATEST(0,EXTRACT(EPOCH FROM (now()-billable_started_at))))/60.0*upstream_payout_rate_ht_per_min),0)::float8 AS estimated_upstream_payout_ht,"+
+        " COALESCE(sum(LEAST(86400,GREATEST(0,EXTRACT(EPOCH FROM (now()-billable_started_at))))/60.0*net_client_rate_ht_per_min),0)::float8 AS estimated_client_net_ht,"+
+        " COALESCE(sum(service_rate_ttc_per_min)/60.0,0)::float8 AS service_rate_ttc_per_second,"+
+        " COALESCE(sum(upstream_payout_rate_ht_per_min)/60.0,0)::float8 AS upstream_rate_ht_per_second,"+
+        " COALESCE(sum(net_client_rate_ht_per_min)/60.0,0)::float8 AS client_rate_ht_per_second"+
+        " FROM tenant_scoped_live_call_financial_sessions WHERE status='active' AND billable_started_at>now()-interval '24 hours'"+
+        " GROUP BY currency ORDER BY currency"
+      );
       const numbers=await tx.unsafe(
         "SELECT n.id,a.id AS assignment_id,n.display_number,n.e164,n.tariff_code,n.currency,n.number_type,n.service_rate_ttc_per_min::float8,n.status,n.activated_at,"+
         " a.assignment_type,a.status AS assignment_status,a.kyc_status,a.valid_from,a.valid_to"+
@@ -3918,7 +4080,7 @@ export class PostgresStore{
         " FROM tenant_scoped_portal_call_details WHERE started_at>=$1::timestamptz AND started_at<=$2::timestamptz"+
         " ORDER BY started_at DESC,call_id DESC LIMIT 20",[callsFrom,to]
       );
-      return {tenant,financial_by_currency:financial,metric_net_payout_by_currency:metricPayout,series,activity_breakdown:activityBreakdown,numbers,settlements,subscriptions,portability_requests:portabilityRequests,destinations,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,recent_calls:recentCalls,voice_quality:voiceQuality[0]||null,range:{from,to},metric_ranges:mr};
+      return {tenant,financial_by_currency:financial,metric_net_payout_by_currency:metricPayout,live_financial_by_currency:liveFinancial.map(row=>numberFields(row,["active_calls","estimated_service_revenue_ttc","estimated_upstream_payout_ht","estimated_client_net_ht","service_rate_ttc_per_second","upstream_rate_ht_per_second","client_rate_ht_per_second"])),series,activity_breakdown:activityBreakdown,numbers,settlements,subscriptions,portability_requests:portabilityRequests,destinations,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,recent_calls:recentCalls,voice_quality:voiceQuality[0]||null,range:{from,to},metric_ranges:mr};
     });
   }
 

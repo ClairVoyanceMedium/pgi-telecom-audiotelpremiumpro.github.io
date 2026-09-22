@@ -293,6 +293,17 @@ export function createBackend(options={}){
         await store.updateCustomerPassword(context.id,hashPassword(newPassword));
         return done(res,metrics,started,"customer.auth.change_password",200,{ok:true,relogin_required:true},{"Set-Cookie":clearCustomerSessionCookies()});
       }
+      if(method==="GET"&&pathname==="/api/v1/customer/events"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"overview.read");
+        const tenantId=Number(context.tenant_id);
+        res.pgiRoute="customer.events";
+        return openEventStream(req,res,eventBus,requestId,config,sseClients,event=>{
+          if(!["live_call.started","live_call.ended","call.ingested"].includes(String(event?.type||"")))return false;
+          return Number(event?.payload?.tenant_id||0)===tenantId;
+        });
+      }
       if(method==="GET"&&pathname==="/api/v1/customer/portal"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
@@ -758,6 +769,17 @@ export function createBackend(options={}){
       if(method==="POST"&&match){
         authorizeTelephony(req,config);
         return done(res,metrics,started,"routing.release",200,await store.releaseExpert(match.id));
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/internal/live-calls/start"){
+        authorizeTelephony(req,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        return done(res,metrics,started,"live_call.start",201,await store.startLiveCallFinancial(body));
+      }
+      if(method==="POST"&&pathname==="/api/v1/internal/live-calls/stop"){
+        authorizeTelephony(req,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        return done(res,metrics,started,"live_call.stop",200,await store.stopLiveCallFinancial(body.external_call_id,body.status,body.ended_at));
       }
 
       if(method==="GET"&&pathname==="/api/v1/finance/reconciliation"){
@@ -1781,7 +1803,7 @@ async function metricsResponse(res,metrics,store,workers){
   res.writeHead(200,{"Content-Type":"text/plain; version=0.0.4; charset=utf-8","Content-Length":Buffer.byteLength(body)});
   res.end(body);
 }
-function openEventStream(req,res,eventBus,requestId,config,clients){
+function openEventStream(req,res,eventBus,requestId,config,clients,filter=null){
   if(eventBus.size>=Number(config.maxEventSubscribers||32)){
     const e=new Error("Realtime capacity reached");e.status=503;e.code="SSE_CAPACITY_REACHED";e.expose=true;throw e;
   }
@@ -1796,6 +1818,7 @@ function openEventStream(req,res,eventBus,requestId,config,clients){
   clients?.add(res);
   const unsubscribe=eventBus.subscribe(event=>{
     if(res.destroyed)return;
+    if(filter&&filter(event)!==true)return;
     res.write("event: "+safeEventName(event.type)+"\ndata: "+JSON.stringify(event)+"\n\n");
   });
   const heartbeat=setInterval(()=>{if(!res.destroyed)res.write(": ping\n\n");},15000);
