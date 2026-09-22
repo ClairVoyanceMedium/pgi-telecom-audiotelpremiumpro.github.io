@@ -1,6 +1,6 @@
 (function(){
 "use strict";
-var state={range:"today",data:null,user:null,demo:false,googleCredential:null,billingBusy:false,liveTickTimer:null,liveRefreshTimer:null,liveBaseAt:0};
+var state={range:"today",data:null,user:null,demo:false,googleCredential:null,billingBusy:false,liveTickTimer:null,liveRefreshTimer:null,liveBaseAt:0,liveEventSource:null,liveReconnectTimer:null};
 var I=window.PGIClientI18n||{locale:"fr-FR",t:function(x){return x;},apply:function(){}};
 function tr(x){return I.t?I.t(x):x;}
 var $=function(id){return document.getElementById(id);};
@@ -163,6 +163,36 @@ function renderDestinations(data){
   var rows=data.destinations||[],el=$("destinations-list");
   el.innerHTML=rows.length?rows.map(function(x){var line=x.sva_number_id?numbers[String(x.sva_number_id)]||"Numéro attribué":"Tous les numéros";var cap=x.max_concurrent_calls?" · "+n(x.active_calls)+"/"+n(x.max_concurrent_calls)+" appels":" · "+n(x.active_calls)+" appel(s)";return '<div class="cp-row"><div><strong>'+esc(x.label)+'</strong><span>'+esc(line+" · "+x.destination_type+" · "+x.destination_uri+cap)+'</span></div>'+chip(x.status)+'</div>';}).join(""):'<p class="cp-empty">Aucune destination affichée.</p>';
 }
+function stopLiveEvents(){
+  clearTimeout(state.liveReconnectTimer);state.liveReconnectTimer=null;
+  if(state.liveEventSource){try{state.liveEventSource.close();}catch(_e){}state.liveEventSource=null;}
+}
+function scheduleLivePortalRefresh(delay){
+  clearTimeout(state.liveRefreshTimer);
+  state.liveRefreshTimer=setTimeout(function(){loadPortal().catch(function(){});},Math.max(50,Number(delay)||250));
+}
+function startLiveEvents(){
+  if(state.demo||state.liveEventSource||!window.PGICustomerApi||typeof window.PGICustomerApi.events!=="function")return;
+  try{
+    var es=window.PGICustomerApi.events();state.liveEventSource=es;
+    ["live_call.started","live_call.ended","call.ingested"].forEach(function(name){
+      es.addEventListener(name,function(){scheduleLivePortalRefresh(180);});
+    });
+    es.onerror=function(){
+      if(es.readyState===EventSource.CLOSED){
+        try{es.close();}catch(_e){}
+        if(state.liveEventSource===es)state.liveEventSource=null;
+        clearTimeout(state.liveReconnectTimer);
+        state.liveReconnectTimer=setTimeout(startLiveEvents,5000);
+        scheduleLivePortalRefresh(12000);
+      }
+    };
+  }catch(_e){
+    state.liveEventSource=null;
+    clearTimeout(state.liveReconnectTimer);
+    state.liveReconnectTimer=setTimeout(startLiveEvents,10000);
+  }
+}
 function liveFinancialRow(data,currency){
   return (data.live_financial_by_currency||[]).find(function(x){return String(x.currency||"")===String(currency||"");})||null;
 }
@@ -193,8 +223,12 @@ function armLiveFinancial(data){
   state.liveBaseAt=Date.parse(data&&data.server_time||"")||Date.now();
   paintLiveFinancial();
   state.liveTickTimer=setInterval(paintLiveFinancial,500);
-  var a=aggregate(data),row=liveFinancialRow(data,a.currency);
-  if(!state.demo&&n(row&&row.active_calls)>0)state.liveRefreshTimer=setTimeout(function(){loadPortal().catch(function(){});},15000);
+  if(!state.demo)startLiveEvents();
+  var a=aggregate(data),row=liveFinancialRow(data,a.currency),hasLive=n(row&&row.active_calls)>0;
+  if(!state.demo){
+    var fallbackDelay=hasLive?15000:(state.liveEventSource?120000:30000);
+    state.liveRefreshTimer=setTimeout(function(){loadPortal().catch(function(){});},fallbackDelay);
+  }
 }
 
 function render(data){
@@ -232,9 +266,10 @@ async function loadPortal(){
 }
 window.PGIClientPortalReload=loadPortal;
 function showApp(){
-  $("customer-auth").hidden=true;$("customer-app").hidden=false;loadPortal().catch(function(e){toast("Chargement impossible : "+(e.code||e.message));});
+  $("customer-auth").hidden=true;$("customer-app").hidden=false;startLiveEvents();loadPortal().catch(function(e){toast("Chargement impossible : "+(e.code||e.message));});
 }
 function showLogin(){
+  stopLiveEvents();clearInterval(state.liveTickTimer);clearTimeout(state.liveRefreshTimer);
   $("customer-app").hidden=true;$("customer-auth").hidden=false;$("login-panel").hidden=false;$("register-panel").hidden=true;$("activation-panel").hidden=true;
 }
 function showRegister(){
@@ -482,7 +517,7 @@ function bind(){
   $("show-register").addEventListener("click",showRegister);
   $("show-login").addEventListener("click",showLogin);
   $("register-country").addEventListener("change",updateRegistrationNumberField);
-  $("customer-logout").addEventListener("click",async function(){try{await window.PGICustomerApi.logout();}catch(_e){}clearInterval(state.liveTickTimer);clearTimeout(state.liveRefreshTimer);state.user=null;showLogin();});
+  $("customer-logout").addEventListener("click",async function(){try{await window.PGICustomerApi.logout();}catch(_e){}stopLiveEvents();clearInterval(state.liveTickTimer);clearTimeout(state.liveRefreshTimer);state.user=null;showLogin();});
   $("client-live-recalc").addEventListener("click",function(){loadPortal().then(function(){toast("Estimation en direct recalculée.");}).catch(function(){toast("Actualisation impossible");});});
   $("export-calls").addEventListener("click",function(){exportClient("calls");});
   $("client-relations").addEventListener("click",function(){import("./client-relations.js").then(function(m){return m.open(state.data||{});}).catch(function(){toast("Réclamations momentanément indisponibles.");});});
