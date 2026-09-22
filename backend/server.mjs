@@ -760,6 +760,17 @@ export function createBackend(options={}){
         return done(res,metrics,started,"routing.release",200,await store.releaseExpert(match.id));
       }
 
+      if(method==="POST"&&pathname==="/api/v1/internal/live-calls/start"){
+        authorizeTelephony(req,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        return done(res,metrics,started,"live_call.start",201,await store.startLiveCallFinancial(body));
+      }
+      if(method==="POST"&&pathname==="/api/v1/internal/live-calls/stop"){
+        authorizeTelephony(req,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        return done(res,metrics,started,"live_call.stop",200,await store.stopLiveCallFinancial(body.external_call_id,body.status,body.ended_at));
+      }
+
       if(method==="GET"&&pathname==="/api/v1/finance/reconciliation"){
         requireRole(actor,["admin","finance","readonly"]);
         const requestedRange=rangeParams(url);
