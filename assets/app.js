@@ -2,7 +2,7 @@
 "use strict";
 var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
 var CONFIG={serviceRate:.8,payoutRate:.46,expertCostPerMin:.18,fixedCostPerCall:.03};
-var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0,upstreamBase:0,platformMarginBase:0,clientNetBase:0,upstreamRate:0,platformMarginRate:0,clientNetRate:0,asOf:0,currency:"EUR",mixed:false},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,pendingSyncMode:"dashboard",scheduledSyncMode:"dashboard",hiddenAt:null,lastSyncAt:null,activeView:"overview",system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:true};
+var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,pendingSyncMode:"dashboard",scheduledSyncMode:"dashboard",hiddenAt:null,lastSyncAt:null,activeView:"overview",system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:true};
 var titles={overview:"Cockpit",calls:"Appels",finance:"Finance",experts:"Intervenants",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Supervision",settings:"Paramètres"};var experts=["Accueil","Service commercial","Support client","Service technique","Prise de rendez-vous","Comptabilité"];
 var carriers=["Orange","SFR","Bouygues","Free"];
 var number089="0890 80 24 24";
@@ -42,140 +42,10 @@ function setProductionLive(summary){
 state.live.calls=Number(summary&&summary.live_calls||0);
 state.live.available=Number(summary&&summary.active_experts||0);
 state.live.queue=Number(summary&&summary.queue_depth||0);
-state.live.upstreamBase=Number(summary&&summary.live_upstream_estimate_ht||0);
-state.live.platformMarginBase=Number(summary&&summary.live_platform_margin_estimate_ht||0);
-state.live.clientNetBase=Number(summary&&summary.live_client_net_estimate_ht||0);
-state.live.upstreamRate=Number(summary&&summary.live_upstream_rate_per_second||0);
-state.live.platformMarginRate=Number(summary&&summary.live_platform_margin_rate_per_second||0);
-state.live.clientNetRate=Number(summary&&summary.live_client_net_rate_per_second||0);
-state.live.asOf=Date.parse(summary&&summary.live_estimate_as_of||"")||Date.now();
-state.live.currency=String(summary&&summary.live_estimate_currency||state.marketCurrency||"EUR");
-state.live.mixed=Boolean(summary&&summary.live_estimate_mixed_currency);
+window.PGILiveFinanceSummary=summary||{};
+window.dispatchEvent(new CustomEvent("pgi:live-finance",{detail:summary||{}}));
 }
-function projectedLive(base,rate){
-var elapsed=state.live.asOf?Math.max(0,(Date.now()-state.live.asOf)/1000):0;
-return Math.max(0,Number(base||0)+Number(rate||0)*elapsed);
-}
-function renderLiveJackpot(){
-var mixed=state.live.mixed;
-var upstream=projectedLive(state.live.upstreamBase,state.live.upstreamRate);
-var clientNet=projectedLive(state.live.clientNetBase,state.live.clientNetRate);
-var margin=projectedLive(state.live.platformMarginBase,state.live.platformMarginRate);
-var currency=state.live.currency||state.marketCurrency||"EUR";
-setText("live-jackpot",mixed?"Multi-devises":moneyIn(upstream,currency,"fr-FR"));
-setText("live-jackpot-client",mixed?"—":moneyIn(clientNet,currency,"fr-FR"));
-setText("live-jackpot-margin",mixed?"—":moneyIn(margin,currency,"fr-FR"));
-setText("live-jackpot-detail",nfmt(state.live.calls||0)+" appel(s) en cours · estimation avant CDR et rapprochement");
-}
-function syncMarketSelector(data){
-var markets=data&&Array.isArray(data.markets)?data.markets:[];
-var active=markets.filter(function(x){return String(x.status||"").toLowerCase()==="active";});
-var current=state.market;
-if(!active.some(function(x){return x.country_code===current;})){
-var preferred=active.find(function(x){return x.country_code==="FR";})||active[0]||null;
-current=preferred?preferred.country_code:null;
-}
-state.market=current;
-var selected=active.find(function(x){return x.country_code===current;})||null;
-state.marketCurrency=selected&&selected.default_currency?selected.default_currency:"EUR";
-var wrap=$("market-filter-wrap"),select=$("market-filter");
-if(select){
-select.innerHTML=active.map(function(x){
-var label=(x.display_name||x.country_code)+" ("+x.country_code+")";
-return '<option value="'+esc(x.country_code)+'">'+esc(label)+"</option>";
-}).join("");
-if(current)select.value=current;
-select.disabled=active.length<2;
-}
-if(wrap)wrap.hidden=active.length<2;
-}
-function showLogin(message){
-var dialog=$("auth-dialog");
-var msg=$("auth-message");
-if(msg)msg.textContent=message||"Identifiez-vous pour accéder aux données de production.";
-if(dialog&&typeof dialog.showModal==="function"&&!dialog.open)dialog.showModal();
-}
-function closeLogin(){
-var dialog=$("auth-dialog");
-if(dialog&&dialog.open)dialog.close();
-}
-function stopProductionEvents(){
-if(state.eventSource){
-try{state.eventSource.close();}catch(e){}
-state.eventSource=null;
-}
-}
-function clearProductionData(){
-if(RUNTIME.mode!=="production")return;
-allCalls=[];
-experts=[];
-carriers=[];
-state.system=null;
-state.route=null;
-state.wholesale=null;
-state.serverSummary=null;
-state.previousSummary=null;
-state.serverAnalytics=null;
-state.serverReconciliation=null;
-state.cdrSampleTruncated=false;
-setProductionLive({});
-render();
-}
-function requireProductionLogin(message){
-if(RUNTIME.mode!=="production")return;
-state.authUser=null;
-stopProductionEvents();
-var logout=$("logout-btn");if(logout)logout.hidden=true;
-clearProductionData();
-showLogin(message||"Session requise. Saisissez vos identifiants administrateur.");
-}
-async function logoutProduction(){
-if(RUNTIME.mode!=="production"||!window.PGIApi)return;
-var button=$("logout-btn");if(button)button.disabled=true;
-try{await window.PGIApi.logout();}catch(e){}
-finally{
-if(button)button.disabled=false;
-requireProductionLogin("Session fermée. Identifiez-vous pour continuer.");
-}
-}
-function syncModeRank(mode){
-return mode==="full"?3:mode==="incremental"?2:1;
-}
-function mergeSyncMode(current,next){
-return syncModeRank(next)>syncModeRank(current)?next:current;
-}
-function scheduleProductionSync(mode){
-if(RUNTIME.mode!=="production")return;
-mode=mode||"dashboard";
-if(document.hidden){
-state.pendingSync=true;
-state.pendingSyncMode=mergeSyncMode(state.pendingSyncMode,mode);
-return;
-}
-state.scheduledSyncMode=mergeSyncMode(state.scheduledSyncMode,mode);
-clearTimeout(state.syncTimer);
-state.syncTimer=setTimeout(function(){
-var next=state.scheduledSyncMode;
-state.scheduledSyncMode="dashboard";
-syncProductionData({mode:next});
-},900);
-}
-function startProductionEvents(){
-if(RUNTIME.mode!=="production"||state.eventSource||!window.PGIApi||document.hidden)return;
-try{
-var es=window.PGIApi.events();
-state.eventSource=es;
-es.addEventListener("call.ingested",function(){scheduleProductionSync("incremental");});
-["expert.status","expert.busy","expert.released","call_destination.busy","call_destination.released","carrier.switched","carrier.rollback","alert","voice.incident","voice.incident.resolved"].forEach(function(name){
-es.addEventListener(name,function(){scheduleProductionSync("dashboard");});
-});
-["baseline.created","subscription.unpaid"].forEach(function(n){es.addEventListener(n,function(){window.PGIDataClient.invalidateAppBootstrap();scheduleProductionSync("full");});});
-es.onerror=function(){
-if(es.readyState===EventSource.CLOSED){state.eventSource=null;}
-};
-}catch(e){recordRuntimeError();}
-}
-async function syncProductionData(options){
+function syncProductionData(options){
 if(RUNTIME.mode!=="production"||!window.PGIApi)return;
 options=options||{};
 var mode=options.mode||"full";
@@ -435,7 +305,6 @@ setText("fin-gap",monetaryLabel(a.gap,mixed));
 setText("live-calls",String(state.live.calls||0));
 setText("live-available",String(state.live.available||0));
 setText("live-queue",String(state.live.queue||0));
-renderLiveJackpot();
 var trend=$("ca-trend");
 if(trend){
 var pct=revenueTrendPercent(rows);
@@ -1471,7 +1340,6 @@ navigator.serviceWorker.register("./service-worker.js").catch(function(){});
 }
 function clock(){
 setText("footer-clock",new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeStyle:"medium"}).format(new Date()));
-renderLiveJackpot();
 }
 window.addEventListener("error",recordRuntimeError);
 window.addEventListener("unhandledrejection",recordRuntimeError);
@@ -1489,6 +1357,7 @@ window.addEventListener("online",updateConnectivity);
 window.addEventListener("offline",updateConnectivity);
 document.addEventListener("visibilitychange",handleVisibilityChange);
 registerServiceWorker();
+import("./live-revenue-jackpot.js").catch(recordRuntimeError);
 if(RUNTIME.mode==="production")syncProductionData({mode:"full",forceMeta:true});else loadDemoCalls().then(render).catch(function(){recordRuntimeError();render();});
 clock();
 setInterval(clock,1000);
