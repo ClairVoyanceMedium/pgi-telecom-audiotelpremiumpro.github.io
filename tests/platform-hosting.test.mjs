@@ -6,7 +6,7 @@ import path from "node:path";
 import http from "node:http";
 import {loadConfig} from "../backend/src/config.mjs";
 import {createStaticSiteHandler} from "../backend/src/static-site.mjs";
-import {clientIp} from "../backend/src/http.mjs";
+import {clientIp,securityHeaders} from "../backend/src/http.mjs";
 
 test("production config accepts PaaS PORT DATABASE_URL and release SHA",()=>{
   const secret="x".repeat(48);
@@ -66,6 +66,15 @@ test("same-origin static handler serves marketing at root and keeps private UI n
     await new Promise(resolve=>server.close(resolve));
     fs.rmSync(root,{recursive:true,force:true});
   }
+});
+
+test("security headers preserve Google popup compatibility without allowing cross-domain policy files",()=>{
+  const headers=new Map();
+  securityHeaders({setHeader:(name,value)=>headers.set(String(name).toLowerCase(),String(value))},"req-test");
+  assert.equal(headers.get("cross-origin-opener-policy"),"same-origin-allow-popups");
+  assert.equal(headers.get("cross-origin-resource-policy"),"same-origin");
+  assert.equal(headers.get("x-permitted-cross-domain-policies"),"none");
+  assert.equal(headers.get("x-frame-options"),"DENY");
 });
 
 test("trusted proxy mode uses the forwarded visitor IP for abuse controls",()=>{
