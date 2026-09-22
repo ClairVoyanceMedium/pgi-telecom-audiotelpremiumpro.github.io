@@ -6,6 +6,7 @@ import path from "node:path";
 import http from "node:http";
 import {loadConfig} from "../backend/src/config.mjs";
 import {createStaticSiteHandler} from "../backend/src/static-site.mjs";
+import {clientIp} from "../backend/src/http.mjs";
 
 test("production config accepts PaaS PORT DATABASE_URL and release SHA",()=>{
   const secret="x".repeat(48);
@@ -30,12 +31,13 @@ test("production config accepts PaaS PORT DATABASE_URL and release SHA",()=>{
   assert.equal(config.staticDir,"/app/dist");
 });
 
-test("same-origin static handler serves public and client pages but never API paths",async()=>{
+test("same-origin static handler serves marketing at root and keeps private UI non-indexed",async()=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),"pgi-static-"));
   fs.mkdirSync(path.join(root,"site"),{recursive:true});
-  fs.writeFileSync(path.join(root,"index.html"),"cockpit");
+  fs.writeFileSync(path.join(root,"index.html"),"marketing");
+  fs.writeFileSync(path.join(root,"cockpit.html"),"cockpit");
   fs.writeFileSync(path.join(root,"client.html"),"client");
-  fs.writeFileSync(path.join(root,"site","index.html"),"marketing");
+  fs.writeFileSync(path.join(root,"site","index.html"),"marketing-old");
   const handler=createStaticSiteHandler(root);
   const server=http.createServer(async(req,res)=>{
     const pathname=new URL(req.url,"http://local").pathname;
@@ -45,18 +47,31 @@ test("same-origin static handler serves public and client pages but never API pa
   await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
   try{
     const address=server.address(),base="http://127.0.0.1:"+address.port;
-    const marketing=await fetch(base+"/site/");
+    const marketing=await fetch(base+"/");
     assert.equal(marketing.status,200);
     assert.equal(await marketing.text(),"marketing");
+    const legacy=await fetch(base+"/site/",{redirect:"manual"});
+    assert.equal(legacy.status,308);
+    assert.equal(legacy.headers.get("location"),"/");
+    const cockpit=await fetch(base+"/cockpit");
+    assert.equal(cockpit.status,200);
+    assert.equal(await cockpit.text(),"cockpit");
+    assert.match(cockpit.headers.get("x-robots-tag")||"",/noindex/);
     const client=await fetch(base+"/client.html",{method:"HEAD"});
     assert.equal(client.status,200);
-    assert.equal(await client.text(),"");
+    assert.match(client.headers.get("x-robots-tag")||"",/noindex/);
     const api=await fetch(base+"/api/v1/health");
     assert.equal(api.status,404);
   }finally{
     await new Promise(resolve=>server.close(resolve));
     fs.rmSync(root,{recursive:true,force:true});
   }
+});
+
+test("trusted proxy mode uses the forwarded visitor IP for abuse controls",()=>{
+  const req={socket:{remoteAddress:"10.0.0.8"},headers:{"x-forwarded-for":"203.0.113.24, 10.0.0.8"}};
+  assert.equal(clientIp(req,false),"10.0.0.8");
+  assert.equal(clientIp(req,true),"203.0.113.24");
 });
 
 test("Railway deployment keeps app and database private-by-reference",()=>{
