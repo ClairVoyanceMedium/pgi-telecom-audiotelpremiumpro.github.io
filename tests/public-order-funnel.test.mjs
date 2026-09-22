@@ -5,6 +5,7 @@ import fs from "node:fs";
 const site=fs.readFileSync("site/site.js","utf8");
 const audience=fs.readFileSync("assets/client-audience.js","utf8");
 const portal=fs.readFileSync("assets/client-portal.js","utf8");
+const api=fs.readFileSync("assets/client-portal-api.js","utf8");
 const store=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
 
 test("public order intent is private, short-lived and consumed by registration",()=>{
