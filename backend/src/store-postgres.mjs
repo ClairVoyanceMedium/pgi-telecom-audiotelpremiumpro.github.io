@@ -2885,6 +2885,9 @@ export class PostgresStore{
     const timezoneInput=String(input.timezone||"").trim().slice(0,80);
     const accountTypeInput=String(input.account_type||"").trim().toLowerCase();
     const accountType=accountTypeInput||((companyName||registrationRaw)?"business":"individual");
+    const acquisitionSource=String(input.acquisition_source||"")==="public_marketing_site"?"public_marketing_site":"self_service";
+    const serviceIntentInput=String(input.service_intent||"").trim().toLowerCase();
+    const serviceIntent=["new_number","portability","advice"].includes(serviceIntentInput)?serviceIntentInput:"";
     const authorityConfirmed=input.authority_confirmed===true;
     if(firstName.length<1||lastName.length<1)throw problem(400,"CUSTOMER_NAME_REQUIRED");
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw problem(400,"INVALID_CUSTOMER_EMAIL");
@@ -2933,7 +2936,7 @@ export class PostgresStore{
       await tx.unsafe(
         "INSERT INTO tenant_kyc_profiles(tenant_id,entity_type,registration_country,registration_number,status,metadata)"+
         " VALUES($1,$2,$3,$4,'pending',$5::jsonb) ON CONFLICT(tenant_id) DO NOTHING",
-        [tenant.id,accountType==="individual"?"individual":"company",country,registrationNumber||null,JSON.stringify({source:"self_service",registration_optional:true,account_type:accountType})]
+        [tenant.id,accountType==="individual"?"individual":"company",country,registrationNumber||null,JSON.stringify({source:acquisitionSource,registration_optional:true,account_type:accountType,service_intent:serviceIntent||null})]
       );
       await tx.unsafe(
         "INSERT INTO tenant_market_profiles(tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region)"+
@@ -2944,7 +2947,7 @@ export class PostgresStore{
       let principal=(await tx.unsafe(
         "INSERT INTO customer_principals(email,display_name,status,preferred_locale,timezone,email_verified,metadata)"+
         " VALUES($1,$2,'active',$3,$4,false,$5::jsonb) RETURNING id,email,display_name,status,email_verified,session_version",
-        [email,displayName,locale,timezone,JSON.stringify({first_name:firstName,last_name:lastName,phone:phone||null,signup_source:"self_service_email",account_type:accountType,authority_confirmed:true})]
+        [email,displayName,locale,timezone,JSON.stringify({first_name:firstName,last_name:lastName,phone:phone||null,signup_source:acquisitionSource==="public_marketing_site"?"public_marketing_site":"self_service_email",service_intent:serviceIntent||null,account_type:accountType,authority_confirmed:true})]
       ))[0];
       await tx.unsafe(
         "INSERT INTO customer_password_credentials(customer_principal_id,password_hash,status) VALUES($1::uuid,$2,'active')",
@@ -2956,17 +2959,17 @@ export class PostgresStore{
       );
       await tx.unsafe(
         "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'customer.self_register','tenant',$2,$3::jsonb)",
-        [tenant.id,String(tenant.id),JSON.stringify({customer_principal_id:principal.id,country_code:country,account_type:accountType,billing_currency:currency,billing_currency_source:"country_default",registration_number_supplied:Boolean(registrationNumber),authority_confirmed:true})]
+        [tenant.id,String(tenant.id),JSON.stringify({customer_principal_id:principal.id,country_code:country,account_type:accountType,acquisition_source:acquisitionSource,service_intent:serviceIntent||null,billing_currency:currency,billing_currency_source:"country_default",registration_number_supplied:Boolean(registrationNumber),authority_confirmed:true})]
       );
       await tx.unsafe(
         "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'customer.self_registered','tenant',$2,$3::jsonb)",
-        [tenant.id,String(tenant.id),JSON.stringify({tenant_public_id:tenant.public_id,customer_principal_id:principal.id,email,country_code:country,account_type:accountType})]
+        [tenant.id,String(tenant.id),JSON.stringify({tenant_public_id:tenant.public_id,customer_principal_id:principal.id,email,country_code:country,account_type:accountType,acquisition_source:acquisitionSource,service_intent:serviceIntent||null})]
       );
       principal=(await tx.unsafe("SELECT id,email,display_name,status,email_verified,session_version FROM customer_principals WHERE id=$1::uuid",[principal.id]))[0];
       const refreshedTenant=(await tx.unsafe("SELECT id,public_id,display_name,status,authorization_version FROM tenants WHERE id=$1",[tenant.id]))[0];
       return {...principal,tenant_id:refreshedTenant.id,tenant_public_id:refreshedTenant.public_id,tenant_name:refreshedTenant.display_name,tenant_status:refreshedTenant.status,customer_role:"owner",authorization_version:refreshedTenant.authorization_version};
     });
-    this.eventBus.publish("customer.self_registered",{tenant_public_id:result.tenant_public_id,email:result.email,country_code:country});
+    this.eventBus.publish("customer.self_registered",{tenant_public_id:result.tenant_public_id,email:result.email,country_code:country,acquisition_source:acquisitionSource,service_intent:serviceIntent||null});
     return result;
   }
 

@@ -482,8 +482,9 @@ async function init(){
   handleBillingReturn();
   var cfg=window.PGI_CONFIG||{};
   state.demo=cfg.mode==="demo"||!cfg.apiBaseUrl;
+  if(location.search.includes("register=1")){showRegister();return;}
   if(state.demo){showApp();return;}
-  if(new URLSearchParams(location.search).get("invite")){showActivation();return;}
+  if(location.search.includes("invite=")){showActivation();return;}
   try{var me=await window.PGICustomerApi.me();state.user=me.user;showApp();}catch(_e){showLogin();}
 }
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init,{once:true});else init();
