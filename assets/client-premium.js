@@ -1,7 +1,7 @@
 (function(){
 "use strict";
 
-var refresh=null,status=null,detail=null,main=null,lastLoadedAt=null;
+var refresh=null,status=null,detail=null,main=null,lastLoadedAt=null,liveTimer=null,liveData={base:0,rate:0,asOf:0,currency:"EUR",active:0,mixed:false};
 
 function $(id){return document.getElementById(id);}
 function formatTime(date){
@@ -24,6 +24,24 @@ function setBusy(busy){
     refresh.disabled=busy;
     refresh.textContent=busy?"Actualisation…":"Actualiser";
   }
+}
+function money(v,currency){
+  try{return new Intl.NumberFormat(document.documentElement.lang||"fr-FR",{style:"currency",currency:currency||"EUR",maximumFractionDigits:2}).format(Number(v)||0)}
+  catch(_e){return (Number(v)||0).toFixed(2)+" "+(currency||"EUR")}
+}
+function liveTick(){
+  var amount=$("client-live-amount"),detail=$("client-live-detail");if(!amount||!detail)return;
+  var elapsed=liveData.asOf?Math.max(0,(Date.now()-liveData.asOf)/1000):0;
+  var value=Math.max(0,liveData.base+liveData.rate*elapsed);
+  amount.textContent=liveData.mixed?"Multi-devises":money(value,liveData.currency);
+  detail.textContent=liveData.active?liveData.active+" appel(s) actif(s) · estimation provisoire":"Aucun appel actif · dernier calcul consolidé";
+}
+function liveLoad(data){
+  var x=data&&data.live_payout_estimate||{};
+  liveData.base=Number(x.net_payout_estimate_ht||0);liveData.rate=Number(x.net_payout_rate_per_second||0);
+  liveData.asOf=Date.parse(x.as_of||data&&data.server_time||"")||Date.now();
+  liveData.currency=String(x.currency||data&&data.tenant&&data.tenant.default_currency||"EUR");
+  liveData.active=Number(x.active_calls||0);liveData.mixed=Boolean(x.mixed_currency);liveTick();
 }
 function networkState(){
   if(navigator.onLine===false){
@@ -70,6 +88,8 @@ function init(){
   detail=$("client-data-detail");
   main=$("client-main");
   if(refresh)refresh.addEventListener("click",refreshPortal);
+  var liveRefresh=$("client-live-refresh");if(liveRefresh)liveRefresh.addEventListener("click",refreshPortal);
+  if(!liveTimer)liveTimer=setInterval(liveTick,1000);
 
   document.addEventListener("pgi:portal-loading",function(){
     setBusy(true);
@@ -77,6 +97,7 @@ function init(){
   });
   document.addEventListener("pgi:portal-loaded",function(e){
     window.PGI_PREMIUM_PORTAL_DATA=e&&e.detail?e.detail.data||{}:{};
+    liveLoad(window.PGI_PREMIUM_PORTAL_DATA);
     lastLoadedAt=new Date();
     setBusy(false);
     networkState();
