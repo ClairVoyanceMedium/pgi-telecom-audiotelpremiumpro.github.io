@@ -24,7 +24,7 @@ test("public homepage links to focused SEO content without changing the signup f
   assert.match(html,/href="\/reversement-audiotel\//);
   assert.match(html,/href="\/numero-sva\//);
   assert.match(html,/href="\/comparateur-audiotel\//);
-  assert.match(html,/objectif tarifaire est d’être plus compétitif/);
+  assert.match(html,/Objectif PGI : une offre plus compétitive/);
 });
 
 test("public pricing and revenue example stay explicit and non-guaranteed",()=>{
