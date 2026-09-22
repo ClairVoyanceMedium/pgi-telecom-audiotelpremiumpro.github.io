@@ -1,9 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import {createRequire} from "node:module";
-
-const require=createRequire(import.meta.url);
-const postgres=require("postgres");
+const {default:postgres}=await import("postgres");
 const url=process.env.PGI_DATABASE_URL||process.env.DATABASE_URL||"";
 if(!url)throw new Error("PGI_DATABASE_URL or DATABASE_URL is required");
 
