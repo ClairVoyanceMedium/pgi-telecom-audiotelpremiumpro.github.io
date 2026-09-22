@@ -285,11 +285,10 @@ function updateRegistrationNumberField(){
 }
 async function submitRegistration(e){
   e.preventDefault();setAuthMessage("");
-  var b=e.submitter;
   var password=$("register-password").value,confirm=$("register-password-confirm").value;
   if(password!==confirm){setAuthMessage("Les deux mots de passe sont différents.",true);return;}
   if(password.length<12){setAuthMessage("Le mot de passe doit contenir au moins 12 caractères.",true);return;}
-  var payload={
+  var b=e.submitter,payload={
     first_name:$("register-first-name").value.trim(),
     last_name:$("register-last-name").value.trim(),
     account_type:$("register-account-type").value,
@@ -304,7 +303,7 @@ async function submitRegistration(e){
     preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",
     timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC")
   };
-  if(b)b.disabled=true;
+  b&&(b.disabled=true);
   try{
     var result=await window.PGICustomerApi.register(payload);
     state.user=result.user;
@@ -312,16 +311,14 @@ async function submitRegistration(e){
     showApp();
   }catch(err){
     var messages={
-      CUSTOMER_ACCOUNT_EXISTS:"Un compte existe déjà avec cette adresse e-mail.",
+      CUSTOMER_ACCOUNT_EXISTS:"Cette adresse e-mail est déjà utilisée.",
       INVALID_SIRET:"Le SIRET doit contenir 14 chiffres.",
-      INVALID_REGISTRATION_NUMBER:"Le numéro d’immatriculation n’est pas valide.",
-      INVALID_PHONE:"Le numéro de téléphone n’est pas valide.",
-      REGISTRATION_RATE_LIMITED:"Trop de créations de compte ont été tentées. Réessayez plus tard.",
-      REGISTRATION_AUTHORITY_REQUIRED:"Vous devez confirmer la création de ce compte."
+      INVALID_REGISTRATION_NUMBER:"Numéro d’immatriculation invalide.",
+      INVALID_PHONE:"Numéro de téléphone invalide.",
+      REGISTRATION_RATE_LIMITED:"Trop de tentatives. Réessayez plus tard.",
+      REGISTRATION_AUTHORITY_REQUIRED:"Confirmez la création du compte."
     };
-    setAuthMessage(messages[err.code]||"Création du compte impossible.",true);
-  }finally{
-    if(b)b.disabled=false;
+    b&&(b.disabled=false);setAuthMessage(messages[err.code]||"Création impossible.",true);
   }
 }
 async function submitLogin(e){
