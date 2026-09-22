@@ -6,7 +6,7 @@ export function loadConfig(env=process.env){
   if(!["disabled","session"].includes(authMode))throw new Error("PGI_AUTH_MODE must be disabled or session");
 
   const host=env.PGI_BACKEND_HOST||(mode==="production"?"127.0.0.1":"127.0.0.1");
-  const port=integer(env.PGI_BACKEND_PORT,8080,1,65535,"PGI_BACKEND_PORT");
+  const port=integer(env.PGI_BACKEND_PORT||env.PORT,8080,1,65535,"PGI_BACKEND_PORT");
   const sessionSecret=env.PGI_SESSION_SECRET||"";
   const adminPasswordHash=env.PGI_ADMIN_PASSWORD_HASH||"";
   const ingestToken=env.PGI_INGEST_TOKEN||"";
@@ -16,10 +16,11 @@ export function loadConfig(env=process.env){
   const telephonyPassword=env.PGI_TELEPHONY_PASSWORD||"";
   const callerHashKey=env.PGI_CALLER_HASH_KEY||"";
   const portabilitySecretKey=env.PGI_PORTABILITY_SECRET_KEY||"";
-  const databaseUrl=env.PGI_DATABASE_URL||buildDatabaseUrl(env);
+  const databaseUrl=env.PGI_DATABASE_URL||env.DATABASE_URL||buildDatabaseUrl(env);
   const databaseReadUrl=env.PGI_DATABASE_READ_URL||"";
   const databaseSsl=(env.PGI_DATABASE_SSL||"disable").toLowerCase();
-  const releaseId=env.PGI_RELEASE_ID||"";
+  const releaseId=env.PGI_RELEASE_ID||env.RAILWAY_GIT_COMMIT_SHA||"";
+  const staticDir=String(env.PGI_STATIC_DIR||"").trim();
   const googleClientId=String(env.PGI_GOOGLE_CLIENT_ID||"").trim();
   const webauthnRpId=String(env.PGI_WEBAUTHN_RP_ID||"").trim().toLowerCase();
   const webauthnOrigin=String(env.PGI_WEBAUTHN_ORIGIN||"").trim();
@@ -45,7 +46,7 @@ export function loadConfig(env=process.env){
   }
 
   return Object.freeze({
-    mode,authMode,host,port,releaseId,googleClientId,webauthnRpId,webauthnOrigin,
+    mode,authMode,host,port,releaseId,staticDir,googleClientId,webauthnRpId,webauthnOrigin,
     sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),

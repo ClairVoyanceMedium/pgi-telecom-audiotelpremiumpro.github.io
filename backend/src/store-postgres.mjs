@@ -5382,7 +5382,7 @@ export class PostgresStore{
       ),
       this.readSql.unsafe(
         "SELECT p.id,p.email,p.display_name,p.status,p.preferred_locale,p.timezone,p.email_verified,p.last_authenticated_at,p.created_at,p.updated_at,"+
-        " m.role,m.status AS membership_status,p.metadata->>'first_name' AS first_name,p.metadata->>'last_name' AS last_name,p.metadata->>'phone' AS phone,p.metadata->>'signup_source' AS signup_source"+
+        " m.role,m.status AS membership_status,p.metadata->>'first_name' AS first_name,p.metadata->>'last_name' AS last_name,p.metadata->>'phone' AS phone,p.metadata->>'signup_source' AS signup_source,p.metadata->>'service_intent' AS service_intent,p.metadata->>'account_type' AS account_type"+
         " FROM customer_tenant_memberships m JOIN customer_principals p ON p.id=m.customer_principal_id WHERE m.tenant_id=$1 ORDER BY (m.role='owner') DESC,p.created_at,p.id LIMIT 100",[id]
       ),
       this.readSql.unsafe(

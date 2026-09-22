@@ -13,6 +13,7 @@ import {createPortabilityQueueHandlers} from "./src/portability-automation.mjs";
 import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability-automation.mjs";
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData} from "./src/customer-access.mjs";
+import {createStaticSiteHandler} from "./src/static-site.mjs";
 
 export async function createDefaultBackend(){
   const config=loadConfig();
@@ -41,6 +42,7 @@ export function createBackend(options={}){
 
   const store=options.store||new MemoryStore(config,eventBus);
   if(config.mode==="simulator"&&typeof store.seedSimulator==="function")store.seedSimulator();
+  const staticSite=createStaticSiteHandler(config.staticDir);
 
   const metrics={
     requests:0,errors:0,rateLimited:0,authFailures:0,authRateLimited:0,
@@ -1255,6 +1257,9 @@ export function createBackend(options={}){
         return openEventStream(req,res,eventBus,requestId,config,sseClients);
       }
 
+      if((method==="GET"||method==="HEAD")&&await staticSite(req,res,pathname)){
+        res.pgiRoute="static";bump(metrics.byStatus,200);bump(metrics.byRoute,"static");return;
+      }
       return done(res,metrics,started,"not_found",404,{error:{code:"NOT_FOUND",request_id:requestId}});
     }catch(error){
       metrics.errors++;
