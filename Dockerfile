@@ -1,0 +1,26 @@
+FROM node:22-alpine
+
+# Root Dockerfile intentionally mirrors infra/Dockerfile.platform.
+# Railway detects a root Dockerfile automatically for new services, so production
+# does not depend on the legacy railway.json Config-as-Code path.
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+
+COPY index.html client.html sitemap.xml manifest.webmanifest service-worker.js robots.txt .nojekyll ./
+COPY site ./site
+COPY assets ./assets
+COPY backend ./backend
+COPY database ./database
+COPY scripts/build-static.mjs scripts/bootstrap-database.mjs scripts/start-platform.sh ./scripts/
+
+RUN chmod 700 /app/scripts/start-platform.sh && chown -R node:node /app
+USER node
+
+ENV PGI_BACKEND_HOST=0.0.0.0
+ENV PGI_STATIC_DIR=/app/dist
+EXPOSE 8080
+
+CMD ["sh","scripts/start-platform.sh"]
