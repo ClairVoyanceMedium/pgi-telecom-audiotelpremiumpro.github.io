@@ -1,6 +1,6 @@
 (function(){
 "use strict";
-var state={range:"today",data:null,user:null,demo:false,googleCredential:null,billingBusy:false};
+var state={range:"today",data:null,user:null,demo:false,googleCredential:null,billingBusy:false,live:{base:0,rate:0,asOf:0,currency:"EUR",active:0,mixed:false}};
 var I=window.PGIClientI18n||{locale:"fr-FR",t:function(x){return x;},apply:function(){}};
 function tr(x){return I.t?I.t(x):x;}
 var $=function(id){return document.getElementById(id);};
@@ -51,6 +51,7 @@ function demoData(range){
     subscriptions:[{id:1,status:"active",billing_currency:"EUR",current_period_start:"2026-09-01T00:00:00Z",current_period_end:"2026-10-01T00:00:00Z",plan_name:"Accès Audiotel",amount_minor:300,price_currency:"EUR",tax_behavior:"inclusive",billing_interval:"month",last_payment_status:"paid"}],
     portability_requests:[],
     destinations:[{id:1,sva_number_id:1,label:"Standard principal",destination_type:"pstn",destination_uri:"tel:+33123456789",priority:10,status:"active",active_calls:1,max_concurrent_calls:25}],
+    live_payout_estimate:{as_of:new Date().toISOString(),active_calls:1,currency:"EUR",mixed_currency:false,upstream_estimate_ht:18.42,platform_fee_estimate_ht:4.10,net_payout_estimate_ht:14.32,net_payout_rate_per_second:.0065,basis:"demo",provisional:true},
     recent_calls:recent,
     voice_quality:{calls_total:sums.calls_total,calls_connected:sums.calls_connected,pdd_samples:sums.calls_total,avg_pdd_ms:2380,high_pdd_calls:Math.round(sums.calls_total*.025),quality_samples:sums.calls_total,network_affected_calls:Math.round(sums.calls_total*.018),low_mos_calls:Math.round(sums.calls_total*.012),mos:4.26,packet_loss_percent:.34,jitter_ms:3.4,latency_ms:44,rtt_ms:78,sip_5xx_calls:Math.round(sums.calls_total*.008),caller_hangups:Math.round(sums.calls_connected*.52),callee_hangups:Math.round(sums.calls_connected*.43),network_hangups:Math.round(sums.calls_total*.05)},
     billing_provider:{architecture_ready:true,target_provider:"stripe",connection_state:"not_connected",external_billing_enabled:false,checkout_available:false,customer_portal_available:false,webhook_ingest_enabled:false,subscription_funds_flow:"customer_to_pgi",sva_payout_flow:"carrier_to_pgi_to_customer",pgi_margin_retained:true,client_payout_compliance_gated:true,funds_custody_mode:"payment_compliance_profile"},
@@ -68,6 +69,23 @@ function aggregate(data){
     ?payoutRows.filter(function(x){return x.currency===currency;}).reduce(function(a,x){return a+n(x.net_payout_ht);},0)
     :(data.settlements||[]).filter(function(x){return x.currency===currency&&["reconciled","invoiced","payable","paid"].includes(String(x.status));}).reduce(function(a,x){return a+n(x.net_payout_ht);},0);
   return {calls:calls,connected:connected,billable:billable,currency:currency,revenue:revenue,payout:payout,updated:updated};
+}
+function renderLiveEarnings(data){
+  var live=data&&data.live_payout_estimate||{};
+  state.live.base=n(live.net_payout_estimate_ht);
+  state.live.rate=n(live.net_payout_rate_per_second);
+  state.live.asOf=Date.parse(live.as_of||data&&data.server_time||"")||Date.now();
+  state.live.currency=String(live.currency||data&&data.tenant&&data.tenant.default_currency||"EUR");
+  state.live.active=n(live.active_calls);
+  state.live.mixed=Boolean(live.mixed_currency);
+  tickLiveEarnings();
+}
+function tickLiveEarnings(){
+  var amountEl=$("client-live-amount"),detailEl=$("client-live-detail");if(!amountEl||!detailEl)return;
+  var elapsed=state.live.asOf?Math.max(0,(Date.now()-state.live.asOf)/1000):0;
+  var value=Math.max(0,state.live.base+state.live.rate*elapsed);
+  amountEl.textContent=state.live.mixed?"Multi-devises":money(value,state.live.currency);
+  detailEl.textContent=state.live.active?nf(state.live.active)+" appel(s) actif(s) · estimation provisoire":"Aucun appel actif · dernier calcul consolidé";
 }
 function svgLine(id,rows,series,options){
   var el=$(id);if(!el)return;rows=(rows||[]).slice(-62);if(!rows.length){el.innerHTML='<text x="360" y="110" text-anchor="middle" class="axis-label">Aucune donnée</text>';return;}
@@ -175,7 +193,7 @@ function render(data){
   $("kpi-minutes").textContent=nf(a.billable/60,1);$("kpi-revenue").textContent=money(a.revenue,a.currency);$("kpi-payout").textContent=money(a.payout,a.currency);
   $("portal-sync").textContent="Dernière consolidation : "+(a.updated?dt(a.updated):dt(data.server_time));
   $("traffic-total").textContent=nf(a.calls)+" appels";
-  renderAnalytics(data);renderNumbers(data);renderCalls(data);renderSettlements(data);renderSubscriptions(data);renderOnboarding(data);renderDestinations(data);renderPortabilitySummary(data);renderVoiceStudio(data);renderServiceCenter(data);if(I.apply)I.apply(document.body);
+  renderLiveEarnings(data);renderAnalytics(data);renderNumbers(data);renderCalls(data);renderSettlements(data);renderSubscriptions(data);renderOnboarding(data);renderDestinations(data);renderPortabilitySummary(data);renderVoiceStudio(data);renderServiceCenter(data);if(I.apply)I.apply(document.body);
 }
 async function loadPortal(){
   var range=rangeFor(state.range),data;
@@ -449,6 +467,7 @@ function bind(){
   $("client-relations").addEventListener("click",function(){import("./client-relations.js").then(function(m){return m.open(state.data||{});}).catch(function(){toast("Réclamations momentanément indisponibles.");});});
   $("client-export").addEventListener("click",function(){var d=$("client-export-dialog");if(d&&typeof d.showModal==="function")d.showModal();});
   $("client-security").addEventListener("click",function(){var d=$("client-security-dialog");if(d&&typeof d.showModal==="function")d.showModal();});
+  $("client-live-refresh").addEventListener("click",function(){loadPortal().catch(function(){toast("Actualisation impossible");});});
   $("client-metrics-reset").addEventListener("click",function(){
     import("./metric-reset.js").then(function(m){
       m.openMetricReset({
@@ -484,6 +503,7 @@ async function init(){
   var cfg=window.PGI_CONFIG||{};
   state.demo=cfg.mode==="demo"||!cfg.apiBaseUrl;
   if(location.search.includes("register=1")){showRegister();return;}
+  setInterval(function(){tickLiveEarnings();if(!document.hidden&&state.data&&state.live.active>0&&Date.now()-state.live.asOf>15000)loadPortal().catch(function(){});},1000);
   if(state.demo){showApp();return;}
   if(location.search.includes("invite=")){showActivation();return;}
   try{var me=await window.PGICustomerApi.me();state.user=me.user;showApp();}catch(_e){showLogin();}
