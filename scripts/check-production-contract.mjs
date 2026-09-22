@@ -344,6 +344,11 @@ if(serviceWorker.includes("assets/command-palette.js"))failures.push("full comma
 if(serviceWorker.includes("assets/cockpit-pro.js"))failures.push("advanced cockpit analytics must remain outside the PWA shell precache");
 if(!/pgi_ui_preferences/.test(workspace)||!/pgi_operating_market/.test(workspace))failures.push("workspace preferences must remain persistent");
 if(!manifestSource.includes("Cockpit / PGI Telecom • Audiotel Premium Pro")||!indexSource.includes('apple-mobile-web-app-title" content="Cockpit / PGI Telecom • Audiotel Premium Pro"'))failures.push("PWA must retain the exact cockpit install label");
+try{
+  const cockpitManifest=JSON.parse(manifestSource);
+  if(cockpitManifest.start_url!=="/cockpit"||cockpitManifest.id!=="/cockpit"||cockpitManifest.scope!=="/")failures.push("PWA cockpit manifest must launch /cockpit within root scope");
+}catch{failures.push("PWA manifest must be valid JSON");}
+if(!serviceWorker.includes('"cockpit.html"')||!serviceWorker.includes('u.pathname==="/cockpit"'))failures.push("PWA service worker must keep a cockpit-specific offline fallback");
 for(const token of ["data-control-tower","data-sva-compliance","data-platform-admin"]){if(!indexSource.includes(token))failures.push("cockpit must expose visible admin center "+token);}
 if(!/\[data-control-tower\]/.test(commandPaletteLoader)||!/\[data-sva-compliance\]/.test(commandPaletteLoader))failures.push("visible admin centers must lazy-load their tools directly");
 for(const file of ["assets/data-client.js","assets/command-palette-loader.js","assets/workspace.js"]){
