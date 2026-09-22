@@ -23,13 +23,18 @@ export function createStaticSiteHandler(rootDir){
     if(method!=="GET"&&method!=="HEAD")return false;
     if(pathname==="/metrics"||String(pathname||"").startsWith("/api/"))return false;
 
-    if(["/site","/site/","/site/index.html"].includes(String(pathname||""))){
+    if(["/site","/site/","/site/index.html","/index.html"].includes(String(pathname||""))){
       res.writeHead(308,{"Location":"/","Cache-Control":"no-store"});
       res.end();
       return true;
     }
+    if(String(pathname||"")==="/cockpit/"){
+      res.writeHead(308,{"Location":"/cockpit","Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow, noarchive"});
+      res.end();
+      return true;
+    }
 
-    const requestedPath=["/cockpit","/cockpit/"].includes(String(pathname||""))?"/cockpit.html":pathname;
+    const requestedPath=String(pathname||"")==="/cockpit"?"/cockpit.html":pathname;
     const file=await resolveStaticFile(root,requestedPath);
     if(!file)return false;
 
