@@ -72,9 +72,9 @@ export function routeMatch(pathname,pattern){
   return params;
 }
 
-export function clientIp(req){
+export function clientIp(req,trustProxy=false){
   const socketIp=String(req.socket?.remoteAddress||"unknown");
-  if(isLoopbackProxy(socketIp)){
+  if(trustProxy||isLoopbackProxy(socketIp)){
     const raw=req.headers?.["x-forwarded-for"];
     const value=Array.isArray(raw)?raw[0]:raw;
     const first=String(value||"").split(",")[0].trim();
