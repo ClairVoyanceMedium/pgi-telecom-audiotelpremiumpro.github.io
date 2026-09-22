@@ -23,9 +23,13 @@ test("Customer 360 exposes recent registrations without creating a public custom
 test("Customer 360 enriches the dossier with real identities and signup metadata",()=>{
   assert.match(store,/metadata->>'phone' AS phone/);
   assert.match(store,/metadata->>'signup_source' AS signup_source/);
+  assert.match(store,/metadata->>'service_intent' AS service_intent/);
   assert.match(detail,/renderCustomerIdentity/);
   assert.match(detail360,/Identité & inscription/);
   assert.match(detail360,/E-mail facturation/);
+  assert.match(detail360,/Origine/);
+  assert.match(detail360,/Demande initiale/);
+  assert.match(detail360,/Site public/);
   assert.match(detail360,/Dernière connexion/);
   assert.match(detail360,/Inscrit /);
 });
