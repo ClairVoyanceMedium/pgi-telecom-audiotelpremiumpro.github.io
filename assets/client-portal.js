@@ -297,14 +297,12 @@ async function submitRegistration(e){
     registration_number:$("register-number").value.trim(),
     phone:$("register-phone").value.trim(),
     email:$("register-email").value.trim(),
-    acquisition_source:$("customer-register-form").dataset.acquisitionSource||"self_service",
-    service_intent:$("customer-register-form").dataset.serviceIntent||"",
     password:password,
     authority_confirmed:$("register-authority").checked,
     website:$("register-website").value,
     preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",
     timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC")
-  };
+  };Object.assign(payload,window.PGIOrderMeta||{});
   try{
     var result=await window.PGICustomerApi.register(payload);
     state.user=result.user;
