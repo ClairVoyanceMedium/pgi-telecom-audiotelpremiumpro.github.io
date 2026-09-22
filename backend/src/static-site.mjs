@@ -34,7 +34,17 @@ export function createStaticSiteHandler(rootDir){
       return true;
     }
 
-    const requestedPath=String(pathname||"")==="/cockpit"?"/cockpit.html":pathname;
+    const rawPath=String(pathname||"");
+    if(rawPath!=="/cockpit"&&rawPath!=="/"&&!rawPath.endsWith("/")&&!path.extname(rawPath)){
+      const directoryIndex=await resolveStaticFile(root,rawPath+"/");
+      if(directoryIndex){
+        res.writeHead(308,{"Location":rawPath+"/","Cache-Control":"public, max-age=300"});
+        res.end();
+        return true;
+      }
+    }
+
+    const requestedPath=rawPath==="/cockpit"?"/cockpit.html":pathname;
     const file=await resolveStaticFile(root,requestedPath);
     if(!file)return false;
 
