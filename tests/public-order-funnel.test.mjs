@@ -15,13 +15,12 @@ test("public order intent is private, short-lived and consumed by registration",
   assert.match(audience,/sessionStorage\.removeItem/);
   assert.match(audience,/register-first-name/);
   assert.match(audience,/register-email/);
-  assert.match(audience,/dataset\.acquisitionSource="public_marketing_site"/);
+  assert.match(audience,/PGIOrderMeta=\{acquisition_source:"public_marketing_site"/);
 });
 
 test("client registration carries acquisition source and service intent",()=>{
-  assert.match(portal,/acquisition_source:/);
-  assert.match(portal,/service_intent:/);
-  assert.match(portal,/params\.get\("register"\)==="1"/);
+  assert.match(api,/PGIOrderMeta/);
+  assert.match(portal,/location\.search\.includes\("register=1"\)/);
   assert.match(store,/public_marketing_site/);
   assert.match(store,/serviceIntent/);
   assert.match(store,/\["new_number","portability","advice"\]/);
