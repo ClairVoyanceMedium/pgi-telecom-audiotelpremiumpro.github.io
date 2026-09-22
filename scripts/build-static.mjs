@@ -193,6 +193,8 @@ function applyPublicMetadata(html,baseUrl){
     .replace(/<link rel="canonical" href="[^"]*">/,'<link rel="canonical" href="'+canonical+'">')
     .replace(/<meta property="og:url" content="[^"]*">/,'<meta property="og:url" content="'+canonical+'">')
     .replace(/<meta property="og:image" content="[^"]*">/,'<meta property="og:image" content="'+image+'">')
+    .replace(/<meta name="twitter:image" content="[^"]*">/,'<meta name="twitter:image" content="'+image+'">')
+    .replace(/"logo":"[^"]*audiotel-brand-logo-v33[.]png"/,'"logo":"'+image+'"')
     .replace(/"url":"[^"]*"/,'"url":"'+canonical+'"');
 }
 

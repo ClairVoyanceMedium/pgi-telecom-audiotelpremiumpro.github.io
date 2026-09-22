@@ -23,13 +23,19 @@ test("production static build publishes marketing root and private cockpit",()=>
     const robots=fs.readFileSync("dist/robots.txt","utf8");
     const sitemap=fs.readFileSync("dist/sitemap.xml","utf8");
 
-    assert.match(root,/Vos appels peuvent devenir une/);
+    assert.match(root,/Pilotez votre activité/);
+    assert.match(root,/Voyance &amp; astrologie/);
+    assert.match(root,/Solution Audiotel et SVA/);
+    assert.match(root,/max-snippet:-1/);
     assert.doesNotMatch(root,/Cockpit \/ PGI Telecom/);
     assert.match(root,/href="site\/site\.css"/);
     assert.match(root,/src="site\/site\.js"/);
     assert.doesNotMatch(root,/\.\.\/assets\//);
     assert.match(root,/rel="canonical" href="https:\/\/pgi-test\.vercel\.app\/"/);
     assert.match(root,/property="og:url" content="https:\/\/pgi-test\.vercel\.app\/"/);
+    assert.match(root,/"@type":"Organization"/);
+    assert.match(root,/"logo":"https:\/\/pgi-test\.vercel\.app\/assets\/audiotel-brand-logo-v33\.png"/);
+    assert.match(root,/name="twitter:image" content="https:\/\/pgi-test\.vercel\.app\/assets\/audiotel-brand-logo-v33\.png"/);
 
     assert.match(cockpit,/Cockpit \/ PGI Telecom/);
     assert.match(cockpit,/noindex,nofollow,noarchive/);
