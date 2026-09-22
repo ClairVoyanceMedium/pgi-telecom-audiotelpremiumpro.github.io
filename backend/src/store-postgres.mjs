@@ -1105,10 +1105,13 @@ export class PostgresStore{
         [sva.tenant_id||null,String(call.id),JSON.stringify({source:envelope.source})]
       );
       await tx.unsafe("UPDATE raw_cdr_events SET processing_status='processed',processed_at=now() WHERE id=$1",[inserted[0].id]);
-      return {duplicate:false,call_id:call.id};
+      return {duplicate:false,call_id:call.id,tenant_id:sva.tenant_id||null,market_id:sva.market_id||null,currency:String(sva.currency||"EUR")};
     });
 
-    if(!result.duplicate)this.eventBus.publish("call.ingested",{id:result.call_id});
+    if(!result.duplicate){
+      this.eventBus.publish("live_call.ended",{external_call_id:p.external_call_id,tenant_id:result.tenant_id,market_id:result.market_id,currency:result.currency,status:"ended",source:"cdr"});
+      this.eventBus.publish("call.ingested",{id:result.call_id,tenant_id:result.tenant_id,market_id:result.market_id,currency:result.currency});
+    }
     return result;
   }
 
