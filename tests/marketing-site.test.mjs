@@ -17,6 +17,14 @@ test("public site targets both individuals and professionals",()=>{
   assert.match(html,/Simple pour un particulier\. Complète pour une entreprise\./);
 });
 
+test("public homepage links to focused SEO content without changing the signup flow",()=>{
+  assert.match(html,/href="\/audiotel-voyance\//);
+  assert.match(html,/href="\/audiotel-coaching\//);
+  assert.match(html,/href="\/audiotel-professionnels\//);
+  assert.match(html,/href="\/reversement-audiotel\//);
+  assert.match(html,/href="\/numero-sva\//);
+});
+
 test("public pricing and revenue example stay explicit and non-guaranteed",()=>{
   assert.match(html,/3 € TTC \/ mois/);
   assert.match(html,/0,10 € HT \/ min/);
