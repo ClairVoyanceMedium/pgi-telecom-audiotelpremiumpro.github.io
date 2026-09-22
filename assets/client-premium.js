@@ -91,7 +91,8 @@ function init(){
   var liveRefresh=$("client-live-refresh");if(liveRefresh)liveRefresh.addEventListener("click",refreshPortal);
   if(!liveTimer)liveTimer=setInterval(liveTick,1000);
   if(!liveSyncTimer)liveSyncTimer=setInterval(function(){
-    if(document.hidden||navigator.onLine===false||liveSyncBusy)return;
+    var app=$("customer-app");
+    if(document.hidden||navigator.onLine===false||liveSyncBusy||!app||app.hidden)return;
     liveSyncBusy=true;Promise.resolve(refreshPortal()).finally(function(){setTimeout(function(){liveSyncBusy=false},1000)});
   },15000);
 
