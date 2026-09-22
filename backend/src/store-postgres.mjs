@@ -211,7 +211,7 @@ export class PostgresStore{
       mixed_currency:r.currency_count>1,
       asr_percent:r.calls_total?r.calls_connected/r.calls_total*100:0,
       active_experts:p.active_experts,
-      live_calls:p.live_calls,
+      live_calls:live.active_calls||p.live_calls,
       queue_depth:0,
       live_estimate_as_of:new Date().toISOString(),
       live_estimate_currency:live.currency_count===1?live.currency:null,
