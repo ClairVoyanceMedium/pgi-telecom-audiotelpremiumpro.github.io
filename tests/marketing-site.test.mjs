@@ -1,0 +1,54 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+
+const html=fs.readFileSync("site/index.html","utf8");
+const css=fs.readFileSync("site/site.css","utf8");
+const js=fs.readFileSync("site/site.js","utf8");
+const robots=fs.readFileSync("robots.txt","utf8");
+const sitemap=fs.readFileSync("sitemap.xml","utf8");
+const cockpit=fs.readFileSync("index.html","utf8");
+const client=fs.readFileSync("client.html","utf8");
+
+test("public site targets both individuals and professionals",()=>{
+  assert.match(html,/PARTICULIERS · INDÉPENDANTS · ENTREPRISES/);
+  assert.match(html,/Créer un compte particulier/);
+  assert.match(html,/Créer un compte professionnel/);
+  assert.match(html,/Simple pour un particulier\. Complète pour une entreprise\./);
+});
+
+test("public pricing and revenue example stay explicit and non-guaranteed",()=>{
+  assert.match(html,/3 € TTC \/ mois/);
+  assert.match(html,/0,10 € HT \/ min/);
+  assert.match(html,/1 800 € HT/);
+  assert.match(html,/Simulation non contractuelle/);
+  assert.match(html,/pas une promesse commerciale/);
+  assert.match(html,/ne constituent pas une garantie de revenus/);
+  assert.doesNotMatch(html,/revenu garanti|gains garantis/i);
+});
+
+test("calculator uses transparent minutes times rate arithmetic",()=>{
+  assert.match(js,/const minutes=h\*60\*d/);
+  assert.match(js,/const perMonth=minutes\*r/);
+  assert.match(js,/perMonth\*12/);
+  assert.match(html,/id="rate"/);
+  assert.match(html,/id="hours"/);
+  assert.match(html,/id="days"/);
+});
+
+test("marketing surface is indexable while private surfaces remain noindex",()=>{
+  assert.match(html,/name="robots" content="index,follow,max-image-preview:large"/);
+  assert.match(cockpit,/name="robots" content="noindex,nofollow,noarchive"/);
+  assert.match(client,/name="robots" content="noindex,nofollow,noarchive"/);
+  assert.match(robots,/Allow: \/site\//);
+  assert.match(robots,/Disallow: \/client\.html/);
+  assert.match(sitemap,/\/site\//);
+});
+
+test("public site remains self-contained and mobile responsive",()=>{
+  assert.doesNotMatch(html,/<script[^>]+src="https?:\/\//i);
+  assert.doesNotMatch(css,/url\(["']?https?:\/\//i);
+  assert.match(html,/name="viewport"/);
+  assert.match(css,/@media\(max-width:680px\)/);
+  assert.match(html,/href="\.\.\/client\.html"/);
+});
