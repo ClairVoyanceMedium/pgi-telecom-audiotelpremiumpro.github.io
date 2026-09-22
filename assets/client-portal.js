@@ -1,6 +1,6 @@
 (function(){
 "use strict";
-var state={range:"today",data:null,user:null,demo:false,googleCredential:null,billingBusy:false,live:{base:0,rate:0,asOf:0,currency:"EUR",active:0,mixed:false}};
+var state={range:"today",data:null,user:null,demo:false,googleCredential:null,billingBusy:false,liveRefreshing:false,live:{base:0,rate:0,asOf:0,currency:"EUR",active:0,mixed:false}};
 var I=window.PGIClientI18n||{locale:"fr-FR",t:function(x){return x;},apply:function(){}};
 function tr(x){return I.t?I.t(x):x;}
 var $=function(id){return document.getElementById(id);};
@@ -503,7 +503,7 @@ async function init(){
   var cfg=window.PGI_CONFIG||{};
   state.demo=cfg.mode==="demo"||!cfg.apiBaseUrl;
   if(location.search.includes("register=1")){showRegister();return;}
-  setInterval(function(){tickLiveEarnings();if(!document.hidden&&state.data&&state.live.active>0&&Date.now()-state.live.asOf>15000)loadPortal().catch(function(){});},1000);
+  setInterval(function(){tickLiveEarnings();if(!document.hidden&&state.data&&state.live.active>0&&!state.liveRefreshing&&Date.now()-state.live.asOf>15000){state.liveRefreshing=true;loadPortal().catch(function(){}).finally(function(){state.liveRefreshing=false;});}},1000);
   if(state.demo){showApp();return;}
   if(location.search.includes("invite=")){showActivation();return;}
   try{var me=await window.PGICustomerApi.me();state.user=me.user;showApp();}catch(_e){showLogin();}
