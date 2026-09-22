@@ -26,6 +26,10 @@ for (const [file,max] of Object.entries(budgets)) {
   total += size;
   if (size > max) failures.push(`${file}: ${size} bytes > budget ${max}`);
 }
+for (const [file,max] of Object.entries(marketingBudgets)) {
+  const bytes = fs.statSync(path.resolve(file)).size;
+  if (bytes > max) failures.push(`${file}: ${bytes} bytes > marketing budget ${max}`);
+}
 for (const [file,max] of Object.entries(portalBudgets)) {
   const bytes = fs.statSync(path.resolve(file)).size;
   if (bytes > max) failures.push(`${file}: ${bytes} bytes > portal budget ${max}`);
