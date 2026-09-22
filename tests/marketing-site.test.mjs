@@ -12,8 +12,8 @@ const client=fs.readFileSync("client.html","utf8");
 
 test("public site targets both individuals and professionals",()=>{
   assert.match(html,/PARTICULIERS · INDÉPENDANTS · ENTREPRISES/);
-  assert.match(html,/Créer un compte particulier/);
-  assert.match(html,/Créer un compte professionnel/);
+  assert.match(html,/Demander un compte particulier/);
+  assert.match(html,/Demander un compte professionnel/);
   assert.match(html,/Simple pour un particulier\. Complète pour une entreprise\./);
 });
 
