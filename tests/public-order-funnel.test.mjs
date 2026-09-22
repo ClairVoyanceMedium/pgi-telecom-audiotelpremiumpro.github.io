@@ -24,6 +24,12 @@ test("public order intent is private, short-lived and consumed by registration",
   assert.match(siteHtml,/JavaScript doit être activé/);
 });
 
+test("client registration prevents duplicate button submits while request is pending",()=>{
+  assert.match(portal,/b=e\.submitter/);
+  assert.match(portal,/b\.disabled=true/);
+  assert.match(portal,/b\.disabled=false/);
+});
+
 test("client registration carries acquisition source and service intent",()=>{
   assert.match(api,/PGIOrderMeta/);
   assert.match(portal,/location\.search\.includes\("register=1"\)/);
