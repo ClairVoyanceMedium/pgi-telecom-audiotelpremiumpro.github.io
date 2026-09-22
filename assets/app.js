@@ -42,8 +42,6 @@ function setProductionLive(summary){
 state.live.calls=Number(summary&&summary.live_calls||0);
 state.live.available=Number(summary&&summary.active_experts||0);
 state.live.queue=Number(summary&&summary.queue_depth||0);
-window.PGILiveFinanceSummary=summary||{};
-window.dispatchEvent(new CustomEvent("pgi:live-finance",{detail:summary||{}}));
 }
 function syncMarketSelector(data){
 var markets=data&&Array.isArray(data.markets)?data.markets:[];
@@ -144,7 +142,7 @@ try{
 var es=window.PGIApi.events();
 state.eventSource=es;
 es.addEventListener("call.ingested",function(){scheduleProductionSync("incremental");});
-["expert.status","expert.busy","expert.released","call_destination.busy","call_destination.released","carrier.switched","carrier.rollback","alert","voice.incident","voice.incident.resolved"].forEach(function(name){
+["expert.status","expert.busy","expert.released","carrier.switched","carrier.rollback","alert","voice.incident","voice.incident.resolved"].forEach(function(name){
 es.addEventListener(name,function(){scheduleProductionSync("dashboard");});
 });
 ["baseline.created","subscription.unpaid"].forEach(function(n){es.addEventListener(n,function(){window.PGIDataClient.invalidateAppBootstrap();scheduleProductionSync("full");});});
@@ -1465,7 +1463,6 @@ window.addEventListener("online",updateConnectivity);
 window.addEventListener("offline",updateConnectivity);
 document.addEventListener("visibilitychange",handleVisibilityChange);
 registerServiceWorker();
-import("./live-revenue-jackpot.js").catch(recordRuntimeError);
 if(RUNTIME.mode==="production")syncProductionData({mode:"full",forceMeta:true});else loadDemoCalls().then(render).catch(function(){recordRuntimeError();render();});
 clock();
 setInterval(clock,1000);
