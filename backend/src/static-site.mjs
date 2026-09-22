@@ -23,16 +23,25 @@ export function createStaticSiteHandler(rootDir){
     if(method!=="GET"&&method!=="HEAD")return false;
     if(pathname==="/metrics"||String(pathname||"").startsWith("/api/"))return false;
 
-    const file=await resolveStaticFile(root,pathname);
+    if(["/site","/site/","/site/index.html"].includes(String(pathname||""))){
+      res.writeHead(308,{"Location":"/","Cache-Control":"no-store"});
+      res.end();
+      return true;
+    }
+
+    const requestedPath=["/cockpit","/cockpit/"].includes(String(pathname||""))?"/cockpit.html":pathname;
+    const file=await resolveStaticFile(root,requestedPath);
     if(!file)return false;
 
     const stat=await fs.promises.stat(file);
     const ext=path.extname(file).toLowerCase();
     const runtimeConfig=/\/assets\/(?:config|client-config)\.js$/.test(file);
     const html=ext===".html";
+    const privateUi=["/client.html","/cockpit","/cockpit/","/cockpit.html"].includes(String(pathname||""));
     res.setHeader("Content-Type",MIME[ext]||"application/octet-stream");
     res.setHeader("Content-Length",String(stat.size));
     res.setHeader("Cache-Control",runtimeConfig||html?"no-store":"public, max-age=300");
+    if(privateUi)res.setHeader("X-Robots-Tag","noindex, nofollow, noarchive");
     if(method==="HEAD"){res.writeHead(200);res.end();return true;}
     res.writeHead(200);
     await new Promise((resolve,reject)=>{
