@@ -2,7 +2,7 @@
 "use strict";
 var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
 var CONFIG={serviceRate:.8,payoutRate:.46,expertCostPerMin:.18,fixedCostPerCall:.03};
-var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0,currency:null,mixed:false,upstream:0,client:0,revenue:0,upstreamRate:0,clientRate:0,serviceRate:0,baseAt:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,pendingSyncMode:"dashboard",scheduledSyncMode:"dashboard",hiddenAt:null,lastSyncAt:null,activeView:"overview",system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:true};
+var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,pendingSyncMode:"dashboard",scheduledSyncMode:"dashboard",hiddenAt:null,lastSyncAt:null,activeView:"overview",system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:true};
 var titles={overview:"Cockpit",calls:"Appels",finance:"Finance",experts:"Intervenants",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Supervision",settings:"Paramètres"};var experts=["Accueil","Service commercial","Support client","Service technique","Prise de rendez-vous","Comptabilité"];
 var carriers=["Orange","SFR","Bouygues","Free"];
 var number089="0890 80 24 24";
@@ -42,29 +42,7 @@ function setProductionLive(summary){
 state.live.calls=Number(summary&&summary.live_calls||0);
 state.live.available=Number(summary&&summary.active_experts||0);
 state.live.queue=Number(summary&&summary.queue_depth||0);
-state.live.currency=summary&&summary.live_currency||null;
-state.live.mixed=Boolean(summary&&summary.live_mixed_currency);
-state.live.upstream=Number(summary&&summary.live_upstream_payout_ht||0);
-state.live.client=Number(summary&&summary.live_client_net_ht||0);
-state.live.revenue=Number(summary&&summary.live_service_revenue_ttc||0);
-state.live.upstreamRate=Number(summary&&summary.live_upstream_rate_ht_per_second||0);
-state.live.clientRate=Number(summary&&summary.live_client_rate_ht_per_second||0);
-state.live.serviceRate=Number(summary&&summary.live_service_rate_ttc_per_second||0);
-state.live.baseAt=Date.parse(summary&&summary.live_as_of||"")||Date.now();
 }
-function paintAdminLive(){
-var root=$("live-jackpot-card"),currency=state.live.currency||state.marketCurrency||"EUR";
-var elapsed=Math.max(0,Math.min(90,(Date.now()-(state.live.baseAt||Date.now()))/1000));
-var liveUpstream=Math.max(0,state.live.upstream+elapsed*state.live.upstreamRate);
-if(root)root.setAttribute("data-active",state.live.calls>0?"true":"false");
-setText("live-jackpot",state.live.mixed?"Multi-devises":moneyIn(liveUpstream,currency,"fr-FR"));
-setText("live-jackpot-calls",state.live.calls?nfmt(state.live.calls)+" appel"+(state.live.calls>1?"s":"")+" en cours":"Aucun appel en cours");
-setText("live-jackpot-rate",state.live.calls&&!state.live.mixed?"+"+moneyIn(state.live.upstreamRate,currency,"fr-FR")+" / seconde estimée":"Flux financier en attente");
-var period=state.serverSummary?summaryAggregate(state.serverSummary):null;
-var combined=period&&!period.mixedCurrency&&!state.live.mixed?Number(period.expected||0)+liveUpstream:null;
-setText("live-jackpot-period",combined==null?"—":moneyIn(combined,currency,"fr-FR"));
-}
-
 function syncMarketSelector(data){
 var markets=data&&Array.isArray(data.markets)?data.markets:[];
 var active=markets.filter(function(x){return String(x.status||"").toLowerCase()==="active";});
@@ -164,7 +142,7 @@ try{
 var es=window.PGIApi.events();
 state.eventSource=es;
 es.addEventListener("call.ingested",function(){scheduleProductionSync("incremental");});
-["expert.status","expert.busy","expert.released","live_call.started","live_call.ended","carrier.switched","carrier.rollback","alert","voice.incident","voice.incident.resolved"].forEach(function(name){
+["expert.status","expert.busy","expert.released","carrier.switched","carrier.rollback","alert","voice.incident","voice.incident.resolved"].forEach(function(name){
 es.addEventListener(name,function(){scheduleProductionSync("dashboard");});
 });
 ["baseline.created","subscription.unpaid"].forEach(function(n){es.addEventListener(n,function(){window.PGIDataClient.invalidateAppBootstrap();scheduleProductionSync("full");});});
@@ -433,7 +411,6 @@ setText("fin-gap",monetaryLabel(a.gap,mixed));
 setText("live-calls",String(state.live.calls||0));
 setText("live-available",String(state.live.available||0));
 setText("live-queue",String(state.live.queue||0));
-paintAdminLive();
 var trend=$("ca-trend");
 if(trend){
 var pct=revenueTrendPercent(rows);
@@ -1469,7 +1446,6 @@ navigator.serviceWorker.register("./service-worker.js").catch(function(){});
 }
 function clock(){
 setText("footer-clock",new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeStyle:"medium"}).format(new Date()));
-paintAdminLive();
 }
 window.addEventListener("error",recordRuntimeError);
 window.addEventListener("unhandledrejection",recordRuntimeError);
