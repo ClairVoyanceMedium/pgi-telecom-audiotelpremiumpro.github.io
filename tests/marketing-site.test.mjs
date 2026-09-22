@@ -52,3 +52,22 @@ test("public site remains self-contained and mobile responsive",()=>{
   assert.match(css,/@media\(max-width:680px\)/);
   assert.match(html,/href="\.\.\/client\.html"/);
 });
+
+
+test("public site provides a real registration handoff without leaking PII in the URL",()=>{
+  assert.match(html,/id="order-form"/);
+  assert.match(html,/order_account_type/);
+  assert.match(html,/id="order-service-intent"/);
+  assert.match(html,/Demander l’ouverture/);
+  assert.match(js,/sessionStorage\.setItem\(KEY,JSON\.stringify\(intent\)\)/);
+  assert.match(js,/location\.href="\.\.\/client\.html\?register=1"/);
+  assert.doesNotMatch(js,/location\.href=.*email|URLSearchParams.*email/);
+});
+
+test("marketing conversion uses trust and legitimate urgency without fabricated scarcity",()=>{
+  assert.match(html,/Préparez votre dossier maintenant/);
+  assert.match(html,/Aucun paiement à cette étape/);
+  assert.match(html,/Validation avant mise en service/);
+  assert.match(html,/audiotel-brand-logo-v33\.png/);
+  assert.doesNotMatch(html,/places restantes|plus que \d+|compte à rebours|dernière chance|clients en ligne/i);
+});
