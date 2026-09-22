@@ -139,6 +139,23 @@ npm ci + npm run verify
 
 Si la nouvelle API ne devient pas prête, le script redéploie automatiquement la release backend précédente. Cette stratégie est compatible avec le rollback parce que les migrations automatisées sont limitées aux changements additifs.
 
+## Hébergement full-stack Railway avant branchement opérateur
+
+Pour rendre le site public, le portail client, le cockpit et l’API réellement persistants avant le raccordement SVA, le dépôt peut être déployé comme un seul service web Railway relié à un PostgreSQL managé dans le même projet.
+
+Le fichier `Dockerfile` à la racine est la voie canonique pour un nouveau service Railway. Il sert toutes les surfaces depuis le même processus Node et conserve `/api/v1` en même origine, ce qui évite les cookies cross-origin et CORS. `infra/Dockerfile.platform` reste la copie dédiée de l’image plateforme. Le fichier `railway.json` est conservé uniquement pour compatibilité avec les services Railway qui l’utilisent déjà ; un nouveau service ne doit pas dépendre de l’ancien mécanisme Config-as-Code.
+
+Configuration minimale du service :
+
+- PostgreSQL Railway non exposé publiquement ;
+- `DATABASE_URL` défini par référence vers la variable `DATABASE_URL` du service PostgreSQL ;
+- secrets PGI injectés par l’environnement, jamais dans Git ;
+- `PGI_REQUIRE_OPERATOR=false` tant que le numéro SVA, le code tarifaire et le trunk SIP ne sont pas contractuellement disponibles ;
+- domaine HTTPS Railway ou domaine personnalisé sur le même service web.
+
+Le script `scripts/start-platform.sh` construit le front en mode production à partir du SHA Railway, initialise de façon fail-closed une base vide, applique les migrations puis lance l’API sur le port fourni par la plateforme.
+
+
 ## Déploiement
 
 Les deux workflows de production restent explicitement gated. Aucun déploiement n’est activé uniquement parce qu’un commit arrive sur `main`.
