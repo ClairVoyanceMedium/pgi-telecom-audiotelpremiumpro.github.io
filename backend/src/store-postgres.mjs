@@ -724,7 +724,10 @@ export class PostgresStore{
         " RETURNING id,tenant_id,sva_number_id,label,destination_type,destination_uri,priority,status,failover_enabled,max_concurrent_calls,active_calls,last_assigned_at",[destination.id,tenantId]);
       const row=updated[0];return {...row,route_kind:"destination",call_destination_id:Number(row.id),expert_id:null};
     });
-    if(routed)return routed;
+    if(routed){
+      this.eventBus.publish("call_destination.busy",{id:routed.id,tenant_id:routed.tenant_id,sva_number_id:routed.sva_number_id,active_calls:routed.active_calls,last_assigned_at:routed.last_assigned_at});
+      return routed;
+    }
     const legacy=await this.selectExpert(context);
     return legacy?{...legacy,route_kind:"expert",call_destination_id:null,expert_id:Number(legacy.id),label:legacy.display_name}:null;
   }
@@ -739,7 +742,7 @@ export class PostgresStore{
 
   async selectExpert(context={}){
     const svaNumber=String(context.svaNumber||"").trim();
-    return this.sql.begin(async tx=>{
+    const selected=await this.sql.begin(async tx=>{
       let tenantId=null,marketId=null;
       if(svaNumber){
         const svaRows=await tx.unsafe(
@@ -793,6 +796,8 @@ export class PostgresStore{
       );
       return updated[0];
     });
+    if(selected)this.eventBus.publish("expert.busy",{id:selected.id,tenant_id:selected.tenant_id,active_calls:selected.active_calls,last_assigned_at:selected.last_assigned_at});
+    return selected;
   }
 
   async releaseExpert(id){
