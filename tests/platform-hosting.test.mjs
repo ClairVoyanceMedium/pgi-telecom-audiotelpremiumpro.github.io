@@ -62,11 +62,14 @@ test("same-origin static handler serves public and client pages but never API pa
 test("Railway deployment keeps app and database private-by-reference",()=>{
   const railway=JSON.parse(fs.readFileSync("railway.json","utf8"));
   const docker=fs.readFileSync("infra/Dockerfile.platform","utf8");
+  const rootDocker=fs.readFileSync("Dockerfile","utf8");
   const start=fs.readFileSync("scripts/start-platform.sh","utf8");
   const bootstrap=fs.readFileSync("scripts/bootstrap-database.mjs","utf8");
   assert.equal(railway.build.builder,"DOCKERFILE");
   assert.equal(railway.build.dockerfilePath,"infra/Dockerfile.platform");
   assert.equal(railway.deploy.healthcheckPath,"/api/v1/ready");
+  assert.ok(rootDocker.includes('CMD ["sh","scripts/start-platform.sh"]'));
+  assert.match(rootDocker,/COPY backend \.\/backend/);
   assert.match(start,/DATABASE_URL/);
   assert.match(start,/PGI_STATIC_DIR/);
   assert.match(start,/bootstrap-database\.mjs/);
@@ -74,4 +77,5 @@ test("Railway deployment keeps app and database private-by-reference",()=>{
   assert.match(bootstrap,/refusing destructive bootstrap/);
   assert.doesNotMatch(start,/DATABASE_PUBLIC_URL/);
   assert.doesNotMatch(docker,/DATABASE_PUBLIC_URL/);
+  assert.doesNotMatch(rootDocker,/DATABASE_PUBLIC_URL/);
 });
