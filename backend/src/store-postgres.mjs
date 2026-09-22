@@ -171,7 +171,7 @@ export class PostgresStore{
         "SELECT count(*) FILTER (WHERE status='available' AND enabled)::int AS active_experts,"+
         " COALESCE(sum(active_calls),0)::int AS live_calls FROM experts"
       ),
-      this.liveFinancialSnapshot(null,market)
+      this.liveFinancialSnapshot(null,null)
     ]);
     const r=numberFields(rows[0],[
       "calls_total","calls_connected","calls_abandoned","calls_failed","currency_count"
