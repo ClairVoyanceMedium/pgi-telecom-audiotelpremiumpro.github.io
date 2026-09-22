@@ -170,17 +170,58 @@ export class PostgresStore{
       "SELECT count(*) FILTER (WHERE status='available' AND enabled)::int AS active_experts,"+
       " COALESCE(sum(active_calls),0)::int AS live_calls FROM experts"
     );
+    const liveEstimateRows=await this.readSql.unsafe(
+      "WITH active_routes AS ("+
+      " SELECT d.tenant_id,d.sva_number_id,d.active_calls,d.last_assigned_at FROM tenant_call_destinations d WHERE d.active_calls>0 AND d.last_assigned_at IS NOT NULL"+
+      " UNION ALL SELECT e.tenant_id,NULL::bigint AS sva_number_id,e.active_calls,e.last_assigned_at FROM experts e WHERE e.tenant_id IS NOT NULL AND e.active_calls>0 AND e.last_assigned_at IS NOT NULL"+
+      "), resolved AS ("+
+      " SELECT ar.active_calls,ar.last_assigned_at,sn.currency,"+
+      " GREATEST(0,EXTRACT(EPOCH FROM(now()-ar.last_assigned_at)))::float8 AS elapsed_seconds,"+
+      " COALESCE(cc.payout_rate_ht_per_min,0)::float8 AS upstream_rate,"+
+      " CASE WHEN pt.id IS NULL THEN 0 ELSE LEAST(COALESCE(cc.payout_rate_ht_per_min,0)::float8,COALESCE(cc.payout_rate_ht_per_min,0)::float8*pt.platform_fee_bps/10000.0+pt.platform_fee_ht_per_min::float8) END AS fee_rate,"+
+      " CASE WHEN pt.id IS NULL THEN 0 ELSE GREATEST(0,COALESCE(cc.payout_rate_ht_per_min,0)::float8-(COALESCE(cc.payout_rate_ht_per_min,0)::float8*pt.platform_fee_bps/10000.0+pt.platform_fee_ht_per_min::float8)) END AS net_rate"+
+      " FROM active_routes ar"+
+      " JOIN LATERAL (SELECT sn.id,sn.currency,sn.market_id FROM sva_numbers sn LEFT JOIN operating_markets m ON m.id=sn.market_id"+
+      " WHERE sn.tenant_id=ar.tenant_id AND sn.status IN ('active','porting') AND (ar.sva_number_id IS NULL OR sn.id=ar.sva_number_id)"+
+      " AND ($1::text IS NULL OR m.country_code=$1) ORDER BY (ar.sva_number_id IS NOT NULL AND sn.id=ar.sva_number_id) DESC,sn.id ASC LIMIT 1) sn ON true"+
+      " LEFT JOIN LATERAL (SELECT cc.payout_rate_ht_per_min FROM logical_carrier_routes lr JOIN carrier_contracts cc ON cc.carrier_id=lr.active_carrier_id"+
+      " WHERE lr.route_key='sva-primary' AND (cc.sva_number_id IS NULL OR cc.sva_number_id=sn.id) AND cc.valid_from<=CURRENT_DATE AND (cc.valid_to IS NULL OR cc.valid_to>=CURRENT_DATE)"+
+      " ORDER BY (cc.sva_number_id IS NOT NULL) DESC,cc.valid_from DESC,cc.id DESC LIMIT 1) cc ON true"+
+      " LEFT JOIN LATERAL (SELECT pt.id,pt.platform_fee_bps,pt.platform_fee_ht_per_min FROM tenant_payout_terms pt"+
+      " WHERE pt.tenant_id=ar.tenant_id AND pt.status='active' AND pt.effective_from<=now() AND (pt.effective_to IS NULL OR pt.effective_to>now())"+
+      " AND (pt.market_id IS NULL OR pt.market_id=sn.market_id) AND (pt.sva_number_id IS NULL OR pt.sva_number_id=sn.id)"+
+      " ORDER BY (pt.sva_number_id IS NOT NULL) DESC,(pt.market_id IS NOT NULL) DESC,pt.effective_from DESC,pt.id DESC LIMIT 1) pt ON true"+
+      "), totals AS ("+
+      " SELECT count(DISTINCT currency)::int AS currency_count,min(currency) AS currency,COALESCE(sum(active_calls),0)::int AS active_calls,"+
+      " COALESCE(sum(elapsed_seconds*active_calls*upstream_rate/60.0),0)::float8 AS upstream_estimate_ht,"+
+      " COALESCE(sum(elapsed_seconds*active_calls*fee_rate/60.0),0)::float8 AS platform_margin_estimate_ht,"+
+      " COALESCE(sum(elapsed_seconds*active_calls*net_rate/60.0),0)::float8 AS client_net_estimate_ht,"+
+      " COALESCE(sum(active_calls*upstream_rate/60.0),0)::float8 AS upstream_rate_per_second,"+
+      " COALESCE(sum(active_calls*fee_rate/60.0),0)::float8 AS platform_margin_rate_per_second,"+
+      " COALESCE(sum(active_calls*net_rate/60.0),0)::float8 AS client_net_rate_per_second FROM resolved"+
+      ") SELECT * FROM totals",[market||null]
+    );
     const r=numberFields(rows[0],[
       "calls_total","calls_connected","calls_abandoned","calls_failed","currency_count"
     ]);
     const p=numberFields(presence[0],["active_experts","live_calls"]);
+    const live=numberFields(liveEstimateRows[0]||{},["currency_count","active_calls","upstream_estimate_ht","platform_margin_estimate_ht","client_net_estimate_ht","upstream_rate_per_second","platform_margin_rate_per_second","client_net_rate_per_second"]);
     return {
       ...r,
       mixed_currency:r.currency_count>1,
       asr_percent:r.calls_total?r.calls_connected/r.calls_total*100:0,
       active_experts:p.active_experts,
       live_calls:p.live_calls,
-      queue_depth:0
+      queue_depth:0,
+      live_estimate_as_of:new Date().toISOString(),
+      live_estimate_currency:live.currency_count===1?live.currency:null,
+      live_estimate_mixed_currency:live.currency_count>1,
+      live_upstream_estimate_ht:live.upstream_estimate_ht||0,
+      live_platform_margin_estimate_ht:live.platform_margin_estimate_ht||0,
+      live_client_net_estimate_ht:live.client_net_estimate_ht||0,
+      live_upstream_rate_per_second:live.upstream_rate_per_second||0,
+      live_platform_margin_rate_per_second:live.platform_margin_rate_per_second||0,
+      live_client_net_rate_per_second:live.client_net_rate_per_second||0
     };
   }
 
@@ -3895,6 +3936,32 @@ export class PostgresStore{
         "SELECT id,sva_number_id,label,destination_type,destination_uri,priority,status,failover_enabled,max_concurrent_calls,active_calls,last_assigned_at"+
         " FROM tenant_scoped_call_destinations ORDER BY priority,id LIMIT 100"
       );
+      const livePayoutRows=await tx.unsafe(
+        "WITH active_routes AS ("+
+        " SELECT d.sva_number_id,d.active_calls,d.last_assigned_at FROM tenant_call_destinations d WHERE d.tenant_id=$1 AND d.active_calls>0 AND d.last_assigned_at IS NOT NULL"+
+        " UNION ALL SELECT NULL::bigint,e.active_calls,e.last_assigned_at FROM experts e WHERE e.tenant_id=$1 AND e.active_calls>0 AND e.last_assigned_at IS NOT NULL"+
+        "), resolved AS ("+
+        " SELECT ar.active_calls,GREATEST(0,EXTRACT(EPOCH FROM(now()-ar.last_assigned_at)))::float8 AS elapsed_seconds,sn.currency,"+
+        " COALESCE(cc.payout_rate_ht_per_min,0)::float8 AS upstream_rate,"+
+        " CASE WHEN pt.id IS NULL THEN 0 ELSE LEAST(COALESCE(cc.payout_rate_ht_per_min,0)::float8,COALESCE(cc.payout_rate_ht_per_min,0)::float8*pt.platform_fee_bps/10000.0+pt.platform_fee_ht_per_min::float8) END AS fee_rate,"+
+        " CASE WHEN pt.id IS NULL THEN 0 ELSE GREATEST(0,COALESCE(cc.payout_rate_ht_per_min,0)::float8-(COALESCE(cc.payout_rate_ht_per_min,0)::float8*pt.platform_fee_bps/10000.0+pt.platform_fee_ht_per_min::float8)) END AS net_rate"+
+        " FROM active_routes ar"+
+        " JOIN LATERAL (SELECT sn.id,sn.currency,sn.market_id FROM sva_numbers sn WHERE sn.tenant_id=$1 AND sn.status IN ('active','porting')"+
+        " AND (ar.sva_number_id IS NULL OR sn.id=ar.sva_number_id) ORDER BY (ar.sva_number_id IS NOT NULL AND sn.id=ar.sva_number_id) DESC,sn.id ASC LIMIT 1) sn ON true"+
+        " LEFT JOIN LATERAL (SELECT cc.payout_rate_ht_per_min FROM logical_carrier_routes lr JOIN carrier_contracts cc ON cc.carrier_id=lr.active_carrier_id"+
+        " WHERE lr.route_key='sva-primary' AND (cc.sva_number_id IS NULL OR cc.sva_number_id=sn.id) AND cc.valid_from<=CURRENT_DATE AND (cc.valid_to IS NULL OR cc.valid_to>=CURRENT_DATE)"+
+        " ORDER BY (cc.sva_number_id IS NOT NULL) DESC,cc.valid_from DESC,cc.id DESC LIMIT 1) cc ON true"+
+        " LEFT JOIN LATERAL (SELECT pt.id,pt.platform_fee_bps,pt.platform_fee_ht_per_min FROM tenant_payout_terms pt"+
+        " WHERE pt.tenant_id=$1 AND pt.status='active' AND pt.effective_from<=now() AND (pt.effective_to IS NULL OR pt.effective_to>now())"+
+        " AND (pt.market_id IS NULL OR pt.market_id=sn.market_id) AND (pt.sva_number_id IS NULL OR pt.sva_number_id=sn.id)"+
+        " ORDER BY (pt.sva_number_id IS NOT NULL) DESC,(pt.market_id IS NOT NULL) DESC,pt.effective_from DESC,pt.id DESC LIMIT 1) pt ON true"+
+        ") SELECT count(DISTINCT currency)::int AS currency_count,min(currency) AS currency,COALESCE(sum(active_calls),0)::int AS active_calls,"+
+        " COALESCE(sum(elapsed_seconds*active_calls*upstream_rate/60.0),0)::float8 AS upstream_estimate_ht,"+
+        " COALESCE(sum(elapsed_seconds*active_calls*fee_rate/60.0),0)::float8 AS platform_fee_estimate_ht,"+
+        " COALESCE(sum(elapsed_seconds*active_calls*net_rate/60.0),0)::float8 AS net_payout_estimate_ht,"+
+        " COALESCE(sum(active_calls*net_rate/60.0),0)::float8 AS net_payout_rate_per_second FROM resolved",[id]
+      );
+      const livePayout=numberFields(livePayoutRows[0]||{},["currency_count","active_calls","upstream_estimate_ht","platform_fee_estimate_ht","net_payout_estimate_ht","net_payout_rate_per_second"]);
       const portabilityRequests=await tx.unsafe(
         "SELECT id,country_code,requested_e164,display_number,service_family,current_operator_name,desired_port_date,status,ownership_status,"+
         " operator_portability_reference,scheduled_at,completed_at,rejection_reason,tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,tariff_verified_at,"+
@@ -3918,7 +3985,7 @@ export class PostgresStore{
         " FROM tenant_scoped_portal_call_details WHERE started_at>=$1::timestamptz AND started_at<=$2::timestamptz"+
         " ORDER BY started_at DESC,call_id DESC LIMIT 20",[callsFrom,to]
       );
-      return {tenant,financial_by_currency:financial,metric_net_payout_by_currency:metricPayout,series,activity_breakdown:activityBreakdown,numbers,settlements,subscriptions,portability_requests:portabilityRequests,destinations,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,recent_calls:recentCalls,voice_quality:voiceQuality[0]||null,range:{from,to},metric_ranges:mr};
+      return {tenant,financial_by_currency:financial,metric_net_payout_by_currency:metricPayout,series,activity_breakdown:activityBreakdown,numbers,settlements,subscriptions,portability_requests:portabilityRequests,destinations,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,recent_calls:recentCalls,voice_quality:voiceQuality[0]||null,live_payout_estimate:{as_of:new Date().toISOString(),active_calls:livePayout.active_calls||0,currency:livePayout.currency_count===1?livePayout.currency:null,mixed_currency:livePayout.currency_count>1,upstream_estimate_ht:livePayout.upstream_estimate_ht||0,platform_fee_estimate_ht:livePayout.platform_fee_estimate_ht||0,net_payout_estimate_ht:livePayout.net_payout_estimate_ht||0,net_payout_rate_per_second:livePayout.net_payout_rate_per_second||0,basis:"active_route_elapsed_time_and_current_contract_terms",provisional:true},range:{from,to},metric_ranges:mr};
     });
   }
 
