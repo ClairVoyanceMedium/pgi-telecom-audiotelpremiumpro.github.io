@@ -13,6 +13,7 @@ const files=[
   "client.html",
   "site/index.html",
   "site/site.css",
+  "site/site-v155.css",
   "site/site.js",
   "sitemap.xml",
   "manifest.webmanifest",
@@ -96,6 +97,7 @@ const marketingRoot=applyPublicMetadata(
     .replaceAll("../assets/","assets/")
     .replaceAll("../client.html","client.html")
     .replace('href="site.css"','href="site/site.css"')
+    .replace('href="site-v155.css"','href="site/site-v155.css"')
     .replace('src="site.js"','src="site/site.js"'),
   publicBaseUrl
 );
