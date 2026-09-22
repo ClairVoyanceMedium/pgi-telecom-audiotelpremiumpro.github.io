@@ -22,7 +22,7 @@ test("production static build publishes marketing root and private cockpit",()=>
     const legacy=fs.readFileSync("dist/site/index.html","utf8");
     const robots=fs.readFileSync("dist/robots.txt","utf8");
     const sitemap=fs.readFileSync("dist/sitemap.xml","utf8");
-    const seoSlugs=["audiotel-voyance","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva"];
+    const seoSlugs=["audiotel-voyance","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","comparateur-audiotel","guide-audiotel-sva"];
     const seoPages=seoSlugs.map(slug=>fs.readFileSync("dist/"+slug+"/index.html","utf8"));
 
     assert.match(root,/Pilotez votre activité/);
@@ -54,6 +54,15 @@ test("production static build publishes marketing root and private cockpit",()=>
       assert.doesNotMatch(page,/__CANONICAL__|__BASE__|__LOGO__/);
       assert.doesNotMatch(page,/<script[^>]+src=/i);
     });
+    const comparator=seoPages[seoSlugs.indexOf("comparateur-audiotel")];
+    assert.match(comparator,/1 800 € \/ mois/);
+    assert.match(comparator,/0,10 € \/ min/);
+    assert.match(comparator,/"@type":"FAQPage"/);
+    assert.match(comparator,/"@type":"BreadcrumbList"/);
+    const guide=seoPages[seoSlugs.indexOf("guide-audiotel-sva")];
+    assert.match(guide,/Qu’est-ce qu’Audiotel/);
+    assert.match(guide,/"@type":"FAQPage"/);
+    assert.match(guide,/"@type":"BreadcrumbList"/);
   }finally{
     fs.rmSync("dist",{recursive:true,force:true});
   }
