@@ -297,6 +297,8 @@ async function submitRegistration(e){
     registration_number:$("register-number").value.trim(),
     phone:$("register-phone").value.trim(),
     email:$("register-email").value.trim(),
+    acquisition_source:$("customer-register-form").dataset.acquisitionSource||"self_service",
+    service_intent:$("customer-register-form").dataset.serviceIntent||"",
     password:password,
     authority_confirmed:$("register-authority").checked,
     website:$("register-website").value,
@@ -482,8 +484,10 @@ async function init(){
   handleBillingReturn();
   var cfg=window.PGI_CONFIG||{};
   state.demo=cfg.mode==="demo"||!cfg.apiBaseUrl;
+  var params=new URLSearchParams(location.search);
+  if(params.get("register")==="1"){showRegister();return;}
   if(state.demo){showApp();return;}
-  if(new URLSearchParams(location.search).get("invite")){showActivation();return;}
+  if(params.get("invite")){showActivation();return;}
   try{var me=await window.PGICustomerApi.me();state.user=me.user;showApp();}catch(_e){showLogin();}
 }
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init,{once:true});else init();
