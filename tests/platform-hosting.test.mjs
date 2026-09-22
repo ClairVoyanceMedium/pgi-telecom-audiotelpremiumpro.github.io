@@ -38,6 +38,8 @@ test("same-origin static handler serves marketing at root and keeps private UI n
   fs.writeFileSync(path.join(root,"cockpit.html"),"cockpit");
   fs.writeFileSync(path.join(root,"client.html"),"client");
   fs.writeFileSync(path.join(root,"site","index.html"),"marketing-old");
+  fs.mkdirSync(path.join(root,"comparateur-audiotel"),{recursive:true});
+  fs.writeFileSync(path.join(root,"comparateur-audiotel","index.html"),"comparator");
   const handler=createStaticSiteHandler(root);
   const server=http.createServer(async(req,res)=>{
     const pathname=new URL(req.url,"http://local").pathname;
@@ -53,6 +55,12 @@ test("same-origin static handler serves marketing at root and keeps private UI n
     const legacy=await fetch(base+"/site/",{redirect:"manual"});
     assert.equal(legacy.status,308);
     assert.equal(legacy.headers.get("location"),"/");
+    const seoRedirect=await fetch(base+"/comparateur-audiotel",{redirect:"manual"});
+    assert.equal(seoRedirect.status,308);
+    assert.equal(seoRedirect.headers.get("location"),"/comparateur-audiotel/");
+    const seoPage=await fetch(base+"/comparateur-audiotel/");
+    assert.equal(seoPage.status,200);
+    assert.equal(await seoPage.text(),"comparator");
     const cockpit=await fetch(base+"/cockpit");
     assert.equal(cockpit.status,200);
     assert.equal(await cockpit.text(),"cockpit");
