@@ -71,3 +71,18 @@ test("marketing conversion uses trust and legitimate urgency without fabricated 
   assert.match(html,/audiotel-brand-logo-v33\.png/);
   assert.doesNotMatch(html,/places restantes|plus que \d+|compte à rebours|dernière chance|clients en ligne/i);
 });
+
+
+test("marketing page exposes structured service data without fabricated social proof",()=>{
+  assert.match(html,/application\/ld\+json/);
+  assert.match(html,/"@type":"Service"/);
+  assert.match(html,/"price":"3\.00"/);
+  assert.match(html,/"priceCurrency":"EUR"/);
+  assert.match(html,/0,10 € par jour/);
+  assert.doesNotMatch(html,/aggregateRating|"review"|bestRating|ratingValue/);
+});
+
+test("marketing metadata declares the canonical social URL",()=>{
+  assert.match(html,/property="og:url" content="https:\/\/clairvoyancemedium\.github\.io\/pgi-telecom-audiotelpremiumpro\.github\.io\/site\/"/);
+  assert.match(html,/name="twitter:card" content="summary_large_image"/);
+});
