@@ -65,6 +65,9 @@ test("les cockpits affichent les reversements en direct sans les confondre avec 
   const server=read("backend/server.mjs"),store=read("backend/src/store-postgres.mjs"),site=read("site/index.html");
   assert.match(clientPortal,/client-live-finance\.js/);
   assert.match(index,/live-finance\.js/);
+  for(const asset of ["client-live-finance.js","client-live-finance.css","live-finance.js","live-finance.css"]){
+    assert.ok(buildStatic.includes('"assets/'+asset+'"'),"production build missing "+asset);
+  }
   for(const id of ["client-live-money","client-live-amount","client-period-payout-estimate","client-live-recalc"])assert.ok(clientLiveFinance.includes('id="'+id+'"'),"missing client live #"+id);
   for(const id of ["live-jackpot-card","live-jackpot","live-jackpot-period"])assert.ok(adminLiveFinance.includes('id="'+id+'"'),"missing admin live #"+id);
   assert.match(clientLiveFinance,/live_financial_by_currency/);
