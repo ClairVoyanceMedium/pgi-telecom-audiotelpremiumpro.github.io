@@ -24,7 +24,11 @@ function hydratePublicOrderIntent(){
   }catch(_e){try{sessionStorage.removeItem("pgi_public_order_intent_v1")}catch(_x){}}
 }
 export function init(){
-  const select=$("register-account-type");if(!select)return;
-  if(!bound){select.addEventListener("change",apply);bound=true}
+  const select=$("register-account-type"),form=$("customer-register-form");if(!select)return;
+  if(!bound){
+    select.addEventListener("change",apply);
+    if((window.PGI_CONFIG||{}).mode==="demo"&&form)form.addEventListener("submit",e=>{e.preventDefault();e.stopImmediatePropagation();const m=$("auth-message");if(m){m.classList.remove("bad");m.textContent="Démonstration : aucune demande réelle n’est envoyée depuis GitHub Pages. Le même parcours enverra la création du compte dès que l’API de production sera raccordée.";}},{capture:true});
+    bound=true
+  }
   hydratePublicOrderIntent();apply();
 }
