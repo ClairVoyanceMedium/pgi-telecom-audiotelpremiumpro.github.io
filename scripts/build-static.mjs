@@ -101,6 +101,20 @@ const marketingRoot=applyPublicMetadata(
 );
 fs.writeFileSync(path.join(dist,"site","index.html"),marketingSite,"utf8");
 fs.writeFileSync(path.join(dist,"index.html"),marketingRoot,"utf8");
+const seoPages=[
+  "audiotel-voyance",
+  "audiotel-coaching",
+  "audiotel-professionnels",
+  "reversement-audiotel",
+  "numero-sva"
+];
+for(const slug of seoPages){
+  const source=fs.readFileSync(path.join(root,"site","seo",slug+".html"),"utf8");
+  const targetDir=path.join(dist,slug);
+  fs.mkdirSync(targetDir,{recursive:true});
+  fs.writeFileSync(path.join(targetDir,"index.html"),applyLandingMetadata(source,publicBaseUrl,slug),"utf8");
+}
+
 
 if(publicBaseUrl){
   fs.writeFileSync(
@@ -119,16 +133,16 @@ if(publicBaseUrl){
     ].join("\n"),
     "utf8"
   );
+  const lastmod=new Date().toISOString().slice(0,10);
+  const urls=[
+    {loc:publicBaseUrl+"/",priority:"1.0"},
+    ...seoPages.map(slug=>({loc:publicBaseUrl+"/"+slug+"/",priority:"0.8"}))
+  ];
   fs.writeFileSync(
     path.join(dist,"sitemap.xml"),
     '<?xml version="1.0" encoding="UTF-8"?>\n'+
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'+
-    '  <url>\n'+
-    '    <loc>'+escapeXml(publicBaseUrl+"/")+'</loc>\n'+
-    '    <lastmod>'+new Date().toISOString().slice(0,10)+'</lastmod>\n'+
-    '    <changefreq>weekly</changefreq>\n'+
-    '    <priority>1.0</priority>\n'+
-    '  </url>\n'+
+    urls.map(x=>'  <url>\n    <loc>'+escapeXml(x.loc)+'</loc>\n    <lastmod>'+lastmod+'</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>'+x.priority+'</priority>\n  </url>\n').join("")+
     '</urlset>\n',
     "utf8"
   );
@@ -196,6 +210,16 @@ function applyPublicMetadata(html,baseUrl){
     .replace(/<meta name="twitter:image" content="[^"]*">/,'<meta name="twitter:image" content="'+image+'">')
     .replace(/"logo":"[^"]*audiotel-brand-logo-v33[.]png"/,'"logo":"'+image+'"')
     .replace(/"url":"[^"]*"/,'"url":"'+canonical+'"');
+}
+
+function applyLandingMetadata(html,baseUrl,slug){
+  const base=baseUrl||"https://clairvoyancemedium.github.io/pgi-telecom-audiotelpremiumpro.github.io";
+  const canonical=base.replace(/\/+$/,"")+"/"+slug+"/";
+  const logo=base.replace(/\/+$/,"")+"/assets/audiotel-brand-logo-v33.png";
+  return html
+    .replaceAll("__BASE__",base.replace(/\/+$/,""))
+    .replaceAll("__CANONICAL__",canonical)
+    .replaceAll("__LOGO__",logo);
 }
 
 function escapeXml(value){
