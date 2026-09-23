@@ -278,10 +278,13 @@ Retourne l’état de préparation du prestataire de paiement pour le tenant aut
 Chaque tentative de création de session de paiement doit porter une clé `Idempotency-Key` unique et stable pendant la tentative. Le client web en génère une avant l’appel. Le futur adaptateur devra réutiliser cette même clé jusqu’au prestataire afin qu’un double clic, un délai réseau ou une répétition HTTP ne crée jamais deux sessions de souscription.
 
 ### POST /customer/billing/checkout-session
-Point d’orchestration réservé à la future création d’une session de souscription. Le contrat HTTP et la protection CSRF sont déjà en place. Sans prestataire connecté, la route répond `503 PAYMENT_PROVIDER_NOT_CONNECTED` et aucune opération financière n’est effectuée.
+Crée une session Stripe Checkout hébergée pour l’offre active du tenant authentifié. Le serveur exige une `Idempotency-Key`, résout le prix Stripe par `lookup_key`, puis vérifie montant, devise, périodicité et comportement fiscal contre la version tarifaire PGI avant de créer Checkout. Les métadonnées de tenant et de version tarifaire sont posées côté serveur sur la session et l’abonnement. Un abonnement déjà `active` ou `past_due` bloque la création d’un doublon. Sans configuration Stripe, la route répond `503 PAYMENT_PROVIDER_NOT_CONNECTED`.
 
 ### POST /customer/billing/portal-session
-Point d’orchestration réservé au futur portail de gestion de facturation. Sans prestataire connecté, la route répond `503 PAYMENT_PROVIDER_NOT_CONNECTED`.
+Crée une session Stripe Customer Portal pour le customer Stripe déjà lié au tenant. Le portail permet la gestion du moyen de paiement, l’historique des factures et la résiliation en fin de période selon sa configuration. Sans configuration Stripe, la route répond `503 PAYMENT_PROVIDER_NOT_CONNECTED`.
+
+### POST /billing/stripe/webhook
+Webhook public Stripe. Le backend lit le corps brut, vérifie `Stripe-Signature` par HMAC avec tolérance temporelle, ignore proprement les événements non utiles et normalise les événements `customer.subscription.*` utiles. L’événement normalisé reste soumis aux contrôles d’idempotence, collision d’identifiant, liaison tenant, version de prix et cohérence du prix. Le retour navigateur Checkout n’active jamais l’abonnement à lui seul.
 
 La facturation d’abonnement et les reversements SVA restent deux flux séparés. L’abonnement suit `client → prestataire de paiement → PGI`. Le modèle SVA nominal suit `opérateur SVA → PGI → marge PGI → net client`. Le règlement opérateur est rapproché appel par appel, puis PGI matérialise sa marge contractuelle et la dette nette envers le client. Le net client ne devient `payable` qu’après encaissement amont et validation des garde-fous KYC, bancaires et de conformité du flux de fonds.
 
