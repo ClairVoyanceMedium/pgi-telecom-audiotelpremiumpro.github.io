@@ -1,8 +1,8 @@
 ## 1.30.2 — Branding production & Stripe Billing — 2026-09-24
 
 - logo officiel renforcé dans Paramètres, abonnement client, footer client et impressions/PDF ;
-- en-têtes de rapports imprimés aux couleurs PGI Telecom • Audiotel Premium Pro ;
-- état Stripe réel affiché dans Paramètres : mode test/réel, fournisseur, Checkout/portail et webhook signé ;
+- branding PGI conservé dans les rapports imprimés via les en-têtes et pieds de page déjà présents ;
+- identité PGI renforcée dans Paramètres sans alourdir le shell critique ;
 - image officielle rattachée au produit Stripe Checkout ;
 - palette Stripe premium brun/doré déjà configurée ;
 - cache PWA incrémenté pour distribuer immédiatement le nouveau branding ;
