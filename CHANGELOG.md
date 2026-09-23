@@ -1,3 +1,13 @@
+## 1.30.3 — Identité publique PGI & SEO canonique — 2026-09-24
+
+- suppression de l’ancien domaine GitHub ClairVoyanceMedium des métadonnées publiques ;
+- URL Vercel PGI utilisée par défaut pour canonical, Open Graph et schema.org ;
+- robots.txt aligné sur la racine publique et cockpit/client maintenus hors index ;
+- sitemap public complet : accueil, pages métiers, comparateur, guides, demande d’ouverture et pages légales ;
+- test automatique empêchant le retour de l’ancien domaine dans les sources SEO ;
+- cache PWA incrémenté en v46 pour diffuser la nouvelle identité publique ;
+- aucune donnée KYC, fiscale ou adresse légale inventée.
+
 ## 1.30.2 — Branding production & Stripe Billing — 2026-09-24
 
 - logo officiel renforcé dans Paramètres, abonnement client, footer client et impressions/PDF ;
