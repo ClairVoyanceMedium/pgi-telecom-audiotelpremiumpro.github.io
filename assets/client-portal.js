@@ -124,7 +124,9 @@ function renderSettlements(data){
 function renderSubscriptions(data){
   var rows=data.subscriptions||[],el=$("subscription-list"),provider=data.billing_provider||{},offer=data.billing_offer||null,billingSummary=data.billing_summary||{},currencyInfo=billingSummary.billing_currency||{};
   el.innerHTML=rows.length?rows.slice(0,3).map(function(x){var price=x.amount_minor!=null?money(n(x.amount_minor)/100,x.price_currency||x.billing_currency)+" TTC / "+(x.billing_interval==="year"?"an":"mois"):"Tarif contractuel";return '<div class="cp-row"><div><strong>'+esc(x.plan_name||"Abonnement Audiotel")+'</strong><span>'+esc(price+" · période jusqu’au "+dateOnly(x.current_period_end))+'</span></div>'+chip(x.status)+'</div>';}).join(""):'<p class="cp-empty">Aucun abonnement actif pour le moment.</p>';
-  var stateEl=$("client-billing-provider-state"),chipEl=$("client-billing-provider-chip"),start=$("client-billing-start"),manage=$("client-billing-manage"),offerDetail=$("client-billing-offer-detail"),offerChip=$("client-billing-offer-chip");
+  var stateEl=$("client-billing-provider-state"),chipEl=$("client-billing-provider-chip"),start=$("client-billing-start"),manage=$("client-billing-manage"),offerDetail=$("client-billing-offer-detail"),offerChip=$("client-billing-offer-chip"),consent=$("client-billing-consent");
+  var currentSubscription=rows.some(function(x){return ["active","past_due"].includes(String(x.status||"").toLowerCase());});
+  if(consent)consent.hidden=currentSubscription;
   var connected=provider.connection_state&&provider.connection_state!=="not_connected";
   if(offer&&offer.amount_minor!=null){
     var cadence=offer.billing_interval==="year"?"an":"mois",offerPrice=money(n(offer.amount_minor)/100,offer.currency)+" TTC / "+cadence;
@@ -402,6 +404,10 @@ async function openBilling(kind){
   var data=state.data||{},provider=data.billing_provider||{},offer=data.billing_offer||null,rows=data.subscriptions||[];
   if(kind==="start"&&!offer){toast("Le tarif n’est pas encore disponible pour ce compte.");return;}
   if(kind==="start"&&!provider.checkout_available){toast("Le paiement en ligne n’est pas encore activé. Votre dossier reste enregistré.");return;}
+  if(kind==="start"){
+    var terms=$("client-billing-terms");
+    if(!terms||!terms.checked){toast("Acceptez les conditions d’abonnement et la politique de confidentialité avant le paiement.");if(terms)terms.focus();return;}
+  }
   if(kind==="manage"&&!rows.length){toast("Aucun abonnement actif à gérer pour le moment.");return;}
   if(kind==="manage"&&!provider.customer_portal_available){toast("Le portail de facturation n’est pas encore activé.");return;}
   var action=kind==="manage"?window.PGICustomerApi.createBillingPortal:window.PGICustomerApi.createBillingCheckout;
@@ -424,8 +430,9 @@ function handleBillingReturn(){
   var url=new URL(location.href),result=url.searchParams.get("billing");
   if(!result)return;
   url.searchParams.delete("billing");history.replaceState(null,"",url.pathname+(url.search?"?"+url.searchParams.toString():"")+url.hash);
-  if(result==="success")toast("Paiement terminé. Le statut de l’abonnement sera confirmé automatiquement.");
+  if(result==="success")toast("Paiement reçu par Stripe. L’abonnement sera activé uniquement après confirmation sécurisée du webhook.");
   else if(result==="cancelled")toast("Paiement annulé. Aucun changement n’a été appliqué.");
+  else if(result==="portal-return")toast("Retour de la facturation sécurisé. Les changements confirmés par Stripe seront synchronisés automatiquement.");
 }
 async function changePassword(e){
   e.preventDefault();
