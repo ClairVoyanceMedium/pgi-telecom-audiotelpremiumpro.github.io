@@ -232,7 +232,7 @@ export class PostgresStore{
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_CONTEXT");
     const tenantRows=await this.readSql.unsafe("SELECT id,default_currency,created_at FROM tenants WHERE id=$1",[id]);
     const tenant=tenantRows[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
-    const resetRows=await this.readSql.unsafe("SELECT effective_from FROM metric_baselines WHERE tenant_id=$1 AND scope='global' AND metric_key='jackpot' ORDER BY effective_from DESC,id DESC LIMIT 1",[id]);
+    const resetRows=await this.readSql.unsafe("SELECT effective_from FROM customer_jackpot_baselines WHERE tenant_id=$1 ORDER BY effective_from DESC,id DESC LIMIT 1",[id]);
     const resetAt=new Date(resetRows[0]?.effective_from||tenant.created_at).toISOString();
     const rows=await this.withTenantReadContext(id,async tx=>tx.unsafe(
       "SELECT currency,count(*) FILTER(WHERE status='active')::int AS active_calls,count(*) FILTER(WHERE status='ended')::int AS completed_calls,"+
@@ -1442,9 +1442,9 @@ export class PostgresStore{
     const id=Number(tenantId),principal=String(customerPrincipalId||"");
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_CONTEXT");
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(principal))throw problem(400,"INVALID_CUSTOMER_PRINCIPAL");
-    const rows=await this.sql.unsafe("INSERT INTO metric_baselines(tenant_id,scope,metric_key,reason,effective_from,created_by_customer_principal_id) VALUES($1,'global','jackpot','Remise à zéro du jackpot personnel',now(),$2::uuid) RETURNING id,tenant_id,metric_key,effective_from",[id,principal]);
+    const rows=await this.sql.unsafe("INSERT INTO customer_jackpot_baselines(tenant_id,reason,effective_from,created_by_customer_principal_id) VALUES($1,'Remise à zéro du jackpot personnel',now(),$2::uuid) RETURNING id,tenant_id,effective_from",[id,principal]);
     const row=rows[0];
-    await this.sql.unsafe("INSERT INTO audit_log(tenant_id,action,entity_type,entity_id,details) VALUES($1,'customer.jackpot.reset','metric_baseline',$2,$3::jsonb)",[id,String(row.id),JSON.stringify({metric_key:"jackpot",customer_principal_id:principal,accounting_impact:"none"})]);
+    await this.sql.unsafe("INSERT INTO audit_log(tenant_id,action,entity_type,entity_id,details) VALUES($1,'customer.jackpot.reset','customer_jackpot_baseline',$2,$3::jsonb)",[id,String(row.id),JSON.stringify({metric_key:"jackpot",customer_principal_id:principal,accounting_impact:"none"})]);
     this.eventBus.publish("customer.jackpot.reset",{tenant_id:id,reset_at:row.effective_from});
     return {jackpot_reset_at:row.effective_from,accounting_impact:"none"};
   }
