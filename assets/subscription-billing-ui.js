@@ -18,6 +18,10 @@ export function render(summary={},tenantCount=0,provider={}){
   set("wh-billing-provider-state",connected?"Événements de paiement activés":"Architecture prête, connexion à effectuer");
   set("wh-billing-checkout",provider.checkout_available?"ACTIF":"PRÊT À BRANCHER");
   set("wh-billing-payout","OPÉRATEUR → PGI → CLIENT");
+  set("settings-billing-mode",provider.stripe_live_mode?"MODE RÉEL":"MODE TEST / NON ACTIVÉ");
+  set("settings-billing-provider",connected?"Stripe connecté":"Stripe non connecté");
+  set("settings-billing-checkout",provider.checkout_available&&provider.customer_portal_available?"Checkout + portail actifs":provider.checkout_available?"Checkout actif · portail à vérifier":"Paiement en ligne non actif");
+  set("settings-billing-webhook",provider.webhook_ingest_enabled?"Signature serveur active":"Webhook signé non actif");
   const unpaid=Number(summary.subscription_unpaid_alerts||0),list=$("alerts-list"),count=$("alert-count"),old=$("subscription-unpaid-alert");
   if(old)old.remove();
   if(unpaid&&list){list.insertAdjacentHTML("afterbegin",'<div id="subscription-unpaid-alert" class="alert-item"><div class="alert-icon warn">!</div><div><strong>Abonnement client impayé</strong><small>'+n(unpaid)+' client(s) à traiter dans Plateforme SVA.</small></div></div>');if(count)count.textContent=String(Number(count.textContent||0)+1);}
