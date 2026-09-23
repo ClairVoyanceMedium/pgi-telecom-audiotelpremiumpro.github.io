@@ -1,3 +1,14 @@
+## 1.30.2 — Branding production & Stripe Billing — 2026-09-24
+
+- logo officiel renforcé dans Paramètres, abonnement client, footer client et impressions/PDF ;
+- en-têtes de rapports imprimés aux couleurs PGI Telecom • Audiotel Premium Pro ;
+- état Stripe réel affiché dans Paramètres : mode test/réel, fournisseur, Checkout/portail et webhook signé ;
+- image officielle rattachée au produit Stripe Checkout ;
+- palette Stripe premium brun/doré déjà configurée ;
+- cache PWA incrémenté pour distribuer immédiatement le nouveau branding ;
+- aucune identité KYC, adresse légale, immatriculation fiscale ou TVA inventée ;
+- factures Stripe prêtes à reprendre le branding global du compte dès validation du fichier logo dans les paramètres Stripe.
+
 ## 1.30.0 — SVA Compliance Center multi-organismes — 2026-09-20
 
 - nouveau SVA Compliance Center premium, lazy-loadé depuis le cockpit ;
