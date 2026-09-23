@@ -285,6 +285,12 @@ Point d’orchestration réservé au futur portail de gestion de facturation. Sa
 
 La facturation d’abonnement et les reversements SVA restent deux flux séparés. L’abonnement suit `client → prestataire de paiement → PGI`. Le modèle SVA nominal suit `opérateur SVA → PGI → marge PGI → net client`. Le règlement opérateur est rapproché appel par appel, puis PGI matérialise sa marge contractuelle et la dette nette envers le client. Le net client ne devient `payable` qu’après encaissement amont et validation des garde-fous KYC, bancaires et de conformité du flux de fonds.
 
+### GET /customer/jackpot
+Retourne le jackpot motivant du tenant, indépendant des métriques officielles. Le montant est une estimation opérationnelle calculée à la seconde depuis la dernière baseline jackpot, y compris lorsqu'une remise à zéro intervient pendant un appel actif. Les CDR et rapprochements restent l'autorité comptable.
+
+### POST /customer/jackpot/reset
+Crée une nouvelle baseline `jackpot` pour le tenant authentifié. L'opération est idempotente, auditée et non destructive : elle ne modifie ni CDR, ni règlement, ni distribution de revenus, ni statistique officielle.
+
 ### GET /customer/portal?from=...&to=...
 Appel consolidé du portail client : trafic, séries journalières, numéros, reversements, abonnement, destinations de routage, qualité voix agrégée et derniers appels avec diagnostic technique. Les données sont lues dans le contexte SQL du tenant et peuvent utiliser la réplique de lecture.
 

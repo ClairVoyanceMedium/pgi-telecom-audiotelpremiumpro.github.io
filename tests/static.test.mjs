@@ -68,18 +68,32 @@ test("les cockpits affichent les reversements en direct sans les confondre avec 
   for(const asset of ["client-live-finance.js","client-live-finance.css","live-finance.js","live-finance.css"]){
     assert.ok(buildStatic.includes('"assets/'+asset+'"'),"production build missing "+asset);
   }
-  for(const id of ["client-live-money","client-live-amount","client-period-payout-estimate","client-live-recalc"])assert.ok(clientLiveFinance.includes('id="'+id+'"'),"missing client live #"+id);
-  for(const id of ["live-jackpot-card","live-jackpot","live-jackpot-period"])assert.ok(adminLiveFinance.includes('id="'+id+'"'),"missing admin live #"+id);
-  assert.match(clientLiveFinance,/live_financial_by_currency/);
+  for(const id of ["client-live-money","client-live-amount","client-period-payout-estimate","client-live-recalc","client-jackpot-reset","client-jackpot-rate"])assert.ok(clientLiveFinance.includes('id="'+id+'"'),"missing client live #"+id);
+  for(const id of ["live-jackpot-card","live-jackpot","live-jackpot-period","live-jackpot-ranking"])assert.ok(adminLiveFinance.includes('id="'+id+'"'),"missing admin live #"+id);
   assert.match(clientLiveFinance,/client_rate_ht_per_second/);
+  assert.match(clientLiveFinance,/customer\.jackpot\.reset/);
   assert.match(clientLiveFinance,/\/customer\/events/);
+  assert.match(clientPortalApi,/\/customer\/jackpot/);
   assert.match(adminLiveFinance,/live_upstream_payout_ht/);
-  assert.match(adminLiveFinance,/live_upstream_rate_ht_per_second/);
+  assert.match(adminLiveFinance,/live-jackpot-ranking/);
+  assert.match(api,/\/dashboard\/live-finance/);
   assert.match(server,/\/api\/v1\/customer\/events/);
+  assert.match(server,/\/api\/v1\/customer\/jackpot/);
+  assert.match(server,/can_reset:\["owner","admin"\]\.includes\(context\.customer_role\)/);
+  assert.match(server,/CUSTOMER_JACKPOT_RESET_FORBIDDEN/);
+  assert.match(server,/\/api\/v1\/dashboard\/live-finance/);
   assert.match(server,/live_call\.started/);
   assert.match(server,/live_call\.ended/);
   assert.match(store,/liveFinancialSnapshot/);
+  assert.match(store,/customerJackpotSnapshot/);
+  assert.match(store,/liveFinancialByTenant/);
+  assert.match(store,/customer_jackpot_baselines/);
   assert.match(store,/tenant_scoped_live_call_financial_sessions/);
+  const jackpotMigration=read("database/migrations/056_motivational_jackpot.sql");
+  assert.match(jackpotMigration,/CREATE TABLE customer_jackpot_baselines/);
+  assert.match(jackpotMigration,/Expand-only and non-destructive/);
+  assert.match(jackpotMigration,/never delete or alter accounting data/);
+  assert.doesNotMatch(jackpotMigration,/DROP\s+(TABLE|COLUMN|CONSTRAINT)/i);
   assert.match(site,/Des prix bas soutenus par le bouche-à-oreille/);
   assert.match(site,/préserver des tarifs bas/);
   assert.doesNotMatch(site,/tarif garanti|prix garanti/i);

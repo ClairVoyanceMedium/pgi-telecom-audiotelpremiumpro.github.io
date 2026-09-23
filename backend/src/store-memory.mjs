@@ -30,6 +30,7 @@ export class MemoryStore{
     this.nextVoiceServiceId=1;
     this.nextVoiceVersionId=1;
     this.baselines=[];
+    this.jackpotBaselines=[];
     this.rawEventKeys=new Set();
     this.outbox=[];
     this.workQueue=[];
@@ -187,6 +188,32 @@ export class MemoryStore{
     }
     const byCurrency=[...groups.values()].map(roundFinance);
     return {as_of:new Date(now).toISOString(),active_calls:byCurrency.reduce((a,x)=>a+Number(x.active_calls||0),0),currency_count:byCurrency.length,by_currency:byCurrency};
+  }
+
+
+  async customerJackpotSnapshot(tenantId){
+    const id=Number(tenantId),all=this.jackpotBaselines.filter(x=>x.tenant_id===id).sort((a,b)=>Date.parse(b.effective_from||b.created_at)-Date.parse(a.effective_from||a.created_at));
+    const resetAt=(all[0]&&all[0].effective_from)||new Date().toISOString(),resetMs=Date.parse(resetAt),now=Date.now(),groups=new Map();
+    for(const row of this.liveFinancialSessions){
+      if(Number(row.tenant_id||0)!==id||!["active","ended"].includes(row.status))continue;
+      const start=Math.max(Date.parse(row.billable_started_at),resetMs),end=row.status==="active"?now:Date.parse(row.ended_at||row.updated_at||row.billable_started_at);
+      if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)continue;
+      const cur=row.currency||"EUR";if(!groups.has(cur))groups.set(cur,{currency:cur,active_calls:0,completed_calls:0,jackpot_client_net_ht:0,live_client_net_ht:0,client_rate_ht_per_second:0});
+      const g=groups.get(cur),value=Math.min(86400,(end-start)/1000)/60*Number(row.net_client_rate_ht_per_min||0);g.jackpot_client_net_ht+=value;
+      if(row.status==="active"){g.active_calls++;g.live_client_net_ht+=value;g.client_rate_ht_per_second+=Number(row.net_client_rate_ht_per_min||0)/60}else g.completed_calls++;
+    }
+    return {as_of:new Date(now).toISOString(),reset_at:resetAt,default_currency:"EUR",currency_count:groups.size,by_currency:[...groups.values()],estimate:true,accounting_impact:"none"};
+  }
+
+  async liveFinancialByTenant(limit=50){
+    const now=Date.now(),groups=new Map();
+    for(const row of this.liveFinancialSessions){
+      if(row.status!=="active")continue;const tenant=Number(row.tenant_id||0),cur=row.currency||"EUR",key=tenant+":"+cur,start=Date.parse(row.billable_started_at),elapsed=Math.max(0,Math.min(86400,(now-start)/1000));
+      if(!groups.has(key))groups.set(key,{tenant_public_id:String(tenant),display_name:"Client "+tenant,currency:cur,active_calls:0,generated_upstream_payout_ht:0,generated_client_net_ht:0,pgi_margin_ht:0,upstream_rate_ht_per_second:0,client_rate_ht_per_second:0,pgi_margin_rate_ht_per_second:0});
+      const g=groups.get(key),up=Number(row.upstream_payout_rate_ht_per_min||0),net=Number(row.net_client_rate_ht_per_min||0),margin=Math.max(0,up-net);g.active_calls++;g.generated_upstream_payout_ht+=elapsed/60*up;g.generated_client_net_ht+=elapsed/60*net;g.pgi_margin_ht+=elapsed/60*margin;g.upstream_rate_ht_per_second+=up/60;g.client_rate_ht_per_second+=net/60;g.pgi_margin_rate_ht_per_second+=margin/60;
+    }
+    const data=[...groups.values()].sort((a,b)=>b.generated_upstream_payout_ht-a.generated_upstream_payout_ht).slice(0,Math.max(1,Math.min(100,Number(limit)||50)));
+    return {as_of:new Date(now).toISOString(),active_calls:data.reduce((a,x)=>a+x.active_calls,0),by_client:data};
   }
 
   async dashboardAnalytics(from,to,market=null){
@@ -583,6 +610,12 @@ export class MemoryStore{
     this.#audit("baseline.create",String(row.id),row);
     this.eventBus.publish("baseline.created",{id:row.id,scope:row.scope,tenant_id:row.tenant_id,metric_key:row.metric_key});
     return {...row};
+  }
+
+
+  async createCustomerJackpotReset(tenantId,customerPrincipalId){
+    const id=Number(tenantId),now=new Date().toISOString(),row={id:this.nextBaselineId++,tenant_id:id,scope:"global",scope_id:null,metric_key:"jackpot",reason:"Remise à zéro du jackpot personnel",created_at:now,effective_from:now,created_by:null,created_by_customer_principal_id:customerPrincipalId||null};
+    this.baselines.push(row);this.#audit("customer.jackpot.reset",String(row.id),{tenant_id:id,accounting_impact:"none"});this.eventBus.publish("customer.jackpot.reset",{tenant_id:id,reset_at:now});return {jackpot_reset_at:now,accounting_impact:"none"};
   }
 
   async createCustomerMetricReset(tenantId,metricKeys,customerPrincipalId){
