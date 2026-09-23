@@ -3060,20 +3060,41 @@ export class PostgresStore{
         " FROM service_plans p,tenants t WHERE p.id=s.service_plan_id AND t.id=s.tenant_id AND p.plan_key='external-sva-access'"+
         " AND t.tenant_type<>'internal' AND s.status='active' AND s.current_period_end IS NOT NULL AND s.current_period_end<=now()"
       );
+      await tx.unsafe(
+        "INSERT INTO subscription_recovery_states(subscription_id,tenant_id,recovery_state,first_failed_at,last_failed_at,grace_until,recovery_deadline,attempt_count,last_payment_status)"+
+        " SELECT s.id,s.tenant_id,'grace',now(),now(),now()+interval '7 days',now()+interval '14 days',1,COALESCE(NULLIF(s.last_payment_status,''),'unpaid')"+
+        " FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id JOIN tenants t ON t.id=s.tenant_id"+
+        " WHERE p.plan_key='external-sva-access' AND t.tenant_type<>'internal' AND t.status<>'closed' AND s.status='past_due'"+
+        " AND (s.current_period_end IS NULL OR s.current_period_end<=now())"+
+        " ON CONFLICT(subscription_id) DO UPDATE SET recovery_state='grace',first_failed_at=EXCLUDED.first_failed_at,last_failed_at=EXCLUDED.last_failed_at,"+
+        " grace_until=EXCLUDED.grace_until,recovery_deadline=EXCLUDED.recovery_deadline,next_retry_at=NULL,attempt_count=1,last_payment_status=EXCLUDED.last_payment_status,recovered_at=NULL"+
+        " WHERE subscription_recovery_states.recovery_state IN ('healthy','recovered')"
+      );
+      await tx.unsafe(
+        "UPDATE subscription_recovery_states SET recovery_state='suspended',updated_at=now()"+
+        " WHERE recovery_state IN ('grace','retrying','action_required') AND grace_until IS NOT NULL AND grace_until<=now()"
+      );
       return tx.unsafe(
         "WITH due AS ("+
-        " SELECT s.id AS subscription_id,s.tenant_id,t.public_id,t.display_name,t.country_code,s.current_period_end,s.status,s.last_payment_status"+
+        " SELECT s.id AS subscription_id,s.tenant_id,t.public_id,t.display_name,t.country_code,s.current_period_end,s.status,s.last_payment_status,"+
+        " r.recovery_state,r.first_failed_at,r.grace_until,r.recovery_deadline,r.next_retry_at,r.attempt_count"+
         " FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id JOIN tenants t ON t.id=s.tenant_id"+
+        " LEFT JOIN subscription_recovery_states r ON r.subscription_id=s.id AND r.tenant_id=s.tenant_id"+
         " WHERE p.plan_key='external-sva-access' AND t.tenant_type<>'internal' AND t.status<>'closed'"+
-        " AND (s.status IN ('past_due','suspended') OR (s.current_period_end IS NOT NULL AND s.current_period_end<=now())"+
-        " OR lower(COALESCE(s.last_payment_status,'')) IN ('failed','unpaid','declined','past_due'))"+
-        " ORDER BY COALESCE(s.current_period_end,now()) ASC,s.id ASC LIMIT $1"+
+        " AND (s.status IN ('past_due','suspended') OR lower(COALESCE(s.last_payment_status,'')) IN ('failed','unpaid','declined','past_due','action_required'))"+
+        " ORDER BY COALESCE(r.grace_until,s.current_period_end,now()) ASC,s.id ASC LIMIT $1"+
         "), ins AS ("+
         " INSERT INTO tenant_admin_alerts(alert_key,tenant_id,subscription_id,alert_type,severity,title,message,due_at,details)"+
-        " SELECT 'subscription_unpaid:'||d.subscription_id||':'||COALESCE(EXTRACT(EPOCH FROM d.current_period_end)::bigint::text,d.status),d.tenant_id,d.subscription_id,"+
-        " 'subscription_unpaid','critical','Abonnement impayé','Abonnement mensuel non réglé : accès SVA bloqué.',d.current_period_end,"+
-        " jsonb_build_object('tenant_public_id',d.public_id,'tenant',d.display_name,'country_code',d.country_code,'subscription_status',d.status,'last_payment_status',d.last_payment_status)"+
-        " FROM due d ON CONFLICT(alert_key) DO NOTHING"+
+        " SELECT 'subscription_unpaid:'||d.subscription_id||':'||COALESCE(EXTRACT(EPOCH FROM d.first_failed_at)::bigint::text,'legacy'),d.tenant_id,d.subscription_id,"+
+        " 'subscription_unpaid',CASE WHEN d.recovery_state='suspended' OR (d.grace_until IS NOT NULL AND d.grace_until<=now()) THEN 'critical' ELSE 'warning' END,"+
+        " CASE WHEN d.recovery_state='suspended' OR (d.grace_until IS NOT NULL AND d.grace_until<=now()) THEN 'Abonnement suspendu' ELSE 'Paiement à régulariser' END,"+
+        " CASE WHEN d.recovery_state='suspended' OR (d.grace_until IS NOT NULL AND d.grace_until<=now()) THEN 'Période de grâce expirée : accès SVA suspendu, régularisation possible depuis le portail client.'"+
+        " ELSE 'Paiement mensuel refusé : période de grâce active, relances automatiques en cours.' END,"+
+        " COALESCE(d.grace_until,d.current_period_end),"+
+        " jsonb_build_object('tenant_public_id',d.public_id,'tenant',d.display_name,'country_code',d.country_code,'subscription_status',d.status,'last_payment_status',d.last_payment_status,"+
+        " 'recovery_state',d.recovery_state,'grace_until',d.grace_until,'recovery_deadline',d.recovery_deadline,'next_retry_at',d.next_retry_at,'attempt_count',COALESCE(d.attempt_count,0))"+
+        " FROM due d ON CONFLICT(alert_key) DO UPDATE SET severity=EXCLUDED.severity,title=EXCLUDED.title,message=EXCLUDED.message,due_at=EXCLUDED.due_at,details=EXCLUDED.details,last_detected_at=now(),updated_at=now()"+
+        " WHERE tenant_admin_alerts.state<>'resolved'"+
         " RETURNING id,tenant_id,subscription_id,alert_type,severity,state,title,message,due_at,details,first_detected_at,last_detected_at"+
         ") SELECT i.*,t.public_id AS tenant_public_id,t.display_name AS tenant,t.country_code FROM ins i JOIN tenants t ON t.id=i.tenant_id",
         [limit]
@@ -3599,18 +3620,35 @@ export class PostgresStore{
       ))[0]||null;
       const subscription=(await tx.unsafe(
         "SELECT s.id,s.status,s.billing_currency,s.current_period_start,s.current_period_end,s.cancel_at_period_end,s.last_payment_status,"+
-        " s.billing_provider,s.provider_customer_reference,s.provider_subscription_reference,s.price_version_id"+
+        " s.billing_provider,s.provider_customer_reference,s.provider_subscription_reference,s.price_version_id,"+
+        " r.recovery_state,r.first_failed_at,r.last_failed_at,r.grace_until,r.recovery_deadline,r.next_retry_at,r.attempt_count,r.last_invoice_reference,r.recovered_at"+
         " FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id"+
+        " LEFT JOIN subscription_recovery_states r ON r.subscription_id=s.id AND r.tenant_id=s.tenant_id"+
         " WHERE s.tenant_id=$1 AND p.plan_key='external-sva-access' ORDER BY s.created_at DESC,s.id DESC LIMIT 1",
         [id]
       ))[0]||null;
       const access=(await tx.unsafe("SELECT pgi_tenant_has_premium_call_access($1,NULL,now()) AS allowed",[id]))[0];
+      const recovery=subscription?.recovery_state?{
+        state:subscription.recovery_state,
+        first_failed_at:subscription.first_failed_at||null,
+        last_failed_at:subscription.last_failed_at||null,
+        grace_until:subscription.grace_until||null,
+        recovery_deadline:subscription.recovery_deadline||null,
+        next_retry_at:subscription.next_retry_at||null,
+        attempt_count:Number(subscription.attempt_count||0),
+        last_invoice_reference:subscription.last_invoice_reference||null,
+        recovered_at:subscription.recovered_at||null,
+        grace_active:Boolean(subscription.grace_until&&Date.parse(subscription.grace_until)>Date.now()&&["grace","retrying","action_required"].includes(String(subscription.recovery_state))),
+        action_required:String(subscription.recovery_state)==="action_required",
+        service_suspended:String(subscription.recovery_state)==="suspended"||Boolean(subscription.grace_until&&Date.parse(subscription.grace_until)<=Date.now()&&["grace","retrying","action_required"].includes(String(subscription.recovery_state)))
+      }:null;
       return {
         tenant:{id:tenant.public_id,name:tenant.display_name,billing_email:tenant.billing_email,country_code:tenant.country_code,locale:tenant.preferred_locale,currency:billingCurrency,timezone:tenant.timezone,status:tenant.status},
         offer,
         reference_offer:referenceOffer,
         pricing_state:offer?"local_price_ready":referenceOffer?"local_conversion_required":"unavailable",
         subscription,
+        recovery,
         premium_call_access:Boolean(access?.allowed),
         billing_currency:{currency:billingCurrency,source:billingDefault?.source||"tenant_default",catalog_version:billingDefault?.catalog_version||null,accepted_currencies:billingDefault?.accepted_currencies||[billingCurrency],local_price_configured:Boolean(offer)},
         checkout_prefill:{email:tenant.billing_email||null,locale:tenant.preferred_locale,country_code:tenant.country_code,currency:billingCurrency},
