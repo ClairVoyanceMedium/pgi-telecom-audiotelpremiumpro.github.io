@@ -280,7 +280,7 @@ Chaque tentative de création de session de paiement doit porter une clé `Idemp
 ### POST /customer/billing/checkout-session
 Crée une session Stripe Checkout hébergée pour l’offre active du tenant authentifié. Le serveur exige une `Idempotency-Key`, résout le prix Stripe par `lookup_key`, puis vérifie montant, devise, périodicité et comportement fiscal contre la version tarifaire PGI avant de créer Checkout. Les métadonnées de tenant et de version tarifaire sont posées côté serveur sur la session et l’abonnement. Un abonnement déjà `active` ou `past_due` bloque la création d’un doublon. Sans configuration Stripe, la route répond `503 PAYMENT_PROVIDER_NOT_CONNECTED`.
 
-### POST /customer/billing/portal-session
+### Webhook Stripe de renouvellement\n`invoice.paid`, `invoice.payment_failed` et `invoice.payment_action_required` déclenchent une relecture serveur de l’abonnement Stripe référencé. PGI journalise ensuite l’événement de facture avec la période et le statut d’abonnement vérifiés ; un paiement échoué ou une authentification requise bascule l’accès externe en `past_due` sauf si l’abonnement est déjà dans un état terminal ou suspendu.\n\n### POST /customer/billing/portal-session
 Crée une session Stripe Customer Portal pour le customer Stripe déjà lié au tenant. Le portail permet la gestion du moyen de paiement, l’historique des factures et la résiliation en fin de période selon sa configuration. Sans configuration Stripe, la route répond `503 PAYMENT_PROVIDER_NOT_CONNECTED`.
 
 ### POST /billing/stripe/webhook

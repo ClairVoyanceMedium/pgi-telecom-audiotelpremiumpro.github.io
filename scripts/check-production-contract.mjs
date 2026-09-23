@@ -302,9 +302,10 @@ for(const name of ["PGI_EXTERNAL_BILLING_ENABLED","PGI_PUBLIC_BASE_URL","PGI_STR
   if(!envExample.includes(name+"="))failures.push("production env example missing Stripe contract "+name);
 }
 if(!/PGI_EXTERNAL_BILLING_ENABLED/.test(preflight)||!/PGI_STRIPE_SECRET_KEY/.test(preflight)||!/PGI_STRIPE_WEBHOOK_SECRET/.test(preflight)||!/PGI_STRIPE_PORTAL_CONFIGURATION_ID/.test(preflight))failures.push("preflight must fail closed when Stripe Billing is enabled");
-if(!/\/api\/v1\/billing\/stripe\/webhook/.test(backendServer)||!/verifyStripeWebhook/.test(backendServer)||!/normalizeStripeSubscriptionEvent/.test(backendServer))failures.push("backend must expose the signed Stripe webhook adapter");
+if(!backendServer.includes("/api/v1/billing/stripe/webhook")||!backendServer.includes("verifyStripeWebhook")||!backendServer.includes("normalizeStripeBillingEvent"))failures.push("backend must expose the signed Stripe webhook adapter");
 if(!/timingSafeEqual/.test(stripeBillingSource)||!/Stripe-Signature|stripe-signature/.test(stripeBillingSource)||!/stripeWebhookToleranceSeconds/.test(stripeBillingSource))failures.push("Stripe webhook must verify signatures with bounded replay tolerance");
 if(!/Idempotency-Key/.test(stripeBillingSource)||!/lookup_keys/.test(stripeBillingSource)||!/STRIPE_PRICE_AMOUNT_MISMATCH/.test(stripeBillingSource))failures.push("Stripe Checkout must preserve idempotency and verify remote price semantics");
+if(!stripeBillingSource.includes("invoice.paid")||!stripeBillingSource.includes("invoice.payment_failed")||!stripeBillingSource.includes("invoice.payment_action_required")||!stripeBillingSource.includes("/v1/subscriptions/"))failures.push("Stripe webhook must reconcile renewal payment outcomes");
 if(!/DSP2/.test(wholesaleDoc)||!/opérateur attributaire/i.test(wholesaleDoc)||!/multi-éditeurs/i.test(wholesaleDoc))failures.push("wholesale roadmap must retain regulatory and payment-compliance boundaries");
 if(!/PGI_PROCESS_ROLE/.test(compose)||!/PGI_PROCESS_ROLE=/.test(envExample))failures.push("production contract must expose the API/worker process role");
 if(!/PGI_DATABASE_READ_URL/.test(compose)||!/PGI_DATABASE_READ_URL=/.test(envExample))failures.push("production contract must support an optional read replica");
