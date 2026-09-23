@@ -465,7 +465,11 @@ test("la PWA met en cache uniquement le shell critique",()=>{
 test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiques",()=>{
   assert.match(index,/assets\/audiotel-brand-icon-v33\.png/);
   assert.match(index,/assets\/audiotel-brand-logo-v33\.png/);
-  for(const cls of ["brand-emblem","topbar-brand-emblem","command-brand-logo","auth-brand-logo","footer-brand-logo"])assert.ok(index.includes(cls),"missing branding "+cls);
+  for(const cls of ["brand-emblem","topbar-brand-emblem","command-brand-logo","auth-brand-logo","footer-brand-logo","settings-brand-logo","print-brand-header"])assert.ok(index.includes(cls),"missing branding "+cls);
+  for(const id of ["settings-billing-mode","settings-billing-provider","settings-billing-checkout","settings-billing-webhook"])assert.ok(index.includes('id="'+id+'"'),id);
+  for(const cls of ["cp-logo-auth","cp-logo-header","cp-billing-brand-logo","cp-footer-brand","cp-print-brand"])assert.ok(clientPortal.includes(cls),"missing client branding "+cls);
+  assert.match(subscriptionBillingUi,/settings-billing-mode/);
+  assert.match(subscriptionBillingUi,/settings-billing-webhook/);
   assert.match(css,/\.brand-emblem\{/);
   assert.match(css,/\.command-brand-logo\{/);
   assert.match(css,/\.auth-brand-logo\{/);
