@@ -29,7 +29,8 @@ export class MemoryStore{
     this.voiceServices=[];
     this.nextVoiceServiceId=1;
     this.nextVoiceVersionId=1;
-    this.baselines=[];\n    this.jackpotBaselines=[];
+    this.baselines=[];
+    this.jackpotBaselines=[];
     this.rawEventKeys=new Set();
     this.outbox=[];
     this.workQueue=[];
