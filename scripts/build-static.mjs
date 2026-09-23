@@ -228,7 +228,7 @@ function applyPublicMetadata(html,baseUrl){
 }
 
 function applyLandingMetadata(html,baseUrl,slug){
-  const base=baseUrl||"https://clairvoyancemedium.github.io/pgi-telecom-audiotelpremiumpro.github.io";
+  const base=baseUrl||"https://pgi-telecom-audiotelpremiumpro-gith.vercel.app";
   const canonical=base.replace(/\/+$/,"")+"/"+slug+"/";
   const logo=base.replace(/\/+$/,"")+"/assets/audiotel-brand-logo-v33.png";
   return html

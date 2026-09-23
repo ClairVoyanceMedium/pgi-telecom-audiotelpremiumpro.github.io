@@ -1,8 +1,9 @@
 User-agent: *
-Allow: /site/
+Allow: /
 Disallow: /client.html
-Disallow: /index.html
+Disallow: /cockpit
+Disallow: /cockpit.html
 Disallow: /backend/
 Disallow: /docs/
 
-Sitemap: https://clairvoyancemedium.github.io/pgi-telecom-audiotelpremiumpro.github.io/sitemap.xml
+Sitemap: https://pgi-telecom-audiotelpremiumpro-gith.vercel.app/sitemap.xml
