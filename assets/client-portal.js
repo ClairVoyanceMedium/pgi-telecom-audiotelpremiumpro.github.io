@@ -138,8 +138,8 @@ function renderSubscriptions(data){
   }
   if(stateEl)stateEl.textContent=connected?tr("Prestataire de paiement configuré."):tr("Architecture de paiement prête, prestataire non connecté.");
   if(chipEl){chipEl.textContent=connected?tr("PRÊT"):tr("NON CONNECTÉ");chipEl.className="cp-chip "+(connected?"ok":"neutral");}
-  if(start)start.disabled=!provider.checkout_available||!offer;
-  if(manage)manage.disabled=!provider.customer_portal_available||!rows.length;
+  if(start){start.disabled=false;start.setAttribute("aria-disabled",String(!provider.checkout_available||!offer));start.title=!offer?tr("Tarif indisponible pour ce compte."):!provider.checkout_available?tr("Paiement en ligne pas encore activé."):"";}
+  if(manage){manage.disabled=false;manage.setAttribute("aria-disabled",String(!provider.customer_portal_available||!rows.length));manage.title=!rows.length?tr("Aucun abonnement actif à gérer."):!provider.customer_portal_available?tr("Portail de facturation pas encore activé."):"";}
 }
 function renderOnboarding(data){
   var root=$("client-onboarding");if(!root)return;
@@ -399,6 +399,11 @@ async function exportClient(kind){
 async function openBilling(kind){
   if(state.billingBusy)return;
   if(state.demo){toast("Prestataire de paiement non connecté.");return;}
+  var data=state.data||{},provider=data.billing_provider||{},offer=data.billing_offer||null,rows=data.subscriptions||[];
+  if(kind==="start"&&!offer){toast("Le tarif n’est pas encore disponible pour ce compte.");return;}
+  if(kind==="start"&&!provider.checkout_available){toast("Le paiement en ligne n’est pas encore activé. Votre dossier reste enregistré.");return;}
+  if(kind==="manage"&&!rows.length){toast("Aucun abonnement actif à gérer pour le moment.");return;}
+  if(kind==="manage"&&!provider.customer_portal_available){toast("Le portail de facturation n’est pas encore activé.");return;}
   var action=kind==="manage"?window.PGICustomerApi.createBillingPortal:window.PGICustomerApi.createBillingCheckout;
   var button=kind==="manage"?$("client-billing-manage"):$("client-billing-start"),original=button?button.textContent:"";
   var idempotencyKey=kind==="manage"?null:window.PGICustomerApi.newIdempotencyKey();
