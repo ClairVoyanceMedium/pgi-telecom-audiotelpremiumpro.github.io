@@ -163,7 +163,12 @@ html{scroll-padding-top:150px}
   .cp-onboarding-steps{justify-content:flex-start}
 }
 
+.cp-billing-consent{margin:10px 0}
+.cp-billing-consent .cp-check{background:rgba(255,255,255,.025)}
+.cp-billing-consent a,.cp-billing-trust a{color:#e7d3c0;text-underline-offset:2px}
+.cp-billing-consent a:hover,.cp-billing-trust a:hover{color:#fff}
 .cp-billing-trust{margin:10px 0 0;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:rgba(255,255,255,.018);color:var(--muted);font-size:9px;line-height:1.55}
+.cp-billing-trust strong{color:#e1e4e7}
 #client-billing-start:disabled,#client-billing-manage:disabled{cursor:not-allowed;opacity:.58}
 
 /* customer-portability */

@@ -12,6 +12,13 @@ export function loadConfig(env=process.env){
   const ingestToken=env.PGI_INGEST_TOKEN||"";
   const externalBillingEnabled=booleanValue(env.PGI_EXTERNAL_BILLING_ENABLED,false,"PGI_EXTERNAL_BILLING_ENABLED");
   const billingIngestToken=env.PGI_BILLING_INGEST_TOKEN||"";
+  const stripeSecretKey=String(env.PGI_STRIPE_SECRET_KEY||env.STRIPE_SECRET_KEY||"").trim();
+  const stripeWebhookSecret=String(env.PGI_STRIPE_WEBHOOK_SECRET||"").trim();
+  const stripeApiVersion=String(env.PGI_STRIPE_API_VERSION||"2026-08-26.dahlia").trim();
+  const stripePortalConfigurationId=String(env.PGI_STRIPE_PORTAL_CONFIGURATION_ID||"").trim();
+  const stripePriceLookupKey=String(env.PGI_STRIPE_PRICE_LOOKUP_KEY||"pgi_audiotel_premium_pro_monthly_eur").trim();
+  const stripeLiveMode=booleanValue(env.PGI_STRIPE_LIVE_MODE,false,"PGI_STRIPE_LIVE_MODE");
+  const publicBaseUrl=String(env.PGI_PUBLIC_BASE_URL||(env.VERCEL_PROJECT_PRODUCTION_URL?"https://"+env.VERCEL_PROJECT_PRODUCTION_URL:"")).trim().replace(/\/$/,"");
   const telephonyUser=env.PGI_TELEPHONY_USER||"";
   const telephonyPassword=env.PGI_TELEPHONY_PASSWORD||"";
   const callerHashKey=env.PGI_CALLER_HASH_KEY||"";
@@ -41,6 +48,15 @@ export function loadConfig(env=process.env){
     if(parsed.hostname!==webauthnRpId&&!parsed.hostname.endsWith("."+webauthnRpId))throw new Error("PGI_WEBAUTHN_RP_ID must match the origin host or a parent domain");
   }
   if(!["disable","require"].includes(databaseSsl))throw new Error("PGI_DATABASE_SSL must be disable or require");
+  if(publicBaseUrl){
+    let parsed;try{parsed=new URL(publicBaseUrl);}catch{throw new Error("PGI_PUBLIC_BASE_URL invalid");}
+    if(parsed.protocol!=="https:"||parsed.origin!==publicBaseUrl||parsed.username||parsed.password)throw new Error("PGI_PUBLIC_BASE_URL must be an exact HTTPS origin");
+  }
+  if(stripeSecretKey&&!/^sk_(test|live)_[A-Za-z0-9]+$/.test(stripeSecretKey))throw new Error("PGI_STRIPE_SECRET_KEY must be a Stripe secret key");
+  if(stripeWebhookSecret&&!/^whsec_[A-Za-z0-9]+$/.test(stripeWebhookSecret))throw new Error("PGI_STRIPE_WEBHOOK_SECRET invalid");
+  if(stripePortalConfigurationId&&!/^bpc_[A-Za-z0-9]+$/.test(stripePortalConfigurationId))throw new Error("PGI_STRIPE_PORTAL_CONFIGURATION_ID invalid");
+  if(!/^[A-Za-z0-9_\-]{3,200}$/.test(stripePriceLookupKey))throw new Error("PGI_STRIPE_PRICE_LOOKUP_KEY invalid");
+  if(stripeSecretKey&&stripeLiveMode!==stripeSecretKey.startsWith("sk_live_"))throw new Error("PGI_STRIPE_LIVE_MODE must match the Stripe secret key mode");
 
   if(mode==="production"){
     if(authMode!=="session")throw new Error("production requires session authentication");
@@ -57,13 +73,14 @@ export function loadConfig(env=process.env){
 
   return Object.freeze({
     mode,authMode,host,port,releaseId,staticDir,trustProxy,protectMachineEndpoints,googleClientId,webauthnRpId,webauthnOrigin,
-    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
+    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,stripeSecretKey,stripeWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),
     bodyLimitBytes:integer(env.PGI_BODY_LIMIT_BYTES,262144,4096,10485760,"PGI_BODY_LIMIT_BYTES"),
     rateLimitPerMinute:integer(env.PGI_RATE_LIMIT_PER_MINUTE,240,10,10000,"PGI_RATE_LIMIT_PER_MINUTE"),
     heavyReadRateLimitPerMinute:integer(env.PGI_HEAVY_READ_RATE_LIMIT_PER_MINUTE,60,5,5000,"PGI_HEAVY_READ_RATE_LIMIT_PER_MINUTE"),
     writeRateLimitPerMinute:integer(env.PGI_WRITE_RATE_LIMIT_PER_MINUTE,120,5,5000,"PGI_WRITE_RATE_LIMIT_PER_MINUTE"),
+    stripeWebhookToleranceSeconds:integer(env.PGI_STRIPE_WEBHOOK_TOLERANCE_SECONDS,300,60,900,"PGI_STRIPE_WEBHOOK_TOLERANCE_SECONDS"),
     authMaxFailures:integer(env.PGI_AUTH_MAX_FAILURES,8,3,100,"PGI_AUTH_MAX_FAILURES"),
     authFailureWindowSeconds:integer(env.PGI_AUTH_FAILURE_WINDOW_SECONDS,900,60,86400,"PGI_AUTH_FAILURE_WINDOW_SECONDS"),
     outboxWorkerStaleSeconds:integer(env.PGI_OUTBOX_WORKER_STALE_SECONDS,15,5,3600,"PGI_OUTBOX_WORKER_STALE_SECONDS"),

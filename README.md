@@ -316,7 +316,7 @@ Le plan `external-sva-access` conserve son tarif historique initial de 2,00 EUR,
 
 Le prix est versionné : le passage à 3,00 EUR TTC crée une nouvelle version avec sa date d'effet sans modifier la version historique à 2,00 EUR. Les abonnements existants restent reliés à leur version de prix jusqu'à une migration explicite, ce qui évite de modifier silencieusement un contrat en cours.
 
-Le fournisseur de paiement reste volontairement découplé. `PGI_EXTERNAL_BILLING_ENABLED=false` est la valeur par défaut. Lors d'une ouverture commerciale, un adaptateur de paiement peut envoyer des événements normalisés vers l'endpoint interne protégé par `PGI_BILLING_INGEST_TOKEN` sans modifier le modèle télécom.
+Le fournisseur de paiement reste volontairement découplé. L’adaptateur Stripe Billing prend en charge Checkout hébergé, Customer Portal et webhook signé, mais `PGI_EXTERNAL_BILLING_ENABLED=false` reste la valeur par défaut. Les secrets Stripe sont exclusivement injectés par l’environnement et ne sont jamais stockés dans le dépôt. Le prix distant est vérifié contre la version tarifaire PGI avant Checkout, et seul un événement Stripe signé peut faire évoluer l’abonnement. L’ingress normalisé interne protégé par `PGI_BILLING_INGEST_TOKEN` reste disponible pour d’autres adaptateurs sans coupler le modèle télécom à Stripe.
 
 
 ## Contrôle clients et impayés 1.21

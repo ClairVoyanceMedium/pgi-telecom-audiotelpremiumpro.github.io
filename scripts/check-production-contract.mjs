@@ -108,6 +108,7 @@ const hyperscaleDoc=fs.readFileSync("docs/HYPERSCALE.md","utf8");
 const scaleHpa=fs.readFileSync("infra/scale/api-hpa.example.yaml","utf8");
 const postgresStore=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
 const backendServer=fs.readFileSync("backend/server.mjs","utf8");
+const stripeBillingSource=fs.readFileSync("backend/src/stripe-billing.mjs","utf8");
 const wholesaleDoc=fs.readFileSync("docs/WHOLESALE-SVA.md","utf8");
 
 const requiredCompose=[
@@ -296,6 +297,14 @@ if(!/tenant_number_assignments_payout_terms_gate/.test(pgiRevenueMigration)||!/p
 if(!/rebuildTenantRevenueDistributions/.test(postgresStore)||!/PORTABILITY_PAYOUT_TERMS_REQUIRED/.test(postgresStore))failures.push("carrier settlements and port-ins must enforce PGI revenue distribution");
 if((postgresStore.match(/SVA_PAYOUT_TERMS_REQUIRED/g)||[]).length<2)failures.push("every external SVA routing path must require PGI payout terms");
 if(!/sva_payout_flow:"carrier_to_pgi_to_customer"/.test(backendServer)||!/pgi_margin_retained:true/.test(backendServer))failures.push("backend contract must declare operator to PGI to client SVA flow");
+for(const name of ["PGI_EXTERNAL_BILLING_ENABLED","PGI_PUBLIC_BASE_URL","PGI_STRIPE_SECRET_KEY","PGI_STRIPE_WEBHOOK_SECRET","PGI_STRIPE_LIVE_MODE","PGI_STRIPE_PRICE_LOOKUP_KEY","PGI_STRIPE_PORTAL_CONFIGURATION_ID"]){
+  if(!compose.includes(name+":"))failures.push("docker compose missing optional Stripe contract "+name);
+  if(!envExample.includes(name+"="))failures.push("production env example missing Stripe contract "+name);
+}
+if(!/PGI_EXTERNAL_BILLING_ENABLED/.test(preflight)||!/PGI_STRIPE_SECRET_KEY/.test(preflight)||!/PGI_STRIPE_WEBHOOK_SECRET/.test(preflight)||!/PGI_STRIPE_PORTAL_CONFIGURATION_ID/.test(preflight))failures.push("preflight must fail closed when Stripe Billing is enabled");
+if(!/\/api\/v1\/billing\/stripe\/webhook/.test(backendServer)||!/verifyStripeWebhook/.test(backendServer)||!/normalizeStripeSubscriptionEvent/.test(backendServer))failures.push("backend must expose the signed Stripe webhook adapter");
+if(!/timingSafeEqual/.test(stripeBillingSource)||!/Stripe-Signature|stripe-signature/.test(stripeBillingSource)||!/stripeWebhookToleranceSeconds/.test(stripeBillingSource))failures.push("Stripe webhook must verify signatures with bounded replay tolerance");
+if(!/Idempotency-Key/.test(stripeBillingSource)||!/lookup_keys/.test(stripeBillingSource)||!/STRIPE_PRICE_AMOUNT_MISMATCH/.test(stripeBillingSource))failures.push("Stripe Checkout must preserve idempotency and verify remote price semantics");
 if(!/DSP2/.test(wholesaleDoc)||!/opérateur attributaire/i.test(wholesaleDoc)||!/multi-éditeurs/i.test(wholesaleDoc))failures.push("wholesale roadmap must retain regulatory and payment-compliance boundaries");
 if(!/PGI_PROCESS_ROLE/.test(compose)||!/PGI_PROCESS_ROLE=/.test(envExample))failures.push("production contract must expose the API/worker process role");
 if(!/PGI_DATABASE_READ_URL/.test(compose)||!/PGI_DATABASE_READ_URL=/.test(envExample))failures.push("production contract must support an optional read replica");

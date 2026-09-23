@@ -119,7 +119,9 @@ const seoPages=[
   "numero-sva",
   "comparateur-audiotel",
   "guide-audiotel-sva",
-  "demande-ouverture"
+  "demande-ouverture",
+  "confidentialite",
+  "conditions-abonnement"
 ];
 for(const slug of seoPages){
   const source=fs.readFileSync(path.join(root,"site","seo",slug+".html"),"utf8");
