@@ -46,7 +46,7 @@ export function relationCaseDeadlines(kind,priority,capacity,from=new Date()){
   const first=new Date(start.getTime()+responseHours*3600000);
   const target=new Date(start.getTime()+resolutionDays*86400000);
   const mediationBase=new Date(start.getTime());
-  const mediation=String(capacity||"unknown")==="consumer"?new Date(mediationBase.setMonth(mediationBase.getMonth()+2)):null;
+  const mediation=String(capacity||"unknown")==="consumer"?new Date(mediationBase.setUTCMonth(mediationBase.getUTCMonth()+2)):null;
   return {first_response_due_at:first.toISOString(),target_resolution_at:target.toISOString(),mediation_eligible_at:mediation?mediation.toISOString():null};
 }
 
