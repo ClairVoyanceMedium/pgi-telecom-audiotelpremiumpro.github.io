@@ -22,7 +22,7 @@ test("production static build publishes marketing root and private cockpit",()=>
     const legacy=fs.readFileSync("dist/site/index.html","utf8");
     const robots=fs.readFileSync("dist/robots.txt","utf8");
     const sitemap=fs.readFileSync("dist/sitemap.xml","utf8");
-    const seoSlugs=["audiotel-voyance","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","comparateur-audiotel","guide-audiotel-sva","demande-ouverture"];
+    const seoSlugs=["audiotel-voyance","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","comparateur-audiotel","guide-audiotel-sva","demande-ouverture","confidentialite","conditions-abonnement"];
     const seoPages=seoSlugs.map(slug=>fs.readFileSync("dist/"+slug+"/index.html","utf8"));
 
     assert.match(root,/Pilotez votre activité/);
@@ -67,6 +67,12 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.match(application,/id="order-form"/);
     assert.match(application,/src="\/site\/site\.js"/);
     assert.match(application,/Continuer vers l’espace sécurisé/);
+    const privacy=seoPages[seoSlugs.indexOf("confidentialite")];
+    const terms=seoPages[seoSlugs.indexOf("conditions-abonnement")];
+    assert.match(privacy,/Paiements Stripe/);
+    assert.match(privacy,/CNIL/);
+    assert.match(terms,/3,00 € TTC par mois/);
+    assert.match(terms,/opérateur → PGI → client/);
   }finally{
     fs.rmSync("dist",{recursive:true,force:true});
   }
