@@ -308,7 +308,8 @@ export function createBackend(options={}){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
         requireCustomerPermission(context,"finance.read");
-        return done(res,metrics,started,"customer.jackpot",200,await store.customerJackpotSnapshot(context.tenant_id));
+        const jackpot=await store.customerJackpotSnapshot(context.tenant_id);
+        return done(res,metrics,started,"customer.jackpot",200,{...jackpot,can_reset:["owner","admin"].includes(context.customer_role)});
       }
       if(method==="GET"&&pathname==="/api/v1/customer/portal"){
         requireActor(customerActor);
@@ -571,6 +572,7 @@ export function createBackend(options={}){
         requireCustomerCsrf(req,customerActor,config);
         const context=await store.customerSessionContext(customerActor);
         requireCustomerPermission(context,"finance.read");
+        if(!["owner","admin"].includes(context.customer_role)){const e=new Error("Customer role cannot reset jackpot");e.status=403;e.code="CUSTOMER_JACKPOT_RESET_FORBIDDEN";throw e;}
         const payload={tenant_id:context.tenant_id};
         const result=await store.idempotent(req.headers["idempotency-key"],"customer.jackpot.reset",payload,()=>store.createCustomerJackpotReset(context.tenant_id,customerActor.sub));
         return done(res,metrics,started,"customer.jackpot.reset",201,{...result.value,replayed:result.replayed});

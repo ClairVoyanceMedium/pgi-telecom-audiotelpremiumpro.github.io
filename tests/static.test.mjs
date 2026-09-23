@@ -79,6 +79,8 @@ test("les cockpits affichent les reversements en direct sans les confondre avec 
   assert.match(api,/\/dashboard\/live-finance/);
   assert.match(server,/\/api\/v1\/customer\/events/);
   assert.match(server,/\/api\/v1\/customer\/jackpot/);
+  assert.match(server,/can_reset:\["owner","admin"\]\.includes\(context\.customer_role\)/);
+  assert.match(server,/CUSTOMER_JACKPOT_RESET_FORBIDDEN/);
   assert.match(server,/\/api\/v1\/dashboard\/live-finance/);
   assert.match(server,/live_call\.started/);
   assert.match(server,/live_call\.ended/);

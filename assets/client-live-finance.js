@@ -8,7 +8,7 @@ function stamp(v){if(!v)return "—";try{return new Intl.DateTimeFormat(navigato
 function ui(){
  if($("client-live-money"))return;
  var box=$("client-overview");if(!box)return;
- box.insertAdjacentHTML("afterend",'<section id="client-live-money" class="cp-live-money" data-active="false" aria-live="polite"><div class="cp-jackpot-main"><span>JACKPOT PERSONNEL</span><strong id="client-live-amount">0,00 €</strong><small id="client-jackpot-rate">Votre compteur démarre à la première seconde facturable</small><small id="client-live-calls">Aucun appel en cours</small></div><div class="cp-jackpot-live"><span>GAIN EN COURS</span><strong id="client-period-payout-estimate">0,00 €</strong><small id="client-jackpot-since">Depuis votre dernière remise à zéro</small></div><div class="cp-jackpot-actions"><button id="client-jackpot-reset" class="cp-primary" type="button">Remettre à 0,00 €</button><button id="client-live-recalc" class="cp-ghost" type="button">Actualiser</button><small id="client-jackpot-state" role="status">Compteur motivant uniquement. Vos gains réels ne sont jamais supprimés.</small></div></section>');
+ box.insertAdjacentHTML("afterend",'<section id="client-live-money" class="cp-live-money" data-active="false" aria-live="polite"><div class="cp-jackpot-main"><span>JACKPOT PERSONNEL</span><strong id="client-live-amount">0,00 €</strong><small id="client-jackpot-rate">Votre compteur démarre à la première seconde facturable</small><small id="client-live-calls">Aucun appel en cours</small></div><div class="cp-jackpot-live"><span>GAIN EN COURS</span><strong id="client-period-payout-estimate">0,00 €</strong><small id="client-jackpot-since">Depuis votre dernière remise à zéro</small></div><div class="cp-jackpot-actions"><button id="client-jackpot-reset" class="cp-primary" type="button" hidden>Remettre à 0,00 €</button><button id="client-live-recalc" class="cp-ghost" type="button">Actualiser</button><small id="client-jackpot-state" role="status">Compteur motivant uniquement. Vos gains réels ne sont jamais supprimés.</small></div></section>');
  $("client-live-recalc").addEventListener("click",refresh);
  $("client-jackpot-reset").addEventListener("click",reset);
  if(!$("client-live-finance-css")){var l=document.createElement("link");l.id="client-live-finance-css";l.rel="stylesheet";l.href="assets/client-live-finance.css";document.head.appendChild(l)}
@@ -20,7 +20,7 @@ function values(){
  return {cur:row.currency||cur,calls:n(row.active_calls),total:n(row.jackpot_client_net_ht)+elapsed*rate,live:n(row.live_client_net_ht)+elapsed*rate,rate:rate,resetAt:d.reset_at};
 }
 function paint(){
- ui();var v=values(),card=$("client-live-money");if(card){card.dataset.active=v.calls>0?"true":"false";card.hidden=false}
+ ui();var v=values(),card=$("client-live-money"),resetButton=$("client-jackpot-reset");if(card){card.dataset.active=v.calls>0?"true":"false";card.hidden=false}if(resetButton)resetButton.hidden=s.data?.can_reset!==true
  if($("client-live-amount"))$("client-live-amount").textContent=money(v.total,v.cur);
  if($("client-period-payout-estimate"))$("client-period-payout-estimate").textContent=money(v.live,v.cur);
  if($("client-live-calls"))$("client-live-calls").textContent=v.calls?v.calls+" appel"+(v.calls>1?"s":"")+" en cours":"Aucun appel en cours";
@@ -29,13 +29,13 @@ function paint(){
 }
 async function refresh(){
  ui();var api=window.PGICustomerApi,cfg=window.PGI_CONFIG||{};
- if(cfg.mode==="demo"){s.data={default_currency:"EUR",reset_at:new Date().toISOString(),as_of:new Date().toISOString(),by_currency:[]};s.at=Date.now();paint();return}
+ if(cfg.mode==="demo"){s.data={default_currency:"EUR",reset_at:new Date().toISOString(),as_of:new Date().toISOString(),by_currency:[],can_reset:true};s.at=Date.now();paint();return}
  if(!api||typeof api.jackpot!=="function")return;
  try{s.data=await api.jackpot();s.at=Date.parse(s.data&&s.data.as_of||"")||Date.now();paint();schedule(values().calls?10000:30000)}
  catch(err){if(Number(err&&err.status)===403&&$("client-live-money"))$("client-live-money").hidden=true;else if($("client-jackpot-state"))$("client-jackpot-state").textContent="Synchronisation momentanément indisponible."}
 }
 async function reset(){
- if(s.busy)return;
+ if(s.busy||s.data?.can_reset!==true)return;
  var api=window.PGICustomerApi;if(!api||typeof api.resetJackpot!=="function")return;
  if(!confirm("Remettre uniquement votre jackpot motivant à 0,00 € ? Vos revenus, CDR, règlements et statistiques officielles restent inchangés."))return;
  s.busy=true;var b=$("client-jackpot-reset"),m=$("client-jackpot-state");if(b)b.disabled=true;if(m)m.textContent="Remise à zéro…";
