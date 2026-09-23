@@ -70,6 +70,17 @@ need_env PGI_TELEPHONY_PASSWORD
 need_env PGI_CALLER_HASH_KEY
 need_env PGI_PORTABILITY_SECRET_KEY
 
+if [ "${PGI_EXTERNAL_BILLING_ENABLED:-false}" = "true" ]; then
+  need_env PGI_BILLING_INGEST_TOKEN
+  need_env PGI_PUBLIC_BASE_URL
+  need_env PGI_STRIPE_SECRET_KEY
+  need_env PGI_STRIPE_WEBHOOK_SECRET
+  need_env PGI_STRIPE_PORTAL_CONFIGURATION_ID
+  echo "INFO Stripe Billing go-live checks enabled"
+else
+  echo "INFO Stripe Billing checks skipped: external billing disabled"
+fi
+
 if [ "${PGI_BACKEND_MODE:-}" != "production" ]; then
   echo "FAIL PGI_BACKEND_MODE must be production"
   fail=1
