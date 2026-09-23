@@ -1,3 +1,14 @@
+## 1.30.2 — Branding production & Stripe Billing — 2026-09-24
+
+- logo officiel renforcé dans Paramètres, abonnement client, footer client et impressions/PDF ;
+- branding PGI conservé dans les rapports imprimés via les en-têtes et pieds de page déjà présents ;
+- identité PGI renforcée dans Paramètres sans alourdir le shell critique ;
+- image officielle rattachée au produit Stripe Checkout ;
+- palette Stripe premium brun/doré déjà configurée ;
+- cache PWA incrémenté pour distribuer immédiatement le nouveau branding ;
+- aucune identité KYC, adresse légale, immatriculation fiscale ou TVA inventée ;
+- factures Stripe prêtes à reprendre le branding global du compte dès validation du fichier logo dans les paramètres Stripe.
+
 ## 1.30.0 — SVA Compliance Center multi-organismes — 2026-09-20
 
 - nouveau SVA Compliance Center premium, lazy-loadé depuis le cockpit ;

@@ -459,19 +459,21 @@ test("la PWA met en cache uniquement le shell critique",()=>{
   assert.match(app,/loadDemoCalls/);
   assert.doesNotMatch(sw,/assets\/command-palette\.js/);
   assert.doesNotMatch(sw,/assets\/customer-admin\.css/);
-  assert.match(sw,/pgi-v44/);
+  assert.match(sw,/pgi-v45/);
 });
 
 test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiques",()=>{
   assert.match(index,/assets\/audiotel-brand-icon-v33\.png/);
   assert.match(index,/assets\/audiotel-brand-logo-v33\.png/);
   for(const cls of ["brand-emblem","topbar-brand-emblem","command-brand-logo","auth-brand-logo","footer-brand-logo"])assert.ok(index.includes(cls),"missing branding "+cls);
+  assert.match(index,/view-settings[\s\S]*command-brand-logo[\s\S]*audiotel-brand-logo-v33\.png/);
+  for(const cls of ["cp-logo-auth","cp-logo-header","cp-billing-brand-logo","cp-footer-brand","cp-print-brand"])assert.ok(clientPortal.includes(cls),"missing client branding "+cls);
   assert.match(css,/\.brand-emblem\{/);
   assert.match(css,/\.command-brand-logo\{/);
   assert.match(css,/\.auth-brand-logo\{/);
   assert.match(sw,/audiotel-brand-icon-v33\.png/);
   assert.match(sw,/audiotel-brand-logo-v33\.png/);
-  assert.match(sw,/pgi-v44/);
+  assert.match(sw,/pgi-v45/);
   assert.match(buildStatic,/audiotel-brand-logo-v33\.png/);
   assert.doesNotMatch(css,/brand-mark|command-brand-emblem|auth-brand-lockup|auth-brand-emblem/);
   assert.doesNotMatch(sw,/favicon\.svg/);
@@ -507,7 +509,7 @@ test("brand header polish keeps split colors, larger icon and dark period contra
   assert.match(css,/\.product-name-pgi\{color:#f4e8dc\}/);
   assert.match(css,/\.product-name-audiotel\{color:#e0ad6d\}/);
   assert.match(css,/\.periods\{[\s\S]*rgba\(31,22,18,.96\)/);
-  assert.match(sw,/pgi-v44/);
+  assert.match(sw,/pgi-v45/);
 });
 
 
@@ -666,7 +668,7 @@ test("Premium+ reste lazy, accessible et complet sur petit écran",()=>{
 });
 
 test("la PWA Premium+ gère le portail client et les mises à jour sans forcer le reload",()=>{
-  assert.match(sw,/pgi-v44/);
+  assert.match(sw,/pgi-v45/);
   assert.match(sw,/client\.html/);
   assert.match(sw,/SKIP_WAITING/);
   assert.doesNotMatch(sw,/c\.addAll\(S\)\)\.then\(\(\)=>self\.skipWaiting\(\)\)/);
