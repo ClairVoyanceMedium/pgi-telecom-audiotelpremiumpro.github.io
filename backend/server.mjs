@@ -14,6 +14,7 @@ import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
+import {stripeProviderState,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeSubscriptionEvent} from "./src/stripe-billing.mjs";
 
 export async function createDefaultBackend(){
   const config=loadConfig();
@@ -102,6 +103,14 @@ export function createBackend(options={}){
         authorizeMachineEndpoint(req,config);
         res.pgiRoute="metrics";
         return metricsResponse(res,metrics,store,workers);
+      }
+      if(method==="POST"&&pathname==="/api/v1/billing/stripe/webhook"){
+        if(!config.externalBillingEnabled||!config.stripeWebhookSecret)return done(res,metrics,started,"billing.stripe_webhook",404,{error:{code:"STRIPE_WEBHOOK_DISABLED"}});
+        const event=await verifyStripeWebhook(req,config);
+        const normalized=normalizeStripeSubscriptionEvent(event);
+        if(!normalized)return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,ignored:true,type:String(event.type||"")});
+        const result=await store.applySubscriptionBillingEvent(normalized);
+        return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,duplicate:Boolean(result.duplicate)});
       }
 
       if(method==="POST"&&pathname==="/api/v1/auth/login"){
@@ -407,14 +416,21 @@ export function createBackend(options={}){
         const billing=await store.customerBillingPreparation(context.tenant_id);
         const provider=billingProviderStatus(config);
         if(!billing.offer)return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:"NO_ACTIVE_BILLING_OFFER"},billing_provider:provider});
-        return done(res,metrics,started,"customer.billing.checkout",503,{error:{code:"PAYMENT_PROVIDER_NOT_CONNECTED"},billing_provider:provider,checkout:{offer:billing.offer,prefill:billing.checkout_prefill,return_paths:billing.return_paths}});
+        if(["active","past_due"].includes(String(billing.subscription?.status||"")))return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:"SUBSCRIPTION_ALREADY_EXISTS"},billing_provider:provider});
+        if(!provider.checkout_available)return done(res,metrics,started,"customer.billing.checkout",503,{error:{code:"PAYMENT_PROVIDER_NOT_CONNECTED"},billing_provider:provider,checkout:{offer:billing.offer,prefill:billing.checkout_prefill,return_paths:billing.return_paths}});
+        const payload={tenant_id:context.tenant_id,price_version_id:billing.offer.price_version_id,provider:"stripe"};
+        const result=await store.idempotent(checkoutIdempotencyKey,"customer.billing.checkout",payload,()=>createStripeCheckout(config,billing,checkoutIdempotencyKey));
+        return done(res,metrics,started,"customer.billing.checkout",201,{...result.value,replayed:result.replayed,billing_provider:provider});
       }
       if(method==="POST"&&pathname==="/api/v1/customer/billing/portal-session"){
         requireCustomerCsrf(req,customerActor,config);
         const context=await store.customerSessionContext(customerActor);
         requireCustomerPermission(context,"billing.manage");
+        const billing=await store.customerBillingPreparation(context.tenant_id);
         const provider=billingProviderStatus(config);
-        return done(res,metrics,started,"customer.billing.portal",503,{error:{code:"PAYMENT_PROVIDER_NOT_CONNECTED"},billing_provider:provider});
+        if(!provider.customer_portal_available)return done(res,metrics,started,"customer.billing.portal",503,{error:{code:"PAYMENT_PROVIDER_NOT_CONNECTED"},billing_provider:provider});
+        const session=await createStripePortalSession(config,billing);
+        return done(res,metrics,started,"customer.billing.portal",201,{...session,billing_provider:provider});
       }
       if(method==="GET"&&pathname==="/api/v1/customer/portability"){
         requireActor(customerActor);
@@ -1364,15 +1380,17 @@ export function resolveTelephonyRoutingContext(url,config){
 }
 
 export function billingProviderStatus(config){
-  const ingestion=Boolean(config?.externalBillingEnabled);
+  const external=Boolean(config?.externalBillingEnabled),stripe=stripeProviderState(config);
+  const state=stripe.connected?"connected":stripe.api?"checkout_ready_webhook_pending":stripe.webhook?"webhook_ready_checkout_pending":external?"event_ingest_enabled":"not_connected";
   return Object.freeze({
     architecture_ready:true,
     target_provider:"stripe",
-    connection_state:ingestion?"event_ingest_enabled":"not_connected",
-    external_billing_enabled:ingestion,
-    checkout_available:false,
-    customer_portal_available:false,
-    webhook_ingest_enabled:ingestion,
+    connection_state:state,
+    external_billing_enabled:external,
+    checkout_available:stripe.api,
+    customer_portal_available:stripe.api,
+    webhook_ingest_enabled:stripe.webhook,
+    stripe_live_mode:Boolean(config?.stripeLiveMode),
     checkout_mode:"provider_hosted",
     customer_portal_mode:"provider_hosted",
     payment_data_storage:"provider_only",
