@@ -1,3 +1,13 @@
+## 1.30.4 — Stripe Billing : renouvellements & impayés — 2026-09-24
+
+- traitement serveur de `invoice.paid`, `invoice.payment_failed` et `invoice.payment_action_required` ;
+- relecture de l’abonnement Stripe avant toute mise à jour issue d’une facture ;
+- conservation du journal append-only avec l’identifiant d’événement facture Stripe ;
+- paiement réussi : période et état actifs réconciliés ;
+- paiement échoué ou authentification requise : accès externe placé en `past_due` sauf état terminal ou déjà suspendu ;
+- tests dédiés aux renouvellements, impayés et factures sans abonnement ;
+- aucune donnée KYC, fiscale ou bancaire ajoutée au dépôt.
+
 ## 1.30.3 — Identité publique PGI & SEO canonique — 2026-09-24
 
 - suppression de l’ancien domaine GitHub ClairVoyanceMedium des métadonnées publiques ;
