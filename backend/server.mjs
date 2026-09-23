@@ -332,7 +332,7 @@ export function createBackend(options={}){
           canFinance?store.customerBillingPreparation(context.tenant_id):Promise.resolve(null)
         ]);
         const data=scopeCustomerPortalData(context,rawData);
-        return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,metric_resets:Object.fromEntries(Object.entries(metricRanges).map(([k,v])=>[k,v.baseline])),billing_offer:billing?.offer||null,billing_summary:billing?{subscription:billing.subscription,premium_call_access:billing.premium_call_access,billing_currency:billing.billing_currency,pricing_state:billing.pricing_state,reference_offer:billing.reference_offer,checkout_prefill:billing.checkout_prefill,return_paths:billing.return_paths}:{restricted:true},billing_provider:billing?billingProviderStatus(config):{connection_state:"restricted",checkout_available:false,customer_portal_available:false},server_time:new Date().toISOString()});
+        return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,metric_resets:Object.fromEntries(Object.entries(metricRanges).map(([k,v])=>[k,v.baseline])),billing_offer:billing?.offer||null,billing_summary:billing?{subscription:billing.subscription,recovery:billing.recovery,premium_call_access:billing.premium_call_access,billing_currency:billing.billing_currency,pricing_state:billing.pricing_state,reference_offer:billing.reference_offer,checkout_prefill:billing.checkout_prefill,return_paths:billing.return_paths}:{restricted:true},billing_provider:billing?billingProviderStatus(config):{connection_state:"restricted",checkout_available:false,customer_portal_available:false},server_time:new Date().toISOString()});
       }
       if(method==="GET"&&pathname==="/api/v1/customer/team"){
         requireActor(customerActor);
@@ -1404,6 +1404,10 @@ export function billingProviderStatus(config){
     provider_webhook_adapter_required:true,
     provider_signature_validation_at_adapter:true,
     automatic_access_recovery:true,
+    failed_payment_grace_days:7,
+    recovery_window_days:14,
+    failed_payment_policy:"grace_then_suspend_auto_reactivate",
+    earned_sva_payouts_preserved:true,
     subscription_funds_flow:"customer_to_pgi",
     sva_payout_flow:"carrier_to_pgi_to_customer",
     pgi_margin_retained:true,
