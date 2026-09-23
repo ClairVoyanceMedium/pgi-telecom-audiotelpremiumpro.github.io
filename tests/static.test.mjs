@@ -466,7 +466,7 @@ test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiqu
   assert.match(index,/assets\/audiotel-brand-icon-v33\.png/);
   assert.match(index,/assets\/audiotel-brand-logo-v33\.png/);
   for(const cls of ["brand-emblem","topbar-brand-emblem","command-brand-logo","auth-brand-logo","footer-brand-logo"])assert.ok(index.includes(cls),"missing branding "+cls);
-  assert.match(index,/view-settings[\\s\\S]*command-brand-logo[\\s\\S]*audiotel-brand-logo-v33\\.png/);
+  assert.match(index,/view-settings[\s\S]*command-brand-logo[\s\S]*audiotel-brand-logo-v33\.png/);
   for(const cls of ["cp-logo-auth","cp-logo-header","cp-billing-brand-logo","cp-footer-brand","cp-print-brand"])assert.ok(clientPortal.includes(cls),"missing client branding "+cls);
   assert.match(css,/\.brand-emblem\{/);
   assert.match(css,/\.command-brand-logo\{/);
