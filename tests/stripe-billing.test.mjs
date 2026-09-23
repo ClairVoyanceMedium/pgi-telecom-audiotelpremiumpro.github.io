@@ -47,9 +47,9 @@ test("Stripe subscription events preserve tenant and price binding",()=>{
 test("Stripe renewal invoices refresh the subscription before changing billing access",async()=>{
   const original=globalThis.fetch,now=Math.floor(Date.now()/1000),periodEnd=now+30*86400;
   globalThis.fetch=async(url)=>{
-    assert.match(String(url),/\/v1\/subscriptions\/sub_invoice_1$/);
+    assert.match(String(url),/\/v1\/subscriptions\/sub_Invoice123$/);
     return {ok:true,status:200,json:async()=>({
-      id:"sub_invoice_1",customer:"cus_invoice_1",status:"active",cancel_at_period_end:false,
+      id:"sub_Invoice123",customer:"cus_invoice_1",status:"active",cancel_at_period_end:false,
       metadata:{tenant_public_id:"22222222-2222-4222-8222-222222222222",price_version_id:"42"},
       items:{data:[{current_period_start:now,current_period_end:periodEnd,price:{id:"price_123",unit_amount:300,currency:"eur",recurring:{interval:"month",interval_count:1}}}]}
     })};
@@ -57,17 +57,17 @@ test("Stripe renewal invoices refresh the subscription before changing billing a
   try{
     const paid=await normalizeStripeBillingEvent({
       id:"evt_invoice_paid",type:"invoice.paid",created:now,
-      data:{object:{id:"in_paid",customer:"cus_invoice_1",parent:{subscription_details:{subscription:"sub_invoice_1"}}}}
+      data:{object:{id:"in_paid",customer:"cus_invoice_1",parent:{subscription_details:{subscription:"sub_Invoice123"}}}}
     },{stripeSecretKey:"sk_test_example",stripeApiVersion:"2026-08-26.dahlia"});
     assert.equal(paid.event_type,"invoice.paid");
     assert.equal(paid.provider_event_id,"evt_invoice_paid");
     assert.equal(paid.last_payment_status,"paid");
     assert.equal(paid.status,"active");
-    assert.equal(paid.provider_subscription_reference,"sub_invoice_1");
+    assert.equal(paid.provider_subscription_reference,"sub_Invoice123");
 
     const failed=await normalizeStripeBillingEvent({
       id:"evt_invoice_failed",type:"invoice.payment_failed",created:now+1,
-      data:{object:{id:"in_failed",customer:"cus_invoice_1",parent:{subscription_details:{subscription:"sub_invoice_1"}}}}
+      data:{object:{id:"in_failed",customer:"cus_invoice_1",parent:{subscription_details:{subscription:"sub_Invoice123"}}}}
     },{stripeSecretKey:"sk_test_example",stripeApiVersion:"2026-08-26.dahlia"});
     assert.equal(failed.event_type,"invoice.payment_failed");
     assert.equal(failed.last_payment_status,"failed");
@@ -75,7 +75,7 @@ test("Stripe renewal invoices refresh the subscription before changing billing a
 
     const action=await normalizeStripeBillingEvent({
       id:"evt_invoice_action",type:"invoice.payment_action_required",created:now+2,
-      data:{object:{id:"in_action",customer:"cus_invoice_1",parent:{subscription_details:{subscription:"sub_invoice_1"}}}}
+      data:{object:{id:"in_action",customer:"cus_invoice_1",parent:{subscription_details:{subscription:"sub_Invoice123"}}}}
     },{stripeSecretKey:"sk_test_example",stripeApiVersion:"2026-08-26.dahlia"});
     assert.equal(action.last_payment_status,"action_required");
     assert.equal(action.status,"past_due");
