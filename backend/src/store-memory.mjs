@@ -29,7 +29,7 @@ export class MemoryStore{
     this.voiceServices=[];
     this.nextVoiceServiceId=1;
     this.nextVoiceVersionId=1;
-    this.baselines=[];
+    this.baselines=[];\n    this.jackpotBaselines=[];
     this.rawEventKeys=new Set();
     this.outbox=[];
     this.workQueue=[];
@@ -191,7 +191,7 @@ export class MemoryStore{
 
 
   async customerJackpotSnapshot(tenantId){
-    const id=Number(tenantId),all=this.baselines.filter(x=>x.tenant_id===id&&x.scope==="global"&&x.metric_key==="jackpot").sort((a,b)=>Date.parse(b.effective_from||b.created_at)-Date.parse(a.effective_from||a.created_at));
+    const id=Number(tenantId),all=this.jackpotBaselines.filter(x=>x.tenant_id===id).sort((a,b)=>Date.parse(b.effective_from||b.created_at)-Date.parse(a.effective_from||a.created_at));
     const resetAt=(all[0]&&all[0].effective_from)||new Date().toISOString(),resetMs=Date.parse(resetAt),now=Date.now(),groups=new Map();
     for(const row of this.liveFinancialSessions){
       if(Number(row.tenant_id||0)!==id||!["active","ended"].includes(row.status))continue;
