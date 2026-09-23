@@ -9,7 +9,7 @@ html{background:#2b1b15}body{background:radial-gradient(circle at 18% -5%,rgba(2
 .settings-brand-card{grid-column:1/-1;overflow:hidden;background:radial-gradient(circle at 100% 0%,rgba(215,167,106,.12),transparent 38%),linear-gradient(145deg,rgba(16,24,37,.96),rgba(8,13,22,.98));border-color:rgba(215,167,106,.22)}
 .settings-brand-lockup{display:flex;align-items:center;gap:22px}
 .settings-brand-logo{display:block;width:min(238px,34vw);height:auto;object-fit:contain;filter:drop-shadow(0 12px 26px rgba(0,0,0,.28))}
-.settings-brand-status{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:18px}
+.settings-brand-status{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-top:18px}
 .settings-brand-status>div{padding:11px 12px;border:1px solid rgba(128,158,192,.12);border-radius:12px;background:rgba(255,255,255,.018)}
 .settings-brand-status span{display:block;color:#75899f;font-size:8px;text-transform:uppercase;letter-spacing:.06em}
 .settings-brand-status strong{display:block;margin-top:6px;color:#f5ebe2;font-size:10px}
