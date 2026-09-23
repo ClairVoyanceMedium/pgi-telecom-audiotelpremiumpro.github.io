@@ -44,7 +44,7 @@ function renderCurrent(){
  const a=aggregate(current),g=$("cp-proof-grid");g.innerHTML='<div><span>Appels</span><strong>'+nf(a.calls)+'</strong></div><div><span>Minutes facturables</span><strong>'+nf(a.billable/60,1)+'</strong></div><div><span>Montant TTC</span><strong>'+esc(money(a.revenue,a.currency))+'</strong></div><div><span>Reversement validé</span><strong>'+esc(money(a.payout,a.currency))+'</strong></div>';
  $("cp-proof-period").textContent=current.range?dt(current.range.from)+" → "+dt(current.range.to):"Période affichée";
 }
-async function copyNumber(){const v=$("client-number-memory-value")?.dataset.copy||"";if(!v)return;try{await navigator.clipboard.writeText(v);$("client-number-copy").textContent="Copié";setTimeout(()=>$("client-number-copy").textContent="Copier le numéro",1200)}catch{}}
+async function copyNumber(){const v=$("client-number-memory-value")?.dataset.copy||"",b=$("client-number-copy");if(!v||!b)return;try{await navigator.clipboard.writeText(v);b.textContent="Copié"}catch{b.textContent="Copie impossible"}finally{setTimeout(()=>b.textContent="Copier le numéro",1600)}}
 function showReceipt(r,prefix="Relevé"){if(!r)return;$("cp-proof-ref").textContent=prefix+" "+(r.reference||"")+" · "+dt(r.created_at)+" · SHA "+String(r.snapshot_sha256||"").slice(0,12)}
 async function loadReceipts(){if(demo()||loadedReceipts)return;loadedReceipts=true;try{const r=await call("/customer/consumption-receipts");if(r.data?.[0])showReceipt(r.data[0],"Dernier relevé")}catch{}}
 async function createReceipt(){

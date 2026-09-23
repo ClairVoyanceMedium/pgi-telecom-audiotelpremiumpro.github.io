@@ -26,6 +26,7 @@ var commands=[
 ["print-finance","Action","Imprimer Finance / PDF","Vue finance","pdf impression finance"]
 ].map(function(x){return {id:x[0],group:x[1],label:x[2],hint:x[3],keywords:x[4]};});
 function byId(id){return document.getElementById(id);}
+function feedback(message){if(typeof root.PGIActionFeedback==="function")root.PGIActionFeedback(message);else root.alert(message);}
 function normalize(value){
 return String(value||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
 }
@@ -66,17 +67,17 @@ function execute(id){
 close();
 if(id==="platform-admin"){
 if(!adminModule)adminModule=import(ADMIN_URL);
-adminModule.then(function(m){m.open();}).catch(function(){});
+adminModule.then(function(m){m.open();}).catch(function(){feedback("L’administration est momentanément indisponible.");});
 return;
 }
 if(id==="control-tower"){
 if(!towerModule)towerModule=import(TOWER_URL);
-towerModule.then(function(m){m.open();}).catch(function(){});
+towerModule.then(function(m){m.open();}).catch(function(){feedback("Control Tower est momentanément indisponible.");});
 return;
 }
 if(id==="sva-compliance"){
 if(!svaModule)svaModule=import(SVA_URL);
-svaModule.then(function(m){m.open();}).catch(function(){});
+svaModule.then(function(m){m.open();}).catch(function(){feedback("Le centre de conformité est momentanément indisponible.");});
 return;
 }
 root.dispatchEvent(new CustomEvent("pgi:command",{detail:{id:id}}));

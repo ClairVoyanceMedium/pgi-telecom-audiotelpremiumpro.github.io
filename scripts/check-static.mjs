@@ -27,6 +27,9 @@ const required = [
   "assets/client-search.js",
   "assets/client-premium.js",
   "assets/client-audience.js",
+  "assets/client-access-visibility.js",
+  "assets/client-mobile.js",
+  "assets/client-team-access.js",
   "assets/client-premium-plus.js",
   "assets/passkey-client.js",
   "assets/premium-plus-core.js",
@@ -51,11 +54,14 @@ const required = [
   "assets/customer-admin.css",
   "assets/tenant-control-detail.js",
   "assets/tenant-consumption-check.js",
+  "assets/customer-360-detail.js",
+  "assets/customer-internal-notes.js",
   "assets/tenant-control-utils.js",
   "assets/tenant-portability-admin.js",
   "assets/tenant-service-admin.js",
   "assets/tenant-payout-admin.js",
   "assets/platform-admin-tools.js",
+  "assets/platform-regulatory-tools.js",
   "assets/control-tower.js",
   "assets/control-tower-assurance.js",
   "assets/performance-resilience-lab.js",
@@ -84,12 +90,26 @@ const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const clientPortal = fs.readFileSync(path.join(root, "client.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "assets/app.js"), "utf8");
 const frontRuntime = [
-  "index.html","client.html","assets/client-admin-theme.css","assets/config.js","assets/core.js","assets/api-client.js","assets/client-portal-api.js","assets/client-portal.js","assets/client-analytics-plus.js","assets/client-account-proof.js","assets/client-experience-command-center.js","assets/client-portability.js","assets/client-service-center.js","assets/client-relations.js","assets/client-voice-studio.js","assets/client-search.js","assets/client-premium.js","assets/client-premium-plus.js","assets/passkey-client.js","assets/premium-plus-core.js","assets/premium-plus.js","assets/client-intelligence.js",
+  "index.html","client.html","assets/client-admin-theme.css","assets/config.js","assets/core.js","assets/api-client.js","assets/client-portal-api.js","assets/client-portal.js","assets/client-analytics-plus.js","assets/client-account-proof.js","assets/client-experience-command-center.js","assets/client-portability.js","assets/client-service-center.js","assets/client-relations.js","assets/client-voice-studio.js","assets/client-search.js","assets/client-premium.js","assets/client-access-visibility.js","assets/client-mobile.js","assets/client-team-access.js","assets/client-premium-plus.js","assets/passkey-client.js","assets/premium-plus-core.js","assets/premium-plus.js","assets/client-intelligence.js",
   "assets/data-client.js","assets/demo-data.js","assets/command-palette-loader.js","assets/command-palette.js",
-  "assets/workspace.js","assets/cockpit-pro.js","assets/performance-radar.js","assets/voice-intelligence.js","assets/subscription-billing-ui.js","assets/customer-admin.js","assets/customer-relations.js","assets/customer-admin.css","assets/tenant-control-detail.js","assets/tenant-consumption-check.js","assets/tenant-control-utils.js","assets/tenant-portability-admin.js","assets/tenant-service-admin.js","assets/tenant-payout-admin.js","assets/platform-admin-tools.js","assets/control-tower.js","assets/control-tower-assurance.js","assets/performance-resilience-lab.js","assets/sva-compliance-center.js","assets/call-tools.js","assets/call-list.js","assets/metric-reset.js","assets/app.js","service-worker.js"
+  "assets/workspace.js","assets/cockpit-pro.js","assets/performance-radar.js","assets/voice-intelligence.js","assets/subscription-billing-ui.js","assets/customer-admin.js","assets/customer-relations.js","assets/customer-admin.css","assets/tenant-control-detail.js","assets/tenant-consumption-check.js","assets/customer-360-detail.js","assets/customer-internal-notes.js","assets/tenant-control-utils.js","assets/tenant-portability-admin.js","assets/tenant-service-admin.js","assets/tenant-payout-admin.js","assets/platform-admin-tools.js","assets/platform-regulatory-tools.js","assets/control-tower.js","assets/control-tower-assurance.js","assets/performance-resilience-lab.js","assets/sva-compliance-center.js","assets/call-tools.js","assets/call-list.js","assets/metric-reset.js","assets/app.js","service-worker.js"
 ].map(file=>fs.readFileSync(path.join(root,file),"utf8")).join("\n");
 
 const failures = [];
+const buildSource=fs.readFileSync(path.join(root,"scripts/build-static.mjs"),"utf8");
+const buildFilesBlock=buildSource.match(/const files=\[([\s\S]*?)\n\];/);
+const publishedFiles=new Set(buildFilesBlock?[...buildFilesBlock[1].matchAll(/"([^"]+)"/g)].map(match=>match[1]):[]);
+for(const file of publishedFiles){
+  if(!file.endsWith(".js"))continue;
+  const source=fs.readFileSync(path.join(root,file),"utf8"),specifiers=[];
+  for(const pattern of [/(?:import|export)\s+(?:[^"']*?\sfrom\s*)?["'](\.\.?\/[^"']+\.(?:js|css))["']/g,/import\(\s*["'](\.\.?\/[^"']+\.(?:js|css))["']\s*\)/g,/new URL\(\s*["'](\.\.?\/[^"']+\.(?:js|css))["']/g]){
+    for(const match of source.matchAll(pattern))specifiers.push(match[1]);
+  }
+  for(const specifier of specifiers){
+    const target=path.posix.normalize(path.posix.join(path.posix.dirname(file),specifier));
+    if(!publishedFiles.has(target))failures.push("Lazy/static asset omitted from production build: "+file+" -> "+target);
+  }
+}
 if (!index.includes("PGI • Telecom - Audiotel Premium Pro")) failures.push("Nom officiel absent de index.html");
 if (!index.includes('name="viewport"')) failures.push("Viewport mobile absent");
 if (!clientPortal.includes('name="robots" content="noindex,nofollow,noarchive"')) failures.push("Customer portal must be noindex");

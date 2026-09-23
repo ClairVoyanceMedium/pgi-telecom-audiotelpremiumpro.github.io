@@ -39,6 +39,9 @@ const files=[
   "assets/client-search.js",
   "assets/client-premium.js",
   "assets/client-audience.js",
+  "assets/client-access-visibility.js",
+  "assets/client-mobile.js",
+  "assets/client-team-access.js",
   "assets/client-premium-plus.js",
   "assets/passkey-client.js",
   "assets/premium-plus-core.js",
@@ -64,11 +67,14 @@ const files=[
   "assets/customer-admin.css",
   "assets/tenant-control-detail.js",
   "assets/tenant-consumption-check.js",
+  "assets/customer-360-detail.js",
+  "assets/customer-internal-notes.js",
   "assets/tenant-control-utils.js",
   "assets/tenant-portability-admin.js",
   "assets/tenant-service-admin.js",
   "assets/tenant-payout-admin.js",
   "assets/platform-admin-tools.js",
+  "assets/platform-regulatory-tools.js",
   "assets/control-tower.js",
   "assets/control-tower-assurance.js",
   "assets/performance-resilience-lab.js",
@@ -112,7 +118,8 @@ const seoPages=[
   "reversement-audiotel",
   "numero-sva",
   "comparateur-audiotel",
-  "guide-audiotel-sva"
+  "guide-audiotel-sva",
+  "demande-ouverture"
 ];
 for(const slug of seoPages){
   const source=fs.readFileSync(path.join(root,"site","seo",slug+".html"),"utf8");

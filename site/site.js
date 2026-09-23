@@ -22,42 +22,56 @@ render();
 })();
 
 ;(()=>{
-const KEY="pgi_public_order_intent_v1";
+const KEY="pgi_public_order_intent_v1",DRAFT_KEY="pgi_public_order_draft_v1",MAX_AGE=3600000;
 const form=document.getElementById("order-form");
 if(!form)return;
 const typeInputs=[...form.querySelectorAll('input[name="order_account_type"]')];
 const companyWrap=document.getElementById("order-company-wrap");
 const company=document.getElementById("order-company");
+const value=id=>String(document.getElementById(id)?.value||"").trim();
+function selectedType(){return form.querySelector('input[name="order_account_type"]:checked')?.value||""}
 function syncType(){
-  const type=form.querySelector('input[name="order_account_type"]:checked')?.value||"";
+  const type=selectedType();
   const business=type==="business";
   if(companyWrap)companyWrap.hidden=!business;
   if(company){company.disabled=!business;if(!business)company.value=""}
 }
+function snapshot(){
+  const type=selectedType();
+  return {version:1,created_at:Date.now(),account_type:type,first_name:value("order-first-name").slice(0,80),last_name:value("order-last-name").slice(0,80),company_name:type==="business"?value("order-company").slice(0,200):"",email:value("order-email").slice(0,320),phone:value("order-phone").slice(0,40),service_intent:value("order-service-intent")};
+}
+function saveDraft(){try{sessionStorage.setItem(DRAFT_KEY,JSON.stringify(snapshot()))}catch(_e){}}
+function hydrateDraft(){
+  try{
+    const raw=sessionStorage.getItem(DRAFT_KEY);if(!raw)return;
+    const x=JSON.parse(raw),age=Date.now()-Number(x.created_at||0);
+    if(!x||x.version!==1||age<0||age>MAX_AGE){sessionStorage.removeItem(DRAFT_KEY);return}
+    const set=(id,v)=>{const el=document.getElementById(id);if(el&&v!=null&&!el.value)el.value=String(v)};
+    if(["individual","business"].includes(x.account_type)){const radio=form.querySelector('input[name="order_account_type"][value="'+x.account_type+'"]');if(radio)radio.checked=true}
+    set("order-first-name",x.first_name);set("order-last-name",x.last_name);set("order-company",x.company_name);set("order-email",x.email);set("order-phone",x.phone);set("order-service-intent",x.service_intent);
+  }catch(_e){try{sessionStorage.removeItem(DRAFT_KEY)}catch(_x){}}
+}
+function applyRequestedProfile(){
+  const profile=new URLSearchParams(location.search).get("profil"),type=["business","professionnel","entreprise"].includes(profile)?"business":["individual","particulier"].includes(profile)?"individual":"";
+  if(!type)return;
+  const radio=form.querySelector('input[name="order_account_type"][value="'+type+'"]');if(radio)radio.checked=true;
+}
+hydrateDraft();applyRequestedProfile();
 typeInputs.forEach(x=>x.addEventListener("change",syncType));
 document.querySelectorAll("[data-order-type]").forEach(link=>link.addEventListener("click",()=>{
   const radio=form.querySelector('input[name="order_account_type"][value="'+link.dataset.orderType+'"]');
-  if(radio){radio.checked=true;syncType()}
+  if(radio){radio.checked=true;syncType();saveDraft()}
 }));
+form.addEventListener("input",saveDraft);
+form.addEventListener("change",saveDraft);
 form.addEventListener("submit",e=>{
   e.preventDefault();
-  const type=form.querySelector('input[name="order_account_type"]:checked')?.value||"";
+  const type=selectedType();
   if(!["individual","business"].includes(type))return;
-  const intent={
-    version:1,
-    created_at:Date.now(),
-    source:"public_marketing_site",
-    account_type:type,
-    first_name:String(document.getElementById("order-first-name")?.value||"").trim().slice(0,80),
-    last_name:String(document.getElementById("order-last-name")?.value||"").trim().slice(0,80),
-    company_name:type==="business"?String(company?.value||"").trim().slice(0,200):"",
-    email:String(document.getElementById("order-email")?.value||"").trim().slice(0,320),
-    phone:String(document.getElementById("order-phone")?.value||"").trim().slice(0,40),
-    service_intent:String(document.getElementById("order-service-intent")?.value||"")
-  };
-  try{sessionStorage.setItem(KEY,JSON.stringify(intent))}
+  const intent={...snapshot(),source:"public_marketing_site"};
+  try{sessionStorage.setItem(KEY,JSON.stringify(intent));sessionStorage.removeItem(DRAFT_KEY)}
   catch(_e){const s=document.getElementById("order-status");if(s)s.hidden=false;return}
-  const b=form.querySelector('button[type="submit"]');if(b)b.disabled=true;
+  const b=form.querySelector('button[type="submit"]');if(b){b.disabled=true;b.setAttribute("aria-busy","true");b.innerHTML="Ouverture de l’inscription…"}
   location.href="../client.html?register=1";
 });
 syncType();

@@ -9,6 +9,7 @@ const robots=fs.readFileSync("robots.txt","utf8");
 const sitemap=fs.readFileSync("sitemap.xml","utf8");
 const cockpit=fs.readFileSync("index.html","utf8");
 const client=fs.readFileSync("client.html","utf8");
+const application=fs.readFileSync("site/seo/demande-ouverture.html","utf8");
 
 test("public site targets both individuals and professionals",()=>{
   assert.match(html,/AUDIOTEL · SVA · PARTICULIERS · PROFESSIONNELS/);
@@ -24,7 +25,9 @@ test("public homepage links to focused SEO content without changing the signup f
   assert.match(html,/href="\/reversement-audiotel\//);
   assert.match(html,/href="\/numero-sva\//);
   assert.match(html,/href="\/comparateur-audiotel\//);
+  assert.match(html,/href="\/demande-ouverture\//);
   assert.match(html,/Objectif PGI : une offre plus compétitive/);
+  assert.doesNotMatch(html,/href="#commande"/);
 });
 
 test("public pricing and revenue example stay explicit and non-guaranteed",()=>{
@@ -72,6 +75,15 @@ test("public site provides a real registration handoff without leaking PII in th
   assert.match(js,/sessionStorage\.setItem\(KEY,JSON\.stringify\(intent\)\)/);
   assert.match(js,/location\.href="\.\.\/client\.html\?register=1"/);
   assert.doesNotMatch(js,/location\.href=.*email|URLSearchParams.*email/);
+});
+
+test("dedicated opening page preselects profiles and preserves an unfinished session draft",()=>{
+  assert.match(application,/id="order-form"/);
+  assert.match(application,/Continuer vers l’espace sécurisé/);
+  assert.match(application,/Aucune donnée personnelle dans l’URL/);
+  assert.match(js,/pgi_public_order_draft_v1/);
+  assert.match(js,/new URLSearchParams\(location\.search\)\.get\("profil"\)/);
+  assert.match(js,/sessionStorage\.removeItem\(DRAFT_KEY\)/);
 });
 
 test("marketing conversion uses trust and legitimate urgency without fabricated scarcity",()=>{
