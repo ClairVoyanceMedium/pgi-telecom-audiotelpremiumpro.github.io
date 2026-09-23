@@ -429,7 +429,7 @@ async function openBilling(kind){
 function handleBillingReturn(){
   var url=new URL(location.href),result=url.searchParams.get("billing");
   if(!result)return;
-  url.searchParams.delete("billing");history.replaceState(null,"",url.pathname+(url.search?"?"+url.searchParams.toString():"")+url.hash);
+  url.searchParams.delete("billing");url.searchParams.delete("session_id");history.replaceState(null,"",url.pathname+(url.search?"?"+url.searchParams.toString():"")+url.hash);
   if(result==="success")toast("Paiement reçu par Stripe. L’abonnement sera activé uniquement après confirmation sécurisée du webhook.");
   else if(result==="cancelled")toast("Paiement annulé. Aucun changement n’a été appliqué.");
   else if(result==="portal-return")toast("Retour de la facturation sécurisé. Les changements confirmés par Stripe seront synchronisés automatiquement.");
