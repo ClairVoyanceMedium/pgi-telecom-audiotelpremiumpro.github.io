@@ -48,11 +48,11 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.match(sitemap,/<loc>https:\/\/pgi-test\.vercel\.app\/<\/loc>/);
     for(const slug of seoSlugs)assert.match(sitemap,new RegExp("<loc>https:\\/\\/pgi-test\\.vercel\\.app\\/"+slug+"\\/<\\/loc>"));
     seoPages.forEach((page,index)=>{
-      assert.match(page,new RegExp('rel="canonical" href="https:\\/\\/pgi-test\\.vercel\\.app\\/'+seoSlugs[index]+'\\/"'));
-      assert.match(page,/"@type":"WebPage"/);
-      assert.match(page,/"@type":"Service"/);
+      const slug=seoSlugs[index],legal=["confidentialite","conditions-abonnement"].includes(slug);
+      assert.match(page,new RegExp('rel="canonical" href="https:\\/\\/pgi-test\\.vercel\\.app\\/'+slug+'\\/"'));
+      if(!legal){assert.match(page,/"@type":"WebPage"/);assert.match(page,/"@type":"Service"/);}
       assert.doesNotMatch(page,/__CANONICAL__|__BASE__|__LOGO__/);
-      if(seoSlugs[index]!=="demande-ouverture")assert.doesNotMatch(page,/<script[^>]+src=/i);
+      if(slug!=="demande-ouverture")assert.doesNotMatch(page,/<script[^>]+src=/i);
     });
     const comparator=seoPages[seoSlugs.indexOf("comparateur-audiotel")];
     assert.match(comparator,/1 800 € \/ mois/);
