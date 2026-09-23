@@ -2110,6 +2110,9 @@ export class PostgresStore{
     const priceVersionId=Number(payload.price_version_id);
     const marketId=payload.market_id==null||payload.market_id===""?null:Number(payload.market_id);
     const lastPaymentStatus=payload.last_payment_status==null?null:String(payload.last_payment_status).trim().toLowerCase();
+    const providerInvoiceReference=payload.provider_invoice_reference==null?null:String(payload.provider_invoice_reference).trim();
+    const paymentAttemptCount=payload.payment_attempt_count==null?null:Number(payload.payment_attempt_count);
+    const nextPaymentAttempt=payload.next_payment_attempt||null;
     const providerPriceReference=payload.provider_price_reference==null?null:String(payload.provider_price_reference).trim();
     const providerPriceAmount=payload.provider_price_amount_minor==null?null:Number(payload.provider_price_amount_minor);
     const providerPriceCurrency=payload.provider_price_currency==null?null:String(payload.provider_price_currency).trim().toUpperCase();
@@ -2130,6 +2133,9 @@ export class PostgresStore{
     if(periodStart&&periodEnd&&Date.parse(periodEnd)<=Date.parse(periodStart))throw problem(400,"INVALID_SUBSCRIPTION_PERIOD");
     if(endsAtInput&&!Number.isFinite(Date.parse(endsAtInput)))throw problem(400,"INVALID_SUBSCRIPTION_END");
     if(status==="active"&&(!periodEnd||Date.parse(periodEnd)<=Date.parse(eventTime)))throw problem(400,"ACTIVE_SUBSCRIPTION_PERIOD_REQUIRED");
+    if(providerInvoiceReference&&providerInvoiceReference.length>200)throw problem(400,"INVALID_PROVIDER_INVOICE_REFERENCE");
+    if(paymentAttemptCount!=null&&(!Number.isInteger(paymentAttemptCount)||paymentAttemptCount<0||paymentAttemptCount>100))throw problem(400,"INVALID_PAYMENT_ATTEMPT_COUNT");
+    if(nextPaymentAttempt&&!Number.isFinite(Date.parse(nextPaymentAttempt)))throw problem(400,"INVALID_NEXT_PAYMENT_ATTEMPT");
     if(providerPriceReference&&providerPriceReference.length>200)throw problem(400,"INVALID_PROVIDER_PRICE_REFERENCE");
     if(providerPriceAmount!=null&&(!Number.isInteger(providerPriceAmount)||providerPriceAmount<0))throw problem(400,"INVALID_PROVIDER_PRICE_AMOUNT");
     if(providerPriceCurrency&&!/^[A-Z]{3}$/.test(providerPriceCurrency))throw problem(400,"INVALID_PROVIDER_PRICE_CURRENCY");
@@ -2140,6 +2146,7 @@ export class PostgresStore{
       provider_subscription_reference:providerSubscription,event_type:eventType,status,event_time:eventTime,
       price_version_id:priceVersionId,market_id:marketId,current_period_start:periodStart,current_period_end:periodEnd,
       cancel_at_period_end:!!payload.cancel_at_period_end,last_payment_status:lastPaymentStatus,ends_at:endsAtInput,
+      provider_invoice_reference:providerInvoiceReference,payment_attempt_count:paymentAttemptCount,next_payment_attempt:nextPaymentAttempt,
       provider_price_reference:providerPriceReference,provider_price_amount_minor:providerPriceAmount,provider_price_currency:providerPriceCurrency,
       provider_billing_interval:providerBillingInterval,provider_interval_count:providerIntervalCount
     };
@@ -2215,6 +2222,43 @@ export class PostgresStore{
         "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'subscription.changed','tenant_subscription',$2,$3::jsonb)",
         [tenant.id,String(subscriptionId),JSON.stringify({status,provider,event_type:eventType})]
       );
+      const paymentFailed=eventType==="invoice.payment_failed"||lastPaymentStatus==="failed";
+      const paymentActionRequired=eventType==="invoice.payment_action_required"||lastPaymentStatus==="action_required";
+      const paymentRecovered=eventType==="invoice.paid"||(status==="active"&&["paid","succeeded","success"].includes(lastPaymentStatus||""));
+      if(paymentFailed||paymentActionRequired){
+        const recoveryState=paymentActionRequired?"action_required":((paymentAttemptCount||1)>1?"retrying":"grace");
+        const attempts=Math.max(1,paymentAttemptCount||1);
+        await tx.unsafe(
+          "INSERT INTO subscription_recovery_states(subscription_id,tenant_id,recovery_state,first_failed_at,last_failed_at,grace_until,recovery_deadline,next_retry_at,attempt_count,last_invoice_reference,last_payment_status,recovered_at)"+
+          " VALUES($1,$2,$3,$4::timestamptz,$4::timestamptz,$4::timestamptz+interval '7 days',$4::timestamptz+interval '14 days',$5::timestamptz,$6,$7,$8,NULL)"+
+          " ON CONFLICT(subscription_id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,"+
+          " recovery_state=CASE WHEN subscription_recovery_states.recovery_state IN ('healthy','recovered') THEN EXCLUDED.recovery_state"+
+          " WHEN EXCLUDED.recovery_state='action_required' THEN 'action_required' ELSE 'retrying' END,"+
+          " first_failed_at=CASE WHEN subscription_recovery_states.recovery_state IN ('healthy','recovered') OR subscription_recovery_states.first_failed_at IS NULL THEN EXCLUDED.first_failed_at ELSE subscription_recovery_states.first_failed_at END,"+
+          " last_failed_at=EXCLUDED.last_failed_at,"+
+          " grace_until=CASE WHEN subscription_recovery_states.recovery_state IN ('healthy','recovered') OR subscription_recovery_states.grace_until IS NULL THEN EXCLUDED.grace_until ELSE subscription_recovery_states.grace_until END,"+
+          " recovery_deadline=CASE WHEN subscription_recovery_states.recovery_state IN ('healthy','recovered') OR subscription_recovery_states.recovery_deadline IS NULL THEN EXCLUDED.recovery_deadline ELSE subscription_recovery_states.recovery_deadline END,"+
+          " next_retry_at=EXCLUDED.next_retry_at,attempt_count=GREATEST(subscription_recovery_states.attempt_count,EXCLUDED.attempt_count),"+
+          " last_invoice_reference=COALESCE(EXCLUDED.last_invoice_reference,subscription_recovery_states.last_invoice_reference),last_payment_status=EXCLUDED.last_payment_status,recovered_at=NULL",
+          [subscriptionId,tenant.id,recoveryState,eventTime,nextPaymentAttempt,attempts,providerInvoiceReference,lastPaymentStatus||recoveryState]
+        );
+        await tx.unsafe(
+          "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'subscription.payment_attention','tenant_subscription',$2,$3::jsonb)",
+          [tenant.id,String(subscriptionId),JSON.stringify({status,recovery_state:recoveryState,attempt_count:attempts,next_payment_attempt:nextPaymentAttempt,grace_days:7,recovery_days:14,provider,event_type:eventType})]
+        );
+      }else if(paymentRecovered){
+        await tx.unsafe(
+          "INSERT INTO subscription_recovery_states(subscription_id,tenant_id,recovery_state,last_payment_status,recovered_at,attempt_count)"+
+          " VALUES($1,$2,'recovered',$3,$4::timestamptz,0)"+
+          " ON CONFLICT(subscription_id) DO UPDATE SET recovery_state='recovered',last_payment_status=EXCLUDED.last_payment_status,recovered_at=EXCLUDED.recovered_at,"+
+          " grace_until=NULL,recovery_deadline=NULL,next_retry_at=NULL,attempt_count=0",
+          [subscriptionId,tenant.id,lastPaymentStatus||"paid",eventTime]
+        );
+        await tx.unsafe(
+          "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'subscription.payment_recovered','tenant_subscription',$2,$3::jsonb)",
+          [tenant.id,String(subscriptionId),JSON.stringify({status,provider,event_type:eventType,recovered_at:eventTime})]
+        );
+      }
       if(status==="active"&&periodEnd&&Date.parse(periodEnd)>Date.parse(eventTime)&&(!lastPaymentStatus||["paid","succeeded","success"].includes(lastPaymentStatus))){
         await tx.unsafe(
           "UPDATE tenant_admin_alerts SET state='resolved',resolved_at=now(),updated_at=now() WHERE tenant_id=$1 AND subscription_id=$2 AND alert_type='subscription_unpaid' AND state<>'resolved'",
