@@ -10,6 +10,7 @@ const sitemap=fs.readFileSync("sitemap.xml","utf8");
 const cockpit=fs.readFileSync("index.html","utf8");
 const client=fs.readFileSync("client.html","utf8");
 const application=fs.readFileSync("site/seo/demande-ouverture.html","utf8");
+const buildStatic=fs.readFileSync("scripts/build-static.mjs","utf8");
 
 test("public site targets both individuals and professionals",()=>{
   assert.match(html,/AUDIOTEL · SVA · PARTICULIERS · PROFESSIONNELS/);
@@ -111,5 +112,6 @@ test("marketing metadata declares the canonical social URL",()=>{
 
 
 test("public SEO sources never expose the legacy GitHub identity",()=>{
-  for(const value of [html,robots,sitemap])assert.doesNotMatch(value,/clairvoyancemedium\.github\.io/i);
+  for(const value of [html,robots,sitemap,buildStatic])assert.doesNotMatch(value,/clairvoyancemedium\.github\.io/i);
+  assert.match(buildStatic,/pgi-telecom-audiotelpremiumpro-gith\.vercel\.app/);
 });
