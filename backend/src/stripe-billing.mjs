@@ -86,9 +86,10 @@ export async function createStripeCheckout(config,billing,idempotencyKey){
     client_reference_id:String(tenant.id||""),
     line_items:[{price:price.id,quantity:1}],
     metadata,
-    subscription_data:{metadata},
+    subscription_data:{metadata,description:"Abonnement plateforme PGI Telecom • Audiotel Premium Pro. Les reversements SVA restent distincts."},
     billing_address_collection:"required",
     tax_id_collection:{enabled:true},
+    custom_text:{submit:{message:"Cet abonnement concerne l’accès à la plateforme PGI Telecom. Les reversements SVA et leurs conditions restent distincts."}},
     locale:"auto"
   };
   const customer=String(subscription.provider_customer_reference||"");
