@@ -2110,6 +2110,11 @@ export class PostgresStore{
     const priceVersionId=Number(payload.price_version_id);
     const marketId=payload.market_id==null||payload.market_id===""?null:Number(payload.market_id);
     const lastPaymentStatus=payload.last_payment_status==null?null:String(payload.last_payment_status).trim().toLowerCase();
+    const providerPriceReference=payload.provider_price_reference==null?null:String(payload.provider_price_reference).trim();
+    const providerPriceAmount=payload.provider_price_amount_minor==null?null:Number(payload.provider_price_amount_minor);
+    const providerPriceCurrency=payload.provider_price_currency==null?null:String(payload.provider_price_currency).trim().toUpperCase();
+    const providerBillingInterval=payload.provider_billing_interval==null?null:String(payload.provider_billing_interval).trim().toLowerCase();
+    const providerIntervalCount=payload.provider_interval_count==null?null:Number(payload.provider_interval_count);
     if(!/^[a-z0-9_.-]{2,40}$/.test(provider))throw problem(400,"INVALID_BILLING_PROVIDER");
     if(!eventId||eventId.length>200)throw problem(400,"INVALID_BILLING_EVENT_ID");
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantPublicId))throw problem(400,"INVALID_BILLING_TENANT");
@@ -2125,11 +2130,18 @@ export class PostgresStore{
     if(periodStart&&periodEnd&&Date.parse(periodEnd)<=Date.parse(periodStart))throw problem(400,"INVALID_SUBSCRIPTION_PERIOD");
     if(endsAtInput&&!Number.isFinite(Date.parse(endsAtInput)))throw problem(400,"INVALID_SUBSCRIPTION_END");
     if(status==="active"&&(!periodEnd||Date.parse(periodEnd)<=Date.parse(eventTime)))throw problem(400,"ACTIVE_SUBSCRIPTION_PERIOD_REQUIRED");
+    if(providerPriceReference&&providerPriceReference.length>200)throw problem(400,"INVALID_PROVIDER_PRICE_REFERENCE");
+    if(providerPriceAmount!=null&&(!Number.isInteger(providerPriceAmount)||providerPriceAmount<0))throw problem(400,"INVALID_PROVIDER_PRICE_AMOUNT");
+    if(providerPriceCurrency&&!/^[A-Z]{3}$/.test(providerPriceCurrency))throw problem(400,"INVALID_PROVIDER_PRICE_CURRENCY");
+    if(providerBillingInterval&& !["month","year"].includes(providerBillingInterval))throw problem(400,"INVALID_PROVIDER_BILLING_INTERVAL");
+    if(providerIntervalCount!=null&&(!Number.isInteger(providerIntervalCount)||providerIntervalCount<=0))throw problem(400,"INVALID_PROVIDER_INTERVAL_COUNT");
     const normalized={
       provider,provider_event_id:eventId,tenant_public_id:tenantPublicId,provider_customer_reference:providerCustomer,
       provider_subscription_reference:providerSubscription,event_type:eventType,status,event_time:eventTime,
       price_version_id:priceVersionId,market_id:marketId,current_period_start:periodStart,current_period_end:periodEnd,
-      cancel_at_period_end:!!payload.cancel_at_period_end,last_payment_status:lastPaymentStatus,ends_at:endsAtInput
+      cancel_at_period_end:!!payload.cancel_at_period_end,last_payment_status:lastPaymentStatus,ends_at:endsAtInput,
+      provider_price_reference:providerPriceReference,provider_price_amount_minor:providerPriceAmount,provider_price_currency:providerPriceCurrency,
+      provider_billing_interval:providerBillingInterval,provider_interval_count:providerIntervalCount
     };
     const hash=createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
     const result=await this.sql.begin(async tx=>{
@@ -2144,13 +2156,19 @@ export class PostgresStore{
       if(!tenant)throw problem(404,"BILLING_TENANT_NOT_FOUND");
       if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_BILLING_EXEMPT");
       const priceRows=await tx.unsafe(
-        "SELECT v.id,v.service_plan_id,v.currency,v.market_id FROM service_plan_price_versions v"+
+        "SELECT v.id,v.service_plan_id,v.currency,v.market_id,v.amount_minor,v.billing_interval,v.interval_count,v.provider,v.provider_price_reference FROM service_plan_price_versions v"+
         " JOIN service_plans p ON p.id=v.service_plan_id WHERE v.id=$1 AND p.plan_key='external-sva-access' LIMIT 1",
         [priceVersionId]
       );
       const price=priceRows[0];
       if(!price)throw problem(404,"SUBSCRIPTION_PRICE_NOT_FOUND");
       if(price.market_id!=null&&Number(price.market_id)!==marketId)throw problem(409,"SUBSCRIPTION_PRICE_MARKET_MISMATCH");
+      if(providerPriceAmount!=null&&Number(price.amount_minor)!==providerPriceAmount)throw problem(409,"SUBSCRIPTION_PRICE_AMOUNT_MISMATCH");
+      if(providerPriceCurrency&&String(price.currency).toUpperCase()!==providerPriceCurrency)throw problem(409,"SUBSCRIPTION_PRICE_CURRENCY_MISMATCH");
+      if(providerBillingInterval&&String(price.billing_interval)!==providerBillingInterval)throw problem(409,"SUBSCRIPTION_PRICE_INTERVAL_MISMATCH");
+      if(providerIntervalCount!=null&&Number(price.interval_count)!==providerIntervalCount)throw problem(409,"SUBSCRIPTION_PRICE_INTERVAL_MISMATCH");
+      if(price.provider&&String(price.provider)!==provider)throw problem(409,"SUBSCRIPTION_PRICE_PROVIDER_MISMATCH");
+      if(price.provider_price_reference&&providerPriceReference&&String(price.provider_price_reference)!==providerPriceReference)throw problem(409,"SUBSCRIPTION_PRICE_PROVIDER_REFERENCE_MISMATCH");
       let subscriptions=await tx.unsafe(
         "SELECT id,tenant_id,last_event_at,provider_customer_reference FROM tenant_subscriptions WHERE billing_provider=$1 AND provider_subscription_reference=$2 LIMIT 1 FOR UPDATE",
         [provider,providerSubscription]
@@ -3522,7 +3540,7 @@ export class PostgresStore{
       const billingCurrency=billingDefault?.currency||tenant.default_currency;
       const offer=(await tx.unsafe(
         "SELECT v.id AS price_version_id,p.plan_key,p.display_name AS plan_name,v.market_id,m.country_code AS market,v.currency,v.amount_minor,v.tax_behavior,"+
-        " v.billing_interval,v.interval_count,v.effective_from,v.effective_to FROM service_plan_price_versions v"+
+        " v.billing_interval,v.interval_count,v.provider,v.provider_price_reference,v.effective_from,v.effective_to FROM service_plan_price_versions v"+
         " JOIN service_plans p ON p.id=v.service_plan_id LEFT JOIN operating_markets m ON m.id=v.market_id"+
         " WHERE p.plan_key='external-sva-access' AND p.status='active' AND v.currency=$1"+
         " AND (v.market_id IS NULL OR m.country_code=$2) AND v.effective_from<=now() AND (v.effective_to IS NULL OR v.effective_to>now())"+
@@ -3530,7 +3548,7 @@ export class PostgresStore{
         [billingCurrency,tenant.country_code]
       ))[0]||null;
       const referenceOffer=offer?offer:(await tx.unsafe(
-        "SELECT v.id AS price_version_id,p.plan_key,p.display_name AS plan_name,v.currency,v.amount_minor,v.tax_behavior,v.billing_interval,v.interval_count,v.effective_from,v.effective_to"+
+        "SELECT v.id AS price_version_id,p.plan_key,p.display_name AS plan_name,v.currency,v.amount_minor,v.tax_behavior,v.billing_interval,v.interval_count,v.provider,v.provider_price_reference,v.effective_from,v.effective_to"+
         " FROM service_plan_price_versions v JOIN service_plans p ON p.id=v.service_plan_id"+
         " WHERE p.plan_key='external-sva-access' AND p.status='active' AND v.market_id IS NULL AND v.currency='EUR'"+
         " AND v.effective_from<=now() AND (v.effective_to IS NULL OR v.effective_to>now()) ORDER BY v.effective_from DESC LIMIT 1"
