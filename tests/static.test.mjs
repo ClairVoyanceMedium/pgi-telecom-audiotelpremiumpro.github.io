@@ -87,11 +87,13 @@ test("les cockpits affichent les reversements en direct sans les confondre avec 
   assert.match(store,/liveFinancialSnapshot/);
   assert.match(store,/customerJackpotSnapshot/);
   assert.match(store,/liveFinancialByTenant/);
-  assert.match(store,/metric_key='jackpot'/);
+  assert.match(store,/customer_jackpot_baselines/);
   assert.match(store,/tenant_scoped_live_call_financial_sessions/);
   const jackpotMigration=read("database/migrations/056_motivational_jackpot.sql");
-  assert.match(jackpotMigration,/metric_key IN \('all','calls','minutes','revenue','payout','quality','jackpot'\)/);
+  assert.match(jackpotMigration,/CREATE TABLE customer_jackpot_baselines/);
+  assert.match(jackpotMigration,/Expand-only and non-destructive/);
   assert.match(jackpotMigration,/never delete or alter accounting data/);
+  assert.doesNotMatch(jackpotMigration,/DROP\s+(TABLE|COLUMN|CONSTRAINT)/i);
   assert.match(site,/Des prix bas soutenus par le bouche-à-oreille/);
   assert.match(site,/préserver des tarifs bas/);
   assert.doesNotMatch(site,/tarif garanti|prix garanti/i);
