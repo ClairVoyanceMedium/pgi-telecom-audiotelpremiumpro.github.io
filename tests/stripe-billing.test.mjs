@@ -125,7 +125,8 @@ test("Stripe Checkout verifies the remote price before creating a hosted subscri
     assert.match(body,/subscription_data%5Bmetadata%5D%5Btenant_public_id%5D/);
     assert.match(body,/subscription_data%5Bdescription%5D=/);
     assert.match(body,/custom_text%5Bsubmit%5D%5Bmessage%5D=/);
-    assert.match(decodeURIComponent(body),/reversements SVA et leurs conditions restent distincts/i);
+    const checkoutForm=new URLSearchParams(body);
+    assert.match(checkoutForm.get("custom_text[submit][message]")||"",/reversements SVA et leurs conditions restent distincts/i);
     assert.equal(calls[1].init.headers["Idempotency-Key"],"idem-test-1");
   }finally{globalThis.fetch=original;}
 });
