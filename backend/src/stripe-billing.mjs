@@ -15,7 +15,7 @@ function baseUrl(config){
 }
 function appendForm(params,prefix,value){
   if(value==null)return;
-  if(Array.isArray(value)){value.forEach(v=>appendForm(params,prefix+"[]",v));return;}
+  if(Array.isArray(value)){value.forEach((v,i)=>appendForm(params,prefix+"["+i+"]",v));return;}
   if(typeof value==="object"){
     for(const [k,v] of Object.entries(value))appendForm(params,prefix?prefix+"["+k+"]":k,v);
     return;
