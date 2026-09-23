@@ -1,3 +1,11 @@
+## 1.30.5 — Checkout Stripe : clarté contractuelle — 2026-09-24
+
+- description d’abonnement transmise à Stripe sans tarif codé en dur ;
+- mention explicite dans Checkout : l’abonnement concerne l’accès à la plateforme PGI Telecom ;
+- distinction affichée entre abonnement plateforme et reversements SVA ;
+- conservation de la collecte d’adresse et d’identifiant fiscal déjà configurée ;
+- aucune donnée KYC, fiscale ou bancaire ajoutée au dépôt.
+
 ## 1.30.4 — Stripe Billing : renouvellements & impayés — 2026-09-24
 
 - traitement serveur de `invoice.paid`, `invoice.payment_failed` et `invoice.payment_action_required` ;
