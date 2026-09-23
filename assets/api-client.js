@@ -105,6 +105,7 @@ var q=new URLSearchParams({from:from,to:to});
 if(market)q.set("market",market);
 return request("/dashboard/summary?"+q.toString());
 },
+liveFinance:function(){return request("/dashboard/live-finance",{timeoutMs:6000});},
 analytics:function(from,to,market){
 var q=new URLSearchParams({from:from,to:to});
 if(market)q.set("market",market);

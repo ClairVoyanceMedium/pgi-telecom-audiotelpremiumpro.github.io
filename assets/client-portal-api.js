@@ -69,6 +69,8 @@ root.PGICustomerApi=Object.freeze({
   cancelPortability:function(id,idempotencyKey){return request("/customer/portability/"+encodeURIComponent(id)+"/cancel",{method:"POST",body:{},idempotencyKey:idempotencyKey});},
   portal:function(from,to){var q=new URLSearchParams({from:from,to:to});return request("/customer/portal?"+q.toString(),{timeoutMs:12000});},
   resetMetrics:function(metricKeys,idempotencyKey){return request("/customer/metrics/reset",{method:"POST",body:{metric_keys:metricKeys},idempotencyKey:idempotencyKey});},
+  jackpot:function(){return request("/customer/jackpot",{timeoutMs:6000});},
+  resetJackpot:function(idempotencyKey){return request("/customer/jackpot/reset",{method:"POST",body:{},idempotencyKey:idempotencyKey});},
   incidents:function(id){var q=id?"?incident_id="+encodeURIComponent(id):"";return request("/customer/incidents"+q,{timeoutMs:8000});},
   relations:function(){return request("/customer/relations",{timeoutMs:10000});},
   createRelationDispute:function(payload,idempotencyKey){return request("/customer/relations/disputes",{method:"POST",body:payload,idempotencyKey:idempotencyKey});},

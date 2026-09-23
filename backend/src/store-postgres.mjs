@@ -226,6 +226,42 @@ export class PostgresStore{
     };
   }
 
+
+  async customerJackpotSnapshot(tenantId){
+    const id=Number(tenantId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_CONTEXT");
+    const tenantRows=await this.readSql.unsafe("SELECT id,default_currency,created_at FROM tenants WHERE id=$1",[id]);
+    const tenant=tenantRows[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+    const resetRows=await this.readSql.unsafe("SELECT effective_from FROM metric_baselines WHERE tenant_id=$1 AND scope='global' AND metric_key='jackpot' ORDER BY effective_from DESC,id DESC LIMIT 1",[id]);
+    const resetAt=new Date(resetRows[0]?.effective_from||tenant.created_at).toISOString();
+    const rows=await this.withTenantReadContext(id,async tx=>tx.unsafe(
+      "SELECT currency,count(*) FILTER(WHERE status='active')::int AS active_calls,count(*) FILTER(WHERE status='ended')::int AS completed_calls,"+
+      " COALESCE(sum(CASE WHEN COALESCE(ended_at,now())>GREATEST(billable_started_at,$1::timestamptz) THEN LEAST(86400,GREATEST(0,EXTRACT(EPOCH FROM (COALESCE(ended_at,now())-GREATEST(billable_started_at,$1::timestamptz)))))/60.0*net_client_rate_ht_per_min ELSE 0 END),0)::float8 AS jackpot_client_net_ht,"+
+      " COALESCE(sum(CASE WHEN status='active' AND now()>GREATEST(billable_started_at,$1::timestamptz) THEN LEAST(86400,GREATEST(0,EXTRACT(EPOCH FROM (now()-GREATEST(billable_started_at,$1::timestamptz)))))/60.0*net_client_rate_ht_per_min ELSE 0 END),0)::float8 AS live_client_net_ht,"+
+      " COALESCE(sum(net_client_rate_ht_per_min) FILTER(WHERE status='active')/60.0,0)::float8 AS client_rate_ht_per_second"+
+      " FROM tenant_scoped_live_call_financial_sessions WHERE status IN ('active','ended') AND COALESCE(ended_at,now())>$1::timestamptz AND billable_started_at<=now() GROUP BY currency ORDER BY currency",[resetAt]
+    ));
+    const byCurrency=rows.map(row=>numberFields(row,["active_calls","completed_calls","jackpot_client_net_ht","live_client_net_ht","client_rate_ht_per_second"]));
+    return {as_of:new Date().toISOString(),reset_at:resetAt,default_currency:tenant.default_currency||"EUR",currency_count:byCurrency.length,by_currency:byCurrency,estimate:true,accounting_impact:"none"};
+  }
+
+  async liveFinancialByTenant(limit=50){
+    const safe=clampInt(limit,50,1,100);
+    const rows=await this.readSql.unsafe(
+      "SELECT t.public_id AS tenant_public_id,t.display_name,l.currency,count(*)::int AS active_calls,"+
+      " COALESCE(sum(LEAST(86400,GREATEST(0,EXTRACT(EPOCH FROM (now()-l.billable_started_at))))/60.0*l.upstream_payout_rate_ht_per_min),0)::float8 AS generated_upstream_payout_ht,"+
+      " COALESCE(sum(LEAST(86400,GREATEST(0,EXTRACT(EPOCH FROM (now()-l.billable_started_at))))/60.0*l.net_client_rate_ht_per_min),0)::float8 AS generated_client_net_ht,"+
+      " COALESCE(sum(LEAST(86400,GREATEST(0,EXTRACT(EPOCH FROM (now()-l.billable_started_at))))/60.0*GREATEST(0,l.upstream_payout_rate_ht_per_min-l.net_client_rate_ht_per_min)),0)::float8 AS pgi_margin_ht,"+
+      " COALESCE(sum(l.upstream_payout_rate_ht_per_min)/60.0,0)::float8 AS upstream_rate_ht_per_second,"+
+      " COALESCE(sum(l.net_client_rate_ht_per_min)/60.0,0)::float8 AS client_rate_ht_per_second,"+
+      " COALESCE(sum(GREATEST(0,l.upstream_payout_rate_ht_per_min-l.net_client_rate_ht_per_min))/60.0,0)::float8 AS pgi_margin_rate_ht_per_second"+
+      " FROM live_call_financial_sessions l JOIN tenants t ON t.id=l.tenant_id WHERE l.status='active' AND l.billable_started_at>now()-interval '24 hours'"+
+      " GROUP BY t.public_id,t.display_name,l.currency ORDER BY generated_upstream_payout_ht DESC,t.display_name LIMIT $1",[safe]
+    );
+    const data=rows.map(row=>numberFields(row,["active_calls","generated_upstream_payout_ht","generated_client_net_ht","pgi_margin_ht","upstream_rate_ht_per_second","client_rate_ht_per_second","pgi_margin_rate_ht_per_second"]));
+    return {as_of:new Date().toISOString(),active_calls:data.reduce((a,x)=>a+Number(x.active_calls||0),0),by_client:data};
+  }
+
   async dashboardAnalytics(from,to,market=null){
     const durationMs=Math.max(0,Date.parse(to)-Date.parse(from));
     const granularity=durationMs>14*86400000?"day":"hour";
@@ -1399,6 +1435,18 @@ export class PostgresStore{
     );
     this.eventBus.publish("baseline.created",{id:row.id,scope:row.scope,tenant_id:row.tenant_id,metric_key:row.metric_key});
     return row;
+  }
+
+
+  async createCustomerJackpotReset(tenantId,customerPrincipalId){
+    const id=Number(tenantId),principal=String(customerPrincipalId||"");
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_CONTEXT");
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(principal))throw problem(400,"INVALID_CUSTOMER_PRINCIPAL");
+    const rows=await this.sql.unsafe("INSERT INTO metric_baselines(tenant_id,scope,metric_key,reason,effective_from,created_by_customer_principal_id) VALUES($1,'global','jackpot','Remise à zéro du jackpot personnel',now(),$2::uuid) RETURNING id,tenant_id,metric_key,effective_from",[id,principal]);
+    const row=rows[0];
+    await this.sql.unsafe("INSERT INTO audit_log(tenant_id,action,entity_type,entity_id,details) VALUES($1,'customer.jackpot.reset','metric_baseline',$2,$3::jsonb)",[id,String(row.id),JSON.stringify({metric_key:"jackpot",customer_principal_id:principal,accounting_impact:"none"})]);
+    this.eventBus.publish("customer.jackpot.reset",{tenant_id:id,reset_at:row.effective_from});
+    return {jackpot_reset_at:row.effective_from,accounting_impact:"none"};
   }
 
   async createCustomerMetricReset(tenantId,metricKeys,customerPrincipalId){

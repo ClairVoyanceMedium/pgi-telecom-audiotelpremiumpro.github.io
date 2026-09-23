@@ -300,9 +300,15 @@ export function createBackend(options={}){
         const tenantId=Number(context.tenant_id);
         res.pgiRoute="customer.events";
         return openEventStream(req,res,eventBus,requestId,config,sseClients,event=>{
-          if(!["live_call.started","live_call.ended","call.ingested"].includes(String(event?.type||"")))return false;
+          if(!["live_call.started","live_call.ended","call.ingested","customer.jackpot.reset"].includes(String(event?.type||"")))return false;
           return Number(event?.payload?.tenant_id||0)===tenantId;
         });
+      }
+      if(method==="GET"&&pathname==="/api/v1/customer/jackpot"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"finance.read");
+        return done(res,metrics,started,"customer.jackpot",200,await store.customerJackpotSnapshot(context.tenant_id));
       }
       if(method==="GET"&&pathname==="/api/v1/customer/portal"){
         requireActor(customerActor);
@@ -561,6 +567,15 @@ export function createBackend(options={}){
         return done(res,metrics,started,"customer.voice_service.rollback",200,{...result.value,replayed:result.replayed});
       }
 
+      if(method==="POST"&&pathname==="/api/v1/customer/jackpot/reset"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"finance.read");
+        const payload={tenant_id:context.tenant_id};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer.jackpot.reset",payload,()=>store.createCustomerJackpotReset(context.tenant_id,customerActor.sub));
+        return done(res,metrics,started,"customer.jackpot.reset",201,{...result.value,replayed:result.replayed});
+      }
+
       if(method==="POST"&&pathname==="/api/v1/customer/metrics/reset"){
         requireCustomerCsrf(req,customerActor,config);
         const context=await store.customerSessionContext(customerActor);
@@ -682,6 +697,11 @@ export function createBackend(options={}){
         const metricRanges=await store.effectiveMetricRanges(requestedRange.from,requestedRange.to);
         const market=url.searchParams.get("market")||null;
         return done(res,metrics,started,"dashboard.summary",200,{...await selectiveSummary(store,metricRanges,market),metric_resets:Object.fromEntries(Object.entries(metricRanges).map(([k,v])=>[k,v.baseline]))});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/dashboard/live-finance"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"dashboard.live_finance",200,await store.liveFinancialByTenant(50));
       }
 
       if(method==="GET"&&pathname==="/api/v1/dashboard/analytics"){
