@@ -206,6 +206,9 @@ export async function normalizeStripeBillingEvent(event,config){
   normalized.event_type=type;
   normalized.event_time=eventIso(event);
   normalized.last_payment_status=invoicePaymentStatus(type);
+  normalized.provider_invoice_reference=idValue(invoice?.id);
+  normalized.payment_attempt_count=Number.isInteger(Number(invoice?.attempt_count))?Math.max(0,Number(invoice.attempt_count)):0;
+  normalized.next_payment_attempt=periodIso(invoice?.next_payment_attempt);
   if(type==="invoice.paid"){
     if(["active","trialing"].includes(String(subscription?.status||"").toLowerCase()))normalized.status="active";
   }else if(!["cancelled","ended","suspended"].includes(normalized.status)){
