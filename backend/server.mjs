@@ -14,7 +14,7 @@ import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
-import {stripeProviderState,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeSubscriptionEvent} from "./src/stripe-billing.mjs";
+import {stripeProviderState,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent} from "./src/stripe-billing.mjs";
 
 export async function createDefaultBackend(){
   const config=loadConfig();
@@ -107,7 +107,7 @@ export function createBackend(options={}){
       if(method==="POST"&&pathname==="/api/v1/billing/stripe/webhook"){
         if(!config.externalBillingEnabled||!config.stripeWebhookSecret)return done(res,metrics,started,"billing.stripe_webhook",404,{error:{code:"STRIPE_WEBHOOK_DISABLED"}});
         const event=await verifyStripeWebhook(req,config);
-        const normalized=normalizeStripeSubscriptionEvent(event);
+        const normalized=await normalizeStripeBillingEvent(event,config);
         if(!normalized)return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,ignored:true,type:String(event.type||"")});
         const result=await store.applySubscriptionBillingEvent(normalized);
         return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,duplicate:Boolean(result.duplicate)});
