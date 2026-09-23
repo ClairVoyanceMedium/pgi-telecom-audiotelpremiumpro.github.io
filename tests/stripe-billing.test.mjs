@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createHmac} from "node:crypto";
-import {verifyStripeWebhook,normalizeStripeSubscriptionEvent,createStripeCheckout,stripeProviderState} from "../backend/src/stripe-billing.mjs";
+import {verifyStripeWebhook,normalizeStripeSubscriptionEvent,normalizeStripeBillingEvent,createStripeCheckout,stripeProviderState} from "../backend/src/stripe-billing.mjs";
 
 test("Stripe provider state fails closed until API and webhook are both configured",()=>{
   assert.deepEqual(stripeProviderState({externalBillingEnabled:false}),{api:false,webhook:false,connected:false});
@@ -42,6 +42,56 @@ test("Stripe subscription events preserve tenant and price binding",()=>{
   assert.equal(n.provider_billing_interval,"month");
   assert.equal(n.status,"active");
   assert.ok(Date.parse(n.current_period_end)>Date.parse(n.event_time));
+});
+
+test("Stripe renewal invoices refresh the subscription before changing billing access",async()=>{
+  const original=globalThis.fetch,now=Math.floor(Date.now()/1000),periodEnd=now+30*86400;
+  globalThis.fetch=async(url)=>{
+    assert.match(String(url),/\/v1\/subscriptions\/sub_invoice_1$/);
+    return {ok:true,status:200,json:async()=>({
+      id:"sub_invoice_1",customer:"cus_invoice_1",status:"active",cancel_at_period_end:false,
+      metadata:{tenant_public_id:"22222222-2222-4222-8222-222222222222",price_version_id:"42"},
+      items:{data:[{current_period_start:now,current_period_end:periodEnd,price:{id:"price_123",unit_amount:300,currency:"eur",recurring:{interval:"month",interval_count:1}}}]}
+    })};
+  };
+  try{
+    const paid=await normalizeStripeBillingEvent({
+      id:"evt_invoice_paid",type:"invoice.paid",created:now,
+      data:{object:{id:"in_paid",customer:"cus_invoice_1",parent:{subscription_details:{subscription:"sub_invoice_1"}}}}
+    },{stripeSecretKey:"sk_test_example",stripeApiVersion:"2026-08-26.dahlia"});
+    assert.equal(paid.event_type,"invoice.paid");
+    assert.equal(paid.provider_event_id,"evt_invoice_paid");
+    assert.equal(paid.last_payment_status,"paid");
+    assert.equal(paid.status,"active");
+    assert.equal(paid.provider_subscription_reference,"sub_invoice_1");
+
+    const failed=await normalizeStripeBillingEvent({
+      id:"evt_invoice_failed",type:"invoice.payment_failed",created:now+1,
+      data:{object:{id:"in_failed",customer:"cus_invoice_1",parent:{subscription_details:{subscription:"sub_invoice_1"}}}}
+    },{stripeSecretKey:"sk_test_example",stripeApiVersion:"2026-08-26.dahlia"});
+    assert.equal(failed.event_type,"invoice.payment_failed");
+    assert.equal(failed.last_payment_status,"failed");
+    assert.equal(failed.status,"past_due");
+
+    const action=await normalizeStripeBillingEvent({
+      id:"evt_invoice_action",type:"invoice.payment_action_required",created:now+2,
+      data:{object:{id:"in_action",customer:"cus_invoice_1",parent:{subscription_details:{subscription:"sub_invoice_1"}}}}
+    },{stripeSecretKey:"sk_test_example",stripeApiVersion:"2026-08-26.dahlia"});
+    assert.equal(action.last_payment_status,"action_required");
+    assert.equal(action.status,"past_due");
+  }finally{globalThis.fetch=original;}
+});
+
+test("Stripe invoice events without a subscription are ignored without an API fetch",async()=>{
+  const original=globalThis.fetch;
+  globalThis.fetch=async()=>{throw new Error("fetch must not run");};
+  try{
+    const result=await normalizeStripeBillingEvent(
+      {id:"evt_standalone",type:"invoice.paid",created:Math.floor(Date.now()/1000),data:{object:{id:"in_standalone"}}},
+      {stripeSecretKey:"sk_test_example"}
+    );
+    assert.equal(result,null);
+  }finally{globalThis.fetch=original;}
 });
 
 test("Stripe Checkout verifies the remote price before creating a hosted subscription",async()=>{
