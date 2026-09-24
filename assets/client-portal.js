@@ -142,25 +142,7 @@ function renderSubscriptions(data){
   if(chipEl){chipEl.textContent=connected?tr("PRÊT"):tr("NON CONNECTÉ");chipEl.className="cp-chip "+(connected?"ok":"neutral");}
   if(start){start.disabled=false;start.setAttribute("aria-disabled",String(!provider.checkout_available||!offer));start.title=!offer?tr("Tarif indisponible pour ce compte."):!provider.checkout_available?tr("Paiement en ligne pas encore activé."):"";}
   if(manage){manage.disabled=false;manage.setAttribute("aria-disabled",String(!provider.customer_portal_available||!rows.length));manage.title=!rows.length?tr("Aucun abonnement actif à gérer."):!provider.customer_portal_available?tr("Portail de facturation pas encore activé."):"";}
-  var recovery=billingSummary.recovery||null,recoveryBox=$("client-billing-recovery"),recoveryTitle=$("client-billing-recovery-title"),recoveryText=$("client-billing-recovery-text"),recoveryAction=$("client-billing-recovery-action");
-  if(recoveryBox){
-    var recoveryState=String(recovery&&recovery.state||"").toLowerCase(),attention=recovery&&!["healthy","recovered"].includes(recoveryState);
-    recoveryBox.hidden=!attention;
-    recoveryBox.classList.toggle("is-critical",Boolean(attention&&(recovery.service_suspended||recoveryState==="suspended")));
-    if(attention){
-      var parts=[],title=tr("Paiement à régulariser");
-      if(recoveryState==="action_required"){title=tr("Validation bancaire requise");parts.push(tr("Votre banque demande une action pour finaliser le renouvellement."));}
-      else if(recovery.service_suspended||recoveryState==="suspended"){title=tr("Accès SVA suspendu temporairement");parts.push(tr("La période de grâce est terminée. Votre espace, vos factures et vos reversements acquis restent accessibles."));}
-      else{parts.push(tr("Votre service reste actif pendant la période de grâce."));}
-      if(recovery.grace_until&&!recovery.service_suspended)parts.push(tr("Grâce jusqu’au")+" "+dateOnly(recovery.grace_until)+".");
-      if(recovery.next_retry_at)parts.push(tr("Prochaine tentative automatique")+" "+dt(recovery.next_retry_at)+".");
-      if(n(recovery.attempt_count)>0)parts.push(tr("Tentative")+" "+nf(recovery.attempt_count)+".");
-      if(recovery.recovery_deadline)parts.push(tr("Récupération automatique suivie jusqu’au")+" "+dateOnly(recovery.recovery_deadline)+".");
-      if(recoveryTitle)recoveryTitle.textContent=title;
-      if(recoveryText)recoveryText.textContent=parts.join(" ");
-      if(recoveryAction){recoveryAction.disabled=!provider.customer_portal_available;recoveryAction.setAttribute("aria-disabled",String(!provider.customer_portal_available));recoveryAction.title=provider.customer_portal_available?"":tr("Portail de facturation pas encore activé.");}
-    }
-  }
+  if(window.PGIBillingRecovery)window.PGIBillingRecovery.render(data,provider);
 }
 function renderOnboarding(data){
   var root=$("client-onboarding");if(!root)return;
@@ -502,7 +484,6 @@ function bind(){
   $("client-password-form").addEventListener("submit",changePassword);
   $("client-billing-start").addEventListener("click",function(){openBilling("start");});
   $("client-billing-manage").addEventListener("click",function(){openBilling("manage");});
-  var recoveryAction=$("client-billing-recovery-action");if(recoveryAction)recoveryAction.addEventListener("click",function(){openBilling("manage");});
   $("portability-open").addEventListener("click",function(){ensurePortability().then(function(x){x.render(state.data||{portability_requests:[]});x.open();}).catch(function(){toast("Portabilité momentanément indisponible.");});});
   $("google-tenant-continue").addEventListener("click",function(){handleGoogleCredential(null,$("customer-tenant").value||"");});
   qsa("[data-client-export]").forEach(function(b){b.addEventListener("click",function(){var d=$("client-export-dialog");if(d&&d.open)d.close();exportClient(b.dataset.clientExport);});});
