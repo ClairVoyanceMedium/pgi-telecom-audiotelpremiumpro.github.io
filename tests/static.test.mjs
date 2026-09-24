@@ -689,8 +689,8 @@ test("mobile width hardening prevents document-level horizontal drift",()=>{
 
 
 test("public marketing pages prevent document-level horizontal drift",()=>{
-  assert.match(siteCss,/public-mobile-width-hardening-v138/);
-  assert.match(siteCss,/html\{scroll-behavior:smooth;width:100%;max-width:100%;overflow-x:hidden;overflow-x:clip;overscroll-behavior-x:none\}/);
-  assert.match(siteCss,/body\{margin:0;width:100%;min-width:0;max-width:100%;overflow-x:hidden;overflow-x:clip;overscroll-behavior-x:none/);
+  assert.match(siteCss,/public-mobile-width-hardening-v139-samsung/);
+  assert.match(siteCss,/html\{scroll-behavior:smooth;width:100%;max-width:100%;overflow-x:hidden!important;overscroll-behavior-x:none;touch-action:pan-y pinch-zoom\}/);
+  assert.match(siteCss,/body\{margin:0;position:relative;width:100%;min-width:0;max-width:100%;overflow-x:hidden!important;overscroll-behavior-x:none;touch-action:pan-y pinch-zoom/);
   assert.match(siteCss,/\.wrap\{width:var\(--wrap\);max-width:100%;min-width:0/);
 });
