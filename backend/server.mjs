@@ -1558,7 +1558,8 @@ function authorizeIngest(req,config){
 function authorizeMachineEndpoint(req,config){
   if(!config.protectMachineEndpoints)return;
   const socketIp=String(req.socket?.remoteAddress||"");
-  if(isLoopback(socketIp))return;
+  const effectiveIp=clientIp(req,config.trustProxy);
+  if(isLoopback(socketIp)&&isLoopback(effectiveIp))return;
   authorizeIngest(req,config);
 }
 function isLoopback(ip){return ip==="127.0.0.1"||ip==="::1"||ip==="::ffff:127.0.0.1";}

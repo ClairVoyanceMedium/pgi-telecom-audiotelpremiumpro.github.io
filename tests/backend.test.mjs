@@ -30,6 +30,30 @@ async function withServer(fn){
   try{await fn({app,base});}finally{await app.close();}
 }
 
+
+test("protected machine endpoints reject proxied requests even when the app socket is loopback",async()=>{
+  const ingestToken="machine-test-token-"+"x".repeat(32);
+  const app=createBackend({config:config({protectMachineEndpoints:true,trustProxy:true,ingestToken})});
+  const address=await app.listen();
+  const base=`http://127.0.0.1:${address.port}`;
+  try{
+    let r=await fetch(base+"/api/v1/ready",{headers:{"X-Forwarded-For":"203.0.113.50"}});
+    assert.equal(r.status,401);
+    assert.equal((await r.json()).error.code,"INGEST_AUTH_FAILED");
+
+    r=await fetch(base+"/metrics",{headers:{"X-Forwarded-For":"203.0.113.50"}});
+    assert.equal(r.status,401);
+
+    r=await fetch(base+"/api/v1/ready",{headers:{"X-Forwarded-For":"203.0.113.50","X-PGI-Ingest-Token":ingestToken}});
+    assert.equal(r.status,200);
+
+    r=await fetch(base+"/api/v1/ready");
+    assert.equal(r.status,200);
+  }finally{
+    await app.close();
+  }
+});
+
 test("production config rejects missing or malformed release identity",()=>{
   const secret="x".repeat(48);
   const base={
