@@ -41,7 +41,7 @@ SELECT
 FROM subscription_recovery_states
 WHERE tenant_id=pgi_require_tenant_context();
 
-CREATE OR REPLACE FUNCTION pgi_tenant_has_premium_call_access(
+CREATE FUNCTION pgi_tenant_has_premium_call_access_v2(
   p_tenant_id bigint,
   p_market_id bigint DEFAULT NULL,
   p_at timestamptz DEFAULT now()
@@ -90,3 +90,45 @@ AS $$
     WHERE t.id=p_tenant_id
   ),false)
 $$;
+
+CREATE VIEW tenant_subscription_access_v2
+WITH (security_barrier=true)
+AS
+SELECT
+  t.id AS tenant_id,
+  t.public_id AS tenant_public_id,
+  t.slug,
+  t.display_name,
+  t.tenant_type,
+  t.status AS tenant_status,
+  (t.tenant_type='internal') AS billing_exempt,
+  pgi_tenant_has_premium_call_access_v2(t.id,NULL,now()) AS premium_call_access,
+  s.id AS subscription_id,
+  s.status AS subscription_status,
+  s.billing_currency,
+  s.current_period_start,
+  s.current_period_end,
+  s.cancel_at_period_end,
+  s.last_payment_status,
+  s.billing_provider,
+  pv.amount_minor,
+  pv.billing_interval,
+  pv.interval_count,
+  r.recovery_state,
+  r.first_failed_at,
+  r.grace_until,
+  r.recovery_deadline,
+  r.next_retry_at,
+  r.attempt_count
+FROM tenants t
+LEFT JOIN LATERAL (
+  SELECT x.*
+  FROM tenant_subscriptions x
+  JOIN service_plans p ON p.id=x.service_plan_id
+  WHERE x.tenant_id=t.id
+    AND p.plan_key='external-sva-access'
+  ORDER BY x.created_at DESC
+  LIMIT 1
+) s ON true
+LEFT JOIN service_plan_price_versions pv ON pv.id=s.price_version_id
+LEFT JOIN subscription_recovery_states r ON r.subscription_id=s.id AND r.tenant_id=t.id;
