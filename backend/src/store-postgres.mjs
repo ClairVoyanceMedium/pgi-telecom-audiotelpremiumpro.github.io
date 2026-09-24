@@ -4978,6 +4978,9 @@ export class PostgresStore{
       " (SELECT max(created_at) FROM tenants WHERE tenant_type<>'internal') AS latest_tenant_created_at,"+
       " (SELECT count(*)::int FROM tenant_kyc_profiles k JOIN tenants t ON t.id=k.tenant_id WHERE t.tenant_type<>'internal' AND k.status='pending') AS kyc_pending,"+
       " (SELECT count(*)::int FROM tenant_admin_alerts a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.alert_type='subscription_unpaid' AND a.state<>'resolved') AS subscription_unpaid_alerts,"+
+      " (SELECT count(*)::int FROM subscription_recovery_states r JOIN tenants t ON t.id=r.tenant_id WHERE t.tenant_type<>'internal' AND r.recovery_state IN ('grace','retrying','action_required') AND r.grace_until>now()) AS subscription_recovery_grace,"+
+      " (SELECT count(*)::int FROM subscription_recovery_states r JOIN tenants t ON t.id=r.tenant_id WHERE t.tenant_type<>'internal' AND r.recovery_state='action_required' AND r.grace_until>now()) AS subscription_recovery_action_required,"+
+      " (SELECT count(*)::int FROM subscription_recovery_states r JOIN tenants t ON t.id=r.tenant_id WHERE t.tenant_type<>'internal' AND (r.recovery_state='suspended' OR (r.recovery_state IN ('grace','retrying','action_required') AND r.grace_until<=now()))) AS subscription_recovery_suspended,"+
       " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND NOT premium_call_access) AS subscription_access_blocked,"+
       " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.status='active') AS assignments_active,"+
       " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND i.status NOT IN ('resolved','closed')) AS service_incidents_open,"+
@@ -6125,6 +6128,9 @@ export class PostgresStore{
         " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND premium_call_access) AS subscription_access_enabled,"+
         " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND NOT premium_call_access) AS subscription_access_blocked,"+
         " (SELECT count(*)::int FROM tenant_admin_alerts a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.alert_type='subscription_unpaid' AND a.state<>'resolved') AS subscription_unpaid_alerts,"+
+      " (SELECT count(*)::int FROM subscription_recovery_states r JOIN tenants t ON t.id=r.tenant_id WHERE t.tenant_type<>'internal' AND r.recovery_state IN ('grace','retrying','action_required') AND r.grace_until>now()) AS subscription_recovery_grace,"+
+      " (SELECT count(*)::int FROM subscription_recovery_states r JOIN tenants t ON t.id=r.tenant_id WHERE t.tenant_type<>'internal' AND r.recovery_state='action_required' AND r.grace_until>now()) AS subscription_recovery_action_required,"+
+      " (SELECT count(*)::int FROM subscription_recovery_states r JOIN tenants t ON t.id=r.tenant_id WHERE t.tenant_type<>'internal' AND (r.recovery_state='suspended' OR (r.recovery_state IN ('grace','retrying','action_required') AND r.grace_until<=now()))) AS subscription_recovery_suspended,"+
         " COALESCE((SELECT v.amount_minor::int FROM service_plan_price_versions v JOIN service_plans p ON p.id=v.service_plan_id"+
         " WHERE p.plan_key='external-sva-access' AND v.market_id IS NULL AND v.currency='EUR' AND v.effective_from<=now()"+
         " AND (v.effective_to IS NULL OR v.effective_to>now()) ORDER BY v.effective_from DESC LIMIT 1),0) AS subscription_price_minor,"+
