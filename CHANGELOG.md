@@ -1,3 +1,11 @@
+## 1.30.7 — Mobile-first sans dérive horizontale — 2026-09-24
+
+- suppression du débordement horizontal global sur mobile sans casser les tableaux et onglets défilants ;
+- confinement des SVG, cartes, grilles, en-têtes et panneaux dans la largeur réelle de l’écran ;
+- prise en charge des safe areas et des très petits écrans ;
+- correction des badges longs du portail client et du menu mobile plein écran ;
+- cache PWA renouvelé pour livrer immédiatement les feuilles de style corrigées.
+
 ## 1.30.6 — Revenue Recovery Stripe & continuité SVA — 2026-09-24
 
 - délai de grâce de 72 heures après le premier échec de renouvellement ;
