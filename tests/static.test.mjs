@@ -459,7 +459,7 @@ test("la PWA met en cache uniquement le shell critique",()=>{
   assert.match(app,/loadDemoCalls/);
   assert.doesNotMatch(sw,/assets\/command-palette\.js/);
   assert.doesNotMatch(sw,/assets\/customer-admin\.css/);
-  assert.match(sw,/pgi-v49/);
+  assert.match(sw,/pgi-v50/);
 });
 
 test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiques",()=>{
@@ -473,7 +473,7 @@ test("le logo officiel Audiotel Premium Pro est intégré aux points stratégiqu
   assert.match(css,/\.auth-brand-logo\{/);
   assert.match(sw,/audiotel-brand-icon-v33\.png/);
   assert.match(sw,/audiotel-brand-logo-v33\.png/);
-  assert.match(sw,/pgi-v49/);
+  assert.match(sw,/pgi-v50/);
   assert.match(buildStatic,/audiotel-brand-logo-v33\.png/);
   assert.doesNotMatch(css,/brand-mark|command-brand-emblem|auth-brand-lockup|auth-brand-emblem/);
   assert.doesNotMatch(sw,/favicon\.svg/);
@@ -509,7 +509,7 @@ test("brand header polish keeps split colors, larger icon and dark period contra
   assert.match(css,/\.product-name-pgi\{color:#f4e8dc\}/);
   assert.match(css,/\.product-name-audiotel\{color:#e0ad6d\}/);
   assert.match(css,/\.periods\{[\s\S]*rgba\(31,22,18,.96\)/);
-  assert.match(sw,/pgi-v49/);
+  assert.match(sw,/pgi-v50/);
 });
 
 
@@ -668,10 +668,22 @@ test("Premium+ reste lazy, accessible et complet sur petit écran",()=>{
 });
 
 test("la PWA Premium+ gère le portail client et les mises à jour sans forcer le reload",()=>{
-  assert.match(sw,/pgi-v49/);
+  assert.match(sw,/pgi-v50/);
   assert.match(sw,/client\.html/);
   assert.match(sw,/SKIP_WAITING/);
   assert.doesNotMatch(sw,/c\.addAll\(S\)\)\.then\(\(\)=>self\.skipWaiting\(\)\)/);
   assert.match(premiumPlusCore,/r\?\.waiting/);
   assert.match(premiumPlusCore,/postMessage\(\{type:"SKIP_WAITING"\}\)/);
+});
+
+
+test("mobile width hardening prevents document-level horizontal drift",()=>{
+  assert.match(css,/mobile-width-hardening-v137/);
+  assert.match(css,/html,body\{width:100%;max-width:100%;overflow-x:hidden;overflow-x:clip/);
+  assert.match(css,/@media \(max-width:820px\)[\s\S]*body\{min-width:0\}/);
+  assert.match(clientPortalCss,/mobile-width-hardening-v137/);
+  assert.match(clientPortalCss,/html,body\{width:100%;max-width:100%;overflow-x:hidden;overflow-x:clip/);
+  assert.match(clientPortalCss,/\.cp-svg\{max-width:100%;overflow:hidden\}/);
+  assert.match(clientPortalCss,/\.cp-chip\{min-width:0;max-width:50%;overflow:hidden;text-overflow:ellipsis\}/);
+  assert.match(sw,/pgi-v50/);
 });
