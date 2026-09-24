@@ -740,7 +740,7 @@ export class PostgresStore{
         if(!sva)throw problem(404,"SVA_NUMBER_NOT_ROUTABLE");
         if(sva.tenant_id==null)throw problem(409,"SVA_TENANT_NOT_CONFIGURED");
         tenantId=Number(sva.tenant_id);marketId=sva.market_id==null?null:Number(sva.market_id);svaId=Number(sva.id);
-        const access=await tx.unsafe("SELECT pgi_tenant_has_premium_call_access($1,$2,now()) AS allowed",[tenantId,marketId]);
+        const access=await tx.unsafe("SELECT pgi_tenant_has_premium_call_access_v2($1,$2,now()) AS allowed",[tenantId,marketId]);
         if(!access[0]?.allowed)throw problem(402,"SVA_SUBSCRIPTION_REQUIRED");
         if(sva.tenant_type!=="internal"){
           const assignments=await tx.unsafe("SELECT id FROM tenant_number_assignments WHERE tenant_id=$1 AND sva_number_id=$2 AND status='active' AND (valid_from IS NULL OR valid_from<=now()) AND (valid_to IS NULL OR valid_to>=now()) LIMIT 1",[tenantId,svaId]);
@@ -881,7 +881,7 @@ export class PostgresStore{
         tenantId=Number(sva.tenant_id);
         marketId=sva.market_id==null?null:Number(sva.market_id);
         const accessRows=await tx.unsafe(
-          "SELECT pgi_tenant_has_premium_call_access($1,$2,now()) AS allowed",
+          "SELECT pgi_tenant_has_premium_call_access_v2($1,$2,now()) AS allowed",
           [tenantId,marketId]
         );
         if(!accessRows[0]?.allowed)throw problem(402,"SVA_SUBSCRIPTION_REQUIRED");
@@ -2021,9 +2021,9 @@ export class PostgresStore{
       this.readSql.unsafe(
         "SELECT"+
         " (SELECT count(*)::bigint FROM tenants WHERE tenant_type<>'internal') AS external_tenants,"+
-        " (SELECT count(*)::bigint FROM tenant_subscription_access WHERE tenant_type<>'internal' AND premium_call_access) AS access_enabled,"+
-        " (SELECT count(*)::bigint FROM tenant_subscription_access WHERE tenant_type<>'internal' AND NOT premium_call_access) AS access_blocked,"+
-        " (SELECT count(*)::bigint FROM tenant_subscription_access WHERE tenant_type='internal' AND billing_exempt) AS internal_exempt,"+
+        " (SELECT count(*)::bigint FROM tenant_subscription_access_v2 WHERE tenant_type<>'internal' AND premium_call_access) AS access_enabled,"+
+        " (SELECT count(*)::bigint FROM tenant_subscription_access_v2 WHERE tenant_type<>'internal' AND NOT premium_call_access) AS access_blocked,"+
+        " (SELECT count(*)::bigint FROM tenant_subscription_access_v2 WHERE tenant_type='internal' AND billing_exempt) AS internal_exempt,"+
         " (SELECT count(*)::bigint FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id WHERE p.plan_key='external-sva-access' AND s.status='active' AND s.current_period_end>now()) AS active_subscriptions"
       ),
       this.readSql.unsafe(
@@ -2045,7 +2045,7 @@ export class PostgresStore{
       this.readSql.unsafe(
         "SELECT tenant_public_id,display_name,tenant_type,tenant_status,billing_exempt,premium_call_access,"+
         " subscription_status,billing_currency,current_period_end,cancel_at_period_end,last_payment_status,billing_provider,amount_minor"+
-        " FROM tenant_subscription_access WHERE tenant_type<>'internal' ORDER BY display_name LIMIT 100"
+        " FROM tenant_subscription_access_v2 WHERE tenant_type<>'internal' ORDER BY display_name LIMIT 100"
       )
     ]);
     return {
@@ -2377,7 +2377,7 @@ export class PostgresStore{
       " AND ($1::text IS NULL OR t.slug_search LIKE $1||'%' OR t.display_name_search LIKE $1||'%' OR t.legal_name_search LIKE $1||'%' OR lower(t.country_code)=$1"+
       " OR EXISTS (SELECT 1 FROM customer_tenant_memberships cm JOIN customer_principals cp ON cp.id=cm.customer_principal_id WHERE cm.tenant_id=t.id AND cp.email_normalized=$1))"+
       " AND ($2::text IS NULL OR t.status=$2) AND ($3::text IS NULL OR t.country_code=$3)"+
-      " AND ($4::text IS NULL OR ($4='active' AND pgi_tenant_has_premium_call_access(t.id,NULL,now()))"+
+      " AND ($4::text IS NULL OR ($4='active' AND pgi_tenant_has_premium_call_access_v2(t.id,NULL,now()))"+
       " OR ($4='unpaid' AND NOT EXISTS (SELECT 1 FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id WHERE s.tenant_id=t.id AND p.plan_key='external-sva-access' AND s.status='active' AND s.current_period_end>now()))"+
       " OR ($4='blocked' AND t.status='suspended'))"+
       " AND ($5::text IS NULL OR EXISTS (SELECT 1 FROM tenant_number_assignments ta JOIN sva_numbers sn ON sn.id=ta.sva_number_id WHERE ta.tenant_id=t.id AND sn.e164 LIKE $5||'%'))"+
@@ -2387,7 +2387,7 @@ export class PostgresStore{
       " page.preferred_locale,page.default_currency,page.timezone,page.home_region,page.capacity_tier,COALESCE(k.status,'not_started') AS kyc_status,page.created_at,"+
       " COALESCE(a.assignment_count,0)::int AS number_assignments,COALESCE(a.active_assignments,0)::int AS active_assignments,"+
       " s.status AS subscription_status,s.current_period_end,s.last_payment_status,s.cancel_at_period_end,s.billing_provider,"+
-      " COALESCE(pgi_tenant_has_premium_call_access(page.id,NULL,now()),false) AS premium_call_access"+
+      " COALESCE(pgi_tenant_has_premium_call_access_v2(page.id,NULL,now()),false) AS premium_call_access"+
       " FROM page LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=page.id"+
       " LEFT JOIN LATERAL (SELECT count(*) AS assignment_count,count(*) FILTER (WHERE status='active') AS active_assignments FROM tenant_number_assignments a WHERE a.tenant_id=page.id) a ON true"+
       " LEFT JOIN LATERAL (SELECT x.status,x.current_period_end,x.last_payment_status,x.cancel_at_period_end,x.billing_provider FROM tenant_subscriptions x JOIN service_plans sp ON sp.id=x.service_plan_id WHERE x.tenant_id=page.id AND sp.plan_key='external-sva-access' ORDER BY x.created_at DESC,x.id DESC LIMIT 1) s ON true"+
@@ -2413,7 +2413,7 @@ export class PostgresStore{
     const rows=await this.readSql.unsafe(
       "SELECT a.id AS _cursor_id,a.id,t.public_id AS tenant_public_id,t.display_name AS tenant,sn.display_number,sn.e164,sn.currency,sn.number_type,"+
       " m.country_code AS market,a.tariff_code,a.assignment_type,a.status,a.kyc_status,a.valid_from,a.valid_to,"+
-      " c.name AS regulatory_assignor,pgi_tenant_has_premium_call_access(t.id,m.id,now()) AS premium_call_access"+
+      " c.name AS regulatory_assignor,pgi_tenant_has_premium_call_access_v2(t.id,m.id,now()) AS premium_call_access"+
       " FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id"+
       " LEFT JOIN operating_markets m ON m.id=sn.market_id LEFT JOIN carriers c ON c.id=a.regulatory_assignor_carrier_id"+
       " WHERE t.tenant_type<>'internal' AND ($1::uuid IS NULL OR t.public_id=$1::uuid)"+
@@ -2441,7 +2441,7 @@ export class PostgresStore{
       if(previous===status)return {...tenant,status,previous_status:previous,changed:false,suspended_assignments:0};
       const updated=await tx.unsafe("UPDATE tenants SET status=$1,updated_at=now() WHERE id=$2 RETURNING id,public_id,display_name,tenant_type,status,country_code",[status,tenant.id]);
       if(status==="active"){
-        const access=await tx.unsafe("SELECT pgi_tenant_has_premium_call_access($1,NULL,now()) AS allowed",[tenant.id]);
+        const access=await tx.unsafe("SELECT pgi_tenant_has_premium_call_access_v2($1,NULL,now()) AS allowed",[tenant.id]);
         if(!access[0]?.allowed)throw problem(409,"PAID_SUBSCRIPTION_REQUIRED_FOR_ACTIVATION");
       }
       let suspendedAssignments=0;
@@ -3627,7 +3627,7 @@ export class PostgresStore{
         " WHERE s.tenant_id=$1 AND p.plan_key='external-sva-access' ORDER BY s.created_at DESC,s.id DESC LIMIT 1",
         [id]
       ))[0]||null;
-      const access=(await tx.unsafe("SELECT pgi_tenant_has_premium_call_access($1,NULL,now()) AS allowed",[id]))[0];
+      const access=(await tx.unsafe("SELECT pgi_tenant_has_premium_call_access_v2($1,NULL,now()) AS allowed",[id]))[0];
       const recovery=subscription?.recovery_state?{
         state:subscription.recovery_state,
         first_failed_at:subscription.first_failed_at||null,
@@ -3882,7 +3882,7 @@ export class PostgresStore{
       if(!market||market.status!=="active")throw problem(409,"PORTABILITY_MARKET_NOT_ACTIVE");
       const kyc=(await tx.unsafe("SELECT status FROM tenant_kyc_profiles WHERE tenant_id=$1 LIMIT 1",[current.tenant_id]))[0];
       if(!kyc||kyc.status!=="verified")throw problem(409,"PORTABILITY_KYC_REQUIRED");
-      const access=(await tx.unsafe("SELECT pgi_tenant_has_premium_call_access($1,$2,now()) AS allowed",[current.tenant_id,market.id]))[0];
+      const access=(await tx.unsafe("SELECT pgi_tenant_has_premium_call_access_v2($1,$2,now()) AS allowed",[current.tenant_id,market.id]))[0];
       if(!access?.allowed)throw problem(402,"SVA_SUBSCRIPTION_REQUIRED");
       const payout=(await tx.unsafe("SELECT pgi_tenant_has_payout_terms($1,$2,NULL,now()) AS allowed",[current.tenant_id,market.id]))[0];
       if(!payout?.allowed)throw problem(409,"PORTABILITY_PAYOUT_TERMS_REQUIRED");
@@ -4981,7 +4981,7 @@ export class PostgresStore{
       " (SELECT count(*)::int FROM subscription_recovery_states r JOIN tenants t ON t.id=r.tenant_id WHERE t.tenant_type<>'internal' AND r.recovery_state IN ('grace','retrying','action_required') AND r.grace_until>now()) AS subscription_recovery_grace,"+
       " (SELECT count(*)::int FROM subscription_recovery_states r JOIN tenants t ON t.id=r.tenant_id WHERE t.tenant_type<>'internal' AND r.recovery_state='action_required' AND r.grace_until>now()) AS subscription_recovery_action_required,"+
       " (SELECT count(*)::int FROM subscription_recovery_states r JOIN tenants t ON t.id=r.tenant_id WHERE t.tenant_type<>'internal' AND (r.recovery_state='suspended' OR (r.recovery_state IN ('grace','retrying','action_required') AND r.grace_until<=now()))) AS subscription_recovery_suspended,"+
-      " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND NOT premium_call_access) AS subscription_access_blocked,"+
+      " (SELECT count(*)::int FROM tenant_subscription_access_v2 WHERE tenant_type<>'internal' AND NOT premium_call_access) AS subscription_access_blocked,"+
       " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.status='active') AS assignments_active,"+
       " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND i.status NOT IN ('resolved','closed')) AS service_incidents_open,"+
       " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND i.status NOT IN ('resolved','closed') AND i.severity='critical') AS service_incidents_critical,"+
@@ -5637,7 +5637,7 @@ export class PostgresStore{
       ),
       this.readSql.unsafe(
         "SELECT a.id,sn.display_number,sn.e164,sn.currency,sn.number_type,m.country_code AS market,a.tariff_code,a.assignment_type,a.status,a.kyc_status,"+
-        " c.name AS regulatory_assignor,a.valid_from,a.valid_to,pgi_tenant_has_premium_call_access($1,m.id,now()) AS premium_call_access"+
+        " c.name AS regulatory_assignor,a.valid_from,a.valid_to,pgi_tenant_has_premium_call_access_v2($1,m.id,now()) AS premium_call_access"+
         " FROM tenant_number_assignments a JOIN sva_numbers sn ON sn.id=a.sva_number_id LEFT JOIN operating_markets m ON m.id=sn.market_id"+
         " LEFT JOIN carriers c ON c.id=a.regulatory_assignor_carrier_id WHERE a.tenant_id=$1 ORDER BY a.created_at DESC,a.id DESC LIMIT 100",[id]
       ),
@@ -5702,7 +5702,7 @@ export class PostgresStore{
         "SELECT id,email,role,status,expires_at,accepted_at,created_at FROM customer_tenant_invitations WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 100",[id]
       )
     ]);
-    const access=await this.readSql.unsafe("SELECT pgi_tenant_has_premium_call_access($1,NULL,now()) AS allowed",[id]);
+    const access=await this.readSql.unsafe("SELECT pgi_tenant_has_premium_call_access_v2($1,NULL,now()) AS allowed",[id]);
     return {
       tenant:{...tenant,premium_call_access:Boolean(access[0]?.allowed)},
       subscriptions:subs,lines,portability,destinations,experts,alerts,settlements,payout_terms:payoutTerms,controls,audit,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,users,invitations,
@@ -5833,7 +5833,7 @@ export class PostgresStore{
     const factsRows=await this.readSql.unsafe(
       "SELECT"+
       " CASE WHEN $1::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM tenants WHERE id=$1 AND status='active') END AS tenant_active,"+
-      " CASE WHEN $1::bigint IS NULL THEN NULL ELSE pgi_tenant_has_premium_call_access($1,$3,now()) END AS subscription_active,"+
+      " CASE WHEN $1::bigint IS NULL THEN NULL ELSE pgi_tenant_has_premium_call_access_v2($1,$3,now()) END AS subscription_active,"+
       " CASE WHEN $1::bigint IS NULL THEN NULL ELSE pgi_tenant_has_payout_terms($1,$3,$2,now()) END AS payout_terms_ready,"+
       " CASE WHEN $1::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM tenant_kyc_profiles WHERE tenant_id=$1 AND status='verified') END AS kyc_verified,"+
       " CASE WHEN $2::bigint IS NULL THEN NULL ELSE pgi_sva_regulatory_ready($1,$2) END AS regulatory_ready,"+
@@ -6124,9 +6124,9 @@ export class PostgresStore{
         " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal') AS assignments_total,"+
         " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.status='active') AS assignments_active,"+
         " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.regulatory_assignor_carrier_id IS NOT NULL) AS assignments_with_assignor,"+
-        " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND subscription_status='active' AND current_period_end>now()) AS external_subscriptions_active,"+
-        " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND premium_call_access) AS subscription_access_enabled,"+
-        " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND NOT premium_call_access) AS subscription_access_blocked,"+
+        " (SELECT count(*)::int FROM tenant_subscription_access_v2 WHERE tenant_type<>'internal' AND subscription_status='active' AND current_period_end>now()) AS external_subscriptions_active,"+
+        " (SELECT count(*)::int FROM tenant_subscription_access_v2 WHERE tenant_type<>'internal' AND premium_call_access) AS subscription_access_enabled,"+
+        " (SELECT count(*)::int FROM tenant_subscription_access_v2 WHERE tenant_type<>'internal' AND NOT premium_call_access) AS subscription_access_blocked,"+
         " (SELECT count(*)::int FROM tenant_admin_alerts a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.alert_type='subscription_unpaid' AND a.state<>'resolved') AS subscription_unpaid_alerts,"+
       " (SELECT count(*)::int FROM subscription_recovery_states r JOIN tenants t ON t.id=r.tenant_id WHERE t.tenant_type<>'internal' AND r.recovery_state IN ('grace','retrying','action_required') AND r.grace_until>now()) AS subscription_recovery_grace,"+
       " (SELECT count(*)::int FROM subscription_recovery_states r JOIN tenants t ON t.id=r.tenant_id WHERE t.tenant_type<>'internal' AND r.recovery_state='action_required' AND r.grace_until>now()) AS subscription_recovery_action_required,"+
