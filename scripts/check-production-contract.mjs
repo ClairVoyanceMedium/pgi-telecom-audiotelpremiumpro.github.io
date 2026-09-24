@@ -109,6 +109,8 @@ const scaleHpa=fs.readFileSync("infra/scale/api-hpa.example.yaml","utf8");
 const postgresStore=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
 const backendServer=fs.readFileSync("backend/server.mjs","utf8");
 const stripeBillingSource=fs.readFileSync("backend/src/stripe-billing.mjs","utf8");
+const subscriptionRecoveryMigration=fs.readFileSync("database/migrations/057_subscription_billing_recovery.sql","utf8");
+const subscriptionBillingUi=fs.readFileSync("assets/subscription-billing-ui.js","utf8");
 const wholesaleDoc=fs.readFileSync("docs/WHOLESALE-SVA.md","utf8");
 
 const requiredCompose=[
@@ -306,6 +308,11 @@ if(!backendServer.includes("/api/v1/billing/stripe/webhook")||!backendServer.inc
 if(!/timingSafeEqual/.test(stripeBillingSource)||!/Stripe-Signature|stripe-signature/.test(stripeBillingSource)||!/stripeWebhookToleranceSeconds/.test(stripeBillingSource))failures.push("Stripe webhook must verify signatures with bounded replay tolerance");
 if(!/Idempotency-Key/.test(stripeBillingSource)||!/lookup_keys/.test(stripeBillingSource)||!/STRIPE_PRICE_AMOUNT_MISMATCH/.test(stripeBillingSource))failures.push("Stripe Checkout must preserve idempotency and verify remote price semantics");
 if(!stripeBillingSource.includes("invoice.paid")||!stripeBillingSource.includes("invoice.payment_failed")||!stripeBillingSource.includes("invoice.payment_action_required")||!stripeBillingSource.includes("/v1/subscriptions/"))failures.push("Stripe webhook must reconcile renewal payment outcomes");
+if(!/CREATE TABLE subscription_recovery_states/.test(subscriptionRecoveryMigration)||!/tenant_scoped_subscription_recovery/.test(subscriptionRecoveryMigration)||!/interval '7 days'/.test(subscriptionRecoveryMigration)||!/interval '14 days'/.test(subscriptionRecoveryMigration))failures.push("subscription recovery must retain 7-day grace and 14-day recovery windows");
+if(!/s\.status='past_due'/.test(subscriptionRecoveryMigration)||!/r\.grace_until>p_at/.test(subscriptionRecoveryMigration)||!/pgi_tenant_has_premium_call_access/.test(subscriptionRecoveryMigration))failures.push("premium access must preserve service only during the bounded billing grace period");
+if(!/subscription\.payment_attention/.test(postgresStore)||!/subscription\.payment_recovered/.test(postgresStore)||!/recovery_state='suspended'/.test(postgresStore))failures.push("billing recovery runtime must escalate and auto-recover from payment failures");
+if(!/failed_payment_grace_days:7/.test(backendServer)||!/recovery_window_days:14/.test(backendServer)||!/earned_sva_payouts_preserved:true/.test(backendServer))failures.push("billing provider contract must expose grace, recovery and payout-preservation policy");
+if(!/subscription_recovery_grace/.test(subscriptionBillingUi)||!/subscription_recovery_suspended/.test(subscriptionBillingUi)||!/reversements SVA acquis restent inchangés/.test(subscriptionBillingUi))failures.push("admin UI must distinguish payment recovery from suspension without affecting earned SVA payouts");
 if(!/DSP2/.test(wholesaleDoc)||!/opérateur attributaire/i.test(wholesaleDoc)||!/multi-éditeurs/i.test(wholesaleDoc))failures.push("wholesale roadmap must retain regulatory and payment-compliance boundaries");
 if(!/PGI_PROCESS_ROLE/.test(compose)||!/PGI_PROCESS_ROLE=/.test(envExample))failures.push("production contract must expose the API/worker process role");
 if(!/PGI_DATABASE_READ_URL/.test(compose)||!/PGI_DATABASE_READ_URL=/.test(envExample))failures.push("production contract must support an optional read replica");
