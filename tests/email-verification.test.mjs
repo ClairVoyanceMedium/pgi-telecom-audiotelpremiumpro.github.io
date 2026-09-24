@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash} from "../backend/src/brevo-email.mjs";
+import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash} from "../backend/src/resend-email.mjs";
 const config={emailVerificationPepper:"p".repeat(48),emailVerificationTtlMinutes:10,emailVerificationResendSeconds:60};
 test("email verification challenge stores hashes, not the OTP",()=>{
   const now=Date.parse("2026-09-24T08:00:00.000Z"),challenge=createEmailVerificationChallenge(config,null,now);

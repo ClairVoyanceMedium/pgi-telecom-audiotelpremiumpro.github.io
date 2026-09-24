@@ -19,10 +19,9 @@ export function loadConfig(env=process.env){
   const stripePriceLookupKey=String(env.PGI_STRIPE_PRICE_LOOKUP_KEY||"pgi_audiotel_premium_pro_monthly_eur").trim();
   const stripeLiveMode=booleanValue(env.PGI_STRIPE_LIVE_MODE,false,"PGI_STRIPE_LIVE_MODE");
   const emailVerificationEnabled=booleanValue(env.PGI_EMAIL_VERIFICATION_ENABLED,false,"PGI_EMAIL_VERIFICATION_ENABLED");
-  const brevoApiKey=String(env.PGI_BREVO_API_KEY||"").trim();
-  const brevoSandbox=booleanValue(env.PGI_BREVO_SANDBOX,false,"PGI_BREVO_SANDBOX");
+  const resendApiKey=String(env.PGI_RESEND_API_KEY||"").trim();
   const emailVerificationPepper=String(env.PGI_EMAIL_VERIFICATION_PEPPER||"").trim();
-  const transactionalFromEmail=String(env.PGI_TRANSACTIONAL_FROM_EMAIL||"contact.audiotel.premium.pro@gmail.com").trim().toLowerCase();
+  const transactionalFromEmail=String(env.PGI_TRANSACTIONAL_FROM_EMAIL||"").trim().toLowerCase();
   const transactionalFromName=String(env.PGI_TRANSACTIONAL_FROM_NAME||"PGI Telecom").trim().slice(0,120);
   const publicBaseUrl=String(env.PGI_PUBLIC_BASE_URL||(env.VERCEL_PROJECT_PRODUCTION_URL?"https://"+env.VERCEL_PROJECT_PRODUCTION_URL:"")).trim().replace(/\/$/,"");
   const telephonyUser=env.PGI_TELEPHONY_USER||"";
@@ -64,7 +63,7 @@ export function loadConfig(env=process.env){
   if(!/^[A-Za-z0-9_\-]{3,200}$/.test(stripePriceLookupKey))throw new Error("PGI_STRIPE_PRICE_LOOKUP_KEY invalid");
   if(stripeSecretKey&&stripeLiveMode!==stripeSecretKey.startsWith("sk_live_"))throw new Error("PGI_STRIPE_LIVE_MODE must match the Stripe secret key mode");
   if(emailVerificationEnabled){
-    if(brevoApiKey.length<32)throw new Error("email verification requires PGI_BREVO_API_KEY");
+    if(!resendApiKey.startsWith("re_")||resendApiKey.length<12)throw new Error("email verification requires a valid PGI_RESEND_API_KEY");
     if(emailVerificationPepper.length<32)throw new Error("email verification requires PGI_EMAIL_VERIFICATION_PEPPER >= 32 characters");
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(transactionalFromEmail))throw new Error("PGI_TRANSACTIONAL_FROM_EMAIL invalid");
     if(!transactionalFromName)throw new Error("PGI_TRANSACTIONAL_FROM_NAME required");
@@ -85,7 +84,7 @@ export function loadConfig(env=process.env){
 
   return Object.freeze({
     mode,authMode,host,port,releaseId,staticDir,trustProxy,protectMachineEndpoints,googleClientId,webauthnRpId,webauthnOrigin,
-    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,stripeSecretKey,stripeWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,emailVerificationEnabled,brevoApiKey,brevoSandbox,emailVerificationPepper,transactionalFromEmail,transactionalFromName,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
+    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,stripeSecretKey,stripeWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,emailVerificationEnabled,resendApiKey,emailVerificationPepper,transactionalFromEmail,transactionalFromName,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),
     bodyLimitBytes:integer(env.PGI_BODY_LIMIT_BYTES,262144,4096,10485760,"PGI_BODY_LIMIT_BYTES"),

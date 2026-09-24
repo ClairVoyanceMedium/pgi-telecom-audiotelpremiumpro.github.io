@@ -15,7 +15,7 @@ import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebA
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
 import {stripeProviderState,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent} from "./src/stripe-billing.mjs";
-import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendBrevoVerificationCode} from "./src/brevo-email.mjs";
+import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode} from "./src/resend-email.mjs";
 
 export async function createDefaultBackend(){
   const config=loadConfig();
@@ -156,7 +156,7 @@ export function createBackend(options={}){
         if(config.emailVerificationEnabled){
           const challenge=createEmailVerificationChallenge(config);
           await store.beginCustomerEmailVerification(registered.id,challenge.record);
-          try{await sendBrevoVerificationCode(config,{email:registered.email,name:registered.display_name,code:challenge.code});}
+          try{await sendResendVerificationCode(config,{email:registered.email,name:registered.display_name,code:challenge.code,idempotencyKey:"email-verification/"+challenge.record.code_hash});}
           catch(_error){return done(res,metrics,started,"customer.auth.register_email",503,{error:{code:"EMAIL_DELIVERY_UNAVAILABLE",message:"Verification email unavailable"},account_created:true,email_verification_required:true,user:publicUser});}
           return done(res,metrics,started,"customer.auth.register",201,{account_created:true,onboarding:true,email_verification_required:true,verification_token:challenge.token,user:publicUser});
         }
@@ -185,7 +185,7 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes),token=String(body.token||"").trim();
         if(token.length<32){const e=new Error("Invalid email verification");e.status=400;e.code="EMAIL_VERIFICATION_INVALID";throw e;}
         const tokenHash=verificationTokenHash(token),target=await store.customerEmailVerificationResendTarget(tokenHash),challenge=createEmailVerificationChallenge(config,token);
-        try{await sendBrevoVerificationCode(config,{email:target.email,name:target.display_name||target.email,code:challenge.code});}
+        try{await sendResendVerificationCode(config,{email:target.email,name:target.display_name||target.email,code:challenge.code,idempotencyKey:"email-verification/"+challenge.record.code_hash});}
         catch(_error){return done(res,metrics,started,"customer.auth.email_resend",503,{error:{code:"EMAIL_DELIVERY_UNAVAILABLE",message:"Verification email unavailable"}});}
         await store.refreshCustomerEmailVerification(target.id,tokenHash,challenge.record);
         return done(res,metrics,started,"customer.auth.email_resend",200,{sent:true,resend_after_seconds:config.emailVerificationResendSeconds});
@@ -237,7 +237,7 @@ export function createBackend(options={}){
         if(config.emailVerificationEnabled&&auth.email_verified!==true&&auth.metadata?.email_verification?.required===true){
           const challenge=createEmailVerificationChallenge(config);
           await store.beginCustomerEmailVerification(auth.id,challenge.record);
-          try{await sendBrevoVerificationCode(config,{email:auth.email,name:auth.display_name||auth.email,code:challenge.code});}
+          try{await sendResendVerificationCode(config,{email:auth.email,name:auth.display_name||auth.email,code:challenge.code,idempotencyKey:"email-verification/"+challenge.record.code_hash});}
           catch(_error){return done(res,metrics,started,"customer.auth.login_email",503,{error:{code:"EMAIL_DELIVERY_UNAVAILABLE",message:"Verification email unavailable"}});}
           authBuckets.delete(authKey);
           return done(res,metrics,started,"customer.auth.login",403,{error:{code:"EMAIL_VERIFICATION_REQUIRED",message:"Email verification required"},email_verification_required:true,verification_token:challenge.token,user:{id:auth.id,name:auth.display_name||auth.email,email:auth.email}});
