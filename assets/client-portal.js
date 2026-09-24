@@ -231,6 +231,7 @@ async function handleGoogleCredential(response,tenantOverride){
     }
     state.user=result.user;if(invite)history.replaceState(null,"",location.pathname);showApp();
   }catch(err){
+    if(err.code==="EMAIL_VERIFICATION_REQUIRED"&&err.payload&&err.payload.verification_token){openEmailVerification(err.payload);return;}
     if(err.code==="CUSTOMER_TENANT_REQUIRED"&&err.payload&&Array.isArray(err.payload.tenants)&&err.payload.tenants.length){
       var sel=$("customer-tenant");sel.innerHTML=err.payload.tenants.map(function(x){return '<option value="'+esc(x.id)+'">'+esc(x.name+" · "+x.role)+'</option>';}).join("");$("tenant-choice-wrap").hidden=false;$("google-tenant-continue").hidden=false;setAuthMessage(tr("Compte")+" : "+tr("Confirmer"),false);return;
     }
@@ -294,6 +295,11 @@ function updateRegistrationNumberField(){
   input.placeholder=fr?tr("14 chiffres"):tr("Facultatif");
   input.inputMode=fr?"numeric":"text";
 }
+function openEmailVerification(result){
+  return import("./customer-email-verification.js").then(function(m){
+    m.open({token:result.verification_token,email:result.user&&result.user.email||"",onVerified:function(user){state.user=user;showApp();}});
+  }).catch(function(){setAuthMessage("Vérification e-mail momentanément indisponible.",true);});
+}
 async function submitRegistration(e){
   e.preventDefault();setAuthMessage("");
   var password=$("register-password").value,confirm=$("register-password-confirm").value;
@@ -317,9 +323,8 @@ async function submitRegistration(e){
   b&&(b.disabled=true);
   try{
     var result=await window.PGICustomerApi.register(payload);
-    state.user=result.user;
-    setAuthMessage("");
-    showApp();
+    if(result.email_verification_required&&result.verification_token){b&&(b.disabled=false);openEmailVerification(result);return;}
+    state.user=result.user;setAuthMessage("");showApp();
   }catch(err){
     var messages={
       CUSTOMER_ACCOUNT_EXISTS:"Cette adresse e-mail est déjà utilisée.",

@@ -3242,6 +3242,49 @@ export class PostgresStore{
     return result;
   }
 
+  async beginCustomerEmailVerification(principalId,record){
+    const payload={required:true,token_hash:String(record?.token_hash||""),code_hash:String(record?.code_hash||""),expires_at:String(record?.expires_at||""),resend_after:String(record?.resend_after||""),attempts:0,sent_at:String(record?.sent_at||new Date().toISOString())};
+    if(!/^[a-f0-9]{64}$/.test(payload.token_hash)||!/^[a-f0-9]{64}$/.test(payload.code_hash))throw problem(400,"INVALID_EMAIL_VERIFICATION_CHALLENGE");
+    const rows=await this.sql.unsafe("UPDATE customer_principals SET metadata=jsonb_set(COALESCE(metadata,'{}'::jsonb),'{email_verification}',$2::jsonb,true),updated_at=now() WHERE id=$1::uuid AND email_verified=false RETURNING id,email,display_name",[String(principalId),JSON.stringify(payload)]);
+    if(!rows[0])throw problem(409,"EMAIL_ALREADY_VERIFIED");return rows[0];
+  }
+
+  async customerEmailVerificationResendTarget(tokenHash){
+    const rows=await this.sql.unsafe("SELECT id,email,display_name,metadata->'email_verification' AS verification FROM customer_principals WHERE email_verified=false AND metadata#>>'{email_verification,token_hash}'=$1 LIMIT 1",[String(tokenHash)]);
+    const row=rows[0];if(!row)throw problem(400,"EMAIL_VERIFICATION_INVALID");
+    const v=row.verification||{};if(v.required!==true)throw problem(400,"EMAIL_VERIFICATION_INVALID");
+    const resendAt=Date.parse(String(v.resend_after||""));
+    if(Number.isFinite(resendAt)&&resendAt>Date.now()){const e=problem(429,"EMAIL_VERIFICATION_RESEND_TOO_SOON");e.retry_after_seconds=Math.max(1,Math.ceil((resendAt-Date.now())/1000));throw e;}
+    return row;
+  }
+
+  async refreshCustomerEmailVerification(principalId,tokenHash,record){
+    const payload={required:true,token_hash:String(tokenHash),code_hash:String(record?.code_hash||""),expires_at:String(record?.expires_at||""),resend_after:String(record?.resend_after||""),attempts:0,sent_at:String(record?.sent_at||new Date().toISOString())};
+    const rows=await this.sql.unsafe("UPDATE customer_principals SET metadata=jsonb_set(COALESCE(metadata,'{}'::jsonb),'{email_verification}',$3::jsonb,true),updated_at=now() WHERE id=$1::uuid AND email_verified=false AND metadata#>>'{email_verification,token_hash}'=$2 RETURNING id,email,display_name",[String(principalId),String(tokenHash),JSON.stringify(payload)]);
+    if(!rows[0])throw problem(409,"EMAIL_VERIFICATION_STALE");return rows[0];
+  }
+
+  async completeCustomerEmailVerification(tokenHash,codeHash,maxAttempts=5){
+    const result=await this.sql.begin(async tx=>{
+      const rows=await tx.unsafe("SELECT id,email,display_name,email_verified,metadata->'email_verification' AS verification FROM customer_principals WHERE metadata#>>'{email_verification,token_hash}'=$1 FOR UPDATE",[String(tokenHash)]);
+      const row=rows[0];if(!row)return {failure:"EMAIL_VERIFICATION_INVALID"};if(row.email_verified===true)return {row};
+      const v=row.verification||{},attempts=Math.max(0,Number(v.attempts||0));
+      if(v.required!==true)return {failure:"EMAIL_VERIFICATION_INVALID"};
+      if(attempts>=maxAttempts)return {failure:"EMAIL_VERIFICATION_LOCKED"};
+      const expiresAt=Date.parse(String(v.expires_at||""));if(!Number.isFinite(expiresAt)||expiresAt<Date.now())return {failure:"EMAIL_VERIFICATION_EXPIRED"};
+      if(String(v.code_hash||"")!==String(codeHash)){
+        const nextAttempts=attempts+1,next={...v,attempts:nextAttempts};
+        await tx.unsafe("UPDATE customer_principals SET metadata=jsonb_set(COALESCE(metadata,'{}'::jsonb),'{email_verification}',$2::jsonb,true),updated_at=now() WHERE id=$1::uuid",[String(row.id),JSON.stringify(next)]);
+        return {failure:nextAttempts>=maxAttempts?"EMAIL_VERIFICATION_LOCKED":"EMAIL_VERIFICATION_INVALID"};
+      }
+      const safe={required:false,verified_at:new Date().toISOString()};
+      const updated=(await tx.unsafe("UPDATE customer_principals SET email_verified=true,session_version=session_version+1,metadata=jsonb_set(COALESCE(metadata,'{}'::jsonb),'{email_verification}',$2::jsonb,true),updated_at=now() WHERE id=$1::uuid RETURNING id,email,display_name,email_verified,session_version",[String(row.id),JSON.stringify(safe)]))[0];
+      return {row:updated};
+    });
+    if(result.failure){const status=result.failure==="EMAIL_VERIFICATION_EXPIRED"?410:result.failure==="EMAIL_VERIFICATION_LOCKED"?429:400;throw problem(status,result.failure);}
+    return result.row;
+  }
+
   async customerGoogleSignIn(identity,invitationHash=null){
     if(!identity||identity.provider!=="google"||!identity.subject||!identity.email||identity.email_verified!==true)throw problem(400,"INVALID_GOOGLE_IDENTITY");
     return this.sql.begin(async tx=>{
@@ -3295,7 +3338,7 @@ export class PostgresStore{
     email=String(email||"").trim().toLowerCase();
     if(!email||email.length>320)return null;
     const principals=await this.sql.unsafe(
-      "SELECT p.id,p.email,p.display_name,p.status,p.preferred_locale,p.timezone,p.email_verified,p.session_version,"+
+      "SELECT p.id,p.email,p.display_name,p.status,p.preferred_locale,p.timezone,p.email_verified,p.session_version,p.metadata,"+
       " c.password_hash,c.status AS credential_status,c.failed_attempts,c.locked_until"+
       " FROM customer_principals p LEFT JOIN customer_password_credentials c ON c.customer_principal_id=p.id"+
       " WHERE p.email_normalized=$1 LIMIT 1",[email]

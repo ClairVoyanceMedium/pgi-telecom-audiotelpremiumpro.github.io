@@ -7,6 +7,7 @@ const index=read("index.html");
 const clientPortal=read("client.html");
 const clientPortalApi=read("assets/client-portal-api.js");
 const clientPortalJs=read("assets/client-portal.js");
+const customerEmailVerification=read("assets/customer-email-verification.js");
 const clientLiveFinance=read("assets/client-live-finance.js");
 const adminLiveFinance=read("assets/live-finance.js");
 const clientMobile=read("assets/client-mobile.js");
@@ -568,6 +569,9 @@ test("client portal supports autonomous professional email registration",()=>{
   for(const id of ["register-panel","customer-register-form","register-first-name","register-last-name","register-company","register-country","register-number","register-phone","register-email","register-password","register-authority","show-register","show-login","client-onboarding"])assert.ok(clientPortal.includes('id="'+id+'"'),id);
   assert.match(clientPortalApi,/\/customer\/auth\/register/);
   assert.match(clientPortalJs,/submitRegistration/);
+  assert.match(clientPortalJs,/customer-email-verification\.js/);
+  assert.match(customerEmailVerification,/\/customer\/auth\/email\/verify/);
+  assert.match(customerEmailVerification,/\/customer\/auth\/email\/resend/);
   assert.match(clientPortalJs,/COUNTRY_CODES/);
   assert.match(clientPortalJs,/authority_confirmed/);
   assert.match(clientPortalJs,/INVALID_SIRET/);

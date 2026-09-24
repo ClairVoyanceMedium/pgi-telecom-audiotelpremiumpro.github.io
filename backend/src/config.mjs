@@ -18,6 +18,12 @@ export function loadConfig(env=process.env){
   const stripePortalConfigurationId=String(env.PGI_STRIPE_PORTAL_CONFIGURATION_ID||"").trim();
   const stripePriceLookupKey=String(env.PGI_STRIPE_PRICE_LOOKUP_KEY||"pgi_audiotel_premium_pro_monthly_eur").trim();
   const stripeLiveMode=booleanValue(env.PGI_STRIPE_LIVE_MODE,false,"PGI_STRIPE_LIVE_MODE");
+  const emailVerificationEnabled=booleanValue(env.PGI_EMAIL_VERIFICATION_ENABLED,false,"PGI_EMAIL_VERIFICATION_ENABLED");
+  const brevoApiKey=String(env.PGI_BREVO_API_KEY||"").trim();
+  const brevoSandbox=booleanValue(env.PGI_BREVO_SANDBOX,false,"PGI_BREVO_SANDBOX");
+  const emailVerificationPepper=String(env.PGI_EMAIL_VERIFICATION_PEPPER||"").trim();
+  const transactionalFromEmail=String(env.PGI_TRANSACTIONAL_FROM_EMAIL||"contact.audiotel.premium.pro@gmail.com").trim().toLowerCase();
+  const transactionalFromName=String(env.PGI_TRANSACTIONAL_FROM_NAME||"PGI Telecom").trim().slice(0,120);
   const publicBaseUrl=String(env.PGI_PUBLIC_BASE_URL||(env.VERCEL_PROJECT_PRODUCTION_URL?"https://"+env.VERCEL_PROJECT_PRODUCTION_URL:"")).trim().replace(/\/$/,"");
   const telephonyUser=env.PGI_TELEPHONY_USER||"";
   const telephonyPassword=env.PGI_TELEPHONY_PASSWORD||"";
@@ -57,6 +63,12 @@ export function loadConfig(env=process.env){
   if(stripePortalConfigurationId&&!/^bpc_[A-Za-z0-9]+$/.test(stripePortalConfigurationId))throw new Error("PGI_STRIPE_PORTAL_CONFIGURATION_ID invalid");
   if(!/^[A-Za-z0-9_\-]{3,200}$/.test(stripePriceLookupKey))throw new Error("PGI_STRIPE_PRICE_LOOKUP_KEY invalid");
   if(stripeSecretKey&&stripeLiveMode!==stripeSecretKey.startsWith("sk_live_"))throw new Error("PGI_STRIPE_LIVE_MODE must match the Stripe secret key mode");
+  if(emailVerificationEnabled){
+    if(brevoApiKey.length<32)throw new Error("email verification requires PGI_BREVO_API_KEY");
+    if(emailVerificationPepper.length<32)throw new Error("email verification requires PGI_EMAIL_VERIFICATION_PEPPER >= 32 characters");
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(transactionalFromEmail))throw new Error("PGI_TRANSACTIONAL_FROM_EMAIL invalid");
+    if(!transactionalFromName)throw new Error("PGI_TRANSACTIONAL_FROM_NAME required");
+  }
 
   if(mode==="production"){
     if(authMode!=="session")throw new Error("production requires session authentication");
@@ -73,7 +85,7 @@ export function loadConfig(env=process.env){
 
   return Object.freeze({
     mode,authMode,host,port,releaseId,staticDir,trustProxy,protectMachineEndpoints,googleClientId,webauthnRpId,webauthnOrigin,
-    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,stripeSecretKey,stripeWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
+    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,stripeSecretKey,stripeWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,emailVerificationEnabled,brevoApiKey,brevoSandbox,emailVerificationPepper,transactionalFromEmail,transactionalFromName,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),
     bodyLimitBytes:integer(env.PGI_BODY_LIMIT_BYTES,262144,4096,10485760,"PGI_BODY_LIMIT_BYTES"),
@@ -81,6 +93,9 @@ export function loadConfig(env=process.env){
     heavyReadRateLimitPerMinute:integer(env.PGI_HEAVY_READ_RATE_LIMIT_PER_MINUTE,60,5,5000,"PGI_HEAVY_READ_RATE_LIMIT_PER_MINUTE"),
     writeRateLimitPerMinute:integer(env.PGI_WRITE_RATE_LIMIT_PER_MINUTE,120,5,5000,"PGI_WRITE_RATE_LIMIT_PER_MINUTE"),
     stripeWebhookToleranceSeconds:integer(env.PGI_STRIPE_WEBHOOK_TOLERANCE_SECONDS,300,60,900,"PGI_STRIPE_WEBHOOK_TOLERANCE_SECONDS"),
+    emailVerificationTtlMinutes:integer(env.PGI_EMAIL_VERIFICATION_TTL_MINUTES,10,5,60,"PGI_EMAIL_VERIFICATION_TTL_MINUTES"),
+    emailVerificationMaxAttempts:integer(env.PGI_EMAIL_VERIFICATION_MAX_ATTEMPTS,5,3,10,"PGI_EMAIL_VERIFICATION_MAX_ATTEMPTS"),
+    emailVerificationResendSeconds:integer(env.PGI_EMAIL_VERIFICATION_RESEND_SECONDS,60,30,600,"PGI_EMAIL_VERIFICATION_RESEND_SECONDS"),
     dunningGraceHours:integer(env.PGI_DUNNING_GRACE_HOURS,72,1,336,"PGI_DUNNING_GRACE_HOURS"),
     dunningWindowDays:integer(env.PGI_DUNNING_WINDOW_DAYS,14,1,60,"PGI_DUNNING_WINDOW_DAYS"),
     authMaxFailures:integer(env.PGI_AUTH_MAX_FAILURES,8,3,100,"PGI_AUTH_MAX_FAILURES"),

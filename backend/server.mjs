@@ -15,6 +15,7 @@ import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebA
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
 import {stripeProviderState,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent} from "./src/stripe-billing.mjs";
+import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendBrevoVerificationCode} from "./src/brevo-email.mjs";
 
 export async function createDefaultBackend(){
   const config=loadConfig();
@@ -151,15 +152,43 @@ export function createBackend(options={}){
         if(password.length<12||password.length>256){const e=new Error("Invalid password");e.status=400;e.code="INVALID_NEW_PASSWORD";throw e;}
         if(String(body.website||"").trim()){const e=new Error("Invalid registration");e.status=400;e.code="REGISTRATION_REJECTED";throw e;}
         const registered=await store.selfServiceRegister(body,hashPassword(password));
-        const issued=issueSession({
-          secret:config.sessionSecret,
-          user:{id:registered.id,role:"customer",name:registered.display_name||registered.email,actor_type:"customer",tenant_id:Number(registered.tenant_id),tenant_public_id:registered.tenant_public_id,customer_role:registered.customer_role,authorization_version:Number(registered.authorization_version),session_version:Number(registered.session_version)},
-          ttlSeconds:config.sessionTtlSeconds
-        });
-        return done(res,metrics,started,"customer.auth.register",201,{
-          account_created:true,onboarding:true,email_verification_required:registered.email_verified!==true,
-          user:{id:registered.id,name:registered.display_name,email:registered.email,role:registered.customer_role,tenant:{id:registered.tenant_public_id,name:registered.tenant_name,status:registered.tenant_status}}
-        },{"Set-Cookie":[customerSessionCookie(issued.token,config.sessionTtlSeconds),customerCsrfCookie(issued.csrf,config.sessionTtlSeconds)]});
+        const publicUser={id:registered.id,name:registered.display_name,email:registered.email,role:registered.customer_role,tenant:{id:registered.tenant_public_id,name:registered.tenant_name,status:registered.tenant_status}};
+        if(config.emailVerificationEnabled){
+          const challenge=createEmailVerificationChallenge(config);
+          await store.beginCustomerEmailVerification(registered.id,challenge.record);
+          try{await sendBrevoVerificationCode(config,{email:registered.email,name:registered.display_name,code:challenge.code});}
+          catch(_error){return done(res,metrics,started,"customer.auth.register_email",503,{error:{code:"EMAIL_DELIVERY_UNAVAILABLE",message:"Verification email unavailable"},account_created:true,email_verification_required:true,user:publicUser});}
+          return done(res,metrics,started,"customer.auth.register",201,{account_created:true,onboarding:true,email_verification_required:true,verification_token:challenge.token,user:publicUser});
+        }
+        const issued=issueSession({secret:config.sessionSecret,user:{id:registered.id,role:"customer",name:registered.display_name||registered.email,actor_type:"customer",tenant_id:Number(registered.tenant_id),tenant_public_id:registered.tenant_public_id,customer_role:registered.customer_role,authorization_version:Number(registered.authorization_version),session_version:Number(registered.session_version)},ttlSeconds:config.sessionTtlSeconds});
+        return done(res,metrics,started,"customer.auth.register",201,{account_created:true,onboarding:true,email_verification_required:registered.email_verified!==true,user:publicUser},{"Set-Cookie":[customerSessionCookie(issued.token,config.sessionTtlSeconds),customerCsrfCookie(issued.csrf,config.sessionTtlSeconds)]});
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/customer/auth/email/verify"){
+        if(!config.emailVerificationEnabled)return done(res,metrics,started,"customer.auth.email_verify",404,{error:{code:"EMAIL_VERIFICATION_DISABLED"}});
+        requireSameOriginBrowser(req);
+        const body=await readJson(req,config.bodyLimitBytes),token=String(body.token||"").trim(),code=String(body.code||"").trim();
+        if(token.length<32||!/^[0-9]{6}$/.test(code)){const e=new Error("Invalid email verification");e.status=400;e.code="EMAIL_VERIFICATION_INVALID";throw e;}
+        const verified=await store.completeCustomerEmailVerification(verificationTokenHash(token),emailVerificationCodeHash(config,token,code),config.emailVerificationMaxAttempts);
+        const auth=await store.customerAuthLookup(verified.email);
+        const memberships=(auth?.memberships||[]).filter(x=>x.status==="active"&&["active","pending"].includes(x.tenant_status));
+        if(memberships.length!==1)return done(res,metrics,started,"customer.auth.email_verify",409,{error:{code:"CUSTOMER_TENANT_REQUIRED"},tenants:memberships.map(x=>({id:x.public_id,slug:x.slug,name:x.display_name,role:x.role}))});
+        const membership=memberships[0];await store.recordCustomerAuthSuccess(auth.id);const refreshed=await store.customerAuthLookup(verified.email);
+        const current=(refreshed?.memberships||[]).find(x=>Number(x.tenant_id)===Number(membership.tenant_id))||membership;
+        const issued=issueSession({secret:config.sessionSecret,user:{id:auth.id,role:"customer",name:auth.display_name||auth.email,actor_type:"customer",tenant_id:Number(current.tenant_id),tenant_public_id:current.public_id,customer_role:current.role,authorization_version:Number(current.authorization_version),session_version:Number(refreshed?.session_version||verified.session_version)},ttlSeconds:config.sessionTtlSeconds});
+        return done(res,metrics,started,"customer.auth.email_verify",200,{email_verified:true,user:{id:auth.id,name:auth.display_name||auth.email,email:auth.email,role:current.role,tenant:{id:current.public_id,name:current.display_name}}},{"Set-Cookie":[customerSessionCookie(issued.token,config.sessionTtlSeconds),customerCsrfCookie(issued.csrf,config.sessionTtlSeconds)]});
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/customer/auth/email/resend"){
+        if(!config.emailVerificationEnabled)return done(res,metrics,started,"customer.auth.email_resend",404,{error:{code:"EMAIL_VERIFICATION_DISABLED"}});
+        requireSameOriginBrowser(req);
+        const body=await readJson(req,config.bodyLimitBytes),token=String(body.token||"").trim();
+        if(token.length<32){const e=new Error("Invalid email verification");e.status=400;e.code="EMAIL_VERIFICATION_INVALID";throw e;}
+        const tokenHash=verificationTokenHash(token),target=await store.customerEmailVerificationResendTarget(tokenHash),challenge=createEmailVerificationChallenge(config,token);
+        try{await sendBrevoVerificationCode(config,{email:target.email,name:target.display_name||target.email,code:challenge.code});}
+        catch(_error){return done(res,metrics,started,"customer.auth.email_resend",503,{error:{code:"EMAIL_DELIVERY_UNAVAILABLE",message:"Verification email unavailable"}});}
+        await store.refreshCustomerEmailVerification(target.id,tokenHash,challenge.record);
+        return done(res,metrics,started,"customer.auth.email_resend",200,{sent:true,resend_after_seconds:config.emailVerificationResendSeconds});
       }
 
       if(method==="POST"&&pathname==="/api/v1/customer/auth/google"){
@@ -204,6 +233,14 @@ export function createBackend(options={}){
           metrics.authFailures++;recordAuthFailure(authKey,config,authBuckets);
           if(auth?.id)await store.recordCustomerAuthFailure(auth.id);
           const e=new Error("Invalid credentials");e.status=401;e.code="INVALID_CREDENTIALS";throw e;
+        }
+        if(config.emailVerificationEnabled&&auth.email_verified!==true&&auth.metadata?.email_verification?.required===true){
+          const challenge=createEmailVerificationChallenge(config);
+          await store.beginCustomerEmailVerification(auth.id,challenge.record);
+          try{await sendBrevoVerificationCode(config,{email:auth.email,name:auth.display_name||auth.email,code:challenge.code});}
+          catch(_error){return done(res,metrics,started,"customer.auth.login_email",503,{error:{code:"EMAIL_DELIVERY_UNAVAILABLE",message:"Verification email unavailable"}});}
+          authBuckets.delete(authKey);
+          return done(res,metrics,started,"customer.auth.login",403,{error:{code:"EMAIL_VERIFICATION_REQUIRED",message:"Email verification required"},email_verification_required:true,verification_token:challenge.token,user:{id:auth.id,name:auth.display_name||auth.email,email:auth.email}});
         }
         const memberships=(auth.memberships||[]).filter(x=>x.status==="active"&&["active","pending"].includes(x.tenant_status));
         let membership=null;
