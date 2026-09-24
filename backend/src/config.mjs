@@ -81,6 +81,8 @@ export function loadConfig(env=process.env){
     heavyReadRateLimitPerMinute:integer(env.PGI_HEAVY_READ_RATE_LIMIT_PER_MINUTE,60,5,5000,"PGI_HEAVY_READ_RATE_LIMIT_PER_MINUTE"),
     writeRateLimitPerMinute:integer(env.PGI_WRITE_RATE_LIMIT_PER_MINUTE,120,5,5000,"PGI_WRITE_RATE_LIMIT_PER_MINUTE"),
     stripeWebhookToleranceSeconds:integer(env.PGI_STRIPE_WEBHOOK_TOLERANCE_SECONDS,300,60,900,"PGI_STRIPE_WEBHOOK_TOLERANCE_SECONDS"),
+    dunningGraceHours:integer(env.PGI_DUNNING_GRACE_HOURS,72,1,336,"PGI_DUNNING_GRACE_HOURS"),
+    dunningWindowDays:integer(env.PGI_DUNNING_WINDOW_DAYS,14,1,60,"PGI_DUNNING_WINDOW_DAYS"),
     authMaxFailures:integer(env.PGI_AUTH_MAX_FAILURES,8,3,100,"PGI_AUTH_MAX_FAILURES"),
     authFailureWindowSeconds:integer(env.PGI_AUTH_FAILURE_WINDOW_SECONDS,900,60,86400,"PGI_AUTH_FAILURE_WINDOW_SECONDS"),
     outboxWorkerStaleSeconds:integer(env.PGI_OUTBOX_WORKER_STALE_SECONDS,15,5,3600,"PGI_OUTBOX_WORKER_STALE_SECONDS"),
@@ -101,7 +103,7 @@ export function loadConfig(env=process.env){
     expertCostHtPerMin:number(env.PGI_EXPERT_COST_HT_PER_MIN,0.18,0,100,"PGI_EXPERT_COST_HT_PER_MIN"),
     technicalCostHtPerCall:number(env.PGI_TECHNICAL_COST_HT_PER_CALL,0,0,100,"PGI_TECHNICAL_COST_HT_PER_CALL"),
     reconciliationToleranceHt:number(env.PGI_RECONCILIATION_TOLERANCE_HT,0.01,0,100,"PGI_RECONCILIATION_TOLERANCE_HT"),
-    version:env.PGI_VERSION||"1.30.5"
+    version:env.PGI_VERSION||"1.30.6"
   });
 }
 

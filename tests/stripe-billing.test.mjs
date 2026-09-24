@@ -67,11 +67,14 @@ test("Stripe renewal invoices refresh the subscription before changing billing a
 
     const failed=await normalizeStripeBillingEvent({
       id:"evt_invoice_failed",type:"invoice.payment_failed",created:now+1,
-      data:{object:{id:"in_failed",customer:"cus_invoice_1",parent:{subscription_details:{subscription:"sub_Invoice123"}}}}
+      data:{object:{id:"in_failed",customer:"cus_invoice_1",attempt_count:1,next_payment_attempt:now+3600,parent:{subscription_details:{subscription:"sub_Invoice123"}}}}
     },{stripeSecretKey:"sk_test_example",stripeApiVersion:"2026-08-26.dahlia"});
     assert.equal(failed.event_type,"invoice.payment_failed");
     assert.equal(failed.last_payment_status,"failed");
     assert.equal(failed.status,"past_due");
+    assert.equal(failed.provider_invoice_reference,"in_failed");
+    assert.equal(failed.payment_attempt_count,1);
+    assert.ok(Date.parse(failed.next_payment_attempt)>Date.parse(failed.event_time));
 
     const action=await normalizeStripeBillingEvent({
       id:"evt_invoice_action",type:"invoice.payment_action_required",created:now+2,
@@ -79,6 +82,14 @@ test("Stripe renewal invoices refresh the subscription before changing billing a
     },{stripeSecretKey:"sk_test_example",stripeApiVersion:"2026-08-26.dahlia"});
     assert.equal(action.last_payment_status,"action_required");
     assert.equal(action.status,"past_due");
+
+    const retryUpdate=await normalizeStripeBillingEvent({
+      id:"evt_invoice_updated",type:"invoice.updated",created:now+3,
+      data:{object:{id:"in_failed",customer:"cus_invoice_1",attempt_count:2,next_payment_attempt:now+7200,parent:{subscription_details:{subscription:"sub_Invoice123"}}}}
+    },{stripeSecretKey:"sk_test_example",stripeApiVersion:"2026-08-26.dahlia"});
+    assert.equal(retryUpdate.last_payment_status,"retry_scheduled");
+    assert.equal(retryUpdate.payment_attempt_count,2);
+    assert.equal(retryUpdate.status,"past_due");
   }finally{globalThis.fetch=original;}
 });
 

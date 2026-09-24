@@ -740,7 +740,7 @@ export class PostgresStore{
         if(!sva)throw problem(404,"SVA_NUMBER_NOT_ROUTABLE");
         if(sva.tenant_id==null)throw problem(409,"SVA_TENANT_NOT_CONFIGURED");
         tenantId=Number(sva.tenant_id);marketId=sva.market_id==null?null:Number(sva.market_id);svaId=Number(sva.id);
-        const access=await tx.unsafe("SELECT pgi_tenant_has_premium_call_access($1,$2,now()) AS allowed",[tenantId,marketId]);
+        const access=await tx.unsafe("SELECT pgi_tenant_has_premium_routing_access($1,$2,now()) AS allowed",[tenantId,marketId]);
         if(!access[0]?.allowed)throw problem(402,"SVA_SUBSCRIPTION_REQUIRED");
         if(sva.tenant_type!=="internal"){
           const assignments=await tx.unsafe("SELECT id FROM tenant_number_assignments WHERE tenant_id=$1 AND sva_number_id=$2 AND status='active' AND (valid_from IS NULL OR valid_from<=now()) AND (valid_to IS NULL OR valid_to>=now()) LIMIT 1",[tenantId,svaId]);
@@ -881,7 +881,7 @@ export class PostgresStore{
         tenantId=Number(sva.tenant_id);
         marketId=sva.market_id==null?null:Number(sva.market_id);
         const accessRows=await tx.unsafe(
-          "SELECT pgi_tenant_has_premium_call_access($1,$2,now()) AS allowed",
+          "SELECT pgi_tenant_has_premium_routing_access($1,$2,now()) AS allowed",
           [tenantId,marketId]
         );
         if(!accessRows[0]?.allowed)throw problem(402,"SVA_SUBSCRIPTION_REQUIRED");
@@ -2115,6 +2115,9 @@ export class PostgresStore{
     const providerPriceCurrency=payload.provider_price_currency==null?null:String(payload.provider_price_currency).trim().toUpperCase();
     const providerBillingInterval=payload.provider_billing_interval==null?null:String(payload.provider_billing_interval).trim().toLowerCase();
     const providerIntervalCount=payload.provider_interval_count==null?null:Number(payload.provider_interval_count);
+    const providerInvoiceReference=payload.provider_invoice_reference==null?null:String(payload.provider_invoice_reference).trim();
+    const paymentAttemptCount=payload.payment_attempt_count==null?null:Number(payload.payment_attempt_count);
+    const nextPaymentAttempt=payload.next_payment_attempt||null;
     if(!/^[a-z0-9_.-]{2,40}$/.test(provider))throw problem(400,"INVALID_BILLING_PROVIDER");
     if(!eventId||eventId.length>200)throw problem(400,"INVALID_BILLING_EVENT_ID");
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantPublicId))throw problem(400,"INVALID_BILLING_TENANT");
@@ -2135,13 +2138,17 @@ export class PostgresStore{
     if(providerPriceCurrency&&!/^[A-Z]{3}$/.test(providerPriceCurrency))throw problem(400,"INVALID_PROVIDER_PRICE_CURRENCY");
     if(providerBillingInterval&& !["month","year"].includes(providerBillingInterval))throw problem(400,"INVALID_PROVIDER_BILLING_INTERVAL");
     if(providerIntervalCount!=null&&(!Number.isInteger(providerIntervalCount)||providerIntervalCount<=0))throw problem(400,"INVALID_PROVIDER_INTERVAL_COUNT");
+    if(providerInvoiceReference&&providerInvoiceReference.length>200)throw problem(400,"INVALID_PROVIDER_INVOICE_REFERENCE");
+    if(paymentAttemptCount!=null&&(!Number.isInteger(paymentAttemptCount)||paymentAttemptCount<0))throw problem(400,"INVALID_PAYMENT_ATTEMPT_COUNT");
+    if(nextPaymentAttempt&&!Number.isFinite(Date.parse(nextPaymentAttempt)))throw problem(400,"INVALID_NEXT_PAYMENT_ATTEMPT");
     const normalized={
       provider,provider_event_id:eventId,tenant_public_id:tenantPublicId,provider_customer_reference:providerCustomer,
       provider_subscription_reference:providerSubscription,event_type:eventType,status,event_time:eventTime,
       price_version_id:priceVersionId,market_id:marketId,current_period_start:periodStart,current_period_end:periodEnd,
       cancel_at_period_end:!!payload.cancel_at_period_end,last_payment_status:lastPaymentStatus,ends_at:endsAtInput,
       provider_price_reference:providerPriceReference,provider_price_amount_minor:providerPriceAmount,provider_price_currency:providerPriceCurrency,
-      provider_billing_interval:providerBillingInterval,provider_interval_count:providerIntervalCount
+      provider_billing_interval:providerBillingInterval,provider_interval_count:providerIntervalCount,
+      provider_invoice_reference:providerInvoiceReference,payment_attempt_count:paymentAttemptCount,next_payment_attempt:nextPaymentAttempt
     };
     const hash=createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
     const result=await this.sql.begin(async tx=>{
@@ -2176,6 +2183,7 @@ export class PostgresStore{
       if(subscriptions.length&&Number(subscriptions[0].tenant_id)!==Number(tenant.id))throw problem(409,"BILLING_SUBSCRIPTION_TENANT_MISMATCH");
       if(subscriptions.length&&providerCustomer&&subscriptions[0].provider_customer_reference&&String(subscriptions[0].provider_customer_reference)!==providerCustomer)throw problem(409,"BILLING_CUSTOMER_REFERENCE_MISMATCH");
       let subscriptionId;
+      let appliedLatest=!subscriptions.length;
       const startsAt=periodStart||eventTime;
       const endsAt=["cancelled","ended"].includes(status)?(endsAtInput||eventTime):null;
       if(!subscriptions.length){
@@ -2193,6 +2201,7 @@ export class PostgresStore{
         subscriptionId=Number(subscriptions[0].id);
         const last=Date.parse(subscriptions[0].last_event_at||"");
         if(!Number.isFinite(last)||Date.parse(eventTime)>=last){
+          appliedLatest=true;
           await tx.unsafe(
             "UPDATE tenant_subscriptions SET service_plan_id=$2,market_id=$3,status=$4,billing_currency=$5,"+
             " current_period_start=$6::timestamptz,current_period_end=$7::timestamptz,ends_at=$8::timestamptz,price_version_id=$9,"+
@@ -2215,7 +2224,32 @@ export class PostgresStore{
         "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'subscription.changed','tenant_subscription',$2,$3::jsonb)",
         [tenant.id,String(subscriptionId),JSON.stringify({status,provider,event_type:eventType})]
       );
-      if(status==="active"&&periodEnd&&Date.parse(periodEnd)>Date.parse(eventTime)&&(!lastPaymentStatus||["paid","succeeded","success"].includes(lastPaymentStatus))){
+      const paidCurrent=status==="active"&&periodEnd&&Date.parse(periodEnd)>Date.parse(eventTime)&&(!lastPaymentStatus||["paid","succeeded","success"].includes(lastPaymentStatus));
+      if(appliedLatest&&paidCurrent){
+        await tx.unsafe(
+          "UPDATE tenant_subscriptions SET recovery_stage='current',dunning_started_at=NULL,dunning_grace_until=NULL,dunning_deadline_at=NULL,"+
+          " payment_attempt_count=0,next_payment_attempt=NULL,last_invoice_reference=COALESCE($2,last_invoice_reference),updated_at=now() WHERE id=$1",
+          [subscriptionId,providerInvoiceReference]
+        );
+      }else if(appliedLatest&&(status==="past_due"||["invoice.payment_failed","invoice.payment_action_required","invoice.updated"].includes(eventType))){
+        const graceUntil=new Date(Date.parse(eventTime)+Number(this.config.dunningGraceHours||72)*3600000).toISOString();
+        const deadlineAt=new Date(Date.parse(eventTime)+Number(this.config.dunningWindowDays||14)*86400000).toISOString();
+        await tx.unsafe(
+          "UPDATE tenant_subscriptions SET dunning_started_at=COALESCE(dunning_started_at,$2::timestamptz),"+
+          " dunning_grace_until=COALESCE(dunning_grace_until,$3::timestamptz),dunning_deadline_at=COALESCE(dunning_deadline_at,$4::timestamptz),"+
+          " recovery_stage=CASE WHEN COALESCE(dunning_deadline_at,$4::timestamptz)<=now() THEN 'suspended'"+
+          " WHEN COALESCE(dunning_grace_until,$3::timestamptz)<=now() THEN 'retrying' ELSE 'grace' END,"+
+          " payment_attempt_count=GREATEST(payment_attempt_count,COALESCE($5,0)),next_payment_attempt=$6::timestamptz,"+
+          " last_invoice_reference=COALESCE($7,last_invoice_reference),updated_at=now() WHERE id=$1",
+          [subscriptionId,eventTime,graceUntil,deadlineAt,paymentAttemptCount,nextPaymentAttempt,providerInvoiceReference]
+        );
+      }else if(appliedLatest&&["suspended","cancelled","ended"].includes(status)){
+        await tx.unsafe(
+          "UPDATE tenant_subscriptions SET recovery_stage='suspended',next_payment_attempt=NULL,last_invoice_reference=COALESCE($2,last_invoice_reference),updated_at=now() WHERE id=$1",
+          [subscriptionId,providerInvoiceReference]
+        );
+      }
+      if(appliedLatest&&paidCurrent){
         await tx.unsafe(
           "UPDATE tenant_admin_alerts SET state='resolved',resolved_at=now(),updated_at=now() WHERE tenant_id=$1 AND subscription_id=$2 AND alert_type='subscription_unpaid' AND state<>'resolved'",
           [tenant.id,subscriptionId]
@@ -3010,32 +3044,61 @@ export class PostgresStore{
 
   async scanUnpaidSubscriptions(limit=500){
     limit=clampInt(limit,500,1,2000);
+    const graceHours=Number(this.config.dunningGraceHours||72);
+    const windowDays=Number(this.config.dunningWindowDays||14);
     const alerts=await this.sql.begin(async tx=>{
       await tx.unsafe(
-        "UPDATE tenant_subscriptions s SET status='past_due',last_payment_status=COALESCE(NULLIF(last_payment_status,''),'unpaid'),updated_at=now()"+
+        "UPDATE tenant_subscriptions s SET status='past_due',last_payment_status=COALESCE(NULLIF(last_payment_status,''),'unpaid'),"+
+        " recovery_stage='grace',dunning_started_at=COALESCE(dunning_started_at,now()),"+
+        " dunning_grace_until=COALESCE(dunning_grace_until,now()+($1::int*interval '1 hour')),"+
+        " dunning_deadline_at=COALESCE(dunning_deadline_at,now()+($2::int*interval '1 day')),updated_at=now()"+
         " FROM service_plans p,tenants t WHERE p.id=s.service_plan_id AND t.id=s.tenant_id AND p.plan_key='external-sva-access'"+
-        " AND t.tenant_type<>'internal' AND s.status='active' AND s.current_period_end IS NOT NULL AND s.current_period_end<=now()"
+        " AND t.tenant_type<>'internal' AND s.status='active' AND s.current_period_end IS NOT NULL AND s.current_period_end<=now()",
+        [graceHours,windowDays]
+      );
+      await tx.unsafe(
+        "UPDATE tenant_subscriptions s SET dunning_started_at=COALESCE(dunning_started_at,now()),"+
+        " dunning_grace_until=COALESCE(dunning_grace_until,now()+($1::int*interval '1 hour')),"+
+        " dunning_deadline_at=COALESCE(dunning_deadline_at,now()+($2::int*interval '1 day'))"+
+        " FROM service_plans p,tenants t WHERE p.id=s.service_plan_id AND t.id=s.tenant_id AND p.plan_key='external-sva-access'"+
+        " AND t.tenant_type<>'internal' AND s.status='past_due' AND s.dunning_started_at IS NULL",
+        [graceHours,windowDays]
+      );
+      await tx.unsafe(
+        "UPDATE tenant_subscriptions SET recovery_stage=CASE WHEN dunning_deadline_at<=now() THEN 'suspended'"+
+        " WHEN dunning_grace_until<=now() THEN 'retrying' ELSE 'grace' END,updated_at=now()"+
+        " WHERE status='past_due' AND dunning_started_at IS NOT NULL AND recovery_stage<>'suspended'"
       );
       return tx.unsafe(
         "WITH due AS ("+
-        " SELECT s.id AS subscription_id,s.tenant_id,t.public_id,t.display_name,t.country_code,s.current_period_end,s.status,s.last_payment_status"+
+        " SELECT s.id AS subscription_id,s.tenant_id,t.public_id,t.display_name,t.country_code,s.current_period_end,s.status,s.last_payment_status,"+
+        " s.recovery_stage,s.dunning_started_at,s.dunning_grace_until,s.dunning_deadline_at,s.payment_attempt_count,s.next_payment_attempt"+
         " FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id JOIN tenants t ON t.id=s.tenant_id"+
         " WHERE p.plan_key='external-sva-access' AND t.tenant_type<>'internal' AND t.status<>'closed'"+
-        " AND (s.status IN ('past_due','suspended') OR (s.current_period_end IS NOT NULL AND s.current_period_end<=now())"+
-        " OR lower(COALESCE(s.last_payment_status,'')) IN ('failed','unpaid','declined','past_due'))"+
-        " ORDER BY COALESCE(s.current_period_end,now()) ASC,s.id ASC LIMIT $1"+
+        " AND (s.status IN ('past_due','suspended') OR s.recovery_stage<>'current' OR (s.current_period_end IS NOT NULL AND s.current_period_end<=now())"+
+        " OR lower(COALESCE(s.last_payment_status,'')) IN ('failed','unpaid','declined','past_due','action_required','retry_scheduled'))"+
+        " ORDER BY COALESCE(s.dunning_deadline_at,s.current_period_end,now()) ASC,s.id ASC LIMIT $1"+
         "), ins AS ("+
         " INSERT INTO tenant_admin_alerts(alert_key,tenant_id,subscription_id,alert_type,severity,title,message,due_at,details)"+
-        " SELECT 'subscription_unpaid:'||d.subscription_id||':'||COALESCE(EXTRACT(EPOCH FROM d.current_period_end)::bigint::text,d.status),d.tenant_id,d.subscription_id,"+
-        " 'subscription_unpaid','critical','Abonnement impayé','Abonnement mensuel non réglé : accès SVA bloqué.',d.current_period_end,"+
-        " jsonb_build_object('tenant_public_id',d.public_id,'tenant',d.display_name,'country_code',d.country_code,'subscription_status',d.status,'last_payment_status',d.last_payment_status)"+
-        " FROM due d ON CONFLICT(alert_key) DO NOTHING"+
+        " SELECT 'subscription_unpaid:'||d.subscription_id||':'||COALESCE(EXTRACT(EPOCH FROM d.dunning_started_at)::bigint::text,'legacy'),d.tenant_id,d.subscription_id,"+
+        " 'subscription_unpaid',CASE WHEN d.recovery_stage='suspended' THEN 'critical' ELSE 'warning' END,"+
+        " CASE WHEN d.recovery_stage='suspended' THEN 'Abonnement suspendu' WHEN d.recovery_stage='retrying' THEN 'Paiement en cours de récupération' ELSE 'Paiement à régulariser' END,"+
+        " CASE WHEN d.recovery_stage='suspended' THEN 'Délai de récupération expiré : accès SVA suspendu jusqu’au règlement.'"+
+        " WHEN d.recovery_stage='retrying' THEN 'Le prestataire de paiement poursuit les relances automatiques ; le service existant reste maintenu jusqu’à l’échéance de récupération.'"+
+        " ELSE 'Paiement non abouti : service existant maintenu pendant le délai de grâce.' END,d.dunning_deadline_at,"+
+        " jsonb_build_object('tenant_public_id',d.public_id,'tenant',d.display_name,'country_code',d.country_code,'subscription_status',d.status,"+
+        " 'last_payment_status',d.last_payment_status,'recovery_stage',d.recovery_stage,'dunning_grace_until',d.dunning_grace_until,"+
+        " 'dunning_deadline_at',d.dunning_deadline_at,'payment_attempt_count',d.payment_attempt_count,'next_payment_attempt',d.next_payment_attempt)"+
+        " FROM due d ON CONFLICT(alert_key) DO UPDATE SET severity=EXCLUDED.severity,title=EXCLUDED.title,message=EXCLUDED.message,due_at=EXCLUDED.due_at,"+
+        " details=EXCLUDED.details,last_detected_at=now(),updated_at=now(),state=CASE WHEN tenant_admin_alerts.state='resolved' OR tenant_admin_alerts.details->>'recovery_stage' IS DISTINCT FROM EXCLUDED.details->>'recovery_stage' THEN 'open' ELSE tenant_admin_alerts.state END,"+
+        " acknowledged_at=CASE WHEN tenant_admin_alerts.details->>'recovery_stage' IS DISTINCT FROM EXCLUDED.details->>'recovery_stage' THEN NULL ELSE tenant_admin_alerts.acknowledged_at END,"+
+        " acknowledged_by=CASE WHEN tenant_admin_alerts.details->>'recovery_stage' IS DISTINCT FROM EXCLUDED.details->>'recovery_stage' THEN NULL ELSE tenant_admin_alerts.acknowledged_by END,resolved_at=NULL"+
         " RETURNING id,tenant_id,subscription_id,alert_type,severity,state,title,message,due_at,details,first_detected_at,last_detected_at"+
         ") SELECT i.*,t.public_id AS tenant_public_id,t.display_name AS tenant,t.country_code FROM ins i JOIN tenants t ON t.id=i.tenant_id",
         [limit]
       );
     });
-    for(const a of alerts)this.eventBus.publish("subscription.unpaid",{alert_id:Number(a.id),tenant_public_id:a.tenant_public_id,tenant:a.tenant,country_code:a.country_code,due_at:a.due_at});
+    for(const a of alerts)this.eventBus.publish("subscription.unpaid",{alert_id:Number(a.id),tenant_public_id:a.tenant_public_id,tenant:a.tenant,country_code:a.country_code,due_at:a.due_at,recovery_stage:a.details?.recovery_stage||null});
     return alerts;
   }
 
@@ -3555,12 +3618,14 @@ export class PostgresStore{
       ))[0]||null;
       const subscription=(await tx.unsafe(
         "SELECT s.id,s.status,s.billing_currency,s.current_period_start,s.current_period_end,s.cancel_at_period_end,s.last_payment_status,"+
-        " s.billing_provider,s.provider_customer_reference,s.provider_subscription_reference,s.price_version_id"+
+        " s.billing_provider,s.provider_customer_reference,s.provider_subscription_reference,s.price_version_id,s.recovery_stage,s.dunning_started_at,"+
+        " s.dunning_grace_until,s.dunning_deadline_at,s.payment_attempt_count,s.next_payment_attempt,s.last_invoice_reference"+
         " FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id"+
         " WHERE s.tenant_id=$1 AND p.plan_key='external-sva-access' ORDER BY s.created_at DESC,s.id DESC LIMIT 1",
         [id]
       ))[0]||null;
       const access=(await tx.unsafe("SELECT pgi_tenant_has_premium_call_access($1,NULL,now()) AS allowed",[id]))[0];
+      const routingAccess=(await tx.unsafe("SELECT pgi_tenant_has_premium_routing_access($1,NULL,now()) AS allowed",[id]))[0];
       return {
         tenant:{id:tenant.public_id,name:tenant.display_name,billing_email:tenant.billing_email,country_code:tenant.country_code,locale:tenant.preferred_locale,currency:billingCurrency,timezone:tenant.timezone,status:tenant.status},
         offer,
@@ -3568,6 +3633,7 @@ export class PostgresStore{
         pricing_state:offer?"local_price_ready":referenceOffer?"local_conversion_required":"unavailable",
         subscription,
         premium_call_access:Boolean(access?.allowed),
+        premium_routing_access:Boolean(routingAccess?.allowed),
         billing_currency:{currency:billingCurrency,source:billingDefault?.source||"tenant_default",catalog_version:billingDefault?.catalog_version||null,accepted_currencies:billingDefault?.accepted_currencies||[billingCurrency],local_price_configured:Boolean(offer)},
         checkout_prefill:{email:tenant.billing_email||null,locale:tenant.preferred_locale,country_code:tenant.country_code,currency:billingCurrency},
         return_paths:{success:"client.html?billing=success",cancel:"client.html?billing=cancelled"}
@@ -4115,9 +4181,10 @@ export class PostgresStore{
         " FROM tenant_scoped_revenue_distributions ORDER BY period_end DESC,id DESC LIMIT 24"
       );
       const subscriptions=await tx.unsafe(
-        "SELECT id,market_id,status,billing_currency,starts_at,current_period_start,current_period_end,ends_at,cancel_at_period_end,"+
-        " last_payment_status,last_event_at,plan_key,plan_name,amount_minor,price_currency,billing_interval,interval_count"+
-        " FROM tenant_scoped_subscriptions ORDER BY starts_at DESC,id DESC LIMIT 10"
+        "SELECT v.id,v.market_id,v.status,v.billing_currency,v.starts_at,v.current_period_start,v.current_period_end,v.ends_at,v.cancel_at_period_end,"+
+        " v.last_payment_status,v.last_event_at,v.plan_key,v.plan_name,v.amount_minor,v.price_currency,v.billing_interval,v.interval_count,"+
+        " s.recovery_stage,s.dunning_started_at,s.dunning_grace_until,s.dunning_deadline_at,s.payment_attempt_count,s.next_payment_attempt,s.last_invoice_reference"+
+        " FROM tenant_scoped_subscriptions v JOIN tenant_subscriptions s ON s.id=v.id ORDER BY v.starts_at DESC,v.id DESC LIMIT 10"
       );
       const destinations=await tx.unsafe(
         "SELECT id,sva_number_id,label,destination_type,destination_uri,priority,status,failover_enabled,max_concurrent_calls,active_calls,last_assigned_at"+

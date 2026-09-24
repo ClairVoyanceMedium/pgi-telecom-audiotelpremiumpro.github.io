@@ -1,3 +1,12 @@
+## 1.30.6 — Revenue Recovery Stripe & continuité SVA — 2026-09-24
+
+- délai de grâce de 72 heures après le premier échec de renouvellement ;
+- fenêtre de récupération de 14 jours alignée sur Stripe Smart Retries ;
+- séparation entre maintien temporaire du routage existant et droit strict d’activer un nouveau service ;
+- suivi du nombre de tentatives, de la prochaine tentative et de la facture concernée ;
+- suspension automatique à l’échéance, avec rétablissement automatique après paiement ;
+- régularisation depuis le Stripe Customer Portal et alertes administrateur progressives.
+
 ## 1.30.5 — Checkout Stripe : clarté contractuelle — 2026-09-24
 
 - description d’abonnement transmise à Stripe sans tarif codé en dur ;

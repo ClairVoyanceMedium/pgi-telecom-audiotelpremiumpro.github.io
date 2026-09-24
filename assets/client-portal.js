@@ -123,9 +123,17 @@ function renderSettlements(data){
 }
 function renderSubscriptions(data){
   var rows=data.subscriptions||[],el=$("subscription-list"),provider=data.billing_provider||{},offer=data.billing_offer||null,billingSummary=data.billing_summary||{},currencyInfo=billingSummary.billing_currency||{};
-  el.innerHTML=rows.length?rows.slice(0,3).map(function(x){var price=x.amount_minor!=null?money(n(x.amount_minor)/100,x.price_currency||x.billing_currency)+" TTC / "+(x.billing_interval==="year"?"an":"mois"):"Tarif contractuel";return '<div class="cp-row"><div><strong>'+esc(x.plan_name||"Abonnement Audiotel")+'</strong><span>'+esc(price+" · période jusqu’au "+dateOnly(x.current_period_end))+'</span></div>'+chip(x.status)+'</div>';}).join(""):'<p class="cp-empty">Aucun abonnement actif pour le moment.</p>';
+  el.innerHTML=rows.length?rows.slice(0,3).map(function(x){
+    var price=x.amount_minor!=null?money(n(x.amount_minor)/100,x.price_currency||x.billing_currency)+" TTC / "+(x.billing_interval==="year"?"an":"mois"):"Tarif contractuel";
+    var stage=String(x.recovery_stage||"current"),detail=price+" · période jusqu’au "+dateOnly(x.current_period_end);
+    if(stage==="grace")detail+=" · paiement à régulariser, service maintenu jusqu’au "+dateOnly(x.dunning_grace_until);
+    if(stage==="retrying")detail+=" · relances automatiques en cours jusqu’au "+dateOnly(x.dunning_deadline_at);
+    if(stage==="suspended")detail+=" · accès SVA suspendu jusqu’au règlement";
+    return '<div class="cp-row"><div><strong>'+esc(x.plan_name||"Abonnement Audiotel")+'</strong><span>'+esc(detail)+'</span></div>'+chip(stage==="current"?x.status:stage)+'</div>';
+  }).join(""):'<p class="cp-empty">Aucun abonnement actif pour le moment.</p>';
   var stateEl=$("client-billing-provider-state"),chipEl=$("client-billing-provider-chip"),start=$("client-billing-start"),manage=$("client-billing-manage"),offerDetail=$("client-billing-offer-detail"),offerChip=$("client-billing-offer-chip"),consent=$("client-billing-consent");
   var currentSubscription=rows.some(function(x){return ["active","past_due"].includes(String(x.status||"").toLowerCase());});
+  var needsRecovery=rows.some(function(x){return ["grace","retrying","suspended"].includes(String(x.recovery_stage||"").toLowerCase());});
   if(consent)consent.hidden=currentSubscription;
   var connected=provider.connection_state&&provider.connection_state!=="not_connected";
   if(offer&&offer.amount_minor!=null){
@@ -138,10 +146,10 @@ function renderSubscriptions(data){
     if(offerDetail)offerDetail.textContent=tr("Devise automatique")+" : "+resolvedCurrency+" · "+tr("tarif local à configurer");
     if(offerChip){offerChip.textContent=resolvedCurrency;offerChip.className="cp-chip warn";}
   }
-  if(stateEl)stateEl.textContent=connected?tr("Prestataire de paiement configuré."):tr("Architecture de paiement prête, prestataire non connecté.");
-  if(chipEl){chipEl.textContent=connected?tr("PRÊT"):tr("NON CONNECTÉ");chipEl.className="cp-chip "+(connected?"ok":"neutral");}
+  if(stateEl)stateEl.textContent=needsRecovery?tr("Paiement à régulariser. Utilisez le portail sécurisé pour mettre à jour votre moyen de paiement."):connected?tr("Prestataire de paiement configuré."):tr("Architecture de paiement prête, prestataire non connecté.");
+  if(chipEl){chipEl.textContent=needsRecovery?tr("À RÉGULARISER"):connected?tr("PRÊT"):tr("NON CONNECTÉ");chipEl.className="cp-chip "+(needsRecovery?"warn":connected?"ok":"neutral");}
   if(start){start.disabled=false;start.setAttribute("aria-disabled",String(!provider.checkout_available||!offer));start.title=!offer?tr("Tarif indisponible pour ce compte."):!provider.checkout_available?tr("Paiement en ligne pas encore activé."):"";}
-  if(manage){manage.disabled=false;manage.setAttribute("aria-disabled",String(!provider.customer_portal_available||!rows.length));manage.title=!rows.length?tr("Aucun abonnement actif à gérer."):!provider.customer_portal_available?tr("Portail de facturation pas encore activé."):"";}
+  if(manage){manage.textContent=needsRecovery?tr("Régulariser mon paiement"):tr("Gérer mon abonnement");manage.disabled=false;manage.setAttribute("aria-disabled",String(!provider.customer_portal_available||!rows.length));manage.title=!rows.length?tr("Aucun abonnement actif à gérer."):!provider.customer_portal_available?tr("Portail de facturation pas encore activé."):"";}
 }
 function renderOnboarding(data){
   var root=$("client-onboarding");if(!root)return;

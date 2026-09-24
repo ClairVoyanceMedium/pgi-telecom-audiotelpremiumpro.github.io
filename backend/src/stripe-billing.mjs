@@ -186,14 +186,26 @@ function invoicePaymentStatus(type){
   if(type==="invoice.paid")return "paid";
   if(type==="invoice.payment_failed")return "failed";
   if(type==="invoice.payment_action_required")return "action_required";
+  if(type==="invoice.updated")return "retry_scheduled";
   return null;
+}
+function invoiceAttemptCount(invoice){
+  const n=Number(invoice?.attempt_count);
+  return Number.isInteger(n)&&n>=0?n:null;
+}
+function invoiceNextPaymentAttempt(invoice){return periodIso(invoice?.next_payment_attempt);}
+function invoiceReference(invoice){
+  const id=idValue(invoice);
+  return id&&/^in_[A-Za-z0-9]+$/.test(id)?id:null;
 }
 export async function normalizeStripeBillingEvent(event,config){
   const direct=normalizeStripeSubscriptionEvent(event);
   if(direct)return direct;
   const type=String(event?.type||"");
-  if(!["invoice.paid","invoice.payment_failed","invoice.payment_action_required"].includes(type))return null;
-  const invoice=event?.data?.object,subscriptionId=invoiceSubscriptionReference(invoice);
+  if(!["invoice.paid","invoice.payment_failed","invoice.payment_action_required","invoice.updated"].includes(type))return null;
+  const invoice=event?.data?.object;
+  if(type==="invoice.updated"&&!(Number(invoice?.attempt_count)>0&&invoice?.next_payment_attempt))return null;
+  const subscriptionId=invoiceSubscriptionReference(invoice);
   if(!/^sub_[A-Za-z0-9]+$/.test(String(subscriptionId||"")))return null;
   const subscription=await stripeApi(config,"/v1/subscriptions/"+encodeURIComponent(subscriptionId));
   const synthetic={
@@ -206,6 +218,9 @@ export async function normalizeStripeBillingEvent(event,config){
   normalized.event_type=type;
   normalized.event_time=eventIso(event);
   normalized.last_payment_status=invoicePaymentStatus(type);
+  normalized.provider_invoice_reference=invoiceReference(invoice);
+  normalized.payment_attempt_count=invoiceAttemptCount(invoice);
+  normalized.next_payment_attempt=invoiceNextPaymentAttempt(invoice);
   if(type==="invoice.paid"){
     if(["active","trialing"].includes(String(subscription?.status||"").toLowerCase()))normalized.status="active";
   }else if(!["cancelled","ended","suspended"].includes(normalized.status)){
