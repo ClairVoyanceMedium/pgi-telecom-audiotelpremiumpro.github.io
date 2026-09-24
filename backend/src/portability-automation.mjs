@@ -79,7 +79,7 @@ async function loadTask(store,requestId,config){
     "   AND ct.valid_from<=COALESCE(p.desired_port_date,now()::date)"+
     "   AND (ct.valid_to IS NULL OR ct.valid_to>=COALESCE(p.desired_port_date,now()::date))) AS carrier_contract_ready,"+
     " EXISTS(SELECT 1 FROM tenant_kyc_profiles k WHERE k.tenant_id=p.tenant_id AND k.status='verified') AS kyc_ready,"+
-    " CASE WHEN m.id IS NULL THEN false ELSE pgi_tenant_has_premium_call_access(p.tenant_id,m.id,now()) END AS access_ready,"+
+    " CASE WHEN m.id IS NULL THEN false ELSE pgi_tenant_has_premium_call_access_v2(p.tenant_id,m.id,now()) END AS access_ready,"+
     " CASE WHEN m.id IS NULL THEN false ELSE pgi_tenant_has_payout_terms(p.tenant_id,m.id,NULL,now()) END AS payout_ready"+
     " FROM tenant_portability_requests p"+
     " JOIN tenants t ON t.id=p.tenant_id"+
