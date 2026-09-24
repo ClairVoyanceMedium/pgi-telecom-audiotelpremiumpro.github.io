@@ -29,7 +29,7 @@ test("production config accepts Vercel Git commit SHA",()=>{
 });
 
 test("Vercel container is API-only and never migrates on cold start",()=>{
-  const docker=fs.readFileSync("Dockerfile.vercel","utf8");
+  const docker=fs.readFileSync("Containerfile.vercel","utf8");
   const start=fs.readFileSync("scripts/start-vercel.sh","utf8");
   assert.ok(docker.includes('CMD ["sh","scripts/start-vercel.sh"]'));
   assert.match(docker,/ENV PGI_PROCESS_ROLE=api/);
