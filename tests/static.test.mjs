@@ -679,8 +679,7 @@ test("la PWA Premium+ gère le portail client et les mises à jour sans forcer l
 
 test("mobile width hardening prevents document-level horizontal drift",()=>{
   assert.match(css,/mobile-width-hardening-v137/);
-  assert.match(css,/html,body\{width:100%;max-width:100%;overflow-x:hidden;overflow-x:clip/);
-  assert.match(css,/@media \(max-width:820px\)[\s\S]*body\{min-width:0\}/);
+  assert.match(css,/html\{background:var\(--bg\);max-width:100%;overflow-x:clip\}body\{margin:0;min-width:0;max-width:100%;overflow-x:clip;overscroll-behavior-x:none/);
   assert.match(clientPortalCss,/mobile-width-hardening-v137/);
   assert.match(clientPortalCss,/html,body\{width:100%;max-width:100%;overflow-x:hidden;overflow-x:clip/);
   assert.match(clientPortalCss,/\.cp-svg\{max-width:100%;overflow:hidden\}/);
