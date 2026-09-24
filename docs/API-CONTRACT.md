@@ -280,7 +280,13 @@ Chaque tentative de création de session de paiement doit porter une clé `Idemp
 ### POST /customer/billing/checkout-session
 Crée une session Stripe Checkout hébergée pour l’offre active du tenant authentifié. Le serveur exige une `Idempotency-Key`, résout le prix Stripe par `lookup_key`, puis vérifie montant, devise, périodicité et comportement fiscal contre la version tarifaire PGI avant de créer Checkout. Les métadonnées de tenant et de version tarifaire sont posées côté serveur sur la session et l’abonnement. Checkout affiche aussi une mention explicite indiquant que l’abonnement concerne l’accès à la plateforme PGI Telecom et que les reversements SVA restent un flux contractuel distinct. Un abonnement déjà `active` ou `past_due` bloque la création d’un doublon. Sans configuration Stripe, la route répond `503 PAYMENT_PROVIDER_NOT_CONNECTED`.
 
-### Webhook Stripe de renouvellement\n`invoice.paid`, `invoice.payment_failed` et `invoice.payment_action_required` déclenchent une relecture serveur de l’abonnement Stripe référencé. PGI journalise ensuite l’événement de facture avec la période et le statut d’abonnement vérifiés ; un paiement échoué ou une authentification requise bascule l’accès externe en `past_due` sauf si l’abonnement est déjà dans un état terminal ou suspendu.\n\n### POST /customer/billing/portal-session
+### Webhook Stripe de renouvellement
+
+`invoice.paid`, `invoice.payment_failed` et `invoice.payment_action_required` déclenchent une relecture serveur de l’abonnement Stripe référencé. PGI journalise l’événement avec le statut vérifié, l’identifiant de facture, le nombre de tentatives et la prochaine tentative connue.
+
+Au premier échec récupérable, l’abonnement passe en `past_due` mais le routage SVA reste autorisé pendant une **grâce bornée à 7 jours**. PGI conserve une fenêtre de récupération de **14 jours** pour les relances Stripe. Une authentification bancaire requise est distinguée d’un simple échec. À l’expiration de la grâce, l’accès SVA est suspendu, tandis que l’espace client, les factures, le Customer Portal et les reversements SVA déjà acquis restent accessibles et inchangés. Un `invoice.paid` remet automatiquement l’état de récupération à `recovered`, résout les alertes et rétablit l’accès sans intervention manuelle.
+
+### POST /customer/billing/portal-session
 Crée une session Stripe Customer Portal pour le customer Stripe déjà lié au tenant. Le portail permet la gestion du moyen de paiement, l’historique des factures et la résiliation en fin de période selon sa configuration. Sans configuration Stripe, la route répond `503 PAYMENT_PROVIDER_NOT_CONNECTED`.
 
 ### POST /billing/stripe/webhook
