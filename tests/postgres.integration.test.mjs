@@ -35,7 +35,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     await store.sql.unsafe("INSERT INTO sva_numbers(e164,display_number,tariff_code,service_rate_ttc_per_min,status,tenant_id,market_id,currency) SELECT '33890000001','0890 00 00 01','D080',0.8,'active',t.id,m.id,'EUR' FROM tenants t CROSS JOIN operating_markets m WHERE t.slug='integration-external' AND m.country_code='FR'");
     await store.sql.unsafe("INSERT INTO experts(code,display_name,destination_uri,status,compensation_type,compensation_rate,tenant_id) SELECT 'EXT1','External Expert','loopback/9201','available','per_minute',0.18,id FROM tenants WHERE slug='integration-external'");
 
-    const internalAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access(t.id,m.id,now()) AS allowed FROM tenants t CROSS JOIN operating_markets m WHERE t.slug='pgi-internal' AND m.country_code='FR'");
+    const internalAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access_v2(t.id,m.id,now()) AS allowed FROM tenants t CROSS JOIN operating_markets m WHERE t.slug='pgi-internal' AND m.country_code='FR'");
     assert.equal(internalAccess[0].allowed,true);
 
     const billingBefore=await store.subscriptionBillingOverview();
@@ -372,7 +372,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
 
     const newPrice=await store.createSubscriptionPrice({amount_minor:350,currency:"EUR",effective_from:new Date(now.getTime()+60000).toISOString()},{sub:"admin"});
     assert.equal(Number(newPrice.amount_minor),350);
-    const externalAccessAfterPriceChange=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access(t.id,NULL,now()) AS allowed FROM tenants t WHERE t.slug='integration-external'");
+    const externalAccessAfterPriceChange=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access_v2(t.id,NULL,now()) AS allowed FROM tenants t WHERE t.slug='integration-external'");
     assert.equal(externalAccessAfterPriceChange[0].allowed,true);
 
     const directoryActive=await store.listTenants({q:"external",country:"FR",billing:"active",limit:10});
@@ -492,7 +492,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const suspendedTenant=await store.setTenantStatus(externalIdentity[0].public_id,"suspended",{sub:"admin"},"integration");
     assert.equal(suspendedTenant.status,"suspended");
     assert.equal(suspendedTenant.suspended_assignments,1);
-    let extAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access(t.id,NULL,now()) AS allowed FROM tenants t WHERE t.slug='integration-external'");
+    let extAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access_v2(t.id,NULL,now()) AS allowed FROM tenants t WHERE t.slug='integration-external'");
     assert.equal(extAccess[0].allowed,false);
 
     const reactivatedTenant=await store.setTenantStatus(externalIdentity[0].public_id,"active",{sub:"admin"},"integration");
@@ -519,7 +519,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(unpaidAlerts[0].alert_type,"subscription_unpaid");
     assert.equal(unpaidAlerts[0].severity,"warning");
     assert.equal(unpaidAlerts[0].details.recovery_state,"grace");
-    extAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access(t.id,NULL,now()) AS allowed FROM tenants t WHERE t.slug='integration-external'");
+    extAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access_v2(t.id,NULL,now()) AS allowed FROM tenants t WHERE t.slug='integration-external'");
     assert.equal(extAccess[0].allowed,true);
     const billingDuringGrace=await store.customerBillingPreparation(Number(externalTenantRow.id));
     assert.equal(billingDuringGrace.recovery.state,"grace");
@@ -533,7 +533,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     recoveryRows=await store.sql.unsafe("SELECT recovery_state,grace_until,recovery_deadline FROM subscription_recovery_states WHERE subscription_id=$1",[pastDueApplied.subscription_id]);
     assert.equal(recoveryRows[0].recovery_state,"suspended");
     assert.ok(unpaidAlerts.some(x=>x.severity==="critical"));
-    extAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access(t.id,NULL,now()) AS allowed FROM tenants t WHERE t.slug='integration-external'");
+    extAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access_v2(t.id,NULL,now()) AS allowed FROM tenants t WHERE t.slug='integration-external'");
     assert.equal(extAccess[0].allowed,false);
     const billingSuspended=await store.customerBillingPreparation(Number(externalTenantRow.id));
     assert.equal(billingSuspended.recovery.service_suspended,true);
@@ -557,7 +557,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(remainingOpenAlerts.data.length,0);
     const remainingAcknowledged=await store.listAdminAlerts({state:"acknowledged",limit:10});
     assert.equal(remainingAcknowledged.data.length,0);
-    extAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access(t.id,NULL,now()) AS allowed FROM tenants t WHERE t.slug='integration-external'");
+    extAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access_v2(t.id,NULL,now()) AS allowed FROM tenants t WHERE t.slug='integration-external'");
     assert.equal(extAccess[0].allowed,true);
 
     const internalExpertRows=await store.sql.unsafe("SELECT id FROM experts WHERE code='E1' LIMIT 1");
@@ -729,7 +729,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const onboardMarket=await store.sql.unsafe("SELECT status,compliance_status FROM tenant_market_profiles WHERE tenant_id=(SELECT id FROM tenants WHERE public_id=$1::uuid)",[onboarded.public_id]);
     assert.equal(onboardMarket[0].status,"onboarding");
     assert.equal(onboardMarket[0].compliance_status,"not_started");
-    const onboardAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access((SELECT id FROM tenants WHERE public_id=$1::uuid),NULL,now()) AS allowed",[onboarded.public_id]);
+    const onboardAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access_v2((SELECT id FROM tenants WHERE public_id=$1::uuid),NULL,now()) AS allowed",[onboarded.public_id]);
     assert.equal(onboardAccess[0].allowed,false);
 
     const internalTenant=(await store.sql.unsafe("SELECT id,public_id::text AS public_id FROM tenants WHERE slug='pgi-internal'"))[0];
