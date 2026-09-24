@@ -43,6 +43,7 @@ const premiumPlus=read("assets/premium-plus.js");
 const clientPremiumPlus=read("assets/client-premium-plus.js");
 const passkeyClient=read("assets/passkey-client.js");
 const css=read("assets/styles.css");
+const siteCss=read("site/site.css");
 const sw=read("service-worker.js");
 const manifest=read("manifest.webmanifest");
 const buildStatic=read("scripts/build-static.mjs");
@@ -684,4 +685,12 @@ test("mobile width hardening prevents document-level horizontal drift",()=>{
   assert.match(clientPortalCss,/\.cp-svg\{max-width:100%;overflow:hidden\}/);
   assert.match(clientPortalCss,/\.cp-chip\{min-width:0;max-width:50%;overflow:hidden;text-overflow:ellipsis\}/);
   assert.match(sw,/pgi-v50/);
+});
+
+
+test("public marketing pages prevent document-level horizontal drift",()=>{
+  assert.match(siteCss,/public-mobile-width-hardening-v138/);
+  assert.match(siteCss,/html\{scroll-behavior:smooth;width:100%;max-width:100%;overflow-x:hidden;overflow-x:clip;overscroll-behavior-x:none\}/);
+  assert.match(siteCss,/body\{margin:0;width:100%;min-width:0;max-width:100%;overflow-x:hidden;overflow-x:clip;overscroll-behavior-x:none/);
+  assert.match(siteCss,/\.wrap\{width:var\(--wrap\);max-width:100%;min-width:0/);
 });
