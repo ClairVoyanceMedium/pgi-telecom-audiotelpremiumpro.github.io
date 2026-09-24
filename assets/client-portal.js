@@ -295,11 +295,7 @@ function updateRegistrationNumberField(){
   input.placeholder=fr?tr("14 chiffres"):tr("Facultatif");
   input.inputMode=fr?"numeric":"text";
 }
-function openEmailVerification(result){
-  return import("./customer-email-verification.js").then(function(m){
-    m.open({token:result.verification_token,email:result.user&&result.user.email||"",onVerified:function(user){state.user=user;showApp();}});
-  }).catch(function(){setAuthMessage("Vérification e-mail momentanément indisponible.",true);});
-}
+function openEmailVerification(r){return import("./customer-email-verification.js").then(m=>m.open({token:r.verification_token,email:r.user&&r.user.email||"",onVerified:u=>{state.user=u;showApp()}})).catch(()=>setAuthMessage("Vérification e-mail indisponible.",true))}
 async function submitRegistration(e){
   e.preventDefault();setAuthMessage("");
   var password=$("register-password").value,confirm=$("register-password-confirm").value;

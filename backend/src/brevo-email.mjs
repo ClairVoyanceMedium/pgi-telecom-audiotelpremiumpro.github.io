@@ -31,12 +31,12 @@ export async function sendBrevoVerificationCode(config,{email,name,code}){
   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),8000);
   const body={
     sender:{email:config.transactionalFromEmail,name:config.transactionalFromName||"PGI Telecom"},
-    to:[{email:String(email),name:String(name||email)}],
+    to:[{email:String(email),name:String(name||email),contactPixelTrackingConsent:false}],
     replyTo:{email:config.transactionalFromEmail,name:config.transactionalFromName||"PGI Telecom"},
     subject:"Votre code de vérification PGI Telecom",
     textContent:"Votre code de vérification PGI Telecom est "+code+". Il expire dans "+config.emailVerificationTtlMinutes+" minutes. Si vous n’avez pas demandé ce code, ignorez cet e-mail.",
     htmlContent:'<!doctype html><html lang="fr"><body style="font-family:Arial,sans-serif;background:#f6f3ef;color:#221914;padding:24px"><div style="max-width:560px;margin:auto;background:#fff;border:1px solid #e1d8cf;border-radius:14px;padding:28px"><h1 style="font-size:22px;margin:0 0 12px">Vérification de votre adresse e-mail</h1><p>Utilisez ce code pour terminer la création de votre espace Audiotel Premium Pro :</p><p style="font-size:34px;font-weight:700;letter-spacing:8px;margin:24px 0">'+code+'</p><p>Ce code expire dans '+config.emailVerificationTtlMinutes+' minutes.</p><p style="font-size:13px;color:#6f6259">Si vous n’avez pas demandé ce code, vous pouvez ignorer cet e-mail.</p></div></body></html>',
-    tags:["account-email-verification"],contactPixelTrackingConsent:false
+    tags:["account-email-verification"]
   };
   if(config.brevoSandbox)body.headers={"X-Sib-Sandbox":"drop"};
   try{
