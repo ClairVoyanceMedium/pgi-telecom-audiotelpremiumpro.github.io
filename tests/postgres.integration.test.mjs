@@ -501,28 +501,62 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(extAssignments.data[0].status,"suspended");
     await store.setTenantAssignmentStatus(assignmentId,"active",{sub:"admin"},"integration");
 
-    const pastDueTime=new Date(now.getTime()+1000);
-    const pastDueEvent={...billingEvent,provider_event_id:"sub-past-due-1",event_type:"invoice.payment_failed",status:"past_due",event_time:pastDueTime.toISOString(),last_payment_status:"failed"};
+    const pastDueTime=new Date(now.getTime()+1000),nextRetry=new Date(now.getTime()+86400000);
+    const pastDueEvent={...billingEvent,provider_event_id:"sub-past-due-1",event_type:"invoice.payment_failed",status:"past_due",event_time:pastDueTime.toISOString(),last_payment_status:"failed",provider_invoice_reference:"in_Recovery123",payment_attempt_count:1,next_payment_attempt:nextRetry.toISOString()};
     const pastDueApplied=await store.applySubscriptionBillingEvent(pastDueEvent);
     assert.equal(pastDueApplied.status,"past_due");
-    const unpaidAlerts=await store.scanUnpaidSubscriptions();
+    let recoveryRows=await store.sql.unsafe("SELECT recovery_state,first_failed_at,grace_until,recovery_deadline,next_retry_at,attempt_count,last_invoice_reference FROM subscription_recovery_states WHERE subscription_id=$1",[pastDueApplied.subscription_id]);
+    assert.equal(recoveryRows.length,1);
+    assert.equal(recoveryRows[0].recovery_state,"grace");
+    assert.equal(Number(recoveryRows[0].attempt_count),1);
+    assert.equal(recoveryRows[0].last_invoice_reference,"in_Recovery123");
+    assert.ok(Date.parse(recoveryRows[0].grace_until)>Date.parse(pastDueTime.toISOString()));
+    assert.ok(Date.parse(recoveryRows[0].recovery_deadline)>Date.parse(recoveryRows[0].grace_until));
+    assert.equal(new Date(recoveryRows[0].next_retry_at).toISOString(),nextRetry.toISOString());
+
+    let unpaidAlerts=await store.scanUnpaidSubscriptions();
     assert.equal(unpaidAlerts.length,1);
     assert.equal(unpaidAlerts[0].alert_type,"subscription_unpaid");
+    assert.equal(unpaidAlerts[0].severity,"warning");
+    assert.equal(unpaidAlerts[0].details.recovery_state,"grace");
     extAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access(t.id,NULL,now()) AS allowed FROM tenants t WHERE t.slug='integration-external'");
-    assert.equal(extAccess[0].allowed,false);
+    assert.equal(extAccess[0].allowed,true);
+    const billingDuringGrace=await store.customerBillingPreparation(Number(externalTenantRow.id));
+    assert.equal(billingDuringGrace.recovery.state,"grace");
+    assert.equal(billingDuringGrace.recovery.grace_active,true);
+    assert.equal(billingDuringGrace.recovery.service_suspended,false);
     const unpaidDirectory=await store.listTenants({country:"FR",billing:"unpaid",limit:10});
     assert.ok(unpaidDirectory.data.some(x=>x.display_name==="External Test"));
+
+    await store.sql.unsafe("UPDATE subscription_recovery_states SET grace_until=now()-interval '1 second' WHERE subscription_id=$1",[pastDueApplied.subscription_id]);
+    unpaidAlerts=await store.scanUnpaidSubscriptions();
+    recoveryRows=await store.sql.unsafe("SELECT recovery_state,grace_until,recovery_deadline FROM subscription_recovery_states WHERE subscription_id=$1",[pastDueApplied.subscription_id]);
+    assert.equal(recoveryRows[0].recovery_state,"suspended");
+    assert.ok(unpaidAlerts.some(x=>x.severity==="critical"));
+    extAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access(t.id,NULL,now()) AS allowed FROM tenants t WHERE t.slug='integration-external'");
+    assert.equal(extAccess[0].allowed,false);
+    const billingSuspended=await store.customerBillingPreparation(Number(externalTenantRow.id));
+    assert.equal(billingSuspended.recovery.service_suspended,true);
     const openAlerts=await store.listAdminAlerts({state:"open",country:"FR",limit:10});
     assert.equal(openAlerts.data.length,1);
     const acknowledged=await store.acknowledgeAdminAlert(openAlerts.data[0].id,{sub:"admin"});
     assert.equal(acknowledged.state,"acknowledged");
 
     const renewedTime=new Date(now.getTime()+2000),renewedEnd=new Date(now.getTime()+62*86400000);
-    const renewedEvent={...billingEvent,provider_event_id:"sub-renewed-1",event_type:"invoice.paid",status:"active",event_time:renewedTime.toISOString(),current_period_start:renewedTime.toISOString(),current_period_end:renewedEnd.toISOString(),last_payment_status:"paid"};
+    const renewedEvent={...billingEvent,provider_event_id:"sub-renewed-1",event_type:"invoice.paid",status:"active",event_time:renewedTime.toISOString(),current_period_start:renewedTime.toISOString(),current_period_end:renewedEnd.toISOString(),last_payment_status:"paid",provider_invoice_reference:"in_RecoveryPaid123",payment_attempt_count:2,next_payment_attempt:null};
     const renewed=await store.applySubscriptionBillingEvent(renewedEvent);
     assert.equal(renewed.status,"active");
+    recoveryRows=await store.sql.unsafe("SELECT recovery_state,grace_until,recovery_deadline,next_retry_at,attempt_count,recovered_at FROM subscription_recovery_states WHERE subscription_id=$1",[renewed.subscription_id]);
+    assert.equal(recoveryRows[0].recovery_state,"recovered");
+    assert.equal(recoveryRows[0].grace_until,null);
+    assert.equal(recoveryRows[0].recovery_deadline,null);
+    assert.equal(recoveryRows[0].next_retry_at,null);
+    assert.equal(Number(recoveryRows[0].attempt_count),0);
+    assert.ok(recoveryRows[0].recovered_at);
     const remainingOpenAlerts=await store.listAdminAlerts({state:"open",limit:10});
     assert.equal(remainingOpenAlerts.data.length,0);
+    const remainingAcknowledged=await store.listAdminAlerts({state:"acknowledged",limit:10});
+    assert.equal(remainingAcknowledged.data.length,0);
     extAccess=await store.sql.unsafe("SELECT pgi_tenant_has_premium_call_access(t.id,NULL,now()) AS allowed FROM tenants t WHERE t.slug='integration-external'");
     assert.equal(extAccess[0].allowed,true);
 
