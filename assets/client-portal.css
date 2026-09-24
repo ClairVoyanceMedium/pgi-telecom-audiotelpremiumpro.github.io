@@ -216,3 +216,26 @@ html{scroll-padding-top:150px}
   .cp-mobile-sheet-grid{grid-template-columns:1fr}
 }
 @media print{.cp-mobile-nav,.cp-mobile-menu-dialog{display:none!important}}
+
+/* mobile-width-hardening-v137 */
+html,body{width:100%;max-width:100%;overflow-x:hidden;overflow-x:clip;overscroll-behavior-x:none}
+img,svg,canvas,video{max-width:100%}
+.cp-app,.cp-main,.cp-header,.cp-panel,.cp-kpis,.cp-chart-grid,.cp-grid,.cp-intelligence-grid,.cp-onboarding,.cp-command-bar,.cp-search-panel,.cp-row,.cp-footer{min-width:0;max-width:100%}
+.cp-table-wrap,.cp-periods,.cp-section-nav,.cp-search-scopes{max-width:100%;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+@media(max-width:680px){
+  body{min-width:0}
+  .cp-main{width:100%;max-width:100%;overflow-x:hidden;overflow-x:clip;padding-left:max(10px,env(safe-area-inset-left));padding-right:max(10px,env(safe-area-inset-right))}
+  .cp-header{width:100%;max-width:100%;padding-left:max(10px,env(safe-area-inset-left));padding-right:max(10px,env(safe-area-inset-right))}
+  .cp-header>*,.cp-panel-head>*,.cp-intro>*,.cp-command-bar>*{min-width:0}
+  .cp-svg{max-width:100%;overflow:hidden}
+  .cp-row{width:100%;max-width:100%}
+  .cp-chip{min-width:0;max-width:50%;overflow:hidden;text-overflow:ellipsis}
+  .cp-mobile-menu-dialog{width:100%;max-width:100%;height:100dvh;max-height:100dvh;margin:0}
+  .cp-mobile-sheet{width:100%;max-width:100%}
+  .cp-dialog,.cp-export-dialog{max-width:calc(100dvw - 16px)}
+}
+@media(max-width:380px){
+  .cp-status-wrap{flex-direction:column;align-items:stretch}
+  .cp-donut{align-self:center}
+  .cp-legend{width:100%;min-width:0}
+}
