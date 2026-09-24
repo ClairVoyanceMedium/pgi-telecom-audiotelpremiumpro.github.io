@@ -1,3 +1,18 @@
+## 1.31.0 — Revenue Recovery & grâce de paiement — 2026-09-24
+
+- moteur de récupération distinct du statut d’abonnement et du flux SVA ;
+- premier paiement mensuel refusé : statut `past_due` avec grâce de service de 7 jours ;
+- fenêtre de récupération PGI de 14 jours, compatible Smart Retries Stripe ;
+- nombre de tentatives, prochaine tentative et facture Stripe conservés dans l’état de récupération ;
+- authentification bancaire requise distinguée d’un simple échec ;
+- expiration de la grâce : accès SVA suspendu, mais espace client, factures et reversements SVA acquis préservés ;
+- paiement réussi : résolution automatique des alertes, état `recovered` et réactivation immédiate de l’accès ;
+- panneau client dédié avec dates de grâce/retry et accès direct au Customer Portal ;
+- cockpit administrateur séparant grâce, action bancaire requise et suspension réelle ;
+- nouvelle fonction d’autorisation et nouvelle vue v2, ajoutées sans remplacer les objets historiques afin de conserver les migrations expand-only ;
+- tests Stripe et PostgreSQL de bout en bout sur grâce → suspension → récupération ;
+- cache PWA v49 et version applicative 1.31.0.
+
 ## 1.30.5 — Checkout Stripe : clarté contractuelle — 2026-09-24
 
 - description d’abonnement transmise à Stripe sans tarif codé en dur ;
