@@ -28,6 +28,11 @@ export function createStaticSiteHandler(rootDir){
       res.end();
       return true;
     }
+    if(["/admin","/admin/","/admin.html"].includes(String(pathname||""))){
+      res.writeHead(308,{"Location":"/cockpit","Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow, noarchive"});
+      res.end();
+      return true;
+    }
     if(String(pathname||"")==="/cockpit/"){
       res.writeHead(308,{"Location":"/cockpit","Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow, noarchive"});
       res.end();
