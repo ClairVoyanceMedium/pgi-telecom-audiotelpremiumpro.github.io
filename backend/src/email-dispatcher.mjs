@@ -251,7 +251,7 @@ async function markEventReceipt(store,outboxId,disposition,errorCode){
 function webhookState(type){
   return ({
     "email.sent":"sent","email.delivered":"delivered","email.delivery_delayed":"delayed","email.bounced":"bounced",
-    "email.complained":"complained","email.failed":"failed","email.suppressed":"suppressed","email.clicked":"clicked"
+    "email.complained":"complained","email.failed":"failed","email.suppressed":"suppressed","email.clicked":"clicked","email.received":"received"
   })[type]||"accepted";
 }
 function webhookTimestampColumn(type){
