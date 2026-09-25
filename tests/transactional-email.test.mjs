@@ -22,6 +22,7 @@ test("transactional recipient normalization is strict and hashing is determinist
 
 test("all production service templates render both plain text and html",()=>{
   const keys=[
+    "email_verification","password_reset","password_changed","email_change_confirmation","email_changed","email_change_notice_old","passkey_added",
     "registration_received","registration_internal","account_activated","account_suspended",
     "subscription_created","payment_succeeded","payment_recovered","payment_failed","payment_action_required",
     "payment_reminder","subscription_suspended","subscription_cancelled","payout_available","portability_received","portability_internal",
@@ -34,8 +35,29 @@ test("all production service templates render both plain text and html",()=>{
     assert.match(m.html,/Audiotel Premium Pro/,key);
     assert.match(m.html,/https:\/\/audiotel-premium-pro\.com\/assets\/audiotel-brand-logo-v33\.png/,key);
     assert.match(m.html,/alt="Audiotel Premium Pro"/,key);
-    assert.match(m.text,/Audiotel Premium Pro | Une solution PGI Telecom/,key);
-    assert.match(m.html,/Audiotel Premium Pro | Une solution PGI Telecom/,key);
+    assert.match(m.text,/Audiotel Premium Pro \| Une solution PGI Telecom/,key);
+    assert.match(m.html,/Audiotel Premium Pro \| Une solution PGI Telecom/,key);
     assert.doesNotMatch(m.subject,/PGI Telecom/,key);
   }
+});
+
+
+test("customer templates support all portal languages",()=>{
+  const keys=["password_reset","password_changed","email_change_confirmation","payment_succeeded","payment_failed","subscription_suspended","support_response"];
+  for(const locale of ["fr-FR","en-GB","es-ES","it-IT","pt-PT","de-DE","sv-SE"]){
+    for(const key of keys){
+      const m=buildTransactionalMessage(config,key,{name:"Client Test",locale,action_url:"https://audiotel-premium-pro.com/client.html#password-reset=test-token",invoice_url:"https://invoice.stripe.com/i/test",invoice_pdf_url:"https://invoice.stripe.com/i/test.pdf"});
+      assert.ok(m.subject.length>4,locale+" "+key);
+      assert.match(m.html,/Audiotel Premium Pro/,locale+" "+key);
+      assert.match(m.html,/confidentialite/,locale+" "+key);
+      assert.match(m.html,/conditions-abonnement/,locale+" "+key);
+    }
+  }
+});
+
+test("security action links stay on the production origin",()=>{
+  const ok=buildTransactionalMessage(config,"password_reset",{name:"Client",action_url:"https://audiotel-premium-pro.com/client.html#password-reset=abc"});
+  assert.match(ok.html,/password-reset=abc/);
+  const blocked=buildTransactionalMessage(config,"password_reset",{name:"Client",action_url:"https://evil.example/reset"});
+  assert.doesNotMatch(blocked.html,/evil\.example/);
 });
