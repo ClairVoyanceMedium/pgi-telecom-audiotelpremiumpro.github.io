@@ -99,7 +99,7 @@ jobs:
           docker run --rm --network host -e PGPASSWORD="$PGPASSWORD" -v "$PWD/.ci-recovery:/work:ro" postgres:16-alpine \
             pg_restore -h 127.0.0.1 -U pgi_test -d pgi_restore_test --exit-on-error --no-owner --no-acl /work/pgi.dump
           docker run --rm --network host -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine \
-            psql -h 127.0.0.1 -U pgi_test -d pgi_restore_test -Atc "SELECT (to_regclass('public.calls') IS NOT NULL AND to_regclass('public.outbox_events') IS NOT NULL AND to_regclass('public.transactional_email_deliveries') IS NOT NULL)::text;" | grep -Eq '^(t|true)
+            psql -h 127.0.0.1 -U pgi_test -d pgi_restore_test -Atc "SELECT (to_regclass('public.calls') IS NOT NULL AND to_regclass('public.outbox_events') IS NOT NULL AND to_regclass('public.transactional_email_deliveries') IS NOT NULL)::text;" | grep -Eq '^(t|true)$'
 
       - name: PostgreSQL store integration
         env:
