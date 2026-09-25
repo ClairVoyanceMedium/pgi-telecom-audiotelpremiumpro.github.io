@@ -13,7 +13,7 @@ async function fetchCheck(name,path,expected,tokens=[],jsonCheck=null){
   }catch(e){error=e?.name||"FETCH_FAILED";checks.push({name,path,pass:false,status:null,latency_ms:Math.round(performance.now()-started),error});}
 }
 await fetchCheck("site.home","/",200,["Demander l’ouverture","/demande-ouverture/","client.html"]);
-await fetchCheck("site.application","/demande-ouverture/",200,["id=\"order-form\"","client.html?register=1"]);
+await fetchCheck("site.application","/demande-ouverture/",200,["id=\"order-form\""]);\nawait fetchCheck("site.application.logic","/site/site.js",200,["client.html?register=1","sessionStorage"]);
 await fetchCheck("site.client","/client.html",200,["id=\"customer-login-form\"","id=\"client-billing-start\"","id=\"portability-open\"","id=\"service-incident-open\""]);
 await fetchCheck("site.cockpit","/cockpit.html",200,["id=\"auth-form\"","ACCÈS PRODUCTION"]);
 await fetchCheck("site.terms","/conditions-abonnement/",200,["3,00 € TTC par mois"]);
