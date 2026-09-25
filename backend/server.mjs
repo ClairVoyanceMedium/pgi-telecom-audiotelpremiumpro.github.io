@@ -15,7 +15,7 @@ import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebA
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
 import {stripeProviderState,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent} from "./src/stripe-billing.mjs";
-import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode} from "./src/resend-email.mjs";
+import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
 
@@ -171,7 +171,7 @@ export function createBackend(options={}){
         if(config.emailVerificationEnabled){
           const challenge=createEmailVerificationChallenge(config);
           await store.beginCustomerEmailVerification(registered.id,challenge.record);
-          try{await sendResendVerificationCode(config,{email:registered.email,name:registered.display_name,code:challenge.code,idempotencyKey:"email-verification/"+challenge.record.code_hash});}
+          try{await sendResendVerificationCode(config,{email:registered.email,name:registered.display_name,code:challenge.code,locale:body.preferred_locale||undefined,idempotencyKey:"email-verification/"+challenge.record.code_hash});}
           catch(_error){return done(res,metrics,started,"customer.auth.register_email",503,{error:{code:"EMAIL_DELIVERY_UNAVAILABLE",message:"Verification email unavailable"},account_created:true,email_verification_required:true,user:publicUser});}
           return done(res,metrics,started,"customer.auth.register",201,{account_created:true,onboarding:true,email_verification_required:true,verification_token:challenge.token,user:publicUser});
         }
@@ -200,7 +200,7 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes),token=String(body.token||"").trim();
         if(token.length<32){const e=new Error("Invalid email verification");e.status=400;e.code="EMAIL_VERIFICATION_INVALID";throw e;}
         const tokenHash=verificationTokenHash(token),target=await store.customerEmailVerificationResendTarget(tokenHash),challenge=createEmailVerificationChallenge(config,token);
-        try{await sendResendVerificationCode(config,{email:target.email,name:target.display_name||target.email,code:challenge.code,idempotencyKey:"email-verification/"+challenge.record.code_hash});}
+        try{await sendResendVerificationCode(config,{email:target.email,name:target.display_name||target.email,code:challenge.code,locale:body.preferred_locale||auth?.preferred_locale||undefined,idempotencyKey:"email-verification/"+challenge.record.code_hash});}
         catch(_error){return done(res,metrics,started,"customer.auth.email_resend",503,{error:{code:"EMAIL_DELIVERY_UNAVAILABLE",message:"Verification email unavailable"}});}
         await store.refreshCustomerEmailVerification(target.id,tokenHash,challenge.record);
         return done(res,metrics,started,"customer.auth.email_resend",200,{sent:true,resend_after_seconds:config.emailVerificationResendSeconds});
@@ -252,7 +252,7 @@ export function createBackend(options={}){
         if(config.emailVerificationEnabled&&auth.email_verified!==true&&auth.metadata?.email_verification?.required===true){
           const challenge=createEmailVerificationChallenge(config);
           await store.beginCustomerEmailVerification(auth.id,challenge.record);
-          try{await sendResendVerificationCode(config,{email:auth.email,name:auth.display_name||auth.email,code:challenge.code,idempotencyKey:"email-verification/"+challenge.record.code_hash});}
+          try{await sendResendVerificationCode(config,{email:auth.email,name:auth.display_name||auth.email,code:challenge.code,locale:body.preferred_locale||auth?.preferred_locale||undefined,idempotencyKey:"email-verification/"+challenge.record.code_hash});}
           catch(_error){return done(res,metrics,started,"customer.auth.login_email",503,{error:{code:"EMAIL_DELIVERY_UNAVAILABLE",message:"Verification email unavailable"}});}
           authBuckets.delete(authKey);
           return done(res,metrics,started,"customer.auth.login",403,{error:{code:"EMAIL_VERIFICATION_REQUIRED",message:"Email verification required"},email_verification_required:true,verification_token:challenge.token,user:{id:auth.id,name:auth.display_name||auth.email,email:auth.email}});
@@ -277,6 +277,54 @@ export function createBackend(options={}){
         return done(res,metrics,started,"customer.auth.login",200,{user:{id:auth.id,name:auth.display_name||auth.email,email:auth.email,role:current.role,tenant:{id:current.public_id,name:current.display_name}}},{
           "Set-Cookie":[customerSessionCookie(issued.token,config.sessionTtlSeconds),customerCsrfCookie(issued.csrf,config.sessionTtlSeconds)]
         });
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/customer/auth/password/forgot"){
+        if(config.authMode!=="session")return done(res,metrics,started,"customer.auth.password_forgot",404,{error:{code:"AUTH_DISABLED"}});
+        requireSameOriginBrowser(req);
+        enforceRegistrationRate(req,config,registrationBuckets);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const email=String(body.email||"").trim().toLowerCase();
+        const token=randomBytes(32).toString("base64url"),tokenHash=createHash("sha256").update(token).digest("hex");
+        const record={token_hash:tokenHash,requested_at:new Date().toISOString(),expires_at:new Date(Date.now()+30*60000).toISOString()};
+        const target=await store.beginCustomerPasswordReset(email,record);
+        if(target){
+          const actionUrl=config.publicBaseUrl+"/client.html#password-reset="+encodeURIComponent(token);
+          try{
+            await sendTransactionalEmail(config,{to:target.email,name:target.display_name||target.email,senderRole:"support",templateKey:"password_reset",data:{name:target.display_name||target.email,locale:target.preferred_locale,action_url:actionUrl},idempotencyKey:"password-reset/"+tokenHash,internalEventId:"password-reset/"+tokenHash});
+          }catch(error){logSecurityEmailFailure("password_reset",error);}
+        }
+        return done(res,metrics,started,"customer.auth.password_forgot",202,{ok:true,message:"PASSWORD_RESET_IF_ACCOUNT_EXISTS"});
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/customer/auth/password/reset"){
+        if(config.authMode!=="session")return done(res,metrics,started,"customer.auth.password_reset",404,{error:{code:"AUTH_DISABLED"}});
+        requireSameOriginBrowser(req);
+        enforceRegistrationRate(req,config,registrationBuckets);
+        const body=await readJson(req,config.bodyLimitBytes),token=String(body.token||"").trim(),password=String(body.new_password||"");
+        if(token.length<32||password.length<12||password.length>256){const e=new Error("Invalid password reset");e.status=400;e.code="PASSWORD_RESET_INVALID";throw e;}
+        const tokenHash=createHash("sha256").update(token).digest("hex");
+        const target=await store.completeCustomerPasswordReset(tokenHash,hashPassword(password));
+        try{
+          await sendTransactionalEmail(config,{to:target.email,name:target.display_name||target.email,senderRole:"support",templateKey:"password_changed",data:{name:target.display_name||target.email,locale:target.preferred_locale},idempotencyKey:"password-reset-complete/"+tokenHash,internalEventId:"password-reset-complete/"+tokenHash});
+        }catch(error){logSecurityEmailFailure("password_changed",error);}
+        return done(res,metrics,started,"customer.auth.password_reset",200,{ok:true,relogin_required:true},{"Set-Cookie":clearCustomerSessionCookies()});
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/customer/auth/email/change/confirm"){
+        if(config.authMode!=="session")return done(res,metrics,started,"customer.auth.email_change_confirm",404,{error:{code:"AUTH_DISABLED"}});
+        requireSameOriginBrowser(req);
+        enforceRegistrationRate(req,config,registrationBuckets);
+        const body=await readJson(req,config.bodyLimitBytes),token=String(body.token||"").trim();
+        if(token.length<32){const e=new Error("Invalid email change");e.status=400;e.code="EMAIL_CHANGE_INVALID";throw e;}
+        const tokenHash=createHash("sha256").update(token).digest("hex"),target=await store.completeCustomerEmailChange(tokenHash);
+        try{
+          await sendTransactionalEmail(config,{to:target.new_email,name:target.display_name||target.new_email,senderRole:"support",templateKey:"email_changed",data:{name:target.display_name||target.new_email,locale:target.preferred_locale},idempotencyKey:"email-change-complete/new/"+tokenHash,internalEventId:"email-change-complete/new/"+tokenHash});
+        }catch(error){logSecurityEmailFailure("email_changed",error);}
+        try{
+          await sendTransactionalEmail(config,{to:target.old_email,name:target.display_name||target.old_email,senderRole:"support",templateKey:"email_change_notice_old",data:{name:target.display_name||target.old_email,locale:target.preferred_locale},idempotencyKey:"email-change-complete/old/"+tokenHash,internalEventId:"email-change-complete/old/"+tokenHash});
+        }catch(error){logSecurityEmailFailure("email_change_notice_old",error);}
+        return done(res,metrics,started,"customer.auth.email_change_confirm",200,{ok:true,relogin_required:true,new_email:target.new_email},{"Set-Cookie":clearCustomerSessionCookies()});
       }
 
       if(method==="POST"&&pathname==="/api/v1/customer/auth/activate"){
@@ -316,7 +364,11 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes),context=await store.customerSessionContext(customerActor),auth=await store.customerAuthLookup(context.email);
         if(!auth?.password_hash||!verifyPassword(String(body.current_password||""),auth.password_hash)){const e=new Error("Password reauthentication required");e.status=401;e.code="PASSKEY_REAUTH_REQUIRED";throw e;}
         const subject="customer:"+customerActor.sub,state=verifyWebAuthnState(config,body.state,"register",subject),credential=validateWebAuthnRegistration(config,body,state);
-        return done(res,metrics,started,"customer.security.passkey_register",201,{credential:await store.registerWebauthnCredential("customer",customerActor.sub,credential)});
+        const registeredCredential=await store.registerWebauthnCredential("customer",customerActor.sub,credential);
+        try{
+          await sendTransactionalEmail(config,{to:context.email,name:context.display_name||context.email,senderRole:"support",templateKey:"passkey_added",data:{name:context.display_name||context.email,locale:context.preferred_locale},idempotencyKey:"passkey-added/"+context.id+"/"+registeredCredential.id,internalEventId:"passkey-added/"+context.id+"/"+registeredCredential.id});
+        }catch(error){logSecurityEmailFailure("passkey_added",error);}
+        return done(res,metrics,started,"customer.security.passkey_register",201,{credential:registeredCredential});
       }
       if(method==="POST"&&pathname==="/api/v1/customer/security/passkeys/assert-options"){
         requireCustomerCsrf(req,customerActor,config);
@@ -341,6 +393,24 @@ export function createBackend(options={}){
         const context=await store.customerSessionContext(customerActor);
         return done(res,metrics,started,"customer.auth.me",200,{user:publicCustomerActor(customerActor,context)});
       }
+      if(method==="POST"&&pathname==="/api/v1/customer/auth/email/change/request"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        const body=await readJson(req,config.bodyLimitBytes),newEmail=String(body.new_email||"").trim().toLowerCase(),currentPassword=String(body.current_password||"");
+        if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(newEmail)||newEmail.length>320){const e=new Error("Invalid email");e.status=400;e.code="INVALID_CUSTOMER_EMAIL";throw e;}
+        if(newEmail===String(context.email||"").trim().toLowerCase()){const e=new Error("Email unchanged");e.status=409;e.code="EMAIL_UNCHANGED";throw e;}
+        const auth=await store.customerAuthLookup(context.email);
+        if(!auth||!verifyPassword(currentPassword,auth.password_hash)){const e=new Error("Invalid current password");e.status=401;e.code="INVALID_CURRENT_PASSWORD";throw e;}
+        const token=randomBytes(32).toString("base64url"),tokenHash=createHash("sha256").update(token).digest("hex");
+        const record={token_hash:tokenHash,requested_at:new Date().toISOString(),expires_at:new Date(Date.now()+30*60000).toISOString()};
+        const target=await store.beginCustomerEmailChange(context.id,newEmail,record);
+        const actionUrl=config.publicBaseUrl+"/client.html#email-change="+encodeURIComponent(token);
+        try{
+          await sendTransactionalEmail(config,{to:newEmail,name:context.display_name||newEmail,senderRole:"support",templateKey:"email_change_confirmation",data:{name:context.display_name||newEmail,locale:context.preferred_locale,action_url:actionUrl},idempotencyKey:"email-change/"+tokenHash,internalEventId:"email-change/"+tokenHash});
+        }catch(error){logSecurityEmailFailure("email_change_confirmation",error);const e=new Error("Email delivery unavailable");e.status=503;e.code="EMAIL_DELIVERY_UNAVAILABLE";throw e;}
+        return done(res,metrics,started,"customer.auth.email_change_request",202,{ok:true,pending_email:target.new_email});
+      }
+
       if(method==="POST"&&pathname==="/api/v1/customer/auth/change-password"){
         requireCustomerCsrf(req,customerActor,config);
         const context=await store.customerSessionContext(customerActor);
@@ -352,6 +422,10 @@ export function createBackend(options={}){
         const auth=await store.customerAuthLookup(context.email);
         if(!auth||!verifyPassword(currentPassword,auth.password_hash)){const e=new Error("Invalid current password");e.status=401;e.code="INVALID_CURRENT_PASSWORD";throw e;}
         await store.updateCustomerPassword(context.id,hashPassword(newPassword));
+        const securityEventId="password-changed/"+context.id+"/"+Date.now();
+        try{
+          await sendTransactionalEmail(config,{to:context.email,name:context.display_name||context.email,senderRole:"support",templateKey:"password_changed",data:{name:context.display_name||context.email,locale:context.preferred_locale},idempotencyKey:securityEventId,internalEventId:securityEventId});
+        }catch(error){logSecurityEmailFailure("password_changed",error);}
         return done(res,metrics,started,"customer.auth.change_password",200,{ok:true,relogin_required:true},{"Set-Cookie":clearCustomerSessionCookies()});
       }
       if(method==="GET"&&pathname==="/api/v1/customer/events"){
@@ -1922,6 +1996,9 @@ function openEventStream(req,res,eventBus,requestId,config,clients,filter=null){
   const heartbeat=setInterval(()=>{if(!res.destroyed)res.write(": ping\n\n");},15000);
   heartbeat.unref?.();
   req.on("close",()=>{clearInterval(heartbeat);unsubscribe();clients?.delete(res);});
+}
+function logSecurityEmailFailure(template,error){
+  process.stderr.write(JSON.stringify({level:"warn",event:"security_email_send_failed",template:String(template||"security"),code:String(error?.code||"EMAIL_SEND_FAILED")})+"\n");
 }
 function logHttpRequest(config,{requestId,traceId,route,method,status,durationMs}){
   if(config?.mode!=="production")return;
