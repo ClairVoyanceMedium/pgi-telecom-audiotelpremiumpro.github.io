@@ -46,7 +46,7 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.match(robots,/Disallow: \/cockpit/);
     assert.match(robots,/Sitemap: https:\/\/pgi-test\.vercel\.app\/sitemap\.xml/);
     assert.match(sitemap,/<loc>https:\/\/pgi-test\.vercel\.app\/<\/loc>/);
-    for(const slug of seoSlugs)assert.match(sitemap,new RegExp("<loc>https:\\/\\/pgi-test\\.vercel\\.app\\/"+slug+"\\/<\\/loc>"));
+    for(const slug of seoSlugs.filter(x=>x!=="mentions-legales"))assert.match(sitemap,new RegExp("<loc>https:\\/\\/pgi-test\\.vercel\\.app\\/"+slug+"\\/<\\/loc>"));\n    assert.doesNotMatch(sitemap,/mentions-legales/);
     seoPages.forEach((page,index)=>{
       const slug=seoSlugs[index],legal=["mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","cookies-traceurs","resilier-contrat","retractation"].includes(slug);
       assert.match(page,new RegExp('rel="canonical" href="https:\\/\\/pgi-test\\.vercel\\.app\\/'+slug+'\\/"'));
@@ -69,10 +69,10 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.match(application,/Continuer vers l’espace sécurisé/);
     const privacy=seoPages[seoSlugs.indexOf("confidentialite")];
     const terms=seoPages[seoSlugs.indexOf("conditions-abonnement")];
-    assert.match(privacy,/Paiements Stripe/);
+    assert.match(privacy,/Données financières/);
     assert.match(privacy,/CNIL/);
     assert.match(terms,/3,00 € TTC par mois/);
-    assert.match(terms,/opérateur → PGI → client/);
+    assert.match(terms,/Reversements/);
   }finally{
     fs.rmSync("dist",{recursive:true,force:true});
   }
