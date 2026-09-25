@@ -34,7 +34,8 @@ test("all production service templates render both plain text and html",()=>{
     assert.match(m.html,/Audiotel Premium Pro/,key);
     assert.match(m.html,/https:\/\/audiotel-premium-pro\.com\/assets\/audiotel-brand-logo-v33\.png/,key);
     assert.match(m.html,/alt="Audiotel Premium Pro"/,key);
-    assert.doesNotMatch(m.text,/PGI Telecom/,key);
-    assert.doesNotMatch(m.html,/PGI Telecom/,key);
+    assert.match(m.text,/Audiotel Premium Pro — une solution PGI Telecom/,key);
+    assert.match(m.html,/Audiotel Premium Pro — une solution PGI Telecom/,key);
+    assert.doesNotMatch(m.subject,/PGI Telecom/,key);
   }
 });
