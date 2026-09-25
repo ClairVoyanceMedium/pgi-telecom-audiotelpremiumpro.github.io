@@ -308,7 +308,7 @@ async function submitRegistration(e){
     authority_confirmed:$("register-authority").checked,
     legal_terms_accepted:Boolean($("register-legal")&&$("register-legal").checked),
     privacy_notice_acknowledged:Boolean($("register-legal")&&$("register-legal").checked),
-    legal_version:"2026-09-26",
+    legal_version:"2026-09-26-b2b-b2c-v2",
     website:$("register-website").value,
     preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",
     timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC")
