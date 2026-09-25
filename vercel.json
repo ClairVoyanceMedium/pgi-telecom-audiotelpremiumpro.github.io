@@ -5,5 +5,11 @@
       "**": false,
       "main": true
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/v1/internal/email/dispatch",
+      "schedule": "0 6 * * *"
+    }
+  ]
 }
