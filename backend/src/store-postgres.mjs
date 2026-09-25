@@ -3250,7 +3250,7 @@ export class PostgresStore{
   }
 
   async customerEmailVerificationResendTarget(tokenHash){
-    const rows=await this.sql.unsafe("SELECT id,email,display_name,metadata->'email_verification' AS verification FROM customer_principals WHERE email_verified=false AND metadata#>>'{email_verification,token_hash}'=$1 LIMIT 1",[String(tokenHash)]);
+    const rows=await this.sql.unsafe("SELECT id,email,display_name,preferred_locale,metadata->'email_verification' AS verification FROM customer_principals WHERE email_verified=false AND metadata#>>'{email_verification,token_hash}'=$1 LIMIT 1",[String(tokenHash)]);
     const row=rows[0];if(!row)throw problem(400,"EMAIL_VERIFICATION_INVALID");
     const v=row.verification||{};if(v.required!==true)throw problem(400,"EMAIL_VERIFICATION_INVALID");
     const resendAt=Date.parse(String(v.resend_after||""));
