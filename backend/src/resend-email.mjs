@@ -261,7 +261,7 @@ export function buildTransactionalMessage(config,templateKey,data={}){
       cta:{label:"Consulter mon espace",url:portalUrl}
     },
     payout_available:{
-      subject:"Votre reversement Audiotel est disponible",
+      subject:"Votre reversement Audiotel Premium Pro est disponible",
       title:"Reversement disponible",
       lead:greeting,
       paragraphs:["Un reversement issu du trafic SVA a franchi les contrôles nécessaires et est maintenant indiqué comme disponible dans votre espace client.","Le statut affiché dans votre espace reste la référence pour le suivi du règlement."],
