@@ -19,6 +19,11 @@ await fetchCheck("site.client","/client.html",200,["id=\"customer-login-form\"",
 await fetchCheck("site.cockpit","/cockpit.html",200,["id=\"auth-form\"","ACCÈS PRODUCTION"]);
 await fetchCheck("site.terms","/conditions-abonnement/",200,["3,00 € TTC par mois"]);
 await fetchCheck("site.privacy","/confidentialite/",200,["CONFIDENTIALITÉ","RGPD"]);
+await fetchCheck("site.legal","/mentions-legales/",200,["Mentions légales"]);
+await fetchCheck("site.terms-of-use","/conditions-utilisation/",200,["Conditions générales d’utilisation"]);
+await fetchCheck("site.cookies","/cookies-traceurs/",200,["Cookies et traceurs"]);
+await fetchCheck("site.cancellation","/resilier-contrat/",200,["Résilier votre contrat","client.html?action=cancel-subscription"]);
+await fetchCheck("site.withdrawal","/retractation/",200,["14 jours"]);
 await fetchCheck("api.health","/api/v1/health",200,[],b=>b&&b.status==="ok"&&b.mode==="production");
 await fetchCheck("auth.boundary","/api/v1/customer/auth/me",401,["AUTH_REQUIRED"]);
 await fetchCheck("billing.boundary","/api/v1/customer/billing/status",401,["AUTH_REQUIRED"]);
