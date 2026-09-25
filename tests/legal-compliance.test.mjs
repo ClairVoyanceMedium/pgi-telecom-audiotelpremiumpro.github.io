@@ -25,7 +25,7 @@ test("registration requires current legal documents and keeps privacy acknowledg
   assert.match(audience,/conditions-utilisation/);
   assert.match(portal,/legal_terms_accepted/);
   assert.match(portal,/privacy_notice_acknowledged/);
-  assert.match(portal,/legal_version:"2026-09-25"/);
+  assert.match(portal,/legal_version:"2026-09-26"/);
   assert.match(server,/customer\/auth\/register/);
 });
 
