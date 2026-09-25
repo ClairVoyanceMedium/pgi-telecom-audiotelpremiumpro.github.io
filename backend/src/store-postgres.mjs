@@ -3757,12 +3757,7 @@ export class PostgresStore{
         " WHERE lower(cp.email)=lower($1) OR lower(COALESCE(t.billing_email,''))=lower($1)"+
         " ORDER BY (s.id IS NOT NULL) DESC,m.created_at DESC LIMIT 1",
         [email]
-      ).catch(async()=>tx.unsafe(
-        "SELECT t.id AS tenant_id,cp.id::text AS customer_principal_id,s.id AS subscription_id FROM customer_principals cp"+
-        " JOIN customer_tenant_memberships m ON m.customer_principal_id=cp.id AND m.status='active' JOIN tenants t ON t.id=m.tenant_id"+
-        " LEFT JOIN LATERAL (SELECT ts.id FROM tenant_subscriptions ts JOIN service_plans p ON p.id=ts.service_plan_id WHERE ts.tenant_id=t.id AND p.plan_key='external-sva-access' ORDER BY (ts.status IN ('active','past_due')) DESC,ts.created_at DESC,ts.id DESC LIMIT 1) s ON true"+
-        " WHERE lower(cp.email)=lower($1) OR lower(COALESCE(t.billing_email,''))=lower($1) LIMIT 1",[email]
-      ));
+      );
       const matched=matches[0]||{};
       const rows=await tx.unsafe(
         "INSERT INTO consumer_withdrawal_requests(tenant_id,customer_principal_id,subscription_id,first_name,last_name,acknowledgement_email,contract_reference,statement,legal_version,evidence)"+
