@@ -105,6 +105,19 @@ export async function createStripeCheckout(config,billing,idempotencyKey){
   if(!session?.url||!/^https:\/\/checkout\.stripe\.com\//i.test(session.url))throw failure(502,"STRIPE_CHECKOUT_URL_INVALID");
   return {url:session.url,session_id:session.id,price_id:price.id,provider:"stripe"};
 }
+export async function scheduleStripeSubscriptionCancellation(config,providerSubscriptionReference,idempotencyKey){
+  const subscriptionId=String(providerSubscriptionReference||"").trim();
+  if(!/^sub_[A-Za-z0-9]+$/.test(subscriptionId))throw failure(409,"BILLING_SUBSCRIPTION_NOT_AVAILABLE");
+  const subscription=await stripeApi(config,"/v1/subscriptions/"+encodeURIComponent(subscriptionId),{
+    method:"POST",params:{cancel_at_period_end:true},idempotencyKey
+  });
+  if(!subscription||String(subscription.id||"")!==subscriptionId)throw failure(502,"STRIPE_SUBSCRIPTION_RESPONSE_INVALID");
+  return {
+    provider:"stripe",subscription_id:subscriptionId,cancel_at_period_end:Boolean(subscription.cancel_at_period_end),
+    current_period_end:periodIso(subscription?.items?.data?.[0]?.current_period_end||subscription.current_period_end),
+    status:normalizeStatus(subscription.status,"customer.subscription.updated")
+  };
+}
 export async function createStripePortalSession(config,billing){
   const customer=String(billing?.subscription?.provider_customer_reference||"");
   if(!/^cus_[A-Za-z0-9]+$/.test(customer))throw failure(409,"BILLING_CUSTOMER_NOT_AVAILABLE");
