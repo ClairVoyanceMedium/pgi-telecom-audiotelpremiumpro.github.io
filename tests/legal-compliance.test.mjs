@@ -25,7 +25,15 @@ test("registration requires current legal documents and keeps privacy acknowledg
   assert.match(audience,/conditions-utilisation/);
   assert.match(portal,/legal_terms_accepted/);
   assert.match(portal,/privacy_notice_acknowledged/);
-  assert.match(portal,/legal_version:"2026-09-26"/);
+  assert.match(portal,/legal_version:"2026-09-26-b2b-b2c-v2"/);
+  const terms=read("site/seo/conditions-abonnement.html"),cgu=read("site/seo/conditions-utilisation.html");
+  assert.match(terms,/Partie B2C : informations avant engagement/);
+  assert.match(terms,/Partie B2B : socle commercial/);
+  assert.match(terms,/garantie légale de conformité/i);
+  assert.match(terms,/commande et obligation de paiement/i);
+  assert.match(terms,/2026-09-26-b2b-b2c-v2/);
+  assert.match(cgu,/Règles particulières aux consommateurs/);
+  assert.match(cgu,/Règles particulières aux professionnels/);
   assert.match(server,/customer\/auth\/register/);
 });
 
@@ -33,6 +41,7 @@ test("checkout requires terms and explicit immediate performance request",()=>{
   const billing=read("assets/client-billing.js"),server=read("backend/server.mjs");
   assert.match(billing,/client-billing-immediate/);
   assert.match(billing,/immediate_performance_requested:true/);
+  assert.match(billing,/Souscrire avec obligation de paiement/);
   assert.match(server,/SUBSCRIPTION_LEGAL_TERMS_REQUIRED/);
   assert.match(server,/IMMEDIATE_PERFORMANCE_REQUEST_REQUIRED/);
   assert.match(server,/LEGAL_DOCUMENT_VERSION_OUTDATED/);
