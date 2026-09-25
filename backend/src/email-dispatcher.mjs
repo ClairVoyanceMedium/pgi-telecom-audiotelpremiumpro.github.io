@@ -2,7 +2,8 @@ import {emailHash,normalizeEmail,sendTransactionalEmail} from "./resend-email.mj
 
 const OUTBOX_TYPES=[
   "customer.self_registered","tenant.status","subscription.changed",
-  "portability.requested","service.incident.created","service.incident.note","service.incident.changed"
+  "portability.requested","service.incident.created","service.incident.note","service.incident.changed",
+  "tenant.revenue_distribution.updated"
 ];
 const TERMINAL_SEND_STATES=new Set(["accepted","sent","delivered","delayed","clicked","bounced","complained","suppressed"]);
 const EMAIL_RE=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -175,6 +176,9 @@ async function messagesForEvent(store,config,event){
   }
   if(event.event_type==="service.incident.changed"){
     if(customerEmail&&["resolved","closed"].includes(String(p.status||"")))return [msg("customer",customerEmail,customerName,"support_resolved","support",event,base)];
+  }
+  if(event.event_type==="tenant.revenue_distribution.updated"){
+    if(customerEmail&&String(p.status||"")==="payable")return [msg("customer",customerEmail,customerName,"payout_available","billing",event,{...base,currency:p.currency||null})];
   }
   return [];
 }

@@ -209,6 +209,13 @@ export function buildTransactionalMessage(config,templateKey,data={}){
       paragraphs:["La résiliation de votre abonnement Audiotel Premium Pro a été enregistrée.","Votre compte n’est pas supprimé par cet e-mail. Les conditions de fin de service restent celles affichées dans votre espace client."],
       cta:{label:"Consulter mon espace",url:portalUrl}
     },
+    payout_available:{
+      subject:"Votre reversement Audiotel est disponible",
+      title:"Reversement disponible",
+      lead:greeting,
+      paragraphs:["Un reversement issu du trafic SVA a franchi les contrôles nécessaires et est maintenant indiqué comme disponible dans votre espace client.","Le statut affiché dans votre espace reste la référence pour le suivi du règlement."],
+      cta:{label:"Consulter mes reversements",url:portalUrl}
+    },
     portability_received:{
       subject:"Votre demande de portabilité a été reçue",
       title:"Demande de portabilité enregistrée",
