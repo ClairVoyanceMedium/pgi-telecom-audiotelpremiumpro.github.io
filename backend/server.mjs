@@ -542,6 +542,10 @@ export function createBackend(options={}){
         requireCustomerCsrf(req,customerActor,config);
         const checkoutIdempotencyKey=String(req.headers["idempotency-key"]||"").trim();
         if(!checkoutIdempotencyKey||checkoutIdempotencyKey.length>200){const e=new Error("Checkout idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
+        const legal=await readJson(req,config.bodyLimitBytes);
+        if(legal.subscription_terms_accepted!==true||legal.privacy_notice_acknowledged!==true){const e=new Error("Legal terms acceptance required");e.status=400;e.code="SUBSCRIPTION_LEGAL_TERMS_REQUIRED";throw e;}
+        if(legal.immediate_performance_requested!==true){const e=new Error("Immediate performance request required");e.status=400;e.code="IMMEDIATE_PERFORMANCE_REQUEST_REQUIRED";throw e;}
+        if(String(legal.legal_version||"")!=="2026-09-25"){const e=new Error("Legal document version outdated");e.status=409;e.code="LEGAL_DOCUMENT_VERSION_OUTDATED";throw e;}
         const context=await store.customerSessionContext(customerActor);
         requireCustomerPermission(context,"billing.manage");
         const billing=await store.customerBillingPreparation(context.tenant_id);
@@ -549,8 +553,16 @@ export function createBackend(options={}){
         if(!billing.offer)return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:"NO_ACTIVE_BILLING_OFFER"},billing_provider:provider});
         if(["active","past_due"].includes(String(billing.subscription?.status||"")))return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:"SUBSCRIPTION_ALREADY_EXISTS"},billing_provider:provider});
         if(!provider.checkout_available)return done(res,metrics,started,"customer.billing.checkout",503,{error:{code:"PAYMENT_PROVIDER_NOT_CONNECTED"},billing_provider:provider,checkout:{offer:billing.offer,prefill:billing.checkout_prefill,return_paths:billing.return_paths}});
-        const payload={tenant_id:context.tenant_id,price_version_id:billing.offer.price_version_id,provider:"stripe"};
-        const result=await store.idempotent(checkoutIdempotencyKey,"customer.billing.checkout",payload,()=>createStripeCheckout(config,billing,checkoutIdempotencyKey));
+        const payload={tenant_id:context.tenant_id,price_version_id:billing.offer.price_version_id,provider:"stripe",legal_version:"2026-09-25",immediate_performance_requested:true};
+        const result=await store.idempotent(checkoutIdempotencyKey,"customer.billing.checkout",payload,async()=>{
+          const session=await createStripeCheckout(config,billing,checkoutIdempotencyKey);
+          await store.recordCustomerLegalAcceptance(context.tenant_id,context.id,{
+            acceptance_type:"subscription_checkout",document_version:"2026-09-25",
+            documents:{cgu:"/conditions-utilisation/",conditions:"/conditions-abonnement/",privacy:"/confidentialite/",retractation:"/retractation/",cancellation:"/resilier-contrat/"},
+            immediate_performance_requested:true,evidence:{source:"customer_checkout",stripe_checkout_created:true}
+          });
+          return session;
+        });
         return done(res,metrics,started,"customer.billing.checkout",201,{...result.value,replayed:result.replayed,billing_provider:provider});
       }
       if(method==="POST"&&pathname==="/api/v1/customer/billing/portal-session"){
