@@ -158,7 +158,7 @@ if(publicBaseUrl){
   const lastmod=new Date().toISOString().slice(0,10);
   const urls=[
     {loc:publicBaseUrl+"/",priority:"1.0"},
-    ...seoPages.map(slug=>({loc:publicBaseUrl+"/"+slug+"/",priority:"0.8"}))
+    ...seoPages.filter(slug=>slug!=="mentions-legales").map(slug=>({loc:publicBaseUrl+"/"+slug+"/",priority:"0.8"}))
   ];
   fs.writeFileSync(
     path.join(dist,"sitemap.xml"),
