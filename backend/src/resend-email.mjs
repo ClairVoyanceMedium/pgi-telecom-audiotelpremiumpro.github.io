@@ -117,6 +117,8 @@ export function buildTransactionalMessage(config,templateKey,data={}){
   const greeting=firstName?"Bonjour "+firstName+",":"Bonjour,";
   const portalUrl=sameOriginUrl(config,"/client.html");
   const billingUrl=sameOriginUrl(config,"/client.html?billing=payment-required");
+  const logoUrl=sameOriginUrl(config,"/assets/audiotel-brand-logo-v33.png");
+  const homeUrl=sameOriginUrl(config,"/");
   const cases={
     email_verification:{
       subject:"Votre code de vérification Audiotel Premium Pro",
@@ -272,10 +274,10 @@ export function buildTransactionalMessage(config,templateKey,data={}){
   };
   const model=cases[key];
   if(!model)throw providerError("EMAIL_TEMPLATE_NOT_FOUND",500);
-  return renderMessage(model);
+  return renderMessage(model,{logoUrl,homeUrl});
 }
 
-function renderMessage(model){
+function renderMessage(model,brand={}){
   const subject=cleanText(model.subject,180);
   const lead=cleanText(model.lead,300);
   const paragraphs=(model.paragraphs||[]).map(x=>cleanText(x,1200)).filter(Boolean);
@@ -290,7 +292,8 @@ function renderMessage(model){
   const codeHtml=model.code?'<div style="font-size:34px;font-weight:700;letter-spacing:8px;text-align:center;padding:20px 10px;margin:20px 0;background:#f5f1ed;border-radius:12px;color:#1f1713">'+escapeHtml(cleanText(model.code,20))+'</div>':"";
   const ctaHtml=model.cta?.url?'<p style="margin:24px 0"><a href="'+escapeHtml(model.cta.url)+'" style="display:inline-block;background:#33251f;color:#fff;text-decoration:none;padding:13px 18px;border-radius:9px;font-weight:700">'+escapeHtml(cleanText(model.cta.label,120))+'</a></p>':"";
   const footHtml=model.foot?'<p style="font-size:13px;line-height:1.5;color:#6c6059;margin:24px 0 0">'+escapeHtml(cleanText(model.foot,1000))+'</p>':"";
-  const html='<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>@media only screen and (max-width:600px){.pgi-wrap{padding:12px!important}.pgi-card{padding:20px!important}.pgi-title{font-size:22px!important}.pgi-btn{display:block!important;text-align:center!important}}</style></head><body style="margin:0;background:#f4f1ee;font-family:Arial,Helvetica,sans-serif;color:#221914"><div class="pgi-wrap" style="padding:28px 12px"><div class="pgi-card" style="max-width:600px;margin:0 auto;background:#fff;border:1px solid #ded6d0;border-radius:14px;padding:30px"><div style="font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#78675d;margin-bottom:12px">Audiotel Premium Pro</div><h1 class="pgi-title" style="font-size:26px;line-height:1.25;margin:0 0 18px;color:#211812">'+escapeHtml(cleanText(model.title,180))+'</h1><p style="margin:0 0 14px;line-height:1.6;color:#332a25">'+escapeHtml(lead)+'</p>'+paragraphHtml+codeHtml+ctaHtml+footHtml+'<hr style="border:0;border-top:1px solid #ece6e2;margin:28px 0 16px"><p style="font-size:12px;line-height:1.5;color:#81736a;margin:0">Message transactionnel lié à votre compte ou à une demande de service. Aucun mot de passe ne vous sera demandé par e-mail.</p></div></div></body></html>';
+  const logoHtml=brand.logoUrl?'<div style="text-align:center;margin:0 0 18px"><a href="'+escapeHtml(brand.homeUrl||brand.logoUrl)+'" target="_blank" rel="noopener noreferrer" style="text-decoration:none"><img src="'+escapeHtml(brand.logoUrl)+'" width="180" alt="Audiotel Premium Pro" style="display:inline-block;width:180px;max-width:100%;height:auto;border:0;outline:none;text-decoration:none"></a></div>':"";
+  const html='<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>@media only screen and (max-width:600px){.pgi-wrap{padding:12px!important}.pgi-card{padding:20px!important}.pgi-title{font-size:22px!important}.pgi-btn{display:block!important;text-align:center!important}}</style></head><body style="margin:0;background:#f4f1ee;font-family:Arial,Helvetica,sans-serif;color:#221914"><div class="pgi-wrap" style="padding:28px 12px"><div class="pgi-card" style="max-width:600px;margin:0 auto;background:#fff;border:1px solid #ded6d0;border-radius:14px;padding:30px">'+logoHtml+'<div style="font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#78675d;margin-bottom:12px;text-align:center">Audiotel Premium Pro</div><h1 class="pgi-title" style="font-size:26px;line-height:1.25;margin:0 0 18px;color:#211812">'+escapeHtml(cleanText(model.title,180))+'</h1><p style="margin:0 0 14px;line-height:1.6;color:#332a25">'+escapeHtml(lead)+'</p>'+paragraphHtml+codeHtml+ctaHtml+footHtml+'<hr style="border:0;border-top:1px solid #ece6e2;margin:28px 0 16px"><p style="font-size:12px;line-height:1.5;color:#81736a;margin:0">Message transactionnel lié à votre compte ou à une demande de service. Aucun mot de passe ne vous sera demandé par e-mail.</p></div></div></body></html>';
   return {subject,text,html};
 }
 
