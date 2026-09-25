@@ -75,7 +75,7 @@ export async function sendTransactionalEmail(config,options={}){
   const controller=new AbortController();
   const timeout=setTimeout(()=>controller.abort(),Number(config.resendTimeoutMs||8000));
   const body={
-    from:(config.transactionalFromName||"PGI Telecom")+" <"+fromEmail+">",
+    from:(config.transactionalFromName||"Audiotel Premium Pro")+" <"+fromEmail+">",
     to:[to],
     reply_to:replyTo,
     subject:message.subject,
@@ -119,7 +119,7 @@ export function buildTransactionalMessage(config,templateKey,data={}){
   const billingUrl=sameOriginUrl(config,"/client.html?billing=payment-required");
   const cases={
     email_verification:{
-      subject:"Votre code de vérification PGI Telecom",
+      subject:"Votre code de vérification Audiotel Premium Pro",
       title:"Vérification de votre adresse e-mail",
       lead:greeting,
       paragraphs:["Utilisez le code ci-dessous pour confirmer votre adresse e-mail et poursuivre la création de votre espace Audiotel Premium Pro."],
@@ -140,7 +140,7 @@ export function buildTransactionalMessage(config,templateKey,data={}){
       paragraphs:[safeDetail("Compte",data.tenant_name),safeDetail("Pays",data.country_code),safeDetail("Type",data.account_type),safeDetail("Besoin",data.service_intent)].filter(Boolean)
     },
     account_activated:{
-      subject:"Votre compte PGI Telecom est activé",
+      subject:"Votre compte Audiotel Premium Pro est activé",
       title:"Compte activé",
       lead:greeting,
       paragraphs:["Votre compte Audiotel Premium Pro est désormais actif.","L’accès aux fonctions SVA reste conditionné aux contrôles techniques, contractuels et réglementaires applicables."],
@@ -154,56 +154,56 @@ export function buildTransactionalMessage(config,templateKey,data={}){
       cta:{label:"Consulter mon espace",url:portalUrl}
     },
     subscription_created:{
-      subject:"Abonnement PGI Telecom créé",
+      subject:"Abonnement Audiotel Premium Pro créé",
       title:"Abonnement enregistré",
       lead:greeting,
       paragraphs:["Votre abonnement Audiotel Premium Pro a été enregistré.","La facturation de la plateforme est distincte des reversements liés au trafic SVA."],
       cta:{label:"Consulter la facturation",url:billingUrl}
     },
     payment_succeeded:{
-      subject:"Paiement PGI Telecom confirmé",
+      subject:"Paiement Audiotel Premium Pro confirmé",
       title:"Paiement confirmé",
       lead:greeting,
       paragraphs:["Votre paiement d’abonnement a été confirmé.","Aucune action n’est nécessaire de votre part."],
       cta:{label:"Consulter la facturation",url:billingUrl}
     },
     payment_recovered:{
-      subject:"Paiement PGI Telecom régularisé",
+      subject:"Paiement Audiotel Premium Pro régularisé",
       title:"Paiement régularisé",
       lead:greeting,
       paragraphs:["Le paiement précédemment en attente est maintenant régularisé.","Votre état de facturation a été mis à jour automatiquement."],
       cta:{label:"Consulter la facturation",url:billingUrl}
     },
     payment_failed:{
-      subject:"Action requise : paiement PGI Telecom non abouti",
+      subject:"Action requise : paiement Audiotel Premium Pro non abouti",
       title:"Paiement à régulariser",
       lead:greeting,
       paragraphs:["Le dernier paiement de votre abonnement n’a pas abouti.","Votre compte et vos données sont conservés. Utilisez votre espace client pour ouvrir le portail de facturation sécurisé et mettre à jour votre moyen de paiement."],
       cta:{label:"Régulariser ma facturation",url:billingUrl}
     },
     payment_action_required:{
-      subject:"Action requise pour finaliser votre paiement PGI Telecom",
+      subject:"Action requise pour finaliser votre paiement Audiotel Premium Pro",
       title:"Validation de paiement requise",
       lead:greeting,
       paragraphs:["Votre prestataire de paiement demande une action supplémentaire pour finaliser le règlement.","Connectez-vous à votre espace client pour poursuivre via le portail Stripe sécurisé."],
       cta:{label:"Finaliser le paiement",url:billingUrl}
     },
     payment_reminder:{
-      subject:"Rappel : régularisation de votre abonnement PGI Telecom",
+      subject:"Rappel : régularisation de votre abonnement Audiotel Premium Pro",
       title:"Rappel de régularisation",
       lead:greeting,
       paragraphs:["Votre abonnement reste en attente de régularisation.","Le service existant peut rester disponible pendant le délai de récupération prévu, mais certaines fonctions pourront être suspendues à son échéance."],
       cta:{label:"Régulariser ma facturation",url:billingUrl}
     },
     subscription_suspended:{
-      subject:"Abonnement PGI Telecom suspendu",
+      subject:"Abonnement Audiotel Premium Pro suspendu",
       title:"Abonnement suspendu",
       lead:greeting,
       paragraphs:["Le délai de régularisation est arrivé à échéance et les fonctions payantes peuvent être suspendues.","Votre compte et vos données restent conservés. La régularisation du paiement permet la reprise selon les règles du service."],
       cta:{label:"Régulariser ma facturation",url:billingUrl}
     },
     subscription_cancelled:{
-      subject:"Résiliation de votre abonnement PGI Telecom",
+      subject:"Résiliation de votre abonnement Audiotel Premium Pro",
       title:"Abonnement résilié",
       lead:greeting,
       paragraphs:["La résiliation de votre abonnement Audiotel Premium Pro a été enregistrée.","Votre compte n’est pas supprimé par cet e-mail. Les conditions de fin de service restent celles affichées dans votre espace client."],
@@ -284,13 +284,13 @@ function renderMessage(model){
     model.code?"Code : "+cleanText(model.code,20):"",
     model.cta?.url?(cleanText(model.cta.label,120)+": "+model.cta.url):"",
     model.foot||"",
-    "PGI Telecom — Audiotel Premium Pro"
+    "Audiotel Premium Pro"
   ].filter(Boolean).join("\n\n");
   const paragraphHtml=paragraphs.map(p=>'<p style="margin:0 0 14px;line-height:1.6;color:#332a25">'+escapeHtml(p)+'</p>').join("");
   const codeHtml=model.code?'<div style="font-size:34px;font-weight:700;letter-spacing:8px;text-align:center;padding:20px 10px;margin:20px 0;background:#f5f1ed;border-radius:12px;color:#1f1713">'+escapeHtml(cleanText(model.code,20))+'</div>':"";
   const ctaHtml=model.cta?.url?'<p style="margin:24px 0"><a href="'+escapeHtml(model.cta.url)+'" style="display:inline-block;background:#33251f;color:#fff;text-decoration:none;padding:13px 18px;border-radius:9px;font-weight:700">'+escapeHtml(cleanText(model.cta.label,120))+'</a></p>':"";
   const footHtml=model.foot?'<p style="font-size:13px;line-height:1.5;color:#6c6059;margin:24px 0 0">'+escapeHtml(cleanText(model.foot,1000))+'</p>':"";
-  const html='<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>@media only screen and (max-width:600px){.pgi-wrap{padding:12px!important}.pgi-card{padding:20px!important}.pgi-title{font-size:22px!important}.pgi-btn{display:block!important;text-align:center!important}}</style></head><body style="margin:0;background:#f4f1ee;font-family:Arial,Helvetica,sans-serif;color:#221914"><div class="pgi-wrap" style="padding:28px 12px"><div class="pgi-card" style="max-width:600px;margin:0 auto;background:#fff;border:1px solid #ded6d0;border-radius:14px;padding:30px"><div style="font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#78675d;margin-bottom:12px">PGI Telecom · Audiotel Premium Pro</div><h1 class="pgi-title" style="font-size:26px;line-height:1.25;margin:0 0 18px;color:#211812">'+escapeHtml(cleanText(model.title,180))+'</h1><p style="margin:0 0 14px;line-height:1.6;color:#332a25">'+escapeHtml(lead)+'</p>'+paragraphHtml+codeHtml+ctaHtml+footHtml+'<hr style="border:0;border-top:1px solid #ece6e2;margin:28px 0 16px"><p style="font-size:12px;line-height:1.5;color:#81736a;margin:0">Message transactionnel lié à votre compte ou à une demande de service. Aucun mot de passe ne vous sera demandé par e-mail.</p></div></div></body></html>';
+  const html='<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>@media only screen and (max-width:600px){.pgi-wrap{padding:12px!important}.pgi-card{padding:20px!important}.pgi-title{font-size:22px!important}.pgi-btn{display:block!important;text-align:center!important}}</style></head><body style="margin:0;background:#f4f1ee;font-family:Arial,Helvetica,sans-serif;color:#221914"><div class="pgi-wrap" style="padding:28px 12px"><div class="pgi-card" style="max-width:600px;margin:0 auto;background:#fff;border:1px solid #ded6d0;border-radius:14px;padding:30px"><div style="font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#78675d;margin-bottom:12px">Audiotel Premium Pro</div><h1 class="pgi-title" style="font-size:26px;line-height:1.25;margin:0 0 18px;color:#211812">'+escapeHtml(cleanText(model.title,180))+'</h1><p style="margin:0 0 14px;line-height:1.6;color:#332a25">'+escapeHtml(lead)+'</p>'+paragraphHtml+codeHtml+ctaHtml+footHtml+'<hr style="border:0;border-top:1px solid #ece6e2;margin:28px 0 16px"><p style="font-size:12px;line-height:1.5;color:#81736a;margin:0">Message transactionnel lié à votre compte ou à une demande de service. Aucun mot de passe ne vous sera demandé par e-mail.</p></div></div></body></html>';
   return {subject,text,html};
 }
 
