@@ -1,3 +1,16 @@
+## Monthly Contract & Site Protection v3 — 2026-09-26
+
+- abonnement plateforme à durée indéterminée, facturé mensuellement d’avance ;
+- première période mensuelle due lors de la souscription, puis renouvellement mensuel jusqu’à résiliation ;
+- résiliation possible à tout moment avec effet normal à la fin de la période déjà payée et sans nouvelle facturation ensuite ;
+- absence de prorata pour une résiliation purement volontaire, sous réserve des droits impératifs de rétractation, conformité, erreur de facturation ou paiement indu ;
+- affichage client et Stripe Checkout alignés sur le même modèle contractuel ;
+- portail Stripe live conservé en annulation de fin de période sans prorata et liens juridiques replacés sur le domaine officiel ;
+- clauses dédiées aux tableaux de bord, estimations, CDR, numéros, portabilité, routage, studio vocal, support, exports, délégations et sécurité ;
+- wording financier rendu indicatif plutôt que promesse de gain ;
+- profil voyance non présélectionné juridiquement ; page numéro SVA alignée particuliers/professionnels ;
+- version probatoire portée à 2026-09-26-b2b-b2c-v3.
+
 ## Dual B2B/B2C Terms v2 — 2026-09-26
 
 - conditions générales restructurées pour particuliers, non-professionnels et professionnels ;
