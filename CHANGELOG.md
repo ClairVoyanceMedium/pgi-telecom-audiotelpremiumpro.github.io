@@ -1,3 +1,12 @@
+## Dual B2B/B2C Terms v2 — 2026-09-26
+
+- conditions générales restructurées pour particuliers, non-professionnels et professionnels ;
+- qualification juridique réelle prioritaire sur le simple profil sélectionné ;
+- bloc B2C renforcé : information précontractuelle, obligation de paiement, support durable, prix, rétractation, conformité du service numérique, réclamations, médiation et clauses abusives ;
+- bloc B2B renforcé : socle commercial, obligations professionnelles, responsabilité, fraude, reversements et application des protections légales exceptionnelles aux petites entreprises lorsqu’elles y ont droit ;
+- bouton de souscription rendu explicite : « Souscrire avec obligation de paiement » ;
+- nouvelle version probatoire : 2026-09-26-b2b-b2c-v2.
+
 ## Legal Shield — 2026-09-26
 
 - refonte complète des CGU et conditions d’abonnement avec séparation B2B/B2C ;

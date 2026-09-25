@@ -3170,7 +3170,7 @@ export class PostgresStore{
     if(!["individual","business"].includes(accountType))throw problem(400,"INVALID_CUSTOMER_ACCOUNT_TYPE");
     if(!authorityConfirmed)throw problem(400,"REGISTRATION_AUTHORITY_REQUIRED");
     if(!legalAccepted||!privacyAcknowledged)throw problem(400,"REGISTRATION_LEGAL_TERMS_REQUIRED");
-    if(legalVersion!=="2026-09-26")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
+    if(legalVersion!=="2026-09-26-b2b-b2c-v2")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
     if(localeInput&&!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(localeInput))throw problem(400,"INVALID_TENANT_LOCALE");
     if(timezoneInput&&!/^[A-Za-z0-9_+\-/]+(?:\/[A-Za-z0-9_+\-]+)*$/.test(timezoneInput))throw problem(400,"INVALID_TENANT_TIMEZONE");
     const effectiveCompanyName=accountType==="business"?companyName:"";
@@ -3742,7 +3742,7 @@ export class PostgresStore{
   async recordCustomerLegalAcceptance(tenantId,principalId,input={}){
     const type=String(input.acceptance_type||"").trim(),version=String(input.document_version||"").trim();
     if(!["account_terms","subscription_checkout"].includes(type))throw problem(400,"INVALID_LEGAL_ACCEPTANCE_TYPE");
-    if(version!=="2026-09-26")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
+    if(version!=="2026-09-26-b2b-b2c-v2")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
     const documents=input.documents&&typeof input.documents==="object"?input.documents:{};
     const immediate=input.immediate_performance_requested===true;
     const evidence=input.evidence&&typeof input.evidence==="object"?input.evidence:{};
