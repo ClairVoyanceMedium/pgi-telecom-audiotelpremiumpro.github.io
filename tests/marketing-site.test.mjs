@@ -115,3 +115,16 @@ test("public SEO sources never expose the legacy GitHub identity",()=>{
   for(const value of [html,robots,sitemap,buildStatic])assert.doesNotMatch(value,/clairvoyancemedium\.github\.io/i);
   assert.match(buildStatic,/audiotel-premium-pro\.com/);
 });
+
+test("public funnels preserve legal customer qualification and non-promissory finance wording",()=>{
+  const voyance=fs.readFileSync("site/seo/audiotel-voyance.html","utf8");
+  const number=fs.readFileSync("site/seo/numero-sva.html","utf8");
+  const comparator=fs.readFileSync("site/seo/comparateur-audiotel.html","utf8");
+  const liveFinance=fs.readFileSync("assets/client-live-finance.js","utf8");
+  assert.doesNotMatch(voyance,/demande-ouverture\/\?profil=particulier/);
+  assert.match(number,/particuliers et professionnels/i);
+  assert.match(comparator,/écart économique potentiel/i);
+  assert.doesNotMatch(comparator,/<title>[^<]*gain potentiel/i);
+  assert.match(liveFinance,/ESTIMATION PERSONNELLE/);
+  assert.match(liveFinance,/reversements validés contractuellement font foi/);
+});
