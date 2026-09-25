@@ -182,7 +182,14 @@ async function loadPortal(){
 }
 window.PGIReload=loadPortal;
 function showApp(){
-  $("customer-auth").hidden=true;$("customer-app").hidden=false;loadPortal().catch(function(e){toast("Chargement impossible : "+(e.code||e.message));});
+  $("customer-auth").hidden=true;$("customer-app").hidden=false;
+  loadPortal().then(function(){
+    var u=new URL(location.href);
+    if(u.searchParams.get("action")==="cancel-subscription"){
+      u.searchParams.delete("action");history.replaceState(null,"",u.pathname+(u.search?"?"+u.searchParams.toString():"")+u.hash);
+      ensureBilling().then(function(x){return x.open("manage");}).catch(function(){toast("Gestion de la résiliation momentanément indisponible.");});
+    }
+  }).catch(function(e){toast("Chargement impossible : "+(e.code||e.message));});
 }
 function hideAuthPanels(){
   ["login-panel","forgot-panel","reset-panel","register-panel","activation-panel"].forEach(function(id){var el=$(id);if(el)el.hidden=true;});
@@ -299,6 +306,9 @@ async function submitRegistration(e){
     email:$("register-email").value.trim(),
     password:password,
     authority_confirmed:$("register-authority").checked,
+    legal_terms_accepted:Boolean($("register-legal")&&$("register-legal").checked),
+    privacy_notice_acknowledged:Boolean($("register-legal")&&$("register-legal").checked),
+    legal_version:"2026-09-25",
     website:$("register-website").value,
     preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",
     timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC")
@@ -315,7 +325,9 @@ async function submitRegistration(e){
       INVALID_REGISTRATION_NUMBER:"Numéro d’immatriculation invalide.",
       INVALID_PHONE:"Numéro de téléphone invalide.",
       REGISTRATION_RATE_LIMITED:"Trop de tentatives. Réessayez plus tard.",
-      REGISTRATION_AUTHORITY_REQUIRED:"Confirmez la création du compte."
+      REGISTRATION_AUTHORITY_REQUIRED:"Confirmez la création du compte.",
+      REGISTRATION_LEGAL_TERMS_REQUIRED:"Acceptez les documents contractuels avant de créer le compte.",
+      LEGAL_DOCUMENT_VERSION_OUTDATED:"Les documents juridiques ont été mis à jour. Relisez-les puis recommencez."
     };
     b&&(b.disabled=false);setAuthMessage(messages[err.code]||"Création impossible.",true);
   }
