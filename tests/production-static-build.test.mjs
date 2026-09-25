@@ -46,7 +46,8 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.match(robots,/Disallow: \/cockpit/);
     assert.match(robots,/Sitemap: https:\/\/pgi-test\.vercel\.app\/sitemap\.xml/);
     assert.match(sitemap,/<loc>https:\/\/pgi-test\.vercel\.app\/<\/loc>/);
-    for(const slug of seoSlugs.filter(x=>x!=="mentions-legales"))assert.match(sitemap,new RegExp("<loc>https:\\/\\/pgi-test\\.vercel\\.app\\/"+slug+"\\/<\\/loc>"));\n    assert.doesNotMatch(sitemap,/mentions-legales/);
+    for(const slug of seoSlugs.filter(x=>x!=="mentions-legales"))assert.match(sitemap,new RegExp("<loc>https:\\/\\/pgi-test\\.vercel\\.app\\/"+slug+"\\/<\\/loc>"));
+    assert.doesNotMatch(sitemap,/mentions-legales/);
     seoPages.forEach((page,index)=>{
       const slug=seoSlugs[index],legal=["mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","cookies-traceurs","resilier-contrat","retractation"].includes(slug);
       assert.match(page,new RegExp('rel="canonical" href="https:\\/\\/pgi-test\\.vercel\\.app\\/'+slug+'\\/"'));
