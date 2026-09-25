@@ -32,7 +32,10 @@ test("public homepage links to focused SEO content without changing the signup f
 });
 
 test("public pricing and revenue example stay explicit and non-guaranteed",()=>{
-  assert.match(html,/3 € TTC \/ mois/);\n  assert.match(html,/Facturé mensuellement d’avance/);\n  assert.match(html,/Contrat à durée indéterminée/);\n  assert.match(html,/Résiliation possible à tout moment/);
+  assert.match(html,/3 € TTC \/ mois/);
+  assert.match(html,/Facturé mensuellement d’avance/);
+  assert.match(html,/Contrat à durée indéterminée/);
+  assert.match(html,/Résiliation possible à tout moment/);
   assert.match(html,/0,10 € HT \/ min/);
   assert.match(html,/1 800 € HT/);
   assert.match(html,/Simulation non contractuelle/);
