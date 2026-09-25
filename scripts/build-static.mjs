@@ -27,6 +27,7 @@ const files=[
   "assets/client-google.js",
   "assets/client-portal-api.js",
   "assets/client-portal.js",
+  "assets/client-billing.js",
   "assets/customer-email-verification.js",
   "assets/client-live-finance.js",
   "assets/client-live-finance.css",
