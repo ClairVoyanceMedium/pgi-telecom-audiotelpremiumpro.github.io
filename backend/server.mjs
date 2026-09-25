@@ -120,7 +120,7 @@ export function createBackend(options={}){
         const verified=await verifyResendWebhook(req,config);
         const result=await applyResendWebhookEvent(store,verified);
         let inbound=null;
-        if(String(verified.event?.type||"")==="email.received"){
+        if(String(verified.event?.type||"")==="email.received"&&!result.duplicate){
           try{inbound=await forwardInboundEmailToInternal(config,verified.event?.data||{});}
           catch(error){logSecurityEmailFailure("inbound_forward",error);throw error;}
         }
