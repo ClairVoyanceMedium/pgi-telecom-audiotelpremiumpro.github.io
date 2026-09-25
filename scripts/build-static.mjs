@@ -102,15 +102,15 @@ for(const file of files){
 fs.copyFileSync(path.join(root,"index.html"),path.join(dist,"cockpit.html"));
 const publicBaseUrl=resolvePublicBaseUrl();
 const marketingSource=fs.readFileSync(path.join(root,"site","index.html"),"utf8");
-const marketingSite=applyPublicMetadata(marketingSource,publicBaseUrl);
-const marketingRoot=applyPublicMetadata(
+const marketingSite=injectLegalNavigation(applyPublicMetadata(marketingSource,publicBaseUrl));
+const marketingRoot=injectLegalNavigation(applyPublicMetadata(
   marketingSource
     .replaceAll("../assets/","assets/")
     .replaceAll("../client.html","client.html")
     .replace('href="site.css"','href="site/site.css"')
     .replace('src="site.js"','src="site/site.js"'),
   publicBaseUrl
-);
+));
 fs.writeFileSync(path.join(dist,"site","index.html"),marketingSite,"utf8");
 fs.writeFileSync(path.join(dist,"index.html"),marketingRoot,"utf8");
 const seoPages=[
@@ -122,14 +122,19 @@ const seoPages=[
   "comparateur-audiotel",
   "guide-audiotel-sva",
   "demande-ouverture",
+  "mentions-legales",
+  "conditions-utilisation",
+  "conditions-abonnement",
   "confidentialite",
-  "conditions-abonnement"
+  "cookies-traceurs",
+  "resilier-contrat",
+  "retractation"
 ];
 for(const slug of seoPages){
   const source=fs.readFileSync(path.join(root,"site","seo",slug+".html"),"utf8");
   const targetDir=path.join(dist,slug);
   fs.mkdirSync(targetDir,{recursive:true});
-  fs.writeFileSync(path.join(targetDir,"index.html"),applyLandingMetadata(source,publicBaseUrl,slug),"utf8");
+  fs.writeFileSync(path.join(targetDir,"index.html"),injectLegalNavigation(applyLandingMetadata(source,publicBaseUrl,slug)),"utf8");
 }
 
 
@@ -237,6 +242,12 @@ function applyLandingMetadata(html,baseUrl,slug){
     .replaceAll("__BASE__",base.replace(/\/+$/,""))
     .replaceAll("__CANONICAL__",canonical)
     .replaceAll("__LOGO__",logo);
+}
+
+function injectLegalNavigation(html){
+  if(html.includes('aria-label="Informations juridiques"'))return html;
+  const nav='<div class="wrap"><nav class="footer-links" aria-label="Informations juridiques"><a href="/mentions-legales/">Mentions légales</a><a href="/conditions-utilisation/">CGU</a><a href="/conditions-abonnement/">Conditions</a><a href="/confidentialite/">Confidentialité</a><a href="/cookies-traceurs/">Cookies</a><a href="/resilier-contrat/">Résilier votre contrat</a><a href="/retractation/">Rétractation</a></nav></div>';
+  return html.replace("</footer>",nav+"</footer>");
 }
 
 function escapeXml(value){
