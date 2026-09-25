@@ -1,0 +1,40 @@
+name: Production Performance Baseline
+
+on:
+  schedule:
+    - cron: "35 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-performance-baseline
+  cancel-in-progress: true
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Safe production load baseline
+        env:
+          PGI_PERF_TARGET: https://audiotel-premium-pro.com
+          PGI_PERF_ALLOW_REMOTE: "true"
+          PGI_PERF_PATHS: /api/v1/health,/
+          PGI_PERF_DURATION_SECONDS: "10"
+          PGI_PERF_CONCURRENCY: "3"
+          PGI_PERF_MAX_RPS: "3"
+          PGI_PERF_P95_MS: "2500"
+          PGI_PERF_ERROR_RATE: "0.01"
+        run: node scripts/performance-load.mjs --scenario=load
+      - name: Synthetic production boundaries
+        env:
+          PGI_SYNTHETIC_TARGET: https://audiotel-premium-pro.com
+        run: node scripts/synthetic-probe.mjs
