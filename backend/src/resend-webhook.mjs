@@ -2,7 +2,7 @@ import {createHash,createHmac,timingSafeEqual} from "node:crypto";
 
 const ALLOWED=new Set([
   "email.sent","email.delivered","email.delivery_delayed","email.bounced",
-  "email.complained","email.failed","email.suppressed","email.clicked"
+  "email.complained","email.failed","email.suppressed","email.clicked","email.received"
 ]);
 
 export async function verifyResendWebhook(req,config){
