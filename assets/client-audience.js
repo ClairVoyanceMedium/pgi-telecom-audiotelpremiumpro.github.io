@@ -1,5 +1,12 @@
 let bound=false;
 function $(id){return document.getElementById(id)}
+function ensureLegalAcceptance(){
+  if($("register-legal"))return;
+  const authority=$("register-authority")?.closest("label");if(!authority)return;
+  const label=document.createElement("label");label.className="cp-check";
+  label.innerHTML='<input id="register-legal" type="checkbox" required><span>J’accepte les <a href="/conditions-utilisation/" target="_blank" rel="noopener">CGU</a> et les <a href="/conditions-abonnement/" target="_blank" rel="noopener">conditions d’abonnement</a>. J’ai pris connaissance de la <a href="/confidentialite/" target="_blank" rel="noopener">politique de confidentialité</a>.</span>';
+  authority.insertAdjacentElement("afterend",label);
+}
 function apply(){
   const type=$("register-account-type")?.value||"",business=type==="business",individual=type==="individual";
   const companyWrap=$("register-business-company-wrap"),numberWrap=$("register-business-number-wrap"),company=$("register-company"),number=$("register-number"),note=$("register-profile-note"),authority=$("register-authority-text");
@@ -30,5 +37,5 @@ export function init(){
     if((window.PGI_CONFIG||{}).mode==="demo"&&form)form.addEventListener("submit",e=>{e.preventDefault();e.stopImmediatePropagation();const m=$("auth-message");if(m){m.classList.remove("bad");m.textContent="Démonstration : aucune demande réelle n’est envoyée depuis GitHub Pages. Le même parcours enverra la création du compte dès que l’API de production sera raccordée.";}},{capture:true});
     bound=true
   }
-  hydratePublicOrderIntent();apply();
+  ensureLegalAcceptance();hydratePublicOrderIntent();apply();
 }
