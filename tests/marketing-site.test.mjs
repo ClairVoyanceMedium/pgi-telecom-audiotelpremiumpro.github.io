@@ -106,7 +106,7 @@ test("marketing page exposes structured service data without fabricated social p
 });
 
 test("marketing metadata declares the canonical social URL",()=>{
-  assert.match(html,/property="og:url" content="https:\/\/audiotel-premium-pro\.com/"/);
+  assert.match(html,/property="og:url" content="https:\/\/audiotel-premium-pro\.com\/"/);
   assert.match(html,/name="twitter:card" content="summary_large_image"/);
 });
 
