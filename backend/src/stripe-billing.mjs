@@ -198,6 +198,15 @@ function invoiceReference(invoice){
   const id=idValue(invoice);
   return id&&/^in_[A-Za-z0-9]+$/.test(id)?id:null;
 }
+function trustedStripeDocumentUrl(value){
+  if(!value)return null;
+  try{
+    const url=new URL(String(value));
+    const host=url.hostname.toLowerCase();
+    if(url.protocol!=="https:"||!(host==="stripe.com"||host.endsWith(".stripe.com")))return null;
+    return url.toString();
+  }catch{return null;}
+}
 export async function normalizeStripeBillingEvent(event,config){
   const direct=normalizeStripeSubscriptionEvent(event);
   if(direct)return direct;
@@ -219,6 +228,8 @@ export async function normalizeStripeBillingEvent(event,config){
   normalized.event_time=eventIso(event);
   normalized.last_payment_status=invoicePaymentStatus(type);
   normalized.provider_invoice_reference=invoiceReference(invoice);
+  normalized.provider_invoice_url=trustedStripeDocumentUrl(invoice?.hosted_invoice_url);
+  normalized.provider_invoice_pdf_url=trustedStripeDocumentUrl(invoice?.invoice_pdf);
   normalized.payment_attempt_count=invoiceAttemptCount(invoice);
   normalized.next_payment_attempt=invoiceNextPaymentAttempt(invoice);
   if(type==="invoice.paid"){
