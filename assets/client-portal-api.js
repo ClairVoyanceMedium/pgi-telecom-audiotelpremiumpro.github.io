@@ -48,7 +48,7 @@ if(!type.includes("application/json"))throw new Error("API_INVALID_CONTENT_TYPE"
 return payload;
 }
 function get(path,timeoutMs){return request(path,timeoutMs?{timeoutMs:timeoutMs}:{});}
-function post(path,body,idempotencyKey){return post(path,body||{},idempotencyKey);}
+function post(path,body,idempotencyKey){return request(path,{method:"POST",body:body||{},idempotencyKey:idempotencyKey});}
 root.PGICustomerApi=Object.freeze({
 login:function(email,password,tenant){return post("/customer/auth/login",{email:email,password:password,tenant:tenant||null});},
 register:function(payload){return post("/customer/auth/register",Object.assign(payload,root.PGIOrderMeta||{}));},
