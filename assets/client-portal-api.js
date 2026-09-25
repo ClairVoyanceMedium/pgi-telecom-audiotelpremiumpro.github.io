@@ -68,7 +68,7 @@ passkeyAssertOptions:function(){return post("/customer/security/passkeys/assert-
 passkeyVerify:function(body){return post("/customer/security/passkeys/verify",body);},
 billingStatus:function(){return get("/customer/billing/status",5000);},
 newIdempotencyKey:function(){return typeof crypto!=="undefined"&&crypto.randomUUID?crypto.randomUUID():"customer-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2);},
-createBillingCheckout:function(idempotencyKey){return post("/customer/billing/checkout-session",{},idempotencyKey);},
+createBillingCheckout:function(idempotencyKey,legal){return post("/customer/billing/checkout-session",legal||{},idempotencyKey);},
 createBillingPortal:function(){return post("/customer/billing/portal-session",{});},
 portability:function(){return get("/customer/portability",8000);},
 createPortability:function(payload,idempotencyKey){return post("/customer/portability",payload,idempotencyKey);},
