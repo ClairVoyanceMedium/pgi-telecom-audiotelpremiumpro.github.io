@@ -26,7 +26,8 @@
     "perf:load": "node scripts/performance-load.mjs",
     "perf:synthetic": "node scripts/synthetic-probe.mjs",
     "resilience:drill": "node scripts/resilience-drill.mjs",
-    "check:perf-tools": "node --check scripts/performance-load.mjs && node --check scripts/synthetic-probe.mjs && node --check scripts/resilience-drill.mjs",
+    "production:smoke": "node scripts/production-smoke.mjs",
+    "check:perf-tools": "node --check scripts/performance-load.mjs && node --check scripts/synthetic-probe.mjs && node --check scripts/resilience-drill.mjs && node --check scripts/production-smoke.mjs",
     "start:platform": "sh scripts/start-platform.sh"
   },
   "engines": {
