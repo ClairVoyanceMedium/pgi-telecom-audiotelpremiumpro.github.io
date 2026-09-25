@@ -12,7 +12,7 @@ test("production static build publishes marketing root and private cockpit",()=>
         PGI_RUNTIME_MODE:"production",
         PGI_API_BASE_URL:"/api/v1",
         PGI_RELEASE_ID:"c".repeat(40),
-        VERCEL_PROJECT_PRODUCTION_URL:"pgi-test.vercel.app"
+        VERCEL_PROJECT_PRODUCTION_URL:"audiotel-premium-pro.com"
       },
       stdio:"pipe"
     });
@@ -33,24 +33,24 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.match(root,/href="site\/site\.css"/);
     assert.match(root,/src="site\/site\.js"/);
     assert.doesNotMatch(root,/\.\.\/assets\//);
-    assert.match(root,/rel="canonical" href="https:\/\/pgi-test\.vercel\.app\/"/);
-    assert.match(root,/property="og:url" content="https:\/\/pgi-test\.vercel\.app\/"/);
+    assert.match(root,/rel="canonical" href="https:\/\/audiotel-premium-pro\.com\/"/);
+    assert.match(root,/property="og:url" content="https:\/\/audiotel-premium-pro\.com\/"/);
     assert.match(root,/"@type":"Organization"/);
-    assert.match(root,/"logo":"https:\/\/pgi-test\.vercel\.app\/assets\/audiotel-brand-logo-v33\.png"/);
-    assert.match(root,/name="twitter:image" content="https:\/\/pgi-test\.vercel\.app\/assets\/audiotel-brand-logo-v33\.png"/);
+    assert.match(root,/"logo":"https:\/\/audiotel-premium-pro\.com\/assets\/audiotel-brand-logo-v33\.png"/);
+    assert.match(root,/name="twitter:image" content="https:\/\/audiotel-premium-pro\.com\/assets\/audiotel-brand-logo-v33\.png"/);
 
     assert.match(cockpit,/Cockpit \/ PGI Telecom/);
     assert.match(cockpit,/noindex,nofollow,noarchive/);
 
-    assert.match(legacy,/rel="canonical" href="https:\/\/pgi-test\.vercel\.app\/"/);
+    assert.match(legacy,/rel="canonical" href="https:\/\/audiotel-premium-pro\.com\/"/);
     assert.match(robots,/Disallow: \/cockpit/);
-    assert.match(robots,/Sitemap: https:\/\/pgi-test\.vercel\.app\/sitemap\.xml/);
-    assert.match(sitemap,/<loc>https:\/\/pgi-test\.vercel\.app\/<\/loc>/);
-    for(const slug of seoSlugs.filter(x=>x!=="mentions-legales"))assert.match(sitemap,new RegExp("<loc>https:\\/\\/pgi-test\\.vercel\\.app\\/"+slug+"\\/<\\/loc>"));
+    assert.match(robots,/Sitemap: https:\/\/audiotel-premium-pro\.com\/sitemap\.xml/);
+    assert.match(sitemap,/<loc>https:\/\/audiotel-premium-pro\.com\/<\/loc>/);
+    for(const slug of seoSlugs.filter(x=>x!=="mentions-legales"))assert.match(sitemap,new RegExp("<loc>https:\\/\\/audiotel-premium-pro\\.com\\/"+slug+"\\/<\\/loc>"));
     assert.doesNotMatch(sitemap,/mentions-legales/);
     seoPages.forEach((page,index)=>{
       const slug=seoSlugs[index],legal=["mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","cookies-traceurs","resilier-contrat","retractation"].includes(slug);
-      assert.match(page,new RegExp('rel="canonical" href="https:\\/\\/pgi-test\\.vercel\\.app\\/'+slug+'\\/"'));
+      assert.match(page,new RegExp('rel="canonical" href="https:\\/\\/audiotel-premium-pro\\.com\\/'+slug+'\\/"'));
       if(!legal){assert.match(page,/"@type":"WebPage"/);assert.match(page,/"@type":"Service"/);}
       assert.doesNotMatch(page,/__CANONICAL__|__BASE__|__LOGO__/);
       if(slug!=="demande-ouverture")assert.doesNotMatch(page,/<script[^>]+src=/i);
