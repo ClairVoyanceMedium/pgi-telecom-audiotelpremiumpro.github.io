@@ -7,7 +7,7 @@ const [migration,store,memory,adminUi,clientUi,readme]=await Promise.all([
   readFile(new URL("../backend/src/store-postgres.mjs",import.meta.url),"utf8"),
   readFile(new URL("../backend/src/store-memory.mjs",import.meta.url),"utf8"),
   readFile(new URL("../assets/subscription-billing-ui.js",import.meta.url),"utf8"),
-  readFile(new URL("../assets/client-portal.js",import.meta.url),"utf8"),
+  readFile(new URL("../assets/client-billing.js",import.meta.url),"utf8"),
   readFile(new URL("../README.md",import.meta.url),"utf8")
 ]);
 
