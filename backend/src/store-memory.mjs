@@ -50,6 +50,7 @@ export class MemoryStore{
     this.subscriptionEvents=new Set();
     this.adminAlerts=[];
     this.customerExperiencePreferencesMap=new Map();
+    this.customerLegalAcceptances=[];
     this.staffUsers=[{id:1,public_id:randomUUID(),login_name:"local-admin",email:"local-admin@staff.pgi.invalid",display_name:"Local Simulator",role:"admin",enabled:true,password_hash:null,session_version:1,last_login_at:null,created_at:new Date().toISOString()}];
     this.nextStaffUserId=2;
   }
@@ -1057,6 +1058,9 @@ export class MemoryStore{
     if(String(passwordHash||"").length<20)throw problem(400,"INVALID_PASSWORD_HASH");
     if(!["individual","business"].includes(accountType))throw problem(400,"INVALID_CUSTOMER_ACCOUNT_TYPE");
     if(input.authority_confirmed!==true)throw problem(400,"REGISTRATION_AUTHORITY_REQUIRED");
+    if(input.legal_terms_accepted!==true||input.privacy_notice_acknowledged!==true)throw problem(400,"REGISTRATION_LEGAL_TERMS_REQUIRED");
+    if(String(input.legal_version||"")!=="2026-09-25")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
+    this.customerLegalAcceptances.push({acceptance_type:"account_terms",document_version:"2026-09-25",accepted_at:new Date().toISOString()});
     return {id:randomUUID(),email,display_name:(first+" "+last).trim(),status:"active",email_verified:false,session_version:1,tenant_id:1,tenant_public_id:"00000000-0000-4000-8000-000000000001",tenant_name:accountType==="business"?(company||(first+" "+last).trim()):(first+" "+last).trim(),tenant_status:"pending",customer_role:"owner",authorization_version:1,customer_type:accountType};
   }
   async customerGoogleSignIn(){throw problem(403,"GOOGLE_INVITATION_REQUIRED");}
@@ -1098,6 +1102,12 @@ export class MemoryStore{
     if(row.status!=="pending")throw problem(409,"CUSTOMER_INVITATION_NOT_PENDING");
     row.status="revoked";return structuredClone(row);
   }
+  async recordCustomerLegalAcceptance(tenantId,principalId,input={}){
+    if(String(input.document_version||"")!=="2026-09-25")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
+    const row={public_id:randomUUID(),tenant_id:Number(tenantId),customer_principal_id:String(principalId),acceptance_type:String(input.acceptance_type||""),document_version:"2026-09-25",immediate_performance_requested:input.immediate_performance_requested===true,accepted_at:new Date().toISOString()};
+    this.customerLegalAcceptances.push(row);this.#audit("customer.legal_acceptance",String(principalId),{acceptance_type:row.acceptance_type,document_version:row.document_version});return structuredClone(row);
+  }
+
   async customerBillingPreparation(tenantId){void tenantId;return {tenant:{id:"00000000-0000-4000-8000-000000000001",name:"Société Démo",billing_email:"demo@example.test",country_code:"FR",locale:"fr-FR",currency:"EUR",timezone:"Europe/Paris",status:"pending"},offer:{price_version_id:1,plan_key:"external-sva-access",plan_name:"External SVA Access",market:null,currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1},reference_offer:{price_version_id:1,plan_key:"external-sva-access",plan_name:"External SVA Access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1},pricing_state:"local_price_ready",subscription:null,premium_call_access:false,billing_currency:{currency:"EUR",source:"country_default",catalog_version:"2026-09-20",accepted_currencies:["EUR"],local_price_configured:true},checkout_prefill:{email:"demo@example.test",locale:"fr-FR",country_code:"FR",currency:"EUR"},return_paths:{success:"client.html?billing=success",cancel:"client.html?billing=cancelled"}};}
   async customerExperiencePreferences(tenantId,principalId){
     const key=String(tenantId)+":"+String(principalId||"");
