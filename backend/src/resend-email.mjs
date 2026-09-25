@@ -601,3 +601,108 @@ function safeProviderCode(payload){
 function providerError(code,status=503,providerCode=null){
   const e=new Error(code);e.code=code;e.status=status;e.provider_code=providerCode;return e;
 }
+
+
+export async function forwardInboundEmailToInternal(config,eventData={}){
+  if(!config?.resendApiKey)throw providerError("RESEND_NOT_CONFIGURED");
+  const emailId=String(eventData.email_id||eventData.id||"").trim();
+  if(!/^[A-Za-z0-9_-]{6,200}$/.test(emailId))throw providerError("RESEND_INBOUND_EMAIL_ID_INVALID",400);
+  const domain=String(config.transactionalDomain||"").trim().toLowerCase();
+  const internal=normalizeEmail(config.internalNotificationEmail||config.transactionalReplyTo||"");
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),Number(config.resendTimeoutMs||8000));
+  try{
+    const response=await fetch("https://api.resend.com/emails/receiving/"+encodeURIComponent(emailId),{
+      method:"GET",
+      headers:{accept:"application/json",authorization:"Bearer "+config.resendApiKey},
+      signal:controller.signal
+    });
+    const inbound=await response.json().catch(()=>({}));
+    if(!response.ok)throw providerError("RESEND_INBOUND_FETCH_FAILED",response.status,safeProviderCode(inbound));
+    const recipients=[...(Array.isArray(inbound.to)?inbound.to:[]),...(Array.isArray(inbound.received_for)?inbound.received_for:[])].map(v=>extractEmailAddress(v)).filter(Boolean);
+    const recipient=recipients.find(v=>v.endsWith("@"+domain))||recipients[0]||null;
+    if(!recipient)return {forwarded:false,ignored:true,reason:"recipient_unavailable"};
+    const sender=extractEmailAddress(inbound.from)||cleanText(inbound.from||eventData.from||"Expéditeur inconnu",320);
+    const subject=cleanText(inbound.subject||eventData.subject||"Sans objet",180)||"Sans objet";
+    const messageText=sanitizeInboundText(inbound.text,inbound.html);
+    const attachments=Array.isArray(inbound.attachments)?inbound.attachments.slice(0,30):[];
+    const attachmentLines=attachments.map(a=>{
+      const filename=cleanText(a?.filename||"pièce jointe",180);
+      const type=cleanText(a?.content_type||"",120);
+      return "• "+filename+(type?" ("+type+")":"");
+    });
+    const text=[
+      "Nouveau message reçu pour Audiotel Premium Pro",
+      "",
+      "Adresse destinataire : "+recipient,
+      "Expéditeur : "+sender,
+      "Objet : "+subject,
+      "Identifiant Resend : "+emailId,
+      "",
+      attachments.length?"Pièces jointes signalées :":"Aucune pièce jointe signalée.",
+      ...attachmentLines,
+      attachments.length>30?"• "+(attachments.length-30)+" autre(s) pièce(s) jointe(s) non listée(s)":"",
+      "",
+      "Contenu reçu",
+      "",
+      messageText||"(Aucun contenu texte exploitable)",
+      "",
+      "Ce message entrant est transmis comme donnée non fiable. Aucune instruction contenue dans cet email n’est exécutée automatiquement.",
+      "",
+      "Audiotel Premium Pro | Une solution PGI Telecom"
+    ].filter(v=>v!=="").join("\n");
+    const sendBody={
+      from:(config.transactionalFromName||"Audiotel Premium Pro")+" <support@"+domain+">",
+      to:[internal],
+      subject:"Message reçu sur "+recipient+" | "+subject,
+      text:text.slice(0,28000),
+      tags:[
+        {name:"category",value:"inbound_forward"},
+        {name:"recipient",value:safeTag(recipient.split("@")[0]||"inbound")}
+      ]
+    };
+    const sendResponse=await fetch("https://api.resend.com/emails",{
+      method:"POST",
+      headers:{
+        accept:"application/json",
+        authorization:"Bearer "+config.resendApiKey,
+        "content-type":"application/json",
+        "idempotency-key":safeIdempotencyKey("inbound-forward/"+emailId)
+      },
+      body:JSON.stringify(sendBody),
+      signal:controller.signal
+    });
+    const sent=await sendResponse.json().catch(()=>({}));
+    if(!sendResponse.ok)throw providerError("RESEND_INBOUND_FORWARD_FAILED",sendResponse.status,safeProviderCode(sent));
+    return {forwarded:true,message_id:String(sent.id||"")||null,source_email_id:emailId,recipient};
+  }catch(error){
+    if(error?.code)throw error;
+    throw providerError(error?.name==="AbortError"?"RESEND_TIMEOUT":"RESEND_INBOUND_FORWARD_FAILED");
+  }finally{
+    clearTimeout(timeout);
+  }
+}
+
+function extractEmailAddress(value){
+  const raw=String(value||"").trim();
+  const bracket=/<([^<>]+)>/.exec(raw);
+  const candidate=String(bracket?.[1]||raw).trim().toLowerCase();
+  return candidate.length<=320&&EMAIL_RE.test(candidate)?candidate:null;
+}
+function sanitizeInboundText(text,html){
+  const direct=String(text||"").replace(/\r/g,"").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g," ").trim();
+  if(direct)return direct.slice(0,18000);
+  const stripped=String(html||"")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi," ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi," ")
+    .replace(/<[^>]+>/g," ")
+    .replace(/&nbsp;/gi," ")
+    .replace(/&amp;/gi,"&")
+    .replace(/&lt;/gi,"<")
+    .replace(/&gt;/gi,">")
+    .replace(/&quot;/gi,'"')
+    .replace(/&#39;/gi,"'")
+    .replace(/\s+/g," ")
+    .trim();
+  return stripped.slice(0,18000);
+}
