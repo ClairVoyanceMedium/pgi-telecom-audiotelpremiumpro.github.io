@@ -8,7 +8,7 @@ const legalSlugs=["mentions-legales","conditions-utilisation","conditions-abonne
 test("complete legal corpus is published and cross-linked",()=>{
   for(const slug of legalSlugs){
     const html=read("site/seo/"+slug+".html");
-    assert.match(html,/25 septembre 2026/);
+    assert.match(html,/26 septembre 2026/);
     assert.match(html,/\/conditions-utilisation\//);
     assert.match(html,/\/confidentialite\//);
     assert.match(html,/\/resilier-contrat\//);
