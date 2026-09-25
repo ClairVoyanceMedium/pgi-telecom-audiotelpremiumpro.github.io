@@ -200,7 +200,7 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes),token=String(body.token||"").trim();
         if(token.length<32){const e=new Error("Invalid email verification");e.status=400;e.code="EMAIL_VERIFICATION_INVALID";throw e;}
         const tokenHash=verificationTokenHash(token),target=await store.customerEmailVerificationResendTarget(tokenHash),challenge=createEmailVerificationChallenge(config,token);
-        try{await sendResendVerificationCode(config,{email:target.email,name:target.display_name||target.email,code:challenge.code,locale:body.preferred_locale||auth?.preferred_locale||undefined,idempotencyKey:"email-verification/"+challenge.record.code_hash});}
+        try{await sendResendVerificationCode(config,{email:target.email,name:target.display_name||target.email,code:challenge.code,locale:body.preferred_locale||target.preferred_locale||undefined,idempotencyKey:"email-verification/"+challenge.record.code_hash});}
         catch(_error){return done(res,metrics,started,"customer.auth.email_resend",503,{error:{code:"EMAIL_DELIVERY_UNAVAILABLE",message:"Verification email unavailable"}});}
         await store.refreshCustomerEmailVerification(target.id,tokenHash,challenge.record);
         return done(res,metrics,started,"customer.auth.email_resend",200,{sent:true,resend_after_seconds:config.emailVerificationResendSeconds});
