@@ -1,3 +1,14 @@
+## Legal Shield — 2026-09-26
+
+- refonte complète des CGU et conditions d’abonnement avec séparation B2B/B2C ;
+- responsabilité éditoriale SVA, antifraude, trafic artificiel, suspension proportionnée et retenues de reversement justifiées ;
+- confidentialité, propriété intellectuelle, preuve, dépendances opérateur et répartition RGPD renforcées ;
+- responsabilité B2B limitée aux dommages directs et prévisibles avec plafond encadré et exceptions impératives ;
+- retard de paiement B2B aligné sur le Code de commerce et indemnité forfaitaire de 40 € ;
+- version contractuelle 2026-09-26 imposée côté inscription, Checkout, mémoire et PostgreSQL ;
+- demande d’exécution immédiate et conséquences de rétractation rendues explicites ;
+- exigence de fonctionnalité de rétractation en ligne applicable depuis le 19 juin 2026 verrouillée avant tout lancement B2C.
+
 ## 1.30.7 — Mobile-first sans dérive horizontale — 2026-09-24
 
 - suppression du débordement horizontal global sur mobile sans casser les tableaux et onglets défilants ;
