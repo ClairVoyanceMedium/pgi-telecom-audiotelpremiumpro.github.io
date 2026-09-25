@@ -209,9 +209,7 @@ console.log("Release:",releaseId||"(demo)");
 function resolvePublicBaseUrl(){
   const raw=String(
     process.env.PGI_PUBLIC_BASE_URL||
-    process.env.VERCEL_PROJECT_PRODUCTION_URL||
-    process.env.VERCEL_URL||
-    ""
+    "https://audiotel-premium-pro.com"
   ).trim();
   if(!raw)return "";
   const value=/^https?:\/\//i.test(raw)?raw:"https://"+raw;
