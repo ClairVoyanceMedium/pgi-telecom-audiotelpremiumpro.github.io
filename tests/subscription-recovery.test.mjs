@@ -5,7 +5,7 @@ import fs from "node:fs";
 const migration=fs.readFileSync("database/migrations/057_subscription_revenue_recovery.sql","utf8");
 const store=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
 const stripe=fs.readFileSync("backend/src/stripe-billing.mjs","utf8");
-const portal=fs.readFileSync("assets/client-portal.js","utf8");
+const portal=fs.readFileSync("assets/client-billing.js","utf8");
 const config=fs.readFileSync("backend/src/config.mjs","utf8");
 
 test("dunning separates strict provisioning from bounded established-call routing",()=>{
