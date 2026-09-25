@@ -56,7 +56,7 @@ test("marketing surface is indexable while private surfaces remain noindex",()=>
   assert.match(client,/name="robots" content="noindex,nofollow,noarchive"/);
   assert.match(robots,/Allow: \/$/m);
   assert.match(robots,/Disallow: \/client\.html/);
-  assert.match(sitemap,/pgi-telecom-audiotelpremiumpro-gith\.vercel\.app\//);
+  assert.match(sitemap,/audiotel-premium-pro\.com//);
 });
 
 test("public site remains self-contained and mobile responsive",()=>{
@@ -106,12 +106,12 @@ test("marketing page exposes structured service data without fabricated social p
 });
 
 test("marketing metadata declares the canonical social URL",()=>{
-  assert.match(html,/property="og:url" content="https:\/\/pgi-telecom-audiotelpremiumpro-gith\.vercel\.app\/"/);
+  assert.match(html,/property="og:url" content="https:\/\/audiotel-premium-pro\.com/"/);
   assert.match(html,/name="twitter:card" content="summary_large_image"/);
 });
 
 
 test("public SEO sources never expose the legacy GitHub identity",()=>{
   for(const value of [html,robots,sitemap,buildStatic])assert.doesNotMatch(value,/clairvoyancemedium\.github\.io/i);
-  assert.match(buildStatic,/pgi-telecom-audiotelpremiumpro-gith\.vercel\.app/);
+  assert.match(buildStatic,/audiotel-premium-pro\.com/);
 });
