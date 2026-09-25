@@ -358,9 +358,9 @@ test("la Plateforme SVA distingue abonnement externe et usage interne exempté",
   assert.match(clientPortalApi,/\/customer\/billing\/portal-session/);
   assert.match(clientPortalApi,/Idempotency-Key/);
   assert.match(clientPortalApi,/newIdempotencyKey/);
-  assert.match(clientPortalJs,/PAYMENT_PROVIDER_NOT_CONNECTED/);
-  assert.match(clientPortalJs,/handleBillingReturn/);
-  assert.match(clientPortalJs,/Ouverture du paiement/);
+  assert.match(clientBilling,/PAYMENT_PROVIDER_NOT_CONNECTED/);
+  assert.match(clientBilling,/handleReturn/);
+  assert.match(clientBilling,/Ouverture du paiement/);
   assert.match(clientPortal,/Paiement sécurisé par Stripe/);
   assert.match(clientPortal,/conditions-abonnement/);
   assert.match(clientPortal,/confidentialite/);
