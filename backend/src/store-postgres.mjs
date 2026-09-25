@@ -3162,12 +3162,15 @@ export class PostgresStore{
     const serviceIntentInput=String(input.service_intent||"").trim().toLowerCase();
     const serviceIntent=["new_number","portability","advice"].includes(serviceIntentInput)?serviceIntentInput:"";
     const authorityConfirmed=input.authority_confirmed===true;
+    const legalAccepted=input.legal_terms_accepted===true,privacyAcknowledged=input.privacy_notice_acknowledged===true,legalVersion=String(input.legal_version||"").trim();
     if(firstName.length<1||lastName.length<1)throw problem(400,"CUSTOMER_NAME_REQUIRED");
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw problem(400,"INVALID_CUSTOMER_EMAIL");
     if(!/^[A-Z]{2}$/.test(country))throw problem(400,"INVALID_COUNTRY_CODE");
     if(String(passwordHash||"").length<20)throw problem(400,"INVALID_PASSWORD_HASH");
     if(!["individual","business"].includes(accountType))throw problem(400,"INVALID_CUSTOMER_ACCOUNT_TYPE");
     if(!authorityConfirmed)throw problem(400,"REGISTRATION_AUTHORITY_REQUIRED");
+    if(!legalAccepted||!privacyAcknowledged)throw problem(400,"REGISTRATION_LEGAL_TERMS_REQUIRED");
+    if(legalVersion!=="2026-09-25")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
     if(localeInput&&!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(localeInput))throw problem(400,"INVALID_TENANT_LOCALE");
     if(timezoneInput&&!/^[A-Za-z0-9_+\-/]+(?:\/[A-Za-z0-9_+\-]+)*$/.test(timezoneInput))throw problem(400,"INVALID_TENANT_TIMEZONE");
     const effectiveCompanyName=accountType==="business"?companyName:"";
@@ -3231,8 +3234,12 @@ export class PostgresStore{
         [tenant.id,principal.id]
       );
       await tx.unsafe(
+        "INSERT INTO customer_legal_acceptances(tenant_id,customer_principal_id,acceptance_type,document_version,documents,account_type,evidence) VALUES($1,$2::uuid,'account_terms',$3,$4::jsonb,$5,$6::jsonb)",
+        [tenant.id,principal.id,legalVersion,JSON.stringify({cgu:"/conditions-utilisation/",conditions:"/conditions-abonnement/",privacy:"/confidentialite/",cookies:"/cookies-traceurs/"}),accountType,JSON.stringify({source:"self_service_registration",authority_confirmed:true,privacy_notice_acknowledged:true})]
+      );
+      await tx.unsafe(
         "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'customer.self_register','tenant',$2,$3::jsonb)",
-        [tenant.id,String(tenant.id),JSON.stringify({customer_principal_id:principal.id,country_code:country,account_type:accountType,acquisition_source:acquisitionSource,service_intent:serviceIntent||null,billing_currency:currency,billing_currency_source:"country_default",registration_number_supplied:Boolean(registrationNumber),authority_confirmed:true})]
+        [tenant.id,String(tenant.id),JSON.stringify({customer_principal_id:principal.id,country_code:country,account_type:accountType,acquisition_source:acquisitionSource,service_intent:serviceIntent||null,billing_currency:currency,billing_currency_source:"country_default",registration_number_supplied:Boolean(registrationNumber),authority_confirmed:true,legal_version:legalVersion,legal_terms_accepted:true,privacy_notice_acknowledged:true})]
       );
       await tx.unsafe(
         "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'customer.self_registered','tenant',$2,$3::jsonb)",
@@ -3730,6 +3737,24 @@ export class PostgresStore{
       );
       return updated;
     });
+  }
+
+  async recordCustomerLegalAcceptance(tenantId,principalId,input={}){
+    const type=String(input.acceptance_type||"").trim(),version=String(input.document_version||"").trim();
+    if(!["account_terms","subscription_checkout"].includes(type))throw problem(400,"INVALID_LEGAL_ACCEPTANCE_TYPE");
+    if(version!=="2026-09-25")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
+    const documents=input.documents&&typeof input.documents==="object"?input.documents:{};
+    const immediate=input.immediate_performance_requested===true;
+    const evidence=input.evidence&&typeof input.evidence==="object"?input.evidence:{};
+    const rows=await this.sql.unsafe(
+      "INSERT INTO customer_legal_acceptances(tenant_id,customer_principal_id,acceptance_type,document_version,documents,immediate_performance_requested,evidence) VALUES($1,$2::uuid,$3,$4,$5::jsonb,$6,$7::jsonb) RETURNING public_id::text AS public_id,acceptance_type,document_version,immediate_performance_requested,accepted_at",
+      [Number(tenantId),String(principalId),type,version,JSON.stringify(documents),immediate,JSON.stringify(evidence)]
+    );
+    await this.sql.unsafe(
+      "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'customer.legal_acceptance','customer_principal',$2,$3::jsonb)",
+      [Number(tenantId),String(principalId),JSON.stringify({acceptance_type:type,document_version:version,immediate_performance_requested:immediate})]
+    );
+    return rows[0];
   }
 
   async customerBillingPreparation(tenantId){
