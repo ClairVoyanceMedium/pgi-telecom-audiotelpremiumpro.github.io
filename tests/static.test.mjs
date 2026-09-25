@@ -7,6 +7,7 @@ const index=read("index.html");
 const clientPortal=read("client.html");
 const clientPortalApi=read("assets/client-portal-api.js");
 const clientPortalJs=read("assets/client-portal.js");
+const clientBilling=read("assets/client-billing.js");
 const customerEmailVerification=read("assets/customer-email-verification.js");
 const clientLiveFinance=read("assets/client-live-finance.js");
 const adminLiveFinance=read("assets/live-finance.js");
@@ -352,6 +353,8 @@ test("la Plateforme SVA distingue abonnement externe et usage interne exempté",
   for(const id of ["wh-billing-provider","wh-billing-provider-state","wh-billing-checkout","wh-billing-payout"])assert.ok(index.includes('id="'+id+'"'));
   for(const id of ["client-billing-offer","client-billing-offer-detail","client-billing-offer-chip","client-billing-provider-state","client-billing-provider-chip","client-billing-start","client-billing-manage","client-billing-consent","client-billing-terms"])assert.ok(clientPortal.includes('id="'+id+'"'));
   assert.match(clientPortalApi,/\/customer\/billing\/checkout-session/);
+  assert.match(clientPortalJs,/client-billing\.js/);
+  assert.match(clientBilling,/createBillingCheckout/);
   assert.match(clientPortalApi,/\/customer\/billing\/portal-session/);
   assert.match(clientPortalApi,/Idempotency-Key/);
   assert.match(clientPortalApi,/newIdempotencyKey/);
