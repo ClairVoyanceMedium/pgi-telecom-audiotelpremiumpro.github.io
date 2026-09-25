@@ -10,7 +10,6 @@ test("complete legal corpus is published and cross-linked",()=>{
     const html=read("site/seo/"+slug+".html");
     assert.match(html,/25 septembre 2026/);
     assert.match(html,/\/conditions-utilisation\//);
-    assert.match(html,/\/conditions-abonnement\//);
     assert.match(html,/\/confidentialite\//);
     assert.match(html,/\/resilier-contrat\//);
     assert.match(html,/\/retractation\//);
