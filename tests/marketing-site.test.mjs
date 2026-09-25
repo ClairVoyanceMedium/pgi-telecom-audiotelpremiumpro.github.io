@@ -126,5 +126,5 @@ test("public funnels preserve legal customer qualification and non-promissory fi
   assert.match(comparator,/écart économique potentiel/i);
   assert.doesNotMatch(comparator,/<title>[^<]*gain potentiel/i);
   assert.match(liveFinance,/ESTIMATION PERSONNELLE/);
-  assert.match(liveFinance,/reversements validés contractuellement font foi/);
+  assert.match(liveFinance,/reversements validés font foi/);
 });
