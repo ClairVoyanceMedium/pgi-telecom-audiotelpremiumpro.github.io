@@ -38,6 +38,9 @@ test("all production service templates render both plain text and html",()=>{
     assert.match(m.text,/Audiotel Premium Pro \| Une solution PGI Telecom/,key);
     assert.match(m.html,/Audiotel Premium Pro \| Une solution PGI Telecom/,key);
     assert.doesNotMatch(m.subject,/PGI Telecom/,key);
+    assert.doesNotMatch(m.subject,/e-mail|E-Mail|E-mail/,key);
+    assert.doesNotMatch(m.text,/e-mail|E-Mail|E-mail/,key);
+    assert.doesNotMatch(m.html,/e-mail|E-Mail|E-mail/,key);
   }
 });
 
