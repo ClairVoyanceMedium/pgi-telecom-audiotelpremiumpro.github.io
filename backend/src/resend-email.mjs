@@ -47,14 +47,14 @@ export function emailVerificationCodeHash(config,token,code){
   return createHmac("sha256",pepper).update(String(token||"")+":"+String(code||"")).digest("hex");
 }
 
-export async function sendResendVerificationCode(config,{email,name,code,idempotencyKey}){
+export async function sendResendVerificationCode(config,{email,name,code,locale,idempotencyKey}){
   if(!config.emailVerificationEnabled)throw providerError("EMAIL_VERIFICATION_DISABLED");
   return sendTransactionalEmail(config,{
     to:email,
     name,
     senderRole:"notifications",
     templateKey:"email_verification",
-    data:{code,ttl_minutes:Number(config.emailVerificationTtlMinutes||10)},
+    data:{code,ttl_minutes:Number(config.emailVerificationTtlMinutes||10),locale},
     idempotencyKey,
     internalEventId:idempotencyKey
   });
@@ -77,7 +77,7 @@ export async function sendTransactionalEmail(config,options={}){
   const body={
     from:(config.transactionalFromName||"Audiotel Premium Pro")+" <"+fromEmail+">",
     to:[to],
-    reply_to:replyTo,
+    reply_to:"Audiotel Premium Pro Support <"+replyTo+">",
     subject:message.subject,
     text:message.text,
     html:message.html,
@@ -119,6 +119,11 @@ export function buildTransactionalMessage(config,templateKey,data={}){
   const billingUrl=sameOriginUrl(config,"/client.html?billing=payment-required");
   const logoUrl=sameOriginUrl(config,"/assets/audiotel-brand-logo-v33.png");
   const homeUrl=sameOriginUrl(config,"/");
+  const privacyUrl=sameOriginUrl(config,"/confidentialite/");
+  const termsUrl=sameOriginUrl(config,"/conditions-abonnement/");
+  const actionUrl=safeActionUrl(config,data.action_url);
+  const invoiceUrl=safeExternalHttpsUrl(data.invoice_url,["stripe.com"]);
+  const invoicePdfUrl=safeExternalHttpsUrl(data.invoice_pdf_url,["stripe.com"]);
   const cases={
     email_verification:{
       subject:"Votre code de vérification Audiotel Premium Pro",
@@ -127,6 +132,48 @@ export function buildTransactionalMessage(config,templateKey,data={}){
       paragraphs:["Utilisez le code ci-dessous pour confirmer votre adresse e-mail et poursuivre la création de votre espace Audiotel Premium Pro."],
       code:String(data.code||""),
       foot:"Ce code expire dans "+Number(data.ttl_minutes||10)+" minutes. Si vous n’êtes pas à l’origine de cette demande, ignorez cet e-mail."
+    },
+    password_reset:{
+      subject:"Réinitialisation de votre mot de passe Audiotel Premium Pro",
+      title:"Réinitialiser votre mot de passe",
+      lead:greeting,
+      paragraphs:["Une demande de réinitialisation a été reçue pour votre compte.","Utilisez le bouton ci-dessous dans le délai indiqué. Si vous n’êtes pas à l’origine de cette demande, aucune action n’est nécessaire."],
+      cta:actionUrl?{label:"Choisir un nouveau mot de passe",url:actionUrl}:null,
+      foot:"Pour votre sécurité, ce lien est temporaire et ne peut être utilisé qu’une seule fois."
+    },
+    password_changed:{
+      subject:"Votre mot de passe Audiotel Premium Pro a été modifié",
+      title:"Mot de passe modifié",
+      lead:greeting,
+      paragraphs:["Le mot de passe de votre compte vient d’être modifié.","Toutes les sessions existantes sont invalidées. Si vous n’êtes pas à l’origine de cette modification, contactez immédiatement l’assistance."],
+      cta:{label:"Accéder à mon espace",url:portalUrl}
+    },
+    email_change_confirmation:{
+      subject:"Confirmez votre nouvelle adresse e-mail Audiotel Premium Pro",
+      title:"Confirmer votre nouvelle adresse e-mail",
+      lead:greeting,
+      paragraphs:["Une modification de l’adresse e-mail de votre compte a été demandée.","Confirmez cette nouvelle adresse avec le bouton ci-dessous. Le lien est temporaire et à usage unique."],
+      cta:actionUrl?{label:"Confirmer mon adresse e-mail",url:actionUrl}:null
+    },
+    email_changed:{
+      subject:"Votre adresse e-mail Audiotel Premium Pro a été mise à jour",
+      title:"Adresse e-mail mise à jour",
+      lead:greeting,
+      paragraphs:["Votre nouvelle adresse e-mail est maintenant confirmée et rattachée à votre compte.","Toutes les sessions existantes ont été invalidées par mesure de sécurité."],
+      cta:{label:"Me reconnecter",url:portalUrl}
+    },
+    email_change_notice_old:{
+      subject:"L’adresse e-mail de votre compte Audiotel Premium Pro a changé",
+      title:"Information de sécurité",
+      lead:greeting,
+      paragraphs:["L’adresse e-mail associée à votre compte vient d’être modifiée.","Si vous n’êtes pas à l’origine de cette modification, contactez immédiatement l’assistance Audiotel Premium Pro."]
+    },
+    passkey_added:{
+      subject:"Une clé d’accès a été ajoutée à votre compte Audiotel Premium Pro",
+      title:"Nouvelle clé d’accès",
+      lead:greeting,
+      paragraphs:["Une nouvelle clé d’accès a été enregistrée pour votre compte.","Si vous n’êtes pas à l’origine de cette action, modifiez votre mot de passe et contactez immédiatement l’assistance."],
+      cta:{label:"Consulter mon espace",url:portalUrl}
     },
     registration_received:{
       subject:"Votre demande d’ouverture a bien été reçue",
@@ -167,14 +214,16 @@ export function buildTransactionalMessage(config,templateKey,data={}){
       title:"Paiement confirmé",
       lead:greeting,
       paragraphs:["Votre paiement d’abonnement a été confirmé.","Aucune action n’est nécessaire de votre part."],
-      cta:{label:"Consulter la facturation",url:billingUrl}
+      cta:invoiceUrl?{label:"Consulter ma facture",url:invoiceUrl}:{label:"Consulter la facturation",url:billingUrl},
+      secondaryCta:invoicePdfUrl?{label:"Télécharger la facture PDF",url:invoicePdfUrl}:null
     },
     payment_recovered:{
       subject:"Paiement Audiotel Premium Pro régularisé",
       title:"Paiement régularisé",
       lead:greeting,
       paragraphs:["Le paiement précédemment en attente est maintenant régularisé.","Votre état de facturation a été mis à jour automatiquement."],
-      cta:{label:"Consulter la facturation",url:billingUrl}
+      cta:invoiceUrl?{label:"Consulter ma facture",url:invoiceUrl}:{label:"Consulter la facturation",url:billingUrl},
+      secondaryCta:invoicePdfUrl?{label:"Télécharger la facture PDF",url:invoicePdfUrl}:null
     },
     payment_failed:{
       subject:"Action requise : paiement Audiotel Premium Pro non abouti",
@@ -274,7 +323,8 @@ export function buildTransactionalMessage(config,templateKey,data={}){
   };
   const model=cases[key];
   if(!model)throw providerError("EMAIL_TEMPLATE_NOT_FOUND",500);
-  return renderMessage(model,{logoUrl,homeUrl});
+  const localized=localizeTransactionalModel(key,model,data.locale);
+  return renderMessage(localized,{logoUrl,homeUrl,privacyUrl,termsUrl,locale:normalizeLocale(data.locale)});
 }
 
 function renderMessage(model,brand={}){
@@ -285,15 +335,21 @@ function renderMessage(model,brand={}){
     model.title,lead,...paragraphs,
     model.code?"Code : "+cleanText(model.code,20):"",
     model.cta?.url?(cleanText(model.cta.label,120)+": "+model.cta.url):"",
+    model.secondaryCta?.url?(cleanText(model.secondaryCta.label,120)+": "+model.secondaryCta.url):"",
     model.foot||"",
-    "Audiotel Premium Pro | Une solution PGI Telecom"
+    "Audiotel Premium Pro | Une solution PGI Telecom",
+    brand.privacyUrl?("Confidentialité: "+brand.privacyUrl):"",
+    brand.termsUrl?("Conditions d’abonnement: "+brand.termsUrl):""
   ].filter(Boolean).join("\n\n");
   const paragraphHtml=paragraphs.map(p=>'<p style="margin:0 0 14px;line-height:1.6;color:#332a25">'+escapeHtml(p)+'</p>').join("");
   const codeHtml=model.code?'<div style="font-size:34px;font-weight:700;letter-spacing:8px;text-align:center;padding:20px 10px;margin:20px 0;background:#f5f1ed;border-radius:12px;color:#1f1713">'+escapeHtml(cleanText(model.code,20))+'</div>':"";
   const ctaHtml=model.cta?.url?'<p style="margin:24px 0"><a href="'+escapeHtml(model.cta.url)+'" style="display:inline-block;background:#33251f;color:#fff;text-decoration:none;padding:13px 18px;border-radius:9px;font-weight:700">'+escapeHtml(cleanText(model.cta.label,120))+'</a></p>':"";
+  const secondaryCtaHtml=model.secondaryCta?.url?'<p style="margin:10px 0 20px"><a href="'+escapeHtml(model.secondaryCta.url)+'" style="color:#5f493d;text-decoration:underline;font-weight:600">'+escapeHtml(cleanText(model.secondaryCta.label,120))+'</a></p>':"";
   const footHtml=model.foot?'<p style="font-size:13px;line-height:1.5;color:#6c6059;margin:24px 0 0">'+escapeHtml(cleanText(model.foot,1000))+'</p>':"";
   const logoHtml=brand.logoUrl?'<div style="text-align:center;margin:0 0 18px"><a href="'+escapeHtml(brand.homeUrl||brand.logoUrl)+'" target="_blank" rel="noopener noreferrer" style="text-decoration:none"><img src="'+escapeHtml(brand.logoUrl)+'" width="180" alt="Audiotel Premium Pro" style="display:inline-block;width:180px;max-width:100%;height:auto;border:0;outline:none;text-decoration:none"></a></div>':"";
-  const html='<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>@media only screen and (max-width:600px){.pgi-wrap{padding:12px!important}.pgi-card{padding:20px!important}.pgi-title{font-size:22px!important}.pgi-btn{display:block!important;text-align:center!important}}</style></head><body style="margin:0;background:#f4f1ee;font-family:Arial,Helvetica,sans-serif;color:#221914"><div class="pgi-wrap" style="padding:28px 12px"><div class="pgi-card" style="max-width:600px;margin:0 auto;background:#fff;border:1px solid #ded6d0;border-radius:14px;padding:30px">'+logoHtml+'<div style="font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#78675d;margin-bottom:12px;text-align:center">Audiotel Premium Pro</div><h1 class="pgi-title" style="font-size:26px;line-height:1.25;margin:0 0 18px;color:#211812">'+escapeHtml(cleanText(model.title,180))+'</h1><p style="margin:0 0 14px;line-height:1.6;color:#332a25">'+escapeHtml(lead)+'</p>'+paragraphHtml+codeHtml+ctaHtml+footHtml+'<hr style="border:0;border-top:1px solid #ece6e2;margin:28px 0 16px"><p style="font-size:12px;line-height:1.5;color:#81736a;margin:0 0 8px">Audiotel Premium Pro | Une solution PGI Telecom</p><p style="font-size:12px;line-height:1.5;color:#81736a;margin:0">Message transactionnel lié à votre compte ou à une demande de service. Aucun mot de passe ne vous sera demandé par e-mail.</p></div></div></body></html>';
+  const lang=escapeHtml(String(brand.locale||"fr").split("-")[0]);
+  const legalHtml='<p style="font-size:11px;line-height:1.5;color:#91847c;margin:10px 0 0"><a href="'+escapeHtml(brand.privacyUrl||brand.homeUrl||"")+'" style="color:#78675d">Confidentialité</a> | <a href="'+escapeHtml(brand.termsUrl||brand.homeUrl||"")+'" style="color:#78675d">Conditions d’abonnement</a></p>';
+  const html='<!doctype html><html lang="'+lang+'"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>@media only screen and (max-width:600px){.pgi-wrap{padding:12px!important}.pgi-card{padding:20px!important}.pgi-title{font-size:22px!important}.pgi-btn{display:block!important;text-align:center!important}}</style></head><body style="margin:0;background:#f4f1ee;font-family:Arial,Helvetica,sans-serif;color:#221914"><div class="pgi-wrap" style="padding:28px 12px"><div class="pgi-card" style="max-width:600px;margin:0 auto;background:#fff;border:1px solid #ded6d0;border-radius:14px;padding:30px">'+logoHtml+'<div style="font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#78675d;margin-bottom:12px;text-align:center">Audiotel Premium Pro</div><h1 class="pgi-title" style="font-size:26px;line-height:1.25;margin:0 0 18px;color:#211812">'+escapeHtml(cleanText(model.title,180))+'</h1><p style="margin:0 0 14px;line-height:1.6;color:#332a25">'+escapeHtml(lead)+'</p>'+paragraphHtml+codeHtml+ctaHtml+secondaryCtaHtml+footHtml+'<hr style="border:0;border-top:1px solid #ece6e2;margin:28px 0 16px"><p style="font-size:12px;line-height:1.5;color:#81736a;margin:0 0 8px">Audiotel Premium Pro | Une solution PGI Telecom</p><p style="font-size:12px;line-height:1.5;color:#81736a;margin:0">Message transactionnel lié à votre compte ou à une demande de service. Aucun mot de passe ne vous sera demandé par e-mail.</p>'+legalHtml+'</div></div></body></html>';
   return {subject,text,html};
 }
 
@@ -303,6 +359,28 @@ function sameOriginUrl(config,path){
   const url=new URL(path,base+"/");
   if(url.origin!==base)throw providerError("EMAIL_LINK_ORIGIN_INVALID",500);
   return url.toString();
+}
+function safeActionUrl(config,value){
+  if(!value)return null;
+  try{
+    const base=String(config.publicBaseUrl||"").replace(/\/$/,""),url=new URL(String(value),base+"/");
+    if(url.protocol!=="https:"||url.origin!==base)return null;
+    return url.toString();
+  }catch{return null;}
+}
+function safeExternalHttpsUrl(value,allowedSuffixes=[]){
+  if(!value)return null;
+  try{
+    const url=new URL(String(value));
+    if(url.protocol!=="https:")return null;
+    const host=url.hostname.toLowerCase();
+    if(!allowedSuffixes.some(s=>host===s||host.endsWith("."+s)))return null;
+    return url.toString();
+  }catch{return null;}
+}
+function normalizeLocale(value){
+  const raw=String(value||"fr-FR").trim().toLowerCase(),lang=raw.split("-")[0];
+  return ["fr","en","es","it","pt","de","sv"].includes(lang)?lang:"fr";
 }
 function safeDetail(label,value){
   const v=cleanText(value||"",200);
