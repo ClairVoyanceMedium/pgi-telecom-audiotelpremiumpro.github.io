@@ -545,7 +545,7 @@ export function createBackend(options={}){
         const legal=await readJson(req,config.bodyLimitBytes);
         if(legal.subscription_terms_accepted!==true||legal.privacy_notice_acknowledged!==true){const e=new Error("Legal terms acceptance required");e.status=400;e.code="SUBSCRIPTION_LEGAL_TERMS_REQUIRED";throw e;}
         if(legal.immediate_performance_requested!==true){const e=new Error("Immediate performance request required");e.status=400;e.code="IMMEDIATE_PERFORMANCE_REQUEST_REQUIRED";throw e;}
-        if(String(legal.legal_version||"")!=="2026-09-26-b2b-b2c-v2"){const e=new Error("Legal document version outdated");e.status=409;e.code="LEGAL_DOCUMENT_VERSION_OUTDATED";throw e;}
+        if(String(legal.legal_version||"")!=="2026-09-26-b2b-b2c-v3"){const e=new Error("Legal document version outdated");e.status=409;e.code="LEGAL_DOCUMENT_VERSION_OUTDATED";throw e;}
         const context=await store.customerSessionContext(customerActor);
         requireCustomerPermission(context,"billing.manage");
         const billing=await store.customerBillingPreparation(context.tenant_id);
@@ -553,11 +553,11 @@ export function createBackend(options={}){
         if(!billing.offer)return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:"NO_ACTIVE_BILLING_OFFER"},billing_provider:provider});
         if(["active","past_due"].includes(String(billing.subscription?.status||"")))return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:"SUBSCRIPTION_ALREADY_EXISTS"},billing_provider:provider});
         if(!provider.checkout_available)return done(res,metrics,started,"customer.billing.checkout",503,{error:{code:"PAYMENT_PROVIDER_NOT_CONNECTED"},billing_provider:provider,checkout:{offer:billing.offer,prefill:billing.checkout_prefill,return_paths:billing.return_paths}});
-        const payload={tenant_id:context.tenant_id,price_version_id:billing.offer.price_version_id,provider:"stripe",legal_version:"2026-09-26-b2b-b2c-v2",immediate_performance_requested:true};
+        const payload={tenant_id:context.tenant_id,price_version_id:billing.offer.price_version_id,provider:"stripe",legal_version:"2026-09-26-b2b-b2c-v3",immediate_performance_requested:true};
         const result=await store.idempotent(checkoutIdempotencyKey,"customer.billing.checkout",payload,async()=>{
           const session=await createStripeCheckout(config,billing,checkoutIdempotencyKey);
           await store.recordCustomerLegalAcceptance(context.tenant_id,context.id,{
-            acceptance_type:"subscription_checkout",document_version:"2026-09-26-b2b-b2c-v2",
+            acceptance_type:"subscription_checkout",document_version:"2026-09-26-b2b-b2c-v3",
             documents:{cgu:"/conditions-utilisation/",conditions:"/conditions-abonnement/",privacy:"/confidentialite/",retractation:"/retractation/",cancellation:"/resilier-contrat/"},
             immediate_performance_requested:true,evidence:{source:"customer_checkout",stripe_checkout_created:true}
           });
