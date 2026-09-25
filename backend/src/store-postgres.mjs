@@ -3377,13 +3377,109 @@ export class PostgresStore{
 
   async updateCustomerPassword(principalId,passwordHash){
     if(!principalId||String(passwordHash||"").length<20)throw problem(400,"INVALID_PASSWORD_HASH");
-    const rows=await this.sql.unsafe(
-      "UPDATE customer_password_credentials SET password_hash=$2,status='active',failed_attempts=0,locked_until=NULL,last_failed_at=NULL,password_changed_at=now(),updated_at=now()"+
-      " WHERE customer_principal_id=$1::uuid RETURNING customer_principal_id",
-      [String(principalId),String(passwordHash)]
+    return this.sql.begin(async tx=>{
+      const rows=await tx.unsafe(
+        "UPDATE customer_password_credentials SET password_hash=$2,status='active',failed_attempts=0,locked_until=NULL,last_failed_at=NULL,password_changed_at=now(),updated_at=now()"+
+        " WHERE customer_principal_id=$1::uuid RETURNING customer_principal_id",
+        [String(principalId),String(passwordHash)]
+      );
+      if(!rows[0])throw problem(404,"CUSTOMER_CREDENTIAL_NOT_FOUND");
+      const principal=(await tx.unsafe(
+        "UPDATE customer_principals SET session_version=session_version+1,metadata=COALESCE(metadata,'{}'::jsonb)-'password_reset',updated_at=now()"+
+        " WHERE id=$1::uuid RETURNING id,email,display_name,preferred_locale,session_version",
+        [String(principalId)]
+      ))[0];
+      return {ok:true,...principal};
+    });
+  }
+
+  async beginCustomerPasswordReset(email,record){
+    email=String(email||"").trim().toLowerCase();
+    if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)||email.length>320)return null;
+    const tokenHash=String(record?.token_hash||""),expiresAt=String(record?.expires_at||"");
+    if(!/^[a-f0-9]{64}$/.test(tokenHash)||!Number.isFinite(Date.parse(expiresAt)))throw problem(400,"INVALID_PASSWORD_RESET_CHALLENGE");
+    const row=(await this.sql.unsafe(
+      "SELECT p.id,p.email,p.display_name,p.preferred_locale FROM customer_principals p"+
+      " JOIN customer_password_credentials c ON c.customer_principal_id=p.id"+
+      " WHERE p.email_normalized=$1 AND p.status='active' AND c.status='active' LIMIT 1",
+      [email]
+    ))[0];
+    if(!row)return null;
+    const payload={token_hash:tokenHash,expires_at:expiresAt,requested_at:String(record?.requested_at||new Date().toISOString())};
+    await this.sql.unsafe(
+      "UPDATE customer_principals SET metadata=jsonb_set(COALESCE(metadata,'{}'::jsonb),'{password_reset}',$2::jsonb,true),updated_at=now() WHERE id=$1::uuid",
+      [String(row.id),JSON.stringify(payload)]
     );
-    if(!rows[0])throw problem(404,"CUSTOMER_CREDENTIAL_NOT_FOUND");
-    return {ok:true};
+    return row;
+  }
+
+  async completeCustomerPasswordReset(tokenHash,passwordHash){
+    tokenHash=String(tokenHash||"");
+    if(!/^[a-f0-9]{64}$/.test(tokenHash)||String(passwordHash||"").length<20)throw problem(400,"PASSWORD_RESET_INVALID");
+    return this.sql.begin(async tx=>{
+      const row=(await tx.unsafe(
+        "SELECT id,email,display_name,preferred_locale,metadata->'password_reset' AS reset FROM customer_principals"+
+        " WHERE status='active' AND metadata#>>'{password_reset,token_hash}'=$1 FOR UPDATE LIMIT 1",
+        [tokenHash]
+      ))[0];
+      const expires=Date.parse(String(row?.reset?.expires_at||""));
+      if(!row||!Number.isFinite(expires)||expires<Date.now())throw problem(400,"PASSWORD_RESET_INVALID");
+      const updated=await tx.unsafe(
+        "UPDATE customer_password_credentials SET password_hash=$2,status='active',failed_attempts=0,locked_until=NULL,last_failed_at=NULL,password_changed_at=now(),updated_at=now()"+
+        " WHERE customer_principal_id=$1::uuid RETURNING customer_principal_id",
+        [String(row.id),String(passwordHash)]
+      );
+      if(!updated[0])throw problem(400,"PASSWORD_RESET_INVALID");
+      await tx.unsafe(
+        "UPDATE customer_principals SET session_version=session_version+1,metadata=COALESCE(metadata,'{}'::jsonb)-'password_reset',updated_at=now() WHERE id=$1::uuid",
+        [String(row.id)]
+      );
+      return {id:row.id,email:row.email,display_name:row.display_name,preferred_locale:row.preferred_locale};
+    });
+  }
+
+  async beginCustomerEmailChange(principalId,newEmail,record){
+    newEmail=String(newEmail||"").trim().toLowerCase();
+    if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(newEmail)||newEmail.length>320)throw problem(400,"INVALID_CUSTOMER_EMAIL");
+    const tokenHash=String(record?.token_hash||""),expiresAt=String(record?.expires_at||"");
+    if(!/^[a-f0-9]{64}$/.test(tokenHash)||!Number.isFinite(Date.parse(expiresAt)))throw problem(400,"INVALID_EMAIL_CHANGE_CHALLENGE");
+    const conflict=(await this.sql.unsafe("SELECT id FROM customer_principals WHERE email_normalized=$1 AND id<>$2::uuid LIMIT 1",[newEmail,String(principalId)]))[0];
+    if(conflict)throw problem(409,"CUSTOMER_ACCOUNT_EXISTS");
+    const payload={new_email:newEmail,token_hash:tokenHash,expires_at:expiresAt,requested_at:String(record?.requested_at||new Date().toISOString())};
+    const row=(await this.sql.unsafe(
+      "UPDATE customer_principals SET metadata=jsonb_set(COALESCE(metadata,'{}'::jsonb),'{email_change}',$2::jsonb,true),updated_at=now()"+
+      " WHERE id=$1::uuid AND status='active' RETURNING id,email,display_name,preferred_locale",
+      [String(principalId),JSON.stringify(payload)]
+    ))[0];
+    if(!row)throw problem(404,"CUSTOMER_ACCOUNT_NOT_FOUND");
+    return {...row,new_email:newEmail};
+  }
+
+  async completeCustomerEmailChange(tokenHash){
+    tokenHash=String(tokenHash||"");
+    if(!/^[a-f0-9]{64}$/.test(tokenHash))throw problem(400,"EMAIL_CHANGE_INVALID");
+    return this.sql.begin(async tx=>{
+      const row=(await tx.unsafe(
+        "SELECT id,email,display_name,preferred_locale,metadata->'email_change' AS change FROM customer_principals"+
+        " WHERE status='active' AND metadata#>>'{email_change,token_hash}'=$1 FOR UPDATE LIMIT 1",
+        [tokenHash]
+      ))[0];
+      const newEmail=String(row?.change?.new_email||"").trim().toLowerCase();
+      const expires=Date.parse(String(row?.change?.expires_at||""));
+      if(!row||!Number.isFinite(expires)||expires<Date.now()||!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(newEmail))throw problem(400,"EMAIL_CHANGE_INVALID");
+      const conflict=(await tx.unsafe("SELECT id FROM customer_principals WHERE email_normalized=$1 AND id<>$2::uuid LIMIT 1",[newEmail,String(row.id)]))[0];
+      if(conflict)throw problem(409,"CUSTOMER_ACCOUNT_EXISTS");
+      await tx.unsafe(
+        "UPDATE customer_principals SET email=$2,email_verified=true,session_version=session_version+1,metadata=COALESCE(metadata,'{}'::jsonb)-'email_change',updated_at=now() WHERE id=$1::uuid",
+        [String(row.id),newEmail]
+      );
+      await tx.unsafe(
+        "UPDATE tenants t SET billing_email=$2,updated_at=now() FROM customer_tenant_memberships m"+
+        " WHERE m.tenant_id=t.id AND m.customer_principal_id=$1::uuid AND lower(btrim(COALESCE(t.billing_email,'')))=lower(btrim($3))",
+        [String(row.id),newEmail,String(row.email)]
+      );
+      return {id:row.id,old_email:row.email,new_email:newEmail,display_name:row.display_name,preferred_locale:row.preferred_locale};
+    });
   }
 
   async customerSessionContext(actor){
