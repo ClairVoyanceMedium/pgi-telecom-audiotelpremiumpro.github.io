@@ -87,6 +87,20 @@ jobs:
           node backend/migrate.mjs
           node backend/migrate.mjs
 
+      - name: Backup and restore drill
+        env:
+          PGPASSWORD: pgi_test
+        run: |
+          mkdir -p .ci-recovery
+          docker run --rm --network host -e PGPASSWORD="$PGPASSWORD" -v "$PWD/.ci-recovery:/work" postgres:16-alpine \
+            pg_dump -h 127.0.0.1 -U pgi_test -d pgi_test --format=custom --no-owner --no-acl -f /work/pgi.dump
+          docker run --rm --network host -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine \
+            createdb -h 127.0.0.1 -U pgi_test pgi_restore_test
+          docker run --rm --network host -e PGPASSWORD="$PGPASSWORD" -v "$PWD/.ci-recovery:/work:ro" postgres:16-alpine \
+            pg_restore -h 127.0.0.1 -U pgi_test -d pgi_restore_test --exit-on-error --no-owner --no-acl /work/pgi.dump
+          docker run --rm --network host -e PGPASSWORD="$PGPASSWORD" postgres:16-alpine \
+            psql -h 127.0.0.1 -U pgi_test -d pgi_restore_test -Atc "SELECT (to_regclass('public.calls') IS NOT NULL AND to_regclass('public.outbox_events') IS NOT NULL AND to_regclass('public.transactional_email_deliveries') IS NOT NULL)::text;" | grep -Eq '^(t|true)
+
       - name: PostgreSQL store integration
         env:
           PGI_TEST_DATABASE_URL: postgresql://pgi_test:pgi_test@127.0.0.1:5432/pgi_test
