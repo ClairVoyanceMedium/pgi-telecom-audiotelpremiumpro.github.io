@@ -2222,7 +2222,7 @@ export class PostgresStore{
       );
       await tx.unsafe(
         "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'subscription.changed','tenant_subscription',$2,$3::jsonb)",
-        [tenant.id,String(subscriptionId),JSON.stringify({status,provider,event_type:eventType})]
+        [tenant.id,String(subscriptionId),JSON.stringify({status,provider,event_type:eventType,provider_invoice_reference:providerInvoiceReference,last_payment_status:lastPaymentStatus,payment_attempt_count:paymentAttemptCount})]
       );
       const paidCurrent=status==="active"&&periodEnd&&Date.parse(periodEnd)>Date.parse(eventTime)&&(!lastPaymentStatus||["paid","succeeded","success"].includes(lastPaymentStatus));
       if(appliedLatest&&paidCurrent){

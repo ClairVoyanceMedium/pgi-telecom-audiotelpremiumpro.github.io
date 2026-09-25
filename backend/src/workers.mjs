@@ -1,5 +1,6 @@
 import {randomUUID} from "node:crypto";
 import {evaluateAlerts} from "./alerts.mjs";
+import {drainTransactionalEmails,drainDunningTransactionalEmails} from "./email-dispatcher.mjs";
 
 export function startWorkers({store,eventBus,config,queueHandlers={}}){
   let stopped=false;
@@ -23,6 +24,7 @@ export function startWorkers({store,eventBus,config,queueHandlers={}}){
           aggregate_id:event.aggregate_id
         },{relay:false});
       },100);
+      if(config.transactionalEmailEnabled)await drainTransactionalEmails({store,config,limit:100});
       stats.lastOutboxSuccessAt=new Date().toISOString();
     }catch{
       stats.outboxErrors++;
@@ -56,6 +58,7 @@ export function startWorkers({store,eventBus,config,queueHandlers={}}){
       });
       for(const a of alerts)eventBus.publish("alert",a);
       if(typeof store.scanUnpaidSubscriptions==="function")await store.scanUnpaidSubscriptions(500);
+      if(config.transactionalEmailEnabled)await drainDunningTransactionalEmails({store,config,limit:100});
       if(typeof store.scanRegulatoryReviews==="function")await store.scanRegulatoryReviews(1000);
       if(typeof store.scanVoiceIncidents==="function")await store.scanVoiceIncidents();
       if(typeof store.scanTenantServiceIncidents==="function")await store.scanTenantServiceIncidents(250);

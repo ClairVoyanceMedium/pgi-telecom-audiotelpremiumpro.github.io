@@ -16,6 +16,8 @@ import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scop
 import {createStaticSiteHandler} from "./src/static-site.mjs";
 import {stripeProviderState,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent} from "./src/stripe-billing.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode} from "./src/resend-email.mjs";
+import {verifyResendWebhook} from "./src/resend-webhook.mjs";
+import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
 
 export async function createDefaultBackend(){
   const config=loadConfig();
@@ -112,6 +114,19 @@ export function createBackend(options={}){
         if(!normalized)return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,ignored:true,type:String(event.type||"")});
         const result=await store.applySubscriptionBillingEvent(normalized);
         return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,duplicate:Boolean(result.duplicate)});
+      }
+      if(method==="POST"&&pathname==="/api/v1/email/resend/webhook"){
+        if(!config.transactionalEmailEnabled||!config.resendWebhookSecret)return done(res,metrics,started,"email.resend_webhook",404,{error:{code:"RESEND_WEBHOOK_DISABLED"}});
+        const verified=await verifyResendWebhook(req,config);
+        const result=await applyResendWebhookEvent(store,verified);
+        return done(res,metrics,started,"email.resend_webhook",200,{received:true,duplicate:Boolean(result.duplicate),event_type:result.event_type||verified.event.type});
+      }
+      if(method==="GET"&&pathname==="/api/v1/internal/email/dispatch"){
+        authorizeEmailCron(req,config);
+        if(typeof store.scanUnpaidSubscriptions==="function")await store.scanUnpaidSubscriptions(500);
+        const delivery=await drainTransactionalEmails({store,config,limit:100});
+        const dunning=await drainDunningTransactionalEmails({store,config,limit:100});
+        return done(res,metrics,started,"email.dispatch",200,{ok:true,delivery,dunning});
       }
 
       if(method==="POST"&&pathname==="/api/v1/auth/login"){
@@ -1779,6 +1794,11 @@ function routeClassRateLimit(req,config,buckets,metrics,pathname,method){
     }
   }
   if(buckets.size>10000&&Math.random()<.01)for(const [k,v] of buckets)if(v.minute<minute-2)buckets.delete(k);
+}
+function authorizeEmailCron(req,config){
+  if(!config.transactionalEmailEnabled||!config.cronSecret){const e=new Error("Email dispatch disabled");e.status=404;e.code="EMAIL_DISPATCH_DISABLED";e.expose=true;throw e;}
+  const authorization=String(req.headers?.authorization||"");
+  if(!constantTimeTokenEqual(authorization,"Bearer "+config.cronSecret)){const e=new Error("Unauthorized");e.status=401;e.code="EMAIL_DISPATCH_UNAUTHORIZED";e.expose=true;throw e;}
 }
 function done(res,metrics,started,route,status,payload,headers={}){
   res.pgiRoute=route;
