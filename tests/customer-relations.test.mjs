@@ -92,7 +92,7 @@ test("interfaces are lazy, mobile-accessible and explicit about non-automatic ir
   assert.match(adminUi,/remboursements, avoirs, libérations définitives/);
   assert.match(customerUi,/Réclamations & départ/);
   assert.match(customerUi,/Aucun numéro n’est libéré avant confirmation/);
-  assert.match(customerUi,/Une demande de portabilité ne sert pas à déclencher une offre commerciale/);
+  assert.match(customerUi,/La résiliation de l’abonnement plateforme reste accessible séparément/);
   assert.match(mobile,/Réclamations & départ/);
   assert.match(fs.readFileSync("assets/client-portal.js","utf8"),/import\("\.\/client-relations\.js"\)/);
   assert.match(fs.readFileSync("assets/tenant-control-detail.js","utf8"),/import\("\.\/customer-relations\.js"\)/);

@@ -17,12 +17,12 @@ await fetchCheck("site.application","/demande-ouverture/",200,["id=\"order-form\
 await fetchCheck("site.application.logic","/site/site.js",200,["client.html?register=1","sessionStorage"]);
 await fetchCheck("site.client","/client.html",200,["id=\"customer-login-form\"","id=\"client-billing-start\"","id=\"portability-open\"","id=\"service-incident-open\""]);
 await fetchCheck("site.cockpit","/cockpit.html",200,["id=\"auth-form\"","ACCÈS PRODUCTION"]);
-await fetchCheck("site.terms","/conditions-abonnement/",200,["3,00 € TTC par mois","Partie B2C","Partie B2B","2026-09-26-b2b-b2c-v2"]);
+await fetchCheck("site.terms","/conditions-abonnement/",200,["3,00 € TTC par mois","durée indéterminée","résiliation à tout moment","2026-09-26-b2b-b2c-v3"]);
 await fetchCheck("site.privacy","/confidentialite/",200,["CONFIDENTIALITÉ","RGPD"]);
 await fetchCheck("site.legal","/mentions-legales/",200,["Mentions légales"]);
 await fetchCheck("site.terms-of-use","/conditions-utilisation/",200,["Conditions générales d’utilisation"]);
 await fetchCheck("site.cookies","/cookies-traceurs/",200,["Cookies et traceurs"]);
-await fetchCheck("site.cancellation","/resilier-contrat/",200,["Résilier votre contrat","client.html?action=cancel-subscription"]);
+await fetchCheck("site.cancellation","/resilier-contrat/",200,["Résilier votre contrat","client.html?action=cancel-subscription","Résiliation possible à tout moment"]);
 await fetchCheck("site.withdrawal","/retractation/",200,["14 jours","Fonctionnalité en ligne obligatoire","26 septembre 2026"]);
 await fetchCheck("api.health","/api/v1/health",200,[],b=>b&&b.status==="ok"&&b.mode==="production");
 await fetchCheck("auth.boundary","/api/v1/customer/auth/me",401,["AUTH_REQUIRED"]);

@@ -33,6 +33,9 @@ test("public homepage links to focused SEO content without changing the signup f
 
 test("public pricing and revenue example stay explicit and non-guaranteed",()=>{
   assert.match(html,/3 € TTC \/ mois/);
+  assert.match(html,/Facturé mensuellement d’avance/);
+  assert.match(html,/Contrat à durée indéterminée/);
+  assert.match(html,/Résiliation possible à tout moment/);
   assert.match(html,/0,10 € HT \/ min/);
   assert.match(html,/1 800 € HT/);
   assert.match(html,/Simulation non contractuelle/);
@@ -114,4 +117,17 @@ test("marketing metadata declares the canonical social URL",()=>{
 test("public SEO sources never expose the legacy GitHub identity",()=>{
   for(const value of [html,robots,sitemap,buildStatic])assert.doesNotMatch(value,/clairvoyancemedium\.github\.io/i);
   assert.match(buildStatic,/audiotel-premium-pro\.com/);
+});
+
+test("public funnels preserve legal customer qualification and non-promissory finance wording",()=>{
+  const voyance=fs.readFileSync("site/seo/audiotel-voyance.html","utf8");
+  const number=fs.readFileSync("site/seo/numero-sva.html","utf8");
+  const comparator=fs.readFileSync("site/seo/comparateur-audiotel.html","utf8");
+  const liveFinance=fs.readFileSync("assets/client-live-finance.js","utf8");
+  assert.doesNotMatch(voyance,/demande-ouverture\/\?profil=particulier/);
+  assert.match(number,/particuliers et professionnels/i);
+  assert.match(comparator,/écart économique potentiel/i);
+  assert.doesNotMatch(comparator,/<title>[^<]*gain potentiel/i);
+  assert.match(liveFinance,/ESTIMATION PERSONNELLE/);
+  assert.match(liveFinance,/reversements validés font foi/);
 });

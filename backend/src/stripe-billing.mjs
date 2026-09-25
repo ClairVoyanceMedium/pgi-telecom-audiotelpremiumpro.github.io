@@ -76,7 +76,9 @@ export async function createStripeCheckout(config,billing,idempotencyKey){
   const metadata={
     tenant_public_id:String(tenant.id||""),
     price_version_id:String(billing?.offer?.price_version_id||""),
-    plan_key:String(billing?.offer?.plan_key||"external-sva-access")
+    plan_key:String(billing?.offer?.plan_key||"external-sva-access"),
+    legal_version:"2026-09-26-b2b-b2c-v3",
+    contract_model:"indefinite_monthly_advance"
   };
   if(billing?.offer?.market_id!=null)metadata.market_id=String(billing.offer.market_id);
   const params={
@@ -86,10 +88,10 @@ export async function createStripeCheckout(config,billing,idempotencyKey){
     client_reference_id:String(tenant.id||""),
     line_items:[{price:price.id,quantity:1}],
     metadata,
-    subscription_data:{metadata,description:"Abonnement plateforme PGI Telecom • Audiotel Premium Pro. Les reversements SVA restent distincts."},
+    subscription_data:{metadata,description:"Abonnement plateforme Audiotel Premium Pro, durée indéterminée, facturation mensuelle d’avance. Reversements SVA distincts."},
     billing_address_collection:"required",
     tax_id_collection:{enabled:true},
-    custom_text:{submit:{message:"Cet abonnement concerne l’accès à la plateforme PGI Telecom. Les reversements SVA et leurs conditions restent distincts."}},
+    custom_text:{submit:{message:"3 € TTC/mois, facturé mensuellement d’avance. Contrat à durée indéterminée. Résiliation possible à tout moment avec effet à la fin de la période en cours. Les reversements SVA restent distincts."}},
     locale:"auto"
   };
   const customer=String(subscription.provider_customer_reference||"");
