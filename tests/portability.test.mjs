@@ -44,8 +44,8 @@ test("customer portability remains tenant scoped and fail closed",()=>{
 test("portability intake does not itself activate routing",()=>{
   assert.doesNotMatch(migration,/logical_carrier_routes/);
   assert.doesNotMatch(migration,/active_connection_id/);
-  assert.match(html,/La demande ne coupe pas votre ligne actuelle/);
-  assert.match(html,/sans transfert de ses obligations à Audiotel Premium Pro/);
+  assert.match(html,/La demande ne coupe pas votre ligne/);
+  assert.match(html,/La résiliation de l’ancien service suit les règles applicables/);
 });
 
 test("French SVA port-in requires a verified encrypted RIO and never transfers the donor contract",()=>{
