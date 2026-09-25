@@ -30,7 +30,9 @@ test("all production service templates render both plain text and html",()=>{
   for(const key of keys){
     const m=buildTransactionalMessage(config,key,{name:"Client",tenant_name:"Société",country_code:"FR",severity:"normal"});
     assert.ok(m.subject.length>3,key);
-    assert.ok(m.text.includes("PGI Telecom"),key);
+    assert.ok(m.text.includes("Audiotel Premium Pro"),key);
     assert.match(m.html,/Audiotel Premium Pro/,key);
+    assert.doesNotMatch(m.text,/PGI Telecom/,key);
+    assert.doesNotMatch(m.html,/PGI Telecom/,key);
   }
 });
