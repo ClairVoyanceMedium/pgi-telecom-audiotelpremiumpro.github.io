@@ -56,7 +56,7 @@ test("marketing surface is indexable while private surfaces remain noindex",()=>
   assert.match(client,/name="robots" content="noindex,nofollow,noarchive"/);
   assert.match(robots,/Allow: \/$/m);
   assert.match(robots,/Disallow: \/client\.html/);
-  assert.match(sitemap,/audiotel-premium-pro\.com//);
+  assert.match(sitemap,/audiotel-premium-pro\.com\//);
 });
 
 test("public site remains self-contained and mobile responsive",()=>{
