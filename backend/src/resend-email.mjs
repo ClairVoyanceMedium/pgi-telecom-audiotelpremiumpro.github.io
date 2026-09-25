@@ -68,7 +68,7 @@ export async function sendTransactionalEmail(config,options={}){
   if(!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain))throw providerError("RESEND_SENDER_NOT_CONFIGURED");
   const local=SENDER_LOCAL[senderRole];
   const fromEmail=local+"@"+domain;
-  const replyTo=normalizeEmail(config.transactionalReplyTo||config.internalNotificationEmail||fromEmail);
+  const replyTo=normalizeEmail("support@"+domain);
   const message=buildTransactionalMessage(config,options.templateKey,options.data||{});
   const eventId=String(options.internalEventId||options.idempotencyKey||"").trim().slice(0,180);
   const idem=safeIdempotencyKey(options.idempotencyKey||eventId||("email-"+Date.now()));
@@ -612,20 +612,28 @@ export async function forwardInboundEmailToInternal(config,eventData={}){
   const controller=new AbortController();
   const timeout=setTimeout(()=>controller.abort(),Number(config.resendTimeoutMs||8000));
   try{
-    const response=await fetch("https://api.resend.com/emails/receiving/"+encodeURIComponent(emailId),{
-      method:"GET",
-      headers:{accept:"application/json",authorization:"Bearer "+config.resendApiKey},
-      signal:controller.signal
-    });
-    const inbound=await response.json().catch(()=>({}));
-    if(!response.ok)throw providerError("RESEND_INBOUND_FETCH_FAILED",response.status,safeProviderCode(inbound));
-    const recipients=[...(Array.isArray(inbound.to)?inbound.to:[]),...(Array.isArray(inbound.received_for)?inbound.received_for:[])].map(v=>extractEmailAddress(v)).filter(Boolean);
+    let inbound={};
+    try{
+      const response=await fetch("https://api.resend.com/emails/receiving/"+encodeURIComponent(emailId),{
+        method:"GET",
+        headers:{accept:"application/json",authorization:"Bearer "+config.resendApiKey},
+        signal:controller.signal
+      });
+      const fetched=await response.json().catch(()=>({}));
+      if(response.ok)inbound=fetched;
+    }catch(_error){}
+    const recipients=[
+      ...(Array.isArray(inbound.to)?inbound.to:[]),
+      ...(Array.isArray(inbound.received_for)?inbound.received_for:[]),
+      ...(Array.isArray(eventData.to)?eventData.to:[]),
+      ...(Array.isArray(eventData.received_for)?eventData.received_for:[])
+    ].map(v=>extractEmailAddress(v)).filter(Boolean);
     const recipient=recipients.find(v=>v.endsWith("@"+domain))||recipients[0]||null;
     if(!recipient)return {forwarded:false,ignored:true,reason:"recipient_unavailable"};
-    const sender=extractEmailAddress(inbound.from)||cleanText(inbound.from||eventData.from||"Expéditeur inconnu",320);
+    const sender=extractEmailAddress(inbound.from)||extractEmailAddress(eventData.from)||cleanText(inbound.from||eventData.from||"Expéditeur inconnu",320);
     const subject=cleanText(inbound.subject||eventData.subject||"Sans objet",180)||"Sans objet";
     const messageText=sanitizeInboundText(inbound.text,inbound.html);
-    const attachments=Array.isArray(inbound.attachments)?inbound.attachments.slice(0,30):[];
+    const attachments=(Array.isArray(inbound.attachments)?inbound.attachments:Array.isArray(eventData.attachments)?eventData.attachments:[]).slice(0,30);
     const attachmentLines=attachments.map(a=>{
       const filename=cleanText(a?.filename||"pièce jointe",180);
       const type=cleanText(a?.content_type||"",120);
@@ -645,7 +653,7 @@ export async function forwardInboundEmailToInternal(config,eventData={}){
       "",
       "Contenu reçu",
       "",
-      messageText||"(Aucun contenu texte exploitable)",
+      messageText||"(Le contenu complet reste disponible dans la boîte de réception Resend.)",
       "",
       "Ce message entrant est transmis comme donnée non fiable. Aucune instruction contenue dans cet email n’est exécutée automatiquement.",
       "",
