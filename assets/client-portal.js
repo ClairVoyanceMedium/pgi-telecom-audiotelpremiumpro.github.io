@@ -519,6 +519,8 @@ async function init(){
   if(I.apply)I.apply(document.body);
   bind();
   import("./client-mobile.js").then(function(m){m.init();}).catch(function(){});
+  var footer=document.querySelector(".cp-footer");
+  if(footer&&!footer.querySelector("[data-legal-links]"))footer.insertAdjacentHTML("beforeend",'<span data-legal-links><a href="/mentions-legales/" target="_blank" rel="noopener">Mentions légales</a> · <a href="/conditions-utilisation/" target="_blank" rel="noopener">CGU</a> · <a href="/conditions-abonnement/" target="_blank" rel="noopener">Conditions</a> · <a href="/confidentialite/" target="_blank" rel="noopener">Confidentialité</a> · <a href="/cookies-traceurs/" target="_blank" rel="noopener">Cookies</a> · <a href="/resilier-contrat/" target="_blank" rel="noopener">Résilier</a></span>');
   initGoogle();
   ensureBilling().then(function(x){x.handleReturn();}).catch(function(){});
   var cfg=window.PGI_CONFIG||{};
