@@ -24,8 +24,7 @@ test -n "$PGI_DATABASE_URL" || {
   exit 1
 }
 
-# One-time production migration run for the transactional email delivery schema.
-# The migration runner is idempotent and records checksums in schema_migrations.
-node backend/migrate.mjs
+# Neon is migrated out-of-band before deployment. Vercel instances are ephemeral
+# and must never race database bootstrap/migrations during cold starts.
 node scripts/build-static.mjs
 exec node backend/server.mjs
