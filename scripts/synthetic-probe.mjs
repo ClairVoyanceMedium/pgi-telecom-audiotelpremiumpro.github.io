@@ -3,12 +3,12 @@ import {randomUUID} from "node:crypto";
 const base=String(process.env.PGI_SYNTHETIC_TARGET||"http://127.0.0.1:8080").replace(/\/$/,"");
 const remote=!/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(?::|\/|$)/i.test(base);
 if(remote&&!base.startsWith("https://"))throw new Error("Remote synthetic probes require HTTPS");
-const probes=[["api.health","/api/v1/health"],["api.ready","/api/v1/ready"]];
+const probes=remote?[["api.health","/api/v1/health",200],["site.home","/",200],["site.client","/client.html",200],["auth.boundary","/api/v1/customer/auth/me",401]]:[["api.health","/api/v1/health",200],["api.ready","/api/v1/ready",200]];
 const results=[];
-for(const [key,path] of probes){
+for(const [key,path,expected] of probes){
   const started=performance.now();let status=null,success=false,errorCode=null;
-  try{const r=await fetch(base+path,{headers:{Accept:"application/json","User-Agent":"PGI-Synthetic-Probe/1"},cache:"no-store",signal:AbortSignal.timeout(10000)});status=r.status;success=r.ok;const body=await r.json().catch(()=>null);if(!success)errorCode=body?.error?.code||"HTTP_"+r.status;}catch(e){errorCode=e?.name||"PROBE_FAILED";}
-  const row={probe_key:key,success,latency_ms:performance.now()-started,http_status:status,release_id:process.env.PGI_RELEASE_ID||null,error_code:errorCode,details:{path}};
+  try{const r=await fetch(base+path,{headers:{Accept:"application/json","User-Agent":"PGI-Synthetic-Probe/1"},cache:"no-store",signal:AbortSignal.timeout(10000)});status=r.status;success=r.status===expected;const body=await r.json().catch(()=>null);if(!success)errorCode=body?.error?.code||"HTTP_"+r.status;}catch(e){errorCode=e?.name||"PROBE_FAILED";}
+  const row={probe_key:key,success,latency_ms:performance.now()-started,http_status:status,release_id:process.env.PGI_RELEASE_ID||null,error_code:errorCode,details:{path,expected_status:expected}};
   results.push(row);
   const cookie=process.env.PGI_SYNTHETIC_ADMIN_COOKIE||"",csrf=process.env.PGI_SYNTHETIC_CSRF||"";
   if(cookie&&csrf){
