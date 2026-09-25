@@ -127,11 +127,11 @@ export function buildTransactionalMessage(config,templateKey,data={}){
   const cases={
     email_verification:{
       subject:"Votre code de vérification Audiotel Premium Pro",
-      title:"Vérification de votre adresse e-mail",
+      title:"Vérification de votre adresse email",
       lead:greeting,
-      paragraphs:["Utilisez le code ci-dessous pour confirmer votre adresse e-mail et poursuivre la création de votre espace Audiotel Premium Pro."],
+      paragraphs:["Utilisez le code ci-dessous pour confirmer votre adresse email et poursuivre la création de votre espace Audiotel Premium Pro."],
       code:String(data.code||""),
-      foot:"Ce code expire dans "+Number(data.ttl_minutes||10)+" minutes. Si vous n’êtes pas à l’origine de cette demande, ignorez cet e-mail."
+      foot:"Ce code expire dans "+Number(data.ttl_minutes||10)+" minutes. Si vous n’êtes pas à l’origine de cette demande, ignorez cet email."
     },
     password_reset:{
       subject:"Réinitialisation de votre mot de passe Audiotel Premium Pro",
@@ -149,24 +149,24 @@ export function buildTransactionalMessage(config,templateKey,data={}){
       cta:{label:"Accéder à mon espace",url:portalUrl}
     },
     email_change_confirmation:{
-      subject:"Confirmez votre nouvelle adresse e-mail Audiotel Premium Pro",
-      title:"Confirmer votre nouvelle adresse e-mail",
+      subject:"Confirmez votre nouvelle adresse email Audiotel Premium Pro",
+      title:"Confirmer votre nouvelle adresse email",
       lead:greeting,
-      paragraphs:["Une modification de l’adresse e-mail de votre compte a été demandée.","Confirmez cette nouvelle adresse avec le bouton ci-dessous. Le lien est temporaire et à usage unique."],
-      cta:actionUrl?{label:"Confirmer mon adresse e-mail",url:actionUrl}:null
+      paragraphs:["Une modification de l’adresse email de votre compte a été demandée.","Confirmez cette nouvelle adresse avec le bouton ci-dessous. Le lien est temporaire et à usage unique."],
+      cta:actionUrl?{label:"Confirmer mon adresse email",url:actionUrl}:null
     },
     email_changed:{
-      subject:"Votre adresse e-mail Audiotel Premium Pro a été mise à jour",
-      title:"Adresse e-mail mise à jour",
+      subject:"Votre adresse email Audiotel Premium Pro a été mise à jour",
+      title:"Adresse email mise à jour",
       lead:greeting,
-      paragraphs:["Votre nouvelle adresse e-mail est maintenant confirmée et rattachée à votre compte.","Toutes les sessions existantes ont été invalidées par mesure de sécurité."],
+      paragraphs:["Votre nouvelle adresse email est maintenant confirmée et rattachée à votre compte.","Toutes les sessions existantes ont été invalidées par mesure de sécurité."],
       cta:{label:"Me reconnecter",url:portalUrl}
     },
     email_change_notice_old:{
-      subject:"L’adresse e-mail de votre compte Audiotel Premium Pro a changé",
+      subject:"L’adresse email de votre compte Audiotel Premium Pro a changé",
       title:"Information de sécurité",
       lead:greeting,
-      paragraphs:["L’adresse e-mail associée à votre compte vient d’être modifiée.","Si vous n’êtes pas à l’origine de cette modification, contactez immédiatement l’assistance Audiotel Premium Pro."]
+      paragraphs:["L’adresse email associée à votre compte vient d’être modifiée.","Si vous n’êtes pas à l’origine de cette modification, contactez immédiatement l’assistance Audiotel Premium Pro."]
     },
     passkey_added:{
       subject:"Une clé d’accès a été ajoutée à votre compte Audiotel Premium Pro",
@@ -257,7 +257,7 @@ export function buildTransactionalMessage(config,templateKey,data={}){
       subject:"Résiliation de votre abonnement Audiotel Premium Pro",
       title:"Abonnement résilié",
       lead:greeting,
-      paragraphs:["La résiliation de votre abonnement Audiotel Premium Pro a été enregistrée.","Votre compte n’est pas supprimé par cet e-mail. Les conditions de fin de service restent celles affichées dans votre espace client."],
+      paragraphs:["La résiliation de votre abonnement Audiotel Premium Pro a été enregistrée.","Votre compte n’est pas supprimé par cet email. Les conditions de fin de service restent celles affichées dans votre espace client."],
       cta:{label:"Consulter mon espace",url:portalUrl}
     },
     payout_available:{
@@ -459,12 +459,12 @@ function localizeTransactionalModel(key,model,locale,name){
       support_resolved:["Su solicitud de asistencia ha sido resuelta","Expediente resuelto",["Su expediente de asistencia ha sido marcado como resuelto.","El historial permanece disponible en su espacio cliente."],null,"Consultar el expediente"]
     },
     it:{
-      email_verification:["Il suo codice di verifica Audiotel Premium Pro","Verifica dell’indirizzo e-mail",["Utilizzi il codice qui sotto per confermare il suo indirizzo e-mail e proseguire con la creazione del suo spazio Audiotel Premium Pro."],"Questo codice scade a breve. Se non ha richiesto questa operazione, ignori questa e-mail."],
+      email_verification:["Il suo codice di verifica Audiotel Premium Pro","Verifica dell’indirizzo email",["Utilizzi il codice qui sotto per confermare il suo indirizzo email e proseguire con la creazione del suo spazio Audiotel Premium Pro."],"Questo codice scade a breve. Se non ha richiesto questa operazione, ignori questa email."],
       password_reset:["Reimpostazione della password Audiotel Premium Pro","Reimpostare la password",["È stata ricevuta una richiesta di reimpostazione della password per il suo account.","Utilizzi il pulsante qui sotto entro il tempo indicato. Se non ha effettuato la richiesta, non è necessaria alcuna azione."],"Per la sua sicurezza, questo link è temporaneo e può essere utilizzato una sola volta.","Scegliere una nuova password"],
       password_changed:["La password Audiotel Premium Pro è stata modificata","Password modificata",["La password del suo account è stata appena modificata.","Tutte le sessioni esistenti sono state invalidate. Se non ha effettuato questa modifica, contatti immediatamente l’assistenza."],null,"Accedere al mio account"],
-      email_change_confirmation:["Confermi il nuovo indirizzo e-mail Audiotel Premium Pro","Confermare il nuovo indirizzo e-mail",["È stata richiesta una modifica dell’indirizzo e-mail del suo account.","Confermi il nuovo indirizzo con il pulsante qui sotto. Il link è temporaneo e monouso."],null,"Confermare il mio indirizzo e-mail"],
-      email_changed:["Il suo indirizzo e-mail Audiotel Premium Pro è stato aggiornato","Indirizzo e-mail aggiornato",["Il suo nuovo indirizzo e-mail è ora confermato e associato al suo account.","Tutte le sessioni esistenti sono state invalidate per sicurezza."],null,"Accedere di nuovo"],
-      email_change_notice_old:["L’indirizzo e-mail del suo account Audiotel Premium Pro è cambiato","Informazione di sicurezza",["L’indirizzo e-mail associato al suo account è stato appena modificato.","Se non ha effettuato questa modifica, contatti immediatamente l’assistenza Audiotel Premium Pro."]],
+      email_change_confirmation:["Confermi il nuovo indirizzo email Audiotel Premium Pro","Confermare il nuovo indirizzo email",["È stata richiesta una modifica dell’indirizzo email del suo account.","Confermi il nuovo indirizzo con il pulsante qui sotto. Il link è temporaneo e monouso."],null,"Confermare il mio indirizzo email"],
+      email_changed:["Il suo indirizzo email Audiotel Premium Pro è stato aggiornato","Indirizzo email aggiornato",["Il suo nuovo indirizzo email è ora confermato e associato al suo account.","Tutte le sessioni esistenti sono state invalidate per sicurezza."],null,"Accedere di nuovo"],
+      email_change_notice_old:["L’indirizzo email del suo account Audiotel Premium Pro è cambiato","Informazione di sicurezza",["L’indirizzo email associato al suo account è stato appena modificato.","Se non ha effettuato questa modifica, contatti immediatamente l’assistenza Audiotel Premium Pro."]],
       passkey_added:["È stata aggiunta una passkey al suo account Audiotel Premium Pro","Nuova passkey",["È stata registrata una nuova passkey per il suo account.","Se non ha effettuato questa operazione, modifichi la password e contatti immediatamente l’assistenza."],null,"Accedere al mio account"],
       registration_received:["La sua richiesta di apertura è stata ricevuta","Richiesta di apertura registrata",["La sua richiesta di apertura Audiotel Premium Pro è stata registrata.","Può seguire le fasi della pratica dal suo spazio cliente. La creazione dell’account non equivale all’attivazione di un servizio SVA."],null,"Accedere al mio spazio"],
       account_activated:["Il suo account Audiotel Premium Pro è attivo","Account attivato",["Il suo account Audiotel Premium Pro è ora attivo.","L’accesso alle funzioni SVA resta soggetto ai controlli tecnici, contrattuali e normativi applicabili."],null,"Aprire il mio spazio cliente"],
@@ -476,7 +476,7 @@ function localizeTransactionalModel(key,model,locale,name){
       payment_action_required:["Azione richiesta per completare il pagamento Audiotel Premium Pro","Convalida del pagamento richiesta",["Il suo fornitore di pagamento richiede un’azione aggiuntiva per completare il pagamento.","Acceda al suo spazio cliente per continuare tramite il portale sicuro Stripe."],null,"Completare il pagamento"],
       payment_reminder:["Promemoria: regolarizzazione dell’abbonamento Audiotel Premium Pro","Promemoria di regolarizzazione",["Il suo abbonamento è ancora in attesa di regolarizzazione.","Il servizio esistente può restare disponibile durante il periodo di recupero, ma alcune funzioni possono essere sospese alla scadenza."],null,"Regolarizzare la fatturazione"],
       subscription_suspended:["Abbonamento Audiotel Premium Pro sospeso","Abbonamento sospeso",["Il periodo di regolarizzazione è scaduto e le funzioni a pagamento possono essere sospese.","Il suo account e i suoi dati restano conservati. La regolarizzazione permette la ripresa secondo le regole del servizio."],null,"Regolarizzare la fatturazione"],
-      subscription_cancelled:["Cancellazione dell’abbonamento Audiotel Premium Pro","Abbonamento cancellato",["La cancellazione del suo abbonamento Audiotel Premium Pro è stata registrata.","Questa e-mail non elimina il suo account. Le condizioni di fine servizio restano quelle indicate nel suo spazio cliente."],null,"Consultare il mio account"],
+      subscription_cancelled:["Cancellazione dell’abbonamento Audiotel Premium Pro","Abbonamento cancellato",["La cancellazione del suo abbonamento Audiotel Premium Pro è stata registrata.","Questa email non elimina il suo account. Le condizioni di fine servizio restano quelle indicate nel suo spazio cliente."],null,"Consultare il mio account"],
       payout_available:["Il suo riversamento Audiotel è disponibile","Riversamento disponibile",["Un riversamento derivante dal traffico SVA ha superato i controlli necessari ed è ora indicato come disponibile nel suo spazio cliente.","Lo stato visualizzato nello spazio cliente resta il riferimento per il monitoraggio del pagamento."],null,"Consultare i miei riversamenti"],
       portability_received:["La sua richiesta di portabilità è stata ricevuta","Richiesta di portabilità registrata",["La sua richiesta di portabilità è stata registrata e sarà trattata secondo i controlli applicabili.","Nessun trasferimento viene indicato come completato finché l’operatore non conferma la portabilità."],null,"Seguire la mia richiesta"],
       support_received:["La sua richiesta di assistenza è stata ricevuta","Richiesta di assistenza registrata",["La sua richiesta è stata registrata nel centro servizi.","Può seguirne lo stato nel suo spazio cliente."],null,"Consultare il centro servizi"],
@@ -485,12 +485,12 @@ function localizeTransactionalModel(key,model,locale,name){
       support_resolved:["La sua richiesta di assistenza è stata risolta","Caso risolto",["Il suo caso di assistenza è stato contrassegnato come risolto.","La cronologia resta disponibile nel suo spazio cliente."],null,"Consultare il caso"]
     },
     pt:{
-      email_verification:["O seu código de verificação Audiotel Premium Pro","Verificar o endereço de e-mail",["Utilize o código abaixo para confirmar o seu endereço de e-mail e continuar a criação do seu espaço Audiotel Premium Pro."],"Este código expira em breve. Se não solicitou esta ação, ignore este e-mail."],
+      email_verification:["O seu código de verificação Audiotel Premium Pro","Verificar o endereço de email",["Utilize o código abaixo para confirmar o seu endereço de email e continuar a criação do seu espaço Audiotel Premium Pro."],"Este código expira em breve. Se não solicitou esta ação, ignore este email."],
       password_reset:["Redefinição da sua palavra-passe Audiotel Premium Pro","Redefinir a palavra-passe",["Foi recebido um pedido de redefinição da palavra-passe da sua conta.","Utilize o botão abaixo dentro do prazo indicado. Se não fez este pedido, não é necessária nenhuma ação."],"Para sua segurança, esta ligação é temporária e só pode ser utilizada uma vez.","Escolher uma nova palavra-passe"],
       password_changed:["A sua palavra-passe Audiotel Premium Pro foi alterada","Palavra-passe alterada",["A palavra-passe da sua conta acabou de ser alterada.","Todas as sessões existentes foram invalidadas. Se não fez esta alteração, contacte imediatamente o suporte."],null,"Aceder à minha conta"],
-      email_change_confirmation:["Confirme o seu novo endereço de e-mail Audiotel Premium Pro","Confirmar novo endereço de e-mail",["Foi solicitada uma alteração do endereço de e-mail da sua conta.","Confirme o novo endereço através do botão abaixo. A ligação é temporária e de utilização única."],null,"Confirmar o meu endereço de e-mail"],
-      email_changed:["O seu endereço de e-mail Audiotel Premium Pro foi atualizado","Endereço de e-mail atualizado",["O seu novo endereço de e-mail está confirmado e associado à sua conta.","Todas as sessões existentes foram invalidadas por segurança."],null,"Iniciar sessão novamente"],
-      email_change_notice_old:["O endereço de e-mail da sua conta Audiotel Premium Pro foi alterado","Informação de segurança",["O endereço de e-mail associado à sua conta acabou de ser alterado.","Se não fez esta alteração, contacte imediatamente o suporte Audiotel Premium Pro."]],
+      email_change_confirmation:["Confirme o seu novo endereço de email Audiotel Premium Pro","Confirmar novo endereço de email",["Foi solicitada uma alteração do endereço de email da sua conta.","Confirme o novo endereço através do botão abaixo. A ligação é temporária e de utilização única."],null,"Confirmar o meu endereço de email"],
+      email_changed:["O seu endereço de email Audiotel Premium Pro foi atualizado","Endereço de email atualizado",["O seu novo endereço de email está confirmado e associado à sua conta.","Todas as sessões existentes foram invalidadas por segurança."],null,"Iniciar sessão novamente"],
+      email_change_notice_old:["O endereço de email da sua conta Audiotel Premium Pro foi alterado","Informação de segurança",["O endereço de email associado à sua conta acabou de ser alterado.","Se não fez esta alteração, contacte imediatamente o suporte Audiotel Premium Pro."]],
       passkey_added:["Foi adicionada uma chave de acesso à sua conta Audiotel Premium Pro","Nova chave de acesso",["Foi registada uma nova chave de acesso na sua conta.","Se não realizou esta ação, altere a palavra-passe e contacte imediatamente o suporte."],null,"Aceder à minha conta"],
       registration_received:["O seu pedido de abertura foi recebido","Pedido de abertura registado",["O seu pedido de abertura Audiotel Premium Pro foi registado.","Pode acompanhar as etapas do processo no seu espaço de cliente. A criação da conta não significa a ativação de um serviço SVA."],null,"Aceder ao meu espaço"],
       account_activated:["A sua conta Audiotel Premium Pro está ativa","Conta ativada",["A sua conta Audiotel Premium Pro está agora ativa.","O acesso às funções SVA continua sujeito aos controlos técnicos, contratuais e regulamentares aplicáveis."],null,"Abrir o meu espaço de cliente"],
@@ -502,7 +502,7 @@ function localizeTransactionalModel(key,model,locale,name){
       payment_action_required:["Ação necessária para concluir o pagamento Audiotel Premium Pro","Validação de pagamento necessária",["O seu prestador de pagamento exige uma ação adicional para concluir o pagamento.","Aceda ao seu espaço de cliente para continuar através do portal seguro Stripe."],null,"Concluir o pagamento"],
       payment_reminder:["Lembrete: regularização da sua subscrição Audiotel Premium Pro","Lembrete de regularização",["A sua subscrição continua a aguardar regularização.","O serviço existente pode permanecer disponível durante o período de recuperação, mas algumas funções poderão ser suspensas no final."],null,"Regularizar faturação"],
       subscription_suspended:["Subscrição Audiotel Premium Pro suspensa","Subscrição suspensa",["O período de regularização terminou e as funções pagas podem ser suspensas.","A sua conta e os seus dados continuam preservados. A regularização do pagamento permite a retoma segundo as regras do serviço."],null,"Regularizar faturação"],
-      subscription_cancelled:["Cancelamento da sua subscrição Audiotel Premium Pro","Subscrição cancelada",["O cancelamento da sua subscrição Audiotel Premium Pro foi registado.","Este e-mail não elimina a sua conta. As condições de fim de serviço continuam a ser as apresentadas no espaço de cliente."],null,"Consultar a minha conta"],
+      subscription_cancelled:["Cancelamento da sua subscrição Audiotel Premium Pro","Subscrição cancelada",["O cancelamento da sua subscrição Audiotel Premium Pro foi registado.","Este email não elimina a sua conta. As condições de fim de serviço continuam a ser as apresentadas no espaço de cliente."],null,"Consultar a minha conta"],
       payout_available:["O seu pagamento Audiotel está disponível","Pagamento disponível",["Um pagamento proveniente do tráfego SVA passou pelos controlos necessários e aparece agora como disponível no seu espaço de cliente.","O estado apresentado no seu espaço continua a ser a referência para o acompanhamento."],null,"Consultar os meus pagamentos"],
       portability_received:["O seu pedido de portabilidade foi recebido","Pedido de portabilidade registado",["O seu pedido de portabilidade foi registado e será tratado de acordo com os controlos aplicáveis.","Nenhuma transferência é apresentada como concluída até o operador confirmar a portabilidade."],null,"Acompanhar o meu pedido"],
       support_received:["O seu pedido de assistência foi recebido","Pedido de assistência registado",["O seu pedido foi registado no centro de serviço.","Pode acompanhar o estado no seu espaço de cliente."],null,"Consultar o centro de serviço"],
@@ -511,12 +511,12 @@ function localizeTransactionalModel(key,model,locale,name){
       support_resolved:["O seu pedido de assistência foi resolvido","Processo resolvido",["O seu processo de assistência foi marcado como resolvido.","O histórico continua disponível no seu espaço de cliente."],null,"Consultar o processo"]
     },
     de:{
-      email_verification:["Ihr Audiotel Premium Pro Bestätigungscode","E-Mail-Adresse bestätigen",["Verwenden Sie den folgenden Code, um Ihre E-Mail-Adresse zu bestätigen und die Einrichtung Ihres Audiotel Premium Pro Zugangs fortzusetzen."],"Dieser Code läuft in Kürze ab. Wenn Sie dies nicht angefordert haben, ignorieren Sie diese E-Mail."],
+      email_verification:["Ihr Audiotel Premium Pro Bestätigungscode","Email-Adresse bestätigen",["Verwenden Sie den folgenden Code, um Ihre Email-Adresse zu bestätigen und die Einrichtung Ihres Audiotel Premium Pro Zugangs fortzusetzen."],"Dieser Code läuft in Kürze ab. Wenn Sie dies nicht angefordert haben, ignorieren Sie diese Email."],
       password_reset:["Zurücksetzen Ihres Audiotel Premium Pro Passworts","Passwort zurücksetzen",["Für Ihr Konto wurde eine Anfrage zum Zurücksetzen des Passworts gestellt.","Verwenden Sie die Schaltfläche unten innerhalb der angegebenen Frist. Wenn Sie dies nicht angefordert haben, ist keine Aktion erforderlich."],"Zu Ihrer Sicherheit ist dieser Link nur vorübergehend und kann nur einmal verwendet werden.","Neues Passwort wählen"],
       password_changed:["Ihr Audiotel Premium Pro Passwort wurde geändert","Passwort geändert",["Das Passwort Ihres Kontos wurde soeben geändert.","Alle bestehenden Sitzungen wurden ungültig gemacht. Wenn Sie diese Änderung nicht vorgenommen haben, kontaktieren Sie sofort den Support."],null,"Mein Konto öffnen"],
-      email_change_confirmation:["Bestätigen Sie Ihre neue Audiotel Premium Pro E-Mail-Adresse","Neue E-Mail-Adresse bestätigen",["Eine Änderung der E-Mail-Adresse Ihres Kontos wurde angefordert.","Bestätigen Sie die neue Adresse über die Schaltfläche unten. Der Link ist vorübergehend und nur einmal verwendbar."],null,"E-Mail-Adresse bestätigen"],
-      email_changed:["Ihre Audiotel Premium Pro E-Mail-Adresse wurde aktualisiert","E-Mail-Adresse aktualisiert",["Ihre neue E-Mail-Adresse ist jetzt bestätigt und mit Ihrem Konto verknüpft.","Alle bestehenden Sitzungen wurden aus Sicherheitsgründen ungültig gemacht."],null,"Erneut anmelden"],
-      email_change_notice_old:["Die E-Mail-Adresse Ihres Audiotel Premium Pro Kontos wurde geändert","Sicherheitsinformation",["Die mit Ihrem Konto verknüpfte E-Mail-Adresse wurde soeben geändert.","Wenn Sie diese Änderung nicht vorgenommen haben, kontaktieren Sie sofort den Audiotel Premium Pro Support."]],
+      email_change_confirmation:["Bestätigen Sie Ihre neue Audiotel Premium Pro Email-Adresse","Neue Email-Adresse bestätigen",["Eine Änderung der Email-Adresse Ihres Kontos wurde angefordert.","Bestätigen Sie die neue Adresse über die Schaltfläche unten. Der Link ist vorübergehend und nur einmal verwendbar."],null,"Email-Adresse bestätigen"],
+      email_changed:["Ihre Audiotel Premium Pro Email-Adresse wurde aktualisiert","Email-Adresse aktualisiert",["Ihre neue Email-Adresse ist jetzt bestätigt und mit Ihrem Konto verknüpft.","Alle bestehenden Sitzungen wurden aus Sicherheitsgründen ungültig gemacht."],null,"Erneut anmelden"],
+      email_change_notice_old:["Die Email-Adresse Ihres Audiotel Premium Pro Kontos wurde geändert","Sicherheitsinformation",["Die mit Ihrem Konto verknüpfte Email-Adresse wurde soeben geändert.","Wenn Sie diese Änderung nicht vorgenommen haben, kontaktieren Sie sofort den Audiotel Premium Pro Support."]],
       passkey_added:["Ihrem Audiotel Premium Pro Konto wurde ein Passkey hinzugefügt","Neuer Passkey",["Für Ihr Konto wurde ein neuer Passkey registriert.","Wenn Sie diese Aktion nicht durchgeführt haben, ändern Sie Ihr Passwort und kontaktieren Sie sofort den Support."],null,"Mein Konto öffnen"],
       registration_received:["Ihre Kontoeröffnungsanfrage ist eingegangen","Kontoeröffnungsanfrage erfasst",["Ihre Anfrage für Audiotel Premium Pro wurde erfasst.","Sie können den Vorgang in Ihrem Kundenbereich verfolgen. Die Kontoerstellung allein aktiviert keinen SVA Dienst."],null,"Meinen Bereich öffnen"],
       account_activated:["Ihr Audiotel Premium Pro Konto ist aktiv","Konto aktiviert",["Ihr Audiotel Premium Pro Konto ist jetzt aktiv.","Der Zugriff auf SVA Funktionen bleibt von den geltenden technischen, vertraglichen und regulatorischen Prüfungen abhängig."],null,"Kundenbereich öffnen"],
@@ -528,7 +528,7 @@ function localizeTransactionalModel(key,model,locale,name){
       payment_action_required:["Aktion erforderlich, um Ihre Audiotel Premium Pro Zahlung abzuschließen","Zahlungsbestätigung erforderlich",["Ihr Zahlungsanbieter verlangt eine zusätzliche Aktion, um die Zahlung abzuschließen.","Melden Sie sich in Ihrem Kundenbereich an, um über das sichere Stripe Portal fortzufahren."],null,"Zahlung abschließen"],
       payment_reminder:["Erinnerung: Audiotel Premium Pro Abonnement ausgleichen","Erinnerung zur Zahlung",["Ihr Abonnement wartet weiterhin auf Zahlungsausgleich.","Der bestehende Dienst kann während des Wiederherstellungszeitraums verfügbar bleiben, einige Funktionen können danach jedoch gesperrt werden."],null,"Abrechnung klären"],
       subscription_suspended:["Audiotel Premium Pro Abonnement gesperrt","Abonnement gesperrt",["Der Zeitraum zur Zahlungsklärung ist abgelaufen und kostenpflichtige Funktionen können gesperrt werden.","Ihr Konto und Ihre Daten bleiben erhalten. Nach Zahlungsausgleich kann der Dienst gemäß den Regeln wieder aufgenommen werden."],null,"Abrechnung klären"],
-      subscription_cancelled:["Ihr Audiotel Premium Pro Abonnement wurde gekündigt","Abonnement gekündigt",["Die Kündigung Ihres Audiotel Premium Pro Abonnements wurde erfasst.","Diese E-Mail löscht Ihr Konto nicht. Die Bedingungen zum Dienstende bleiben die im Kundenbereich angezeigten."],null,"Mein Konto ansehen"],
+      subscription_cancelled:["Ihr Audiotel Premium Pro Abonnement wurde gekündigt","Abonnement gekündigt",["Die Kündigung Ihres Audiotel Premium Pro Abonnements wurde erfasst.","Diese Email löscht Ihr Konto nicht. Die Bedingungen zum Dienstende bleiben die im Kundenbereich angezeigten."],null,"Mein Konto ansehen"],
       payout_available:["Ihre Audiotel Auszahlung ist verfügbar","Auszahlung verfügbar",["Eine Auszahlung aus SVA Verkehr hat die erforderlichen Prüfungen durchlaufen und wird nun im Kundenbereich als verfügbar angezeigt.","Der dort angezeigte Status bleibt maßgeblich für die Zahlungsnachverfolgung."],null,"Meine Auszahlungen ansehen"],
       portability_received:["Ihre Portierungsanfrage ist eingegangen","Portierungsanfrage erfasst",["Ihre Portierungsanfrage wurde erfasst und wird entsprechend den geltenden Prüfungen bearbeitet.","Eine Übertragung gilt erst als abgeschlossen, wenn der Betreiber die Portierung bestätigt."],null,"Anfrage verfolgen"],
       support_received:["Ihre Supportanfrage ist eingegangen","Supportanfrage erfasst",["Ihre Anfrage wurde im Servicecenter erfasst.","Sie können den Status im Kundenbereich verfolgen."],null,"Servicecenter öffnen"],
