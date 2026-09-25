@@ -13,7 +13,7 @@ export function createController(ctx){
     const stateEl=$("client-billing-provider-state"),chipEl=$("client-billing-provider-chip"),start=$("client-billing-start"),manage=$("client-billing-manage"),offerDetail=$("client-billing-offer-detail"),offerChip=$("client-billing-offer-chip"),consent=$("client-billing-consent");
     if(consent){
       const terms=$("client-billing-terms"),span=terms&&terms.closest("label")?.querySelector("span");
-      if(span)span.innerHTML='Avant mon premier paiement, j’accepte les <a href="/conditions-abonnement/" target="_blank" rel="noopener">conditions d’abonnement</a> et les <a href="/conditions-utilisation/" target="_blank" rel="noopener">CGU</a>, j’ai pris connaissance de la <a href="/confidentialite/" target="_blank" rel="noopener">politique de confidentialité</a> et des modalités de <a href="/retractation/" target="_blank" rel="noopener">rétractation</a>.';
+      if(span)span.innerHTML='Avant mon premier paiement, j’accepte les <a href="/conditions-abonnement/" target="_blank" rel="noopener">conditions générales de vente, d’abonnement et de services</a> et les <a href="/conditions-utilisation/" target="_blank" rel="noopener">CGU</a>, applicables selon mon profil particulier ou professionnel. J’ai pris connaissance de la <a href="/confidentialite/" target="_blank" rel="noopener">politique de confidentialité</a> et, lorsque j’agis comme consommateur, des modalités de <a href="/retractation/" target="_blank" rel="noopener">rétractation</a>.';
       if(!$("client-billing-immediate"))consent.insertAdjacentHTML("beforeend",'<label class="cp-check"><input id="client-billing-immediate" type="checkbox"><span>Je demande expressément que l’accès payant commence immédiatement avant la fin du délai de rétractation lorsque ce droit m’est applicable. Je reconnais qu’en cas d’exécution complète du service avant la fin de ce délai, je perds mon droit de rétractation dans les conditions prévues par la loi.</span></label>');
     }
     const currentSubscription=rows.some(x=>["active","past_due"].includes(String(x.status||"").toLowerCase()));
@@ -24,7 +24,7 @@ export function createController(ctx){
       const cadence=offer.billing_interval==="year"?"an":"mois",offerPrice=money(n(offer.amount_minor)/100,offer.currency)+" TTC / "+cadence;
       if(offerDetail)offerDetail.textContent=offerPrice+" · "+tr("tarif versionné");
       if(offerChip){offerChip.textContent=money(n(offer.amount_minor)/100,offer.currency);offerChip.className="cp-chip ok";}
-      if(start)start.textContent=tr("Activer mon abonnement")+" — "+offerPrice;
+      if(start)start.textContent=tr("Souscrire avec obligation de paiement")+" — "+offerPrice;
     }else{
       const resolvedCurrency=currencyInfo.currency||((data.tenant||{}).default_currency)||"EUR";
       if(offerDetail)offerDetail.textContent=tr("Devise automatique")+" : "+resolvedCurrency+" · "+tr("tarif local à configurer");
@@ -54,7 +54,7 @@ export function createController(ctx){
     const idempotencyKey=kind==="manage"?null:api.newIdempotencyKey();
     state.billingBusy=true;if(button){button.disabled=true;button.textContent=kind==="manage"?tr("Ouverture de la facturation…"):tr("Ouverture du paiement…");}
     try{
-      const result=kind==="manage"?await action():await action(idempotencyKey,{subscription_terms_accepted:true,privacy_notice_acknowledged:true,immediate_performance_requested:true,legal_version:"2026-09-26"});
+      const result=kind==="manage"?await action():await action(idempotencyKey,{subscription_terms_accepted:true,privacy_notice_acknowledged:true,immediate_performance_requested:true,legal_version:"2026-09-26-b2b-b2c-v2"});
       const target=result&&result.url?new URL(result.url,location.origin):null;
       if(!target||target.protocol!=="https:")throw new Error("INVALID_BILLING_URL");
       location.assign(target.href);
