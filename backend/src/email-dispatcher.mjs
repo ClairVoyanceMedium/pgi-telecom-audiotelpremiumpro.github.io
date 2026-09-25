@@ -15,10 +15,10 @@ export async function drainTransactionalEmails({store,config,limit=50}={}){
   const events=await store.sql.unsafe(
     "SELECT o.id,o.tenant_id,o.event_type,o.aggregate_type,o.aggregate_id,o.payload,o.created_at,"+
     " t.public_id::text AS tenant_public_id,t.display_name AS tenant_name,t.billing_email,t.country_code,"+
-    " owner.id::text AS owner_principal_id,owner.email AS owner_email,owner.display_name AS owner_name,owner.email_verified AS owner_email_verified"+
+    " owner.id::text AS owner_principal_id,owner.email AS owner_email,owner.display_name AS owner_name,owner.email_verified AS owner_email_verified,owner.preferred_locale AS owner_preferred_locale"+
     " FROM outbox_events o JOIN tenants t ON t.id=o.tenant_id"+
     " LEFT JOIN LATERAL ("+
-    "   SELECT cp.id,cp.email,cp.display_name,cp.email_verified FROM customer_tenant_memberships m"+
+    "   SELECT cp.id,cp.email,cp.display_name,cp.email_verified,cp.preferred_locale FROM customer_tenant_memberships m"+
     "   JOIN customer_principals cp ON cp.id=m.customer_principal_id"+
     "   WHERE m.tenant_id=o.tenant_id AND m.status='active' AND cp.status='active'"+
     "   ORDER BY (m.role='owner') DESC,m.created_at ASC LIMIT 1"+
@@ -54,9 +54,9 @@ export async function drainDunningTransactionalEmails({store,config,limit=50}={}
   const rows=await store.sql.unsafe(
     "SELECT s.id AS subscription_id,s.tenant_id,s.recovery_stage,s.dunning_started_at,s.dunning_grace_until,s.dunning_deadline_at,"+
     " t.public_id::text AS tenant_public_id,t.display_name AS tenant_name,t.billing_email,"+
-    " owner.id::text AS owner_principal_id,owner.email AS owner_email,owner.display_name AS owner_name"+
+    " owner.id::text AS owner_principal_id,owner.email AS owner_email,owner.display_name AS owner_name,owner.preferred_locale AS owner_preferred_locale"+
     " FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id JOIN tenants t ON t.id=s.tenant_id"+
-    " LEFT JOIN LATERAL (SELECT cp.id,cp.email,cp.display_name FROM customer_tenant_memberships m JOIN customer_principals cp ON cp.id=m.customer_principal_id"+
+    " LEFT JOIN LATERAL (SELECT cp.id,cp.email,cp.display_name,cp.preferred_locale FROM customer_tenant_memberships m JOIN customer_principals cp ON cp.id=m.customer_principal_id"+
     " WHERE m.tenant_id=s.tenant_id AND m.status='active' AND cp.status='active' ORDER BY (m.role='owner') DESC,m.created_at ASC LIMIT 1) owner ON true"+
     " WHERE p.plan_key='external-sva-access' AND t.tenant_type<>'internal' AND t.status<>'closed'"+
     " AND s.recovery_stage IN ('retrying','suspended') AND s.dunning_started_at IS NOT NULL"+
@@ -70,8 +70,8 @@ export async function drainDunningTransactionalEmails({store,config,limit=50}={}
     const stamp=new Date(row.dunning_started_at).getTime();
     const templateKey=row.recovery_stage==="suspended"?"subscription_suspended":"payment_reminder";
     const idem="dunning/"+row.subscription_id+"/"+stamp+"/"+row.recovery_stage;
-    const event={id:null,tenant_id:row.tenant_id,event_type:"subscription.dunning",aggregate_type:"tenant_subscription",aggregate_id:String(row.subscription_id),payload:{},tenant_name:row.tenant_name,owner_name:row.owner_name,owner_principal_id:row.owner_principal_id};
-    const message={scope:"customer",to,name:row.owner_name||row.tenant_name,templateKey,senderRole:"billing",idempotencyKey:idem,internalEventId:idem,data:{name:row.owner_name||row.tenant_name}};
+    const event={id:null,tenant_id:row.tenant_id,event_type:"subscription.dunning",aggregate_type:"tenant_subscription",aggregate_id:String(row.subscription_id),payload:{},tenant_name:row.tenant_name,owner_name:row.owner_name,owner_principal_id:row.owner_principal_id,owner_preferred_locale:row.owner_preferred_locale};
+    const message={scope:"customer",to,name:row.owner_name||row.tenant_name,templateKey,senderRole:"billing",idempotencyKey:idem,internalEventId:idem,data:{name:row.owner_name||row.tenant_name,locale:row.owner_preferred_locale}};
     const sent=await dispatchMessage(store,config,event,message);
     result.processed++;
     if(sent.state==="accepted"||sent.state==="existing")result.accepted++;
@@ -125,7 +125,7 @@ async function messagesForEvent(store,config,event){
   const customerEmail=validEmail(event.billing_email)?event.billing_email:validEmail(event.owner_email)?event.owner_email:validEmail(p.email)?p.email:null;
   const customerName=event.owner_name||event.tenant_name||"";
   const internal=validEmail(config.internalNotificationEmail)?config.internalNotificationEmail:null;
-  const base={name:customerName,tenant_name:event.tenant_name,country_code:event.country_code};
+  const base={name:customerName,tenant_name:event.tenant_name,country_code:event.country_code,locale:event.owner_preferred_locale||p.preferred_locale||null};
   if(event.event_type==="customer.self_registered"){
     const email=validEmail(p.email)?p.email:customerEmail;
     return [
@@ -147,7 +147,7 @@ async function messagesForEvent(store,config,event){
     if(type==="invoice.payment_action_required")return [msg("customer",customerEmail,customerName,"payment_action_required","billing",event,base)];
     if(type==="invoice.paid"){
       const recovered=await invoiceWasPreviouslyFailed(store,event.aggregate_id,p.provider_invoice_reference);
-      return [msg("customer",customerEmail,customerName,recovered?"payment_recovered":"payment_succeeded","billing",event,base)];
+      return [msg("customer",customerEmail,customerName,recovered?"payment_recovered":"payment_succeeded","billing",event,{...base,invoice_url:p.provider_invoice_url||null,invoice_pdf_url:p.provider_invoice_pdf_url||null})];
     }
     if(type==="customer.subscription.deleted"||p.status==="cancelled"||p.status==="ended")return [msg("customer",customerEmail,customerName,"subscription_cancelled","billing",event,base)];
     if(p.status==="suspended")return [msg("customer",customerEmail,customerName,"subscription_suspended","billing",event,base)];
