@@ -8,7 +8,7 @@ const legalSlugs=["mentions-legales","conditions-utilisation","conditions-abonne
 test("complete legal corpus is published and cross-linked",()=>{
   for(const slug of legalSlugs){
     const html=read("site/seo/"+slug+".html");
-    assert.match(html,/25 septembre 2026/);
+    assert.match(html,/26 septembre 2026/);
     assert.match(html,/\/conditions-utilisation\//);
     assert.match(html,/\/confidentialite\//);
     assert.match(html,/\/resilier-contrat\//);
@@ -25,7 +25,7 @@ test("registration requires current legal documents and keeps privacy acknowledg
   assert.match(audience,/conditions-utilisation/);
   assert.match(portal,/legal_terms_accepted/);
   assert.match(portal,/privacy_notice_acknowledged/);
-  assert.match(portal,/legal_version:"2026-09-25"/);
+  assert.match(portal,/legal_version:"2026-09-26"/);
   assert.match(server,/customer\/auth\/register/);
 });
 

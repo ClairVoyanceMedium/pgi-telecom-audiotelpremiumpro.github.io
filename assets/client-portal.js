@@ -308,7 +308,7 @@ async function submitRegistration(e){
     authority_confirmed:$("register-authority").checked,
     legal_terms_accepted:Boolean($("register-legal")&&$("register-legal").checked),
     privacy_notice_acknowledged:Boolean($("register-legal")&&$("register-legal").checked),
-    legal_version:"2026-09-25",
+    legal_version:"2026-09-26",
     website:$("register-website").value,
     preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",
     timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC")
@@ -520,7 +520,7 @@ async function init(){
   bind();
   import("./client-mobile.js").then(function(m){m.init();}).catch(function(){});
   var footer=document.querySelector(".cp-footer");
-  if(footer&&!footer.querySelector("[data-legal-links]"))footer.insertAdjacentHTML("beforeend",'<span data-legal-links><a href="/mentions-legales/" target="_blank" rel="noopener">Mentions légales</a> · <a href="/conditions-utilisation/" target="_blank" rel="noopener">CGU</a> · <a href="/conditions-abonnement/" target="_blank" rel="noopener">Conditions</a> · <a href="/confidentialite/" target="_blank" rel="noopener">Confidentialité</a> · <a href="/cookies-traceurs/" target="_blank" rel="noopener">Cookies</a> · <a href="/resilier-contrat/" target="_blank" rel="noopener">Résilier</a></span>');
+  if(footer&&!footer.querySelector("[data-legal-links]"))footer.insertAdjacentHTML("beforeend",'<span data-legal-links><a href="/mentions-legales/" target="_blank" rel="noopener">Mentions légales</a> · <a href="/conditions-utilisation/" target="_blank" rel="noopener">CGU</a> · <a href="/conditions-abonnement/" target="_blank" rel="noopener">Conditions</a> · <a href="/confidentialite/" target="_blank" rel="noopener">Confidentialité</a> · <a href="/cookies-traceurs/" target="_blank" rel="noopener">Cookies</a> · <a href="/resilier-contrat/" target="_blank" rel="noopener">Résilier</a> · <a href="/retractation/" target="_blank" rel="noopener">Rétractation</a></span>');
   initGoogle();
   ensureBilling().then(function(x){x.handleReturn();}).catch(function(){});
   var cfg=window.PGI_CONFIG||{};
