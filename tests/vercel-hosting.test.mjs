@@ -45,7 +45,9 @@ test("Vercel container is API-only and never migrates on cold start",()=>{
   assert.doesNotMatch(docker,/DATABASE_PUBLIC_URL/);
   const build=fs.readFileSync("scripts/build-static.mjs","utf8");
   const server=fs.readFileSync("backend/server.mjs","utf8");
-  assert.match(build,/audiotel-premium-pro\\.com/);\n  assert.match(build,/PGI_PUBLIC_BASE_URL/);\n  assert.doesNotMatch(build,/VERCEL_PROJECT_PRODUCTION_URL|VERCEL_URL/);
+  assert.match(build,/audiotel-premium-pro\.com/);
+  assert.match(build,/PGI_PUBLIC_BASE_URL/);
+  assert.doesNotMatch(build,/VERCEL_PROJECT_PRODUCTION_URL|VERCEL_URL/);
   assert.match(build,/marketingRoot/);
   assert.match(build,/cockpit\.html/);
   assert.match(build,/Sitemap:/);
