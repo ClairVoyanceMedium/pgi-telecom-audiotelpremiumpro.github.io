@@ -189,7 +189,7 @@ test("customer can self-register by email without Google",async()=>{
       body:JSON.stringify({
         first_name:"Camille",last_name:"Martin",account_type:"business",company_name:"Cabinet Martin",country_code:"FR",
         registration_number:"",phone:"+33600000000",email:"camille@example.test",
-        password:"long-password-12345",authority_confirmed:true,website:"",preferred_locale:"fr-FR",timezone:"Europe/Paris"
+        password:"long-password-12345",authority_confirmed:true,legal_terms_accepted:true,privacy_notice_acknowledged:true,legal_version:"2026-09-25",website:"",preferred_locale:"fr-FR",timezone:"Europe/Paris"
       })
     });
     assert.equal(response.status,201);
