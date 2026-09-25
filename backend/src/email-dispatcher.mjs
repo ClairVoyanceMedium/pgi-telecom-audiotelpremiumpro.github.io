@@ -1,12 +1,51 @@
 import {emailHash,normalizeEmail,sendTransactionalEmail} from "./resend-email.mjs";
 
 const OUTBOX_TYPES=[
-  "customer.self_registered","tenant.status","subscription.changed",
+  "customer.self_registered","tenant.status","subscription.changed","subscription.cancellation.requested",
   "portability.requested","service.incident.created","service.incident.note","service.incident.changed",
   "tenant.revenue_distribution.updated"
 ];
 const TERMINAL_SEND_STATES=new Set(["accepted","sent","delivered","delayed","clicked","bounced","complained","suppressed"]);
 const EMAIL_RE=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export async function drainConsumerWithdrawalAcknowledgements({store,config,limit=25}={}){
+  if(!config?.transactionalEmailEnabled||!store?.sql)return {enabled:Boolean(config?.transactionalEmailEnabled),processed:0,accepted:0,failed:0};
+  const take=Math.max(1,Math.min(50,Number(limit)||25));
+  const claimed=await store.sql.begin(async tx=>{
+    const rows=await tx.unsafe(
+      "SELECT id,public_id::text AS public_id,first_name,last_name,acknowledgement_email,contract_reference,statement,received_at,acknowledgement_attempts"+
+      " FROM consumer_withdrawal_requests WHERE acknowledgement_state IN ('pending','failed','sending') AND next_acknowledgement_attempt_at<=now() AND acknowledgement_attempts<8"+
+      " ORDER BY received_at,id LIMIT $1 FOR UPDATE SKIP LOCKED",[take]
+    );
+    for(const row of rows){
+      await tx.unsafe("UPDATE consumer_withdrawal_requests SET acknowledgement_state='sending',acknowledgement_attempts=acknowledgement_attempts+1,next_acknowledgement_attempt_at=now()+interval '5 minutes' WHERE id=$1",[row.id]);
+      row.acknowledgement_attempts=Number(row.acknowledgement_attempts||0)+1;
+    }
+    return rows;
+  });
+  const result={enabled:true,processed:0,accepted:0,failed:0};
+  for(const row of claimed){
+    const idem="consumer-withdrawal/"+row.public_id+"/ack";
+    try{
+      const sent=await sendTransactionalEmail(config,{
+        to:row.acknowledgement_email,name:[row.first_name,row.last_name].filter(Boolean).join(" "),senderRole:"support",
+        templateKey:"consumer_withdrawal_ack",idempotencyKey:idem,internalEventId:idem,
+        data:{name:[row.first_name,row.last_name].filter(Boolean).join(" "),reference:row.public_id,contract_reference:row.contract_reference,statement:row.statement,received_at:new Date(row.received_at).toISOString(),locale:"fr-FR"}
+      });
+      await store.sql.unsafe("UPDATE consumer_withdrawal_requests SET acknowledgement_state='accepted',acknowledgement_provider_message_id=$2,acknowledgement_last_error=NULL,acknowledgement_sent_at=COALESCE(acknowledgement_sent_at,now()) WHERE id=$1",[row.id,sent.message_id]);
+      if(validEmail(config.internalNotificationEmail)){
+        try{await sendTransactionalEmail(config,{to:config.internalNotificationEmail,senderRole:"support",templateKey:"consumer_withdrawal_internal",idempotencyKey:"consumer-withdrawal/"+row.public_id+"/internal",internalEventId:"consumer-withdrawal/"+row.public_id+"/internal",data:{reference:row.public_id,contract_reference:row.contract_reference,received_at:new Date(row.received_at).toISOString(),locale:"fr-FR"}});}catch{}
+      }
+      result.accepted++;
+    }catch(error){
+      const delay=Math.min(3600,Math.max(60,30*Math.pow(2,Math.max(0,row.acknowledgement_attempts-1))));
+      await store.sql.unsafe("UPDATE consumer_withdrawal_requests SET acknowledgement_state='failed',acknowledgement_last_error=$2,next_acknowledgement_attempt_at=now()+($3::text||' seconds')::interval WHERE id=$1",[row.id,String(error?.code||"EMAIL_DELIVERY_FAILED").slice(0,240),String(delay)]);
+      result.failed++;
+    }
+    result.processed++;
+  }
+  return result;
+}
 
 export async function drainTransactionalEmails({store,config,limit=50}={}){
   if(!config?.transactionalEmailEnabled)return {enabled:false,processed:0,accepted:0,suppressed:0,failed:0};
@@ -152,6 +191,10 @@ async function messagesForEvent(store,config,event){
     if(type==="customer.subscription.deleted"||p.status==="cancelled"||p.status==="ended")return [msg("customer",customerEmail,customerName,"subscription_cancelled","billing",event,base)];
     if(p.status==="suspended")return [msg("customer",customerEmail,customerName,"subscription_suspended","billing",event,base)];
     return [];
+  }
+  if(event.event_type==="subscription.cancellation.requested"){
+    if(!customerEmail)return [];
+    return [msg("customer",customerEmail,customerName,"subscription_cancellation_received","billing",event,{...base,request_reference:p.request_public_id||null,requested_effective_at:p.requested_effective_at||null})];
   }
   if(event.event_type==="portability.requested"){
     return [
