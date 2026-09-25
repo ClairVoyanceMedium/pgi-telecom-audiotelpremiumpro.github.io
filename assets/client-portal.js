@@ -207,15 +207,25 @@ window.PGIReload=loadPortal;
 function showApp(){
   $("customer-auth").hidden=true;$("customer-app").hidden=false;loadPortal().catch(function(e){toast("Chargement impossible : "+(e.code||e.message));});
 }
+function hideAuthPanels(){
+  ["login-panel","forgot-panel","reset-panel","register-panel","activation-panel"].forEach(function(id){var el=$(id);if(el)el.hidden=true;});
+}
 function showLogin(){
-  $("customer-app").hidden=true;$("customer-auth").hidden=false;$("login-panel").hidden=false;$("register-panel").hidden=true;$("activation-panel").hidden=true;
+  $("customer-app").hidden=true;$("customer-auth").hidden=false;hideAuthPanels();$("login-panel").hidden=false;
+}
+function showForgot(){
+  $("customer-app").hidden=true;$("customer-auth").hidden=false;hideAuthPanels();$("forgot-panel").hidden=false;
+  var email=$("customer-email")&&$("customer-email").value.trim();if(email)$("forgot-email").value=email;
+}
+function showReset(){
+  $("customer-app").hidden=true;$("customer-auth").hidden=false;hideAuthPanels();$("reset-panel").hidden=false;
 }
 function showRegister(){
-  $("customer-app").hidden=true;$("customer-auth").hidden=false;$("login-panel").hidden=true;$("register-panel").hidden=false;$("activation-panel").hidden=true;
+  $("customer-app").hidden=true;$("customer-auth").hidden=false;hideAuthPanels();$("register-panel").hidden=false;
   populateCountries();import("./client-audience.js").then(m=>m.init(),()=>{});
 }
 function showActivation(){
-  $("customer-app").hidden=true;$("customer-auth").hidden=false;$("login-panel").hidden=true;$("register-panel").hidden=true;$("activation-panel").hidden=false;
+  $("customer-app").hidden=true;$("customer-auth").hidden=false;hideAuthPanels();$("activation-panel").hidden=false;
 }
 async function handleGoogleCredential(response,tenantOverride){
   var credential=response&&response.credential?response.credential:state.googleCredential;
@@ -345,6 +355,56 @@ async function submitLogin(e){
     setAuthMessage("Connexion refusée. Vérifiez vos identifiants.",true);
   }
 }
+async function submitForgot(e){
+  e.preventDefault();setAuthMessage("");
+  var email=$("forgot-email").value.trim();
+  try{
+    await window.PGICustomerApi.forgotPassword(email);
+    setAuthMessage("Si cette adresse correspond à un compte actif, un lien sécurisé vient d’être envoyé.",false);
+  }catch(_err){
+    setAuthMessage("Si cette adresse correspond à un compte actif, un lien sécurisé sera envoyé.",false);
+  }
+}
+async function submitReset(e){
+  e.preventDefault();setAuthMessage("");
+  var params=new URLSearchParams(String(location.hash||"").replace(/^#/,"")),token=params.get("password-reset")||"";
+  var password=$("reset-password").value,confirm=$("reset-password-confirm").value;
+  if(password!==confirm){setAuthMessage("Les deux mots de passe sont différents.",true);return;}
+  if(password.length<12){setAuthMessage("Le mot de passe doit contenir au moins 12 caractères.",true);return;}
+  try{
+    await window.PGICustomerApi.resetPassword(token,password);
+    history.replaceState(null,"",location.pathname+location.search);
+    $("customer-reset-form").reset();showLogin();
+    setAuthMessage("Mot de passe mis à jour. Vous pouvez maintenant vous reconnecter.",false);
+  }catch(err){
+    setAuthMessage(err.code==="PASSWORD_RESET_INVALID"?"Ce lien est invalide ou expiré. Demandez un nouveau lien.":"Réinitialisation impossible.",true);
+  }
+}
+async function confirmEmailChangeFromHash(token){
+  try{
+    var result=await window.PGICustomerApi.confirmEmailChange(token);
+    history.replaceState(null,"",location.pathname+location.search);
+    showLogin();setAuthMessage("Votre nouvelle adresse email est confirmée. Reconnectez-vous avec cette adresse.",false);
+    return result;
+  }catch(_err){
+    history.replaceState(null,"",location.pathname+location.search);
+    showLogin();setAuthMessage("Le lien de changement d’adresse email est invalide ou expiré.",true);
+    return null;
+  }
+}
+async function requestEmailChange(){
+  var email=$("security-new-email").value.trim(),password=$("email-change-password").value,msg=$("email-change-message");
+  msg.classList.remove("bad");msg.textContent="";
+  if(!email||!password){msg.classList.add("bad");msg.textContent="Renseignez la nouvelle adresse email et votre mot de passe actuel.";return;}
+  try{
+    await window.PGICustomerApi.requestEmailChange(email,password);
+    msg.textContent="Un lien de confirmation a été envoyé à la nouvelle adresse email.";
+    $("security-new-email").value="";$("email-change-password").value="";
+  }catch(err){
+    msg.classList.add("bad");
+    msg.textContent=err.code==="INVALID_CURRENT_PASSWORD"?"Le mot de passe actuel est incorrect.":err.code==="CUSTOMER_ACCOUNT_EXISTS"?"Cette adresse email est déjà utilisée.":err.code==="EMAIL_UNCHANGED"?"Cette adresse est déjà celle de votre compte.":"Modification impossible.";
+  }
+}
 async function submitActivation(e){
   e.preventDefault();setAuthMessage("");
   var p=$("activation-password").value,c=$("activation-password-confirm").value;
@@ -461,9 +521,13 @@ async function changePassword(e){
 }
 function bind(){
   $("customer-login-form").addEventListener("submit",submitLogin);
+  $("customer-forgot-form").addEventListener("submit",submitForgot);
+  $("customer-reset-form").addEventListener("submit",submitReset);
   $("customer-register-form").addEventListener("submit",submitRegistration);
   $("customer-activation-form").addEventListener("submit",submitActivation);
   $("show-register").addEventListener("click",showRegister);
+  $("show-forgot").addEventListener("click",showForgot);
+  $("forgot-back-login").addEventListener("click",showLogin);
   $("show-login").addEventListener("click",showLogin);
   $("register-country").addEventListener("change",updateRegistrationNumberField);
   $("customer-logout").addEventListener("click",async function(){try{await window.PGICustomerApi.logout();}catch(_e){}state.user=null;showLogin();});
@@ -490,6 +554,7 @@ function bind(){
   });
   $("client-security-close").addEventListener("click",function(){var d=$("client-security-dialog");if(d&&d.open)d.close();});
   $("client-password-form").addEventListener("submit",changePassword);
+  $("request-email-change").addEventListener("click",requestEmailChange);
   $("client-billing-start").addEventListener("click",function(){openBilling("start");});
   $("client-billing-manage").addEventListener("click",function(){openBilling("manage");});
   $("portability-open").addEventListener("click",function(){ensurePortability().then(function(x){x.render(state.data||{portability_requests:[]});x.open();}).catch(function(){toast("Portabilité momentanément indisponible.");});});
@@ -505,6 +570,10 @@ async function init(){
   handleBillingReturn();
   var cfg=window.PGI_CONFIG||{};
   state.demo=cfg.mode==="demo"||!cfg.apiBaseUrl;
+  var authHash=new URLSearchParams(String(location.hash||"").replace(/^#/,""));
+  var resetToken=authHash.get("password-reset")||"",emailChangeToken=authHash.get("email-change")||"";
+  if(resetToken){showReset();return;}
+  if(emailChangeToken&&!state.demo){await confirmEmailChangeFromHash(emailChangeToken);return;}
   if(location.search.includes("register=1")){showRegister();return;}
   if(state.demo){showApp();return;}
   if(location.search.includes("invite=")){showActivation();return;}
