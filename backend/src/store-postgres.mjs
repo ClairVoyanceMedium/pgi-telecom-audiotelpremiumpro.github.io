@@ -2116,6 +2116,8 @@ export class PostgresStore{
     const providerBillingInterval=payload.provider_billing_interval==null?null:String(payload.provider_billing_interval).trim().toLowerCase();
     const providerIntervalCount=payload.provider_interval_count==null?null:Number(payload.provider_interval_count);
     const providerInvoiceReference=payload.provider_invoice_reference==null?null:String(payload.provider_invoice_reference).trim();
+    const providerInvoiceUrl=payload.provider_invoice_url==null?null:String(payload.provider_invoice_url).trim();
+    const providerInvoicePdfUrl=payload.provider_invoice_pdf_url==null?null:String(payload.provider_invoice_pdf_url).trim();
     const paymentAttemptCount=payload.payment_attempt_count==null?null:Number(payload.payment_attempt_count);
     const nextPaymentAttempt=payload.next_payment_attempt||null;
     if(!/^[a-z0-9_.-]{2,40}$/.test(provider))throw problem(400,"INVALID_BILLING_PROVIDER");
@@ -2139,6 +2141,8 @@ export class PostgresStore{
     if(providerBillingInterval&& !["month","year"].includes(providerBillingInterval))throw problem(400,"INVALID_PROVIDER_BILLING_INTERVAL");
     if(providerIntervalCount!=null&&(!Number.isInteger(providerIntervalCount)||providerIntervalCount<=0))throw problem(400,"INVALID_PROVIDER_INTERVAL_COUNT");
     if(providerInvoiceReference&&providerInvoiceReference.length>200)throw problem(400,"INVALID_PROVIDER_INVOICE_REFERENCE");
+    if(providerInvoiceUrl&&(!/^https:\/\//i.test(providerInvoiceUrl)||providerInvoiceUrl.length>2000))throw problem(400,"INVALID_PROVIDER_INVOICE_URL");
+    if(providerInvoicePdfUrl&&(!/^https:\/\//i.test(providerInvoicePdfUrl)||providerInvoicePdfUrl.length>2000))throw problem(400,"INVALID_PROVIDER_INVOICE_PDF_URL");
     if(paymentAttemptCount!=null&&(!Number.isInteger(paymentAttemptCount)||paymentAttemptCount<0))throw problem(400,"INVALID_PAYMENT_ATTEMPT_COUNT");
     if(nextPaymentAttempt&&!Number.isFinite(Date.parse(nextPaymentAttempt)))throw problem(400,"INVALID_NEXT_PAYMENT_ATTEMPT");
     const normalized={
@@ -2148,7 +2152,7 @@ export class PostgresStore{
       cancel_at_period_end:!!payload.cancel_at_period_end,last_payment_status:lastPaymentStatus,ends_at:endsAtInput,
       provider_price_reference:providerPriceReference,provider_price_amount_minor:providerPriceAmount,provider_price_currency:providerPriceCurrency,
       provider_billing_interval:providerBillingInterval,provider_interval_count:providerIntervalCount,
-      provider_invoice_reference:providerInvoiceReference,payment_attempt_count:paymentAttemptCount,next_payment_attempt:nextPaymentAttempt
+      provider_invoice_reference:providerInvoiceReference,provider_invoice_url:providerInvoiceUrl,provider_invoice_pdf_url:providerInvoicePdfUrl,payment_attempt_count:paymentAttemptCount,next_payment_attempt:nextPaymentAttempt
     };
     const hash=createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
     const result=await this.sql.begin(async tx=>{
@@ -2222,7 +2226,7 @@ export class PostgresStore{
       );
       await tx.unsafe(
         "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'subscription.changed','tenant_subscription',$2,$3::jsonb)",
-        [tenant.id,String(subscriptionId),JSON.stringify({status,provider,event_type:eventType,provider_invoice_reference:providerInvoiceReference,last_payment_status:lastPaymentStatus,payment_attempt_count:paymentAttemptCount})]
+        [tenant.id,String(subscriptionId),JSON.stringify({status,provider,event_type:eventType,provider_invoice_reference:providerInvoiceReference,provider_invoice_url:providerInvoiceUrl,provider_invoice_pdf_url:providerInvoicePdfUrl,last_payment_status:lastPaymentStatus,payment_attempt_count:paymentAttemptCount})]
       );
       const paidCurrent=status==="active"&&periodEnd&&Date.parse(periodEnd)>Date.parse(eventTime)&&(!lastPaymentStatus||["paid","succeeded","success"].includes(lastPaymentStatus));
       if(appliedLatest&&paidCurrent){
