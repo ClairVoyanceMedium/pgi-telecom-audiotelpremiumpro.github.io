@@ -536,7 +536,7 @@ export function createBackend(options={}){
         const context=await store.customerSessionContext(customerActor);
         requireCustomerPermission(context,"finance.read");
         const billing=await store.customerBillingPreparation(context.tenant_id);
-        return done(res,metrics,started,"customer.billing.status",200,{billing_provider:billingProviderStatus(config),...billing});
+        return done(res,metrics,started,"customer.billing.status",200,{billing_provider:billingProviderStatus(config),b2c_commercial_ready:config.b2cCommercialReady===true,b2c_readiness:{legal_operator:config.legalOperatorConfigured===true,consumer_mediator:config.consumerMediatorConfigured===true,online_withdrawal:config.onlineWithdrawalReady===true},...billing});
       }
       if(method==="POST"&&pathname==="/api/v1/customer/billing/checkout-session"){
         requireCustomerCsrf(req,customerActor,config);
@@ -550,6 +550,9 @@ export function createBackend(options={}){
         requireCustomerPermission(context,"billing.manage");
         const billing=await store.customerBillingPreparation(context.tenant_id);
         const provider=billingProviderStatus(config);
+        if(String(billing.tenant?.customer_type||"business")==="individual"&&config.b2cCommercialReady!==true){
+          return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:"B2C_COMMERCIAL_NOT_READY",message:"Consumer checkout is temporarily unavailable until mandatory B2C legal prerequisites and the online withdrawal function are operational."},billing_provider:provider,b2c_readiness:{legal_operator:config.legalOperatorConfigured===true,consumer_mediator:config.consumerMediatorConfigured===true,online_withdrawal:config.onlineWithdrawalReady===true}});
+        }
         if(!billing.offer)return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:"NO_ACTIVE_BILLING_OFFER"},billing_provider:provider});
         if(["active","past_due"].includes(String(billing.subscription?.status||"")))return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:"SUBSCRIPTION_ALREADY_EXISTS"},billing_provider:provider});
         if(!provider.checkout_available)return done(res,metrics,started,"customer.billing.checkout",503,{error:{code:"PAYMENT_PROVIDER_NOT_CONNECTED"},billing_provider:provider,checkout:{offer:billing.offer,prefill:billing.checkout_prefill,return_paths:billing.return_paths}});
