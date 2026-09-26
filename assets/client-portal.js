@@ -187,7 +187,7 @@ function showApp(){
     var u=new URL(location.href);
     if(u.searchParams.get("action")==="cancel-subscription"){
       u.searchParams.delete("action");history.replaceState(null,"",u.pathname+(u.search?"?"+u.searchParams.toString():"")+u.hash);
-      ensureBilling().then(function(x){return x.open("manage");}).catch(function(){toast("Gestion de la résiliation momentanément indisponible.");});
+      ensureBilling().then(function(x){return x.open("cancel");}).catch(function(){toast("Gestion de la résiliation momentanément indisponible.");});
     }
   }).catch(function(e){toast("Chargement impossible : "+(e.code||e.message));});
 }
