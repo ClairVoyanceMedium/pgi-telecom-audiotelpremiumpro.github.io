@@ -70,6 +70,31 @@ export function stripeProviderState(config){
   const webhook=Boolean(config?.externalBillingEnabled&&config?.stripeWebhookSecret);
   return {api,webhook,connected:api&&webhook};
 }
+export async function stripeAccountStatus(config){
+  const provider=stripeProviderState(config);
+  if(!provider.api)return {
+    reachable:false,charges_enabled:false,payouts_enabled:false,details_submitted:false,
+    requirements_due:[],disabled_reason:"not_connected",error_code:null
+  };
+  try{
+    const account=await stripeApi(config,"/v1/account");
+    const due=[...(account?.requirements?.past_due||[]),...(account?.requirements?.currently_due||[])];
+    return {
+      reachable:true,
+      charges_enabled:account?.charges_enabled===true,
+      payouts_enabled:account?.payouts_enabled===true,
+      details_submitted:account?.details_submitted===true,
+      requirements_due:[...new Set(due.map(x=>String(x)).filter(Boolean))].slice(0,50),
+      disabled_reason:account?.requirements?.disabled_reason?String(account.requirements.disabled_reason):null,
+      error_code:null
+    };
+  }catch(error){
+    return {
+      reachable:false,charges_enabled:false,payouts_enabled:false,details_submitted:false,
+      requirements_due:[],disabled_reason:null,error_code:String(error?.code||"PAYMENT_PROVIDER_UNAVAILABLE")
+    };
+  }
+}
 export async function createStripeCheckout(config,billing,idempotencyKey){
   const price=await resolvePrice(config,billing?.offer);
   const tenant=billing?.tenant||{},subscription=billing?.subscription||{};

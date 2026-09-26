@@ -110,6 +110,18 @@ Le backend doit journaliser l'utilisateur, la date, la portée et la raison.
 
 La lecture de synthèse wholesale est implémentée. Les mutations explicitement documentées comme implémentées ci-dessous sont protégées par rôle et CSRF ; les mutations financières ou réglementaires qui nécessitent encore un prestataire externe restent fail-closed et ne sont pas simulées comme si elles étaient autorisées.
 
+### GET /platform/launch-readiness
+
+Diagnostic pré-lancement en lecture seule, accessible aux rôles `admin`, `finance` et `readonly`.
+
+Le résultat distingue explicitement `ready_for_b2b` et `ready_for_b2c`. Il agrège uniquement des preuves observables : stockage PostgreSQL, santé runtime, sécurité, emails, état réel du compte Stripe, identité juridique, prérequis B2C, opérateur/routage, conformité SVA, performance/résilience et reversements.
+
+Les dépendances externes absentes restent `pending_external` ou `action_required`. Le endpoint ne renvoie jamais de clé API, secret, donnée KYC, coordonnées bancaires ou identité Stripe. Il expose l’identifiant de release et la version applicative afin qu’un export de preuve puisse être rattaché au code effectivement contrôlé.
+
+La lecture du compte Stripe est fail-closed : la présence d’une clé et d’un webhook ne suffit pas. Le compte doit être joignable et signaler `charges_enabled`, `payouts_enabled` et `details_submitted` à vrai avant que le domaine paiement soit déclaré prêt.
+
+Une connexion opérateur explicitement marquée `down`, `failed`, `error`, `critical` ou `unhealthy` reste bloquante même si sa connexion est administrativement `active`.
+
 ### GET /platform/overview
 
 Implémenté en lecture seule pour les rôles `admin`, `finance` et `readonly`.

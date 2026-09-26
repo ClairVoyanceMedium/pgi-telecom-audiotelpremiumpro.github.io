@@ -64,3 +64,24 @@ Chaque build production doit recevoir un `PGI_RELEASE_ID` correspondant exacteme
 ## Remise à zéro
 
 La remise à zéro des métriques ne supprime jamais les CDR sources. Elle crée une baseline auditée en base.
+
+
+## Gate sécurité avant ouverture commerciale
+
+Le lancement commercial ne doit jamais être décidé à partir de la seule disponibilité HTTP.
+
+Le gate `/api/v1/platform/launch-readiness` vérifie notamment que la production utilise des sessions, un secret de session suffisamment long et la protection des endpoints machine. Les dépendances externes restent séparées de cette vérification.
+
+Avant ouverture :
+
+- exécuter `npm run verify` ;
+- tester qu’un utilisateur client ne peut accéder à aucune route `/api/v1/platform/*` ;
+- tester qu’un rôle lecture seule ne peut effectuer aucune mutation ;
+- tester CSRF sur les écritures staff et client ;
+- tester les limites brute-force et rate limits ;
+- contrôler l’absence de secrets dans Git et dans les réponses du Launch Readiness ;
+- contrôler les webhooks Stripe/Resend avec signature invalide ;
+- contrôler les journaux afin qu’aucun corps JSON sensible, secret, numéro complet ou donnée bancaire n’y soit écrit ;
+- conserver les changements critiques sous contrôle quatre yeux.
+
+Un score de readiness n’autorise jamais à neutraliser un contrôle de sécurité.

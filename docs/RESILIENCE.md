@@ -169,3 +169,10 @@ Le gate vérifie notamment :
 `npm run resilience:drill` utilise uniquement le store simulateur et vérifie la reprise d'un lease expiré, l'isolation en dead-letter et la reprise du traitement après incident.
 
 Le débit affiché comme « PROUVÉ » correspond au dernier test réussi enregistré. Il ne constitue pas une garantie de capacité future : toute modification majeure d'infrastructure, de schéma ou de charge doit déclencher un nouveau test.
+
+
+## Runbook de reprise
+
+La procédure exécutable de décision, restauration, rollback, reprise opérateur et validation après incident est décrite dans `docs/DISASTER-RECOVERY-RUNBOOK.md`.
+
+Le Launch Readiness considère le gate résilience comme non prêt lorsqu’un test de charge, une sonde synthétique ou un restore drill récent manque. La présence de code de sauvegarde n’est pas considérée comme une preuve de restauration.

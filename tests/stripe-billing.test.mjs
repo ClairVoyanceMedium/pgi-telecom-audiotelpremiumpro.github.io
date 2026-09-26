@@ -1,12 +1,47 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createHmac} from "node:crypto";
-import {verifyStripeWebhook,normalizeStripeSubscriptionEvent,normalizeStripeBillingEvent,createStripeCheckout,stripeProviderState} from "../backend/src/stripe-billing.mjs";
+import {verifyStripeWebhook,normalizeStripeSubscriptionEvent,normalizeStripeBillingEvent,createStripeCheckout,stripeProviderState,stripeAccountStatus} from "../backend/src/stripe-billing.mjs";
 
 test("Stripe provider state fails closed until API and webhook are both configured",()=>{
   assert.deepEqual(stripeProviderState({externalBillingEnabled:false}),{api:false,webhook:false,connected:false});
   assert.deepEqual(stripeProviderState({externalBillingEnabled:true,stripeSecretKey:"sk_test_x",publicBaseUrl:"https://example.test"}),{api:true,webhook:false,connected:false});
   assert.deepEqual(stripeProviderState({externalBillingEnabled:true,stripeSecretKey:"sk_test_x",stripeWebhookSecret:"whsec_x",publicBaseUrl:"https://example.test"}),{api:true,webhook:true,connected:true});
+});
+
+test("Stripe account readiness verifies real account capabilities instead of trusting keys alone",async()=>{
+  const original=globalThis.fetch,calls=[];
+  globalThis.fetch=async(url)=>{
+    calls.push(String(url));
+    assert.equal(String(url),"https://api.stripe.com/v1/account");
+    return {ok:true,status:200,json:async()=>({
+      charges_enabled:false,payouts_enabled:false,details_submitted:false,
+      requirements:{disabled_reason:"requirements.past_due",currently_due:["external_account","business_profile.url"],past_due:["external_account"]}
+    })};
+  };
+  try{
+    const status=await stripeAccountStatus({
+      externalBillingEnabled:true,stripeSecretKey:"sk_live_example",publicBaseUrl:"https://example.test",stripeApiVersion:"2026-08-26.dahlia"
+    });
+    assert.equal(status.reachable,true);
+    assert.equal(status.charges_enabled,false);
+    assert.equal(status.payouts_enabled,false);
+    assert.equal(status.details_submitted,false);
+    assert.deepEqual(status.requirements_due,["external_account","business_profile.url"]);
+    assert.equal(status.disabled_reason,"requirements.past_due");
+    assert.equal(calls.length,1);
+  }finally{globalThis.fetch=original;}
+});
+
+test("Stripe account readiness is fail-closed without making a network call when provider API is disabled",async()=>{
+  const original=globalThis.fetch;
+  globalThis.fetch=async()=>{throw new Error("network must not be used");};
+  try{
+    const status=await stripeAccountStatus({externalBillingEnabled:false});
+    assert.equal(status.reachable,false);
+    assert.equal(status.disabled_reason,"not_connected");
+    assert.equal(status.charges_enabled,false);
+  }finally{globalThis.fetch=original;}
 });
 
 test("Stripe webhook signature is verified before JSON is trusted",async()=>{
