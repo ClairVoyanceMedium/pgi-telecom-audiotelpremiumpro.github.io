@@ -56,7 +56,8 @@
       setText("withdrawal-result-time",body.received_at?new Date(body.received_at).toLocaleString("fr-FR"):"—");
       setText("withdrawal-result-email",pending.acknowledgement_email);
       summary.hidden=true;result.hidden=false;
-      if(status)status.textContent=body?.acknowledgement?.state==="accepted"
+      const resultStatus=document.getElementById("consumer-withdrawal-status-result");
+      if(resultStatus)resultStatus.textContent=body?.acknowledgement?.state==="accepted"
         ?"Votre déclaration est enregistrée et l’accusé de réception électronique a été remis au prestataire d’envoi."
         :"Votre déclaration est enregistrée. L’accusé de réception électronique est en cours d’acheminement.";
       pending=null;
