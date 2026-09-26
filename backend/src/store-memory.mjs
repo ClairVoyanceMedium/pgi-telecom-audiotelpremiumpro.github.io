@@ -1060,8 +1060,8 @@ export class MemoryStore{
     if(!["individual","business"].includes(accountType))throw problem(400,"INVALID_CUSTOMER_ACCOUNT_TYPE");
     if(input.authority_confirmed!==true)throw problem(400,"REGISTRATION_AUTHORITY_REQUIRED");
     if(input.legal_terms_accepted!==true||input.privacy_notice_acknowledged!==true)throw problem(400,"REGISTRATION_LEGAL_TERMS_REQUIRED");
-    if(String(input.legal_version||"")!=="2026-09-26-b2b-b2c-v3")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
-    this.customerLegalAcceptances.push({acceptance_type:"account_terms",document_version:"2026-09-26-b2b-b2c-v3",documents:{cgu:"/conditions-utilisation/",conditions:"/conditions-abonnement/",privacy:"/confidentialite/",cookies:"/cookies-traceurs/"},account_type:accountType,evidence:{source:"self_service_registration",authority_confirmed:true,privacy_notice_acknowledged:true},accepted_at:new Date().toISOString()});
+    if(String(input.legal_version||"")!=="2026-09-26-b2b-b2c-v4")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
+    this.customerLegalAcceptances.push({acceptance_type:"account_terms",document_version:"2026-09-26-b2b-b2c-v4",documents:{cgu:"/conditions-utilisation/",conditions:"/conditions-abonnement/",privacy:"/confidentialite/",cookies:"/cookies-traceurs/"},account_type:accountType,evidence:{source:"self_service_registration",authority_confirmed:true,privacy_notice_acknowledged:true},accepted_at:new Date().toISOString()});
     return {id:randomUUID(),email,display_name:(first+" "+last).trim(),status:"active",email_verified:false,session_version:1,tenant_id:1,tenant_public_id:"00000000-0000-4000-8000-000000000001",tenant_name:accountType==="business"?(company||(first+" "+last).trim()):(first+" "+last).trim(),tenant_status:"pending",customer_role:"owner",authorization_version:1,customer_type:accountType};
   }
   async customerGoogleSignIn(){throw problem(403,"GOOGLE_INVITATION_REQUIRED");}
@@ -1115,8 +1115,8 @@ export class MemoryStore{
   }
 
   async recordCustomerLegalAcceptance(tenantId,principalId,input={}){
-    if(String(input.document_version||"")!=="2026-09-26-b2b-b2c-v3")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
-    const row={public_id:randomUUID(),tenant_id:Number(tenantId),customer_principal_id:String(principalId),acceptance_type:String(input.acceptance_type||""),document_version:"2026-09-26-b2b-b2c-v3",documents:structuredClone(input.documents&&typeof input.documents==="object"?input.documents:{}),immediate_performance_requested:input.immediate_performance_requested===true,evidence:structuredClone(input.evidence&&typeof input.evidence==="object"?input.evidence:{}),accepted_at:new Date().toISOString()};
+    if(String(input.document_version||"")!=="2026-09-26-b2b-b2c-v4")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
+    const row={public_id:randomUUID(),tenant_id:Number(tenantId),customer_principal_id:String(principalId),acceptance_type:String(input.acceptance_type||""),document_version:"2026-09-26-b2b-b2c-v4",documents:structuredClone(input.documents&&typeof input.documents==="object"?input.documents:{}),immediate_performance_requested:input.immediate_performance_requested===true,evidence:structuredClone(input.evidence&&typeof input.evidence==="object"?input.evidence:{}),accepted_at:new Date().toISOString()};
     this.customerLegalAcceptances.push(row);this.#audit("customer.legal_acceptance",String(principalId),{acceptance_type:row.acceptance_type,document_version:row.document_version});return structuredClone(row);
   }
 

@@ -1,3 +1,14 @@
+## Legal Hardening v4 — 2026-09-26
+
+- corpus contractuel porté à 100 clauses avec séparation stricte B2B/B2C ;
+- modifications des services numériques B2C encadrées par les droits légaux applicables ;
+- clauses renforcées sur sous-traitance, changement de prestataire, transfert B2B, audit de conformité, restrictions réglementaires, compromission de compte, SLA, réversibilité, preuve électronique, intégralité contractuelle et survie ;
+- clause attributive de juridiction rendue très apparente et limitée aux hypothèses légalement admissibles entre commerçants ;
+- nouvelle annexe RGPD / accord de traitement des données conforme à la logique de l’article 28 : instructions, sécurité, sous-traitants ultérieurs, transferts, droits, violations, AIPD, audit, restitution et suppression ;
+- politique de confidentialité reliée à l’annexe de traitement ;
+- version probatoire portée à 2026-09-26-b2b-b2c-v4 dans l’inscription, le checkout, la rétractation et les preuves serveur ;
+- identité juridique réelle de l’exploitant et médiateur de la consommation maintenus comme prérequis bloquants avant ouverture B2C.
+
 ## Monthly Contract & Site Protection v3 — 2026-09-26
 
 - abonnement plateforme à durée indéterminée, facturé mensuellement d’avance ;

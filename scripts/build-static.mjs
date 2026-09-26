@@ -128,6 +128,7 @@ const seoPages=[
   "conditions-utilisation",
   "conditions-abonnement",
   "confidentialite",
+  "accord-traitement-donnees",
   "cookies-traceurs",
   "resilier-contrat",
   "retractation"
@@ -246,7 +247,7 @@ function applyLandingMetadata(html,baseUrl,slug){
 
 function injectLegalNavigation(html){
   if(html.includes('aria-label="Informations juridiques"'))return html;
-  const nav='<div class="wrap"><nav class="footer-links" aria-label="Informations juridiques"><a href="/mentions-legales/">Mentions légales</a><a href="/conditions-utilisation/">CGU</a><a href="/conditions-abonnement/">Conditions</a><a href="/confidentialite/">Confidentialité</a><a href="/cookies-traceurs/">Cookies</a><a href="/resilier-contrat/">Résilier votre contrat</a><a href="/retractation/">Rétractation</a></nav></div>';
+  const nav='<div class="wrap"><nav class="footer-links" aria-label="Informations juridiques"><a href="/mentions-legales/">Mentions légales</a><a href="/conditions-utilisation/">CGU</a><a href="/conditions-abonnement/">Conditions</a><a href="/confidentialite/">Confidentialité</a><a href="/accord-traitement-donnees/">DPA</a><a href="/cookies-traceurs/">Cookies</a><a href="/resilier-contrat/">Résilier votre contrat</a><a href="/retractation/">Rétractation</a></nav></div>';
   return html.replace("</footer>",nav+"</footer>");
 }
 

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 const read=p=>fs.readFileSync(p,"utf8");
-const legalSlugs=["mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","cookies-traceurs","resilier-contrat","retractation"];
+const legalSlugs=["mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","accord-traitement-donnees","cookies-traceurs","resilier-contrat","retractation"];
 
 test("complete legal corpus is published and cross-linked",()=>{
   for(const slug of legalSlugs){
@@ -16,7 +16,15 @@ test("complete legal corpus is published and cross-linked",()=>{
   }
   assert.match(read("site/seo/resilier-contrat.html"),/>Résilier votre contrat</);
   assert.match(read("site/seo/retractation.html"),/14 jours/);
-  assert.match(read("site/seo/mentions-legales.html"),/À compléter avant ouverture commerciale/);
+  const dpa=read("site/seo/accord-traitement-donnees.html");
+  assert.match(dpa,/Instructions documentées/);
+  assert.match(dpa,/Sous-traitants ultérieurs/);
+  assert.match(dpa,/Violations de données/);
+  assert.match(dpa,/Audit/);
+  const legalNotice=read("site/seo/mentions-legales.html");
+  assert.match(legalNotice,/À compléter avant ouverture commerciale/);
+  assert.match(legalNotice,/440 N Barranca Avenue #4133/);
+  assert.match(legalNotice,/\+1 559 288 7060/);
 });
 
 test("registration requires current legal documents and keeps privacy acknowledgement separate from authority",()=>{
@@ -25,19 +33,23 @@ test("registration requires current legal documents and keeps privacy acknowledg
   assert.match(audience,/conditions-utilisation/);
   assert.match(portal,/legal_terms_accepted/);
   assert.match(portal,/privacy_notice_acknowledged/);
-  assert.match(portal,/legal_version:"2026-09-26-b2b-b2c-v3"/);
+  assert.match(portal,/legal_version:"2026-09-26-b2b-b2c-v4"/);
   const terms=read("site/seo/conditions-abonnement.html"),cgu=read("site/seo/conditions-utilisation.html");
   assert.match(terms,/Partie B2C : informations avant engagement/);
   assert.match(terms,/Partie B2B : socle commercial/);
   assert.match(terms,/garantie légale de conformité/i);
   assert.match(terms,/commande et obligation de paiement/i);
-  assert.match(terms,/2026-09-26-b2b-b2c-v3/);
+  assert.match(terms,/2026-09-26-b2b-b2c-v4/);
   assert.match(terms,/durée indéterminée/i);
   assert.match(terms,/facturé par périodes mensuelles successives/i);
   assert.match(terms,/résiliation à tout moment/i);
   assert.match(terms,/Absence de prorata en cas de résiliation volontaire/);
   assert.match(terms,/Tableaux de bord, appels et données provisoires/);
   assert.match(terms,/Routage et studio vocal/);
+  assert.match(terms,/Modifications du service numérique B2C/);
+  assert.match(terms,/Coopération, contrôle et audit B2B/);
+  assert.match(terms,/Clause de juridiction entre commerçants/);
+  assert.match(terms,/accord-traitement-donnees/);
   assert.match(cgu,/Règles particulières aux consommateurs/);
   assert.match(cgu,/Règles particulières aux professionnels/);
   assert.match(server,/customer\/auth\/register/);

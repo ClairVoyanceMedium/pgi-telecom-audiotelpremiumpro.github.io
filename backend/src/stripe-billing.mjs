@@ -77,7 +77,7 @@ export async function createStripeCheckout(config,billing,idempotencyKey){
     tenant_public_id:String(tenant.id||""),
     price_version_id:String(billing?.offer?.price_version_id||""),
     plan_key:String(billing?.offer?.plan_key||"external-sva-access"),
-    legal_version:"2026-09-26-b2b-b2c-v3",
+    legal_version:"2026-09-26-b2b-b2c-v4",
     contract_model:"indefinite_monthly_advance"
   };
   if(billing?.offer?.market_id!=null)metadata.market_id=String(billing.offer.market_id);
