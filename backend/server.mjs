@@ -136,7 +136,9 @@ export function createBackend(options={}){
 
       if(method==="GET"&&pathname==="/api/v1/public/withdrawal/status"){
         const schemaReady=typeof store.customerWithdrawalFeatureReady==="function"&&await store.customerWithdrawalFeatureReady();
-        return done(res,metrics,started,"public.withdrawal_status",200,{available:config.onlineWithdrawalReady===true&&schemaReady});
+        const emailReady=config.onlineWithdrawalReady===true;
+        process.stdout.write(JSON.stringify({level:"info",event:"withdrawal_readiness",email_ready:emailReady,schema_ready:schemaReady})+"\n");
+        return done(res,metrics,started,"public.withdrawal_status",200,{available:emailReady&&schemaReady});
       }
 
       if(method==="POST"&&pathname==="/api/v1/public/withdrawal"){
