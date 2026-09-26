@@ -70,6 +70,10 @@ export function loadConfig(env=process.env){
   const hubspotTrackingEnabled=booleanValue(env.PGI_HUBSPOT_TRACKING_ENABLED,true,"PGI_HUBSPOT_TRACKING_ENABLED");
   const hubspotPrivateAppToken=String(env.PGI_HUBSPOT_PRIVATE_APP_TOKEN||"").trim();
   const hubspotCrmEnabled=booleanValue(env.PGI_HUBSPOT_CRM_ENABLED,Boolean(hubspotPrivateAppToken),"PGI_HUBSPOT_CRM_ENABLED");
+  const hubspotOwnerId=String(env.PGI_HUBSPOT_OWNER_ID||"99851906").trim();
+  const hubspotCompanySyncEnabled=booleanValue(env.PGI_HUBSPOT_COMPANY_SYNC_ENABLED,true,"PGI_HUBSPOT_COMPANY_SYNC_ENABLED");
+  const hubspotTaskSyncEnabled=booleanValue(env.PGI_HUBSPOT_TASK_SYNC_ENABLED,true,"PGI_HUBSPOT_TASK_SYNC_ENABLED");
+  const hubspotDealAmountEnabled=booleanValue(env.PGI_HUBSPOT_DEAL_AMOUNT_ENABLED,false,"PGI_HUBSPOT_DEAL_AMOUNT_ENABLED");
   const hubspotPipelineId=String(env.PGI_HUBSPOT_PIPELINE_ID||"default").trim();
   const hubspotStageNew=String(env.PGI_HUBSPOT_STAGE_NEW||"appointmentscheduled").trim();
   const hubspotStageQualified=String(env.PGI_HUBSPOT_STAGE_QUALIFIED||"qualifiedtobuy").trim();
@@ -90,6 +94,7 @@ export function loadConfig(env=process.env){
   if(hubspotPortalId&&!/^\d{4,20}$/.test(hubspotPortalId))throw new Error("PGI_HUBSPOT_PORTAL_ID invalid");
   if(!["eu1","na1"].includes(hubspotRegion))throw new Error("PGI_HUBSPOT_REGION invalid");
   if(hubspotCrmEnabled&&hubspotPrivateAppToken.length<20)throw new Error("PGI_HUBSPOT_CRM_ENABLED requires PGI_HUBSPOT_PRIVATE_APP_TOKEN");
+  if(hubspotOwnerId&&!/^\d{1,20}$/.test(hubspotOwnerId))throw new Error("PGI_HUBSPOT_OWNER_ID invalid");
   for(const [name,value] of Object.entries({PGI_HUBSPOT_PIPELINE_ID:hubspotPipelineId,PGI_HUBSPOT_STAGE_NEW:hubspotStageNew,PGI_HUBSPOT_STAGE_QUALIFIED:hubspotStageQualified,PGI_HUBSPOT_STAGE_READY:hubspotStageReady,PGI_HUBSPOT_STAGE_ACTIVE:hubspotStageActive,PGI_HUBSPOT_STAGE_LOST:hubspotStageLost})){
     if(!/^[A-Za-z0-9_.-]{1,120}$/.test(value))throw new Error(name+" invalid");
   }
@@ -133,7 +138,7 @@ export function loadConfig(env=process.env){
   }
 
   return Object.freeze({
-    mode,authMode,host,port,releaseId,staticDir,trustProxy,protectMachineEndpoints,ga4MeasurementId,clarityProjectId,firstPartyAnalyticsEnabled,hubspotPortalId,hubspotRegion,hubspotTrackingEnabled,hubspotPrivateAppToken,hubspotCrmEnabled,hubspotPipelineId,hubspotStageNew,hubspotStageQualified,hubspotStageReady,hubspotStageActive,hubspotStageLost,googleClientId,webauthnRpId,webauthnOrigin,
+    mode,authMode,host,port,releaseId,staticDir,trustProxy,protectMachineEndpoints,ga4MeasurementId,clarityProjectId,firstPartyAnalyticsEnabled,hubspotPortalId,hubspotRegion,hubspotTrackingEnabled,hubspotPrivateAppToken,hubspotCrmEnabled,hubspotOwnerId,hubspotCompanySyncEnabled,hubspotTaskSyncEnabled,hubspotDealAmountEnabled,hubspotPipelineId,hubspotStageNew,hubspotStageQualified,hubspotStageReady,hubspotStageActive,hubspotStageLost,googleClientId,webauthnRpId,webauthnOrigin,
     sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,stripeSecretKey,stripeWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,b2cCommercialRequested,b2cCommercialReady,legalOperatorConfigured,consumerMediatorConfigured,onlineWithdrawalReady,emailVerificationEnabled,transactionalEmailEnabled,resendApiKey,resendWebhookSecret,transactionalDomain,transactionalReplyTo,internalNotificationEmail,cronSecret,emailVerificationPepper,transactionalFromEmail,transactionalFromName,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),
