@@ -99,7 +99,6 @@ function track(name,meta={}){
   const event=safe(name,80).toLowerCase().replace(/[^a-z0-9_.-]/g,"_");
   if(!event)return;
   if(consent?.analytics&&window.gtag)window.gtag("event",event,cleanMeta(meta));
-  if(consent?.marketing&&window._hsq)window._hsq.push(["trackCustomBehavioralEvent",{name:"pe"+event.replace(/[^a-z0-9]/g,"_"),properties:cleanMeta(meta)}]);
   if(!consent?.analytics)return;
   const a=captureAttribution();
   fetch("/api/v1/public/acquisition/event",{
@@ -168,6 +167,6 @@ async function init(){
   if(consent)applyConsent();else banner();
   manageButton();
 }
-window.PGITracking=Object.freeze({track,getAttribution:()=>structuredClone?structuredClone(captureAttribution()):JSON.parse(JSON.stringify(captureAttribution())),getConsent:()=>consent?{...consent}:null});
+window.PGITracking=Object.freeze({track,getAttribution:()=>typeof structuredClone==="function"?structuredClone(captureAttribution()):JSON.parse(JSON.stringify(captureAttribution())),getSessionId:()=>sessionId(),getConsent:()=>consent?{...consent}:null});
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init,{once:true});else init();
 })();
