@@ -42,8 +42,8 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.match(root,/"@type":"Organization"/);
     assert.match(root,/"@type":"WebPage"/);
     assert.match(root,/"@id":"https:\\/\\/audiotel-premium-pro\\.com\\/#service"/);
-    assert.match(root,/"@id":"https:\/\/audiotel-premium-pro\.com\/#logo"/);
-    assert.match(root,/"contentUrl":"https:\/\/audiotel-premium-pro\.com\/assets\/audiotel-brand-logo-v33\.png"/);
+    assert.ok(root.includes('"@id":"https://audiotel-premium-pro.com/#logo"'));
+    assert.ok(root.includes('"contentUrl":"https://audiotel-premium-pro.com/assets/audiotel-brand-logo-v33.png"'));
     assert.match(root,/name="twitter:image" content="https:\/\/audiotel-premium-pro\.com\/assets\/audiotel-brand-logo-v33\.png"/);
 
     assert.match(cockpit,/Cockpit \/ PGI Telecom/);
@@ -55,9 +55,9 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.match(sitemap,/<loc>https:\/\/audiotel-premium-pro\.com\/<\/loc>/);
     for(const slug of seoSlugs.filter(x=>x!=="mentions-legales"))assert.match(sitemap,new RegExp("<loc>https:\\/\\/audiotel-premium-pro\\.com\\/"+slug+"\\/<\\/loc>"));
     assert.doesNotMatch(sitemap,/mentions-legales/);
-    assert.doesNotMatch(sitemap,/client\\.html|cockpit|backend\\/|docs\\//);
+    for(const forbidden of ["client.html","cockpit","backend/","docs/"])assert.ok(!sitemap.includes(forbidden));
     assert.doesNotMatch(sitemap,/<changefreq>|<priority>/);
-    assert.match(llms,/Audiotel Premium Pro \\| PGI Telecom/);
+    assert.ok(llms.includes("Audiotel Premium Pro | PGI Telecom"));
     assert.match(llms,/guide-audiotel-sva/);
     assert.match(llmsFull,/Official French references/);
     assert.equal(indexNowKey,"fa0a7deb5d60bdf1260c8174ad8c71db");
@@ -79,7 +79,7 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.match(guide,/"@type":"BreadcrumbList"/);
     assert.match(guide,/"@type":"Article"/);
     assert.match(guide,/Arcep — numéros SVA/);
-    assert.match(guide,/economie\\.gouv\\.fr/);
+    assert.ok(guide.includes("economie.gouv.fr"));
     const application=seoPages[seoSlugs.indexOf("demande-ouverture")];
     assert.match(application,/id="order-form"/);
     assert.match(application,/src="\/site\/site\.js"/);
