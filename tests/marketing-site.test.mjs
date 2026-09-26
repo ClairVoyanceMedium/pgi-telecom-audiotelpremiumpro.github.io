@@ -109,7 +109,7 @@ test("marketing page exposes structured service data without fabricated social p
   assert.match(html,/"@type":"Organization"/);
   assert.match(html,/"@type":"WebPage"/);
   assert.match(html,/"@type":"Service"/);
-  assert.match(html,/support@audiotel-premium-pro\\.com/);
+  assert.ok(html.includes("support@audiotel-premium-pro.com"));
   assert.match(html,/"price":"3\.00"/);
   assert.match(html,/"priceCurrency":"EUR"/);
   assert.match(html,/0,10 € par jour/);
@@ -141,7 +141,7 @@ test("public funnels preserve legal customer qualification and non-promissory fi
 });
 
 test("machine-readable discovery stays factual and public-only",()=>{
-  assert.match(llms,/Canonical: https:\/\/audiotel-premium-pro\.com\//);
+  assert.ok(llms.includes("Canonical: https://audiotel-premium-pro.com/"));
   assert.match(llms,/Do not treat \/client\.html, \/cockpit/);
   assert.match(llmsFull,/Never describe a simulated reversement as guaranteed income/);
   assert.match(llmsFull,/Arcep/);
