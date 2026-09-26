@@ -23,7 +23,9 @@ export function evaluateLaunchReadiness(input={}){
   const billingReady=billing.connection_state==="connected"&&billing.stripe_live_mode===true&&billingAccount.reachable===true&&billingAccount.charges_enabled===true&&billingAccount.payouts_enabled===true&&billingAccount.details_submitted===true;
   const legalIdentityReady=bool(config.legalOperatorConfigured);
   const b2cLegalReady=bool(config.consumerMediatorConfigured)&&withdrawalReady&&bool(config.b2cCommercialReady);
-  const operatorReady=Boolean(route.active_carrier||route.active_carrier_id)&&["active","ready"].includes(String(route.active_connection_state||"").toLowerCase());
+  const operatorHealth=String(route.active_connection_last_health_status||"").toLowerCase();
+  const operatorHealthBad=["down","failed","error","critical","unhealthy"].includes(operatorHealth);
+  const operatorReady=Boolean(route.active_carrier||route.active_carrier_id)&&["active","ready"].includes(String(route.active_connection_state||"").toLowerCase())&&!operatorHealthBad;
   const regulatoryReady=number(summary.assignments_total)>0&&number(regulatory.review_blocking)===0&&number(regulatory.numbers_ready)>=number(summary.assignments_total);
   const resilienceReady=performance.preproduction_gate?.ready===true;
   const payoutReady=summary.payment_compliance_active===true||number(summary.assignments_total)===0;
@@ -36,7 +38,7 @@ export function evaluateLaunchReadiness(input={}){
     section("billing","Paiements Stripe",billingReady?STATUS.READY:STATUS.ACTION,billingReady?"Stripe live est joignable, vérifié et autorisé à encaisser/payer.":billingAccount.reachable===true?"Le compte Stripe répond mais ses capacités/KYC ne sont pas entièrement activées ("+number(billingAccount.requirements_due?.length)+" exigence(s) restante(s)).":"Stripe live doit être connecté, joignable et opérationnel avant encaissement.",["b2b","b2c"]),
     section("legal_identity","Identité juridique",legalIdentityReady?STATUS.READY:STATUS.ACTION,legalIdentityReady?"Identité juridique de l’exploitant configurée.":"Compléter l’identité juridique réelle avant ouverture commerciale.",["b2b","b2c"]),
     section("b2c_legal","Protection consommateurs",b2cLegalReady?STATUS.READY:STATUS.ACTION,b2cLegalReady?"Médiation et rétractation en ligne sont opérationnelles.":"Médiateur, identité et/ou prérequis B2C restent à finaliser.",["b2c"]),
-    section("operator","Opérateur / routage SVA",operatorReady?STATUS.READY:STATUS.PENDING,operatorReady?"Une connexion opérateur active est disponible.":"Aucun branchement opérateur actif vérifié.",["b2b","b2c"]),
+    section("operator","Opérateur / routage SVA",operatorReady?STATUS.READY:STATUS.PENDING,operatorReady?"Une connexion opérateur active est disponible et aucun état de santé défavorable n’est signalé.":operatorHealthBad?"La connexion opérateur active signale un état de santé défavorable ("+operatorHealth+").":"Aucun branchement opérateur actif vérifié.",["b2b","b2c"]),
     section("regulatory","Conformité SVA",regulatoryReady?STATUS.READY:STATUS.PENDING,regulatoryReady?"Toutes les affectations actives sont prêtes sans blocage réglementaire.":"Affectations/numéros ou preuves réglementaires restent à finaliser.",["b2b","b2c"]),
     section("resilience","Résilience préproduction",resilienceReady?STATUS.READY:STATUS.ACTION,resilienceReady?"Le gate performance/résilience est démontré par des preuves fraîches.":"Test de charge, sonde synthétique et/ou restore drill à compléter.",["b2b","b2c"]),
     section("payouts","Reversements",payoutReady?STATUS.READY:STATUS.PENDING,payoutReady?"La conformité de reversement est disponible ou aucun flux réel n’est encore actif.":"Le profil de conformité des reversements doit être activé avant paiement client.",["b2b"])
