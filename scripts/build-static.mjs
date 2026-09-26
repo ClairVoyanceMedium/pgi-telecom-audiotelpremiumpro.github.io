@@ -1,5 +1,6 @@
 import fs from "node:fs";
-import path from "node:path";\nimport {execFileSync} from "node:child_process";
+import path from "node:path";
+import {execFileSync} from "node:child_process";
 
 const root=process.cwd();
 const dist=path.join(root,"dist");
@@ -18,6 +19,9 @@ const files=[
   "manifest.webmanifest",
   "service-worker.js",
   "robots.txt",
+  "llms.txt",
+  "llms-full.txt",
+  "fa0a7deb5d60bdf1260c8174ad8c71db.txt",
   ".nojekyll",
   "assets/styles.css",
   "assets/client-portal.css",
@@ -121,6 +125,9 @@ const seoPages=[
   "audiotel-professionnels",
   "reversement-audiotel",
   "numero-sva",
+  "portabilite-numero-sva",
+  "numero-surtaxe-08",
+  "tarif-numero-sva",
   "comparateur-audiotel",
   "guide-audiotel-sva",
   "demande-ouverture",
