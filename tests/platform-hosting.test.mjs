@@ -53,6 +53,9 @@ test("same-origin static handler serves marketing at root and keeps private UI n
     const legacy=await fetch(base+"/site/",{redirect:"manual"});
     assert.equal(legacy.status,308);
     assert.equal(legacy.headers.get("location"),"/");
+    const legacySector=await fetch(base+"/audiotel-voyance/",{redirect:"manual"});
+    assert.equal(legacySector.status,308);
+    assert.equal(legacySector.headers.get("location"),"/audiotel-independants/");
     const cockpit=await fetch(base+"/cockpit");
     assert.equal(cockpit.status,200);
     assert.equal(await cockpit.text(),"cockpit");
