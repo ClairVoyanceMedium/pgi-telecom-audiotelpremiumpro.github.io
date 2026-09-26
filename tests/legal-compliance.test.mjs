@@ -16,7 +16,10 @@ test("complete legal corpus is published and cross-linked",()=>{
   }
   assert.match(read("site/seo/resilier-contrat.html"),/>Résilier votre contrat</);
   assert.match(read("site/seo/retractation.html"),/14 jours/);\n  const dpa=read("site/seo/accord-traitement-donnees.html");\n  assert.match(dpa,/Instructions documentées/);\n  assert.match(dpa,/Sous-traitants ultérieurs/);\n  assert.match(dpa,/Violations de données/);\n  assert.match(dpa,/Audit/);
-  assert.match(read("site/seo/mentions-legales.html"),/À compléter avant ouverture commerciale/);
+  const legalNotice=read("site/seo/mentions-legales.html");
+  assert.match(legalNotice,/À compléter avant ouverture commerciale/);
+  assert.match(legalNotice,/440 N Barranca Avenue #4133/);
+  assert.match(legalNotice,/numéro de téléphone légal de l’hébergeur/);
 });
 
 test("registration requires current legal documents and keeps privacy acknowledgement separate from authority",()=>{
