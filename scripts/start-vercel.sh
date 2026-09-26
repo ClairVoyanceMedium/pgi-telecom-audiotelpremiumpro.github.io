@@ -24,7 +24,9 @@ test -n "$PGI_DATABASE_URL" || {
   exit 1
 }
 
-# Neon is migrated out-of-band before deployment. Vercel instances are ephemeral
-# and must never race database bootstrap/migrations during cold starts.
+# One-off guarded production maintenance for migration 060 only.
+# Remove immediately after production reports schema_ready=true.
+node backend/apply-withdrawal-060.mjs
+
 node scripts/build-static.mjs
 exec node backend/server.mjs
