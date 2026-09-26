@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createHmac} from "node:crypto";
-import {verifyStripeWebhook,normalizeStripeSubscriptionEvent,normalizeStripeBillingEvent,createStripeCheckout,stripeProviderState} from "../backend/src/stripe-billing.mjs";
+import {verifyStripeWebhook,normalizeStripeSubscriptionEvent,normalizeStripeBillingEvent,createStripeCheckout,scheduleStripeSubscriptionCancellation,stripeProviderState} from "../backend/src/stripe-billing.mjs";
 
 test("Stripe provider state fails closed until API and webhook are both configured",()=>{
   assert.deepEqual(stripeProviderState({externalBillingEnabled:false}),{api:false,webhook:false,connected:false});
@@ -142,5 +142,30 @@ test("Stripe Checkout verifies the remote price before creating a hosted subscri
     assert.equal(checkoutForm.get("metadata[contract_model]"),"indefinite_monthly_advance");
     assert.equal(checkoutForm.get("subscription_data[metadata][legal_version]"),"2026-09-26-b2b-b2c-v3");
     assert.equal(calls[1].init.headers["Idempotency-Key"],"idem-test-1");
+  }finally{globalThis.fetch=original;}
+});
+
+
+test("Stripe cancellation is scheduled at period end and is idempotent",async()=>{
+  const original=globalThis.fetch,calls=[];
+  globalThis.fetch=async(url,init={})=>{
+    calls.push({url:String(url),init});
+    return {ok:true,status:200,json:async()=>({
+      id:"sub_cancel123",customer:"cus_123",status:"active",cancel_at_period_end:true,
+      items:{data:[{current_period_end:Math.floor(Date.now()/1000)+86400}]}
+    })};
+  };
+  try{
+    const result=await scheduleStripeSubscriptionCancellation(
+      {stripeSecretKey:"sk_test_example",stripeApiVersion:"2026-08-26.dahlia"},
+      "sub_cancel123","subscription-cancellation/test-reference"
+    );
+    assert.equal(result.cancel_at_period_end,true);
+    assert.equal(result.subscription_id,"sub_cancel123");
+    assert.equal(calls.length,1);
+    assert.match(calls[0].url,/\/v1\/subscriptions\/sub_cancel123$/);
+    assert.equal(calls[0].init.method,"POST");
+    assert.equal(calls[0].init.headers["Idempotency-Key"],"subscription-cancellation/test-reference");
+    assert.equal(new URLSearchParams(String(calls[0].init.body)).get("cancel_at_period_end"),"true");
   }finally{globalThis.fetch=original;}
 });
