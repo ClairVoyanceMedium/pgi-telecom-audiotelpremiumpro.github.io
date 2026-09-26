@@ -22,11 +22,11 @@ test("production static build publishes marketing root and private cockpit",()=>
     const legacy=fs.readFileSync("dist/site/index.html","utf8");
     const robots=fs.readFileSync("dist/robots.txt","utf8");
     const sitemap=fs.readFileSync("dist/sitemap.xml","utf8");
-    const seoSlugs=["audiotel-voyance","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","comparateur-audiotel","guide-audiotel-sva","demande-ouverture","mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","cookies-traceurs","resilier-contrat","retractation"];
+    const seoSlugs=["audiotel-independants","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","comparateur-audiotel","guide-audiotel-sva","demande-ouverture","mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","cookies-traceurs","resilier-contrat","retractation"];
     const seoPages=seoSlugs.map(slug=>fs.readFileSync("dist/"+slug+"/index.html","utf8"));
 
     assert.match(root,/Pilotez votre activité/);
-    assert.match(root,/Voyance &amp; astrologie/);
+    assert.match(root,/Indépendants &amp; porteurs de projet/);
     assert.match(root,/Solution Audiotel et SVA/);
     assert.match(root,/max-snippet:-1/);
     assert.doesNotMatch(root,/Cockpit \/ PGI Telecom/);
