@@ -140,7 +140,7 @@ test("Stripe Checkout verifies the remote price before creating a hosted subscri
     assert.match(checkoutForm.get("custom_text[submit][message]")||"",/facturé mensuellement d’avance/i);
     assert.match(checkoutForm.get("custom_text[submit][message]")||"",/Résiliation possible à tout moment/i);
     assert.equal(checkoutForm.get("metadata[contract_model]"),"indefinite_monthly_advance");
-    assert.equal(checkoutForm.get("subscription_data[metadata][legal_version]"),"2026-09-26-b2b-b2c-v3");
+    assert.equal(checkoutForm.get("subscription_data[metadata][legal_version]"),"2026-09-26-b2b-b2c-v4");
     assert.equal(calls[1].init.headers["Idempotency-Key"],"idem-test-1");
   }finally{globalThis.fetch=original;}
 });
