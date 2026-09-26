@@ -21,10 +21,11 @@ function fixture(overrides={}){
       scale:{regions_total:1,regions_ready:1}
     },
     billingProvider:{connection_state:"connected",stripe_live_mode:true},
+    billingAccount:{reachable:true,charges_enabled:true,payouts_enabled:true,details_submitted:true,requirements_due:[]},
     carrier:{route:{active_carrier_id:1,active_carrier:"Carrier réel",active_connection_state:"active"}},
     withdrawalReady:true
   };
-  return {...base,...overrides,config:{...base.config,...(overrides.config||{})},system:{...base.system,...(overrides.system||{})},performance:{...base.performance,...(overrides.performance||{})},platform:{...base.platform,...(overrides.platform||{})},billingProvider:{...base.billingProvider,...(overrides.billingProvider||{})},carrier:{...base.carrier,...(overrides.carrier||{})}};
+  return {...base,...overrides,config:{...base.config,...(overrides.config||{})},system:{...base.system,...(overrides.system||{})},performance:{...base.performance,...(overrides.performance||{})},platform:{...base.platform,...(overrides.platform||{})},billingProvider:{...base.billingProvider,...(overrides.billingProvider||{})},billingAccount:{...base.billingAccount,...(overrides.billingAccount||{})},carrier:{...base.carrier,...(overrides.carrier||{})}};
 }
 
 test("launch readiness becomes green only when every observable commercial gate is ready",()=>{
@@ -44,9 +45,21 @@ test("missing consumer mediator blocks B2C without inventing a B2B blocker",()=>
   assert.ok(!result.blockers.b2b.includes("b2c_legal"));
 });
 
+test("configured Stripe credentials are not enough when the live account is still restricted",()=>{
+  const result=evaluateLaunchReadiness(fixture({
+    billingAccount:{reachable:true,charges_enabled:false,payouts_enabled:false,details_submitted:false,requirements_due:["external_account","individual.address.line1"]}
+  }));
+  assert.equal(result.ready_for_b2b,false);
+  assert.ok(result.blockers.b2b.includes("billing"));
+  assert.equal(result.facts.stripe_account_reachable,true);
+  assert.equal(result.facts.stripe_charges_enabled,false);
+  assert.equal(result.facts.stripe_requirements_due,2);
+});
+
 test("operator and Stripe stay fail-closed until real active connections exist",()=>{
   const input=fixture({
     billingProvider:{connection_state:"not_connected",stripe_live_mode:false},
+    billingAccount:{reachable:false,charges_enabled:false,payouts_enabled:false,details_submitted:false,requirements_due:["external_account"]},
     carrier:{route:{active_carrier_id:null,active_carrier:null,active_connection_state:null}}
   });
   const result=evaluateLaunchReadiness(input);
