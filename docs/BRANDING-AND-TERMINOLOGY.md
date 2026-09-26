@@ -9,7 +9,7 @@
 
 ## Positionnement métier
 
-Audiotel Premium Pro n’est pas une plateforme réservée à la voyance.
+Audiotel Premium Pro est une plateforme SVA générique : aucun métier ou secteur ne doit être traité comme cible exclusive.
 
 Un numéro SVA peut être utilisé par tout professionnel ou toute organisation ayant un ou plusieurs services, équipes, intervenants ou postes, par exemple :
 
@@ -22,7 +22,7 @@ Un numéro SVA peut être utilisé par tout professionnel ou toute organisation 
 - assistance ;
 - consultants ou conseillers ;
 - professionnels indépendants ;
-- voyants ou autres intervenants spécialisés.
+- intervenants spécialisés, indépendants, équipes ou autres profils compatibles avec le service.
 
 ## Terminologie visible
 
