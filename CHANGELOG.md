@@ -1,3 +1,14 @@
+## Analytics & CRM Automation — 2026-09-26
+
+- consentement centralisé pour GA4, Clarity et suivi HubSpot sur les surfaces publiques ;
+- collecte first-party sans PII avec validation serveur et attribution premier contact persistée uniquement après consentement ;
+- propagation automatique de la source d’acquisition jusqu’au compte créé ;
+- synchronisation HubSpot durable et idempotente : contacts, entreprises, transactions et tâches commerciales ;
+- synchronisation du centre de service PGI vers les tickets et notes HubSpot ;
+- montant des transactions HubSpot volontairement désactivé tant que la devise du portail n’est pas EUR ;
+- aucune donnée de démonstration créée dans le CRM et aucun secret serveur exposé au navigateur ;
+- tests dédiés au consentement, au build public, au CRM commercial et au support.
+
 ## Universal Audience & Savings — 2026-09-26
 
 - suppression du ciblage public spécifique à la voyance et remplacement par un positionnement SVA multi-activités ;
