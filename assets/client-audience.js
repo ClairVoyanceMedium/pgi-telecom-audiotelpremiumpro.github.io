@@ -26,7 +26,16 @@ function hydratePublicOrderIntent(){
     if(["individual","business"].includes(x.account_type))set("register-account-type",x.account_type);
     set("register-first-name",x.first_name);set("register-last-name",x.last_name);set("register-email",x.email);set("register-phone",x.phone);
     if(x.account_type==="business")set("register-company",x.company_name);
-    window.PGIOrderMeta={acquisition_source:"public_marketing_site",service_intent:String(x.service_intent||"").slice(0,40)};
+    const clean=(v,n=180)=>String(v||"").replace(/[\u0000-\u001f\u007f]/g," ").trim().slice(0,n);
+    window.PGIOrderMeta={
+      acquisition_source:"public_marketing_site",
+      service_intent:clean(x.service_intent,40),
+      utm_source:clean(x.utm_source),utm_medium:clean(x.utm_medium),utm_campaign:clean(x.utm_campaign),
+      utm_term:clean(x.utm_term),utm_content:clean(x.utm_content),
+      landing_path:clean(String(x.landing_path||"").split("?")[0],300),
+      referrer_host:clean(x.referrer_host,180),
+      acquisition_session_id:clean(x.acquisition_session_id,120)
+    };
     sessionStorage.removeItem("pgi_public_order_intent_v1");
   }catch(_e){try{sessionStorage.removeItem("pgi_public_order_intent_v1")}catch(_x){}}
 }
