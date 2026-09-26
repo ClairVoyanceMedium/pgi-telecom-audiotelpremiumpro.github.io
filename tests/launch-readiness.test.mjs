@@ -70,6 +70,24 @@ test("operator and Stripe stay fail-closed until real active connections exist",
   assert.equal(result.sections.find(x=>x.key==="operator").status,"pending_external");
 });
 
+test("an administratively active carrier is still blocked when its latest health is explicitly bad",()=>{
+  const result=evaluateLaunchReadiness(fixture({
+    carrier:{route:{active_carrier_id:1,active_carrier:"Carrier réel",active_connection_state:"active",active_connection_last_health_status:"down"}}
+  }));
+  assert.equal(result.ready_for_b2b,false);
+  assert.equal(result.ready_for_b2c,false);
+  assert.ok(result.blockers.b2b.includes("operator"));
+  assert.equal(result.sections.find(x=>x.key==="operator").status,"pending_external");
+  assert.match(result.sections.find(x=>x.key==="operator").detail,/down/);
+});
+
+test("missing carrier telemetry does not create a fictional outage when the active connection itself is ready",()=>{
+  const result=evaluateLaunchReadiness(fixture({
+    carrier:{route:{active_carrier_id:1,active_carrier:"Carrier réel",active_connection_state:"active",active_connection_last_health_status:null}}
+  }));
+  assert.equal(result.sections.find(x=>x.key==="operator").status,"ready");
+});
+
 test("stale resilience evidence and runtime failures remain explicit blockers",()=>{
   const input=fixture({
     performance:{preproduction_gate:{ready:false,blockers:[{code:"RESTORE_DRILL_STALE"}]}},
