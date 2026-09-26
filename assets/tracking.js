@@ -29,9 +29,9 @@ function initialAttribution(){
 }
 function captureAttribution(persist=false){
   const allowed=Boolean(consent?.analytics||consent?.marketing);
-  const next={...(allowed?storedAttribution():{}),...initialAttribution()};
+  const stored=allowed?storedAttribution():{},next={...initialAttribution(),...stored};
   const q=new URLSearchParams(location.search);
-  allowedUtms.forEach(k=>{const v=safe(q.get(k),180);if(v)next[k]=v});
+  allowedUtms.forEach(k=>{const v=safe(q.get(k),180);if(v&&!next[k])next[k]=v});
   if(allowed&&persist){try{sessionStorage.setItem(ATTR_KEY,JSON.stringify(next))}catch{}}
   return next;
 }
