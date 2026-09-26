@@ -82,3 +82,19 @@ test("build publishes all legal routes and injects global legal navigation",()=>
   for(const slug of legalSlugs)assert.match(build,new RegExp('"'+slug+'"'));
   assert.match(build,/injectLegalNavigation/);
 });
+
+test("consumer paid checkout stays fail-closed until B2C prerequisites are genuinely operational",()=>{
+  const config=read("backend/src/config.mjs");
+  const postgres=read("backend/src/store-postgres.mjs");
+  const server=read("backend/server.mjs");
+  const billing=read("assets/client-billing.js");
+  const withdrawal=read("site/seo/retractation.html");
+  assert.match(config,/PGI_B2C_COMMERCIAL_READY/);
+  assert.match(config,/const onlineWithdrawalReady=false/);
+  assert.match(config,/b2cCommercialReady=b2cCommercialRequested&&legalOperatorConfigured&&consumerMediatorConfigured&&onlineWithdrawalReady/);
+  assert.match(postgres,/AS customer_type/);
+  assert.match(server,/B2C_COMMERCIAL_NOT_READY/);
+  assert.match(server,/b2c_commercial_ready/);
+  assert.match(billing,/Souscription particulier indisponible/);
+  assert.match(withdrawal,/bloquée côté serveur/);
+});
