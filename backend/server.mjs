@@ -1932,7 +1932,7 @@ function routeClassRateLimit(req,config,buckets,metrics,pathname,method){
   const authPath=pathname.startsWith("/api/v1/auth/")||pathname.startsWith("/api/v1/customer/auth/");
   if(!authPath&&method!=="GET"&&method!=="HEAD"&&method!=="OPTIONS"){
     scope="write";limit=Number(config.writeRateLimitPerMinute||120);
-  }else if(method==="GET"&&/(?:analytics|control-tower|customer-profitability|performance-lab|digital-twin|evidence-pack|regulatory)/.test(pathname)){
+  }else if(method==="GET"&&/(?:analytics|control-tower|launch-readiness|customer-profitability|performance-lab|digital-twin|evidence-pack|regulatory)/.test(pathname)){
     scope="heavy_read";limit=Number(config.heavyReadRateLimitPerMinute||60);
   }
   if(!scope||limit<=0)return;
