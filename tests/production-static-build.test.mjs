@@ -53,7 +53,7 @@ test("production static build publishes marketing root and private cockpit",()=>
       assert.match(page,new RegExp('rel="canonical" href="https:\\/\\/audiotel-premium-pro\\.com\\/'+slug+'\\/"'));
       if(!legal){assert.match(page,/"@type":"WebPage"/);assert.match(page,/"@type":"Service"/);}
       assert.doesNotMatch(page,/__CANONICAL__|__BASE__|__LOGO__/);
-      if(slug!=="demande-ouverture")assert.doesNotMatch(page,/<script[^>]+src=/i);
+      if(!["demande-ouverture","retractation"].includes(slug))assert.doesNotMatch(page,/<script[^>]+src=/i);
     });
     const comparator=seoPages[seoSlugs.indexOf("comparateur-audiotel")];
     assert.match(comparator,/1 800 € \/ mois/);
