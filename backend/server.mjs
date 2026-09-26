@@ -134,9 +134,15 @@ export function createBackend(options={}){
         return done(res,metrics,started,"email.dispatch",200,{ok:true,delivery,dunning});
       }
 
+      if(method==="GET"&&pathname==="/api/v1/public/withdrawal/status"){
+        const schemaReady=typeof store.customerWithdrawalFeatureReady==="function"&&await store.customerWithdrawalFeatureReady();
+        return done(res,metrics,started,"public.withdrawal_status",200,{available:config.onlineWithdrawalReady===true&&schemaReady});
+      }
+
       if(method==="POST"&&pathname==="/api/v1/public/withdrawal"){
         requireSameOriginBrowser(req);
-        if(config.onlineWithdrawalReady!==true)return done(res,metrics,started,"public.withdrawal",503,{error:{code:"ONLINE_WITHDRAWAL_UNAVAILABLE"}});
+        const schemaReady=typeof store.customerWithdrawalFeatureReady==="function"&&await store.customerWithdrawalFeatureReady();
+        if(config.onlineWithdrawalReady!==true||!schemaReady)return done(res,metrics,started,"public.withdrawal",503,{error:{code:"ONLINE_WITHDRAWAL_UNAVAILABLE"}});
         const idempotencyKey=String(req.headers["idempotency-key"]||"").trim();
         if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)){const e=new Error("Withdrawal idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
         const body=await readJson(req,config.bodyLimitBytes);
@@ -567,7 +573,8 @@ export function createBackend(options={}){
         const context=await store.customerSessionContext(customerActor);
         requireCustomerPermission(context,"finance.read");
         const billing=await store.customerBillingPreparation(context.tenant_id);
-        return done(res,metrics,started,"customer.billing.status",200,{billing_provider:billingProviderStatus(config),b2c_commercial_ready:config.b2cCommercialReady===true,b2c_readiness:{legal_operator:config.legalOperatorConfigured===true,consumer_mediator:config.consumerMediatorConfigured===true,online_withdrawal:config.onlineWithdrawalReady===true},...billing});
+        const withdrawalReady=config.onlineWithdrawalReady===true&&typeof store.customerWithdrawalFeatureReady==="function"&&await store.customerWithdrawalFeatureReady();
+        return done(res,metrics,started,"customer.billing.status",200,{billing_provider:billingProviderStatus(config),b2c_commercial_ready:config.b2cCommercialReady===true&&withdrawalReady,b2c_readiness:{legal_operator:config.legalOperatorConfigured===true,consumer_mediator:config.consumerMediatorConfigured===true,online_withdrawal:withdrawalReady},...billing});
       }
       if(method==="POST"&&pathname==="/api/v1/customer/billing/checkout-session"){
         requireCustomerCsrf(req,customerActor,config);
@@ -581,8 +588,10 @@ export function createBackend(options={}){
         requireCustomerPermission(context,"billing.manage");
         const billing=await store.customerBillingPreparation(context.tenant_id);
         const provider=billingProviderStatus(config);
-        if(String(billing.tenant?.customer_type||"business")==="individual"&&config.b2cCommercialReady!==true){
-          return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:"B2C_COMMERCIAL_NOT_READY",message:"Consumer checkout is temporarily unavailable until mandatory B2C legal prerequisites and the online withdrawal function are operational."},billing_provider:provider,b2c_readiness:{legal_operator:config.legalOperatorConfigured===true,consumer_mediator:config.consumerMediatorConfigured===true,online_withdrawal:config.onlineWithdrawalReady===true}});
+        const individual=String(billing.tenant?.customer_type||"business")==="individual";
+        const withdrawalReady=!individual||(config.onlineWithdrawalReady===true&&typeof store.customerWithdrawalFeatureReady==="function"&&await store.customerWithdrawalFeatureReady());
+        if(individual&&(config.b2cCommercialReady!==true||!withdrawalReady)){
+          return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:"B2C_COMMERCIAL_NOT_READY",message:"Consumer checkout is temporarily unavailable until mandatory B2C legal prerequisites and the online withdrawal function are operational."},billing_provider:provider,b2c_readiness:{legal_operator:config.legalOperatorConfigured===true,consumer_mediator:config.consumerMediatorConfigured===true,online_withdrawal:withdrawalReady}});
         }
         if(!billing.offer)return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:"NO_ACTIVE_BILLING_OFFER"},billing_provider:provider});
         if(["active","past_due"].includes(String(billing.subscription?.status||"")))return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:"SUBSCRIPTION_ALREADY_EXISTS"},billing_provider:provider});

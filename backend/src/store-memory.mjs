@@ -1103,6 +1103,8 @@ export class MemoryStore{
     if(row.status!=="pending")throw problem(409,"CUSTOMER_INVITATION_NOT_PENDING");
     row.status="revoked";return structuredClone(row);
   }
+  async customerWithdrawalFeatureReady(){return true;}
+
   async createCustomerWithdrawalRequest(input={}){
     const publicId=randomUUID(),submittedAt=new Date().toISOString(),reference="RET-"+publicId.slice(0,8).toUpperCase();
     const row={public_id:publicId,tenant_id:null,first_name:String(input.first_name||""),last_name:String(input.last_name||""),contract_email:String(input.contract_email||""),acknowledgement_email:String(input.acknowledgement_email||""),contract_reference:input.contract_reference||null,contract_details:String(input.contract_details||""),contract_date:input.contract_date||null,legal_version:String(input.legal_version||""),source:"online",request_sha256:String(input.request_sha256||""),requester_ip_sha256:input.requester_ip_sha256||null,user_agent_sha256:input.user_agent_sha256||null,submitted_at:submittedAt,reference};

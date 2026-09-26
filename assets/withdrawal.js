@@ -10,6 +10,7 @@ const backButton=document.getElementById("withdrawal-back-button");
 if(!form||!review||!status||!continueButton||!confirmButton||!backButton)return;
 
 let busy=false;
+let available=false;
 const fields=["first_name","last_name","contract_email","acknowledgement_email","contract_reference","contract_date","contract_details"];
 
 function value(name){
@@ -54,6 +55,7 @@ function payload(){
   };
 }
 function showReview(){
+  if(!available){setStatus("La rétractation en ligne n’est pas disponible pour le moment. Vous pouvez conserver une trace datée de votre demande en écrivant à support@audiotel-premium-pro.com.","error");return;}
   if(!form.reportValidity())return;
   if(value("website"))return;
   const box=review.querySelector("[data-withdrawal-summary]");
@@ -115,6 +117,19 @@ async function submit(){
   }
 }
 
+async function checkAvailability(){
+  continueButton.disabled=true;
+  setStatus("Vérification de la disponibilité de la rétractation en ligne…","pending");
+  try{
+    const response=await fetch(apiBase()+"/public/withdrawal/status",{method:"GET",credentials:"same-origin",cache:"no-store",headers:{"Accept":"application/json"}});
+    const data=await response.json().catch(()=>({}));
+    available=response.ok&&data.available===true;
+  }catch(_error){available=false;}
+  continueButton.disabled=!available;
+  if(available)setStatus("");
+  else setStatus("La rétractation en ligne n’est pas disponible pour le moment. Vous pouvez conserver une trace datée de votre demande en écrivant à support@audiotel-premium-pro.com.","error");
+}
+
 continueButton.addEventListener("click",showReview);
 backButton.addEventListener("click",back);
 confirmButton.addEventListener("click",submit);
@@ -126,4 +141,5 @@ if(contractEmail&&acknowledgement){
     if(!String(acknowledgement.value||"").trim())acknowledgement.value=String(contractEmail.value||"").trim();
   });
 }
+void checkAvailability();
 })();

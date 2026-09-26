@@ -110,8 +110,11 @@ test("online consumer withdrawal is direct, explicit, durable and acknowledged",
   assert.match(html,/Renoncer au contrat ici/);
   assert.match(html,/Confirmer la rétractation/);
   assert.match(html,/acknowledgement_email/);
-  assert.match(client,/\/public\/withdrawal/);
+  assert.match(client,/\/public\/withdrawal\/status/);
+  assert.match(client,/available=response\.ok&&data\.available===true/);
   assert.match(client,/Idempotency-Key/);
+  assert.match(server,/\/api\/v1\/public\/withdrawal\/status/);
+  assert.match(server,/customerWithdrawalFeatureReady/);
   assert.match(server,/\/api\/v1\/public\/withdrawal/);
   assert.match(server,/WITHDRAWAL_CONFIRMATION_REQUIRED/);
   assert.match(server,/requester_ip_sha256/);
