@@ -180,6 +180,7 @@ if(!/ready_for_b2b/.test(launchReadinessSource)||!/ready_for_b2c/.test(launchRea
 if(!/stripeAccountStatus/.test(stripeBillingSource)||!/charges_enabled/.test(stripeBillingSource)||!/payouts_enabled/.test(stripeBillingSource))failures.push("Stripe readiness must verify live account capabilities, not only configured credentials");
 if(!/active_connection_last_health_status/.test(postgresStore)||!/unhealthy/.test(launchReadinessSource))failures.push("operator readiness must consume explicit carrier health evidence when available");
 if(!/\/platform\/launch-readiness/.test(launchReadinessUi)||!/Launch Readiness/.test(launchReadinessUi))failures.push("Control Tower must surface Launch Readiness");
+if(!/data-launch-readiness-export/.test(launchReadinessUi)||!/launch-readiness-/.test(launchReadinessUi))failures.push("Launch Readiness must support a local evidence export");
 if(!/launch-readiness\.js/.test(controlTowerUi))failures.push("Control Tower must lazy-load Launch Readiness");
 
 if(!/CREATE OR REPLACE behavioral object/.test(migrationSafety))failures.push("migration safety must preserve rollback-compatible behavioral objects");
