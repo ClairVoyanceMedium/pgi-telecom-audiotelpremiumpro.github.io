@@ -99,6 +99,13 @@ test("stale resilience evidence and runtime failures remain explicit blockers",(
   assert.equal(result.sections.find(x=>x.key==="runtime").status,"blocked");
 });
 
+test("launch readiness evidence is bound to the exact application release",()=>{
+  const result=evaluateLaunchReadiness(fixture({config:{version:"1.30.7",releaseId:"a".repeat(40)}}));
+  assert.equal(result.application_version,"1.30.7");
+  assert.equal(result.release_id,"a".repeat(40));
+  assert.match(result.generated_at,/T/);
+});
+
 test("launch readiness output never exposes configured secrets",()=>{
   const input=fixture();
   input.config.sessionSecret="session-secret-never-return";
