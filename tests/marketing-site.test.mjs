@@ -10,7 +10,11 @@ const sitemap=fs.readFileSync("sitemap.xml","utf8");
 const cockpit=fs.readFileSync("index.html","utf8");
 const client=fs.readFileSync("client.html","utf8");
 const application=fs.readFileSync("site/seo/demande-ouverture.html","utf8");
-const buildStatic=fs.readFileSync("scripts/build-static.mjs","utf8");\nconst llms=fs.readFileSync("llms.txt","utf8");\nconst llmsFull=fs.readFileSync("llms-full.txt","utf8");\nconst manifest=fs.readFileSync("manifest.webmanifest","utf8");\nconst guide=fs.readFileSync("site/seo/guide-audiotel-sva.html","utf8");
+const buildStatic=fs.readFileSync("scripts/build-static.mjs","utf8");
+const llms=fs.readFileSync("llms.txt","utf8");
+const llmsFull=fs.readFileSync("llms-full.txt","utf8");
+const manifest=fs.readFileSync("manifest.webmanifest","utf8");
+const guide=fs.readFileSync("site/seo/guide-audiotel-sva.html","utf8");
 
 test("public site targets both individuals and professionals",()=>{
   assert.match(html,/AUDIOTEL · SVA · PARTICULIERS · PROFESSIONNELS/);
@@ -101,7 +105,11 @@ test("marketing conversion uses trust and legitimate urgency without fabricated 
 
 test("marketing page exposes structured service data without fabricated social proof",()=>{
   assert.match(html,/application\/ld\+json/);
-  assert.match(html,/"@type":"WebSite"/);\n  assert.match(html,/"@type":"Organization"/);\n  assert.match(html,/"@type":"WebPage"/);\n  assert.match(html,/"@type":"Service"/);\n  assert.match(html,/support@audiotel-premium-pro\\.com/);
+  assert.match(html,/"@type":"WebSite"/);
+  assert.match(html,/"@type":"Organization"/);
+  assert.match(html,/"@type":"WebPage"/);
+  assert.match(html,/"@type":"Service"/);
+  assert.match(html,/support@audiotel-premium-pro\\.com/);
   assert.match(html,/"price":"3\.00"/);
   assert.match(html,/"priceCurrency":"EUR"/);
   assert.match(html,/0,10 € par jour/);
