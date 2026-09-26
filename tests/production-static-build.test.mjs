@@ -21,8 +21,11 @@ test("production static build publishes marketing root and private cockpit",()=>
     const cockpit=fs.readFileSync("dist/cockpit.html","utf8");
     const legacy=fs.readFileSync("dist/site/index.html","utf8");
     const robots=fs.readFileSync("dist/robots.txt","utf8");
-    const sitemap=fs.readFileSync("dist/sitemap.xml","utf8");\n    const llms=fs.readFileSync("dist/llms.txt","utf8");\n    const llmsFull=fs.readFileSync("dist/llms-full.txt","utf8");\n    const indexNowKey=fs.readFileSync("dist/fa0a7deb5d60bdf1260c8174ad8c71db.txt","utf8").trim();
-    const seoSlugs=["audiotel-voyance","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","comparateur-audiotel","guide-audiotel-sva","demande-ouverture","mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","cookies-traceurs","resilier-contrat","retractation"];
+    const sitemap=fs.readFileSync("dist/sitemap.xml","utf8");
+    const llms=fs.readFileSync("dist/llms.txt","utf8");
+    const llmsFull=fs.readFileSync("dist/llms-full.txt","utf8");
+    const indexNowKey=fs.readFileSync("dist/fa0a7deb5d60bdf1260c8174ad8c71db.txt","utf8").trim();
+    const seoSlugs=["audiotel-voyance","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","tarif-numero-sva","numero-surtaxe-08","portabilite-numero-sva","comparateur-audiotel","guide-audiotel-sva","demande-ouverture","mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","cookies-traceurs","resilier-contrat","retractation"];
     const seoPages=seoSlugs.map(slug=>fs.readFileSync("dist/"+slug+"/index.html","utf8"));
 
     assert.match(root,/Pilotez votre activité/);
@@ -35,7 +38,10 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.doesNotMatch(root,/\.\.\/assets\//);
     assert.match(root,/rel="canonical" href="https:\/\/audiotel-premium-pro\.com\/"/);
     assert.match(root,/property="og:url" content="https:\/\/audiotel-premium-pro\.com\/"/);
-    assert.match(root,/"@type":"WebSite"/);\n    assert.match(root,/"@type":"Organization"/);\n    assert.match(root,/"@type":"WebPage"/);\n    assert.match(root,/"@id":"https:\\/\\/audiotel-premium-pro\\.com\\/#service"/);
+    assert.match(root,/"@type":"WebSite"/);
+    assert.match(root,/"@type":"Organization"/);
+    assert.match(root,/"@type":"WebPage"/);
+    assert.match(root,/"@id":"https:\\/\\/audiotel-premium-pro\\.com\\/#service"/);
     assert.match(root,/"logo":"https:\/\/audiotel-premium-pro\.com\/assets\/audiotel-brand-logo-v33\.png"/);
     assert.match(root,/name="twitter:image" content="https:\/\/audiotel-premium-pro\.com\/assets\/audiotel-brand-logo-v33\.png"/);
 
@@ -47,7 +53,13 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.match(robots,/Sitemap: https:\/\/audiotel-premium-pro\.com\/sitemap\.xml/);
     assert.match(sitemap,/<loc>https:\/\/audiotel-premium-pro\.com\/<\/loc>/);
     for(const slug of seoSlugs.filter(x=>x!=="mentions-legales"))assert.match(sitemap,new RegExp("<loc>https:\\/\\/audiotel-premium-pro\\.com\\/"+slug+"\\/<\\/loc>"));
-    assert.doesNotMatch(sitemap,/mentions-legales/);\n    assert.doesNotMatch(sitemap,/client\\.html|cockpit|backend\\/|docs\\//);\n    assert.doesNotMatch(sitemap,/<changefreq>|<priority>/);\n    assert.match(llms,/Audiotel Premium Pro \\| PGI Telecom/);\n    assert.match(llms,/guide-audiotel-sva/);\n    assert.match(llmsFull,/Official French references/);\n    assert.equal(indexNowKey,"fa0a7deb5d60bdf1260c8174ad8c71db");
+    assert.doesNotMatch(sitemap,/mentions-legales/);
+    assert.doesNotMatch(sitemap,/client\\.html|cockpit|backend\\/|docs\\//);
+    assert.doesNotMatch(sitemap,/<changefreq>|<priority>/);
+    assert.match(llms,/Audiotel Premium Pro \\| PGI Telecom/);
+    assert.match(llms,/guide-audiotel-sva/);
+    assert.match(llmsFull,/Official French references/);
+    assert.equal(indexNowKey,"fa0a7deb5d60bdf1260c8174ad8c71db");
     seoPages.forEach((page,index)=>{
       const slug=seoSlugs[index],legal=["mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","cookies-traceurs","resilier-contrat","retractation"].includes(slug);
       assert.match(page,new RegExp('rel="canonical" href="https:\\/\\/audiotel-premium-pro\\.com\\/'+slug+'\\/"'));
@@ -63,7 +75,10 @@ test("production static build publishes marketing root and private cockpit",()=>
     const guide=seoPages[seoSlugs.indexOf("guide-audiotel-sva")];
     assert.match(guide,/Qu’est-ce qu’Audiotel/);
     assert.match(guide,/"@type":"FAQPage"/);
-    assert.match(guide,/"@type":"BreadcrumbList"/);\n    assert.match(guide,/"@type":"Article"/);\n    assert.match(guide,/Arcep — numéros SVA/);\n    assert.match(guide,/economie\\.gouv\\.fr/);
+    assert.match(guide,/"@type":"BreadcrumbList"/);
+    assert.match(guide,/"@type":"Article"/);
+    assert.match(guide,/Arcep — numéros SVA/);
+    assert.match(guide,/economie\\.gouv\\.fr/);
     const application=seoPages[seoSlugs.indexOf("demande-ouverture")];
     assert.match(application,/id="order-form"/);
     assert.match(application,/src="\/site\/site\.js"/);
