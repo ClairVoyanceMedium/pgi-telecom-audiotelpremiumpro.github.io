@@ -51,6 +51,8 @@ export function evaluateLaunchReadiness(input={}){
     schema_version:"pgi-launch-readiness/1",
     generated_at:new Date().toISOString(),
     production_mode:production,
+    application_version:String(config.version||"")||null,
+    release_id:String(config.releaseId||"")||null,
     score:Math.round(100*readyCount/sections.length),
     ready_for_b2b:b2bBlockers.length===0,
     ready_for_b2c:b2cBlockers.length===0,
