@@ -45,7 +45,11 @@ test("registration requires current legal documents and keeps privacy acknowledg
   assert.match(terms,/résiliation à tout moment/i);
   assert.match(terms,/Absence de prorata en cas de résiliation volontaire/);
   assert.match(terms,/Tableaux de bord, appels et données provisoires/);
-  assert.match(terms,/Routage et studio vocal/);\n  assert.match(terms,/Modifications du service numérique B2C/);\n  assert.match(terms,/Coopération, contrôle et audit B2B/);\n  assert.match(terms,/Clause de juridiction entre commerçants/);\n  assert.match(terms,/accord-traitement-donnees/);
+  assert.match(terms,/Routage et studio vocal/);
+  assert.match(terms,/Modifications du service numérique B2C/);
+  assert.match(terms,/Coopération, contrôle et audit B2B/);
+  assert.match(terms,/Clause de juridiction entre commerçants/);
+  assert.match(terms,/accord-traitement-donnees/);
   assert.match(cgu,/Règles particulières aux consommateurs/);
   assert.match(cgu,/Règles particulières aux professionnels/);
   assert.match(server,/customer\/auth\/register/);
