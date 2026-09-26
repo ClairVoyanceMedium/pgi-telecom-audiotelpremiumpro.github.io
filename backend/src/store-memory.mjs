@@ -51,6 +51,7 @@ export class MemoryStore{
     this.adminAlerts=[];
     this.customerExperiencePreferencesMap=new Map();
     this.customerLegalAcceptances=[];
+    this.customerWithdrawalRequests=[];
     this.staffUsers=[{id:1,public_id:randomUUID(),login_name:"local-admin",email:"local-admin@staff.pgi.invalid",display_name:"Local Simulator",role:"admin",enabled:true,password_hash:null,session_version:1,last_login_at:null,created_at:new Date().toISOString()}];
     this.nextStaffUserId=2;
   }
@@ -1102,6 +1103,15 @@ export class MemoryStore{
     if(row.status!=="pending")throw problem(409,"CUSTOMER_INVITATION_NOT_PENDING");
     row.status="revoked";return structuredClone(row);
   }
+  async createCustomerWithdrawalRequest(input={}){
+    const publicId=randomUUID(),submittedAt=new Date().toISOString(),reference="RET-"+publicId.slice(0,8).toUpperCase();
+    const row={public_id:publicId,tenant_id:null,first_name:String(input.first_name||""),last_name:String(input.last_name||""),contract_email:String(input.contract_email||""),acknowledgement_email:String(input.acknowledgement_email||""),contract_reference:input.contract_reference||null,contract_details:String(input.contract_details||""),contract_date:input.contract_date||null,legal_version:String(input.legal_version||""),source:"online",request_sha256:String(input.request_sha256||""),requester_ip_sha256:input.requester_ip_sha256||null,user_agent_sha256:input.user_agent_sha256||null,submitted_at:submittedAt,reference};
+    this.customerWithdrawalRequests.push(row);
+    this.#outbox("consumer.withdrawal.received","customer_withdrawal_request",publicId,{withdrawal_public_id:publicId,reference,first_name:row.first_name,last_name:row.last_name,contract_email:row.contract_email,acknowledgement_email:row.acknowledgement_email,contract_reference:row.contract_reference,contract_details:row.contract_details,contract_date:row.contract_date,submitted_at:submittedAt,legal_version:row.legal_version});
+    this.#audit("consumer.withdrawal.received",publicId,{reference});
+    return structuredClone({public_id:publicId,reference,submitted_at:submittedAt});
+  }
+
   async recordCustomerLegalAcceptance(tenantId,principalId,input={}){
     if(String(input.document_version||"")!=="2026-09-26-b2b-b2c-v3")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
     const row={public_id:randomUUID(),tenant_id:Number(tenantId),customer_principal_id:String(principalId),acceptance_type:String(input.acceptance_type||""),document_version:"2026-09-26-b2b-b2c-v3",documents:structuredClone(input.documents&&typeof input.documents==="object"?input.documents:{}),immediate_performance_requested:input.immediate_performance_requested===true,evidence:structuredClone(input.evidence&&typeof input.evidence==="object"?input.evidence:{}),accepted_at:new Date().toISOString()};
