@@ -28,6 +28,8 @@ const files=[
   "assets/client-portal-api.js",
   "assets/client-portal.js",
   "assets/client-billing.js",
+  "assets/withdrawal.js",
+  "assets/withdrawal.css",
   "assets/customer-email-verification.js",
   "assets/client-live-finance.js",
   "assets/client-live-finance.css",

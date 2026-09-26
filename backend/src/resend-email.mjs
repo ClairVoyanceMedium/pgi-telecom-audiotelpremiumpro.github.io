@@ -260,6 +260,39 @@ export function buildTransactionalMessage(config,templateKey,data={}){
       paragraphs:["La résiliation de votre abonnement Audiotel Premium Pro a été enregistrée.","Votre compte n’est pas supprimé par cet email. Les conditions de fin de service restent celles affichées dans votre espace client."],
       cta:{label:"Consulter mon espace",url:portalUrl}
     },
+    withdrawal_received:{
+      subject:"Accusé de réception de votre rétractation Audiotel Premium Pro",
+      title:"Rétractation reçue",
+      lead:greeting,
+      paragraphs:[
+        "Votre déclaration de rétractation a été reçue et enregistrée.",
+        safeDetail("Référence de la déclaration",data.reference),
+        safeDetail("Nom",([data.first_name,data.last_name].filter(Boolean).join(" "))),
+        safeDetail("Adresse email utilisée pour le contrat",data.contract_email),
+        safeDetail("Contrat ou service concerné",data.contract_details),
+        safeDetail("Référence du contrat ou de la commande",data.contract_reference),
+        safeDetail("Date de conclusion du contrat",data.contract_date),
+        safeDetail("Adresse choisie pour cet accusé",data.acknowledgement_email),
+        safeDetail("Date et heure de la déclaration",data.submitted_at)
+      ].filter(Boolean),
+      foot:"Conservez cet accusé de réception. Le traitement administratif de votre demande et, le cas échéant, les conséquences financières sont déterminés selon les règles légales et contractuelles applicables."
+    },
+    withdrawal_internal:{
+      subject:"Rétractation B2C reçue — traitement requis",
+      title:"Nouvelle déclaration de rétractation",
+      lead:"Une déclaration de rétractation en ligne vient d’être enregistrée.",
+      paragraphs:[
+        safeDetail("Référence",data.reference),
+        safeDetail("Nom",([data.first_name,data.last_name].filter(Boolean).join(" "))),
+        safeDetail("Email du contrat",data.contract_email),
+        safeDetail("Email d’accusé",data.acknowledgement_email),
+        safeDetail("Contrat / service",data.contract_details),
+        safeDetail("Référence contrat",data.contract_reference),
+        safeDetail("Date du contrat",data.contract_date),
+        safeDetail("Reçue le",data.submitted_at)
+      ].filter(Boolean),
+      foot:"Vérifier le contrat, l’état d’exécution et les suites de remboursement ou de facturation proportionnelle éventuellement applicables."
+    },
     payout_available:{
       subject:"Votre reversement Audiotel Premium Pro est disponible",
       title:"Reversement disponible",

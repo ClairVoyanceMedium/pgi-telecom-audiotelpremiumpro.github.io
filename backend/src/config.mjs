@@ -28,12 +28,12 @@ export function loadConfig(env=process.env){
     if(mediatorUrl.protocol!=="https:"||mediatorUrl.username||mediatorUrl.password)throw new Error("PGI_CONSUMER_MEDIATOR_URL must be HTTPS");
     consumerMediatorConfigured=consumerMediatorName.length>=2;
   }
-  // Fail closed: this becomes true only when the first-party online withdrawal flow is implemented and verified.
-  const onlineWithdrawalReady=false;
-  const b2cCommercialReady=b2cCommercialRequested&&legalOperatorConfigured&&consumerMediatorConfigured&&onlineWithdrawalReady;
   const emailVerificationEnabled=booleanValue(env.PGI_EMAIL_VERIFICATION_ENABLED,false,"PGI_EMAIL_VERIFICATION_ENABLED");
   const transactionalEmailEnabled=booleanValue(env.PGI_TRANSACTIONAL_EMAIL_ENABLED,false,"PGI_TRANSACTIONAL_EMAIL_ENABLED");
   const resendApiKey=String(env.RESEND_API_KEY||env.PGI_RESEND_API_KEY||"").trim();
+  // The public withdrawal function is operational only when its durable acknowledgement channel is enabled.
+  const onlineWithdrawalReady=transactionalEmailEnabled&&resendApiKey.startsWith("re_")&&resendApiKey.length>=12;
+  const b2cCommercialReady=b2cCommercialRequested&&legalOperatorConfigured&&consumerMediatorConfigured&&onlineWithdrawalReady;
   const resendWebhookSecret=String(env.RESEND_WEBHOOK_SECRET||"").trim();
   const transactionalDomain=String(env.PGI_TRANSACTIONAL_DOMAIN||"audiotel-premium-pro.com").trim().toLowerCase();
   const transactionalReplyTo=String(env.PGI_TRANSACTIONAL_REPLY_TO||"contact.audiotel.premium.pro@gmail.com").trim().toLowerCase();

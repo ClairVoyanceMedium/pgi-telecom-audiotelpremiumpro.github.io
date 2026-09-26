@@ -90,11 +90,34 @@ test("consumer paid checkout stays fail-closed until B2C prerequisites are genui
   const billing=read("assets/client-billing.js");
   const withdrawal=read("site/seo/retractation.html");
   assert.match(config,/PGI_B2C_COMMERCIAL_READY/);
-  assert.match(config,/const onlineWithdrawalReady=false/);
+  assert.match(config,/onlineWithdrawalReady=transactionalEmailEnabled&&resendApiKey/);
   assert.match(config,/b2cCommercialReady=b2cCommercialRequested&&legalOperatorConfigured&&consumerMediatorConfigured&&onlineWithdrawalReady/);
   assert.match(postgres,/AS customer_type/);
   assert.match(server,/B2C_COMMERCIAL_NOT_READY/);
   assert.match(server,/b2c_commercial_ready/);
   assert.match(billing,/Souscription particulier indisponible/);
-  assert.match(withdrawal,/bloquée côté serveur/);
+  assert.match(withdrawal,/fonctionnalité en ligne de rétractation est mise à disposition/);
+});
+
+test("online consumer withdrawal is direct, explicit, durable and acknowledged",()=>{
+  const html=read("site/seo/retractation.html");
+  const client=read("assets/withdrawal.js");
+  const server=read("backend/server.mjs");
+  const postgres=read("backend/src/store-postgres.mjs");
+  const dispatcher=read("backend/src/email-dispatcher.mjs");
+  const email=read("backend/src/resend-email.mjs");
+  const migration=read("database/migrations/060_customer_withdrawal_requests.sql");
+  assert.match(html,/Renoncer au contrat ici/);
+  assert.match(html,/Confirmer la rétractation/);
+  assert.match(html,/acknowledgement_email/);
+  assert.match(client,/\/public\/withdrawal/);
+  assert.match(client,/Idempotency-Key/);
+  assert.match(server,/\/api\/v1\/public\/withdrawal/);
+  assert.match(server,/WITHDRAWAL_CONFIRMATION_REQUIRED/);
+  assert.match(server,/requester_ip_sha256/);
+  assert.match(postgres,/consumer\.withdrawal\.received/);
+  assert.match(dispatcher,/withdrawal_received/);
+  assert.match(email,/Date et heure de la déclaration/);
+  assert.match(migration,/CREATE TABLE customer_withdrawal_requests/);
+  assert.doesNotMatch(migration,/requester_ip\s+text/);
 });

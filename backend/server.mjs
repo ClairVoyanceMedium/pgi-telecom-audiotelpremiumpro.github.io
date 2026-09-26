@@ -15,7 +15,7 @@ import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebA
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
 import {stripeProviderState,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent} from "./src/stripe-billing.mjs";
-import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,forwardInboundEmailToInternal} from "./src/resend-email.mjs";
+import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
 
@@ -132,6 +132,37 @@ export function createBackend(options={}){
         const delivery=await drainTransactionalEmails({store,config,limit:100});
         const dunning=await drainDunningTransactionalEmails({store,config,limit:100});
         return done(res,metrics,started,"email.dispatch",200,{ok:true,delivery,dunning});
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/public/withdrawal"){
+        requireSameOriginBrowser(req);
+        if(config.onlineWithdrawalReady!==true)return done(res,metrics,started,"public.withdrawal",503,{error:{code:"ONLINE_WITHDRAWAL_UNAVAILABLE"}});
+        const idempotencyKey=String(req.headers["idempotency-key"]||"").trim();
+        if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)){const e=new Error("Withdrawal idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
+        const body=await readJson(req,config.bodyLimitBytes);
+        if(String(body.website||"").trim()){const e=new Error("Invalid withdrawal request");e.status=400;e.code="WITHDRAWAL_REQUEST_REJECTED";throw e;}
+        if(body.confirmed!==true){const e=new Error("Withdrawal confirmation required");e.status=400;e.code="WITHDRAWAL_CONFIRMATION_REQUIRED";throw e;}
+        if(String(body.legal_version||"")!=="2026-09-26-b2b-b2c-v3"){const e=new Error("Legal document version outdated");e.status=409;e.code="LEGAL_DOCUMENT_VERSION_OUTDATED";throw e;}
+        const firstName=String(body.first_name||"").trim(),lastName=String(body.last_name||"").trim();
+        if(firstName.length<1||firstName.length>80||lastName.length<1||lastName.length>80){const e=new Error("Name required");e.status=400;e.code="WITHDRAWAL_NAME_REQUIRED";throw e;}
+        let contractEmail,acknowledgementEmail;
+        try{
+          contractEmail=normalizeEmail(body.contract_email);
+          acknowledgementEmail=normalizeEmail(body.acknowledgement_email||body.contract_email);
+        }catch(_error){const e=new Error("Invalid email");e.status=400;e.code="WITHDRAWAL_EMAIL_INVALID";throw e;}
+        const contractReference=String(body.contract_reference||"").trim();
+        const contractDetails=String(body.contract_details||"").trim();
+        const contractDate=String(body.contract_date||"").trim();
+        if(contractReference.length>180){const e=new Error("Contract reference too long");e.status=400;e.code="WITHDRAWAL_REFERENCE_INVALID";throw e;}
+        if(contractDetails.length<3||contractDetails.length>1200){const e=new Error("Contract details required");e.status=400;e.code="WITHDRAWAL_CONTRACT_DETAILS_REQUIRED";throw e;}
+        if(contractDate&&(!/^\d{4}-\d{2}-\d{2}$/.test(contractDate)||!Number.isFinite(Date.parse(contractDate+"T00:00:00Z")))){const e=new Error("Invalid contract date");e.status=400;e.code="WITHDRAWAL_CONTRACT_DATE_INVALID";throw e;}
+        const declaration={first_name:firstName,last_name:lastName,contract_email:contractEmail,acknowledgement_email:acknowledgementEmail,contract_reference:contractReference||null,contract_date:contractDate||null,contract_details:contractDetails,legal_version:"2026-09-26-b2b-b2c-v3",source:"online"};
+        const requestSha256=createHash("sha256").update(JSON.stringify(declaration)).digest("hex");
+        const evidenceKey=config.sessionSecret||config.callerHashKey||"pgi-withdrawal-simulator";
+        const ip=clientIp(req,config.trustProxy),userAgent=String(req.headers["user-agent"]||"");
+        const evidence={request_sha256:requestSha256,requester_ip_sha256:ip?createHmac("sha256",evidenceKey).update(ip).digest("hex"):null,user_agent_sha256:userAgent?createHmac("sha256",evidenceKey).update(userAgent).digest("hex"):null};
+        const result=await store.idempotent(idempotencyKey,"public.withdrawal.create",declaration,()=>store.createCustomerWithdrawalRequest({...declaration,...evidence}));
+        return done(res,metrics,started,"public.withdrawal",201,{reference:result.value.reference,submitted_at:result.value.submitted_at,acknowledgement_delivery:"queued",replayed:result.replayed});
       }
 
       if(method==="POST"&&pathname==="/api/v1/auth/login"){
