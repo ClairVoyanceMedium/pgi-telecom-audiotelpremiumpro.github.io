@@ -3,7 +3,7 @@ import {emailHash,normalizeEmail,sendTransactionalEmail} from "./resend-email.mj
 const OUTBOX_TYPES=[
   "customer.self_registered","tenant.status","subscription.changed",
   "portability.requested","service.incident.created","service.incident.note","service.incident.changed",
-  "tenant.revenue_distribution.updated"
+  "tenant.revenue_distribution.updated","consumer.withdrawal.received"
 ];
 const TERMINAL_SEND_STATES=new Set(["accepted","sent","delivered","delayed","clicked","bounced","complained","suppressed"]);
 const EMAIL_RE=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -157,6 +157,15 @@ async function messagesForEvent(store,config,event){
     return [
       customerEmail&&msg("customer",customerEmail,customerName,"portability_received","support",event,base),
       internal&&msg("internal",internal,"","portability_internal","support",event,base)
+    ].filter(Boolean);
+  }
+  if(event.event_type==="consumer.withdrawal.received"){
+    const acknowledgement=validEmail(p.acknowledgement_email)?p.acknowledgement_email:null;
+    const fullName=[p.first_name,p.last_name].map(x=>String(x||"").trim()).filter(Boolean).join(" ");
+    const withdrawalData={name:fullName,reference:p.reference,first_name:p.first_name,last_name:p.last_name,contract_email:p.contract_email,acknowledgement_email:p.acknowledgement_email,contract_reference:p.contract_reference,contract_details:p.contract_details,contract_date:p.contract_date,submitted_at:p.submitted_at,legal_version:p.legal_version,locale:"fr-FR"};
+    return [
+      acknowledgement&&msg("customer",acknowledgement,fullName,"withdrawal_received","support",event,withdrawalData),
+      internal&&msg("internal",internal,"","withdrawal_internal","support",event,withdrawalData)
     ].filter(Boolean);
   }
   if(event.event_type==="service.incident.created"){
