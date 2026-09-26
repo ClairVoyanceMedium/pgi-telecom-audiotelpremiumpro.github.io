@@ -83,6 +83,26 @@ test("build publishes all legal routes and injects global legal navigation",()=>
   assert.match(build,/injectLegalNavigation/);
 });
 
+test("analytics and CRM tracking remain consent-gated and legally disclosed",()=>{
+  const tracking=read("assets/tracking.js");
+  const privacy=read("site/seo/confidentialite.html");
+  const cookies=read("site/seo/cookies-traceurs.html");
+  const server=read("backend/server.mjs");
+  assert.match(tracking,/analytics_storage:"denied"/);
+  assert.match(tracking,/Tout refuser/);
+  assert.match(tracking,/Tout accepter/);
+  assert.match(tracking,/if\(!consent\?\.analytics&&!consent\?\.marketing\)return\{\}/);
+  assert.match(tracking,/sessionStorage\.removeItem\(ATTR_KEY\)/);
+  assert.match(privacy,/HubSpot/);
+  assert.match(privacy,/Google Analytics/);
+  assert.match(privacy,/Microsoft Clarity/);
+  assert.match(cookies,/Google Analytics 4/);
+  assert.match(cookies,/suivi comportemental HubSpot/);
+  assert.match(server,/\/api\/v1\/public\/integrations/);
+  assert.match(server,/PUBLIC_ACQUISITION_EVENTS/);
+  assert.doesNotMatch(server,/hubspotPrivateAppToken.*public\.integrations/s);
+});
+
 test("consumer paid checkout stays fail-closed until B2C prerequisites are genuinely operational",()=>{
   const config=read("backend/src/config.mjs");
   const postgres=read("backend/src/store-postgres.mjs");
