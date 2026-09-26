@@ -164,7 +164,7 @@ async function messagesForEvent(store,config,event){
     const fullName=[p.first_name,p.last_name].map(x=>String(x||"").trim()).filter(Boolean).join(" ");
     const withdrawalData={name:fullName,reference:p.reference,first_name:p.first_name,last_name:p.last_name,contract_email:p.contract_email,acknowledgement_email:p.acknowledgement_email,contract_reference:p.contract_reference,contract_details:p.contract_details,contract_date:p.contract_date,submitted_at:p.submitted_at,legal_version:p.legal_version,locale:"fr-FR"};
     return [
-      acknowledgement&&msg("customer",acknowledgement,fullName,"withdrawal_received","support",event,withdrawalData),
+      acknowledgement&&msg("withdrawal_recipient",acknowledgement,fullName,"withdrawal_received","support",event,withdrawalData),
       internal&&msg("internal",internal,"","withdrawal_internal","support",event,withdrawalData)
     ].filter(Boolean);
   }
