@@ -134,6 +134,29 @@ export function createBackend(options={}){
         return done(res,metrics,started,"email.dispatch",200,{ok:true,delivery,dunning});
       }
 
+      if(method==="GET"&&pathname==="/api/v1/public/integrations"){
+        return done(res,metrics,started,"public.integrations",200,{
+          first_party_analytics_enabled:config.firstPartyAnalyticsEnabled===true,
+          ga4_enabled:Boolean(config.ga4MeasurementId),
+          ga4_measurement_id:config.ga4MeasurementId||null,
+          clarity_enabled:Boolean(config.clarityProjectId),
+          clarity_project_id:config.clarityProjectId||null,
+          hubspot_tracking_enabled:config.hubspotTrackingEnabled===true&&Boolean(config.hubspotPortalId),
+          hubspot_portal_id:config.hubspotPortalId||null,
+          hubspot_region:config.hubspotRegion||"eu1"
+        },{"Cache-Control":"public, max-age=300"});
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/public/acquisition/event"){
+        requireSameOriginBrowser(req);
+        if(config.firstPartyAnalyticsEnabled!==true||typeof store.recordAcquisitionEvent!=="function")return done(res,metrics,started,"public.acquisition_event",404,{error:{code:"ACQUISITION_ANALYTICS_DISABLED"}});
+        const body=await readJson(req,Math.min(config.bodyLimitBytes,16384));
+        if(body.consent_analytics!==true)return done(res,metrics,started,"public.acquisition_event",202,{accepted:false,reason:"analytics_consent_required"});
+        const normalized=normalizePublicAcquisitionEvent(body);
+        const saved=await store.recordAcquisitionEvent(normalized);
+        return done(res,metrics,started,"public.acquisition_event",202,{accepted:true,event_id:saved?.public_id||null,occurred_at:saved?.occurred_at||null});
+      }
+
       if(method==="GET"&&pathname==="/api/v1/public/withdrawal/status"){
         const schemaReady=typeof store.customerWithdrawalFeatureReady==="function"&&await store.customerWithdrawalFeatureReady();
         return done(res,metrics,started,"public.withdrawal_status",200,{available:config.onlineWithdrawalReady===true&&schemaReady});
@@ -1749,6 +1772,42 @@ function authorizeMachineEndpoint(req,config){
   authorizeIngest(req,config);
 }
 function isLoopback(ip){return ip==="127.0.0.1"||ip==="::1"||ip==="::ffff:127.0.0.1";}
+const PUBLIC_ACQUISITION_EVENTS=new Set(["page_view","cta_open_application","cta_open_comparator","application_intent","registration_submit","savings_calculated"]);
+function normalizePublicAcquisitionEvent(body={}){
+  const clean=(value,max=180)=>String(value||"").replace(/[\u0000-\u001f\u007f]/g," ").trim().slice(0,max);
+  const eventName=clean(body.event_name,80).toLowerCase();
+  if(!PUBLIC_ACQUISITION_EVENTS.has(eventName)){const e=new Error("Unsupported acquisition event");e.status=400;e.code="ACQUISITION_EVENT_INVALID";throw e;}
+  const sessionId=clean(body.session_id,120);
+  if(sessionId&&!/^[A-Za-z0-9._-]{8,120}$/.test(sessionId)){const e=new Error("Invalid analytics session");e.status=400;e.code="ACQUISITION_SESSION_INVALID";throw e;}
+  const path=clean(body.path,300);
+  if(path&&(!path.startsWith("/")||path.includes("?")||path.includes("#"))){const e=new Error("Invalid analytics path");e.status=400;e.code="ACQUISITION_PATH_INVALID";throw e;}
+  const referrerHost=clean(body.referrer_host,180).toLowerCase();
+  if(referrerHost&&!/^[a-z0-9.-]{1,180}$/i.test(referrerHost)){const e=new Error("Invalid referrer host");e.status=400;e.code="ACQUISITION_REFERRER_INVALID";throw e;}
+  const metadata={};
+  const rawMeta=body.metadata&&typeof body.metadata==="object"&&!Array.isArray(body.metadata)?body.metadata:{};
+  const allowedMeta={
+    page_view:[],
+    cta_open_application:["placement"],
+    cta_open_comparator:["placement"],
+    application_intent:["account_type"],
+    registration_submit:["account_type"],
+    savings_calculated:["current_monthly_cost"]
+  }[eventName]||[];
+  for(const key of allowedMeta){
+    const value=rawMeta[key];
+    if(key==="current_monthly_cost"){
+      const n=Number(value);if(Number.isFinite(n)&&n>=0&&n<=1000000)metadata[key]=Math.round(n*100)/100;
+    }else{
+      const v=clean(value,120);if(v)metadata[key]=v;
+    }
+  }
+  return {
+    event_name:eventName,session_id:sessionId||null,path:path||null,referrer_host:referrerHost||null,
+    source:clean(body.source),medium:clean(body.medium),campaign:clean(body.campaign),term:clean(body.term),content:clean(body.content),
+    consent_analytics:true,consent_marketing:body.consent_marketing===true,metadata
+  };
+}
+
 function requireSameOriginBrowser(req){
   const site=String(req.headers["sec-fetch-site"]||"").toLowerCase();
   if(site==="cross-site"){

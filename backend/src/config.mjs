@@ -62,6 +62,24 @@ export function loadConfig(env=process.env){
     env.VERCEL==="1",
     "PGI_PROTECT_MACHINE_ENDPOINTS"
   );
+  const ga4MeasurementId=String(env.PGI_GA4_MEASUREMENT_ID||"").trim().toUpperCase();
+  const clarityProjectId=String(env.PGI_CLARITY_PROJECT_ID||"").trim();
+  const firstPartyAnalyticsEnabled=booleanValue(env.PGI_FIRST_PARTY_ANALYTICS_ENABLED,true,"PGI_FIRST_PARTY_ANALYTICS_ENABLED");
+  const hubspotPortalId=String(env.PGI_HUBSPOT_PORTAL_ID||"149417663").trim();
+  const hubspotRegion=String(env.PGI_HUBSPOT_REGION||"eu1").trim().toLowerCase();
+  const hubspotTrackingEnabled=booleanValue(env.PGI_HUBSPOT_TRACKING_ENABLED,true,"PGI_HUBSPOT_TRACKING_ENABLED");
+  const hubspotPrivateAppToken=String(env.PGI_HUBSPOT_PRIVATE_APP_TOKEN||"").trim();
+  const hubspotCrmEnabled=booleanValue(env.PGI_HUBSPOT_CRM_ENABLED,Boolean(hubspotPrivateAppToken),"PGI_HUBSPOT_CRM_ENABLED");
+  const hubspotOwnerId=String(env.PGI_HUBSPOT_OWNER_ID||"99851906").trim();
+  const hubspotCompanySyncEnabled=booleanValue(env.PGI_HUBSPOT_COMPANY_SYNC_ENABLED,true,"PGI_HUBSPOT_COMPANY_SYNC_ENABLED");
+  const hubspotTaskSyncEnabled=booleanValue(env.PGI_HUBSPOT_TASK_SYNC_ENABLED,true,"PGI_HUBSPOT_TASK_SYNC_ENABLED");
+  const hubspotDealAmountEnabled=booleanValue(env.PGI_HUBSPOT_DEAL_AMOUNT_ENABLED,false,"PGI_HUBSPOT_DEAL_AMOUNT_ENABLED");
+  const hubspotPipelineId=String(env.PGI_HUBSPOT_PIPELINE_ID||"default").trim();
+  const hubspotStageNew=String(env.PGI_HUBSPOT_STAGE_NEW||"appointmentscheduled").trim();
+  const hubspotStageQualified=String(env.PGI_HUBSPOT_STAGE_QUALIFIED||"qualifiedtobuy").trim();
+  const hubspotStageReady=String(env.PGI_HUBSPOT_STAGE_READY||"contractsent").trim();
+  const hubspotStageActive=String(env.PGI_HUBSPOT_STAGE_ACTIVE||"closedwon").trim();
+  const hubspotStageLost=String(env.PGI_HUBSPOT_STAGE_LOST||"closedlost").trim();
   const googleClientId=String(env.PGI_GOOGLE_CLIENT_ID||"").trim();
   const webauthnRpId=String(env.PGI_WEBAUTHN_RP_ID||"").trim().toLowerCase();
   const webauthnOrigin=String(env.PGI_WEBAUTHN_ORIGIN||"").trim();
@@ -71,7 +89,16 @@ export function loadConfig(env=process.env){
     if(parsed.protocol!=="https:"||parsed.origin!==webauthnOrigin||parsed.username||parsed.password)throw new Error("PGI_WEBAUTHN_ORIGIN must be an exact HTTPS origin");
     if(parsed.hostname!==webauthnRpId&&!parsed.hostname.endsWith("."+webauthnRpId))throw new Error("PGI_WEBAUTHN_RP_ID must match the origin host or a parent domain");
   }
-  if(!["disable","require"].includes(databaseSsl))throw new Error("PGI_DATABASE_SSL must be disable or require");
+  if(ga4MeasurementId&&!/^G-[A-Z0-9]+$/.test(ga4MeasurementId))throw new Error("PGI_GA4_MEASUREMENT_ID invalid");
+  if(clarityProjectId&&!/^[A-Za-z0-9]{6,40}$/.test(clarityProjectId))throw new Error("PGI_CLARITY_PROJECT_ID invalid");
+  if(hubspotPortalId&&!/^\d{4,20}$/.test(hubspotPortalId))throw new Error("PGI_HUBSPOT_PORTAL_ID invalid");
+  if(!["eu1","na1"].includes(hubspotRegion))throw new Error("PGI_HUBSPOT_REGION invalid");
+  if(hubspotCrmEnabled&&hubspotPrivateAppToken.length<20)throw new Error("PGI_HUBSPOT_CRM_ENABLED requires PGI_HUBSPOT_PRIVATE_APP_TOKEN");
+  if(hubspotOwnerId&&!/^\d{1,20}$/.test(hubspotOwnerId))throw new Error("PGI_HUBSPOT_OWNER_ID invalid");
+  for(const [name,value] of Object.entries({PGI_HUBSPOT_PIPELINE_ID:hubspotPipelineId,PGI_HUBSPOT_STAGE_NEW:hubspotStageNew,PGI_HUBSPOT_STAGE_QUALIFIED:hubspotStageQualified,PGI_HUBSPOT_STAGE_READY:hubspotStageReady,PGI_HUBSPOT_STAGE_ACTIVE:hubspotStageActive,PGI_HUBSPOT_STAGE_LOST:hubspotStageLost})){
+    if(!/^[A-Za-z0-9_.-]{1,120}$/.test(value))throw new Error(name+" invalid");
+  }
+    if(!["disable","require"].includes(databaseSsl))throw new Error("PGI_DATABASE_SSL must be disable or require");
   if(publicBaseUrl){
     let parsed;try{parsed=new URL(publicBaseUrl);}catch{throw new Error("PGI_PUBLIC_BASE_URL invalid");}
     if(parsed.protocol!=="https:"||parsed.origin!==publicBaseUrl||parsed.username||parsed.password)throw new Error("PGI_PUBLIC_BASE_URL must be an exact HTTPS origin");
@@ -111,7 +138,7 @@ export function loadConfig(env=process.env){
   }
 
   return Object.freeze({
-    mode,authMode,host,port,releaseId,staticDir,trustProxy,protectMachineEndpoints,googleClientId,webauthnRpId,webauthnOrigin,
+    mode,authMode,host,port,releaseId,staticDir,trustProxy,protectMachineEndpoints,ga4MeasurementId,clarityProjectId,firstPartyAnalyticsEnabled,hubspotPortalId,hubspotRegion,hubspotTrackingEnabled,hubspotPrivateAppToken,hubspotCrmEnabled,hubspotOwnerId,hubspotCompanySyncEnabled,hubspotTaskSyncEnabled,hubspotDealAmountEnabled,hubspotPipelineId,hubspotStageNew,hubspotStageQualified,hubspotStageReady,hubspotStageActive,hubspotStageLost,googleClientId,webauthnRpId,webauthnOrigin,
     sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,stripeSecretKey,stripeWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,b2cCommercialRequested,b2cCommercialReady,legalOperatorConfigured,consumerMediatorConfigured,onlineWithdrawalReady,emailVerificationEnabled,transactionalEmailEnabled,resendApiKey,resendWebhookSecret,transactionalDomain,transactionalReplyTo,internalNotificationEmail,cronSecret,emailVerificationPepper,transactionalFromEmail,transactionalFromName,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),
@@ -122,6 +149,8 @@ export function loadConfig(env=process.env){
     stripeWebhookToleranceSeconds:integer(env.PGI_STRIPE_WEBHOOK_TOLERANCE_SECONDS,300,60,900,"PGI_STRIPE_WEBHOOK_TOLERANCE_SECONDS"),
     resendWebhookToleranceSeconds:integer(env.PGI_RESEND_WEBHOOK_TOLERANCE_SECONDS,300,60,900,"PGI_RESEND_WEBHOOK_TOLERANCE_SECONDS"),
     resendTimeoutMs:integer(env.PGI_RESEND_TIMEOUT_MS,8000,1000,15000,"PGI_RESEND_TIMEOUT_MS"),
+    hubspotTimeoutMs:integer(env.PGI_HUBSPOT_TIMEOUT_MS,8000,1000,15000,"PGI_HUBSPOT_TIMEOUT_MS"),
+    subscriptionPriceMonthlyEur:number(env.PGI_SUBSCRIPTION_PRICE_MONTHLY_EUR,3,0,100000,"PGI_SUBSCRIPTION_PRICE_MONTHLY_EUR"),
     emailVerificationTtlMinutes:integer(env.PGI_EMAIL_VERIFICATION_TTL_MINUTES,10,5,60,"PGI_EMAIL_VERIFICATION_TTL_MINUTES"),
     emailVerificationMaxAttempts:integer(env.PGI_EMAIL_VERIFICATION_MAX_ATTEMPTS,5,3,10,"PGI_EMAIL_VERIFICATION_MAX_ATTEMPTS"),
     emailVerificationResendSeconds:integer(env.PGI_EMAIL_VERIFICATION_RESEND_SECONDS,60,30,600,"PGI_EMAIL_VERIFICATION_RESEND_SECONDS"),

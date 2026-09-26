@@ -81,6 +81,25 @@ function consumptionDiff(stored,current){
   return out;
 }
 
+function cleanAcquisitionValue(value,max=180){
+  return String(value||"").replace(/[\u0000-\u001f\u007f]/g," ").trim().slice(0,max);
+}
+function normalizeAcquisitionInput(input={}){
+  const path=cleanAcquisitionValue(input.landing_path,300);
+  const ref=cleanAcquisitionValue(input.referrer_host,180).toLowerCase();
+  const session=cleanAcquisitionValue(input.acquisition_session_id,120);
+  return {
+    source:cleanAcquisitionValue(input.utm_source),
+    medium:cleanAcquisitionValue(input.utm_medium),
+    campaign:cleanAcquisitionValue(input.utm_campaign),
+    term:cleanAcquisitionValue(input.utm_term),
+    content:cleanAcquisitionValue(input.utm_content),
+    landing_path:path.startsWith("/")?path.split("?")[0]:null,
+    referrer_host:/^[a-z0-9.-]{1,180}$/i.test(ref)?ref:null,
+    session_hash:session?createHash("sha256").update(session).digest("hex"):null
+  };
+}
+
 export class PostgresStore{
   constructor(sql,config,eventBus,readSql=null){
     this.sql=sql;
@@ -3146,6 +3165,28 @@ export class PostgresStore{
     return result;
   }
 
+  async recordAcquisitionEvent(input={}){
+    const eventName=String(input.event_name||"").trim().toLowerCase();
+    if(!/^[a-z0-9_.-]{2,80}$/.test(eventName))throw problem(400,"ACQUISITION_EVENT_INVALID");
+    const acquisition=normalizeAcquisitionInput({
+      acquisition_session_id:input.session_id,
+      landing_path:input.path,
+      referrer_host:input.referrer_host,
+      utm_source:input.source,
+      utm_medium:input.medium,
+      utm_campaign:input.campaign,
+      utm_term:input.term,
+      utm_content:input.content
+    });
+    const metadata=input.metadata&&typeof input.metadata==="object"&&!Array.isArray(input.metadata)?input.metadata:{};
+    const rows=await this.sql.unsafe(
+      "INSERT INTO acquisition_events(event_name,tenant_id,session_hash,path,referrer_host,source,medium,campaign,term,content,consent_analytics,consent_marketing,metadata)"+
+      " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb) RETURNING public_id::text,occurred_at",
+      [eventName,input.tenant_id==null?null:Number(input.tenant_id),acquisition.session_hash,acquisition.landing_path,acquisition.referrer_host,acquisition.source,acquisition.medium,acquisition.campaign,acquisition.term,acquisition.content,input.consent_analytics===true,input.consent_marketing===true,JSON.stringify(metadata)]
+    );
+    return rows[0];
+  }
+
   async selfServiceRegister(input={},passwordHash){
     const firstName=String(input.first_name||"").trim().slice(0,80);
     const lastName=String(input.last_name||"").trim().slice(0,80);
@@ -3161,6 +3202,7 @@ export class PostgresStore{
     const acquisitionSource=String(input.acquisition_source||"")==="public_marketing_site"?"public_marketing_site":"self_service";
     const serviceIntentInput=String(input.service_intent||"").trim().toLowerCase();
     const serviceIntent=["new_number","portability","advice"].includes(serviceIntentInput)?serviceIntentInput:"";
+    const acquisition=normalizeAcquisitionInput(input);
     const authorityConfirmed=input.authority_confirmed===true;
     const legalAccepted=input.legal_terms_accepted===true,privacyAcknowledged=input.privacy_notice_acknowledged===true,legalVersion=String(input.legal_version||"").trim();
     if(firstName.length<1||lastName.length<1)throw problem(400,"CUSTOMER_NAME_REQUIRED");
@@ -3212,7 +3254,7 @@ export class PostgresStore{
       await tx.unsafe(
         "INSERT INTO tenant_kyc_profiles(tenant_id,entity_type,registration_country,registration_number,status,metadata)"+
         " VALUES($1,$2,$3,$4,'pending',$5::jsonb) ON CONFLICT(tenant_id) DO NOTHING",
-        [tenant.id,accountType==="individual"?"individual":"company",country,registrationNumber||null,JSON.stringify({source:acquisitionSource,registration_optional:true,account_type:accountType,service_intent:serviceIntent||null})]
+        [tenant.id,accountType==="individual"?"individual":"company",country,registrationNumber||null,JSON.stringify({source:acquisitionSource,registration_optional:true,account_type:accountType,service_intent:serviceIntent||null,acquisition})]
       );
       await tx.unsafe(
         "INSERT INTO tenant_market_profiles(tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region)"+
@@ -3223,7 +3265,7 @@ export class PostgresStore{
       let principal=(await tx.unsafe(
         "INSERT INTO customer_principals(email,display_name,status,preferred_locale,timezone,email_verified,metadata)"+
         " VALUES($1,$2,'active',$3,$4,false,$5::jsonb) RETURNING id,email,display_name,status,email_verified,session_version",
-        [email,displayName,locale,timezone,JSON.stringify({first_name:firstName,last_name:lastName,phone:phone||null,signup_source:acquisitionSource==="public_marketing_site"?"public_marketing_site":"self_service_email",service_intent:serviceIntent||null,account_type:accountType,authority_confirmed:true})]
+        [email,displayName,locale,timezone,JSON.stringify({first_name:firstName,last_name:lastName,phone:phone||null,signup_source:acquisitionSource==="public_marketing_site"?"public_marketing_site":"self_service_email",service_intent:serviceIntent||null,account_type:accountType,authority_confirmed:true,acquisition})]
       ))[0];
       await tx.unsafe(
         "INSERT INTO customer_password_credentials(customer_principal_id,password_hash,status) VALUES($1::uuid,$2,'active')",
@@ -3239,17 +3281,22 @@ export class PostgresStore{
       );
       await tx.unsafe(
         "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'customer.self_register','tenant',$2,$3::jsonb)",
-        [tenant.id,String(tenant.id),JSON.stringify({customer_principal_id:principal.id,country_code:country,account_type:accountType,acquisition_source:acquisitionSource,service_intent:serviceIntent||null,billing_currency:currency,billing_currency_source:"country_default",registration_number_supplied:Boolean(registrationNumber),authority_confirmed:true,legal_version:legalVersion,legal_terms_accepted:true,privacy_notice_acknowledged:true})]
+        [tenant.id,String(tenant.id),JSON.stringify({customer_principal_id:principal.id,country_code:country,account_type:accountType,acquisition_source:acquisitionSource,service_intent:serviceIntent||null,billing_currency:currency,billing_currency_source:"country_default",registration_number_supplied:Boolean(registrationNumber),authority_confirmed:true,legal_version:legalVersion,legal_terms_accepted:true,privacy_notice_acknowledged:true,acquisition})]
       );
       await tx.unsafe(
         "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'customer.self_registered','tenant',$2,$3::jsonb)",
-        [tenant.id,String(tenant.id),JSON.stringify({tenant_public_id:tenant.public_id,customer_principal_id:principal.id,email,country_code:country,account_type:accountType,acquisition_source:acquisitionSource,service_intent:serviceIntent||null})]
+        [tenant.id,String(tenant.id),JSON.stringify({tenant_public_id:tenant.public_id,customer_principal_id:principal.id,email,country_code:country,account_type:accountType,company_name:effectiveCompanyName||null,acquisition_source:acquisitionSource,service_intent:serviceIntent||null,registration_number_supplied:Boolean(registrationNumber),acquisition})]
+      );
+      await tx.unsafe(
+        "INSERT INTO acquisition_events(event_name,tenant_id,session_hash,path,referrer_host,source,medium,campaign,term,content,consent_analytics,consent_marketing,metadata)"+
+        " VALUES('account_created',$1,$2,$3,$4,$5,$6,$7,$8,$9,true,false,$10::jsonb)",
+        [tenant.id,acquisition.session_hash,acquisition.landing_path,acquisition.referrer_host,acquisition.source,acquisition.medium,acquisition.campaign,acquisition.term,acquisition.content,JSON.stringify({account_type:accountType,service_intent:serviceIntent||null,registration_number_supplied:Boolean(registrationNumber)})]
       );
       principal=(await tx.unsafe("SELECT id,email,display_name,status,email_verified,session_version FROM customer_principals WHERE id=$1::uuid",[principal.id]))[0];
       const refreshedTenant=(await tx.unsafe("SELECT id,public_id,display_name,status,authorization_version FROM tenants WHERE id=$1",[tenant.id]))[0];
       return {...principal,tenant_id:refreshedTenant.id,tenant_public_id:refreshedTenant.public_id,tenant_name:refreshedTenant.display_name,tenant_status:refreshedTenant.status,customer_role:"owner",authorization_version:refreshedTenant.authorization_version};
     });
-    this.eventBus.publish("customer.self_registered",{tenant_public_id:result.tenant_public_id,email:result.email,country_code:country,acquisition_source:acquisitionSource,service_intent:serviceIntent||null});
+    this.eventBus.publish("customer.self_registered",{tenant_public_id:result.tenant_public_id,email:result.email,country_code:country,acquisition_source:acquisitionSource,service_intent:serviceIntent||null,acquisition});
     return result;
   }
 

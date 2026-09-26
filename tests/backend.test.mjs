@@ -205,6 +205,66 @@ test("customer can self-register by email without Google",async()=>{
   }
 });
 
+test("public integrations expose only consent-safe identifiers and never HubSpot secrets",async()=>{
+  const app=createBackend({config:config({
+    firstPartyAnalyticsEnabled:true,
+    ga4MeasurementId:"G-ABC123DEF4",
+    clarityProjectId:"abc123xyz",
+    hubspotPortalId:"149417663",
+    hubspotRegion:"eu1",
+    hubspotTrackingEnabled:true,
+    hubspotPrivateAppToken:"pat-na1-not-for-browser-1234567890",
+    hubspotCrmEnabled:true
+  })});
+  const address=await app.listen(),base=`http://127.0.0.1:${address.port}`;
+  try{
+    const r=await fetch(base+"/api/v1/public/integrations");
+    assert.equal(r.status,200);
+    const body=await r.json();
+    assert.equal(body.first_party_analytics_enabled,true);
+    assert.equal(body.ga4_measurement_id,"G-ABC123DEF4");
+    assert.equal(body.clarity_project_id,"abc123xyz");
+    assert.equal(body.hubspot_portal_id,"149417663");
+    assert.equal(body.hubspot_region,"eu1");
+    const serialized=JSON.stringify(body);
+    assert.equal(serialized.includes("pat-na1"),false);
+    assert.equal("hubspot_private_app_token" in body,false);
+  }finally{await app.close();}
+});
+
+test("first-party acquisition endpoint requires consent and rejects unapproved events",async()=>{
+  const app=createBackend({config:config({firstPartyAnalyticsEnabled:true})});
+  const address=await app.listen(),base=`http://127.0.0.1:${address.port}`;
+  try{
+    let r=await fetch(base+"/api/v1/public/acquisition/event",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({event_name:"page_view",consent_analytics:false,path:"/"})
+    });
+    assert.equal(r.status,202);
+    assert.equal((await r.json()).accepted,false);
+
+    r=await fetch(base+"/api/v1/public/acquisition/event",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({event_name:"send_password_to_crm",consent_analytics:true,path:"/"})
+    });
+    assert.equal(r.status,400);
+    assert.equal((await r.json()).error.code,"ACQUISITION_EVENT_INVALID");
+
+    r=await fetch(base+"/api/v1/public/acquisition/event",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        event_name:"cta_open_application",consent_analytics:true,consent_marketing:false,
+        session_id:"12345678-abcd",path:"/demande-ouverture/",referrer_host:"www.google.com",
+        source:"google",medium:"organic",campaign:"brand",metadata:{placement:"hero",email:"must-not-be-accepted@example.test"}
+      })
+    });
+    assert.equal(r.status,202);
+    const accepted=await r.json();
+    assert.equal(accepted.accepted,true);
+    assert.ok(accepted.event_id);
+  }finally{await app.close();}
+});
+
 test("different-origin browser login is rejected",async()=>{
   const password="correct-test-password-123";
   const app=createBackend({config:config({

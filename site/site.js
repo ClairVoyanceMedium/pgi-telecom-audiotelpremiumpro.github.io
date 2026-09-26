@@ -36,9 +36,21 @@ function syncType(){
   if(companyWrap)companyWrap.hidden=!business;
   if(company){company.disabled=!business;if(!business)company.value=""}
 }
+function acquisitionMeta(){
+  let a={};
+  try{a=window.PGITracking?.getAttribution?.()||JSON.parse(sessionStorage.getItem("pgi_acquisition_v2")||"{}")||{}}catch(_e){}
+  const clean=(v,n=180)=>String(v||"").replace(/[\\u0000-\\u001f\\u007f]/g," ").trim().slice(0,n);
+  return {
+    utm_source:clean(a.utm_source),utm_medium:clean(a.utm_medium),utm_campaign:clean(a.utm_campaign),
+    utm_term:clean(a.utm_term),utm_content:clean(a.utm_content),
+    landing_path:clean(String(a.landing_path||"").split("?")[0],300),
+    referrer_host:clean(a.referrer_host,180),
+    acquisition_session_id:clean(window.PGITracking?.getSessionId?.(),120)
+  };
+}
 function snapshot(){
   const type=selectedType();
-  return {version:1,created_at:Date.now(),account_type:type,first_name:value("order-first-name").slice(0,80),last_name:value("order-last-name").slice(0,80),company_name:type==="business"?value("order-company").slice(0,200):"",email:value("order-email").slice(0,320),phone:value("order-phone").slice(0,40),service_intent:value("order-service-intent")};
+  return {version:1,created_at:Date.now(),account_type:type,first_name:value("order-first-name").slice(0,80),last_name:value("order-last-name").slice(0,80),company_name:type==="business"?value("order-company").slice(0,200):"",email:value("order-email").slice(0,320),phone:value("order-phone").slice(0,40),service_intent:value("order-service-intent"),...acquisitionMeta()};
 }
 function saveDraft(){try{sessionStorage.setItem(DRAFT_KEY,JSON.stringify(snapshot()))}catch(_e){}}
 function hydrateDraft(){
