@@ -1051,6 +1051,15 @@ export class MemoryStore{
     return structuredClone(row);
   }
 
+  async recordAcquisitionEvent(input={}){
+    this.acquisitionEvents??=[];
+    const eventName=String(input.event_name||"").trim().toLowerCase();
+    if(!/^[a-z0-9_.-]{2,80}$/.test(eventName))throw problem(400,"ACQUISITION_EVENT_INVALID");
+    const row={public_id:randomUUID(),occurred_at:new Date().toISOString(),event_name:eventName,tenant_id:input.tenant_id||null,session_id:input.session_id||null,path:input.path||null,referrer_host:input.referrer_host||null,source:input.source||null,medium:input.medium||null,campaign:input.campaign||null,term:input.term||null,content:input.content||null,consent_analytics:input.consent_analytics===true,consent_marketing:input.consent_marketing===true,metadata:structuredClone(input.metadata||{})};
+    this.acquisitionEvents.push(row);
+    return structuredClone({public_id:row.public_id,occurred_at:row.occurred_at});
+  }
+
   async selfServiceRegister(input={},passwordHash){
     const first=String(input.first_name||"").trim(),last=String(input.last_name||"").trim(),email=String(input.email||"").trim().toLowerCase();
     const company=String(input.company_name||"").trim(),registration=String(input.registration_number||"").trim(),accountTypeInput=String(input.account_type||"").trim().toLowerCase(),accountType=accountTypeInput||((company||registration)?"business":"individual");
