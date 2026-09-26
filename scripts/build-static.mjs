@@ -15,6 +15,7 @@ const files=[
   "site/index.html",
   "site/site.css",
   "site/site.js",
+  "site/manifest.webmanifest",
   "sitemap.xml",
   "manifest.webmanifest",
   "service-worker.js",
