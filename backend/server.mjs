@@ -11,13 +11,14 @@ import {normalizeFreeSwitchCdr} from "./src/cdr-freeswitch.mjs";
 import {startWorkers} from "./src/workers.mjs";
 import {createPortabilityQueueHandlers} from "./src/portability-automation.mjs";
 import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability-automation.mjs";
+import {createSubscriptionCancellationQueueHandlers} from "./src/subscription-cancellation-automation.mjs";
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
-import {stripeProviderState,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent} from "./src/stripe-billing.mjs";
+import {stripeProviderState,createStripeCheckout,createStripePortalSession,scheduleStripeSubscriptionCancellation,verifyStripeWebhook,normalizeStripeBillingEvent} from "./src/stripe-billing.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,forwardInboundEmailToInternal} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
-import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
+import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails,drainConsumerWithdrawalAcknowledgements} from "./src/email-dispatcher.mjs";
 
 export async function createDefaultBackend(){
   const config=loadConfig();
@@ -56,6 +57,7 @@ export function createBackend(options={}){
   const classRateBuckets=new Map();
   const authBuckets=new Map();
   const registrationBuckets=new Map();
+  const legalActionBuckets=new Map();
   const sseClients=new Set();
 
   const server=http.createServer(async(req,res)=>{
@@ -131,7 +133,30 @@ export function createBackend(options={}){
         if(typeof store.scanUnpaidSubscriptions==="function")await store.scanUnpaidSubscriptions(500);
         const delivery=await drainTransactionalEmails({store,config,limit:100});
         const dunning=await drainDunningTransactionalEmails({store,config,limit:100});
-        return done(res,metrics,started,"email.dispatch",200,{ok:true,delivery,dunning});
+        const withdrawals=await drainConsumerWithdrawalAcknowledgements({store,config,limit:50});
+        return done(res,metrics,started,"email.dispatch",200,{ok:true,delivery,dunning,withdrawals});
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/public/consumer-withdrawal"){
+        requireSameOriginBrowser(req);
+        enforceLegalActionRate(req,config,legalActionBuckets);
+        const body=await readJson(req,config.bodyLimitBytes);
+        if(String(body.website||"").trim()){const e=new Error("Invalid request");e.status=400;e.code="WITHDRAWAL_REQUEST_REJECTED";throw e;}
+        if(body.confirmed!==true){const e=new Error("Withdrawal confirmation required");e.status=400;e.code="WITHDRAWAL_CONFIRMATION_REQUIRED";throw e;}
+        const first=String(body.first_name||"").trim(),last=String(body.last_name||"").trim();
+        const email=String(body.acknowledgement_email||"").trim().toLowerCase(),reference=String(body.contract_reference||"").trim();
+        const statement="Je notifie par la présente ma rétractation du contrat identifié par « "+reference+" ».";
+        const created=await store.createConsumerWithdrawalRequest({
+          first_name:first,last_name:last,acknowledgement_email:email,contract_reference:reference,statement,
+          legal_version:"2026-09-26-b2b-b2c-v3",
+          evidence:{source:"online_withdrawal_function",source_path:"/retractation/",confirmed:true,user_agent_sha256:createHash("sha256").update(String(req.headers["user-agent"]||"")).digest("hex")}
+        });
+        try{await drainConsumerWithdrawalAcknowledgements({store,config,limit:10});}catch(error){logSecurityEmailFailure("consumer_withdrawal_ack",error);}
+        const status=await store.consumerWithdrawalRequestStatus(created.public_id);
+        return done(res,metrics,started,"consumer.withdrawal",201,{
+          withdrawal_received:true,reference:created.public_id,received_at:created.received_at,
+          acknowledgement:{channel:"email",state:status.acknowledgement_state,sent_at:status.acknowledgement_sent_at||null}
+        });
       }
 
       if(method==="POST"&&pathname==="/api/v1/auth/login"){
@@ -574,6 +599,38 @@ export function createBackend(options={}){
         if(!provider.customer_portal_available)return done(res,metrics,started,"customer.billing.portal",503,{error:{code:"PAYMENT_PROVIDER_NOT_CONNECTED"},billing_provider:provider});
         const session=await createStripePortalSession(config,billing);
         return done(res,metrics,started,"customer.billing.portal",201,{...session,billing_provider:provider});
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/billing/cancel"){
+        requireCustomerCsrf(req,customerActor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        if(body.confirmation!==true){const e=new Error("Cancellation confirmation required");e.status=400;e.code="CANCELLATION_CONFIRMATION_REQUIRED";throw e;}
+        if(String(body.legal_version||"")!=="2026-09-26-b2b-b2c-v3"){const e=new Error("Legal document version outdated");e.status=409;e.code="LEGAL_DOCUMENT_VERSION_OUTDATED";throw e;}
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"billing.manage");
+        const billing=await store.customerBillingPreparation(context.tenant_id),subscription=billing.subscription;
+        if(!subscription||!["active","past_due"].includes(String(subscription.status||"").toLowerCase()))return done(res,metrics,started,"customer.billing.cancel",409,{error:{code:"ACTIVE_SUBSCRIPTION_REQUIRED"}});
+        if(!subscription.current_period_end||!subscription.provider_subscription_reference)return done(res,metrics,started,"customer.billing.cancel",409,{error:{code:"BILLING_SUBSCRIPTION_NOT_AVAILABLE"}});
+        const request=await store.createSubscriptionCancellationRequest(context.tenant_id,context.id,{
+          subscription_id:subscription.id,provider_subscription_reference:subscription.provider_subscription_reference,
+          requested_effective_at:subscription.current_period_end,legal_version:"2026-09-26-b2b-b2c-v3",
+          evidence:{source:"customer_portal",confirmation:true,subscription_status:String(subscription.status||""),cancel_at_period_end:Boolean(subscription.cancel_at_period_end)}
+        });
+        let state=String(request.status||"received"),providerResult=null;
+        if(state!=="scheduled"&&state!=="effective"){
+          try{
+            providerResult=await scheduleStripeSubscriptionCancellation(config,subscription.provider_subscription_reference,"subscription-cancellation/"+request.public_id);
+            if(providerResult.cancel_at_period_end!==true)throw Object.assign(new Error("Cancellation not scheduled"),{code:"STRIPE_CANCELLATION_NOT_SCHEDULED"});
+            await store.markSubscriptionCancellationRequest(request.public_id,"scheduled",{provider:providerResult});state="scheduled";
+          }catch(error){
+            await store.markSubscriptionCancellationRequest(request.public_id,"provider_pending",{error_code:error?.code||error?.message||"PROVIDER_CANCELLATION_FAILED"});state="provider_pending";
+            if(typeof store.enqueueWork==="function")await store.enqueueWork("subscription-cancellation",{request_public_id:request.public_id},{tenant_id:context.tenant_id,dedupe_key:"subscription-cancellation:"+request.public_id,priority:10,max_attempts:20});
+          }
+        }
+        return done(res,metrics,started,"customer.billing.cancel",state==="scheduled"?200:202,{
+          cancellation_received:true,reference:request.public_id,received_at:request.received_at,
+          requested_effective_at:request.requested_effective_at,state,provider:providerResult?{name:"stripe",cancel_at_period_end:providerResult.cancel_at_period_end}:null,
+          number_services_unchanged:true
+        });
       }
       if(method==="GET"&&pathname==="/api/v1/customer/portability"){
         requireActor(customerActor);
@@ -1483,6 +1540,7 @@ export function createBackend(options={}){
   const queueHandlers={
     ...createPortabilityQueueHandlers({store,config}),
     ...createOutboundPortabilityQueueHandlers({store,config}),
+    ...createSubscriptionCancellationQueueHandlers({store,config}),
     ...(options.queueHandlers||{})
   };
   const workers=config.processRole==="api"
@@ -1743,6 +1801,14 @@ function enforceRegistrationRate(req,config,buckets){
   if(!current||now-current.startedAt>=windowMs){current={startedAt:now,count:0};buckets.set(key,current);}
   current.count++;
   if(current.count>5){const e=new Error("Too many registrations");e.status=429;e.code="REGISTRATION_RATE_LIMITED";throw e;}
+  if(buckets.size>5000){for(const [k,v] of buckets)if(now-v.startedAt>=windowMs)buckets.delete(k);}
+}
+function enforceLegalActionRate(req,config,buckets){
+  const key=clientIp(req,config.trustProxy),now=Date.now(),windowMs=15*60*1000;
+  let current=buckets.get(key);
+  if(!current||now-current.startedAt>=windowMs){current={startedAt:now,count:0};buckets.set(key,current);}
+  current.count++;
+  if(current.count>10){const e=new Error("Too many legal action requests");e.status=429;e.code="LEGAL_ACTION_RATE_LIMITED";e.expose=true;throw e;}
   if(buckets.size>5000){for(const [k,v] of buckets)if(now-v.startedAt>=windowMs)buckets.delete(k);}
 }
 function recordAuthFailure(key,config,buckets){
