@@ -32,6 +32,18 @@ SVA means “service à valeur ajoutée”. French SVA numbers include different
 ### Numéro SVA
 A number used to access a value-added telephone service. Assignment, use and tariff rules are governed by the French numbering framework and the applicable operator/service conditions.
 
+### Tarif numéro SVA
+https://audiotel-premium-pro.com/tarif-numero-sva/
+Explains the official distinction between free, banalised and premium-rate SVA number categories and separates caller pricing from the platform subscription.
+
+### Numéro surtaxé 08
+https://audiotel-premium-pro.com/numero-surtaxe-08/
+Explains the 081, 082 and 089 premium-rate ranges and consumer-information guardrails.
+
+### Portabilité numéro SVA
+https://audiotel-premium-pro.com/portabilite-numero-sva/
+Explains a cautious portability workflow: identification, eligibility, programming and final operator confirmation.
+
 ### Reversement Audiotel
 A commercial/financial amount linked to eligible traffic under the applicable contract. On Audiotel Premium Pro, expected, confirmed and validated amounts are intentionally distinguished to avoid presenting an estimate as acquired revenue.
 
