@@ -1,13 +1,14 @@
 import {randomUUID} from "node:crypto";
 import {evaluateAlerts} from "./alerts.mjs";
 import {drainTransactionalEmails,drainDunningTransactionalEmails} from "./email-dispatcher.mjs";
+import {drainHubSpotCrm} from "./hubspot-crm.mjs";
 
 export function startWorkers({store,eventBus,config,queueHandlers={}}){
   let stopped=false;
   const ownerId=randomUUID();
   const timers=[];
   const stats={
-    outboxRuns:0,outboxErrors:0,alertsRuns:0,alertsErrors:0,
+    outboxRuns:0,outboxErrors:0,crmRuns:0,crmErrors:0,crmSynced:0,alertsRuns:0,alertsErrors:0,
     queueRuns:0,queueErrors:0,queueProcessed:0,queueDeadLetters:0,
     lastOutboxSuccessAt:null,lastAlertsSuccessAt:null,lastQueueSuccessAt:null,
     lastOutboxErrorAt:null,lastAlertsErrorAt:null,lastQueueErrorAt:null
@@ -25,6 +26,13 @@ export function startWorkers({store,eventBus,config,queueHandlers={}}){
         },{relay:false});
       },100);
       if(config.transactionalEmailEnabled)await drainTransactionalEmails({store,config,limit:100});
+      if(config.hubspotCrmEnabled){
+        stats.crmRuns++;
+        try{
+          const crm=await drainHubSpotCrm({store,config,limit:100});
+          stats.crmSynced+=Number(crm.synced||0);
+        }catch(_error){stats.crmErrors++;}
+      }
       stats.lastOutboxSuccessAt=new Date().toISOString();
     }catch{
       stats.outboxErrors++;
