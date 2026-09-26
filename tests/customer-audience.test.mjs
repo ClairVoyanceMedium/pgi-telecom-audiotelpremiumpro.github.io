@@ -11,8 +11,8 @@ const memory=fs.readFileSync("backend/src/store-memory.mjs","utf8");
 
 test("registration explicitly supports individual and business customers",()=>{
   assert.match(html,/id="register-account-type"/);
-  assert.match(html,/value="individual">Particulier \/ porteur de projet/);
-  assert.match(html,/value="business">Professionnel \/ indépendant \/ entreprise/);
+  assert.match(html,/value="individual">Particulier \/ projet/);
+  assert.match(html,/value="business">Professionnel \/ entreprise/);
   assert.match(html,/id="register-business-company-wrap" hidden/);
   assert.match(html,/id="register-business-number-wrap" hidden/);
   assert.match(html,/SIRET<\/span> <span class="cp-optional">\(facultatif à l’inscription\)/);
