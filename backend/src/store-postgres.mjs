@@ -3165,6 +3165,28 @@ export class PostgresStore{
     return result;
   }
 
+  async recordAcquisitionEvent(input={}){
+    const eventName=String(input.event_name||"").trim().toLowerCase();
+    if(!/^[a-z0-9_.-]{2,80}$/.test(eventName))throw problem(400,"ACQUISITION_EVENT_INVALID");
+    const acquisition=normalizeAcquisitionInput({
+      acquisition_session_id:input.session_id,
+      landing_path:input.path,
+      referrer_host:input.referrer_host,
+      utm_source:input.source,
+      utm_medium:input.medium,
+      utm_campaign:input.campaign,
+      utm_term:input.term,
+      utm_content:input.content
+    });
+    const metadata=input.metadata&&typeof input.metadata==="object"&&!Array.isArray(input.metadata)?input.metadata:{};
+    const rows=await this.sql.unsafe(
+      "INSERT INTO acquisition_events(event_name,tenant_id,session_hash,path,referrer_host,source,medium,campaign,term,content,consent_analytics,consent_marketing,metadata)"+
+      " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb) RETURNING public_id::text,occurred_at",
+      [eventName,input.tenant_id==null?null:Number(input.tenant_id),acquisition.session_hash,acquisition.landing_path,acquisition.referrer_host,acquisition.source,acquisition.medium,acquisition.campaign,acquisition.term,acquisition.content,input.consent_analytics===true,input.consent_marketing===true,JSON.stringify(metadata)]
+    );
+    return rows[0];
+  }
+
   async selfServiceRegister(input={},passwordHash){
     const firstName=String(input.first_name||"").trim().slice(0,80);
     const lastName=String(input.last_name||"").trim().slice(0,80);
