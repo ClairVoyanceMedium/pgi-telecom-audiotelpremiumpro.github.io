@@ -6,4 +6,4 @@ Disallow: /cockpit.html
 Disallow: /backend/
 Disallow: /docs/
 
-Sitemap: https://pgi-telecom-audiotelpremiumpro-gith.vercel.app/sitemap.xml
+Sitemap: https://audiotel-premium-pro.com/sitemap.xml

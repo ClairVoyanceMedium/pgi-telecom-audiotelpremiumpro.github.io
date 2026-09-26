@@ -1,0 +1,33 @@
+name: IndexNow after production deployment
+
+on:
+  deployment_status:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.deployment_status.state == 'success' &&
+        (
+          github.event.deployment.environment == 'Production' ||
+          github.event.deployment.environment == 'production'
+        )
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Notify participating IndexNow engines
+        run: node scripts/indexnow-submit.mjs

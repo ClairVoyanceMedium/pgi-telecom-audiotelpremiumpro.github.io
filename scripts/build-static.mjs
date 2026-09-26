@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import {execFileSync} from "node:child_process";
 
 const root=process.cwd();
 const dist=path.join(root,"dist");
@@ -14,10 +15,14 @@ const files=[
   "site/index.html",
   "site/site.css",
   "site/site.js",
+  "site/manifest.webmanifest",
   "sitemap.xml",
   "manifest.webmanifest",
   "service-worker.js",
   "robots.txt",
+  "llms.txt",
+  "llms-full.txt",
+  "fa0a7deb5d60bdf1260c8174ad8c71db.txt",
   ".nojekyll",
   "assets/styles.css",
   "assets/client-portal.css",
@@ -121,6 +126,9 @@ const seoPages=[
   "audiotel-professionnels",
   "reversement-audiotel",
   "numero-sva",
+  "portabilite-numero-sva",
+  "numero-surtaxe-08",
+  "tarif-numero-sva",
   "comparateur-audiotel",
   "guide-audiotel-sva",
   "demande-ouverture",
@@ -157,16 +165,22 @@ if(publicBaseUrl){
     ].join("\n"),
     "utf8"
   );
-  const lastmod=new Date().toISOString().slice(0,10);
   const urls=[
-    {loc:publicBaseUrl+"/",priority:"1.0"},
-    ...seoPages.filter(slug=>slug!=="mentions-legales").map(slug=>({loc:publicBaseUrl+"/"+slug+"/",priority:"0.8"}))
+    {loc:publicBaseUrl+"/",sourcePath:"site/index.html"},
+    ...seoPages
+      .filter(slug=>slug!=="mentions-legales")
+      .map(slug=>({loc:publicBaseUrl+"/"+slug+"/",sourcePath:"site/seo/"+slug+".html"}))
   ];
   fs.writeFileSync(
     path.join(dist,"sitemap.xml"),
     '<?xml version="1.0" encoding="UTF-8"?>\n'+
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'+
-    urls.map(x=>'  <url>\n    <loc>'+escapeXml(x.loc)+'</loc>\n    <lastmod>'+lastmod+'</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>'+x.priority+'</priority>\n  </url>\n').join("")+
+    urls.map(x=>{
+      const lastmod=latestGitDate(x.sourcePath);
+      return '  <url>\n    <loc>'+escapeXml(x.loc)+'</loc>\n'+
+        (lastmod?'    <lastmod>'+lastmod+'</lastmod>\n':'')+
+        '  </url>\n';
+    }).join("")+
     '</urlset>\n',
     "utf8"
   );
@@ -235,13 +249,41 @@ function applyPublicMetadata(html,baseUrl){
 }
 
 function applyLandingMetadata(html,baseUrl,slug){
-  const base=baseUrl||"https://pgi-telecom-audiotelpremiumpro-gith.vercel.app";
+  const base=baseUrl||"https://audiotel-premium-pro.com";
   const canonical=base.replace(/\/+$/,"")+"/"+slug+"/";
   const logo=base.replace(/\/+$/,"")+"/assets/audiotel-brand-logo-v33.png";
-  return html
+  const rendered=html
     .replaceAll("__BASE__",base.replace(/\/+$/,""))
     .replaceAll("__CANONICAL__",canonical)
     .replaceAll("__LOGO__",logo);
+  return injectBreadcrumb(rendered,base,canonical);
+}
+
+function injectBreadcrumb(html,baseUrl,canonical){
+  if(html.includes('"@type":"BreadcrumbList"'))return html;
+  const title=(html.match(/<title>([^<]+)<\/title>/i)?.[1]||"Audiotel Premium Pro").trim();
+  const data={
+    "@context":"https://schema.org",
+    "@type":"BreadcrumbList",
+    itemListElement:[
+      {"@type":"ListItem",position:1,name:"Accueil",item:baseUrl.replace(/\/+$/,"")+"/"},
+      {"@type":"ListItem",position:2,name:title,item:canonical}
+    ]
+  };
+  return html.replace("</head>",'<script type="application/ld+json">'+JSON.stringify(data)+'</script>\n</head>');
+}
+
+function latestGitDate(sourcePath){
+  try{
+    const value=execFileSync("git",["log","-1","--format=%cs","--",sourcePath],{
+      cwd:root,
+      encoding:"utf8",
+      stdio:["ignore","pipe","ignore"]
+    }).trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(value)?value:"";
+  }catch{
+    return "";
+  }
 }
 
 function injectLegalNavigation(html){

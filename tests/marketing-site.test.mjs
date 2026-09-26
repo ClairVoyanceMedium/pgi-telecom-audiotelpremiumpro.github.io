@@ -11,6 +11,10 @@ const cockpit=fs.readFileSync("index.html","utf8");
 const client=fs.readFileSync("client.html","utf8");
 const application=fs.readFileSync("site/seo/demande-ouverture.html","utf8");
 const buildStatic=fs.readFileSync("scripts/build-static.mjs","utf8");
+const llms=fs.readFileSync("llms.txt","utf8");
+const llmsFull=fs.readFileSync("llms-full.txt","utf8");
+const manifest=fs.readFileSync("site/manifest.webmanifest","utf8");
+const guide=fs.readFileSync("site/seo/guide-audiotel-sva.html","utf8");
 
 test("public site targets both individuals and professionals",()=>{
   assert.match(html,/AUDIOTEL · SVA · PARTICULIERS · PROFESSIONNELS/);
@@ -101,7 +105,11 @@ test("marketing conversion uses trust and legitimate urgency without fabricated 
 
 test("marketing page exposes structured service data without fabricated social proof",()=>{
   assert.match(html,/application\/ld\+json/);
+  assert.match(html,/"@type":"WebSite"/);
+  assert.match(html,/"@type":"Organization"/);
+  assert.match(html,/"@type":"WebPage"/);
   assert.match(html,/"@type":"Service"/);
+  assert.ok(html.includes("support@audiotel-premium-pro.com"));
   assert.match(html,/"price":"3\.00"/);
   assert.match(html,/"priceCurrency":"EUR"/);
   assert.match(html,/0,10 € par jour/);
@@ -130,4 +138,20 @@ test("public funnels preserve legal customer qualification and non-promissory fi
   assert.doesNotMatch(comparator,/<title>[^<]*gain potentiel/i);
   assert.match(liveFinance,/ESTIMATION PERSONNELLE/);
   assert.match(liveFinance,/reversements validés font foi/);
+});
+
+test("machine-readable discovery stays factual and public-only",()=>{
+  assert.ok(llms.includes("Canonical: https://audiotel-premium-pro.com/"));
+  assert.match(llms,/Do not treat \/client\.html, \/cockpit/);
+  assert.match(llmsFull,/Never describe a simulated reversement as guaranteed income/);
+  assert.match(llmsFull,/Arcep/);
+  assert.match(manifest,/Audiotel Premium Pro \\| PGI Telecom/);
+  assert.doesNotMatch(manifest,/Cockpit \/ PGI Telecom/);
+});
+
+test("guide cites current official sources for regulatory explanations",()=>{
+  assert.match(guide,/"@type":"Article"/);
+  assert.match(guide,/www\.arcep\.fr\/mes-demarches-et-services\/consommateurs/);
+  assert.match(guide,/www\.economie\.gouv\.fr\/particuliers/);
+  assert.match(guide,/Quels sont les principaux types de numéros en 08 \?/);
 });

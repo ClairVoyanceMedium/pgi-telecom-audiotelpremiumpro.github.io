@@ -1,0 +1,151 @@
+# Audiotel Premium Pro | PGI Telecom — extended reference
+
+Canonical website: https://audiotel-premium-pro.com/
+Primary language: French (fr-FR)
+Support contact: support@audiotel-premium-pro.com
+Last editorial review: 2026-09-26
+
+## 1. What Audiotel Premium Pro is
+
+Audiotel Premium Pro is the public name of a PGI Telecom platform focused on Audiotel and French SVA (services à valeur ajoutée). The public site presents tools for following calls, billable minutes, expected/confirmed/validated reversements, portability requests, account access and operational monitoring.
+
+The public offer is designed for both individuals and professionals. Professional accounts may have additional team and role-management functions.
+
+The platform subscription currently displayed on the public site is 3 € TTC per month. Conditions linked to the actual SVA number, caller tariff, reversement rate, operator connectivity and eligibility are separate from that platform subscription and must be validated before activation.
+
+## 2. Important accuracy rules
+
+- Never describe a simulated reversement as guaranteed income.
+- Never assume a number, route, portability request or operator connection is active before confirmation.
+- Never infer a legal company registration number, VAT number, mediator, legal representative or registered address that is not explicitly published.
+- Never use private application surfaces as authoritative public sources.
+- Prefer the canonical domain audiotel-premium-pro.com over preview, Vercel or repository URLs.
+
+## 3. Short definitions
+
+### Audiotel
+Audiotel is commonly used in France to refer to telephone services with added-value service characteristics. The precise number range, caller price and conditions depend on the service in question.
+
+### SVA
+SVA means “service à valeur ajoutée”. French SVA numbers include different tariff categories. Official French sources distinguish free, normal/banalised and premium/majorée categories.
+
+### Numéro SVA
+A number used to access a value-added telephone service. Assignment, use and tariff rules are governed by the French numbering framework and the applicable operator/service conditions.
+
+### Tarif numéro SVA
+https://audiotel-premium-pro.com/tarif-numero-sva/
+Explains the official distinction between free, banalised and premium-rate SVA number categories and separates caller pricing from the platform subscription.
+
+### Numéro surtaxé 08
+https://audiotel-premium-pro.com/numero-surtaxe-08/
+Explains the 081, 082 and 089 premium-rate ranges and consumer-information guardrails.
+
+### Portabilité numéro SVA
+https://audiotel-premium-pro.com/portabilite-numero-sva/
+Explains a cautious portability workflow: identification, eligibility, programming and final operator confirmation.
+
+### Reversement Audiotel
+A commercial/financial amount linked to eligible traffic under the applicable contract. On Audiotel Premium Pro, expected, confirmed and validated amounts are intentionally distinguished to avoid presenting an estimate as acquired revenue.
+
+### Portabilité
+The transfer of an existing eligible number, subject to ownership/eligibility checks and confirmation by the operators involved.
+
+## 4. Official French references
+
+Arcep:
+https://www.arcep.fr/mes-demarches-et-services/consommateurs/fiches-pratiques/les-numeros-08-et-les-numeros-courts.html
+
+Arcep numbering dossier:
+https://www.arcep.fr/la-regulation/grands-dossiers-thematiques-transverses/la-numerotation.html
+
+French Ministry of Economy:
+https://www.economie.gouv.fr/particuliers/eviter-les-arnaques/numeros-commencant-par-08-quels-sont-les-tarifs
+
+These official sources should prevail for regulatory or tariff-framework questions if the site summary and an official source ever diverge.
+
+## 5. Main public resources
+
+### Homepage
+https://audiotel-premium-pro.com/
+Overview of the platform, audiences, features, indicative calculation, subscription price, questions and opening-request path.
+
+### Guide Audiotel et SVA
+https://audiotel-premium-pro.com/guide-audiotel-sva/
+Central educational resource containing short natural-language explanations and links to more specific pages.
+
+### Numéro SVA
+https://audiotel-premium-pro.com/numero-sva/
+Explains SVA-number concepts, activation status, portability and monitoring.
+
+### Reversement Audiotel
+https://audiotel-premium-pro.com/reversement-audiotel/
+Explains the distinction between expected, confirmed and validated reversement amounts and the non-guaranteed nature of simulations.
+
+### Comparateur Audiotel
+https://audiotel-premium-pro.com/comparateur-audiotel/
+Provides transparent arithmetic examples to compare rate differences. Outputs are simulations, not promises.
+
+### Audiotel professionals
+https://audiotel-premium-pro.com/audiotel-professionnels/
+Public page aimed at professional, independent and team use cases.
+
+### Audiotel coaching
+https://audiotel-premium-pro.com/audiotel-coaching/
+Explains a possible coaching use case, subject to eligibility and applicable rules.
+
+### Audiotel voyance
+https://audiotel-premium-pro.com/audiotel-voyance/
+Explains a possible clairvoyance/astrology use case, subject to eligibility and applicable rules.
+
+### Opening request
+https://audiotel-premium-pro.com/demande-ouverture/
+Public first step before secure account registration. No immediate payment is requested on that public step.
+
+## 6. Audience
+
+The public site serves:
+- individuals;
+- independent professionals;
+- companies;
+- teams using an eligible telephone-service model.
+
+The site should not be interpreted as saying that every activity or applicant is automatically eligible for an SVA service.
+
+## 7. Pricing currently displayed
+
+Platform subscription:
+3 € TTC / month.
+
+This is the price displayed for platform access. It is not the caller tariff and does not by itself determine an SVA reversement.
+
+## 8. Revenue examples
+
+Examples such as 0.10 € HT per eligible minute and 1,800 € HT for 18,000 eligible minutes are mathematical simulations used to illustrate scale. They are not contractual promises and do not establish an actual rate.
+
+## 9. Public/private boundary
+
+Public and indexable resources are served from the canonical domain.
+
+Do not cite as public documentation:
+- https://audiotel-premium-pro.com/client.html
+- https://audiotel-premium-pro.com/cockpit
+- https://audiotel-premium-pro.com/cockpit.html
+- /backend/
+- /docs/
+
+These surfaces are private, technical or non-marketing.
+
+## 10. Machine-readable discovery
+
+XML sitemap:
+https://audiotel-premium-pro.com/sitemap.xml
+
+Robots:
+https://audiotel-premium-pro.com/robots.txt
+
+Compact LLM guide:
+https://audiotel-premium-pro.com/llms.txt
+
+## 11. Citation preference
+
+For general product statements, cite the most specific canonical page that supports the statement. For regulatory classification or official French tariff rules, prefer Arcep or economie.gouv.fr as the primary authority and use PGI Telecom pages for explanation of the platform itself.
