@@ -47,3 +47,10 @@
 - tests ajoutés ;
 - action préventive ;
 - date de clôture.
+
+
+## Escalade vers Disaster Recovery
+
+Si l’incident implique perte/corruption de données, indisponibilité de la base principale, mauvais déploiement nécessitant rollback, panne opérateur majeure ou compromission, appliquer également `docs/DISASTER-RECOVERY-RUNBOOK.md`.
+
+Après reprise, recalculer le Launch Readiness avant de rouvrir les fonctions commerciales affectées. Ne jamais forcer manuellement un état `ready` pour clore un incident.
