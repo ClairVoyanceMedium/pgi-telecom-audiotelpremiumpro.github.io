@@ -19,6 +19,45 @@
 <main id="contenu">
 <section class="section"><div class="wrap">
 <div class="section-head"><p class="eyebrow">CONSOMMATEURS · 14 JOURS</p><h1>Droit de rétractation</h1><p>Cette page concerne les personnes bénéficiant du droit de la consommation pour un contrat conclu à distance. Les professionnels agissant pour les besoins de leur activité ne disposent pas automatiquement du même régime.</p></div>
+<div class="legal-action-shell" id="renoncer-au-contrat">
+  <div class="legal-action-card">
+    <p class="eyebrow">FONCTIONNALITÉ DE RÉTRACTATION EN LIGNE</p>
+    <h2>Renoncer au contrat ici</h2>
+    <p>Cette fonctionnalité permet au consommateur de notifier sa rétractation en ligne. Après vérification du récapitulatif, la confirmation définitive crée une référence horodatée et déclenche un accusé de réception par email.</p>
+    <form id="consumer-withdrawal-form" class="legal-action-form" novalidate>
+      <div class="legal-action-grid">
+        <label>Prénom<input id="withdrawal-first-name" name="first_name" autocomplete="given-name" maxlength="120" required></label>
+        <label>Nom<input id="withdrawal-last-name" name="last_name" autocomplete="family-name" maxlength="120" required></label>
+      </div>
+      <label>Email pour l’accusé de réception<input id="withdrawal-email" name="acknowledgement_email" type="email" autocomplete="email" maxlength="320" required></label>
+      <label>Référence permettant d’identifier le contrat<input id="withdrawal-contract-reference" name="contract_reference" maxlength="240" required placeholder="Référence du contrat, de commande ou email de souscription"><span class="legal-action-note">Si aucune référence distincte ne vous a été communiquée, indiquez l’adresse email utilisée lors de la souscription.</span></label>
+      <label class="legal-action-honeypot" aria-hidden="true">Site web<input id="withdrawal-website" name="website" tabindex="-1" autocomplete="off"></label>
+      <div class="legal-action-actions"><button class="btn" type="submit">Vérifier ma demande</button></div>
+      <p class="legal-action-note">Aucune justification n’est demandée. La fonctionnalité n’ajoute aucune option commerciale à la démarche.</p>
+    </form>
+    <div id="consumer-withdrawal-summary" class="legal-action-summary" hidden>
+      <h3>Vérifiez votre déclaration</h3>
+      <dl>
+        <div><dt>Nom</dt><dd id="withdrawal-summary-name"></dd></div>
+        <div><dt>Email d’accusé</dt><dd id="withdrawal-summary-email"></dd></div>
+        <div><dt>Contrat</dt><dd id="withdrawal-summary-contract"></dd></div>
+      </dl>
+      <p>En confirmant, vous déclarez sans ambiguïté vouloir exercer votre droit de rétractation pour le contrat identifié ci-dessus.</p>
+      <div class="legal-action-actions"><button id="consumer-withdrawal-confirm" class="btn" type="button">Confirmer la rétractation</button><button id="consumer-withdrawal-back" class="legal-action-secondary" type="button">Modifier les informations</button></div>
+      <p id="consumer-withdrawal-status" class="legal-action-status" role="status" aria-live="polite"></p>
+    </div>
+    <div id="consumer-withdrawal-result" class="legal-action-result" hidden role="status" aria-live="polite">
+      <h3>Déclaration enregistrée</h3>
+      <p>Conservez la référence ci-dessous. Un accusé de réception électronique est adressé à l’email indiqué.</p>
+      <dl>
+        <div><dt>Référence</dt><dd id="withdrawal-result-reference"></dd></div>
+        <div><dt>Date et heure</dt><dd id="withdrawal-result-time"></dd></div>
+        <div><dt>Email</dt><dd id="withdrawal-result-email"></dd></div>
+      </dl>
+      <p id="consumer-withdrawal-status-result" class="legal-action-status"></p>
+    </div>
+  </div>
+</div>
 <div class="benefit-grid">
 <article><span>01</span><h3>Délai</h3><p>Lorsqu’il bénéficie du droit de la consommation pour un contrat de services conclu à distance, le consommateur dispose en principe de <strong>14 jours à compter de la conclusion du contrat</strong> pour se rétracter, sans avoir à motiver sa décision, sous réserve des exceptions prévues par la loi.</p></article>
 <article><span>02</span><h3>Fonctionnalité en ligne obligatoire</h3><p>Pour les contrats conclus à distance au moyen d’une interface en ligne et relevant des dispositions entrées en vigueur le 19 juin 2026, une fonctionnalité gratuite, visible, directement accessible et disponible pendant le délai de rétractation doit permettre d’exercer ce droit en ligne.</p></article>
@@ -35,11 +74,12 @@
 <article><span>13</span><h3>Résiliation pour l’avenir</h3><p>La rétractation initiale ne doit pas être confondue avec la résiliation d’un abonnement en cours. Pour mettre fin aux renouvellements futurs, le client utilise la page <a href="/resilier-contrat/">Résilier votre contrat</a>.</p></article>
 <article><span>14</span><h3>Professionnels</h3><p>Le régime général de rétractation du consommateur ne bénéficie pas automatiquement aux professionnels agissant pour les besoins de leur activité. Les droits spécifiques éventuellement accordés par la loi à certaines petites entreprises restent applicables lorsqu’elles en remplissent les conditions.</p></article>
 <article><span>15</span><h3>Formulaire type</h3><p>Le consommateur peut notamment déclarer : « Je vous notifie ma rétractation du contrat portant sur [service], conclu le [date], au nom de [nom et prénom], avec l’adresse email [email]. Référence éventuelle : [référence]. » Une formulation équivalente exprimant clairement la volonté de se rétracter est recevable.</p></article>
-<article><span>16</span><h3>État de préparation B2C</h3><p><strong>Avant toute ouverture commerciale B2C, la fonctionnalité en ligne conforme aux articles L.221-21 et D.221-5 du Code de la consommation doit être techniquement active et testée.</strong> Tant qu’elle ne l’est pas, cette page ne doit pas être interprétée comme autorisant un lancement B2C.</p></article>
+<article><span>16</span><h3>Fonctionnalité active</h3><p>La fonctionnalité « Renoncer au contrat ici » ci-dessus permet la saisie des informations d’identification du contrat, un récapitulatif avant confirmation, la notification explicite de la rétractation, l’horodatage de la demande et l’envoi d’un accusé de réception électronique. Les autres prérequis B2C, notamment les mentions légales complètes et la désignation du médiateur compétent, demeurent indépendamment obligatoires avant ouverture commerciale.</p></article>
 <article><span>17</span><h3>Version</h3><p>Version juridique : <strong>26 septembre 2026</strong>. Les dispositions impératives plus favorables au consommateur prévalent sur le présent document.</p></article></div>
-<p class="fine">Version juridique : 26 septembre 2026. La fonctionnalité en ligne de rétractation est un prérequis au lancement B2C lorsqu’elle est légalement requise.</p>
+<p class="fine">Version juridique : 26 septembre 2026. La fonctionnalité en ligne de rétractation est intégrée à cette page. Les autres prérequis juridiques B2C restent à compléter avant ouverture commerciale.</p>
 </div></section>
-<section class="section section-dark"><div class="wrap"><div class="section-head"><p class="eyebrow">DOCUMENTS JURIDIQUES</p><h2>Accès direct aux informations contractuelles.</h2></div><div class="footer-links"><a href="/mentions-legales/">Mentions légales</a><a href="/conditions-utilisation/">CGU</a><a href="/conditions-abonnement/">Conditions d’abonnement</a><a href="/confidentialite/">Confidentialité</a><a href="/cookies-traceurs/">Cookies & traceurs</a><a href="/resilier-contrat/">Résilier votre contrat</a><a href="/retractation/">Rétractation</a></div></div></section>
+<section class="section section-dark"><div class="wrap"><div class="section-head"><p class="eyebrow">DOCUMENTS JURIDIQUES</p><h2>Accès direct aux informations contractuelles.</h2></div><div class="footer-links"><a href="/mentions-legales/">Mentions légales</a><a href="/conditions-utilisation/">CGU</a><a href="/conditions-abonnement/">Conditions d’abonnement</a><a href="/confidentialite/">Confidentialité</a><a href="/cookies-traceurs/">Cookies & traceurs</a><a href="/resilier-contrat/">Résilier votre contrat</a><a href="/retractation/">Renoncer au contrat ici</a></div></div></section>
 </main>
-<footer class="site-footer"><div class="wrap"><div><strong>Audiotel Premium Pro | Une solution PGI Telecom</strong><p>Plateforme Audiotel &amp; SVA.</p></div><div><a href="/mentions-legales/">Mentions légales</a><a href="/conditions-utilisation/">CGU</a><a href="/conditions-abonnement/">Conditions</a><a href="/confidentialite/">Confidentialité</a><a href="/cookies-traceurs/">Cookies</a><a href="/resilier-contrat/">Résilier votre contrat</a><a href="/retractation/">Rétractation</a><a href="/client.html">Espace client</a></div></div></footer>
+<footer class="site-footer"><div class="wrap"><div><strong>Audiotel Premium Pro | Une solution PGI Telecom</strong><p>Plateforme Audiotel &amp; SVA.</p></div><div><a href="/mentions-legales/">Mentions légales</a><a href="/conditions-utilisation/">CGU</a><a href="/conditions-abonnement/">Conditions</a><a href="/confidentialite/">Confidentialité</a><a href="/cookies-traceurs/">Cookies</a><a href="/resilier-contrat/">Résilier votre contrat</a><a href="/retractation/">Renoncer au contrat ici</a><a href="/client.html">Espace client</a></div></div></footer>
+<script src="/site/legal-actions.js" defer></script>
 </body></html>

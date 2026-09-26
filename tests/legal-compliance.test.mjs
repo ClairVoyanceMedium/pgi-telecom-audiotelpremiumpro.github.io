@@ -82,3 +82,31 @@ test("build publishes all legal routes and injects global legal navigation",()=>
   for(const slug of legalSlugs)assert.match(build,new RegExp('"'+slug+'"'));
   assert.match(build,/injectLegalNavigation/);
 });
+
+
+test("online withdrawal function is explicit, two-step, durable and idempotent",()=>{
+  const page=read("site/seo/retractation.html"),client=read("site/legal-actions.js"),server=read("backend/server.mjs"),migration=read("database/migrations/060_consumer_legal_actions.sql");
+  assert.match(page,/Renoncer au contrat ici/);
+  assert.match(page,/Confirmer la rétractation/);
+  assert.match(page,/consumer-withdrawal-form/);
+  assert.match(client,/\/api\/v1\/public\/consumer-withdrawal/);
+  assert.match(client,/idempotency-key/);
+  assert.match(server,/public\.consumer_withdrawal/);
+  assert.match(server,/WITHDRAWAL_CONFIRMATION_REQUIRED/);
+  assert.match(server,/drainConsumerWithdrawalAcknowledgements/);
+  assert.match(migration,/CREATE TABLE consumer_withdrawal_requests/);
+  assert.match(migration,/consumer withdrawal evidence is immutable/);
+});
+
+test("electronic cancellation has an in-site summary and provider retry path",()=>{
+  const page=read("site/seo/resilier-contrat.html"),billing=read("assets/client-billing.js"),server=read("backend/server.mjs"),migration=read("database/migrations/060_consumer_legal_actions.sql");
+  assert.match(page,/Notifier la résiliation/);
+  assert.match(billing,/client-billing-cancel-dialog/);
+  assert.match(billing,/Notifier la résiliation/);
+  assert.match(billing,/cancelBillingSubscription/);
+  assert.match(server,/\/api\/v1\/customer\/billing\/cancel/);
+  assert.match(server,/subscription-cancellation/);
+  assert.match(server,/cancel_at_period_end/);
+  assert.match(migration,/CREATE TABLE subscription_cancellation_requests/);
+  assert.match(migration,/subscription cancellation evidence is immutable/);
+});

@@ -1102,6 +1102,23 @@ export class MemoryStore{
     if(row.status!=="pending")throw problem(409,"CUSTOMER_INVITATION_NOT_PENDING");
     row.status="revoked";return structuredClone(row);
   }
+  async createConsumerWithdrawalRequest(input={}){
+    this.consumerWithdrawalRequests??=[];
+    const row={public_id:randomUUID(),first_name:String(input.first_name||"").trim(),last_name:String(input.last_name||"").trim(),acknowledgement_email:String(input.acknowledgement_email||"").trim().toLowerCase(),contract_reference:String(input.contract_reference||"").trim(),statement:String(input.statement||"").trim(),legal_version:String(input.legal_version||""),evidence:structuredClone(input.evidence||{}),acknowledgement_state:"accepted",acknowledgement_sent_at:new Date().toISOString(),received_at:new Date().toISOString()};
+    this.consumerWithdrawalRequests.push(row);return structuredClone(row);
+  }
+  async consumerWithdrawalRequestStatus(publicId){
+    this.consumerWithdrawalRequests??=[];const row=this.consumerWithdrawalRequests.find(x=>x.public_id===String(publicId));if(!row)throw problem(404,"WITHDRAWAL_REQUEST_NOT_FOUND");return structuredClone(row);
+  }
+  async createSubscriptionCancellationRequest(tenantId,principalId,input={}){
+    this.subscriptionCancellationRequests??=[];
+    const existing=this.subscriptionCancellationRequests.find(x=>Number(x.subscription_id)===Number(input.subscription_id)&&["received","provider_pending","scheduled"].includes(x.status));if(existing)return {...structuredClone(existing),replayed:true};
+    const row={public_id:randomUUID(),tenant_id:Number(tenantId),customer_principal_id:String(principalId),subscription_id:Number(input.subscription_id),provider_subscription_reference:String(input.provider_subscription_reference||""),requested_effective_at:String(input.requested_effective_at||new Date().toISOString()),legal_version:String(input.legal_version||""),status:"received",provider_confirmed_at:null,provider_last_error:null,received_at:new Date().toISOString()};
+    this.subscriptionCancellationRequests.push(row);return {...structuredClone(row),replayed:false};
+  }
+  async subscriptionCancellationRequest(publicId){this.subscriptionCancellationRequests??=[];const row=this.subscriptionCancellationRequests.find(x=>x.public_id===String(publicId));if(!row)throw problem(404,"CANCELLATION_REQUEST_NOT_FOUND");return structuredClone(row);}
+  async markSubscriptionCancellationRequest(publicId,status,details={}){this.subscriptionCancellationRequests??=[];const row=this.subscriptionCancellationRequests.find(x=>x.public_id===String(publicId));if(!row)throw problem(404,"CANCELLATION_REQUEST_NOT_FOUND");row.status=String(status);row.provider_last_error=details.error_code?String(details.error_code):null;if(["scheduled","effective"].includes(row.status))row.provider_confirmed_at=row.provider_confirmed_at||new Date().toISOString();return structuredClone(row);}
+
   async recordCustomerLegalAcceptance(tenantId,principalId,input={}){
     if(String(input.document_version||"")!=="2026-09-26-b2b-b2c-v3")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
     const row={public_id:randomUUID(),tenant_id:Number(tenantId),customer_principal_id:String(principalId),acceptance_type:String(input.acceptance_type||""),document_version:"2026-09-26-b2b-b2c-v3",documents:structuredClone(input.documents&&typeof input.documents==="object"?input.documents:{}),immediate_performance_requested:input.immediate_performance_requested===true,evidence:structuredClone(input.evidence&&typeof input.evidence==="object"?input.evidence:{}),accepted_at:new Date().toISOString()};

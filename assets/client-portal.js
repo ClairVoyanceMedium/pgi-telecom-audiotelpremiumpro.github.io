@@ -187,7 +187,7 @@ function showApp(){
     var u=new URL(location.href);
     if(u.searchParams.get("action")==="cancel-subscription"){
       u.searchParams.delete("action");history.replaceState(null,"",u.pathname+(u.search?"?"+u.searchParams.toString():"")+u.hash);
-      ensureBilling().then(function(x){return x.open("manage");}).catch(function(){toast("Gestion de la résiliation momentanément indisponible.");});
+      ensureBilling().then(function(x){return x.open("cancel");}).catch(function(){toast("Gestion de la résiliation momentanément indisponible.");});
     }
   }).catch(function(e){toast("Chargement impossible : "+(e.code||e.message));});
 }
@@ -510,6 +510,7 @@ function bind(){
   $("request-email-change").addEventListener("click",requestEmailChange);
   $("client-billing-start").addEventListener("click",function(){ensureBilling().then(function(x){return x.open("start");}).catch(function(){toast("Facturation momentanément indisponible.");});});
   $("client-billing-manage").addEventListener("click",function(){ensureBilling().then(function(x){return x.open("manage");}).catch(function(){toast("Facturation momentanément indisponible.");});});
+  $("client-billing-cancel").addEventListener("click",function(){ensureBilling().then(function(x){return x.open("cancel");}).catch(function(){toast("Résiliation momentanément indisponible.");});});
   $("portability-open").addEventListener("click",function(){ensurePortability().then(function(x){x.render(state.data||{portability_requests:[]});x.open();}).catch(function(){toast("Portabilité momentanément indisponible.");});});
   $("google-tenant-continue").addEventListener("click",function(){handleGoogleCredential(null,$("customer-tenant").value||"");});
   qsa("[data-client-export]").forEach(function(b){b.addEventListener("click",function(){var d=$("client-export-dialog");if(d&&d.open)d.close();exportClient(b.dataset.clientExport);});});
@@ -520,7 +521,7 @@ async function init(){
   bind();
   import("./client-mobile.js").then(function(m){m.init();}).catch(function(){});
   var footer=document.querySelector(".cp-footer");
-  if(footer&&!footer.querySelector("[data-legal-links]"))footer.insertAdjacentHTML("beforeend",'<span data-legal-links><a href="/mentions-legales/" target="_blank" rel="noopener">Mentions légales</a> · <a href="/conditions-utilisation/" target="_blank" rel="noopener">CGU</a> · <a href="/conditions-abonnement/" target="_blank" rel="noopener">Conditions</a> · <a href="/confidentialite/" target="_blank" rel="noopener">Confidentialité</a> · <a href="/cookies-traceurs/" target="_blank" rel="noopener">Cookies</a> · <a href="/resilier-contrat/" target="_blank" rel="noopener">Résilier</a> · <a href="/retractation/" target="_blank" rel="noopener">Rétractation</a></span>');
+  if(footer&&!footer.querySelector("[data-legal-links]"))footer.insertAdjacentHTML("beforeend",'<span data-legal-links><a href="/mentions-legales/" target="_blank" rel="noopener">Mentions légales</a> · <a href="/conditions-utilisation/" target="_blank" rel="noopener">CGU</a> · <a href="/conditions-abonnement/" target="_blank" rel="noopener">Conditions</a> · <a href="/confidentialite/" target="_blank" rel="noopener">Confidentialité</a> · <a href="/cookies-traceurs/" target="_blank" rel="noopener">Cookies</a> · <a href="/resilier-contrat/" target="_blank" rel="noopener">Résilier</a> · <a href="/retractation/" target="_blank" rel="noopener">Renoncer au contrat ici</a></span>');
   initGoogle();
   ensureBilling().then(function(x){x.handleReturn();}).catch(function(){});
   var cfg=window.PGI_CONFIG||{};

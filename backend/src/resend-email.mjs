@@ -125,6 +125,38 @@ export function buildTransactionalMessage(config,templateKey,data={}){
   const invoiceUrl=safeExternalHttpsUrl(data.invoice_url,["stripe.com"]);
   const invoicePdfUrl=safeExternalHttpsUrl(data.invoice_pdf_url,["stripe.com"]);
   const cases={
+    consumer_withdrawal_ack:{
+      subject:"Accusé de réception de votre rétractation",
+      title:"Rétractation enregistrée",
+      lead:greeting,
+      paragraphs:[
+        "Nous accusons réception de votre déclaration de rétractation transmise en ligne.",
+        safeDetail("Référence de la demande",data.reference),
+        safeDetail("Date et heure de réception",data.received_at),
+        safeDetail("Référence du contrat",data.contract_reference),
+        data.statement?("Déclaration : "+cleanText(data.statement,1000)):""
+      ].filter(Boolean),
+      foot:"Conservez cet email : il constitue votre accusé de réception électronique. La réception de la demande ne préjuge pas des vérifications nécessaires sur le contrat, les prestations déjà exécutées et les sommes qui doivent légalement être restituées ou rester dues."
+    },
+    consumer_withdrawal_internal:{
+      subject:"Nouvelle rétractation consommateur reçue",
+      title:"Rétractation à traiter",
+      lead:"Une déclaration de rétractation a été enregistrée via la fonctionnalité en ligne.",
+      paragraphs:[safeDetail("Référence",data.reference),safeDetail("Contrat",data.contract_reference),safeDetail("Reçue le",data.received_at)].filter(Boolean),
+      foot:"Traiter la demande selon le contrat identifié, l’état d’exécution et les délais légaux applicables."
+    },
+    subscription_cancellation_received:{
+      subject:"Votre demande de résiliation a été reçue",
+      title:"Résiliation enregistrée",
+      lead:greeting,
+      paragraphs:[
+        "Votre notification de résiliation de l’abonnement Audiotel Premium Pro a bien été reçue.",
+        safeDetail("Référence de la demande",data.request_reference),
+        safeDetail("Date d’effet prévue",data.requested_effective_at),
+        "Sauf règle impérative ou situation particulière, l’abonnement reste accessible jusqu’à la fin de la période déjà payée et ne sera ensuite plus renouvelé. La gestion du numéro SVA et toute portabilité restent des opérations distinctes."
+      ].filter(Boolean),
+      cta:{label:"Accéder à mon espace",url:portalUrl}
+    },
     email_verification:{
       subject:"Votre code de vérification Audiotel Premium Pro",
       title:"Vérification de votre adresse email",

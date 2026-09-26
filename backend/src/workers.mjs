@@ -1,6 +1,6 @@
 import {randomUUID} from "node:crypto";
 import {evaluateAlerts} from "./alerts.mjs";
-import {drainTransactionalEmails,drainDunningTransactionalEmails} from "./email-dispatcher.mjs";
+import {drainTransactionalEmails,drainDunningTransactionalEmails,drainConsumerWithdrawalAcknowledgements} from "./email-dispatcher.mjs";
 
 export function startWorkers({store,eventBus,config,queueHandlers={}}){
   let stopped=false;
@@ -24,7 +24,7 @@ export function startWorkers({store,eventBus,config,queueHandlers={}}){
           aggregate_id:event.aggregate_id
         },{relay:false});
       },100);
-      if(config.transactionalEmailEnabled)await drainTransactionalEmails({store,config,limit:100});
+      if(config.transactionalEmailEnabled){await drainTransactionalEmails({store,config,limit:100});await drainConsumerWithdrawalAcknowledgements({store,config,limit:25});}
       stats.lastOutboxSuccessAt=new Date().toISOString();
     }catch{
       stats.outboxErrors++;

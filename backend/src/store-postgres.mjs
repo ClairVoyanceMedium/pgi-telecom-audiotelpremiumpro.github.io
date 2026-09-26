@@ -3739,6 +3739,87 @@ export class PostgresStore{
     });
   }
 
+  async createConsumerWithdrawalRequest(input={}){
+    const first=String(input.first_name||"").trim(),last=String(input.last_name||"").trim();
+    const email=String(input.acknowledgement_email||"").trim().toLowerCase();
+    const reference=String(input.contract_reference||"").trim(),statement=String(input.statement||"").trim();
+    const version=String(input.legal_version||"").trim(),evidence=input.evidence&&typeof input.evidence==="object"?input.evidence:{};
+    if(first.length<1||first.length>120||last.length<1||last.length>120)throw problem(400,"INVALID_WITHDRAWAL_NAME");
+    if(email.length<3||email.length>320||!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email))throw problem(400,"INVALID_WITHDRAWAL_EMAIL");
+    if(reference.length<2||reference.length>240||statement.length<10||statement.length>2000)throw problem(400,"INVALID_WITHDRAWAL_CONTRACT");
+    if(version!=="2026-09-26-b2b-b2c-v3")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
+    return this.sql.begin(async tx=>{
+      const matches=await tx.unsafe(
+        "SELECT t.id AS tenant_id,cp.id::text AS customer_principal_id,s.id AS subscription_id FROM customer_principals cp"+
+        " JOIN customer_tenant_memberships m ON m.customer_principal_id=cp.id AND m.status='active'"+
+        " JOIN tenants t ON t.id=m.tenant_id"+
+        " LEFT JOIN LATERAL (SELECT ts.id,ts.status,ts.created_at FROM tenant_subscriptions ts JOIN service_plans p ON p.id=ts.service_plan_id WHERE ts.tenant_id=t.id AND p.plan_key='external-sva-access' ORDER BY (ts.status IN ('active','past_due')) DESC,ts.created_at DESC,ts.id DESC LIMIT 1) s ON true"+
+        " WHERE lower(cp.email)=lower($1) OR lower(COALESCE(t.billing_email,''))=lower($1)"+
+        " ORDER BY (s.id IS NOT NULL) DESC,m.created_at DESC LIMIT 1",
+        [email]
+      );
+      const matched=matches[0]||{};
+      const rows=await tx.unsafe(
+        "INSERT INTO consumer_withdrawal_requests(tenant_id,customer_principal_id,subscription_id,first_name,last_name,acknowledgement_email,contract_reference,statement,legal_version,evidence)"+
+        " VALUES($1,$2::uuid,$3,$4,$5,$6,$7,$8,$9,$10::jsonb) RETURNING public_id::text AS public_id,received_at,acknowledgement_state",
+        [matched.tenant_id||null,matched.customer_principal_id||null,matched.subscription_id||null,first,last,email,reference,statement,version,JSON.stringify(evidence)]
+      );
+      return rows[0];
+    });
+  }
+
+  async consumerWithdrawalRequestStatus(publicId){
+    const id=String(publicId||"").trim();
+    if(!/^[0-9a-f-]{36}$/i.test(id))throw problem(400,"INVALID_WITHDRAWAL_REFERENCE");
+    const rows=await this.readSql.unsafe("SELECT public_id::text AS public_id,received_at,acknowledgement_state,acknowledgement_sent_at FROM consumer_withdrawal_requests WHERE public_id=$1::uuid LIMIT 1",[id]);
+    if(!rows[0])throw problem(404,"WITHDRAWAL_REQUEST_NOT_FOUND");
+    return rows[0];
+  }
+
+  async createSubscriptionCancellationRequest(tenantId,principalId,input={}){
+    const id=Number(tenantId),principal=String(principalId||"").trim(),subscriptionId=Number(input.subscription_id);
+    const providerRef=String(input.provider_subscription_reference||"").trim(),effective=String(input.requested_effective_at||"").trim();
+    const version=String(input.legal_version||"").trim(),evidence=input.evidence&&typeof input.evidence==="object"?input.evidence:{};
+    if(!Number.isInteger(id)||id<=0||!Number.isInteger(subscriptionId)||subscriptionId<=0)throw problem(400,"INVALID_SUBSCRIPTION_CANCELLATION");
+    if(!/^[0-9a-f-]{36}$/i.test(principal))throw problem(401,"CUSTOMER_AUTH_REQUIRED");
+    if(!/^sub_[A-Za-z0-9]+$/.test(providerRef)||!Number.isFinite(Date.parse(effective)))throw problem(409,"BILLING_SUBSCRIPTION_NOT_AVAILABLE");
+    if(version!=="2026-09-26-b2b-b2c-v3")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
+    return this.sql.begin(async tx=>{
+      const subscription=(await tx.unsafe("SELECT id,tenant_id,status,current_period_end,provider_subscription_reference FROM tenant_subscriptions WHERE id=$1 AND tenant_id=$2 FOR UPDATE",[subscriptionId,id]))[0];
+      if(!subscription)throw problem(404,"SUBSCRIPTION_NOT_FOUND");
+      const existing=(await tx.unsafe("SELECT public_id::text AS public_id,status,requested_effective_at,received_at,provider_confirmed_at FROM subscription_cancellation_requests WHERE subscription_id=$1 AND status IN ('received','provider_pending','scheduled') ORDER BY id DESC LIMIT 1",[subscriptionId]))[0];
+      if(existing)return {...existing,replayed:true};
+      const created=(await tx.unsafe(
+        "INSERT INTO subscription_cancellation_requests(tenant_id,customer_principal_id,subscription_id,provider_subscription_reference,requested_effective_at,legal_version,evidence)"+
+        " VALUES($1,$2::uuid,$3,$4,$5::timestamptz,$6,$7::jsonb) RETURNING public_id::text AS public_id,status,requested_effective_at,received_at,provider_confirmed_at",
+        [id,principal,subscriptionId,providerRef,effective,version,JSON.stringify(evidence)]
+      ))[0];
+      await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'subscription.cancellation.requested','tenant_subscription',$2,$3::jsonb)",[id,String(subscriptionId),JSON.stringify({request_public_id:created.public_id,requested_effective_at:effective,customer_principal_id:principal})]);
+      await tx.unsafe("INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'subscription.cancellation.requested','tenant_subscription',$2,$3::jsonb)",[id,String(subscriptionId),JSON.stringify({request_public_id:created.public_id,requested_effective_at:effective,provider_subscription_reference:providerRef})]);
+      return {...created,replayed:false};
+    });
+  }
+
+  async subscriptionCancellationRequest(publicId){
+    const id=String(publicId||"").trim();
+    if(!/^[0-9a-f-]{36}$/i.test(id))throw problem(400,"INVALID_CANCELLATION_REFERENCE");
+    const rows=await this.readSql.unsafe("SELECT public_id::text AS public_id,tenant_id,customer_principal_id::text AS customer_principal_id,subscription_id,provider_subscription_reference,requested_effective_at,legal_version,status,provider_confirmed_at,provider_last_error,received_at FROM subscription_cancellation_requests WHERE public_id=$1::uuid LIMIT 1",[id]);
+    if(!rows[0])throw problem(404,"CANCELLATION_REQUEST_NOT_FOUND");
+    return rows[0];
+  }
+
+  async markSubscriptionCancellationRequest(publicId,status,details={}){
+    const id=String(publicId||"").trim(),state=String(status||"").trim();
+    if(!/^[0-9a-f-]{36}$/i.test(id)||!["provider_pending","scheduled","effective","failed"].includes(state))throw problem(400,"INVALID_CANCELLATION_STATE");
+    const error=details.error_code?String(details.error_code).slice(0,240):null;
+    const rows=await this.sql.unsafe(
+      "UPDATE subscription_cancellation_requests SET status=$2,provider_confirmed_at=CASE WHEN $2 IN ('scheduled','effective') THEN COALESCE(provider_confirmed_at,now()) ELSE provider_confirmed_at END,provider_last_error=$3 WHERE public_id=$1::uuid RETURNING public_id::text AS public_id,status,requested_effective_at,received_at,provider_confirmed_at",
+      [id,state,error]
+    );
+    if(!rows[0])throw problem(404,"CANCELLATION_REQUEST_NOT_FOUND");
+    return rows[0];
+  }
+
   async recordCustomerLegalAcceptance(tenantId,principalId,input={}){
     const type=String(input.acceptance_type||"").trim(),version=String(input.document_version||"").trim();
     if(!["account_terms","subscription_checkout"].includes(type))throw problem(400,"INVALID_LEGAL_ACCEPTANCE_TYPE");
