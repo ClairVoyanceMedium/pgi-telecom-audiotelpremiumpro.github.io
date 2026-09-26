@@ -67,7 +67,11 @@ test("production static build publishes marketing root and private cockpit",()=>
       if(!legal){assert.match(page,/"@type":"WebPage"/);assert.match(page,/"@type":"Service"/);}
       assert.doesNotMatch(page,/__CANONICAL__|__BASE__|__LOGO__/);
       const scripts=[...page.matchAll(/<script[^>]+src="([^"]+)"/gi)].map(x=>x[1]);
-      for(const src of scripts)assert.ok(["/site/hubspot-tracking.js","/site/site.js"].includes(src),"unexpected public script: "+src);
+      const allowedScripts={
+        "demande-ouverture":["/site/site.js","/site/hubspot-tracking.js"],
+        "retractation":["/site/hubspot-tracking.js","/assets/config.js","/assets/withdrawal.js"]
+      }[slug]||["/site/hubspot-tracking.js"];
+      for(const src of scripts)assert.ok(allowedScripts.includes(src),"unexpected public script on "+slug+": "+src);
     });
     const comparator=seoPages[seoSlugs.indexOf("comparateur-audiotel")];
     assert.match(comparator,/1 800 € \/ mois/);
