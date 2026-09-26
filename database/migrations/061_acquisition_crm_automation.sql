@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS crm_external_links (
   tenant_id bigint PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
   provider text NOT NULL DEFAULT 'hubspot' CHECK (provider='hubspot'),
   contact_id text,
+  company_id text,
   deal_id text,
   pipeline_id text,
   last_stage text,
@@ -49,6 +50,8 @@ CREATE TABLE IF NOT EXISTS crm_sync_receipts (
   state text NOT NULL CHECK (state IN ('pending','synced','failed','skipped')),
   attempts integer NOT NULL DEFAULT 0 CHECK (attempts>=0),
   last_error_code text,
+  external_object_type text,
+  external_object_id text,
   processed_at timestamptz,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
