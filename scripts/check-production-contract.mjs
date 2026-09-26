@@ -98,6 +98,8 @@ const shadowBillingSource=fs.readFileSync("backend/src/shadow-billing.mjs","utf8
 const riskEngineSource=fs.readFileSync("backend/src/risk-engine.mjs","utf8");
 const sloAssuranceSource=fs.readFileSync("backend/src/slo-assurance.mjs","utf8");
 const controlTowerAssuranceUi=fs.readFileSync("assets/control-tower-assurance.js","utf8");
+const launchReadinessUi=fs.readFileSync("assets/launch-readiness.js","utf8");
+const launchReadinessSource=fs.readFileSync("backend/src/launch-readiness.mjs","utf8");
 const clientServiceCenter=fs.readFileSync("assets/client-service-center.js","utf8");
 const tenantServiceAdmin=fs.readFileSync("assets/tenant-service-admin.js","utf8");
 const googleIdSource=fs.readFileSync("backend/src/google-id.mjs","utf8");
@@ -173,6 +175,11 @@ if(!/PGI_RELEASE_ID/.test(buildStatic)||!/40-character Git SHA/.test(buildStatic
 if(!/PGI_RELEASE_ID/.test(deploy)||!/releaseId/.test(deploy))failures.push("front deployment must inject and verify the Git SHA");
 if(!/PGI_RELEASE_ID/.test(backendRelease)||!/expected_release/.test(backendRelease)||!/grep -F/.test(backendRelease))failures.push("backend deployment must inject and verify the Git SHA");
 if(!/lock_timeout/.test(migrationRunner)||!/statement_timeout/.test(migrationRunner))failures.push("migration runner must bound lock and statement time");
+if(!/\/api\/v1\/platform\/launch-readiness/.test(backendServer)||!/evaluateLaunchReadiness/.test(backendServer))failures.push("production must expose the authenticated Launch Readiness gate");
+if(!/ready_for_b2b/.test(launchReadinessSource)||!/ready_for_b2c/.test(launchReadinessSource)||!/pending_external/.test(launchReadinessSource))failures.push("Launch Readiness must separate B2B/B2C and keep external dependencies fail-closed");
+if(!/\/platform\/launch-readiness/.test(launchReadinessUi)||!/Launch Readiness/.test(launchReadinessUi))failures.push("Control Tower must surface Launch Readiness");
+if(!/launch-readiness\.js/.test(controlTowerUi))failures.push("Control Tower must lazy-load Launch Readiness");
+
 if(!/CREATE OR REPLACE behavioral object/.test(migrationSafety))failures.push("migration safety must preserve rollback-compatible behavioral objects");
 if(!/CREATE TABLE tenants/.test(wholesaleMigration)||!/tenant_number_assignments/.test(wholesaleMigration)||!/tenant_settlements/.test(wholesaleMigration))failures.push("wholesale migration must preserve tenant, number assignment and settlement foundations");
 if(!/tenant_kyc_profiles/.test(wholesaleComplianceMigration)||!/payment_compliance_profiles/.test(wholesaleComplianceMigration)||!/regulatory_assignor_carrier_id/.test(wholesaleComplianceMigration))failures.push("wholesale compliance migration must preserve KYC, payment and regulatory assignor controls");
