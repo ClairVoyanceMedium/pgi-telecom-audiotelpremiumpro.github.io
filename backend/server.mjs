@@ -146,15 +146,18 @@ export function createBackend(options={}){
         const first=String(body.first_name||"").trim(),last=String(body.last_name||"").trim();
         const email=String(body.acknowledgement_email||"").trim().toLowerCase(),reference=String(body.contract_reference||"").trim();
         const statement="Je notifie par la présente ma rétractation du contrat identifié par « "+reference+" ».";
-        const created=await store.createConsumerWithdrawalRequest({
-          first_name:first,last_name:last,acknowledgement_email:email,contract_reference:reference,statement,
-          legal_version:"2026-09-26-b2b-b2c-v3",
+        const idempotencyKey=String(req.headers["idempotency-key"]||"").trim();
+        if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)){const e=new Error("Idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
+        const requestPayload={first_name:first,last_name:last,acknowledgement_email:email,contract_reference:reference,statement,legal_version:"2026-09-26-b2b-b2c-v3"};
+        const recorded=await store.idempotent(idempotencyKey,"public.consumer_withdrawal",requestPayload,()=>store.createConsumerWithdrawalRequest({
+          ...requestPayload,
           evidence:{source:"online_withdrawal_function",source_path:"/retractation/",confirmed:true,user_agent_sha256:createHash("sha256").update(String(req.headers["user-agent"]||"")).digest("hex")}
-        });
+        }));
+        const created=recorded.value;
         try{await drainConsumerWithdrawalAcknowledgements({store,config,limit:10});}catch(error){logSecurityEmailFailure("consumer_withdrawal_ack",error);}
         const status=await store.consumerWithdrawalRequestStatus(created.public_id);
         return done(res,metrics,started,"consumer.withdrawal",201,{
-          withdrawal_received:true,reference:created.public_id,received_at:created.received_at,
+          withdrawal_received:true,reference:created.public_id,received_at:created.received_at,replayed:recorded.replayed,
           acknowledgement:{channel:"email",state:status.acknowledgement_state,sent_at:status.acknowledgement_sent_at||null}
         });
       }
