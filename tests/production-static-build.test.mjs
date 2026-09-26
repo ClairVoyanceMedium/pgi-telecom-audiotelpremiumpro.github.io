@@ -42,7 +42,8 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.match(root,/"@type":"Organization"/);
     assert.match(root,/"@type":"WebPage"/);
     assert.match(root,/"@id":"https:\\/\\/audiotel-premium-pro\\.com\\/#service"/);
-    assert.match(root,/"@id":"https:\/\/audiotel-premium-pro\.com\/#logo"/);\n    assert.match(root,/"contentUrl":"https:\/\/audiotel-premium-pro\.com\/assets\/audiotel-brand-logo-v33\.png"/);
+    assert.match(root,/"@id":"https:\/\/audiotel-premium-pro\.com\/#logo"/);
+    assert.match(root,/"contentUrl":"https:\/\/audiotel-premium-pro\.com\/assets\/audiotel-brand-logo-v33\.png"/);
     assert.match(root,/name="twitter:image" content="https:\/\/audiotel-premium-pro\.com\/assets\/audiotel-brand-logo-v33\.png"/);
 
     assert.match(cockpit,/Cockpit \/ PGI Telecom/);
