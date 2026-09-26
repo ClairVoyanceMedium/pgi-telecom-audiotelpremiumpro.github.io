@@ -13,7 +13,7 @@ const application=fs.readFileSync("site/seo/demande-ouverture.html","utf8");
 const buildStatic=fs.readFileSync("scripts/build-static.mjs","utf8");
 const llms=fs.readFileSync("llms.txt","utf8");
 const llmsFull=fs.readFileSync("llms-full.txt","utf8");
-const manifest=fs.readFileSync("manifest.webmanifest","utf8");
+const manifest=fs.readFileSync("site/manifest.webmanifest","utf8");
 const guide=fs.readFileSync("site/seo/guide-audiotel-sva.html","utf8");
 
 test("public site targets both individuals and professionals",()=>{
