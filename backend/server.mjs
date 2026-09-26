@@ -18,6 +18,7 @@ import {stripeProviderState,createStripeCheckout,createStripePortalSession,verif
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
+import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
 
 export async function createDefaultBackend(){
   const config=loadConfig();
@@ -1043,6 +1044,23 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/platform/performance-lab"){
         requireRole(actor,["admin","finance","readonly"]);
         return done(res,metrics,started,"platform.performance_lab",200,await store.performanceResilienceLab());
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/platform/launch-readiness"){
+        requireRole(actor,["admin","finance","readonly"]);
+        const [system,performance,platform,carrier,schemaReady]=await Promise.all([
+          store.systemSnapshot(),
+          store.performanceResilienceLab(),
+          store.wholesaleOverview(),
+          store.carrierAdminOverview(),
+          typeof store.customerWithdrawalFeatureReady==="function"?store.customerWithdrawalFeatureReady():Promise.resolve(false)
+        ]);
+        const withdrawalReady=config.onlineWithdrawalReady===true&&schemaReady===true;
+        return done(res,metrics,started,"platform.launch_readiness",200,evaluateLaunchReadiness({
+          config,system,performance,platform,carrier,
+          billingProvider:billingProviderStatus(config),
+          withdrawalReady
+        }));
       }
 
       if(method==="POST"&&pathname==="/api/v1/platform/performance-lab/runs"){
