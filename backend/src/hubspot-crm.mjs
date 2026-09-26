@@ -12,10 +12,12 @@ export async function drainHubSpotCrm({store,config,limit=50}={}){
     " t.public_id::text AS tenant_public_id,t.display_name AS tenant_name,t.billing_email,t.country_code,t.status AS tenant_status,"+
     " k.entity_type,k.registration_number,"+
     " owner.id::text AS owner_principal_id,owner.email AS owner_email,owner.display_name AS owner_name,owner.metadata AS owner_metadata,"+
-    " l.contact_id,l.deal_id,l.pipeline_id,l.last_stage "+
+    " l.contact_id,l.company_id,l.deal_id,l.pipeline_id,l.last_stage,"+
+    " r.state AS receipt_state,r.external_object_type,r.external_object_id "+
     " FROM outbox_events o JOIN tenants t ON t.id=o.tenant_id "+
     " LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id "+
     " LEFT JOIN crm_external_links l ON l.tenant_id=t.id "+
+    " LEFT JOIN crm_sync_receipts r ON r.outbox_event_id=o.id "+
     " LEFT JOIN LATERAL ("+
     "   SELECT cp.id,cp.email,cp.display_name,cp.metadata FROM customer_tenant_memberships m "+
     "   JOIN customer_principals cp ON cp.id=m.customer_principal_id "+
@@ -23,7 +25,7 @@ export async function drainHubSpotCrm({store,config,limit=50}={}){
     "   ORDER BY (m.role='owner') DESC,m.created_at ASC LIMIT 1"+
     " ) owner ON true "+
     " WHERE o.event_type=ANY($1::text[]) "+
-    " AND NOT EXISTS(SELECT 1 FROM crm_sync_receipts r WHERE r.outbox_event_id=o.id AND r.state='synced') "+
+    " AND COALESCE(r.state,'pending')<>'synced' "+
     " ORDER BY o.id ASC LIMIT $2",
     [["customer.self_registered","tenant.status","subscription.changed","portability.requested"],take]
   );
@@ -31,11 +33,12 @@ export async function drainHubSpotCrm({store,config,limit=50}={}){
   for(const row of rows){
     result.processed++;
     try{
-      await syncRow(store,config,row);
-      await receipt(store,row.id,"synced",null);
+      await receipt(store,row.id,"pending",null,row.external_object_type,row.external_object_id);
+      const outcome=await syncRow(store,config,row);
+      await receipt(store,row.id,"synced",null,outcome.externalObjectType,outcome.externalObjectId);
       result.synced++;
     }catch(error){
-      await receipt(store,row.id,"failed",safeCode(error));
+      await receipt(store,row.id,"failed",safeCode(error),row.external_object_type,row.external_object_id);
       await store.sql.unsafe(
         "INSERT INTO crm_external_links(tenant_id,provider,last_error_code,updated_at) VALUES($1,'hubspot',$2,now()) "+
         "ON CONFLICT(tenant_id) DO UPDATE SET last_error_code=EXCLUDED.last_error_code,updated_at=now()",
@@ -52,51 +55,83 @@ async function syncRow(store,config,row){
   const email=String(row.owner_email||row.billing_email||payload.email||"").trim().toLowerCase();
   if(!EMAIL_RE.test(email))throw failure("HUBSPOT_EMAIL_REQUIRED");
   const metadata=row.owner_metadata||{};
+  const acquisition=payload.acquisition&&typeof payload.acquisition==="object"?payload.acquisition:{};
   const firstName=clean(metadata.first_name||payload.first_name,80);
   const lastName=clean(metadata.last_name||payload.last_name,80);
   const phone=clean(metadata.phone||payload.phone,40);
-  const company=clean(payload.company_name||row.tenant_name,200);
+  const companyName=clean(payload.company_name||row.tenant_name,200);
+  const ownerId=String(config.hubspotOwnerId||"").trim();
+  const source=hubspotSource(acquisition);
+
   let contactId=String(row.contact_id||"");
   if(!contactId){
-    contactId=await upsertContact(config,{
-      email,firstName,lastName,phone,company,
-      lifecycleStage:"lead",leadStatus:"NEW"
-    });
+    contactId=await upsertContact(config,{email,firstName,lastName,phone,company:companyName,lifecycleStage:"lead",leadStatus:"NEW",ownerId,source});
+    await persistLink(store,row.tenant_id,{contactId});
   }else{
-    await updateContact(config,contactId,{email,firstName,lastName,phone,company});
+    await updateContact(config,contactId,{email,firstName,lastName,phone,company:companyName,ownerId});
+  }
+
+  const business=String(payload.account_type||metadata.account_type||"").toLowerCase()==="business"||String(row.entity_type||"")==="company";
+  let companyId=String(row.company_id||"");
+  if(config.hubspotCompanySyncEnabled&&business){
+    if(!companyId){
+      companyId=await createCompany(config,{name:companyName||row.tenant_name,country:row.country_code,phone,ownerId});
+      await persistLink(store,row.tenant_id,{contactId,companyId});
+    }
+    await associate(config,"contact",contactId,"company",companyId);
   }
 
   let dealId=String(row.deal_id||"");
-  let pipelineId=String(row.pipeline_id||config.hubspotPipelineId||"default");
+  const pipelineId=String(row.pipeline_id||config.hubspotPipelineId||"default");
   if(!dealId){
     dealId=await createDeal(config,{
-      name:(company||row.tenant_name||email)+" — Audiotel / SVA",
+      name:(companyName||row.tenant_name||email)+" — Audiotel / SVA",
       pipelineId,
       stageId:config.hubspotStageNew||"appointmentscheduled",
-      contactId
+      ownerId
     });
+    await associate(config,"deal",dealId,"contact",contactId);
+    if(companyId)await associate(config,"deal",dealId,"company",companyId);
+    await persistLink(store,row.tenant_id,{contactId,companyId,dealId,pipelineId});
+  }else{
+    await associate(config,"deal",dealId,"contact",contactId);
+    if(companyId)await associate(config,"deal",dealId,"company",companyId);
   }
 
   const desired=stageForEvent(config,row.event_type,payload,row.tenant_status);
   if(desired.stageId){
     await updateDeal(config,dealId,{
       stageId:desired.stageId,
-      amount:desired.customer?String(config.subscriptionPriceMonthlyEur||3):null
+      amount:config.hubspotDealAmountEnabled&&desired.customer?String(config.subscriptionPriceMonthlyEur||3):null
     });
   }
   if(desired.lifecycleStage||desired.leadStatus){
     await updateContact(config,contactId,{
       lifecycleStage:desired.lifecycleStage||null,
-      leadStatus:desired.leadStatus||null
+      leadStatus:desired.leadStatus||null,
+      ownerId
     });
   }
 
+  let externalObjectType=String(row.external_object_type||"")||null;
+  let externalObjectId=String(row.external_object_id||"")||null;
+  const task=taskForEvent(config,row,payload,acquisition);
+  if(config.hubspotTaskSyncEnabled&&task&&!externalObjectId){
+    externalObjectId=await createTask(config,{...task,ownerId});
+    externalObjectType="task";
+    await associate(config,"task",externalObjectId,"contact",contactId);
+    await associate(config,"task",externalObjectId,"deal",dealId);
+    if(companyId)await associate(config,"task",externalObjectId,"company",companyId);
+    await receipt(store,row.id,"pending",null,externalObjectType,externalObjectId);
+  }
+
   await store.sql.unsafe(
-    "INSERT INTO crm_external_links(tenant_id,provider,contact_id,deal_id,pipeline_id,last_stage,last_synced_at,last_error_code,updated_at) "+
-    "VALUES($1,'hubspot',$2,$3,$4,$5,now(),NULL,now()) "+
-    "ON CONFLICT(tenant_id) DO UPDATE SET contact_id=EXCLUDED.contact_id,deal_id=EXCLUDED.deal_id,pipeline_id=EXCLUDED.pipeline_id,last_stage=EXCLUDED.last_stage,last_synced_at=now(),last_error_code=NULL,updated_at=now()",
-    [row.tenant_id,contactId,dealId,pipelineId,desired.label]
+    "INSERT INTO crm_external_links(tenant_id,provider,contact_id,company_id,deal_id,pipeline_id,last_stage,last_synced_at,last_error_code,updated_at) "+
+    "VALUES($1,'hubspot',$2,$3,$4,$5,$6,now(),NULL,now()) "+
+    "ON CONFLICT(tenant_id) DO UPDATE SET contact_id=COALESCE(EXCLUDED.contact_id,crm_external_links.contact_id),company_id=COALESCE(EXCLUDED.company_id,crm_external_links.company_id),deal_id=COALESCE(EXCLUDED.deal_id,crm_external_links.deal_id),pipeline_id=COALESCE(EXCLUDED.pipeline_id,crm_external_links.pipeline_id),last_stage=EXCLUDED.last_stage,last_synced_at=now(),last_error_code=NULL,updated_at=now()",
+    [row.tenant_id,contactId,companyId||null,dealId,pipelineId,desired.label]
   );
+  return {externalObjectType,externalObjectId};
 }
 
 function stageForEvent(config,eventType,payload,tenantStatus){
@@ -105,6 +140,7 @@ function stageForEvent(config,eventType,payload,tenantStatus){
   if(eventType==="tenant.status"){
     const status=String(payload.status||tenantStatus||"");
     if(status==="active")return {stageId:config.hubspotStageQualified||"qualifiedtobuy",label:"validated",lifecycleStage:"opportunity",leadStatus:"OPEN_DEAL"};
+    if(status==="suspended")return {stageId:config.hubspotStageReady||"contractsent",label:"account_attention",lifecycleStage:"opportunity",leadStatus:"IN_PROGRESS"};
     if(["closed","rejected"].includes(status))return {stageId:config.hubspotStageLost||"closedlost",label:"lost",leadStatus:"UNQUALIFIED"};
   }
   if(eventType==="subscription.changed"){
@@ -112,10 +148,74 @@ function stageForEvent(config,eventType,payload,tenantStatus){
     const status=String(payload.status||"");
     if(providerEvent==="invoice.paid"||status==="active")return {stageId:config.hubspotStageActive||"closedwon",label:"customer_active",lifecycleStage:"customer",leadStatus:"OPEN_DEAL",customer:true};
     if(providerEvent==="customer.subscription.deleted"||["cancelled","ended"].includes(status))return {stageId:config.hubspotStageLost||"closedlost",label:"subscription_ended",lifecycleStage:"customer"};
-    if(providerEvent==="invoice.payment_failed"||providerEvent==="invoice.payment_action_required"||status==="past_due")return {stageId:config.hubspotStageReady||"contractsent",label:"payment_attention",lifecycleStage:"opportunity",leadStatus:"OPEN_DEAL"};
+    if(providerEvent==="invoice.payment_failed"||providerEvent==="invoice.payment_action_required"||status==="past_due")return {stageId:config.hubspotStageReady||"contractsent",label:"payment_attention",lifecycleStage:"opportunity",leadStatus:"IN_PROGRESS"};
     if(providerEvent==="customer.subscription.created")return {stageId:config.hubspotStageReady||"contractsent",label:"subscription_created",lifecycleStage:"opportunity",leadStatus:"OPEN_DEAL"};
   }
   return {stageId:null,label:"observed",lifecycleStage:null,leadStatus:null};
+}
+
+function taskForEvent(config,row,payload,acquisition){
+  const createdAt=Date.parse(row.created_at)||Date.now();
+  const serviceIntent=labelServiceIntent(payload.service_intent);
+  const sourceLabel=clean([acquisition.utm_source,acquisition.utm_medium].filter(Boolean).join(" / "),120);
+  const campaign=clean(acquisition.utm_campaign,120);
+  const common=[
+    "Compte : "+clean(row.tenant_name,180),
+    "Pays : "+clean(row.country_code,8),
+    payload.account_type?"Profil : "+clean(payload.account_type,40):"",
+    serviceIntent?"Besoin : "+serviceIntent:"",
+    sourceLabel?"Source : "+sourceLabel:"",
+    campaign?"Campagne : "+campaign:""
+  ].filter(Boolean).join("\n");
+  if(row.event_type==="customer.self_registered")return {
+    subject:"Qualifier la nouvelle demande Audiotel",
+    body:common||"Nouvelle demande Audiotel Premium Pro.",
+    priority:"HIGH",dueAt:new Date(createdAt+24*3600000).toISOString()
+  };
+  if(row.event_type==="portability.requested")return {
+    subject:"Suivre la demande de portabilité",
+    body:common||"Nouvelle demande de portabilité.",
+    priority:"HIGH",dueAt:new Date(createdAt+4*3600000).toISOString()
+  };
+  if(row.event_type==="tenant.status"&&String(payload.status||row.tenant_status)==="suspended")return {
+    subject:"Examiner le compte suspendu",
+    body:common||"Compte client suspendu.",
+    priority:"HIGH",dueAt:new Date(createdAt+2*3600000).toISOString()
+  };
+  if(row.event_type==="subscription.changed"){
+    const type=String(payload.event_type||""),status=String(payload.status||"");
+    if(type==="invoice.payment_failed"||type==="invoice.payment_action_required"||status==="past_due")return {
+      subject:"Traiter le paiement à régulariser",
+      body:common||"Paiement d'abonnement à régulariser.",
+      priority:"HIGH",dueAt:new Date(createdAt+2*3600000).toISOString()
+    };
+    if(type==="customer.subscription.created")return {
+      subject:"Vérifier l'activation du nouvel abonnement",
+      body:common||"Nouvel abonnement enregistré.",
+      priority:"MEDIUM",dueAt:new Date(createdAt+24*3600000).toISOString()
+    };
+    if(type==="customer.subscription.deleted"||["cancelled","ended"].includes(status))return {
+      subject:"Examiner la fin d'abonnement",
+      body:common||"Fin d'abonnement enregistrée.",
+      priority:"MEDIUM",dueAt:new Date(createdAt+24*3600000).toISOString()
+    };
+  }
+  return null;
+}
+
+function hubspotSource(acquisition={}){
+  const medium=String(acquisition.utm_medium||"").toLowerCase();
+  const source=String(acquisition.utm_source||"").toLowerCase();
+  const ref=String(acquisition.referrer_host||"").toLowerCase();
+  if(/chatgpt|perplexity|gemini|claude|copilot/.test(ref+" "+source))return "AI_REFERRALS";
+  if(/cpc|ppc|paidsearch|paid_search/.test(medium))return "PAID_SEARCH";
+  if(/paid_social|paidsocial/.test(medium))return "PAID_SOCIAL";
+  if(/social/.test(medium)||/facebook|instagram|linkedin|tiktok|reddit|x\.com|twitter/.test(source))return "SOCIAL_MEDIA";
+  if(/email|newsletter/.test(medium))return "EMAIL_MARKETING";
+  if(/organic/.test(medium))return "ORGANIC_SEARCH";
+  if(/referral/.test(medium)||ref)return "REFERRALS";
+  if(source||medium)return "OTHER_CAMPAIGNS";
+  return "DIRECT_TRAFFIC";
 }
 
 async function upsertContact(config,input){
@@ -124,12 +224,11 @@ async function upsertContact(config,input){
     body:{filterGroups:[{filters:[{propertyName:"email",operator:"EQ",value:input.email}]}],properties:["email"],limit:1}
   });
   const existing=found?.results?.[0];
-  const props=contactProperties(input);
   if(existing?.id){
-    await hs(config,"/crm/v3/objects/contacts/"+encodeURIComponent(existing.id),{method:"PATCH",body:{properties:props}});
+    await updateContact(config,String(existing.id),{...input,source:null});
     return String(existing.id);
   }
-  const created=await hs(config,"/crm/v3/objects/contacts",{method:"POST",body:{properties:props}});
+  const created=await hs(config,"/crm/v3/objects/contacts",{method:"POST",body:{properties:contactProperties(input)}});
   if(!created?.id)throw failure("HUBSPOT_CONTACT_CREATE_FAILED");
   return String(created.id);
 }
@@ -149,20 +248,27 @@ function contactProperties(input={}){
   if(input.company)props.company=clean(input.company,200);
   if(input.lifecycleStage)props.lifecyclestage=String(input.lifecycleStage);
   if(input.leadStatus)props.hs_lead_status=String(input.leadStatus);
+  if(input.ownerId)props.hubspot_owner_id=String(input.ownerId);
+  if(input.source)props.hs_analytics_source=String(input.source);
   return props;
 }
 
-async function createDeal(config,{name,pipelineId,stageId,contactId}){
-  const created=await hs(config,"/crm/v3/objects/deals",{
-    method:"POST",
-    body:{properties:{dealname:clean(name,240),pipeline:String(pipelineId||"default"),dealstage:String(stageId||"appointmentscheduled"),dealtype:"newbusiness"}}
-  });
+async function createCompany(config,{name,country,phone,ownerId}){
+  const props={name:clean(name,200)};
+  if(country)props.country=clean(country,80);
+  if(phone)props.phone=clean(phone,40);
+  if(ownerId)props.hubspot_owner_id=String(ownerId);
+  const created=await hs(config,"/crm/v3/objects/companies",{method:"POST",body:{properties:props}});
+  if(!created?.id)throw failure("HUBSPOT_COMPANY_CREATE_FAILED");
+  return String(created.id);
+}
+
+async function createDeal(config,{name,pipelineId,stageId,ownerId}){
+  const props={dealname:clean(name,240),pipeline:String(pipelineId||"default"),dealstage:String(stageId||"appointmentscheduled")};
+  if(ownerId)props.hubspot_owner_id=String(ownerId);
+  const created=await hs(config,"/crm/v3/objects/deals",{method:"POST",body:{properties:props}});
   if(!created?.id)throw failure("HUBSPOT_DEAL_CREATE_FAILED");
-  const dealId=String(created.id);
-  if(contactId){
-    await hs(config,"/crm/v4/objects/deal/"+encodeURIComponent(dealId)+"/associations/default/contact/"+encodeURIComponent(contactId),{method:"PUT",body:null});
-  }
-  return dealId;
+  return String(created.id);
 }
 
 async function updateDeal(config,id,{stageId,amount}={}){
@@ -171,6 +277,34 @@ async function updateDeal(config,id,{stageId,amount}={}){
   if(amount!=null)props.amount=String(amount);
   if(!Object.keys(props).length)return;
   await hs(config,"/crm/v3/objects/deals/"+encodeURIComponent(id),{method:"PATCH",body:{properties:props}});
+}
+
+async function createTask(config,{subject,body,priority,dueAt,ownerId}){
+  const due=Date.parse(dueAt);
+  const props={
+    hs_task_subject:clean(subject,240),
+    hs_task_body:clean(body,5000),
+    hs_task_status:"NOT_STARTED",
+    hs_task_priority:["NONE","LOW","MEDIUM","HIGH"].includes(String(priority))?String(priority):"MEDIUM",
+    hs_timestamp:String(Number.isFinite(due)?due:Date.now()+24*3600000)
+  };
+  if(ownerId)props.hubspot_owner_id=String(ownerId);
+  const created=await hs(config,"/crm/v3/objects/tasks",{method:"POST",body:{properties:props}});
+  if(!created?.id)throw failure("HUBSPOT_TASK_CREATE_FAILED");
+  return String(created.id);
+}
+
+async function associate(config,fromType,fromId,toType,toId){
+  if(!fromId||!toId)return;
+  await hs(config,"/crm/v4/objects/"+encodeURIComponent(fromType)+"/"+encodeURIComponent(fromId)+"/associations/default/"+encodeURIComponent(toType)+"/"+encodeURIComponent(toId),{method:"PUT",body:null});
+}
+
+async function persistLink(store,tenantId,{contactId=null,companyId=null,dealId=null,pipelineId=null}={}){
+  await store.sql.unsafe(
+    "INSERT INTO crm_external_links(tenant_id,provider,contact_id,company_id,deal_id,pipeline_id,updated_at) VALUES($1,'hubspot',$2,$3,$4,$5,now()) "+
+    "ON CONFLICT(tenant_id) DO UPDATE SET contact_id=COALESCE(EXCLUDED.contact_id,crm_external_links.contact_id),company_id=COALESCE(EXCLUDED.company_id,crm_external_links.company_id),deal_id=COALESCE(EXCLUDED.deal_id,crm_external_links.deal_id),pipeline_id=COALESCE(EXCLUDED.pipeline_id,crm_external_links.pipeline_id),updated_at=now()",
+    [Number(tenantId),contactId||null,companyId||null,dealId||null,pipelineId||null]
+  );
 }
 
 async function hs(config,path,{method="GET",body=null}={}){
@@ -187,7 +321,7 @@ async function hs(config,path,{method="GET",body=null}={}){
       body:body==null?undefined:JSON.stringify(body),
       signal:controller.signal
     });
-    const payload=await response.json().catch(()=>({}));
+    const payload=response.status===204?{}:await response.json().catch(()=>({}));
     if(!response.ok){
       const e=failure("HUBSPOT_HTTP_"+response.status);
       e.provider_code=clean(payload?.category||payload?.status||payload?.message,120);
@@ -200,15 +334,18 @@ async function hs(config,path,{method="GET",body=null}={}){
   }finally{clearTimeout(timeout);}
 }
 
-async function receipt(store,outboxId,state,errorCode){
+async function receipt(store,outboxId,state,errorCode,externalObjectType=null,externalObjectId=null){
   await store.sql.unsafe(
-    "INSERT INTO crm_sync_receipts(outbox_event_id,provider,state,attempts,last_error_code,processed_at,updated_at) "+
-    "VALUES($1,'hubspot',$2,1,$3,CASE WHEN $2='synced' THEN now() ELSE NULL END,now()) "+
-    "ON CONFLICT(outbox_event_id) DO UPDATE SET state=EXCLUDED.state,attempts=crm_sync_receipts.attempts+1,last_error_code=EXCLUDED.last_error_code,processed_at=CASE WHEN EXCLUDED.state='synced' THEN now() ELSE crm_sync_receipts.processed_at END,updated_at=now()",
-    [Number(outboxId),state,errorCode||null]
+    "INSERT INTO crm_sync_receipts(outbox_event_id,provider,state,attempts,last_error_code,external_object_type,external_object_id,processed_at,updated_at) "+
+    "VALUES($1,'hubspot',$2,1,$3,$4,$5,CASE WHEN $2='synced' THEN now() ELSE NULL END,now()) "+
+    "ON CONFLICT(outbox_event_id) DO UPDATE SET state=EXCLUDED.state,attempts=crm_sync_receipts.attempts+1,last_error_code=EXCLUDED.last_error_code,external_object_type=COALESCE(EXCLUDED.external_object_type,crm_sync_receipts.external_object_type),external_object_id=COALESCE(EXCLUDED.external_object_id,crm_sync_receipts.external_object_id),processed_at=CASE WHEN EXCLUDED.state='synced' THEN now() ELSE crm_sync_receipts.processed_at END,updated_at=now()",
+    [Number(outboxId),state,errorCode||null,externalObjectType||null,externalObjectId||null]
   );
 }
 
+function labelServiceIntent(value){
+  return ({new_number:"Nouveau numéro",portability:"Portabilité",advice:"Orientation"})[String(value||"")]||clean(value,80);
+}
 function clean(value,max=200){return String(value||"").replace(/[\u0000-\u001f\u007f]/g," ").trim().slice(0,max);}
 function safeCode(error){return clean(error?.code||error?.message||"HUBSPOT_SYNC_FAILED",120).replace(/[^A-Za-z0-9_.:-]/g,"_");}
 function failure(code){const e=new Error(code);e.code=code;return e;}
