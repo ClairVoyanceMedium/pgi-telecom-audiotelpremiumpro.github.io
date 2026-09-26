@@ -785,6 +785,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(new Set(migrations.map(x=>x.version)).size,migrations.length);
     assert.equal(migrations[0].version,"001_baseline");
     assert.equal(migrations.at(-1).version,"060_customer_withdrawal_requests");
+    assert.equal(await store.customerWithdrawalFeatureReady(),true);
     for(const migration of migrations)assert.match(migration.checksum,/^[a-f0-9]{64}$/);
   }finally{
     await store.close();
