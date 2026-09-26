@@ -1,7 +1,7 @@
 export function createController(ctx){
   const $=ctx.$,tr=ctx.tr,money=ctx.money,n=ctx.n,dateOnly=ctx.dateOnly,esc=ctx.esc,chip=ctx.chip;
   function render(data){
-    const rows=data.subscriptions||[],el=$("subscription-list"),provider=data.billing_provider||{},offer=data.billing_offer||null,billingSummary=data.billing_summary||{},currencyInfo=billingSummary.billing_currency||{},isIndividual=String((data.tenant||{}).customer_type||"business")==="individual",b2cReady=data.b2c_commercial_ready===true;
+    const rows=data.subscriptions||[],el=$("subscription-list"),provider=data.billing_provider||{},offer=data.billing_offer||null,billingSummary=data.billing_summary||{},currencyInfo=billingSummary.billing_currency||{},b2cBlocked=String((data.tenant||{}).customer_type||"business")==="individual"&&data.b2c_commercial_ready!==true;
     el.innerHTML=rows.length?rows.slice(0,3).map(x=>{
       const price=x.amount_minor!=null?money(n(x.amount_minor)/100,x.price_currency||x.billing_currency)+" TTC / "+(x.billing_interval==="year"?"an":"mois"):"Tarif contractuel";
       const stage=String(x.recovery_stage||"current");let detail=price+" · période payée jusqu’au "+dateOnly(x.current_period_end);if(x.cancel_at_period_end)detail+=" · résiliation enregistrée, aucun renouvellement après cette date";
@@ -32,21 +32,14 @@ export function createController(ctx){
     }
     if(stateEl)stateEl.textContent=needsRecovery?tr("Paiement à régulariser. Utilisez le portail sécurisé pour mettre à jour votre moyen de paiement."):connected?tr("Prestataire de paiement configuré."):tr("Architecture de paiement prête, prestataire non connecté.");
     if(chipEl){chipEl.textContent=needsRecovery?tr("À RÉGULARISER"):connected?tr("PRÊT"):tr("NON CONNECTÉ");chipEl.className="cp-chip "+(needsRecovery?"warn":connected?"ok":"neutral");}
-    if(start){
-      const b2cBlocked=isIndividual&&!b2cReady;
-      start.disabled=b2cBlocked;
-      start.setAttribute("aria-disabled",String(b2cBlocked||!provider.checkout_available||!offer));
-      if(b2cBlocked){start.textContent=tr("Souscription particulier temporairement indisponible");start.title=tr("Ouverture B2C bloquée jusqu’à validation des prérequis juridiques et de la rétractation en ligne.");}
-      else start.title=!offer?tr("Tarif indisponible pour ce compte."):!provider.checkout_available?tr("Paiement en ligne pas encore activé."):"";
-    }
+    if(start){start.disabled=b2cBlocked;start.setAttribute("aria-disabled",String(b2cBlocked||!provider.checkout_available||!offer));if(b2cBlocked){start.textContent=tr("Souscription particulier indisponible");start.title=tr("Ouverture B2C en cours de conformité.");}else start.title=!offer?tr("Tarif indisponible pour ce compte."):!provider.checkout_available?tr("Paiement en ligne pas encore activé."):"";}
     if(manage){manage.textContent=needsRecovery?tr("Régulariser mon paiement"):tr("Gérer / résilier mon abonnement");manage.disabled=false;manage.setAttribute("aria-disabled",String(!provider.customer_portal_available||!rows.length));manage.title=!rows.length?tr("Aucun abonnement actif à gérer."):!provider.customer_portal_available?tr("Portail de facturation pas encore activé."):"";}
   }
   async function open(kind){
     const state=ctx.getState();if(state.billingBusy)return;
     if(state.demo){ctx.toast("Prestataire de paiement non connecté.");return;}
     const data=state.data||{},provider=data.billing_provider||{},offer=data.billing_offer||null,rows=data.subscriptions||[];
-    const isIndividual=String((data.tenant||{}).customer_type||"business")==="individual";
-    if(kind==="start"&&isIndividual&&data.b2c_commercial_ready!==true){ctx.toast("Souscription particulier temporairement indisponible : les prérequis B2C sont encore en finalisation.");return;}
+    if(kind==="start"&&String((data.tenant||{}).customer_type)==="individual"&&data.b2c_commercial_ready!==true){ctx.toast("Souscription particulier indisponible.");return;}
     if(kind==="start"&&!offer){ctx.toast("Le tarif n’est pas encore disponible pour ce compte.");return;}
     if(kind==="start"&&!provider.checkout_available){ctx.toast("Le paiement en ligne n’est pas encore activé. Votre dossier reste enregistré.");return;}
     if(kind==="start"){
@@ -66,7 +59,7 @@ export function createController(ctx){
       const target=result&&result.url?new URL(result.url,location.origin):null;
       if(!target||target.protocol!=="https:")throw new Error("INVALID_BILLING_URL");
       location.assign(target.href);
-    }catch(err){ctx.toast(err&&err.code==="PAYMENT_PROVIDER_NOT_CONNECTED"?"Prestataire de paiement non connecté.":err&&err.code==="B2C_COMMERCIAL_NOT_READY"?"Souscription particulier temporairement indisponible jusqu’à validation des prérequis B2C.":"Gestion de l’abonnement indisponible.");}
+    }catch(err){ctx.toast(err&&err.code==="PAYMENT_PROVIDER_NOT_CONNECTED"?"Prestataire de paiement non connecté.":err&&err.code==="B2C_COMMERCIAL_NOT_READY"?"Souscription particulier indisponible.":"Gestion de l’abonnement indisponible.");}
     finally{state.billingBusy=false;if(button){button.textContent=original;render(state.data||{});}}
   }
   function handleReturn(){
