@@ -25,13 +25,13 @@ test("registration requires current legal documents and keeps privacy acknowledg
   assert.match(audience,/conditions-utilisation/);
   assert.match(portal,/legal_terms_accepted/);
   assert.match(portal,/privacy_notice_acknowledged/);
-  assert.match(portal,/legal_version:"2026-09-26-b2b-b2c-v3"/);
+  assert.match(portal,/legal_version:"2026-09-26-b2b-b2c-v4"/);
   const terms=read("site/seo/conditions-abonnement.html"),cgu=read("site/seo/conditions-utilisation.html");
   assert.match(terms,/Partie B2C : informations avant engagement/);
   assert.match(terms,/Partie B2B : socle commercial/);
   assert.match(terms,/garantie légale de conformité/i);
   assert.match(terms,/commande et obligation de paiement/i);
-  assert.match(terms,/2026-09-26-b2b-b2c-v3/);
+  assert.match(terms,/2026-09-26-b2b-b2c-v4/);
   assert.match(terms,/durée indéterminée/i);
   assert.match(terms,/facturé par périodes mensuelles successives/i);
   assert.match(terms,/résiliation à tout moment/i);
