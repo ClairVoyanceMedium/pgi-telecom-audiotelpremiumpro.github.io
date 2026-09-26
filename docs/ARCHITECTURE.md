@@ -127,7 +127,7 @@ Un changement d'opérateur ne modifie ni le numéro, ni les destinations des soc
 
 ## Positionnement multisectoriel
 
-Un numéro Audiotel Premium Pro peut représenter une entreprise entière et non une personne unique. Le routage doit accepter plusieurs services, équipes, intervenants ou postes derrière le même numéro. La voyance n’est qu’un cas d’usage possible parmi d’autres.
+Un numéro Audiotel Premium Pro peut représenter une entreprise entière et non une personne unique. Le routage doit accepter plusieurs services, équipes, intervenants ou postes derrière le même numéro. Aucun secteur métier ne doit être codé en dur dans le produit ou le parcours commercial.
 
 La terminologie technique historique `experts` est conservée dans la base et les API pour compatibilité, mais l’interface générale utilise « intervenants / services / postes ».
 

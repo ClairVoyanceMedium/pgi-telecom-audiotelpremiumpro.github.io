@@ -76,3 +76,20 @@ form.addEventListener("submit",e=>{
 });
 syncType();
 })();
+
+
+;(()=>{
+const input=document.getElementById("current-platform-fee");
+const month=document.getElementById("savings-month");
+const year=document.getElementById("savings-year");
+if(!input||!month||!year)return;
+const money=new Intl.NumberFormat("fr-FR",{style:"currency",currency:"EUR",minimumFractionDigits:0,maximumFractionDigits:2});
+function renderSavings(){
+  const current=Math.min(5000,Math.max(0,Number.parseFloat(input.value)||0));
+  const monthly=Math.max(0,current-3);
+  month.textContent=money.format(monthly)+" TTC";
+  year.textContent=money.format(monthly*12)+" TTC";
+}
+input.addEventListener("input",renderSavings);
+renderSavings();
+})();

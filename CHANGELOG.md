@@ -1,3 +1,14 @@
+## Universal Audience & Savings — 2026-09-26
+
+- suppression du ciblage public spécifique à la voyance et remplacement par un positionnement SVA multi-activités ;
+- nouvelle page générique indépendants / porteurs de projet et redirection 308 de l’ancienne URL sectorielle ;
+- accueil et demande d’ouverture clarifiés pour particuliers, porteurs de projet et professionnels ;
+- demande initiale possible sans SIRET, avec réserve explicite sur les justificatifs pouvant être requis avant activation ou reversement ;
+- espace d’inscription sécurisé aligné sur les mêmes profils et SIRET facultatif à l’inscription ;
+- calculateur d’économies fixes comparant le coût mensuel saisi à l’abonnement plateforme de 3 € TTC/mois ;
+- comparateur par minute conservé séparément pour éviter de mélanger frais fixes, reversement et coûts variables ;
+- aucune affirmation de tarif concurrent non vérifié ni promesse de gain.
+
 ## Monthly Contract & Site Protection v3 — 2026-09-26
 
 - abonnement plateforme à durée indéterminée, facturé mensuellement d’avance ;
