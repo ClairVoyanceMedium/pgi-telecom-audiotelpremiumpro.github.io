@@ -3796,7 +3796,7 @@ export class PostgresStore{
       const access=(await tx.unsafe("SELECT pgi_tenant_has_premium_call_access($1,NULL,now()) AS allowed",[id]))[0];
       const routingAccess=(await tx.unsafe("SELECT pgi_tenant_has_premium_routing_access($1,NULL,now()) AS allowed",[id]))[0];
       return {
-        tenant:{id:tenant.public_id,name:tenant.display_name,billing_email:tenant.billing_email,country_code:tenant.country_code,locale:tenant.preferred_locale,currency:billingCurrency,timezone:tenant.timezone,status:tenant.status},
+        tenant:{id:tenant.public_id,name:tenant.display_name,billing_email:tenant.billing_email,country_code:tenant.country_code,locale:tenant.preferred_locale,currency:billingCurrency,timezone:tenant.timezone,status:tenant.status,customer_type:tenant.customer_type},
         offer,
         reference_offer:referenceOffer,
         pricing_state:offer?"local_price_ready":referenceOffer?"local_conversion_required":"unavailable",
