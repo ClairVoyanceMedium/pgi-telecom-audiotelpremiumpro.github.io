@@ -3739,6 +3739,16 @@ export class PostgresStore{
     });
   }
 
+  async customerWithdrawalFeatureReady(){
+    try{
+      const rows=await this.sql.unsafe(
+        "SELECT to_regclass('public.customer_withdrawal_requests') IS NOT NULL AS table_ready,"+
+        " EXISTS(SELECT 1 FROM schema_migrations WHERE version='060_customer_withdrawal_requests') AS migration_ready"
+      );
+      return rows[0]?.table_ready===true&&rows[0]?.migration_ready===true;
+    }catch(_error){return false;}
+  }
+
   async createCustomerWithdrawalRequest(input={}){
     const contractEmail=String(input.contract_email||"").trim().toLowerCase();
     const result=await this.sql.begin(async tx=>{
