@@ -3739,6 +3739,42 @@ export class PostgresStore{
     });
   }
 
+  async createCustomerWithdrawalRequest(input={}){
+    const contractEmail=String(input.contract_email||"").trim().toLowerCase();
+    const result=await this.sql.begin(async tx=>{
+      let matched=(await tx.unsafe(
+        "SELECT t.id AS tenant_id FROM customer_principals cp JOIN customer_tenant_memberships m ON m.customer_principal_id=cp.id JOIN tenants t ON t.id=m.tenant_id"+
+        " WHERE cp.email_normalized=$1 AND m.status='active' AND t.tenant_type<>'internal' ORDER BY (m.role='owner') DESC,m.created_at ASC LIMIT 1",
+        [contractEmail]
+      ))[0]||null;
+      if(!matched)matched=(await tx.unsafe(
+        "SELECT id AS tenant_id FROM tenants WHERE tenant_type<>'internal' AND lower(COALESCE(billing_email,''))=$1 ORDER BY id ASC LIMIT 1",
+        [contractEmail]
+      ))[0]||null;
+      const internal=(await tx.unsafe("SELECT id FROM tenants WHERE slug='pgi-internal' LIMIT 1"))[0];
+      if(!internal)throw problem(503,"WITHDRAWAL_EVENT_TENANT_UNAVAILABLE");
+      const tenantId=matched?Number(matched.tenant_id):null;
+      const rows=await tx.unsafe(
+        "INSERT INTO customer_withdrawal_requests(tenant_id,first_name,last_name,contract_email,acknowledgement_email,contract_reference,contract_details,contract_date,legal_version,source,request_sha256,requester_ip_sha256,user_agent_sha256)"+
+        " VALUES($1,$2,$3,$4,$5,$6,$7,$8::date,$9,'online',$10,$11,$12)"+
+        " RETURNING id,public_id::text AS public_id,submitted_at",
+        [tenantId,String(input.first_name||""),String(input.last_name||""),contractEmail,String(input.acknowledgement_email||"").trim().toLowerCase(),input.contract_reference||null,String(input.contract_details||""),input.contract_date||null,String(input.legal_version||""),String(input.request_sha256||""),input.requester_ip_sha256||null,input.user_agent_sha256||null]
+      );
+      const row=rows[0],reference="RET-"+String(row.public_id).slice(0,8).toUpperCase(),eventTenantId=tenantId||Number(internal.id);
+      const eventPayload={withdrawal_public_id:row.public_id,reference,first_name:String(input.first_name||""),last_name:String(input.last_name||""),contract_email:contractEmail,acknowledgement_email:String(input.acknowledgement_email||"").trim().toLowerCase(),contract_reference:input.contract_reference||null,contract_details:String(input.contract_details||""),contract_date:input.contract_date||null,submitted_at:new Date(row.submitted_at).toISOString(),legal_version:String(input.legal_version||"")};
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'consumer.withdrawal.received','customer_withdrawal_request',$2,$3::jsonb)",
+        [eventTenantId,String(row.id),JSON.stringify(eventPayload)]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,action,entity_type,entity_id,details) VALUES($1,'consumer.withdrawal.received','customer_withdrawal_request',$2,$3::jsonb)",
+        [eventTenantId,String(row.id),JSON.stringify({public_id:row.public_id,reference,matched_tenant:Boolean(tenantId)})]
+      );
+      return {public_id:row.public_id,reference,submitted_at:row.submitted_at};
+    });
+    return result;
+  }
+
   async recordCustomerLegalAcceptance(tenantId,principalId,input={}){
     const type=String(input.acceptance_type||"").trim(),version=String(input.document_version||"").trim();
     if(!["account_terms","subscription_checkout"].includes(type))throw problem(400,"INVALID_LEGAL_ACCEPTANCE_TYPE");
