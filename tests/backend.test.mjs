@@ -775,3 +775,28 @@ test("FreeSWITCH normalization preserves PDD, hangup side and distinct RTP loss 
   assert.equal(out.payload.quality.rtt_ms,55);
   assert.equal(out.payload.quality.mos,4.31);
 });
+
+
+test("public consumer withdrawal is confirmed, timestamped and idempotent",async()=>{
+  await withServer(async({app,base})=>{
+    const key="55555555-5555-4555-8555-555555555555";
+    const payload={first_name:"Alice",last_name:"Martin",acknowledgement_email:"alice@example.test",contract_reference:"alice@example.test",confirmed:true,website:""};
+    const submit=()=>fetch(base+"/api/v1/public/consumer-withdrawal",{
+      method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":key},body:JSON.stringify(payload)
+    });
+    let r=await submit();
+    assert.equal(r.status,201);
+    const first=await r.json();
+    assert.equal(first.withdrawal_received,true);
+    assert.equal(first.replayed,false);
+    assert.match(first.reference,/^[0-9a-f-]{36}$/i);
+    assert.ok(Number.isFinite(Date.parse(first.received_at)));
+
+    r=await submit();
+    assert.equal(r.status,201);
+    const second=await r.json();
+    assert.equal(second.replayed,true);
+    assert.equal(second.reference,first.reference);
+    assert.equal(app.store.consumerWithdrawalRequests.length,1);
+  });
+});
