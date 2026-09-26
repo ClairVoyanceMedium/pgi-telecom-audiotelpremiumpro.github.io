@@ -20,6 +20,7 @@ const files=[
   "robots.txt",
   ".nojekyll",
   "assets/styles.css",
+  "assets/tracking.js",
   "assets/client-portal.css",
   "assets/client-admin-theme.css",
   "assets/client-config.js",
@@ -102,17 +103,18 @@ for(const file of files){
 // The customer-facing site owns the production root. Keep the staff cockpit on a
 // dedicated, non-indexed URL instead of exposing it as the homepage.
 fs.copyFileSync(path.join(root,"index.html"),path.join(dist,"cockpit.html"));
+fs.writeFileSync(path.join(dist,"client.html"),injectTracking(fs.readFileSync(path.join(root,"client.html"),"utf8")),"utf8");
 const publicBaseUrl=resolvePublicBaseUrl();
 const marketingSource=fs.readFileSync(path.join(root,"site","index.html"),"utf8");
-const marketingSite=injectLegalNavigation(applyPublicMetadata(marketingSource,publicBaseUrl));
-const marketingRoot=injectLegalNavigation(applyPublicMetadata(
+const marketingSite=injectTracking(injectLegalNavigation(applyPublicMetadata(marketingSource,publicBaseUrl)));
+const marketingRoot=injectTracking(injectLegalNavigation(applyPublicMetadata(
   marketingSource
     .replaceAll("../assets/","assets/")
     .replaceAll("../client.html","client.html")
     .replace('href="site.css"','href="site/site.css"')
     .replace('src="site.js"','src="site/site.js"'),
   publicBaseUrl
-));
+)));
 fs.writeFileSync(path.join(dist,"site","index.html"),marketingSite,"utf8");
 fs.writeFileSync(path.join(dist,"index.html"),marketingRoot,"utf8");
 const seoPages=[
@@ -136,7 +138,7 @@ for(const slug of seoPages){
   const source=fs.readFileSync(path.join(root,"site","seo",slug+".html"),"utf8");
   const targetDir=path.join(dist,slug);
   fs.mkdirSync(targetDir,{recursive:true});
-  fs.writeFileSync(path.join(targetDir,"index.html"),injectLegalNavigation(applyLandingMetadata(source,publicBaseUrl,slug)),"utf8");
+  fs.writeFileSync(path.join(targetDir,"index.html"),injectTracking(injectLegalNavigation(applyLandingMetadata(source,publicBaseUrl,slug))),"utf8");
 }
 
 
@@ -242,6 +244,11 @@ function applyLandingMetadata(html,baseUrl,slug){
     .replaceAll("__BASE__",base.replace(/\/+$/,""))
     .replaceAll("__CANONICAL__",canonical)
     .replaceAll("__LOGO__",logo);
+}
+
+function injectTracking(html){
+  if(html.includes('/assets/tracking.js'))return html;
+  return html.replace("</head>",'<script src="/assets/tracking.js" defer></script>\n</head>');
 }
 
 function injectLegalNavigation(html){
