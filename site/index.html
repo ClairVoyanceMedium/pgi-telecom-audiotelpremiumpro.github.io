@@ -274,20 +274,20 @@
 <div class="order-head"><span>ÉTAPE 1 SUR 2</span><strong>Votre demande</strong><small>La deuxième étape se fait dans l’espace client sécurisé.</small></div>
 <fieldset class="account-choice">
 <legend>Vous êtes</legend>
-<label><input type="radio" name="order_account_type" value="individual" required><span><strong>Particulier</strong><small>Je démarre ou travaille seul.</small></span></label>
-<label><input type="radio" name="order_account_type" value="business" required><span><strong>Professionnel / entreprise</strong><small>Indépendant, société ou équipe.</small></span></label>
+<label><input type="radio" name="order_account_type" value="individual" required><span><strong>Particulier / porteur de projet</strong><small>Je prépare mon activité ou je n’ai pas encore de structure professionnelle.</small></span></label>
+<label><input type="radio" name="order_account_type" value="business" required><span><strong>Professionnel / entreprise</strong><small>Indépendant, entrepreneur individuel, société, association, cabinet ou équipe.</small></span></label>
 </fieldset>
 <div class="order-fields two">
 <label>Prénom<input id="order-first-name" name="first_name" autocomplete="given-name" required maxlength="80"></label>
 <label>Nom<input id="order-last-name" name="last_name" autocomplete="family-name" required maxlength="80"></label>
 </div>
-<label id="order-company-wrap" hidden>Société ou activité <span>(facultatif)</span><input id="order-company" name="company_name" autocomplete="organization" maxlength="200"></label>
+<label id="order-company-wrap" hidden>Société, enseigne ou activité <span>(facultatif)</span><input id="order-company" name="company_name" autocomplete="organization" maxlength="200"></label>
 <label>Adresse e-mail<input id="order-email" name="email" type="email" autocomplete="email" required maxlength="320"></label>
 <label>Téléphone <span>(facultatif)</span><input id="order-phone" name="phone" type="tel" autocomplete="tel" maxlength="40"></label>
 <label>Votre besoin principal<select id="order-service-intent" name="service_intent" required><option value="" selected disabled>Choisir</option><option value="new_number">Obtenir un nouveau numéro</option><option value="portability">Étudier la portabilité de mon numéro</option><option value="advice">Je souhaite être orienté</option></select></label>
 <button class="btn order-submit" type="submit">Continuer ma demande <span>→</span></button>
 <p id="order-status" class="order-status" role="alert" hidden>Impossible de transférer la demande dans cette session. Autorisez le stockage de session puis réessayez.</p>
-<p class="order-privacy">Les informations saisies ici sont transférées uniquement dans votre navigateur vers l’étape d’inscription. Aucun mot de passe n’est demandé sur cette page.</p>
+<p class="order-privacy">Les informations saisies ici sont transférées uniquement dans votre navigateur vers l’étape d’inscription. Aucun mot de passe n’est demandé sur cette page. Le SIRET reste facultatif à l’inscription initiale ; les justificatifs réellement nécessaires seront demandés avant activation si votre situation l’exige.</p>
 <noscript><p class="order-status bad">JavaScript doit être activé pour transférer cette demande vers l’espace client sécurisé.</p></noscript>
 </form>
 </div>
@@ -346,8 +346,8 @@
 </div>
 <div class="faq-list">
 <details open>
-<summary>Est-ce réservé aux entreprises ?</summary>
-<p>Non. L’inscription propose un profil Particulier et un profil Professionnel / entreprise. L’interface est simplifiée pour un particulier et conserve les fonctions d’équipe pour les structures qui en ont besoin.</p>
+<summary>Est-ce réservé aux entreprises ou à un métier particulier ?</summary>
+<p>Non. La demande est ouverte aux particuliers, porteurs de projet et professionnels, sans ciblage d’un métier précis. Vous pouvez commencer sans SIRET ; l’activation réelle reste soumise aux justificatifs et conditions applicables à votre situation.</p>
 </details>
 <details>
 <summary>Est-ce que 1 800 € par mois est garanti ?</summary>
