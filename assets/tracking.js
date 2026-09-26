@@ -2,30 +2,41 @@
 "use strict";
 const CONSENT_KEY="pgi_consent_v2",ATTR_KEY="pgi_acquisition_v2",SESSION_KEY="pgi_analytics_session_v1";
 const allowedUtms=["utm_source","utm_medium","utm_campaign","utm_term","utm_content","gclid","msclkid"];
-let config=null,consent=readConsent(),booted=false;
+let config=null,consent=readConsent(),booted=false,volatileAttribution=null;
 
 function safe(value,max=180){return String(value||"").replace(/[\u0000-\u001f\u007f]/g," ").trim().slice(0,max)}
 function readConsent(){try{const x=JSON.parse(localStorage.getItem(CONSENT_KEY)||"null");return x&&x.version===2?x:null}catch{return null}}
 function saveConsent(next){
   consent={version:2,necessary:true,analytics:next.analytics===true,marketing:next.marketing===true,updated_at:new Date().toISOString()};
   try{localStorage.setItem(CONSENT_KEY,JSON.stringify(consent))}catch{}
+  if(!consent.analytics&&!consent.marketing){
+    try{sessionStorage.removeItem(ATTR_KEY);sessionStorage.removeItem(SESSION_KEY)}catch{}
+  }
   applyConsent();
 }
-function attribution(){
+function storedAttribution(){
   try{return JSON.parse(sessionStorage.getItem(ATTR_KEY)||"{}")||{}}catch{return{}}
 }
-function captureAttribution(){
-  const q=new URLSearchParams(location.search),prev=attribution(),next={...prev};
+function initialAttribution(){
+  if(volatileAttribution)return volatileAttribution;
+  const q=new URLSearchParams(location.search),next={};
   allowedUtms.forEach(k=>{const v=safe(q.get(k),180);if(v)next[k]=v});
-  if(!next.landing_path)next.landing_path=safe(location.pathname+location.search,500);
-  if(!next.referrer_host){
-    try{const h=document.referrer?new URL(document.referrer).hostname:"";if(h&&h!==location.hostname)next.referrer_host=safe(h,180)}catch{}
-  }
-  if(!next.first_seen_at)next.first_seen_at=new Date().toISOString();
-  try{sessionStorage.setItem(ATTR_KEY,JSON.stringify(next))}catch{}
+  next.landing_path=safe(location.pathname,300);
+  try{const h=document.referrer?new URL(document.referrer).hostname:"";if(h&&h!==location.hostname)next.referrer_host=safe(h,180)}catch{}
+  next.first_seen_at=new Date().toISOString();
+  volatileAttribution=next;
+  return next;
+}
+function captureAttribution(persist=false){
+  const allowed=Boolean(consent?.analytics||consent?.marketing);
+  const next={...(allowed?storedAttribution():{}),...initialAttribution()};
+  const q=new URLSearchParams(location.search);
+  allowedUtms.forEach(k=>{const v=safe(q.get(k),180);if(v)next[k]=v});
+  if(allowed&&persist){try{sessionStorage.setItem(ATTR_KEY,JSON.stringify(next))}catch{}}
   return next;
 }
 function sessionId(){
+  if(!consent?.analytics)return "";
   try{
     let id=sessionStorage.getItem(SESSION_KEY);
     if(!id){id=(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+"-"+Math.random().toString(36).slice(2));sessionStorage.setItem(SESSION_KEY,id)}
@@ -86,6 +97,7 @@ async function applyConsent(){
   if(!consent)return;
   setGoogleConsent(consent.analytics,consent.marketing);
   await fetchConfig();
+  if(consent.analytics||consent.marketing)captureAttribution(true);
   if(consent.analytics){
     if(config.ga4_enabled!==false)loadGa4();
     if(config.clarity_enabled===true)loadClarity();
@@ -100,7 +112,7 @@ function track(name,meta={}){
   if(!event)return;
   if(consent?.analytics&&window.gtag)window.gtag("event",event,cleanMeta(meta));
   if(!consent?.analytics)return;
-  const a=captureAttribution();
+  const a=captureAttribution(true);
   fetch("/api/v1/public/acquisition/event",{
     method:"POST",credentials:"same-origin",keepalive:true,
     headers:{"content-type":"application/json"},
@@ -162,11 +174,11 @@ function bind(){
   if(savings)savings.addEventListener("change",()=>track("savings_calculated",{current_monthly_cost:Number(savings.value)||0}));
 }
 async function init(){
-  initGoogleDefaults();captureAttribution();bind();
+  initGoogleDefaults();initialAttribution();bind();
   await fetchConfig();
   if(consent)applyConsent();else banner();
   manageButton();
 }
-window.PGITracking=Object.freeze({track,getAttribution:()=>typeof structuredClone==="function"?structuredClone(captureAttribution()):JSON.parse(JSON.stringify(captureAttribution())),getSessionId:()=>sessionId(),getConsent:()=>consent?{...consent}:null});
+window.PGITracking=Object.freeze({track,getAttribution:()=>{if(!consent?.analytics&&!consent?.marketing)return{};const a=captureAttribution(true);return typeof structuredClone==="function"?structuredClone(a):JSON.parse(JSON.stringify(a))},getSessionId:()=>sessionId(),getConsent:()=>consent?{...consent}:null});
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init,{once:true});else init();
 })();
