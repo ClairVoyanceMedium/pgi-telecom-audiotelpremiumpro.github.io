@@ -12,22 +12,25 @@ const client=fs.readFileSync("client.html","utf8");
 const application=fs.readFileSync("site/seo/demande-ouverture.html","utf8");
 const buildStatic=fs.readFileSync("scripts/build-static.mjs","utf8");
 
-test("public site targets both individuals and professionals",()=>{
+test("public site targets individuals, project holders and professionals without sector lock-in",()=>{
   assert.match(html,/AUDIOTEL · SVA · PARTICULIERS · PROFESSIONNELS/);
+  assert.match(html,/SIRET FACULTATIF À LA DEMANDE/);
   assert.match(html,/Demander un compte particulier/);
   assert.match(html,/Demander un compte professionnel/);
-  assert.match(html,/Simple pour un particulier\. Complète pour une entreprise\./);
+  assert.match(html,/Vous pouvez commencer avec ou sans SIRET/);
+  assert.match(html,/Le numéro SVA n’est pas réservé à un métier particulier/);
+  assert.doesNotMatch(html,/Voyance &amp; astrologie|AUDIOTEL POUR VOYANCE/i);
 });
 
 test("public homepage links to focused SEO content without changing the signup flow",()=>{
-  assert.match(html,/href="\/audiotel-voyance\//);
+  assert.match(html,/href="\/audiotel-independants\//);
   assert.match(html,/href="\/audiotel-coaching\//);
   assert.match(html,/href="\/audiotel-professionnels\//);
   assert.match(html,/href="\/reversement-audiotel\//);
   assert.match(html,/href="\/numero-sva\//);
   assert.match(html,/href="\/comparateur-audiotel\//);
   assert.match(html,/href="\/demande-ouverture\//);
-  assert.match(html,/Objectif PGI : une offre plus compétitive/);
+  assert.match(html,/3 € TTC par mois pour la plateforme/);
   assert.doesNotMatch(html,/href="#commande"/);
 });
 
@@ -42,6 +45,19 @@ test("public pricing and revenue example stay explicit and non-guaranteed",()=>{
   assert.match(html,/pas une promesse commerciale/);
   assert.match(html,/ne constituent pas une garantie de revenus/);
   assert.doesNotMatch(html,/revenu garanti|gains garantis/i);
+});
+
+test("homepage exposes a transparent fixed-fee savings comparison",()=>{
+  assert.match(html,/ÉCONOMIES MESURABLES/);
+  assert.match(html,/id="current-platform-fee"/);
+  assert.match(html,/id="savings-month"/);
+  assert.match(html,/id="savings-year"/);
+  assert.match(html,/30 € TTC \/ mois/);
+  assert.match(html,/27 € \/ mois/);
+  assert.match(html,/324 € \/ an/);
+  assert.match(js,/monthly=Math\.max\(0,current-3\)/);
+  assert.match(js,/monthly\*12/);
+  assert.match(html,/ne prétend pas représenter le tarif d’un concurrent déterminé/);
 });
 
 test("calculator uses transparent minutes times rate arithmetic",()=>{
@@ -124,7 +140,9 @@ test("public funnels preserve legal customer qualification and non-promissory fi
   const number=fs.readFileSync("site/seo/numero-sva.html","utf8");
   const comparator=fs.readFileSync("site/seo/comparateur-audiotel.html","utf8");
   const liveFinance=fs.readFileSync("assets/client-live-finance.js","utf8");
-  assert.doesNotMatch(independants,/demande-ouverture\/\?profil=particulier/);
+  assert.match(independants,/sans être limité à un secteur particulier/i);
+  assert.match(independants,/avec ou sans SIRET/i);
+  assert.doesNotMatch(independants,/voyance|astrologie/i);
   assert.match(number,/particuliers et professionnels/i);
   assert.match(comparator,/écart économique potentiel/i);
   assert.doesNotMatch(comparator,/<title>[^<]*gain potentiel/i);
