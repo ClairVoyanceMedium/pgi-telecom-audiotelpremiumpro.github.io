@@ -13,10 +13,14 @@ export async function drainHubSpotCrm({store,config,limit=50}={}){
     " k.entity_type,k.registration_number,"+
     " owner.id::text AS owner_principal_id,owner.email AS owner_email,owner.display_name AS owner_name,owner.metadata AS owner_metadata,"+
     " l.contact_id,l.company_id,l.deal_id,l.pipeline_id,l.last_stage,"+
+    " i.id AS incident_id,i.public_id::text AS incident_public_id,i.title AS incident_title,i.description AS incident_description,i.status AS incident_status,i.severity AS incident_severity,i.category AS incident_category,"+
+    " il.ticket_id,il.last_status AS ticket_last_status,il.last_priority AS ticket_last_priority,"+
     " r.state AS receipt_state,r.external_object_type,r.external_object_id "+
     " FROM outbox_events o JOIN tenants t ON t.id=o.tenant_id "+
     " LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id "+
     " LEFT JOIN crm_external_links l ON l.tenant_id=t.id "+
+    " LEFT JOIN tenant_service_incidents i ON o.aggregate_type='tenant_service_incident' AND i.id::text=o.aggregate_id "+
+    " LEFT JOIN crm_incident_links il ON il.incident_id=i.id "+
     " LEFT JOIN crm_sync_receipts r ON r.outbox_event_id=o.id "+
     " LEFT JOIN LATERAL ("+
     "   SELECT cp.id,cp.email,cp.display_name,cp.metadata FROM customer_tenant_memberships m "+
@@ -27,14 +31,16 @@ export async function drainHubSpotCrm({store,config,limit=50}={}){
     " WHERE o.event_type=ANY($1::text[]) "+
     " AND COALESCE(r.state,'pending')<>'synced' "+
     " ORDER BY o.id ASC LIMIT $2",
-    [["customer.self_registered","tenant.status","subscription.changed","portability.requested"],take]
+    [["customer.self_registered","tenant.status","subscription.changed","portability.requested","service.incident.created","service.incident.note","service.incident.changed","service.incident.resolved"],take]
   );
   const result={enabled:true,processed:0,synced:0,failed:0};
   for(const row of rows){
     result.processed++;
     try{
       await receipt(store,row.id,"pending",null,row.external_object_type,row.external_object_id);
-      const outcome=await syncRow(store,config,row);
+      const outcome=String(row.event_type||"").startsWith("service.incident.")
+        ?await syncSupportRow(store,config,row)
+        :await syncRow(store,config,row);
       await receipt(store,row.id,"synced",null,outcome.externalObjectType,outcome.externalObjectId);
       result.synced++;
     }catch(error){
@@ -132,6 +138,116 @@ async function syncRow(store,config,row){
     [row.tenant_id,contactId,companyId||null,dealId,pipelineId,desired.label]
   );
   return {externalObjectType,externalObjectId};
+}
+
+async function syncSupportRow(store,config,row){
+  if(!row.incident_id)throw failure("HUBSPOT_INCIDENT_NOT_FOUND");
+  const payload=row.payload||{};
+  const ownerId=String(config.hubspotOwnerId||"").trim();
+  const status=String(payload.status||row.incident_status||"open").toLowerCase();
+  const severity=String(payload.severity||row.incident_severity||"normal").toLowerCase();
+
+  let ticketId=String(row.ticket_id||"");
+  if(!ticketId){
+    ticketId=await createTicket(config,{
+      subject:clean(row.incident_title||("Incident "+(row.incident_public_id||row.aggregate_id)),240),
+      content:clean(row.incident_description||("Dossier PGI "+(row.incident_public_id||row.aggregate_id)),5000),
+      status,
+      severity,
+      ownerId
+    });
+    await persistIncidentLink(store,row,{ticketId,status,severity});
+    if(row.contact_id)await associate(config,"ticket",ticketId,"contact",String(row.contact_id));
+    if(row.company_id)await associate(config,"ticket",ticketId,"company",String(row.company_id));
+    if(row.deal_id)await associate(config,"ticket",ticketId,"deal",String(row.deal_id));
+  }else{
+    await updateTicket(config,ticketId,{status,severity});
+  }
+
+  if(row.event_type==="service.incident.note"&&!row.external_object_id){
+    const noteId=Number(payload.note_id||0);
+    if(Number.isInteger(noteId)&&noteId>0){
+      const notes=await store.sql.unsafe(
+        "SELECT body,author_type,customer_visible,created_at FROM tenant_service_incident_notes WHERE id=$1 AND incident_id=$2 LIMIT 1",
+        [noteId,Number(row.incident_id)]
+      );
+      const note=notes[0];
+      if(note){
+        const prefix=note.customer_visible===false?"[Note interne PGI] ":"";
+        const externalNoteId=await createNote(config,{
+          body:prefix+clean(note.body,4800),
+          occurredAt:note.created_at,
+          ownerId
+        });
+        await associate(config,"note",externalNoteId,"ticket",ticketId);
+        if(row.contact_id)await associate(config,"note",externalNoteId,"contact",String(row.contact_id));
+        await persistIncidentLink(store,row,{ticketId,status,severity});
+        return {externalObjectType:"note",externalObjectId:externalNoteId};
+      }
+    }
+  }
+
+  await persistIncidentLink(store,row,{ticketId,status,severity});
+  return {externalObjectType:"ticket",externalObjectId:ticketId};
+}
+
+async function createTicket(config,{subject,content,status,severity,ownerId}){
+  const props={
+    subject:clean(subject,240),
+    content:clean(content,5000),
+    hs_pipeline:"0",
+    hs_pipeline_stage:ticketStage(status),
+    hs_ticket_priority:ticketPriority(severity)
+  };
+  if(ownerId)props.hubspot_owner_id=String(ownerId);
+  const created=await hs(config,"/crm/v3/objects/tickets",{method:"POST",body:{properties:props}});
+  if(!created?.id)throw failure("HUBSPOT_TICKET_CREATE_FAILED");
+  return String(created.id);
+}
+
+async function updateTicket(config,id,{status,severity}={}){
+  const props={};
+  if(status)props.hs_pipeline_stage=ticketStage(status);
+  if(severity)props.hs_ticket_priority=ticketPriority(severity);
+  if(!Object.keys(props).length)return;
+  await hs(config,"/crm/v3/objects/tickets/"+encodeURIComponent(id),{method:"PATCH",body:{properties:props}});
+}
+
+async function createNote(config,{body,occurredAt,ownerId}){
+  const at=Date.parse(String(occurredAt||""));
+  const props={
+    hs_note_body:clean(body,5000),
+    hs_timestamp:String(Number.isFinite(at)?at:Date.now())
+  };
+  if(ownerId)props.hubspot_owner_id=String(ownerId);
+  const created=await hs(config,"/crm/v3/objects/notes",{method:"POST",body:{properties:props}});
+  if(!created?.id)throw failure("HUBSPOT_NOTE_CREATE_FAILED");
+  return String(created.id);
+}
+
+async function persistIncidentLink(store,row,{ticketId,status,severity}){
+  await store.sql.unsafe(
+    "INSERT INTO crm_incident_links(incident_id,tenant_id,provider,ticket_id,contact_id,company_id,deal_id,last_status,last_priority,last_synced_at,last_error_code,updated_at) "+
+    "VALUES($1,$2,'hubspot',$3,$4,$5,$6,$7,$8,now(),NULL,now()) "+
+    "ON CONFLICT(incident_id) DO UPDATE SET ticket_id=EXCLUDED.ticket_id,contact_id=COALESCE(EXCLUDED.contact_id,crm_incident_links.contact_id),company_id=COALESCE(EXCLUDED.company_id,crm_incident_links.company_id),deal_id=COALESCE(EXCLUDED.deal_id,crm_incident_links.deal_id),last_status=EXCLUDED.last_status,last_priority=EXCLUDED.last_priority,last_synced_at=now(),last_error_code=NULL,updated_at=now()",
+    [Number(row.incident_id),Number(row.tenant_id),String(ticketId),row.contact_id||null,row.company_id||null,row.deal_id||null,clean(status,40),ticketPriority(severity)]
+  );
+}
+
+function ticketStage(status){
+  const s=String(status||"").toLowerCase();
+  if(["resolved","closed"].includes(s))return "4";
+  if(s==="waiting_customer")return "2";
+  if(["investigating","monitoring","active"].includes(s))return "3";
+  return "1";
+}
+
+function ticketPriority(severity){
+  const s=String(severity||"").toLowerCase();
+  if(s==="critical")return "URGENT";
+  if(s==="high")return "HIGH";
+  if(s==="low")return "LOW";
+  return "MEDIUM";
 }
 
 function stageForEvent(config,eventType,payload,tenantStatus){
