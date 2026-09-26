@@ -25,7 +25,7 @@ test("production static build publishes marketing root and private cockpit",()=>
     const seoSlugs=["audiotel-independants","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","comparateur-audiotel","guide-audiotel-sva","demande-ouverture","mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","cookies-traceurs","resilier-contrat","retractation"];
     const seoPages=seoSlugs.map(slug=>fs.readFileSync("dist/"+slug+"/index.html","utf8"));
 
-    assert.match(root,/Pilotez votre activité/);
+    assert.match(root,/Votre numéro surtaxé et votre activité/);
     assert.match(root,/Indépendants &amp; porteurs de projet/);
     assert.match(root,/Solution Audiotel et SVA/);
     assert.match(root,/max-snippet:-1/);
