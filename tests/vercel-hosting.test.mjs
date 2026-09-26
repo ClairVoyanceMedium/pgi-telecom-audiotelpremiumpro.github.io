@@ -29,13 +29,14 @@ test("production config accepts Vercel Git commit SHA",()=>{
 });
 
 test("Vercel container is API-only and never migrates on cold start",()=>{
-  const docker=fs.readFileSync("Containerfile.vercel","utf8");
+  const docker=fs.readFileSync("Dockerfile.vercel","utf8");
   const start=fs.readFileSync("scripts/start-vercel.sh","utf8");
   assert.ok(docker.includes('CMD ["sh","scripts/start-vercel.sh"]'));
   assert.match(docker,/ENV PGI_PROCESS_ROLE=api/);
   assert.match(docker,/ENV PGI_DATABASE_SSL=require/);
   assert.match(docker,/ENV PGI_TRUST_PROXY=true/);
   assert.match(docker,/ENV PGI_PROTECT_MACHINE_ENDPOINTS=true/);
+  assert.ok(docker.includes("llms.txt llms-full.txt fa0a7deb5d60bdf1260c8174ad8c71db.txt"));
   assert.match(start,/VERCEL_GIT_COMMIT_SHA/);
   assert.match(start,/PGI_PROCESS_ROLE=api/);
   assert.match(start,/DATABASE_URL/);
