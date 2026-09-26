@@ -120,11 +120,11 @@ test("public SEO sources never expose the legacy GitHub identity",()=>{
 });
 
 test("public funnels preserve legal customer qualification and non-promissory finance wording",()=>{
-  const voyance=fs.readFileSync("site/seo/audiotel-voyance.html","utf8");
+  const independants=fs.readFileSync("site/seo/audiotel-independants.html","utf8");
   const number=fs.readFileSync("site/seo/numero-sva.html","utf8");
   const comparator=fs.readFileSync("site/seo/comparateur-audiotel.html","utf8");
   const liveFinance=fs.readFileSync("assets/client-live-finance.js","utf8");
-  assert.doesNotMatch(voyance,/demande-ouverture\/\?profil=particulier/);
+  assert.doesNotMatch(independants,/demande-ouverture\/\?profil=particulier/);
   assert.match(number,/particuliers et professionnels/i);
   assert.match(comparator,/écart économique potentiel/i);
   assert.doesNotMatch(comparator,/<title>[^<]*gain potentiel/i);
