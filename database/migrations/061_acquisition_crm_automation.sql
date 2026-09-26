@@ -59,4 +59,25 @@ CREATE TABLE IF NOT EXISTS crm_sync_receipts (
 CREATE INDEX IF NOT EXISTS crm_sync_receipts_state_idx
   ON crm_sync_receipts(state,updated_at,id);
 
+CREATE TABLE IF NOT EXISTS crm_incident_links (
+  incident_id bigint PRIMARY KEY REFERENCES tenant_service_incidents(id) ON DELETE CASCADE,
+  tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  provider text NOT NULL DEFAULT 'hubspot' CHECK (provider='hubspot'),
+  ticket_id text NOT NULL,
+  contact_id text,
+  company_id text,
+  deal_id text,
+  last_status text,
+  last_priority text,
+  last_synced_at timestamptz,
+  last_error_code text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS crm_incident_links_ticket_unique
+  ON crm_incident_links(provider,ticket_id);
+CREATE INDEX IF NOT EXISTS crm_incident_links_tenant_idx
+  ON crm_incident_links(tenant_id,updated_at DESC);
+
 COMMIT;
