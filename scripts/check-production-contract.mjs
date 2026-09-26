@@ -178,6 +178,7 @@ if(!/lock_timeout/.test(migrationRunner)||!/statement_timeout/.test(migrationRun
 if(!/\/api\/v1\/platform\/launch-readiness/.test(backendServer)||!/evaluateLaunchReadiness/.test(backendServer))failures.push("production must expose the authenticated Launch Readiness gate");
 if(!/ready_for_b2b/.test(launchReadinessSource)||!/ready_for_b2c/.test(launchReadinessSource)||!/pending_external/.test(launchReadinessSource))failures.push("Launch Readiness must separate B2B/B2C and keep external dependencies fail-closed");
 if(!/stripeAccountStatus/.test(stripeBillingSource)||!/charges_enabled/.test(stripeBillingSource)||!/payouts_enabled/.test(stripeBillingSource))failures.push("Stripe readiness must verify live account capabilities, not only configured credentials");
+if(!/active_connection_last_health_status/.test(postgresStore)||!/unhealthy/.test(launchReadinessSource))failures.push("operator readiness must consume explicit carrier health evidence when available");
 if(!/\/platform\/launch-readiness/.test(launchReadinessUi)||!/Launch Readiness/.test(launchReadinessUi))failures.push("Control Tower must surface Launch Readiness");
 if(!/launch-readiness\.js/.test(controlTowerUi))failures.push("Control Tower must lazy-load Launch Readiness");
 
