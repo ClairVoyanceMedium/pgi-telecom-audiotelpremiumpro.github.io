@@ -24,7 +24,7 @@ test("complete legal corpus is published and cross-linked",()=>{
   const legalNotice=read("site/seo/mentions-legales.html");
   assert.match(legalNotice,/À compléter avant ouverture commerciale/);
   assert.match(legalNotice,/440 N Barranca Avenue #4133/);
-  assert.match(legalNotice,/numéro de téléphone légal de l’hébergeur/);
+  assert.match(legalNotice,/\+1 559 288 7060/);
 });
 
 test("registration requires current legal documents and keeps privacy acknowledgement separate from authority",()=>{
