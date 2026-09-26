@@ -92,7 +92,7 @@ test("consumer paid checkout stays fail-closed until B2C prerequisites are genui
   assert.match(config,/PGI_B2C_COMMERCIAL_READY/);
   assert.match(config,/const onlineWithdrawalReady=false/);
   assert.match(config,/b2cCommercialReady=b2cCommercialRequested&&legalOperatorConfigured&&consumerMediatorConfigured&&onlineWithdrawalReady/);
-  assert.match(postgres,/AS customer_type/);
+  assert.match(postgres,/AS customer_type/);\n  assert.match(postgres,/customer_type:tenant\\.customer_type/);
   assert.match(server,/B2C_COMMERCIAL_NOT_READY/);
   assert.match(server,/b2c_commercial_ready/);
   assert.match(billing,/Souscription particulier indisponible/);
