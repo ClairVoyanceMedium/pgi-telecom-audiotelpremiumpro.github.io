@@ -19,6 +19,8 @@ test("production static build publishes marketing root and private cockpit",()=>
 
     const root=fs.readFileSync("dist/index.html","utf8");
     const cockpit=fs.readFileSync("dist/cockpit.html","utf8");
+    const client=fs.readFileSync("dist/client.html","utf8");
+    const tracking=fs.readFileSync("dist/assets/tracking.js","utf8");
     const legacy=fs.readFileSync("dist/site/index.html","utf8");
     const robots=fs.readFileSync("dist/robots.txt","utf8");
     const sitemap=fs.readFileSync("dist/sitemap.xml","utf8");
@@ -38,9 +40,13 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.match(root,/"@type":"Organization"/);
     assert.match(root,/"logo":"https:\/\/audiotel-premium-pro\.com\/assets\/audiotel-brand-logo-v33\.png"/);
     assert.match(root,/name="twitter:image" content="https:\/\/audiotel-premium-pro\.com\/assets\/audiotel-brand-logo-v33\.png"/);
+    assert.match(root,/src="\/assets\/tracking\.js"/);
+    assert.match(client,/src="\/assets\/tracking\.js"/);
+    assert.match(tracking,/pgi_consent_v2/);
 
     assert.match(cockpit,/Cockpit \/ PGI Telecom/);
     assert.match(cockpit,/noindex,nofollow,noarchive/);
+    assert.doesNotMatch(cockpit,/assets\/tracking\.js/);
 
     assert.match(legacy,/rel="canonical" href="https:\/\/audiotel-premium-pro\.com\/"/);
     assert.match(robots,/Disallow: \/cockpit/);
@@ -53,7 +59,7 @@ test("production static build publishes marketing root and private cockpit",()=>
       assert.match(page,new RegExp('rel="canonical" href="https:\\/\\/audiotel-premium-pro\\.com\\/'+slug+'\\/"'));
       if(!legal){assert.match(page,/"@type":"WebPage"/);assert.match(page,/"@type":"Service"/);}
       assert.doesNotMatch(page,/__CANONICAL__|__BASE__|__LOGO__/);
-      if(!["demande-ouverture","retractation"].includes(slug))assert.doesNotMatch(page,/<script[^>]+src=/i);
+      assert.match(page,/src="\/assets\/tracking\.js"/);
     });
     const comparator=seoPages[seoSlugs.indexOf("comparateur-audiotel")];
     assert.match(comparator,/1 800 € \/ mois/);
