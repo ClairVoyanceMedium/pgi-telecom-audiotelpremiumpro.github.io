@@ -39,6 +39,12 @@ export function createStaticSiteHandler(rootDir){
       return true;
     }
 
+    if(["/audiotel-voyance","/audiotel-voyance/","/audiotel-voyance/index.html"].includes(String(pathname||""))){
+      res.writeHead(308,{"Location":"/audiotel-independants/","Cache-Control":"no-store"});
+      res.end();
+      return true;
+    }
+
     const requestedPath=String(pathname||"")==="/cockpit"?"/cockpit.html":pathname;
     const file=await resolveStaticFile(root,requestedPath);
     if(!file)return false;
