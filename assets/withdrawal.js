@@ -51,7 +51,7 @@ function payload(){
     contract_details:value("contract_details"),
     website:value("website"),
     confirmed:true,
-    legal_version:"2026-09-26-b2b-b2c-v3"
+    legal_version:"2026-09-26-b2b-b2c-v4"
   };
 }
 function showReview(){
