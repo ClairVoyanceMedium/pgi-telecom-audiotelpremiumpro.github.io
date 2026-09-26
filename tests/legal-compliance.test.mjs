@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 const read=p=>fs.readFileSync(p,"utf8");
-const legalSlugs=["mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","cookies-traceurs","resilier-contrat","retractation"];
+const legalSlugs=["mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","accord-traitement-donnees","cookies-traceurs","resilier-contrat","retractation"];
 
 test("complete legal corpus is published and cross-linked",()=>{
   for(const slug of legalSlugs){
@@ -15,7 +15,7 @@ test("complete legal corpus is published and cross-linked",()=>{
     assert.match(html,/\/retractation\//);
   }
   assert.match(read("site/seo/resilier-contrat.html"),/>Résilier votre contrat</);
-  assert.match(read("site/seo/retractation.html"),/14 jours/);
+  assert.match(read("site/seo/retractation.html"),/14 jours/);\n  const dpa=read("site/seo/accord-traitement-donnees.html");\n  assert.match(dpa,/Instructions documentées/);\n  assert.match(dpa,/Sous-traitants ultérieurs/);\n  assert.match(dpa,/Violations de données/);\n  assert.match(dpa,/Audit/);
   assert.match(read("site/seo/mentions-legales.html"),/À compléter avant ouverture commerciale/);
 });
 
@@ -37,7 +37,7 @@ test("registration requires current legal documents and keeps privacy acknowledg
   assert.match(terms,/résiliation à tout moment/i);
   assert.match(terms,/Absence de prorata en cas de résiliation volontaire/);
   assert.match(terms,/Tableaux de bord, appels et données provisoires/);
-  assert.match(terms,/Routage et studio vocal/);
+  assert.match(terms,/Routage et studio vocal/);\n  assert.match(terms,/Modifications du service numérique B2C/);\n  assert.match(terms,/Coopération, contrôle et audit B2B/);\n  assert.match(terms,/Clause de juridiction entre commerçants/);\n  assert.match(terms,/accord-traitement-donnees/);
   assert.match(cgu,/Règles particulières aux consommateurs/);
   assert.match(cgu,/Règles particulières aux professionnels/);
   assert.match(server,/customer\/auth\/register/);
