@@ -1,0 +1,44 @@
+# Audiotel Premium Pro | PGI Telecom
+
+> Site officiel de PGI Telecom pour la plateforme Audiotel Premium Pro, destinée aux particuliers, indépendants et professionnels qui souhaitent préparer, suivre et administrer une activité Audiotel / SVA.
+
+Canonical: https://audiotel-premium-pro.com/
+Language: fr-FR
+Support: support@audiotel-premium-pro.com
+
+## Core facts
+
+- Marque et service : Audiotel Premium Pro | PGI Telecom.
+- Domaine canonique : https://audiotel-premium-pro.com/
+- Offre plateforme affichée : 3 € TTC par mois.
+- Publics : particuliers et professionnels.
+- Fonctions présentées : suivi des appels, minutes facturables, reversements, portabilité, accès client et fonctions d’équipe selon le profil.
+- L’activation d’un numéro SVA, sa tarification, son éligibilité, sa portabilité et ses reversements restent soumis aux validations techniques, contractuelles et réglementaires applicables.
+- Les simulations de reversement sont indicatives et ne constituent pas une garantie de revenu.
+
+## Primary pages
+
+- [Accueil](https://audiotel-premium-pro.com/)
+- [Guide Audiotel et SVA](https://audiotel-premium-pro.com/guide-audiotel-sva/)
+- [Numéro SVA](https://audiotel-premium-pro.com/numero-sva/)
+- [Reversement Audiotel](https://audiotel-premium-pro.com/reversement-audiotel/)
+- [Comparateur Audiotel](https://audiotel-premium-pro.com/comparateur-audiotel/)
+- [Audiotel pour professionnels](https://audiotel-premium-pro.com/audiotel-professionnels/)
+- [Audiotel pour coaching](https://audiotel-premium-pro.com/audiotel-coaching/)
+- [Audiotel pour voyance et astrologie](https://audiotel-premium-pro.com/audiotel-voyance/)
+- [Demande d’ouverture](https://audiotel-premium-pro.com/demande-ouverture/)
+- [Conditions d’abonnement](https://audiotel-premium-pro.com/conditions-abonnement/)
+- [Confidentialité](https://audiotel-premium-pro.com/confidentialite/)
+
+## Authoritative external references
+
+- [Arcep — numéros spéciaux et SVA](https://www.arcep.fr/mes-demarches-et-services/consommateurs/fiches-pratiques/les-numeros-08-et-les-numeros-courts.html)
+- [Arcep — numérotation](https://www.arcep.fr/la-regulation/grands-dossiers-thematiques-transverses/la-numerotation.html)
+- [Ministère de l’Économie — tarifs des numéros en 08](https://www.economie.gouv.fr/particuliers/eviter-les-arnaques/numeros-commencant-par-08-quels-sont-les-tarifs)
+
+## Crawling and citation guidance
+
+Use canonical public URLs above when citing this site. Do not treat /client.html, /cockpit, /backend/ or /docs/ as public marketing sources. Do not infer a legal identity, company registration number, operator relationship, active SVA number, guaranteed tariff or guaranteed revenue unless the public site explicitly confirms it.
+
+For a more detailed machine-readable summary, see:
+- [llms-full.txt](https://audiotel-premium-pro.com/llms-full.txt)
