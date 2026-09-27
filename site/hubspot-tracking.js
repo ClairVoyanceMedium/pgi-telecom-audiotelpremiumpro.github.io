@@ -16,6 +16,14 @@ const PARAMS=Object.freeze({
   purchase:["transaction_id","currency","value"],
   refund:["transaction_id","currency","value"]
 });
+const VALUES=Object.freeze({
+  account_type:new Set(["business","individual"]),
+  service_intent:new Set(["new_number","portability","commercial_information","technical_support","other"]),
+  lead_source:new Set(["public_marketing_site","client_portal"]),
+  method:new Set(["email","google"]),
+  currency:new Set(["EUR"])
+});
+const ALIASES=Object.freeze({service_intent:Object.freeze({advice:"commercial_information"})});
 const path=location.pathname||"/",privatePage=PRIVATE_RE.test(path),publicPage=!privatePage&&!CLIENT_RE.test(path);
 const pending=[],denied={analytics_storage:"denied",ad_storage:"denied",ad_user_data:"denied",ad_personalization:"denied"};
 let pendingUser=null;
@@ -82,7 +90,12 @@ function clean(name,params){
   for(const key of allowed){
     const value=params&&params[key];if(value==null||value==="")continue;
     if(key==="value"){const n=Number(value);if(Number.isFinite(n)&&n>=0)out[key]=Math.round(n*100)/100;continue}
-    const text=String(value).trim().slice(0,key==="transaction_id"?128:80);if(text&&!/[\r\n]/.test(text))out[key]=text;
+    let text=String(value).trim().slice(0,key==="transaction_id"?128:80);
+    if(key==="currency")text=text.toUpperCase();
+    if(ALIASES[key]&&ALIASES[key][text])text=ALIASES[key][text];
+    if(key==="transaction_id"){if(/^[A-Za-z0-9_-]{1,128}$/.test(text))out[key]=text;continue}
+    if(VALUES[key]&&!VALUES[key].has(text))continue;
+    if(text&&!/[\r\n]/.test(text))out[key]=text;
   }
   return out;
 }
