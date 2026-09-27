@@ -38,12 +38,15 @@ test("business events fire only after successful milestones",()=>{
   assert.match(tracking,/wrapped\.login=/);
   assert.match(tracking,/wrapped\.google=/);
   assert.match(verification,/PGIAnalytics\.track\("sign_up"/);
-  assert.match(billing,/PGIAnalytics\.beginCheckout\(offer\)/);
+  assert.match(billing,/PGIAnalytics\?\.beginCheckout\(offer\)/);
   assert.doesNotMatch(billing,/PGIAnalytics\.track\("purchase"/);
 });
 
 test("the Google payload allowlist excludes direct identifiers",()=>{
   assert.match(tracking,/generate_lead:\["account_type","service_intent","lead_source"\]/);
   assert.match(tracking,/purchase:\["transaction_id","currency","value"\]/);
+  assert.match(tracking,/account_type:new Set\(\["business","individual"\]\)/);
+  assert.match(tracking,/advice:"commercial_information"/);
+  assert.match(tracking,/\^\[A-Za-z0-9_-\]\{1,128\}\$/);
   for(const pii of ["email","phone","first_name","last_name","company_name","password"])assert.doesNotMatch(tracking,new RegExp("[\\\"']"+pii+"[\\\"']\\\\s*:"));
 });
