@@ -71,6 +71,7 @@ form.addEventListener("submit",e=>{
   const intent={...snapshot(),source:"public_marketing_site"};
   try{sessionStorage.setItem(KEY,JSON.stringify(intent));sessionStorage.removeItem(DRAFT_KEY)}
   catch(_e){const s=document.getElementById("order-status");if(s)s.hidden=false;return}
+  if(window.PGIAnalytics)window.PGIAnalytics.track("generate_lead",{account_type:type,service_intent:intent.service_intent,lead_source:"public_marketing_site"});
   const b=form.querySelector('button[type="submit"]');if(b){b.disabled=true;b.setAttribute("aria-busy","true");b.innerHTML="Ouverture de l’inscription…"}
   location.href="../client.html?register=1";
 });
