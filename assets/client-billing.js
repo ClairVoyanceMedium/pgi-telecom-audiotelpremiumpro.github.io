@@ -58,7 +58,7 @@ export function createController(ctx){
       const result=kind==="manage"?await action():await action(idempotencyKey,{subscription_terms_accepted:true,privacy_notice_acknowledged:true,immediate_performance_requested:true,legal_version:"2026-09-26-b2b-b2c-v3"});
       const target=result&&result.url?new URL(result.url,location.origin):null;
       if(!target||target.protocol!=="https:")throw new Error("INVALID_BILLING_URL");
-PGIAnalytics.beginCheckout(offer);
+      window.PGIAnalytics?.beginCheckout(offer);
       location.assign(target.href);
     }catch(err){ctx.toast(err&&err.code==="PAYMENT_PROVIDER_NOT_CONNECTED"?"Prestataire de paiement non connecté.":"Gestion de l’abonnement indisponible.");}
     finally{state.billingBusy=false;if(button){button.textContent=original;render(state.data||{});}}
