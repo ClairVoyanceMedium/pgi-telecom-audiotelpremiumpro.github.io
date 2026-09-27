@@ -13,6 +13,7 @@ test("analytics defaults to denied and respects GPC",()=>{
   for(const key of ["analytics_storage","ad_storage","ad_user_data","ad_personalization"])assert.match(tracking,new RegExp(key+':"denied"'));
   assert.match(tracking,/navigator\.globalPrivacyControl===true/);
   assert.match(tracking,/clearCookies\(\)/);
+  assert.match(tracking,/\["doNotTrack",\{track:true\}\]/);
 });
 
 test("GTM and HubSpot load only through the unified consent controller",()=>{
