@@ -100,7 +100,9 @@ function flush(){if(pendingUser){identify(pendingUser);pendingUser=null}while(pe
 function reject(){updateConsent(false);pending.length=0;pendingUser=null;window._hsq=window._hsq||[];window._hsq.push(["doNotTrack"]);clearCookies()}
 function accept(){
   if(navigator.globalPrivacyControl===true){write("rejected");reject();return false}
-  write("accepted");updateConsent(true);loadGtm();loadHubSpot();flush();return true;
+  write("accepted");updateConsent(true);
+  window._hsq=window._hsq||[];window._hsq.push(["doNotTrack",{track:true}]);
+  loadGtm();loadHubSpot();flush();return true;
 }
 function ensureStyle(){
   if(document.getElementById("pgi-tracking-consent-style"))return;
