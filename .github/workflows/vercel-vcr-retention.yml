@@ -1,6 +1,11 @@
 name: Vercel VCR Retention
 
 on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/vercel-vcr-retention.yml"
+      - "scripts/prune-vercel-vcr.mjs"
   workflow_dispatch:
 
 permissions:
