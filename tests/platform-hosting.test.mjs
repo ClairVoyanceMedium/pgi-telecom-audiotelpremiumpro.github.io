@@ -51,6 +51,13 @@ test("same-origin static handler serves marketing at root and keeps private UI n
     assert.equal(marketing.status,200);
     assert.equal(await marketing.text(),"marketing");
     assert.match(marketing.headers.get("cache-control")||"",/s-maxage=300/);
+    const etag=marketing.headers.get("etag")||"";
+    const lastModified=marketing.headers.get("last-modified")||"";
+    assert.match(etag,/^"sha256-[0-9a-f]{64}"$/);
+    assert.ok(Number.isFinite(Date.parse(lastModified)));
+    const unchanged=await fetch(base+"/",{headers:{"If-None-Match":etag}});
+    assert.equal(unchanged.status,304);
+    assert.match(unchanged.headers.get("etag")||"",/^"sha256-[0-9a-f]{64}"$/);
     assert.match(marketing.headers.get("content-security-policy")||"",/www\.googletagmanager\.com/);
     assert.match(marketing.headers.get("content-security-policy")||"",/hs-scripts\.com/);
     const legacy=await fetch(base+"/site/",{redirect:"manual"});
@@ -61,6 +68,8 @@ test("same-origin static handler serves marketing at root and keeps private UI n
     assert.equal(await cockpit.text(),"cockpit");
     assert.match(cockpit.headers.get("x-robots-tag")||"",/noindex/);
     assert.equal(cockpit.headers.get("cache-control"),"no-store");
+    assert.equal(cockpit.headers.get("etag"),null);
+    assert.equal(cockpit.headers.get("last-modified"),null);
     assert.match(cockpit.headers.get("content-security-policy")||"",/frame-ancestors 'none'/);
     assert.doesNotMatch(cockpit.headers.get("content-security-policy")||"",/accounts\.google\.com/);
     const client=await fetch(base+"/client.html",{method:"HEAD"});
