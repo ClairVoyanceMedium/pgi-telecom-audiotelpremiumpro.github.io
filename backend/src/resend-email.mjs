@@ -110,6 +110,80 @@ export async function sendTransactionalEmail(config,options={}){
   }
 }
 
+
+export async function sendPublicContactMessage(config,options={}){
+  if(!config?.resendApiKey)throw providerError("RESEND_NOT_CONFIGURED");
+  const visitor=normalizeEmail(options.email);
+  const message=String(options.message||"")
+    .replace(/\r\n?/g,"\n")
+    .replace(/[\u0000\u0008\u000b\u000c\u000e-\u001f\u007f]/g," ")
+    .trim()
+    .slice(0,4000);
+  if(message.length<2)throw providerError("INVALID_CONTACT_MESSAGE",400);
+  const domain=String(config.transactionalDomain||"").trim().toLowerCase();
+  if(!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain))throw providerError("RESEND_SENDER_NOT_CONFIGURED");
+  const internal=normalizeEmail(config.internalNotificationEmail||config.transactionalReplyTo||"");
+  const pagePath=cleanText(options.pagePath||"/",500)||"/";
+  const pageTitle=cleanText(options.pageTitle||"",180);
+  const submittedAt=new Date().toISOString();
+  const eventId=String(options.eventId||("public-contact/"+Date.now())).trim().slice(0,180);
+  const subject="Message du site Audiotel Premium Pro";
+  const text=[
+    "Nouveau message envoyé depuis le site Audiotel Premium Pro",
+    "",
+    "Adresse email du visiteur : "+visitor,
+    pageTitle?"Page : "+pageTitle:"",
+    "Chemin : "+pagePath,
+    "Reçu le : "+submittedAt,
+    "",
+    "Message",
+    "",
+    message,
+    "",
+    "Répondez directement à cet email : le champ Reply-To est configuré avec l’adresse du visiteur.",
+    "",
+    "Audiotel Premium Pro | Une solution PGI Telecom"
+  ].filter(Boolean).join("\n");
+  const htmlMessage=escapeHtml(message).replace(/\n/g,"<br>");
+  const html='<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#f4f1ee;font-family:Arial,Helvetica,sans-serif;color:#221914"><div style="padding:24px 12px"><div style="max-width:620px;margin:0 auto;background:#fff;border:1px solid #ded6d0;border-radius:14px;padding:28px"><div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#78675d;margin-bottom:10px">Audiotel Premium Pro</div><h1 style="font-size:22px;line-height:1.25;margin:0 0 18px">Nouveau message du site</h1><p style="margin:0 0 8px"><strong>Adresse email :</strong> '+escapeHtml(visitor)+'</p>'+(pageTitle?'<p style="margin:0 0 8px"><strong>Page :</strong> '+escapeHtml(pageTitle)+'</p>':'')+'<p style="margin:0 0 18px"><strong>Chemin :</strong> '+escapeHtml(pagePath)+'</p><div style="padding:16px;border-radius:10px;background:#f7f3ef;line-height:1.6">'+htmlMessage+'</div><p style="font-size:12px;color:#78675d;margin:18px 0 0">Répondez directement à ce message : Reply-To pointe vers l’adresse du visiteur.</p></div></div></body></html>';
+  const body={
+    from:(config.transactionalFromName||"Audiotel Premium Pro")+" <support@"+domain+">",
+    to:[internal],
+    reply_to:visitor,
+    subject,
+    text,
+    html,
+    headers:eventId?{"X-PGI-Event-ID":eventId}:{},
+    tags:[
+      {name:"category",value:"public_contact"},
+      {name:"sender",value:"support"}
+    ]
+  };
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),Number(config.resendTimeoutMs||8000));
+  try{
+    const response=await fetch("https://api.resend.com/emails",{
+      method:"POST",
+      headers:{
+        accept:"application/json",
+        authorization:"Bearer "+config.resendApiKey,
+        "content-type":"application/json",
+        "idempotency-key":safeIdempotencyKey(eventId)
+      },
+      body:JSON.stringify(body),
+      signal:controller.signal
+    });
+    const payload=await response.json().catch(()=>({}));
+    if(!response.ok)throw providerError("RESEND_CONTACT_SEND_FAILED",response.status,safeProviderCode(payload));
+    return {sent:true,message_id:String(payload.id||"")||null};
+  }catch(error){
+    if(error?.code)throw error;
+    throw providerError(error?.name==="AbortError"?"RESEND_TIMEOUT":"RESEND_CONTACT_SEND_FAILED");
+  }finally{
+    clearTimeout(timeout);
+  }
+}
+
 export function buildTransactionalMessage(config,templateKey,data={}){
   const key=String(templateKey||"").trim();
   const name=cleanText(data.name||"",120);
