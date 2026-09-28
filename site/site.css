@@ -44,39 +44,3 @@ footer{border-top:1px solid rgba(255,255,255,.06);padding:28px 0 38px}.footer-gr
 
 /* public-mobile-width-hardening-v139-samsung */
 main,header,footer,section,.site-header,.header-inner,.hero-grid,.calculator-grid,.pricing-grid,.faq-grid,.order-grid,.footer-grid,.decision-grid,.tech-grid,.benefit-grid,.audience-grid,.proof-grid,.steps{max-width:100%;min-width:0}.hero-grid>*,.calculator-grid>*,.pricing-grid>*,.faq-grid>*,.order-grid>*,.footer-grid>*,.decision-grid>*,.tech-grid>*,.benefit-grid>*,.audience-grid>*,.proof-grid>*,.steps>*{min-width:0;max-width:100%}@media(max-width:680px){html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!important;overscroll-behavior-x:none;touch-action:pan-y pinch-zoom}body>*,main,header,footer,section{max-width:100%!important}.hero,.section,.final-cta,.decision-strip,.proof-strip,.site-header,footer{max-width:100%!important;overflow-x:hidden!important}.wrap{max-width:calc(100% - 22px)!important}.hero-grid,.calculator-grid,.pricing-grid,.faq-grid,.order-grid,.footer-grid,.decision-grid,.tech-grid,.benefit-grid,.audience-grid,.proof-grid,.steps{width:100%;max-width:100%!important;min-width:0!important}}
-
-
-/* Contact email flottant */
-.contact-widget{position:fixed;z-index:150;right:22px;bottom:22px;font-family:inherit}
-.contact-widget-button{display:flex;align-items:center;gap:10px;min-height:50px;padding:0 16px;border:1px solid rgba(232,179,110,.34);border-radius:999px;background:rgba(31,21,17,.96);color:#fff3e8;box-shadow:0 16px 42px rgba(0,0,0,.34);backdrop-filter:blur(16px);cursor:pointer;font:750 13px/1 inherit}
-.contact-widget-button:hover{border-color:rgba(232,179,110,.62);transform:translateY(-1px)}
-.contact-widget-button svg{width:21px;height:21px;fill:none;stroke:var(--gold2);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-.contact-widget-panel{position:absolute;right:0;bottom:64px;width:min(370px,calc(100vw - 32px));padding:0;border:1px solid rgba(232,179,110,.23);border-radius:22px;background:linear-gradient(160deg,rgba(49,33,26,.995),rgba(28,19,15,.995));box-shadow:0 26px 70px rgba(0,0,0,.5);overflow:hidden}
-.contact-widget-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:19px 19px 15px;border-bottom:1px solid rgba(255,255,255,.07)}
-.contact-widget-head>div{display:grid;gap:3px}
-.contact-widget-head strong{font-size:16px;color:#fff4eb}
-.contact-widget-head span{font-size:11px;color:#bba697}
-.contact-widget-close{display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;border-radius:10px;background:rgba(255,255,255,.055);color:#dac7b9;cursor:pointer;font:400 22px/1 inherit}
-.contact-widget-close:hover{background:rgba(255,255,255,.09);color:#fff}
-.contact-widget-form{display:grid;gap:13px;padding:17px 19px 19px}
-.contact-widget-form label{display:grid;gap:6px;color:#d8c8bc;font-size:11px;font-weight:700}
-.contact-widget-form input,.contact-widget-form textarea{width:100%;border:1px solid rgba(255,255,255,.11);border-radius:12px;background:rgba(255,255,255,.055);color:#fff7f0;outline:0;font:600 14px/1.45 inherit}
-.contact-widget-form input{min-height:46px;padding:0 12px}
-.contact-widget-form textarea{min-height:118px;padding:11px 12px;resize:vertical}
-.contact-widget-form input::placeholder,.contact-widget-form textarea::placeholder{color:#8f7b6f}
-.contact-widget-form input:focus,.contact-widget-form textarea:focus{border-color:rgba(232,179,110,.6);box-shadow:0 0 0 3px rgba(232,179,110,.09)}
-.contact-widget-submit{min-height:46px;border:0;border-radius:12px;background:linear-gradient(180deg,#f1c17f,#d99b52);color:#24160e;cursor:pointer;font:850 13px/1 inherit}
-.contact-widget-submit:disabled{opacity:.66;cursor:wait}
-.contact-widget-status{min-height:0;margin:0;font-size:11px;line-height:1.45}
-.contact-widget-status:empty{display:none}
-.contact-widget-status.ok{color:#a9dabc}
-.contact-widget-status.bad{color:#f2a9a0}
-.contact-widget-privacy{margin:0;color:#8f7b6f;font-size:9.5px;line-height:1.45}
-.contact-widget-privacy a{text-decoration:underline;text-underline-offset:2px}
-.contact-widget-honeypot{position:absolute!important;left:-10000px!important;width:1px!important;height:1px!important;overflow:hidden!important}
-@media(max-width:680px){
-  .contact-widget{right:12px;bottom:80px}
-  .contact-widget-button{width:50px;height:50px;min-height:50px;padding:0;justify-content:center}
-  .contact-widget-button span{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-  .contact-widget-panel{right:0;bottom:60px;width:min(360px,calc(100vw - 24px))}
-}
