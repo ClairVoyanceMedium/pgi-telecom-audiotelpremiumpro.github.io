@@ -210,6 +210,7 @@ test("support contact sync deduplicates by email, creates a CRM contact and logs
   assert.equal(created.body.properties.type_de_demande,"Autre");
   const note=requests.find(x=>x.url.endsWith("/objects/notes")&&x.method==="POST");
   assert.match(note.body.properties.hs_note_body,/tarif-numero-sva/);
+  assert.match(note.body.properties.hs_note_body,/Tarifs et comparaison/);
   assert.match(note.body.properties.hs_note_body,/&lt;script&gt;/);
   assert.equal(note.body.associations[0].to.id,"501");
   assert.equal(requests.some(x=>x.url.includes("/objects/deals")),false);
