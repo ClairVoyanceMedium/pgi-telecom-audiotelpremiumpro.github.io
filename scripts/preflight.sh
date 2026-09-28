@@ -70,6 +70,14 @@ need_env PGI_TELEPHONY_PASSWORD
 need_env PGI_CALLER_HASH_KEY
 need_env PGI_PORTABILITY_SECRET_KEY
 
+if [ "${PGI_GA4_MEASUREMENT_ENABLED:-false}" = "true" ]; then
+  need_env PGI_GA4_MEASUREMENT_ID
+  need_env PGI_GA4_API_SECRET
+  echo "INFO GA4 Measurement Protocol checks enabled"
+else
+  echo "INFO GA4 Measurement Protocol checks skipped: server measurement disabled"
+fi
+
 if [ "${PGI_EXTERNAL_BILLING_ENABLED:-false}" = "true" ]; then
   need_env PGI_BILLING_INGEST_TOKEN
   need_env PGI_PUBLIC_BASE_URL
