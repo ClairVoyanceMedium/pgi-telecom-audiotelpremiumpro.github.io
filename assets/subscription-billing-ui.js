@@ -13,10 +13,12 @@ export function render(summary={},tenantCount=0,provider={}){
   set("wh-sub-access",n(access)+" / "+n(tenantCount));
   set("wh-sub-blocked",n(blocked)+" bloqué(s) • "+n(summary.subscription_unpaid_alerts||0)+" impayé(s)");
   set("wh-sub-internal",summary.internal_billing_exempt===false?"À CONFIGURER":"EXEMPTÉ");
-  const connected=provider.connection_state&&provider.connection_state!=="not_connected";
-  set("wh-billing-provider",connected?"PRÊT":"NON CONNECTÉ");
-  set("wh-billing-provider-state",connected?"Événements de paiement activés":"Architecture prête, connexion à effectuer");
-  set("wh-billing-checkout",provider.checkout_available?"ACTIF":"PRÊT À BRANCHER");
+  const connected=["connected","connected_payouts_pending"].includes(String(provider.connection_state||""));
+  const activationRequired=provider.connection_state==="account_activation_required";
+  const providerUnavailable=provider.connection_state==="account_status_unavailable";
+  set("wh-billing-provider",activationRequired?"ACTIVATION REQUISE":providerUnavailable?"VÉRIFICATION":connected?(provider.payouts_enabled===false?"ENCAISSEMENT ACTIF":"PRÊT"):"NON CONNECTÉ");
+  set("wh-billing-provider-state",activationRequired?"Compte Stripe à finaliser avant tout encaissement":providerUnavailable?"État Stripe temporairement non vérifiable":connected?(provider.payouts_enabled===false?"Encaissements autorisés, versements Stripe à finaliser":"Encaissements et versements Stripe opérationnels"):"Architecture prête, connexion à effectuer");
+  set("wh-billing-checkout",provider.checkout_available?"ACTIF":activationRequired?"BLOQUÉ — ACTIVATION":"PRÊT À BRANCHER");
   set("wh-billing-payout","OPÉRATEUR → PGI → CLIENT");
   const unpaid=Number(summary.subscription_unpaid_alerts||0),list=$("alerts-list"),count=$("alert-count"),old=$("subscription-unpaid-alert");
   if(old)old.remove();
