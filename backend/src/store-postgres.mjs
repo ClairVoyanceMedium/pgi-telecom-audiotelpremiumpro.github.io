@@ -3223,7 +3223,7 @@ export class PostgresStore{
       );
       let principal=(await tx.unsafe(
         "INSERT INTO customer_principals(email,display_name,status,preferred_locale,timezone,email_verified,metadata)"+
-        " VALUES($1,$2,'active',$3,$4,false,jsonb_build_object('first_name',$5,'last_name',$6,'phone',$7,'signup_source',$8,'service_intent',$9,'account_type',$10,'authority_confirmed',true))"+
+        " VALUES($1,$2,'active',$3,$4,false,jsonb_build_object('first_name',$5::text,'last_name',$6::text,'phone',$7::text,'signup_source',$8::text,'service_intent',$9::text,'account_type',$10::text,'authority_confirmed',true))"+
         " RETURNING id,email,display_name,status,email_verified,session_version",
         [email,displayName,locale,timezone,firstName,lastName,phone||null,acquisitionSource==="public_marketing_site"?"public_marketing_site":"self_service_email",serviceIntent||null,accountType]
       ))[0];
