@@ -195,10 +195,12 @@ export async function syncHubSpotSupportMessage(input={},options={}){
   const associationTypeId=await noteContactAssociationType({token,fetchImpl});
   const pagePath=clean(input.pagePath||input.page_path||"/",500)||"/";
   const pageTitle=clean(input.pageTitle||input.page_title||"",180);
+  const pageContext=supportPageContext(pagePath);
   const noteBody=[
     "<strong>Message reçu depuis la bulle de contact du site</strong>",
     "<br><br><strong>Email :</strong> "+escapeHubSpotHtml(contactEmail),
     pageTitle?"<br><strong>Page :</strong> "+escapeHubSpotHtml(pageTitle):"",
+    "<br><strong>Catégorie de page :</strong> "+escapeHubSpotHtml(pageContext),
     "<br><strong>Chemin :</strong> "+escapeHubSpotHtml(pagePath),
     "<br><br><strong>Message :</strong><br>"+escapeHubSpotHtml(message).replace(/\n/g,"<br>")
   ].join("");
@@ -301,6 +303,19 @@ async function noteContactAssociationType({token,fetchImpl}){
   const id=Number(match?.typeId);
   if(!Number.isInteger(id)||id<=0)throw problem("HUBSPOT_NOTE_CONTACT_ASSOCIATION_UNAVAILABLE");
   return id;
+}
+
+function supportPageContext(pathname){
+  const p=String(pathname||"/").toLowerCase();
+  if(p==="/")return "Accueil";
+  if(/tarif|comparateur/.test(p))return "Tarifs et comparaison";
+  if(/portabilite/.test(p))return "Portabilité";
+  if(/reversement/.test(p))return "Reversements";
+  if(/guide|numero-sva|numero-surtaxe/.test(p))return "Guide et information SVA";
+  if(/audiotel-(voyance|coaching|professionnels|independants)/.test(p))return "Page métier";
+  if(/demande-ouverture/.test(p))return "Demande d’ouverture";
+  if(/conditions|confidentialite|mentions-legales|retractation|resilier|cookies/.test(p))return "Juridique et confidentialité";
+  return "Autre page publique";
 }
 
 function escapeHubSpotHtml(value){
