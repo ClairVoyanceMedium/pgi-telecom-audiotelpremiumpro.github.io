@@ -3258,7 +3258,7 @@ export class PostgresStore{
   async beginCustomerEmailVerification(principalId,record){
     const payload={required:true,token_hash:String(record?.token_hash||""),code_hash:String(record?.code_hash||""),expires_at:String(record?.expires_at||""),resend_after:String(record?.resend_after||""),attempts:0,sent_at:String(record?.sent_at||new Date().toISOString())};
     if(!/^[a-f0-9]{64}$/.test(payload.token_hash)||!/^[a-f0-9]{64}$/.test(payload.code_hash))throw problem(400,"INVALID_EMAIL_VERIFICATION_CHALLENGE");
-    const rows=await this.sql.unsafe("UPDATE customer_principals SET metadata=jsonb_set(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END,'{email_verification}',$2::jsonb,true),updated_at=now() WHERE id=$1::uuid AND email_verified=false RETURNING id,email,display_name",[String(principalId),JSON.stringify(payload)]);
+    const rows=await this.sql.unsafe("UPDATE customer_principals SET metadata=CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END||jsonb_build_object('email_verification',$2::jsonb),updated_at=now() WHERE id=$1::uuid AND email_verified=false RETURNING id,email,display_name",[String(principalId),JSON.stringify(payload)]);
     if(!rows[0])throw problem(409,"EMAIL_ALREADY_VERIFIED");return rows[0];
   }
 
@@ -3273,7 +3273,7 @@ export class PostgresStore{
 
   async refreshCustomerEmailVerification(principalId,tokenHash,record){
     const payload={required:true,token_hash:String(tokenHash),code_hash:String(record?.code_hash||""),expires_at:String(record?.expires_at||""),resend_after:String(record?.resend_after||""),attempts:0,sent_at:String(record?.sent_at||new Date().toISOString())};
-    const rows=await this.sql.unsafe("UPDATE customer_principals SET metadata=jsonb_set(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END,'{email_verification}',$3::jsonb,true),updated_at=now() WHERE id=$1::uuid AND email_verified=false AND metadata#>>'{email_verification,token_hash}'=$2 RETURNING id,email,display_name",[String(principalId),String(tokenHash),JSON.stringify(payload)]);
+    const rows=await this.sql.unsafe("UPDATE customer_principals SET metadata=CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END||jsonb_build_object('email_verification',$3::jsonb),updated_at=now() WHERE id=$1::uuid AND email_verified=false AND metadata#>>'{email_verification,token_hash}'=$2 RETURNING id,email,display_name",[String(principalId),String(tokenHash),JSON.stringify(payload)]);
     if(!rows[0])throw problem(409,"EMAIL_VERIFICATION_STALE");return rows[0];
   }
 
@@ -3287,11 +3287,11 @@ export class PostgresStore{
       const expiresAt=Date.parse(String(v.expires_at||""));if(!Number.isFinite(expiresAt)||expiresAt<Date.now())return {failure:"EMAIL_VERIFICATION_EXPIRED"};
       if(String(v.code_hash||"")!==String(codeHash)){
         const nextAttempts=attempts+1,next={...v,attempts:nextAttempts};
-        await tx.unsafe("UPDATE customer_principals SET metadata=jsonb_set(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END,'{email_verification}',$2::jsonb,true),updated_at=now() WHERE id=$1::uuid",[String(row.id),JSON.stringify(next)]);
+        await tx.unsafe("UPDATE customer_principals SET metadata=CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END||jsonb_build_object('email_verification',$2::jsonb),updated_at=now() WHERE id=$1::uuid",[String(row.id),JSON.stringify(next)]);
         return {failure:nextAttempts>=maxAttempts?"EMAIL_VERIFICATION_LOCKED":"EMAIL_VERIFICATION_INVALID"};
       }
       const safe={required:false,verified_at:new Date().toISOString()};
-      const updated=(await tx.unsafe("UPDATE customer_principals SET email_verified=true,session_version=session_version+1,metadata=jsonb_set(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END,'{email_verification}',$2::jsonb,true),updated_at=now() WHERE id=$1::uuid RETURNING id,email,display_name,email_verified,session_version",[String(row.id),JSON.stringify(safe)]))[0];
+      const updated=(await tx.unsafe("UPDATE customer_principals SET email_verified=true,session_version=session_version+1,metadata=CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END||jsonb_build_object('email_verification',$2::jsonb),updated_at=now() WHERE id=$1::uuid RETURNING id,email,display_name,email_verified,session_version",[String(row.id),JSON.stringify(safe)]))[0];
       return {row:updated};
     });
     if(result.failure){const status=result.failure==="EMAIL_VERIFICATION_EXPIRED"?410:result.failure==="EMAIL_VERIFICATION_LOCKED"?429:400;throw problem(status,result.failure);}
