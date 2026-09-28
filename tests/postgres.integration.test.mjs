@@ -95,6 +95,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(billingPrep.offer.tax_behavior,"inclusive");
     assert.equal(billingPrep.reference_offer.tax_behavior,"inclusive");
     assert.equal(billingPrep.checkout_prefill.email,"billing@example.test");
+    assert.equal(billingPrep.tenant.customer_type,"business");
     assert.equal(billingPrep.return_paths.success,"client.html?billing=success");
 
     await assert.rejects(

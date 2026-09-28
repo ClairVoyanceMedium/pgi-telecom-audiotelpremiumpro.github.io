@@ -25,12 +25,14 @@ test("complete legal corpus is published and cross-linked",()=>{
 });
 
 test("registration requires current legal documents and keeps privacy acknowledgement separate from authority",()=>{
-  const audience=read("assets/client-audience.js"),portal=read("assets/client-portal.js"),server=read("backend/server.mjs");
+  const audience=read("assets/client-audience.js"),portal=read("assets/client-portal.js"),server=read("backend/server.mjs"),postgres=read("backend/src/store-postgres.mjs");
   assert.match(audience,/id="register-legal"/);
   assert.match(audience,/conditions-utilisation/);
   assert.match(portal,/legal_terms_accepted/);
   assert.match(portal,/privacy_notice_acknowledged/);
   assert.match(portal,/legal_version:"2026-09-26-b2b-b2c-v4"/);
+  assert.match(postgres,/2026-09-26-b2b-b2c-v4/);
+  assert.doesNotMatch(postgres,/2026-09-26-b2b-b2c-v3/);
   const terms=read("site/seo/conditions-abonnement.html"),cgu=read("site/seo/conditions-utilisation.html");
   assert.match(terms,/Partie B2C : informations avant engagement/);
   assert.match(terms,/Partie B2B : socle commercial/);
@@ -102,6 +104,7 @@ test("consumer paid checkout stays fail-closed until B2C prerequisites are genui
   assert.match(config,/onlineWithdrawalReady=transactionalEmailEnabled&&resendApiKey/);
   assert.match(config,/b2cCommercialReady=b2cCommercialRequested&&legalOperatorConfigured&&consumerMediatorConfigured&&onlineWithdrawalReady/);
   assert.match(postgres,/AS customer_type/);
+  assert.match(postgres,/customer_type:tenant\.customer_type/);
   assert.match(server,/B2C_COMMERCIAL_NOT_READY/);
   assert.match(server,/b2c_commercial_ready/);
   assert.match(billing,/Souscription particulier indisponible/);

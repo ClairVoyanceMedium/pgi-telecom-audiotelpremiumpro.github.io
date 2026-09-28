@@ -25,6 +25,7 @@ test("server persists a stable audience profile without breaking legacy registra
   assert.match(postgres,/accountTypeInput\|\|\(\(companyName\|\|registrationRaw\)\?"business":"individual"\)/);
   assert.match(postgres,/accountType==="individual"\?"individual":"company"/);
   assert.match(postgres,/AS customer_type/);
+  assert.match(postgres,/customer_type:tenant\.customer_type/);
   assert.match(postgres,/account_type:accountType/);
   assert.match(memory,/accountTypeInput\|\|\(\(company\|\|registration\)\?"business":"individual"\)/);
 });
