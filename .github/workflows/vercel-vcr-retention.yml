@@ -6,8 +6,6 @@ on:
     paths:
       - ".github/workflows/vercel-vcr-retention.yml"
       - "scripts/prune-vercel-vcr.mjs"
-  schedule:
-    - cron: "23 */6 * * *"
   workflow_dispatch:
 
 permissions:
