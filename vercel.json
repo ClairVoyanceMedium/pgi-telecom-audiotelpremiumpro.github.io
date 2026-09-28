@@ -6,7 +6,7 @@
       "main": true
     }
   },
-  "ignoreCommand": "test -n \"$VERCEL_GIT_PREVIOUS_SHA\" && git diff --quiet \"$VERCEL_GIT_PREVIOUS_SHA\" \"$VERCEL_GIT_COMMIT_SHA\" -- Dockerfile.vercel package.json package-lock.json vercel.json index.html client.html sitemap.xml manifest.webmanifest service-worker.js robots.txt llms.txt llms-full.txt fa0a7deb5d60bdf1260c8174ad8c71db.txt .nojekyll site assets backend database scripts/build-static.mjs scripts/start-vercel.sh",
+  "ignoreCommand": "sh scripts/vercel-ignore-build.sh",
   "crons": [
     {
       "path": "/api/v1/internal/email/dispatch",
