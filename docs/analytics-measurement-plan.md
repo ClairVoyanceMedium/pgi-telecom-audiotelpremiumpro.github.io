@@ -54,6 +54,69 @@ Valeurs stables :
 - `crm_sync` : `synced` ou `not_synced`.
 - `error_type` : `validation` ou `network_or_server`.
 
+## Mesure avancée du comportement et du contenu
+
+La couche Analytics classe désormais chaque page dans le groupe de contenu natif GA4 `content_group` : Accueil, Tarifs et comparaison, Portabilité, Reversements, Guide et information SVA, Pages métiers, Demande d’ouverture, Espace client, Juridique et confidentialité ou Autres pages publiques. Cette dimension native doit être préférée à une dimension personnalisée supplémentaire.
+
+Les principales interactions internes utilisent l’événement recommandé `select_content` avec des identifiants stables et à faible cardinalité : demande d’ouverture, espace client, comparateur, guide SVA, portabilité, reversements, numéro SVA, tarif et pages métiers. Les ouvertures de FAQ et le premier usage des simulateurs sont également mesurés sans transmettre le texte saisi par le visiteur.
+
+Le tunnel public ajoute :
+- `order_form_start` : première interaction avec la demande ;
+- `order_form_submit` : soumission valide de l’étape publique ;
+- `order_form_error` : friction de validation, avec uniquement une catégorie de champ ;
+- `order_form_abandon` : sortie après démarrage sans soumission ;
+- `registration_view` : arrivée à l’étape d’inscription sécurisée ;
+- `email_verification_required` : compte créé nécessitant la vérification email ;
+- `sign_up` : inscription/activation effectivement réussie.
+
+`generate_lead` n’est plus émis avant le résultat du backend : il est envoyé seulement après une réponse HTTP réussie du point d’entrée CRM, afin d’éviter de comptabiliser artificiellement comme lead une demande non acceptée.
+
+## SEO, GEO et provenance des assistants IA
+
+Le paramètre personnalisé à faible cardinalité `traffic_origin` classe le référent sans transmettre l’URL référente complète dans ce paramètre : ChatGPT, Perplexity, Copilot, Gemini, Claude, Poe, You.com, Phind, Mistral, moteur de recherche, réseau social, referral, internal ou direct/unknown. Les dimensions natives Source / Support / Campagne de GA4 continuent d’assurer l’attribution officielle ; `traffic_origin` sert uniquement de couche d’analyse complémentaire pour isoler le trafic provenant des assistants IA.
+
+Lorsqu’un retour provient directement d’un domaine Stripe, le tag applique `ignore_referrer` uniquement à ce cas pour éviter qu’un prestataire de paiement ne remplace artificiellement l’origine marketing réelle de la visite.
+
+## Performance réelle des pages
+
+L’événement `page_performance` collecte uniquement des mesures techniques agrégées et non personnelles :
+- `lcp_ms` pour le Largest Contentful Paint ;
+- `cls_milli` pour le Cumulative Layout Shift multiplié par 1 000 ;
+- `ttfb_ms` pour le délai de première réponse ;
+- `interaction_latency_p98_ms` comme indicateur terrain de latence des interactions observées.
+
+Chaque mesure reçoit `metric_rating` = `good`, `needs_improvement` ou `poor`, ainsi qu’une valeur numérique `metric_value`. Ces données servent à relier directement performance technique, type de page et conversion. Elles complètent, sans les remplacer, Search Console et les données de terrain Chrome pour les Core Web Vitals.
+
+## Définitions personnalisées à prévoir dans GA4
+
+Créer uniquement les dimensions nécessaires au reporting, en évitant les dimensions à forte cardinalité. Google recommande d’utiliser les dimensions natives lorsqu’elles existent et rappelle qu’une propriété standard dispose notamment de 50 dimensions personnalisées de portée événement. 
+
+Dimensions de portée événement prioritaires :
+- `traffic_origin`
+- `contact_context`
+- `contact_source`
+- `crm_sync`
+- `form_context`
+- `error_field`
+- `registration_source`
+- `metric_name`
+- `metric_rating`
+
+Métrique personnalisée :
+- `metric_value`
+
+Ne pas créer une dimension personnalisée pour `content_group`, la page, la source, le support, la campagne, le pays, l’appareil ou le navigateur : GA4 les fournit déjà nativement.
+
+## Hygiène GA4 à maintenir dans l’interface
+
+- conservation des données d’exploration réglée au maximum pertinent pour une propriété standard ;
+- filtrage du trafic interne et développeur ;
+- liste des référents indésirables comprenant les prestataires de paiement réellement utilisés ;
+- mesures améliorées activées pour les interactions natives pertinentes, sans recréer en double les événements personnalisés du site ;
+- liaison Search Console ↔ GA4 lorsqu’elle est disponible dans le compte ;
+- vérification régulière de Temps réel et DebugView après changement de tracking ;
+- ne jamais transformer des identifiants publicitaires ou des données personnelles en dimensions Analytics.
+
 ## Événements préparés, non émis artificiellement
 
 `qualify_lead`, `working_lead`, `close_convert_lead`, `purchase` et `refund` figurent dans l’allowlist, mais aucun clic navigateur ne les simule.
@@ -64,7 +127,9 @@ Valeurs stables :
 
 À marquer comme événements clés : `generate_lead`, `sign_up`, `close_convert_lead`, `purchase`.
 
-`begin_checkout` reste une étape du tunnel et n’est pas assimilé à une vente.
+`begin_checkout` reste une étape du tunnel et n’est pas assimilé à une vente. `contact_message_success` reste analysé séparément car un message peut être commercial, technique ou provenir d’un client existant ; le marquer systématiquement comme conversion commerciale fausserait le taux de conversion.
+
+Le tunnel à analyser en exploration est : page d’entrée → CTA interne → `order_form_start` → `order_form_submit` → `generate_lead` → `registration_view` → `email_verification_required` le cas échéant → `sign_up` → `begin_checkout` → `purchase` lorsque la mesure serveur sera activée.
 
 ## Dimensions personnalisées
 
