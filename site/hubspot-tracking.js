@@ -151,6 +151,7 @@ function wrapCustomerApi(){
   wrapped.me=async(...args)=>{const result=await api.me(...args);identifyUser(result&&result.user);return result};
   wrapped.logout=async(...args)=>{try{return await api.logout(...args)}finally{clearUser()}};
   wrapped.changePassword=async(...args)=>{const result=await api.changePassword(...args);clearUser();return result};
+  if(api.createBillingCheckout)wrapped.createBillingCheckout=async(key,body)=>api.createBillingCheckout(key,{...(body||{}),...((await measurementContext())||{})});
   Object.defineProperty(wrapped,"__analyticsWrapped",{value:true});window.PGICustomerApi=Object.freeze(wrapped);
 }
 function gaField(name,pattern){
