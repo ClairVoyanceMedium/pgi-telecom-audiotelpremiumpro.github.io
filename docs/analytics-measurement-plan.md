@@ -101,11 +101,15 @@ Dimensions de portée événement prioritaires :
 - `registration_source`
 - `metric_name`
 - `metric_rating`
+- `account_type`
+- `service_intent`
+- `lead_source`
+- `error_type`
 
 Métrique personnalisée :
 - `metric_value`
 
-Ne pas créer une dimension personnalisée pour `content_group`, la page, la source, le support, la campagne, le pays, l’appareil ou le navigateur : GA4 les fournit déjà nativement.
+Ne pas créer une dimension personnalisée pour `content_group`, `content_type`, `content_id`, `method`, la page, la source, le support, la campagne, le pays, l’appareil ou le navigateur : GA4 les fournit déjà nativement.
 
 ## Hygiène GA4 à maintenir dans l’interface
 
@@ -121,7 +125,7 @@ Ne pas créer une dimension personnalisée pour `content_group`, la page, la sou
 
 `qualify_lead`, `working_lead`, `close_convert_lead`, `purchase` et `refund` figurent dans l’allowlist, mais aucun clic navigateur ne les simule.
 
-`purchase` et `refund` devront partir du webhook Stripe après confirmation serveur, via Measurement Protocol, avec déduplication par `transaction_id`, devise EUR et montant réellement encaissé ou remboursé. Aucun secret API GA4 n’est créé ni stocké dans ce dépôt.
+`purchase` et `refund` sont préparés côté webhook Stripe via Measurement Protocol avec journal de livraison idempotent. `purchase` représente uniquement la première facture réellement payée lors de la création de l’abonnement ; les renouvellements mensuels ne sont pas réinjectés dans une ancienne session GA4. `refund` corrige uniquement un achat initial mesuré. Le revenu récurrent et la LTV restent une vérité Stripe/CRM. L’émission GA4 serveur reste désactivée tant qu’un secret Measurement Protocol réel n’est pas configuré.
 
 ## Événements clés GA4
 
@@ -130,14 +134,6 @@ Ne pas créer une dimension personnalisée pour `content_group`, la page, la sou
 `begin_checkout` reste une étape du tunnel et n’est pas assimilé à une vente. `contact_message_success` reste analysé séparément car un message peut être commercial, technique ou provenir d’un client existant ; le marquer systématiquement comme conversion commerciale fausserait le taux de conversion.
 
 Le tunnel à analyser en exploration est : page d’entrée → CTA interne → `order_form_start` → `order_form_submit` → `generate_lead` → `registration_view` → `email_verification_required` le cas échéant → `sign_up` → `begin_checkout` → `purchase` lorsque la mesure serveur sera activée.
-
-## Dimensions personnalisées
-
-Portée événement :
-
-- `account_type`
-- `service_intent`
-- `lead_source`
 
 ## Données interdites
 
