@@ -72,9 +72,9 @@ test("consented Checkout passes only GA technical identifiers for server revenue
   assert.match(tracking,/gaField\("client_id"/);
   assert.match(tracking,/gaField\("session_id"/);
   assert.match(tracking,/read\(\)!=="accepted"/);
-  assert.match(billing,/PGIAnalytics\?\.measurementContext/);
-  assert.match(billing,/\.\.\.\(a\|\|\{\}\)/);
-  assert.doesNotMatch(billing,/ga_client_id.*email|ga_session_id.*email/i);
+  assert.match(tracking,/wrapped\.createBillingCheckout=/);
+  assert.match(tracking,/await measurementContext\(\)/);
+  assert.doesNotMatch(tracking,/ga_client_id.*email|ga_session_id.*email/i);
 });
 
 test("GA4 API secret stays server-only and server purchase/refund use verified Stripe webhooks",()=>{
