@@ -19,7 +19,15 @@ const PARAMS=Object.freeze({
   contact_form_start:["contact_context","contact_source"],
   contact_message_submit:["contact_context","contact_source"],
   contact_message_success:["contact_context","contact_source","crm_sync"],
-  contact_message_error:["contact_context","contact_source","error_type"]
+  contact_message_error:["contact_context","contact_source","error_type"],
+  select_content:["content_type","content_id"],
+  order_form_start:["form_context"],
+  order_form_submit:["form_context"],
+  order_form_error:["form_context","error_field"],
+  order_form_abandon:["form_context"],
+  registration_view:["registration_source"],
+  email_verification_required:["account_type","service_intent","lead_source"],
+  page_performance:["metric_name","metric_rating","metric_value"]
 });
 const VALUES=Object.freeze({
   account_type:new Set(["business","individual"]),
@@ -30,10 +38,47 @@ const VALUES=Object.freeze({
   contact_context:new Set(["home","pricing","portability","payouts","education","industry","opening","legal","other"]),
   contact_source:new Set(["floating_email_widget"]),
   crm_sync:new Set(["synced","not_synced"]),
-  error_type:new Set(["network_or_server","validation"])
+  error_type:new Set(["network_or_server","validation"]),
+  content_type:new Set(["cta","navigation","resource","internal_link","faq","tool"]),
+  form_context:new Set(["home","opening"]),
+  error_field:new Set(["account_type","identity","email","service_intent","consent","other"]),
+  registration_source:new Set(["public_order"]),
+  metric_name:new Set(["lcp_ms","cls_milli","ttfb_ms","interaction_latency_p98_ms"]),
+  metric_rating:new Set(["good","needs_improvement","poor"])
 });
 const ALIASES=Object.freeze({service_intent:Object.freeze({advice:"commercial_information"})});
 const path=location.pathname||"/",privatePage=PRIVATE_RE.test(path),publicPage=!privatePage&&!CLIENT_RE.test(path);
+function contentGroup(pathname=location.pathname){
+  const p=String(pathname||"/").toLowerCase();
+  if(p==="/")return "Accueil";
+  if(/tarif-numero-sva|comparateur-audiotel/.test(p))return "Tarifs et comparaison";
+  if(/portabilite-numero-sva/.test(p))return "Portabilité";
+  if(/reversement-audiotel/.test(p))return "Reversements";
+  if(/guide-audiotel-sva|numero-sva|numero-surtaxe-08/.test(p))return "Guide et information SVA";
+  if(/audiotel-(voyance|coaching|professionnels|independants)/.test(p))return "Pages métiers";
+  if(/demande-ouverture/.test(p))return "Demande d’ouverture";
+  if(CLIENT_RE.test(p))return "Espace client";
+  if(/conditions|confidentialite|mentions-legales|retractation|resilier|cookies/.test(p))return "Juridique et confidentialité";
+  return "Autres pages publiques";
+}
+function trafficOrigin(){
+  let host="";
+  try{host=new URL(document.referrer||"").hostname.toLowerCase().replace(/^www\./,"")}catch(_e){}
+  if(!host)return "direct_or_unknown";
+  const ai=[
+    ["chatgpt.com","ai_chatgpt"],["chat.openai.com","ai_chatgpt"],["perplexity.ai","ai_perplexity"],
+    ["copilot.microsoft.com","ai_copilot"],["gemini.google.com","ai_gemini"],["claude.ai","ai_claude"],
+    ["poe.com","ai_poe"],["you.com","ai_you"],["phind.com","ai_phind"],["chat.mistral.ai","ai_mistral"]
+  ].find(([domain])=>host===domain||host.endsWith("."+domain));
+  if(ai)return ai[1];
+  if(/(^|\.)(google|bing|yahoo|duckduckgo|ecosia|qwant|baidu|yandex)\./.test(host)||host==="search.brave.com")return "search";
+  if(/(^|\.)(facebook|instagram|linkedin|tiktok|x|twitter|youtube|reddit)\./.test(host))return "social";
+  if(host===location.hostname.toLowerCase().replace(/^www\./,""))return "internal";
+  return "referral";
+}
+function paymentReferrer(){
+  try{const h=new URL(document.referrer||"").hostname.toLowerCase();return h==="stripe.com"||h.endsWith(".stripe.com")}catch(_e){return false}
+}
 const pending=[],denied={analytics_storage:"denied",ad_storage:"denied",ad_user_data:"denied",ad_personalization:"denied"};
 let pendingUser=null;
 window.dataLayer=window.dataLayer||[];
@@ -62,7 +107,15 @@ function loadGa4(){
   const s=document.createElement("script");s.id=GA_SCRIPT_ID;s.async=true;s.src="https://www.googletagmanager.com/gtag/js?id="+encodeURIComponent(MEASUREMENT_ID);
   (document.head||document.documentElement).appendChild(s);
   window.gtag("js",new Date());
-  window.gtag("config",MEASUREMENT_ID,{send_page_view:true});
+  const context={content_group:contentGroup(),traffic_origin:trafficOrigin()};
+  window.gtag("set",context);
+  window.gtag("config",MEASUREMENT_ID,{
+    send_page_view:true,
+    content_group:context.content_group,
+    allow_google_signals:false,
+    allow_ad_personalization_signals:false,
+    ...(paymentReferrer()?{ignore_referrer:true}:{})
+  });
 }
 function loadGtm(){
   if(privatePage||document.getElementById(GTM_SCRIPT_ID))return;
@@ -92,7 +145,7 @@ function wrapCustomerApi(){
   const api=window.PGICustomerApi;if(!api||api.__analyticsWrapped)return;
   const wrapped={...api};
   wrapped.login=async(...args)=>authEvent("login","email",await api.login(...args));
-  wrapped.register=async(...args)=>{const result=await api.register(...args);return result.email_verification_required?result:authEvent("sign_up","email",result,args[0]&&args[0].account_type)};
+  wrapped.register=async(...args)=>{const result=await api.register(...args);if(result.email_verification_required){track("email_verification_required",{account_type:args[0]&&args[0].account_type});return result}return authEvent("sign_up","email",result,args[0]&&args[0].account_type)};
   wrapped.google=async(...args)=>authEvent(args[2]?"sign_up":"login","google",await api.google(...args));
   wrapped.activate=async(...args)=>authEvent("sign_up","email",await api.activate(...args));
   wrapped.me=async(...args)=>{const result=await api.me(...args);identifyUser(result&&result.user);return result};
@@ -107,6 +160,7 @@ function clean(name,params){
   for(const key of allowed){
     const value=params&&params[key];if(value==null||value==="")continue;
     if(key==="value"){const n=Number(value);if(Number.isFinite(n)&&n>=0)out[key]=Math.round(n*100)/100;continue}
+    if(key==="metric_value"){const n=Number(value);if(Number.isFinite(n)&&n>=0)out[key]=Math.round(n*1000)/1000;continue}
     let text=String(value).trim().slice(0,key==="transaction_id"?128:80);
     if(key==="currency")text=text.toUpperCase();
     if(ALIASES[key]&&ALIASES[key][text])text=ALIASES[key][text];
@@ -119,7 +173,7 @@ function clean(name,params){
 function send(name,params){window.gtag("event",name,params)}
 function track(name,params={}){
   if(privatePage)return false;
-  const withContext=["generate_lead","sign_up","qualify_lead","working_lead","close_convert_lead"].includes(name)?{...leadContext(),...params}:params;
+  const withContext=["generate_lead","sign_up","qualify_lead","working_lead","close_convert_lead","email_verification_required"].includes(name)?{...leadContext(),...params}:params;
   const safe=clean(name,withContext);if(!safe)return false;
   const choice=read();
   if(choice==="accepted"){send(name,safe);return true}
@@ -134,6 +188,93 @@ function accept(){
   window._hsq=window._hsq||[];window._hsq.push(["doNotTrack",{track:true}]);
   loadGa4();loadGtm();loadHubSpot();flush();return true;
 }
+function contentIdForLink(link){
+  const raw=String(link?.getAttribute("href")||"").trim();
+  if(!raw||raw.startsWith("#")||raw.startsWith("mailto:")||raw.startsWith("tel:")||raw.startsWith("javascript:"))return "";
+  let url;try{url=new URL(raw,location.href)}catch(_e){return ""}
+  if(url.origin!==location.origin)return "";
+  const p=url.pathname.replace(/\/+$/,"")||"/";
+  const known={
+    "/demande-ouverture":"opening_request","/client.html":"client_portal","/comparateur-audiotel":"comparator",
+    "/guide-audiotel-sva":"guide_sva","/portabilite-numero-sva":"portability","/reversement-audiotel":"payouts",
+    "/numero-sva":"numero_sva","/numero-surtaxe-08":"numero_surtaxe","/tarif-numero-sva":"pricing",
+    "/audiotel-voyance":"industry_voyance","/audiotel-coaching":"industry_coaching",
+    "/audiotel-professionnels":"industry_professionals","/audiotel-independants":"industry_independents","/":"home"
+  };
+  return known[p]||"";
+}
+function contentTypeForLink(link){
+  if(link.matches(".btn,.header-login,[data-order-type],.resource-link"))return link.matches(".resource-link")?"resource":"cta";
+  if(link.closest("nav"))return "navigation";
+  return "internal_link";
+}
+function bindContentMeasurement(){
+  document.addEventListener("click",event=>{
+    const link=event.target.closest("a[href]");if(!link)return;
+    const id=contentIdForLink(link);if(!id)return;
+    track("select_content",{content_type:contentTypeForLink(link),content_id:id});
+  });
+  document.querySelectorAll("details").forEach((details,index)=>details.addEventListener("toggle",()=>{
+    if(details.open)track("select_content",{content_type:"faq",content_id:(contentGroup().toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"").slice(0,50)||"page")+"_faq_"+String(index+1)});
+  }));
+  const calculator=document.querySelector("[data-calculator]");
+  if(calculator){
+    let used=false;
+    calculator.addEventListener("input",()=>{if(!used){used=true;track("select_content",{content_type:"tool",content_id:"homepage_calculator"})}});
+  }
+  const comparatorInputs=[...document.querySelectorAll("#gap,#cmp-hours,#cmp-week,#cmp-month")];
+  if(comparatorInputs.length){
+    let used=false;
+    comparatorInputs.forEach(input=>input.addEventListener("input",()=>{if(!used){used=true;track("select_content",{content_type:"tool",content_id:"audiotel_comparator"})}}));
+  }
+}
+function bindOrderFunnel(){
+  const form=document.getElementById("order-form");if(!form)return;
+  const formContext=location.pathname.includes("demande-ouverture")?"opening":"home";
+  let started=false,submitted=false,lastErrorAt=0;
+  form.addEventListener("focusin",()=>{if(!started){started=true;track("order_form_start",{form_context:formContext})}},{once:true});
+  form.addEventListener("submit",()=>{submitted=true;track("order_form_submit",{form_context:formContext})});
+  form.addEventListener("invalid",event=>{
+    const now=Date.now();if(now-lastErrorAt<700)return;lastErrorAt=now;
+    const name=String(event.target?.name||event.target?.id||"");
+    const field=/account_type/.test(name)?"account_type":/first_name|last_name|company_name/.test(name)?"identity":/email/.test(name)?"email":/service_intent/.test(name)?"service_intent":/processing_consent/.test(name)?"consent":"other";
+    track("order_form_error",{form_context:formContext,error_field:field});
+  },true);
+  window.addEventListener("pagehide",()=>{if(started&&!submitted)track("order_form_abandon",{form_context:formContext})},{once:true});
+}
+function performanceRating(name,value){
+  if(name==="lcp_ms")return value<=2500?"good":value<=4000?"needs_improvement":"poor";
+  if(name==="cls_milli")return value<=100?"good":value<=250?"needs_improvement":"poor";
+  if(name==="ttfb_ms")return value<=800?"good":value<=1800?"needs_improvement":"poor";
+  return value<=200?"good":value<=500?"needs_improvement":"poor";
+}
+function bindPerformanceMeasurement(){
+  if(privatePage||typeof PerformanceObserver!=="function")return;
+  let lcp=0,cls=0,reported=false;
+  const interactions=[];
+  try{new PerformanceObserver(list=>{for(const e of list.getEntries())lcp=Math.max(lcp,Number(e.startTime||0))}).observe({type:"largest-contentful-paint",buffered:true})}catch(_e){}
+  try{new PerformanceObserver(list=>{for(const e of list.getEntries())if(!e.hadRecentInput)cls+=Number(e.value||0)}).observe({type:"layout-shift",buffered:true})}catch(_e){}
+  try{new PerformanceObserver(list=>{for(const e of list.getEntries())if(Number(e.interactionId||0)>0&&Number(e.duration||0)>0)interactions.push(Number(e.duration))}).observe({type:"event",buffered:true,durationThreshold:40})}catch(_e){}
+  const report=()=>{
+    if(reported)return;reported=true;
+    const nav=performance.getEntriesByType("navigation")[0];
+    const metrics=[];
+    if(lcp>0)metrics.push(["lcp_ms",Math.round(lcp)]);
+    if(cls>=0)metrics.push(["cls_milli",Math.round(cls*1000)]);
+    const ttfb=Number(nav?.responseStart||0);if(ttfb>0)metrics.push(["ttfb_ms",Math.round(ttfb)]);
+    if(interactions.length){
+      const sorted=interactions.slice().sort((a,b)=>a-b),idx=Math.max(0,Math.ceil(sorted.length*.98)-1);
+      metrics.push(["interaction_latency_p98_ms",Math.round(sorted[idx])]);
+    }
+    for(const [metric_name,metric_value] of metrics)track("page_performance",{metric_name,metric_rating:performanceRating(metric_name,metric_value),metric_value});
+  };
+  document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")report()});
+  window.addEventListener("pagehide",report,{once:true});
+}
+function bindRegistrationMeasurement(){
+  if(CLIENT_RE.test(location.pathname)&&new URLSearchParams(location.search).get("register")==="1")track("registration_view",{registration_source:"public_order"});
+}
+
 function ensureStyle(){
   if(document.getElementById("pgi-tracking-consent-style"))return;
   const s=document.createElement("style");s.id="pgi-tracking-consent-style";
@@ -152,6 +293,10 @@ function banner(){
 function show(){banner().hidden=false}
 function boot(){
   wrapCustomerApi();
+  bindContentMeasurement();
+  bindOrderFunnel();
+  bindPerformanceMeasurement();
+  bindRegistrationMeasurement();
   if(document.readyState!=="complete")document.addEventListener("DOMContentLoaded",wrapCustomerApi,{once:true});
   document.addEventListener("click",e=>{const t=e.target.closest("[data-tracking-preferences]");if(t){e.preventDefault();show()}});
   if(privatePage){reject();return}

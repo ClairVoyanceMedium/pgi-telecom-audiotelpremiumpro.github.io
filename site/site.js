@@ -64,7 +64,7 @@ document.querySelectorAll("[data-order-type]").forEach(link=>link.addEventListen
 }));
 form.addEventListener("input",saveDraft);
 form.addEventListener("change",saveDraft);
-async function captureLead(intent){const payload={...intent,page_uri:location.href.split("#")[0],page_name:document.title};window.PGIAnalytics?.track("generate_lead");try{return await fetch("/api/v1/public/hubspot/lead",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",keepalive:true,body:JSON.stringify(payload)})}catch(_e){return null}}
+async function captureLead(i){try{const r=await fetch("/api/v1/public/hubspot/lead",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",keepalive:true,body:JSON.stringify({...i,page_uri:location.href.split("#")[0],page_name:document.title})});if(r.ok)window.PGIAnalytics?.track("generate_lead");return r}catch(_e){return null}}
 form.addEventListener("submit",async e=>{
   e.preventDefault();
   const type=selectedType();
