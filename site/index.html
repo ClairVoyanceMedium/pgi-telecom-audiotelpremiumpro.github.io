@@ -260,9 +260,11 @@
 <label>Adresse e-mail<input id="order-email" name="email" type="email" autocomplete="email" required maxlength="320"></label>
 <label>Téléphone <span>(facultatif)</span><input id="order-phone" name="phone" type="tel" autocomplete="tel" maxlength="40"></label>
 <label>Votre besoin principal<select id="order-service-intent" name="service_intent" required><option value="" selected disabled>Choisir</option><option value="new_number">Obtenir un nouveau numéro</option><option value="portability">Étudier la portabilité de mon numéro</option><option value="advice">Je souhaite être orienté</option></select></label>
+<label class="order-processing-consent"><input id="order-processing-consent" name="processing_consent" type="checkbox" required><span>J’accepte que PGI Telecom – Audiotel Premium Pro stocke et traite les informations transmises afin de répondre à ma demande et préparer, le cas échéant, l’ouverture de mon service.</span></label>
+<label class="order-honeypot" aria-hidden="true">Ne pas remplir<input id="order-website" name="website" type="text" tabindex="-1" autocomplete="off"></label>
 <button class="btn order-submit" type="submit">Continuer ma demande <span>→</span></button>
 <p id="order-status" class="order-status" role="alert" hidden>Impossible de transférer la demande dans cette session. Autorisez le stockage de session puis réessayez.</p>
-<p class="order-privacy">Les informations saisies ici sont transférées uniquement dans votre navigateur vers l’étape d’inscription. Aucun mot de passe n’est demandé sur cette page.</p>
+<p class="order-privacy">Les informations de cette demande sont enregistrées dans notre CRM HubSpot afin d’assurer son traitement et sont aussi reprises automatiquement dans l’étape d’inscription sécurisée. Aucun mot de passe n’est demandé sur cette page. La mesure d’audience HubSpot reste soumise à votre choix de traceurs.</p>
 <noscript><p class="order-status bad">JavaScript doit être activé pour transférer cette demande vers l’espace client sécurisé.</p></noscript>
 </form>
 </div>

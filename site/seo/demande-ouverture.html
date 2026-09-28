@@ -65,9 +65,11 @@
       <label>Adresse e-mail<input id="order-email" name="email" type="email" autocomplete="email" required maxlength="320"></label>
       <label>Téléphone <span>(facultatif)</span><input id="order-phone" name="phone" type="tel" autocomplete="tel" maxlength="40"></label>
       <label>Votre besoin principal<select id="order-service-intent" name="service_intent" required><option value="" selected disabled>Choisir</option><option value="new_number">Obtenir un nouveau numéro</option><option value="portability">Étudier la portabilité de mon numéro</option><option value="advice">Je souhaite être orienté</option></select></label>
+<label class="order-processing-consent"><input id="order-processing-consent" name="processing_consent" type="checkbox" required><span>J’accepte que PGI Telecom – Audiotel Premium Pro stocke et traite les informations transmises afin de répondre à ma demande et préparer, le cas échéant, l’ouverture de mon service.</span></label>
+<label class="order-honeypot" aria-hidden="true">Ne pas remplir<input id="order-website" name="website" type="text" tabindex="-1" autocomplete="off"></label>
       <button class="btn order-submit" type="submit">Continuer vers l’espace sécurisé <span>→</span></button>
       <p id="order-status" class="order-status" role="alert" hidden>Impossible de conserver la demande dans cette session. Autorisez le stockage de session puis réessayez.</p>
-      <p class="order-privacy">La page suivante reprend automatiquement ces informations. Vous y choisissez votre mot de passe avant l’envoi réel de la création du compte.</p>
+      <p class="order-privacy">Ces informations sont enregistrées dans notre CRM HubSpot pour traiter votre demande puis reprises automatiquement dans l’inscription sécurisée. Vous choisissez votre mot de passe uniquement à l’étape suivante. La mesure d’audience HubSpot reste distincte et dépend de votre choix de traceurs.</p>
       <noscript><p class="order-status bad">JavaScript doit être activé pour transférer votre demande vers l’espace sécurisé.</p></noscript>
     </form>
   </div>
