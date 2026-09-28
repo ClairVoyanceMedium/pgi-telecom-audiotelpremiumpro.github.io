@@ -15,7 +15,7 @@ const sample={
 };
 
 test("HubSpot lead payload maps the public funnel to existing CRM properties",()=>{
-  const payload=buildHubSpotLeadSubmission(sample,{pageUri:"https://audiotel-premium-pro.com/demande-ouverture/",pageName:"Demande"});
+  const payload=buildHubSpotLeadSubmission(sample,{pageUri:"https://audiotel-premium-pro.com/demande-ouverture/",pageName:"Demande",hutk:"tracking-token-123"});
   const fields=Object.fromEntries(payload.fields.map(x=>[x.name,x.value]));
   assert.equal(HUBSPOT_LEAD_FORM.portalId,"149417663");
   assert.equal(HUBSPOT_LEAD_FORM.formId,"436e33ad-e5e7-4e7c-b024-f211293ad9bd");
@@ -27,8 +27,11 @@ test("HubSpot lead payload maps the public funnel to existing CRM properties",()
   assert.equal(fields.type_de_demande,"Portabilité d’un numéro existant");
   assert.equal(fields.besoin__projet_audiotel,"Portabilité d’un numéro existant");
   assert.equal(fields.lifecyclestage,"lead");
+  assert.equal(fields.statut_commercial_pgi,"Nouveau prospect");
+  assert.equal(fields.hubspot_owner_id,"99851906");
   assert.equal(payload.legalConsentOptions.consent.consentToProcess,true);
   assert.match(payload.context.pageUri,/demande-ouverture/);
+  assert.equal(payload.context.hutk,"tracking-token-123");
 });
 
 test("HubSpot lead payload refuses processing without an explicit privacy acknowledgement",()=>{
@@ -48,6 +51,28 @@ test("HubSpot submission uses the public forms endpoint without exposing a priva
   assert.equal("Authorization" in request.options.headers,false);
 });
 
+test("HubSpot enrichment falls back safely when optional CRM fields are not part of the form definition",async()=>{
+  const bodies=[];
+  const fetchImpl=async(_url,options)=>{
+    bodies.push(JSON.parse(options.body));
+    if(bodies.length===1){
+      return {ok:false,status:400,text:async()=>JSON.stringify({errors:[{errorType:"FIELD_NOT_IN_FORM_DEFINITION",name:"statut_commercial_pgi"}]})};
+    }
+    return {ok:true,status:200,text:async()=>""};
+  };
+  const result=await submitHubSpotLead(sample,{fetchImpl,attempts:1,timeoutMs:1000});
+  assert.equal(result.ok,true);
+  assert.equal(result.enriched,false);
+  assert.equal(bodies.length,2);
+  const first=Object.fromEntries(bodies[0].fields.map(x=>[x.name,x.value]));
+  const second=Object.fromEntries(bodies[1].fields.map(x=>[x.name,x.value]));
+  assert.equal(first.statut_commercial_pgi,"Nouveau prospect");
+  assert.equal(first.hubspot_owner_id,"99851906");
+  assert.equal(second.statut_commercial_pgi,undefined);
+  assert.equal(second.hubspot_owner_id,undefined);
+  assert.equal(second.lifecyclestage,"lead");
+});
+
 test("public forms and secure registration are wired to the same CRM capture",()=>{
   const site=fs.readFileSync("site/site.js","utf8");
   const home=fs.readFileSync("site/index.html","utf8");
@@ -61,5 +86,5 @@ test("public forms and secure registration are wired to the same CRM capture",()
   assert.match(order,/CRM HubSpot/);
   assert.match(server,/pathname==="\/api\/v1\/public\/hubspot\/lead"/);
   assert.match(server,/submitHubSpotLead\(\.\.\.body|submitHubSpotLead\(body/);
-  assert.match(server,/customer_registration/);
+  assert.match(server,/customer_registration/);\n  assert.match(server,/hubspotutk/);
 });
