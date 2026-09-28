@@ -31,6 +31,7 @@ export function loadConfig(env=process.env){
   const emailVerificationEnabled=booleanValue(env.PGI_EMAIL_VERIFICATION_ENABLED,false,"PGI_EMAIL_VERIFICATION_ENABLED");
   const transactionalEmailEnabled=booleanValue(env.PGI_TRANSACTIONAL_EMAIL_ENABLED,false,"PGI_TRANSACTIONAL_EMAIL_ENABLED");
   const resendApiKey=String(env.RESEND_API_KEY||env.PGI_RESEND_API_KEY||"").trim();
+  const resendReceivingApiKey=String(env.PGI_RESEND_RECEIVING_API_KEY||"").trim();
   // The public withdrawal function is operational only when its durable acknowledgement channel is enabled.
   const onlineWithdrawalReady=transactionalEmailEnabled&&resendApiKey.startsWith("re_")&&resendApiKey.length>=12;
   const b2cCommercialReady=b2cCommercialRequested&&legalOperatorConfigured&&consumerMediatorConfigured&&onlineWithdrawalReady;
@@ -87,6 +88,7 @@ export function loadConfig(env=process.env){
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(transactionalFromEmail))throw new Error("PGI_TRANSACTIONAL_FROM_EMAIL invalid");
     if(!transactionalFromName)throw new Error("PGI_TRANSACTIONAL_FROM_NAME required");
   }
+  if(resendReceivingApiKey&&(!resendReceivingApiKey.startsWith("re_")||resendReceivingApiKey.length<12))throw new Error("PGI_RESEND_RECEIVING_API_KEY invalid");
   if(transactionalEmailEnabled){
     if(!resendApiKey.startsWith("re_")||resendApiKey.length<12)throw new Error("transactional email requires a valid RESEND_API_KEY");
     if(!/^whsec_[A-Za-z0-9_+\/=.-]{16,}$/.test(resendWebhookSecret))throw new Error("transactional email requires RESEND_WEBHOOK_SECRET");
@@ -112,7 +114,7 @@ export function loadConfig(env=process.env){
 
   return Object.freeze({
     mode,authMode,host,port,releaseId,staticDir,trustProxy,protectMachineEndpoints,googleClientId,webauthnRpId,webauthnOrigin,
-    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,stripeSecretKey,stripeWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,b2cCommercialRequested,b2cCommercialReady,legalOperatorConfigured,consumerMediatorConfigured,onlineWithdrawalReady,emailVerificationEnabled,transactionalEmailEnabled,resendApiKey,resendWebhookSecret,transactionalDomain,transactionalReplyTo,internalNotificationEmail,cronSecret,emailVerificationPepper,transactionalFromEmail,transactionalFromName,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
+    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,stripeSecretKey,stripeWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,b2cCommercialRequested,b2cCommercialReady,legalOperatorConfigured,consumerMediatorConfigured,onlineWithdrawalReady,emailVerificationEnabled,transactionalEmailEnabled,resendApiKey,resendReceivingApiKey,resendWebhookSecret,transactionalDomain,transactionalReplyTo,internalNotificationEmail,cronSecret,emailVerificationPepper,transactionalFromEmail,transactionalFromName,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),
     bodyLimitBytes:integer(env.PGI_BODY_LIMIT_BYTES,262144,4096,10485760,"PGI_BODY_LIMIT_BYTES"),
