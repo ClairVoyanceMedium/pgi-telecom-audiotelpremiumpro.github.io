@@ -14,7 +14,7 @@ import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
-import {stripeProviderState,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent} from "./src/stripe-billing.mjs";
+import {stripeProviderState,stripeProviderReadiness,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent} from "./src/stripe-billing.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
@@ -535,7 +535,7 @@ export function createBackend(options={}){
           canFinance?store.customerBillingPreparation(context.tenant_id):Promise.resolve(null)
         ]);
         const data=scopeCustomerPortalData(context,rawData);
-        return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,metric_resets:Object.fromEntries(Object.entries(metricRanges).map(([k,v])=>[k,v.baseline])),billing_offer:billing?.offer||null,billing_summary:billing?{subscription:billing.subscription,premium_call_access:billing.premium_call_access,premium_routing_access:billing.premium_routing_access,billing_currency:billing.billing_currency,pricing_state:billing.pricing_state,reference_offer:billing.reference_offer,checkout_prefill:billing.checkout_prefill,return_paths:billing.return_paths}:{restricted:true},billing_provider:billing?billingProviderStatus(config):{connection_state:"restricted",checkout_available:false,customer_portal_available:false},server_time:new Date().toISOString()});
+        return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,metric_resets:Object.fromEntries(Object.entries(metricRanges).map(([k,v])=>[k,v.baseline])),billing_offer:billing?.offer||null,billing_summary:billing?{subscription:billing.subscription,premium_call_access:billing.premium_call_access,premium_routing_access:billing.premium_routing_access,billing_currency:billing.billing_currency,pricing_state:billing.pricing_state,reference_offer:billing.reference_offer,checkout_prefill:billing.checkout_prefill,return_paths:billing.return_paths}:{restricted:true},billing_provider:billing?await billingProviderStatus(config):{connection_state:"restricted",checkout_available:false,customer_portal_available:false},server_time:new Date().toISOString()});
       }
       if(method==="GET"&&pathname==="/api/v1/customer/team"){
         requireActor(customerActor);
@@ -609,7 +609,7 @@ export function createBackend(options={}){
         requireCustomerPermission(context,"finance.read");
         const billing=await store.customerBillingPreparation(context.tenant_id);
         const withdrawalReady=config.onlineWithdrawalReady===true&&typeof store.customerWithdrawalFeatureReady==="function"&&await store.customerWithdrawalFeatureReady();
-        return done(res,metrics,started,"customer.billing.status",200,{billing_provider:billingProviderStatus(config),b2c_commercial_ready:config.b2cCommercialReady===true&&withdrawalReady,b2c_readiness:{legal_operator:config.legalOperatorConfigured===true,consumer_mediator:config.consumerMediatorConfigured===true,online_withdrawal:withdrawalReady},...billing});
+        return done(res,metrics,started,"customer.billing.status",200,{billing_provider:await billingProviderStatus(config),b2c_commercial_ready:config.b2cCommercialReady===true&&withdrawalReady,b2c_readiness:{legal_operator:config.legalOperatorConfigured===true,consumer_mediator:config.consumerMediatorConfigured===true,online_withdrawal:withdrawalReady},...billing});
       }
       if(method==="POST"&&pathname==="/api/v1/customer/billing/checkout-session"){
         requireCustomerCsrf(req,customerActor,config);
@@ -622,7 +622,7 @@ export function createBackend(options={}){
         const context=await store.customerSessionContext(customerActor);
         requireCustomerPermission(context,"billing.manage");
         const billing=await store.customerBillingPreparation(context.tenant_id);
-        const provider=billingProviderStatus(config);
+        const provider=await billingProviderStatus(config);
         const individual=String(billing.tenant?.customer_type||"business")==="individual";
         const withdrawalReady=!individual||(config.onlineWithdrawalReady===true&&typeof store.customerWithdrawalFeatureReady==="function"&&await store.customerWithdrawalFeatureReady());
         if(individual&&(config.b2cCommercialReady!==true||!withdrawalReady)){
@@ -1600,17 +1600,32 @@ export function resolveTelephonyRoutingContext(url,config){
   return {svaNumber:svaNumber||null};
 }
 
-export function billingProviderStatus(config){
-  const external=Boolean(config?.externalBillingEnabled),stripe=stripeProviderState(config);
-  const state=stripe.connected?"connected":stripe.api?"checkout_ready_webhook_pending":stripe.webhook?"webhook_ready_checkout_pending":external?"event_ingest_enabled":"not_connected";
+export async function billingProviderStatus(config){
+  const external=Boolean(config?.externalBillingEnabled),stripe=await stripeProviderReadiness(config);
+  let state="not_connected";
+  if(external){
+    if(stripe.api&&Boolean(config?.stripeLiveMode)&&!stripe.account_checked)state="account_status_unavailable";
+    else if(stripe.api&&Boolean(config?.stripeLiveMode)&&!stripe.account_ready)state="account_activation_required";
+    else if(stripe.api&&stripe.webhook&&stripe.account_ready)state=stripe.payouts_enabled===false?"connected_payouts_pending":"connected";
+    else if(stripe.api)state="checkout_ready_webhook_pending";
+    else if(stripe.webhook)state="webhook_ready_checkout_pending";
+    else state="event_ingest_enabled";
+  }
   return Object.freeze({
     architecture_ready:true,
     target_provider:"stripe",
     connection_state:state,
     external_billing_enabled:external,
-    checkout_available:stripe.api,
-    customer_portal_available:stripe.api,
+    checkout_available:Boolean(stripe.api&&stripe.account_ready),
+    customer_portal_available:Boolean(stripe.api),
     webhook_ingest_enabled:stripe.webhook,
+    account_checked:Boolean(stripe.account_checked),
+    account_ready:Boolean(stripe.account_ready),
+    charges_enabled:stripe.charges_enabled,
+    payouts_enabled:stripe.payouts_enabled,
+    details_submitted:stripe.details_submitted,
+    fully_operational:Boolean(stripe.fully_operational),
+    readiness_reason:String(stripe.readiness_reason||"unknown"),
     stripe_live_mode:Boolean(config?.stripeLiveMode),
     checkout_mode:"provider_hosted",
     customer_portal_mode:"provider_hosted",
