@@ -4,16 +4,18 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
+  && npm cache clean --force \
+  && rm -rf /root/.npm
 
-COPY index.html client.html sitemap.xml manifest.webmanifest service-worker.js robots.txt llms.txt llms-full.txt fa0a7deb5d60bdf1260c8174ad8c71db.txt .nojekyll ./
-COPY site ./site
-COPY assets ./assets
-COPY backend ./backend
-COPY database ./database
-COPY scripts/build-static.mjs scripts/start-vercel.sh ./scripts/
+COPY --chown=node:node index.html client.html sitemap.xml manifest.webmanifest service-worker.js robots.txt llms.txt llms-full.txt fa0a7deb5d60bdf1260c8174ad8c71db.txt .nojekyll ./
+COPY --chown=node:node site ./site
+COPY --chown=node:node assets ./assets
+COPY --chown=node:node backend ./backend
+COPY --chown=node:node database ./database
+COPY --chown=node:node scripts/build-static.mjs scripts/start-vercel.sh ./scripts/
 
-RUN chmod 700 /app/scripts/start-vercel.sh && chown -R node:node /app
+RUN chown node:node /app && chmod 700 /app/scripts/start-vercel.sh
 USER node
 
 ENV PGI_BACKEND_MODE=production
