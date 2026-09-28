@@ -17,7 +17,8 @@ import {createStaticSiteHandler} from "./src/static-site.mjs";
 import {stripeProviderState,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent} from "./src/stripe-billing.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
-import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";\nimport {submitHubSpotLead} from "./src/hubspot-crm.mjs";
+import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
+import {submitHubSpotLead} from "./src/hubspot-crm.mjs";
 
 export async function createDefaultBackend(){
   const config=loadConfig();
