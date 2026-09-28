@@ -72,6 +72,7 @@ export function stripeProviderState(config){
 }
 
 let stripeAccountReadinessCache={key:"",checkedAt:0,value:null};
+export function invalidateStripeProviderReadiness(){stripeAccountReadinessCache={key:"",checkedAt:0,value:null};}
 export async function stripeProviderReadiness(config,options={}){
   const base=stripeProviderState(config),live=Boolean(config?.stripeLiveMode);
   if(!base.api)return {...base,connected:false,account_checked:false,account_ready:false,charges_enabled:false,payouts_enabled:false,details_submitted:false,fully_operational:false,readiness_reason:"not_configured"};
