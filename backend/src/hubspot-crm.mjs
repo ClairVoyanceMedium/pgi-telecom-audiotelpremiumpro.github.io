@@ -1,5 +1,6 @@
 const HUBSPOT_PORTAL_ID="149417663";
 const HUBSPOT_FORM_ID="436e33ad-e5e7-4e7c-b024-f211293ad9bd";
+const HUBSPOT_OWNER_ID="99851906";
 const HUBSPOT_FORM_ENDPOINT="https://api.hsforms.com/submissions/v3/integration/submit/"+HUBSPOT_PORTAL_ID+"/"+HUBSPOT_FORM_ID;
 const PROCESSING_NOTICE="J’accepte que PGI Telecom – Audiotel Premium Pro stocke et traite les informations transmises afin de répondre à ma demande et préparer, le cas échéant, l’ouverture de mon service.";
 
@@ -43,13 +44,20 @@ export function buildHubSpotLeadSubmission(input={},options={}){
   field(fields,"type_de_demande",intent.hubspot);
   field(fields,"besoin__projet_audiotel",intent.label);
   field(fields,"lifecyclestage","lead");
+  if(options.enrich!==false){
+    field(fields,"statut_commercial_pgi","Nouveau prospect");
+    field(fields,"hubspot_owner_id",HUBSPOT_OWNER_ID);
+  }
 
   const pageUri=clean(options.pageUri||input.page_uri,500)||"https://audiotel-premium-pro.com/demande-ouverture/";
   const pageName=clean(options.pageName||input.page_name,180)||"Demande d’ouverture Audiotel Premium Pro";
+  const context={pageUri,pageName};
+  const hutk=clean(options.hutk||input.hutk,96);
+  if(hutk)context.hutk=hutk;
   return {
     submittedAt:Date.now(),
     fields,
-    context:{pageUri,pageName},
+    context,
     legalConsentOptions:{consent:{consentToProcess:true,text:PROCESSING_NOTICE}}
   };
 }
@@ -57,10 +65,11 @@ export function buildHubSpotLeadSubmission(input={},options={}){
 export async function submitHubSpotLead(input={},options={}){
   const fetchImpl=options.fetchImpl||globalThis.fetch;
   if(typeof fetchImpl!=="function")throw problem("HUBSPOT_FETCH_UNAVAILABLE");
-  const payload=buildHubSpotLeadSubmission(input,options);
+  let payload=buildHubSpotLeadSubmission(input,options);
+  const fallbackPayload=options.enrich===false?null:buildHubSpotLeadSubmission(input,{...options,enrich:false});
   const timeoutMs=Math.max(750,Math.min(5000,Number(options.timeoutMs)||2500));
-  const attempts=Math.max(1,Math.min(2,Number(options.attempts)||2));
-  let lastError=null;
+  const attempts=Math.max(fallbackPayload?2:1,Math.min(2,Number(options.attempts)||2));
+  let lastError=null,enrichmentFallbackUsed=false;
 
   for(let attempt=1;attempt<=attempts;attempt++){
     const controller=new AbortController();
@@ -73,7 +82,9 @@ export async function submitHubSpotLead(input={},options={}){
         signal:controller.signal
       });
       const responseText=await response.text().catch(()=>"");
-      if(response.ok)return {ok:true,status:response.status};
+      if(response.ok)return {ok:true,status:response.status,enriched:!enrichmentFallbackUsed};
+      const optionalFieldRejected=response.status===400&&fallbackPayload&&!enrichmentFallbackUsed&&responseText.includes("FIELD_NOT_IN_FORM_DEFINITION")&&(responseText.includes("statut_commercial_pgi")||responseText.includes("hubspot_owner_id"));
+      if(optionalFieldRejected){payload=fallbackPayload;enrichmentFallbackUsed=true;lastError=null;continue;}
       const error=problem("HUBSPOT_SUBMISSION_REJECTED");
       error.status=response.status;
       error.detail=responseText.slice(0,600);
