@@ -86,5 +86,6 @@ test("public forms and secure registration are wired to the same CRM capture",()
   assert.match(order,/CRM HubSpot/);
   assert.match(server,/pathname==="\/api\/v1\/public\/hubspot\/lead"/);
   assert.match(server,/submitHubSpotLead\(\.\.\.body|submitHubSpotLead\(body/);
-  assert.match(server,/customer_registration/);\n  assert.match(server,/hubspotutk/);
+  assert.match(server,/customer_registration/);
+  assert.match(server,/hubspotutk/);
 });
