@@ -73,7 +73,7 @@ test("consented Checkout passes only GA technical identifiers for server revenue
   assert.match(tracking,/gaField\("session_id"/);
   assert.match(tracking,/read\(\)!=="accepted"/);
   assert.match(billing,/PGIAnalytics\?\.measurementContext/);
-  assert.match(billing,/\.\.\.\(analytics\|\|\{\}\)/);
+  assert.match(billing,/\.\.\.\(a\|\|\{\}\)/);
   assert.doesNotMatch(billing,/ga_client_id.*email|ga_session_id.*email/i);
 });
 
