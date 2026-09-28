@@ -6,6 +6,7 @@ const html=fs.readFileSync("site/index.html","utf8");
 const css=fs.readFileSync("site/site.css","utf8");
 const js=fs.readFileSync("site/site.js","utf8");
 const contactWidget=fs.readFileSync("site/contact-widget.js","utf8");
+const contactCss=fs.readFileSync("site/contact-widget.css","utf8");
 const robots=fs.readFileSync("robots.txt","utf8");
 const sitemap=fs.readFileSync("sitemap.xml","utf8");
 const cockpit=fs.readFileSync("index.html","utf8");
@@ -95,8 +96,8 @@ test("floating contact stays low-friction and submits directly without opening a
   assert.match(contactWidget,/Votre adresse email/);
   assert.match(contactWidget,/Votre message/);
   assert.match(contactWidget,/\/api\/v1\/public\/contact/);
-  assert.match(css,/\.contact-widget-panel/);
-  assert.match(css,/\.contact-widget-honeypot/);
+  assert.match(contactCss,/\.contact-widget-panel/);
+  assert.match(contactCss,/\.contact-widget-honeypot/);
   assert.doesNotMatch(contactWidget,/mailto:/i);
   assert.doesNotMatch(contactWidget,/Votre téléphone|Votre prénom|Objet de votre demande/);
   assert.match(buildStatic,/site\/contact-widget\.js/);
