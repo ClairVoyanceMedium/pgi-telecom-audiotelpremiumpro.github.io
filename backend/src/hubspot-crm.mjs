@@ -125,9 +125,10 @@ export async function syncHubSpotCommercialLead(input={},options={}){
   const contactEmail=baseProps.email;
   const requestedStatus=HUBSPOT_STAGE_BY_STATUS[options.commercialStatus]?options.commercialStatus:"Nouveau prospect";
   let contact=await findPrivateContact(contactEmail,{token,fetchImpl});
+  let effectiveStatus=requestedStatus;
   if(contact){
     const current=contact.properties||{};
-    const effectiveStatus=advanceCommercialStatus(current.statut_commercial_pgi,requestedStatus);
+    effectiveStatus=advanceCommercialStatus(current.statut_commercial_pgi,requestedStatus);
     const update={
       firstname:baseProps.firstname,
       lastname:baseProps.lastname,
@@ -153,9 +154,9 @@ export async function syncHubSpotCommercialLead(input={},options={}){
       if(error?.status!==409)throw error;
       contact=await findPrivateContact(contactEmail,{token,fetchImpl});
       if(!contact)throw error;
+      effectiveStatus=advanceCommercialStatus(contact.properties?.statut_commercial_pgi,requestedStatus)||requestedStatus;
     }
   }
-  const effectiveStatus=advanceCommercialStatus(contact?.properties?.statut_commercial_pgi,requestedStatus)||requestedStatus;
   const deal=await ensureCommercialDeal(contact,input,{token,fetchImpl,status:effectiveStatus});
   return {enabled:true,synced:true,contactId:String(contact.id),dealId:deal?.id?String(deal.id):null,dealCreated:Boolean(deal?.created)};
 }
