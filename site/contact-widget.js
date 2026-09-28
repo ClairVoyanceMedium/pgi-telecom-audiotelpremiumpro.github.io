@@ -31,20 +31,42 @@ const status=root.querySelector(".contact-widget-status");
 const email=form.elements.email;
 const message=form.elements.message;
 const submit=form.querySelector(".contact-widget-submit");
+const contactSource="floating_email_widget";
+let formStarted=false;
+function contactContext(){
+  const p=String(location.pathname||"/").toLowerCase();
+  if(p==="/")return "home";
+  if(/tarif|comparateur/.test(p))return "pricing";
+  if(/portabilite/.test(p))return "portability";
+  if(/reversement/.test(p))return "payouts";
+  if(/guide|numero-sva|numero-surtaxe/.test(p))return "education";
+  if(/audiotel-(voyance|coaching|professionnels|independants)/.test(p))return "industry";
+  if(/demande-ouverture/.test(p))return "opening";
+  if(/conditions|confidentialite|mentions-legales|retractation|resilier|cookies/.test(p))return "legal";
+  return "other";
+}
+function track(name,extra={}){
+  window.PGIAnalytics?.track(name,{contact_context:contactContext(),contact_source:contactSource,...extra});
+}
 function setOpen(open){
   panel.hidden=!open;
   toggle.setAttribute("aria-expanded",String(open));
   root.classList.toggle("is-open",open);
-  if(open)setTimeout(()=>email.focus(),0);
+  if(open){track("contact_widget_open");setTimeout(()=>email.focus(),0);}
 }
 toggle.addEventListener("click",()=>setOpen(panel.hidden));
 close.addEventListener("click",()=>setOpen(false));
+form.addEventListener("focusin",()=>{
+  if(formStarted)return;
+  formStarted=true;
+  track("contact_form_start");
+},{once:true});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!panel.hidden)setOpen(false)});
 form.addEventListener("submit",async e=>{
   e.preventDefault();
   status.className="contact-widget-status";
   status.textContent="";
-  if(!form.reportValidity())return;
+  if(!form.reportValidity()){track("contact_message_error",{error_type:"validation"});return;}
   const payload={
     email:String(email.value||"").trim(),
     message:String(message.value||"").trim(),
@@ -52,7 +74,8 @@ form.addEventListener("submit",async e=>{
     page_path:location.pathname+location.search,
     page_title:document.title
   };
-  if(payload.message.length<2){status.textContent="Merci de préciser votre message.";status.classList.add("bad");message.focus();return}
+  if(payload.message.length<2){track("contact_message_error",{error_type:"validation"});status.textContent="Merci de préciser votre message.";status.classList.add("bad");message.focus();return}
+  track("contact_message_submit");
   submit.disabled=true;
   submit.setAttribute("aria-busy","true");
   submit.textContent="Envoi en cours…";
@@ -66,10 +89,12 @@ form.addEventListener("submit",async e=>{
     if(!response.ok)throw new Error("contact_failed");
     const result=await response.json().catch(()=>({}));
     if(result.accepted!==true)throw new Error("contact_rejected");
+    track("contact_message_success",{crm_sync:result.crm_sync===true?"synced":"not_synced"});
     form.reset();
     status.textContent="Votre message a bien été envoyé. Nous vous répondrons par email.";
     status.classList.add("ok");
   }catch(_error){
+    track("contact_message_error",{error_type:"network_or_server"});
     status.textContent="L’envoi n’a pas abouti. Merci de réessayer dans quelques instants.";
     status.classList.add("bad");
   }finally{
