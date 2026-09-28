@@ -18,7 +18,7 @@ import {stripeProviderState,createStripeCheckout,createStripePortalSession,verif
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
-import {submitHubSpotLead} from "./src/hubspot-crm.mjs";
+import {submitHubSpotLead,syncHubSpotCommercialLead} from "./src/hubspot-crm.mjs";
 
 export async function createDefaultBackend(){
   const config=loadConfig();
@@ -144,15 +144,25 @@ export function createBackend(options={}){
         requireSameOriginBrowser(req);
         const body=await readJson(req,config.bodyLimitBytes);
         if(String(body.website||"").trim())return done(res,metrics,started,"public.hubspot_lead",202,{accepted:false});
-        try{
-          const pageUri=String(body.page_uri||"").trim()||(config.publicBaseUrl?config.publicBaseUrl+"/demande-ouverture/":"https://audiotel-premium-pro.com/demande-ouverture/");
-          const hutk=String(parseCookies(req.headers.cookie||"").hubspotutk||"").trim();
-          const result=await submitHubSpotLead(body,{pageUri,pageName:"Demande d’ouverture Audiotel Premium Pro",hutk});
-          return done(res,metrics,started,"public.hubspot_lead",202,{accepted:true,provider_status:result.status});
-        }catch(error){
-          logHubSpotSyncFailure("public_lead",error);
-          return done(res,metrics,started,"public.hubspot_lead",202,{accepted:false});
+        const pageUri=String(body.page_uri||"").trim()||(config.publicBaseUrl?config.publicBaseUrl+"/demande-ouverture/":"https://audiotel-premium-pro.com/demande-ouverture/");
+        const hutk=String(parseCookies(req.headers.cookie||"").hubspotutk||"").trim();
+        let formResult=null,commercialResult=null;
+        try{formResult=await submitHubSpotLead(body,{pageUri,pageName:"Demande d’ouverture Audiotel Premium Pro",hutk});}
+        catch(error){logHubSpotSyncFailure("public_lead_form",error);}
+        try{commercialResult=await syncHubSpotCommercialLead(body,{pageUri,pageName:"Demande d’ouverture Audiotel Premium Pro",hutk,commercialStatus:"Nouveau prospect"});}
+        catch(error){logHubSpotSyncFailure("public_lead_commercial",error);}
+        const accepted=Boolean(formResult?.ok||commercialResult?.synced);
+        if(accepted&&config.transactionalEmailEnabled){
+          try{
+            const locale=String(body.preferred_locale||req.headers["accept-language"]||"fr-FR").split(",")[0].trim().slice(0,35);
+            const recipient=normalizeEmail(body.email);
+            const name=[String(body.first_name||"").trim(),String(body.last_name||"").trim()].filter(Boolean).join(" ");
+            const day=new Date().toISOString().slice(0,10);
+            const idem="lead-received/"+createHash("sha256").update(recipient+"|"+String(body.service_intent||"advice")+"|"+day).digest("hex");
+            await sendTransactionalEmail(config,{to:recipient,name,senderRole:"notifications",templateKey:"lead_received",data:{name,locale},idempotencyKey:idem,internalEventId:idem});
+          }catch(error){logSecurityEmailFailure("lead_received",error);}
         }
+        return done(res,metrics,started,"public.hubspot_lead",202,{accepted,provider_status:formResult?.status||null,commercial_sync:Boolean(commercialResult?.synced)});
       }
 
       if(method==="POST"&&pathname==="/api/v1/public/withdrawal"){
@@ -225,11 +235,15 @@ export function createBackend(options={}){
         if(password.length<12||password.length>256){const e=new Error("Invalid password");e.status=400;e.code="INVALID_NEW_PASSWORD";throw e;}
         if(String(body.website||"").trim()){const e=new Error("Invalid registration");e.status=400;e.code="REGISTRATION_REJECTED";throw e;}
         const registered=await store.selfServiceRegister(body,hashPassword(password));
-        try{
+        {
           const pageUri=config.publicBaseUrl?config.publicBaseUrl+"/client.html?register=1":"https://audiotel-premium-pro.com/client.html?register=1";
           const hutk=String(parseCookies(req.headers.cookie||"").hubspotutk||"").trim();
-          await submitHubSpotLead({...body,processing_consent:body.privacy_notice_acknowledged===true},{pageUri,pageName:"Création de compte Audiotel Premium Pro",hutk,attempts:1,timeoutMs:2200});
-        }catch(error){logHubSpotSyncFailure("customer_registration",error);}
+          const crmInput={...body,processing_consent:body.privacy_notice_acknowledged===true};
+          try{await submitHubSpotLead(crmInput,{pageUri,pageName:"Création de compte Audiotel Premium Pro",hutk,attempts:1,timeoutMs:2200});}
+          catch(error){logHubSpotSyncFailure("customer_registration_form",error);}
+          try{await syncHubSpotCommercialLead(crmInput,{pageUri,pageName:"Création de compte Audiotel Premium Pro",hutk,commercialStatus:"Dossier en préparation"});}
+          catch(error){logHubSpotSyncFailure("customer_registration_commercial",error);}
+        }
         const publicUser={id:registered.id,name:registered.display_name,email:registered.email,role:registered.customer_role,tenant:{id:registered.tenant_public_id,name:registered.tenant_name,status:registered.tenant_status}};
         if(config.emailVerificationEnabled){
           const challenge=createEmailVerificationChallenge(config);
