@@ -18,7 +18,7 @@ import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCh
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
-import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant} from "./src/hubspot-crm.mjs";
+import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage} from "./src/hubspot-crm.mjs";
 import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
 
 export async function createDefaultBackend(){
@@ -157,8 +157,13 @@ export function createBackend(options={}){
         const pagePath=String(body.page_path||"/").trim().slice(0,500)||"/";
         const pageTitle=String(body.page_title||"").trim().slice(0,180);
         const eventId="public-contact/"+randomUUID();
-        await sendPublicContactMessage(config,{email,message,pagePath,pageTitle,eventId});
-        return done(res,metrics,started,"public.contact",202,{accepted:true});
+        const [mailResult,crmResult]=await Promise.allSettled([
+          sendPublicContactMessage(config,{email,message,pagePath,pageTitle,eventId}),
+          syncHubSpotSupportMessage({email,message,pagePath,pageTitle})
+        ]);
+        if(crmResult.status==="rejected")logHubSpotSyncFailure("public_contact",crmResult.reason);
+        if(mailResult.status==="rejected")throw mailResult.reason;
+        return done(res,metrics,started,"public.contact",202,{accepted:true,crm_sync:crmResult.status==="fulfilled"&&Boolean(crmResult.value?.synced)});
       }
 
       if(method==="POST"&&pathname==="/api/v1/public/hubspot/lead"){

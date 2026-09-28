@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import {buildHubSpotLeadSubmission,submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,HUBSPOT_LEAD_FORM} from "../backend/src/hubspot-crm.mjs";
+import {buildHubSpotLeadSubmission,submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,HUBSPOT_LEAD_FORM} from "../backend/src/hubspot-crm.mjs";
 
 const sample={
   account_type:"business",
@@ -180,4 +180,37 @@ test("server maps only objective lifecycle events to HubSpot",()=>{
   assert.match(server,/En attente d’ouverture/);
   assert.match(server,/Client actif/);
   assert.match(server,/Perdu \/ non abouti/);
+});
+
+
+test("support contact sync deduplicates by email, creates a CRM contact and logs the site message without a deal",async()=>{
+  const requests=[];
+  const response=(status,payload)=>({ok:status>=200&&status<300,status,text:async()=>JSON.stringify(payload||{})});
+  const fetchImpl=async(url,options={})=>{
+    const body=options.body?JSON.parse(options.body):null;
+    requests.push({url,method:options.method||"GET",body});
+    if(url.endsWith("/crm/v3/objects/contacts/search"))return response(200,{results:[]});
+    if(url.endsWith("/crm/v3/objects/contacts")&&options.method==="POST")return response(201,{id:"501",properties:body.properties});
+    if(url.endsWith("/crm/v4/associations/notes/contacts/labels"))return response(200,{results:[{category:"HUBSPOT_DEFINED",typeId:202,label:null}]});
+    if(url.endsWith("/crm/v3/objects/notes")&&options.method==="POST")return response(201,{id:"601",properties:body.properties});
+    throw new Error("Unexpected HubSpot request "+url+" "+options.method);
+  };
+  const result=await syncHubSpotSupportMessage({
+    email:"Visiteur@Example.test",
+    message:"Bonjour, j’ai une question <script>alert(1)</script>",
+    pagePath:"/tarif-numero-sva/",
+    pageTitle:"Tarif numéro SVA"
+  },{token:"pat-test-"+"s".repeat(40),fetchImpl});
+  assert.equal(result.synced,true);
+  assert.equal(result.contactId,"501");
+  assert.equal(result.noteId,"601");
+  assert.equal(result.contactCreated,true);
+  const created=requests.find(x=>x.url.endsWith("/objects/contacts")&&x.method==="POST");
+  assert.equal(created.body.properties.email,"visiteur@example.test");
+  assert.equal(created.body.properties.type_de_demande,"Autre");
+  const note=requests.find(x=>x.url.endsWith("/objects/notes")&&x.method==="POST");
+  assert.match(note.body.properties.hs_note_body,/tarif-numero-sva/);
+  assert.match(note.body.properties.hs_note_body,/&lt;script&gt;/);
+  assert.equal(note.body.associations[0].to.id,"501");
+  assert.equal(requests.some(x=>x.url.includes("/objects/deals")),false);
 });

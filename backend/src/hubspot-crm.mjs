@@ -163,6 +163,55 @@ export async function syncHubSpotCommercialLead(input={},options={}){
 }
 
 
+
+export async function syncHubSpotSupportMessage(input={},options={}){
+  const token=clean(options.token||process.env.PGI_HUBSPOT_PRIVATE_APP_TOKEN||process.env.HUBSPOT_PRIVATE_APP_TOKEN,800);
+  if(!token)return {enabled:false,synced:false,contactId:null,noteId:null,contactCreated:false};
+  const fetchImpl=options.fetchImpl||globalThis.fetch;
+  const contactEmail=email(input.email);
+  const message=clean(input.message,4000);
+  if(message.length<2)throw problem("HUBSPOT_CONTACT_MESSAGE_INVALID");
+  let contact=await findPrivateContact(contactEmail,{token,fetchImpl});
+  let contactCreated=false;
+  if(!contact){
+    try{
+      contact=await hubSpotPrivateRequest("/crm/v3/objects/contacts",{
+        token,fetchImpl,method:"POST",
+        body:{properties:{
+          email:contactEmail,
+          lifecyclestage:"lead",
+          hubspot_owner_id:HUBSPOT_OWNER_ID,
+          type_de_demande:"Autre",
+          besoin__projet_audiotel:"Contact depuis le site Audiotel Premium Pro"
+        }}
+      });
+      contactCreated=true;
+    }catch(error){
+      if(error?.status!==409)throw error;
+      contact=await findPrivateContact(contactEmail,{token,fetchImpl});
+      if(!contact)throw error;
+    }
+  }
+  const associationTypeId=await noteContactAssociationType({token,fetchImpl});
+  const pagePath=clean(input.pagePath||input.page_path||"/",500)||"/";
+  const pageTitle=clean(input.pageTitle||input.page_title||"",180);
+  const noteBody=[
+    "<strong>Message reçu depuis la bulle de contact du site</strong>",
+    "<br><br><strong>Email :</strong> "+escapeHubSpotHtml(contactEmail),
+    pageTitle?"<br><strong>Page :</strong> "+escapeHubSpotHtml(pageTitle):"",
+    "<br><strong>Chemin :</strong> "+escapeHubSpotHtml(pagePath),
+    "<br><br><strong>Message :</strong><br>"+escapeHubSpotHtml(message).replace(/\n/g,"<br>")
+  ].join("");
+  const note=await hubSpotPrivateRequest("/crm/v3/objects/notes",{
+    token,fetchImpl,method:"POST",
+    body:{
+      properties:{hs_timestamp:new Date().toISOString(),hs_note_body:noteBody,hubspot_owner_id:HUBSPOT_OWNER_ID},
+      associations:[{to:{id:String(contact.id)},types:[{associationCategory:"HUBSPOT_DEFINED",associationTypeId}]}]
+    }
+  });
+  return {enabled:true,synced:true,contactId:String(contact.id),noteId:note?.id?String(note.id):null,contactCreated};
+}
+
 export async function syncHubSpotCommercialTenant(store,tenantPublicId,commercialStatus,options={}){
   if(!store||typeof store.tenantControlDetail!=="function")return {enabled:false,synced:false,skipped:true,reason:"tenant_lookup_unavailable"};
   const detail=await store.tenantControlDetail(String(tenantPublicId||"").trim());
@@ -244,6 +293,18 @@ async function ensureCommercialDeal(contact,input,{token,fetchImpl,status}){
     }
   });
   return {...created,created:true};
+}
+
+async function noteContactAssociationType({token,fetchImpl}){
+  const labels=await hubSpotPrivateRequest("/crm/v4/associations/notes/contacts/labels",{token,fetchImpl,method:"GET"});
+  const match=(labels?.results||[]).find(x=>x.category==="HUBSPOT_DEFINED"&&(x.label==null||x.label===""));
+  const id=Number(match?.typeId);
+  if(!Number.isInteger(id)||id<=0)throw problem("HUBSPOT_NOTE_CONTACT_ASSOCIATION_UNAVAILABLE");
+  return id;
+}
+
+function escapeHubSpotHtml(value){
+  return String(value==null?"":value).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
 }
 
 async function defaultDealContactAssociationType({token,fetchImpl}){
