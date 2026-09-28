@@ -26,7 +26,7 @@ test("production static build publishes marketing root and private cockpit",()=>
     const llmsFull=fs.readFileSync("dist/llms-full.txt","utf8");
     const hubspotTracking=fs.readFileSync("dist/site/hubspot-tracking.js","utf8");
     const indexNowKey=fs.readFileSync("dist/fa0a7deb5d60bdf1260c8174ad8c71db.txt","utf8").trim();
-    const seoSlugs=["audiotel-voyance","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","tarif-numero-sva","numero-surtaxe-08","portabilite-numero-sva","comparateur-audiotel","guide-audiotel-sva","demande-ouverture","mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","cookies-traceurs","resilier-contrat","retractation"];
+    const seoSlugs=["audiotel-voyance","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","tarif-numero-sva","numero-surtaxe-08","portabilite-numero-sva","comparateur-audiotel","guide-audiotel-sva","demande-ouverture","mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","accord-traitement-donnees","cookies-traceurs","resilier-contrat","retractation"];
     const seoPages=seoSlugs.map(slug=>fs.readFileSync("dist/"+slug+"/index.html","utf8"));
 
     assert.match(root,/Pilotez votre activité/);
@@ -65,7 +65,7 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.match(hubspotTracking,/pgi_tracking_consent_v1/);
     assert.equal(indexNowKey,"fa0a7deb5d60bdf1260c8174ad8c71db");
     seoPages.forEach((page,index)=>{
-      const slug=seoSlugs[index],legal=["mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","cookies-traceurs","resilier-contrat","retractation"].includes(slug);
+      const slug=seoSlugs[index],legal=["mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","accord-traitement-donnees","cookies-traceurs","resilier-contrat","retractation"].includes(slug);
       assert.match(page,new RegExp('rel="canonical" href="https:\\/\\/audiotel-premium-pro\\.com\\/'+slug+'\\/"'));
       if(!legal){assert.match(page,/"@type":"WebPage"/);assert.match(page,/"@type":"Service"/);}
       assert.doesNotMatch(page,/__CANONICAL__|__BASE__|__LOGO__/);
