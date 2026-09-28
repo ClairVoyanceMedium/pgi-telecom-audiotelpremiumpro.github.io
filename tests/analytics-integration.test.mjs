@@ -55,7 +55,10 @@ test("the Google payload allowlist excludes direct identifiers",()=>{
 test("direct GA4 loader sends the first page_view after consent",()=>{
   assert.match(tracking,/GA_SCRIPT_ID="pgi-ga4-loader"/);
   assert.match(tracking,/googletagmanager\.com\/gtag\/js\?id=/);
-  assert.match(tracking,/gtag\("config",MEASUREMENT_ID,\{send_page_view:true\}\)/);
+  assert.match(tracking,/gtag\("config",MEASUREMENT_ID,\{/);
+  assert.match(tracking,/send_page_view:true/);
+  assert.match(tracking,/content_group/);
+  assert.match(tracking,/allow_google_signals:false/);
   assert.match(tracking,/loadGa4\(\);loadGtm\(\);loadHubSpot\(\);flush\(\)/);
   assert.match(tracking,/analytics_storage:granted\?"granted":"denied"/);
 });
