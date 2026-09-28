@@ -1,8 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
+import {createHash} from "node:crypto";
 
 const PRIVATE_CSP="default-src 'self'; script-src 'self' https://accounts.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://lh3.googleusercontent.com; connect-src 'self' https://accounts.google.com https://www.googleapis.com; frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests";
 const COCKPIT_CSP="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests";
+const VALIDATOR_CACHE=new Map();
+
 const PUBLIC_CSP="default-src 'self'; script-src 'self' 'unsafe-inline' https://*.hs-scripts.com https://*.hs-analytics.net https://*.hubspot.com https://*.usemessages.com https://www.googletagmanager.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.hubspot.com https://www.google-analytics.com; connect-src 'self' https://*.hubspot.com https://*.hubapi.com https://*.hsforms.com https://www.google-analytics.com https://region1.google-analytics.com https://www.googletagmanager.com; frame-src https://*.hubspot.com; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests";
 
 const MIME=Object.freeze({
@@ -56,7 +59,6 @@ export function createStaticSiteHandler(rootDir){
     const cockpitUi=["/cockpit","/cockpit/","/cockpit.html"].includes(requestPath);
     const privateUi=clientUi||cockpitUi;
     res.setHeader("Content-Type",MIME[ext]||"application/octet-stream");
-    res.setHeader("Content-Length",String(stat.size));
     if(runtimeConfig||privateUi)res.setHeader("Cache-Control","no-store");
     else if(html)res.setHeader("Cache-Control","public, max-age=0, s-maxage=300, stale-while-revalidate=60");
     else res.setHeader("Cache-Control","public, max-age=300, stale-while-revalidate=60");
@@ -64,6 +66,19 @@ export function createStaticSiteHandler(rootDir){
     else if(cockpitUi)res.setHeader("Content-Security-Policy",COCKPIT_CSP);
     else if(html)res.setHeader("Content-Security-Policy",PUBLIC_CSP);
     if(privateUi)res.setHeader("X-Robots-Tag","noindex, nofollow, noarchive");
+
+    if(!runtimeConfig&&!privateUi){
+      const {etag,lastModified}=await publicValidators(file,stat);
+      res.setHeader("ETag",etag);
+      res.setHeader("Last-Modified",lastModified);
+      if(isNotModified(req,etag,stat.mtimeMs)){
+        res.writeHead(304);
+        res.end();
+        return true;
+      }
+    }
+
+    res.setHeader("Content-Length",String(stat.size));
     if(method==="HEAD"){res.writeHead(200);res.end();return true;}
     res.writeHead(200);
     await new Promise((resolve,reject)=>{
@@ -94,4 +109,28 @@ async function resolveStaticFile(root,pathname){
     if(!stat.isFile())return null;
     return candidate;
   }catch{return null;}
+}
+
+
+async function publicValidators(file,stat){
+  const key=file+":"+stat.size+":"+Math.trunc(stat.mtimeMs);
+  const cached=VALIDATOR_CACHE.get(key);
+  if(cached)return cached;
+  const digest=createHash("sha256").update(await fs.promises.readFile(file)).digest("hex");
+  const value={etag:'"sha256-'+digest+'"',lastModified:stat.mtime.toUTCString()};
+  VALIDATOR_CACHE.set(key,value);
+  return value;
+}
+
+function isNotModified(req,etag,mtimeMs){
+  const noneMatch=String(req?.headers?.["if-none-match"]||"").trim();
+  if(noneMatch){
+    if(noneMatch==="*")return true;
+    return noneMatch.split(",").map(x=>x.trim().replace(/^W\//,"")).includes(etag);
+  }
+  const modifiedSince=String(req?.headers?.["if-modified-since"]||"").trim();
+  if(!modifiedSince)return false;
+  const timestamp=Date.parse(modifiedSince);
+  if(!Number.isFinite(timestamp))return false;
+  return Math.floor(Number(mtimeMs)/1000)*1000<=timestamp;
 }

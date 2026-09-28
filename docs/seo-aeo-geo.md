@@ -1,6 +1,6 @@
 # SEO / AEO / GEO operating standard
 
-Last reviewed: 2026-09-26
+Last reviewed: 2026-09-28
 
 ## Objective
 
@@ -56,6 +56,27 @@ Important educational pages should use answer-first prose:
 - authoritative external references for regulatory claims.
 
 Avoid keyword stuffing and near-duplicate landing pages. Bing explicitly warns that duplicate/near-duplicate content can dilute signals for both search and AI-powered discovery.
+
+## Search and AI crawler access
+
+Public marketing and educational pages remain crawlable for standard search engines through the wildcard robots policy.
+
+The production robots file also names the principal search-oriented crawlers explicitly:
+- Bingbot for Bing search;
+- OAI-SearchBot for ChatGPT search discovery;
+- Claude-SearchBot for Claude web search;
+- PerplexityBot for Perplexity search;
+- Applebot for Apple search surfaces.
+
+Every explicit crawler group repeats the private-path exclusions for /client.html, /cockpit, /backend/ and /docs/. This prevents an agent-specific rule from accidentally weakening the public/private boundary.
+
+Training-specific crawler policies must not be confused with search discoverability. Search visibility is the goal here; no ranking or citation is guaranteed by a robots directive.
+
+## HTTP freshness validators
+
+Public static resources expose ETag and Last-Modified validators and honor conditional GET requests with HTTP 304 when the representation is unchanged. This helps crawlers recrawl efficiently and distinguish unchanged resources from updated content.
+
+Private customer/admin surfaces and runtime configuration files remain excluded from these public-cache validators.
 
 ## Sitemap
 
@@ -113,7 +134,10 @@ Bing Webmaster Tools:
 - IndexNow;
 - AI Performance;
 - cited pages;
-- citation share/intents/topics when available.
+- citation share;
+- intents;
+- topics;
+- comparison with relevant domains when the dashboard makes it available.
 
 GA4:
 - organic landing pages;
