@@ -20,7 +20,7 @@ function storeConfig(){
 
 function backendConfig(){
   return {
-    mode:"production",authMode:"session",host:"127.0.0.1",port:0,
+    mode:"production",processRole:"api",authMode:"session",host:"127.0.0.1",port:0,
     sessionSecret:"s".repeat(48),adminUsername:"admin",adminPasswordHash:hashPassword("admin-password-123456"),
     ingestToken:"",bodyLimitBytes:262144,rateLimitPerMinute:10000,heavyReadRateLimitPerMinute:10000,writeRateLimitPerMinute:10000,
     authMaxFailures:8,authFailureWindowSeconds:900,sessionTtlSeconds:3600,
