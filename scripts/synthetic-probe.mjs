@@ -3,7 +3,7 @@ import {randomUUID} from "node:crypto";
 const base=String(process.env.PGI_SYNTHETIC_TARGET||"http://127.0.0.1:8080").replace(/\/$/,"");
 const remote=!/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(?::|\/|$)/i.test(base);
 if(remote&&!base.startsWith("https://"))throw new Error("Remote synthetic probes require HTTPS");
-const probes=remote?[["api.health","/api/v1/health",200],["site.home","/",200],["site.client","/client.html",200],["auth.boundary","/api/v1/customer/auth/me",401]]:[["api.health","/api/v1/health",200],["api.ready","/api/v1/ready",200]];
+const probes=remote?[["api.health","/api/v1/health",200],["site.home","/",200],["site.sitemap","/sitemap.xml",200],["site.llms","/llms.txt",200],["site.hubspot_tracking","/site/hubspot-tracking.js",200],["site.client","/client.html",200],["auth.boundary","/api/v1/customer/auth/me",401]]:[["api.health","/api/v1/health",200],["api.ready","/api/v1/ready",200]];
 const results=[];
 for(const [key,path,expected] of probes){
   const started=performance.now();let status=null,success=false,errorCode=null;

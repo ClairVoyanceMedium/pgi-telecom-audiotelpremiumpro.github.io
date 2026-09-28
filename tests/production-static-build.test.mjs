@@ -24,6 +24,7 @@ test("production static build publishes marketing root and private cockpit",()=>
     const sitemap=fs.readFileSync("dist/sitemap.xml","utf8");
     const llms=fs.readFileSync("dist/llms.txt","utf8");
     const llmsFull=fs.readFileSync("dist/llms-full.txt","utf8");
+    const hubspotTracking=fs.readFileSync("dist/site/hubspot-tracking.js","utf8");
     const indexNowKey=fs.readFileSync("dist/fa0a7deb5d60bdf1260c8174ad8c71db.txt","utf8").trim();
     const seoSlugs=["audiotel-voyance","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","tarif-numero-sva","numero-surtaxe-08","portabilite-numero-sva","comparateur-audiotel","guide-audiotel-sva","demande-ouverture","mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","cookies-traceurs","resilier-contrat","retractation"];
     const seoPages=seoSlugs.map(slug=>fs.readFileSync("dist/"+slug+"/index.html","utf8"));
@@ -60,6 +61,8 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.ok(llms.includes("Audiotel Premium Pro | PGI Telecom"));
     assert.match(llms,/guide-audiotel-sva/);
     assert.match(llmsFull,/Official French references/);
+    assert.match(hubspotTracking,/PORTAL_ID="149417663"/);
+    assert.match(hubspotTracking,/pgi_tracking_consent_v1/);
     assert.equal(indexNowKey,"fa0a7deb5d60bdf1260c8174ad8c71db");
     seoPages.forEach((page,index)=>{
       const slug=seoSlugs[index],legal=["mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","cookies-traceurs","resilier-contrat","retractation"].includes(slug);
