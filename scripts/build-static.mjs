@@ -16,6 +16,7 @@ const files=[
   "site/site.css",
   "site/site.js",
   "site/contact-widget.js",
+  "site/contact-widget.css",
   "site/hubspot-tracking.js",
   "site/manifest.webmanifest",
   "sitemap.xml",
@@ -333,7 +334,7 @@ function latestGitDate(sourcePath){
 
 function injectContactWidget(html){
   if(html.includes('/site/contact-widget.js'))return html;
-  return html.replace("</head>",'<script src="/site/contact-widget.js" defer></script>\n</head>');
+  return html.replace("</head>",'<link rel="stylesheet" href="/site/contact-widget.css">\n<script src="/site/contact-widget.js" defer></script>\n</head>');
 }
 
 function injectLegalNavigation(html){
