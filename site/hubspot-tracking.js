@@ -151,7 +151,20 @@ function wrapCustomerApi(){
   wrapped.me=async(...args)=>{const result=await api.me(...args);identifyUser(result&&result.user);return result};
   wrapped.logout=async(...args)=>{try{return await api.logout(...args)}finally{clearUser()}};
   wrapped.changePassword=async(...args)=>{const result=await api.changePassword(...args);clearUser();return result};
+  if(api.createBillingCheckout)wrapped.createBillingCheckout=async(key,body)=>api.createBillingCheckout(key,{...(body||{}),...((await measurementContext())||{})});
   Object.defineProperty(wrapped,"__analyticsWrapped",{value:true});window.PGICustomerApi=Object.freeze(wrapped);
+}
+function gaField(name,pattern){
+  if(privatePage||read()!=="accepted")return Promise.resolve("");
+  return new Promise(resolve=>{
+    let settled=false,timer=setTimeout(()=>finish(""),500);
+    function finish(value){if(settled)return;settled=true;clearTimeout(timer);const v=String(value||"").trim();resolve(pattern.test(v)?v:"")}
+    try{window.gtag("get",MEASUREMENT_ID,name,finish)}catch(_e){finish("")}
+  });
+}
+async function measurementContext(){
+  const [client,session]=await Promise.all([gaField("client_id",/^\d{1,20}\.\d{1,20}$/),gaField("session_id",/^\d{1,20}$/)]);
+  return client?{ga_client_id:client,...(session?{ga_session_id:session}:{})}:null;
 }
 function beginCheckout(offer){return track("begin_checkout",{currency:String(offer&&offer.currency||"EUR").toUpperCase(),value:Number(offer&&offer.amount_minor)/100})}
 function clean(name,params){
@@ -304,7 +317,7 @@ function boot(){
   if(navigator.globalPrivacyControl===true){write("rejected");reject();return}
   if(choice==="accepted")accept();else if(choice==="rejected")reject();else show();
 }
-window.PGIAnalytics=Object.freeze({track,identify,identifyUser,clearUser,beginCheckout,measurementId:MEASUREMENT_ID,containerId:GTM_ID});
+window.PGIAnalytics=Object.freeze({track,identify,identifyUser,clearUser,beginCheckout,measurementContext,measurementId:MEASUREMENT_ID,containerId:GTM_ID});
 window.PGITrackingPreferences={status:()=>read()||"unset",accept:()=>{const ok=accept(),b=document.getElementById("pgi-tracking-consent");if(b)b.hidden=true;return ok},reject:()=>{write("rejected");const b=document.getElementById("pgi-tracking-consent");if(b)b.hidden=true;reject()},open:show};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot,{once:true});else boot();
 })();

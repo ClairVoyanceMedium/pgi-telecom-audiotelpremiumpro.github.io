@@ -14,7 +14,8 @@ import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
-import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent} from "./src/stripe-billing.mjs";
+import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
+import {sanitizeGa4CheckoutContext,buildGa4PurchaseFromStripe,buildGa4RefundFromStripe,sendGa4Measurement} from "./src/ga4-measurement.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
@@ -116,11 +117,19 @@ export function createBackend(options={}){
           invalidateStripeProviderReadiness();
           return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,account_readiness_invalidated:true});
         }
+        const refund=await normalizeStripeRefundEvent(event,config);
+        if(refund){
+          const analytics=await deliverGa4StripeEvent(store,config,"refund",refund.provider_event_id,refund.refund_id,buildGa4RefundFromStripe(refund));
+          return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,type:String(event.type||""),analytics});
+        }
         const normalized=await normalizeStripeBillingEvent(event,config);
         if(!normalized)return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,ignored:true,type:String(event.type||"")});
         const result=await store.applySubscriptionBillingEvent(normalized);
         if(normalized.status==="active")await syncHubSpotTenantLifecycle(store,normalized.tenant_public_id,"En attente d’ouverture","billing_active");
-        return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,duplicate:Boolean(result.duplicate)});
+        const analytics=normalized.event_type==="invoice.paid"
+          ?await deliverGa4StripeEvent(store,config,"purchase",normalized.provider_event_id,normalized.provider_invoice_reference,buildGa4PurchaseFromStripe(normalized))
+          :{enabled:false,sent:false};
+        return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,duplicate:Boolean(result.duplicate),analytics});
       }
       if(method==="POST"&&pathname==="/api/v1/email/resend/webhook"){
         if(!config.transactionalEmailEnabled||!config.resendWebhookSecret)return done(res,metrics,started,"email.resend_webhook",404,{error:{code:"RESEND_WEBHOOK_DISABLED"}});
@@ -657,9 +666,10 @@ export function createBackend(options={}){
         if(!billing.offer)return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:"NO_ACTIVE_BILLING_OFFER"},billing_provider:provider});
         if(["active","past_due"].includes(String(billing.subscription?.status||"")))return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:"SUBSCRIPTION_ALREADY_EXISTS"},billing_provider:provider});
         if(!provider.checkout_available){const code=provider.connection_state==="account_activation_required"?"PAYMENT_ACCOUNT_NOT_READY":provider.connection_state==="account_status_unavailable"?"PAYMENT_PROVIDER_UNAVAILABLE":"PAYMENT_PROVIDER_NOT_CONNECTED";return done(res,metrics,started,"customer.billing.checkout",503,{error:{code},billing_provider:provider,checkout:{offer:billing.offer,prefill:billing.checkout_prefill,return_paths:billing.return_paths}});}
-        const payload={tenant_id:context.tenant_id,price_version_id:billing.offer.price_version_id,provider:"stripe",legal_version:"2026-09-26-b2b-b2c-v4",immediate_performance_requested:true};
+        const analyticsContext=sanitizeGa4CheckoutContext(legal)||{};
+        const payload={tenant_id:context.tenant_id,price_version_id:billing.offer.price_version_id,provider:"stripe",legal_version:"2026-09-26-b2b-b2c-v4",immediate_performance_requested:true,analytics_linked:Boolean(analyticsContext.client_id)};
         const result=await store.idempotent(checkoutIdempotencyKey,"customer.billing.checkout",payload,async()=>{
-          const session=await createStripeCheckout(config,billing,checkoutIdempotencyKey);
+          const session=await createStripeCheckout(config,billing,checkoutIdempotencyKey,analyticsContext);
           await store.recordCustomerLegalAcceptance(context.tenant_id,context.id,{
             acceptance_type:"subscription_checkout",document_version:"2026-09-26-b2b-b2c-v4",
             documents:{cgu:"/conditions-utilisation/",conditions:"/conditions-abonnement/",privacy:"/confidentialite/",retractation:"/retractation/",cancellation:"/resilier-contrat/"},
@@ -1633,6 +1643,17 @@ export function createBackend(options={}){
       if(options.closeStore&&typeof store.close==="function")await store.close();
     }
   };
+}
+
+async function deliverGa4StripeEvent(store,config,eventName,sourceEventId,deliveryId,payload){
+  if(!config.ga4MeasurementEnabled||!config.ga4ApiSecret||!payload)return {enabled:false,sent:false};
+  const transactionId=String(payload?.events?.[0]?.params?.transaction_id||"");
+  const key="stripe:"+eventName+":"+String(deliveryId||transactionId);
+  const claim=await store.claimAnalyticsDelivery({delivery_key:key,source_event_id:String(sourceEventId||""),event_name:eventName,transaction_id:transactionId,payload});
+  if(!claim.claimed)return {enabled:true,sent:claim.duplicate===true,duplicate:claim.duplicate===true,in_progress:claim.in_progress===true};
+  const result=await sendGa4Measurement(config,payload);
+  await store.completeAnalyticsDelivery(key,result);
+  return {...result,retry:Boolean(claim.retry)};
 }
 
 export function resolveTelephonyRoutingContext(url,config){

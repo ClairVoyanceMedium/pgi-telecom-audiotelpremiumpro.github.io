@@ -119,7 +119,7 @@ export async function stripeProviderReadiness(config,options={}){
   return value;
 }
 
-export async function createStripeCheckout(config,billing,idempotencyKey){
+export async function createStripeCheckout(config,billing,idempotencyKey,analyticsContext={}){
   if(config?.stripeLiveMode){
     const readiness=await stripeProviderReadiness(config);
     if(!readiness.account_ready)throw failure(503,readiness.readiness_reason==="account_activation_required"?"PAYMENT_ACCOUNT_NOT_READY":"PAYMENT_PROVIDER_UNAVAILABLE");
@@ -134,6 +134,9 @@ export async function createStripeCheckout(config,billing,idempotencyKey){
     contract_model:"indefinite_monthly_advance"
   };
   if(billing?.offer?.market_id!=null)metadata.market_id=String(billing.offer.market_id);
+  const gaClientId=String(analyticsContext?.client_id||"").trim(),gaSessionId=String(analyticsContext?.session_id||"").trim();
+  if(/^\d{1,20}\.\d{1,20}$/.test(gaClientId))metadata.ga_client_id=gaClientId;
+  if(/^\d{1,20}$/.test(gaSessionId)&&metadata.ga_client_id)metadata.ga_session_id=gaSessionId;
   const params={
     mode:"subscription",
     success_url:baseUrl(config)+"/client.html?billing=success&session_id={CHECKOUT_SESSION_ID}",
@@ -287,10 +290,49 @@ export async function normalizeStripeBillingEvent(event,config){
   normalized.provider_invoice_pdf_url=trustedStripeDocumentUrl(invoice?.invoice_pdf);
   normalized.payment_attempt_count=invoiceAttemptCount(invoice);
   normalized.next_payment_attempt=invoiceNextPaymentAttempt(invoice);
+  const analyticsMeta=subscriptionMeta(subscription);
+  normalized.ga_client_id=/^\d{1,20}\.\d{1,20}$/.test(String(analyticsMeta.ga_client_id||""))?String(analyticsMeta.ga_client_id):null;
+  normalized.ga_session_id=/^\d{1,20}$/.test(String(analyticsMeta.ga_session_id||""))?String(analyticsMeta.ga_session_id):null;
+  normalized.provider_invoice_amount_paid_minor=Number.isInteger(Number(invoice?.amount_paid))?Number(invoice.amount_paid):null;
+  normalized.provider_invoice_currency=invoice?.currency?String(invoice.currency).toUpperCase():null;
   if(type==="invoice.paid"){
     if(["active","trialing"].includes(String(subscription?.status||"").toLowerCase()))normalized.status="active";
   }else if(!["cancelled","ended","suspended"].includes(normalized.status)){
     normalized.status="past_due";
   }
   return normalized;
+}
+
+
+export async function normalizeStripeRefundEvent(event,config){
+  const type=String(event?.type||"");
+  if(!["refund.created","refund.updated"].includes(type))return null;
+  const refund=event?.data?.object;
+  if(!refund||!/^re_[A-Za-z0-9]+$/.test(String(refund.id||"")))return null;
+  const status=String(refund.status||"").toLowerCase();
+  if(status&&status!=="succeeded")return null;
+  const amount=Number(refund.amount),currency=String(refund.currency||"").toUpperCase();
+  if(!Number.isInteger(amount)||amount<=0||!/^[A-Z]{3}$/.test(currency))return null;
+  const chargeId=idValue(refund.charge);
+  if(!/^ch_[A-Za-z0-9]+$/.test(String(chargeId||"")))return null;
+  const charge=await stripeApi(config,"/v1/charges/"+encodeURIComponent(chargeId));
+  const invoiceId=idValue(charge?.invoice);
+  if(!/^in_[A-Za-z0-9]+$/.test(String(invoiceId||"")))return null;
+  const invoice=await stripeApi(config,"/v1/invoices/"+encodeURIComponent(invoiceId));
+  const subscriptionId=invoiceSubscriptionReference(invoice);
+  if(!/^sub_[A-Za-z0-9]+$/.test(String(subscriptionId||"")))return null;
+  const subscription=await stripeApi(config,"/v1/subscriptions/"+encodeURIComponent(subscriptionId));
+  const meta=subscriptionMeta(subscription),client=String(meta.ga_client_id||""),session=String(meta.ga_session_id||"");
+  if(!/^\d{1,20}\.\d{1,20}$/.test(client))return null;
+  return {
+    provider:"stripe",
+    provider_event_id:String(event.id||""),
+    refund_id:String(refund.id),
+    transaction_id:String(invoiceId),
+    amount_minor:amount,
+    currency,
+    ga_client_id:client,
+    ga_session_id:/^\d{1,20}$/.test(session)?session:null,
+    event_time:eventIso(event)
+  };
 }

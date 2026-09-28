@@ -306,6 +306,16 @@ if(!/tenant_number_assignments_payout_terms_gate/.test(pgiRevenueMigration)||!/p
 if(!/rebuildTenantRevenueDistributions/.test(postgresStore)||!/PORTABILITY_PAYOUT_TERMS_REQUIRED/.test(postgresStore))failures.push("carrier settlements and port-ins must enforce PGI revenue distribution");
 if((postgresStore.match(/SVA_PAYOUT_TERMS_REQUIRED/g)||[]).length<2)failures.push("every external SVA routing path must require PGI payout terms");
 if(!/sva_payout_flow:"carrier_to_pgi_to_customer"/.test(backendServer)||!/pgi_margin_retained:true/.test(backendServer))failures.push("backend contract must declare operator to PGI to client SVA flow");
+for(const name of ["PGI_GA4_MEASUREMENT_ENABLED","PGI_GA4_MEASUREMENT_ID","PGI_GA4_API_SECRET","PGI_GA4_MEASUREMENT_TIMEOUT_MS"]){
+  if(!compose.includes(name+":"))failures.push("docker compose missing optional GA4 contract "+name);
+  if(!envExample.includes(name+"="))failures.push("production env example missing GA4 contract "+name);
+}
+if(!/PGI_GA4_MEASUREMENT_ENABLED/.test(preflight)||!/PGI_GA4_API_SECRET/.test(preflight))failures.push("preflight must fail closed when GA4 server measurement is enabled");
+const ga4Measurement=fs.readFileSync("backend/src/ga4-measurement.mjs","utf8");
+const analyticsDeliveryMigration=fs.readFileSync("database/migrations/062_analytics_event_delivery.sql","utf8");
+if(!/region1\.google-analytics\.com\/mp\/collect/.test(ga4Measurement)||!/buildGa4PurchaseFromStripe/.test(ga4Measurement)||!/buildGa4RefundFromStripe/.test(ga4Measurement))failures.push("GA4 server measurement must use the EU Measurement Protocol endpoint for purchase/refund");
+if(!/analytics_event_deliveries/.test(analyticsDeliveryMigration)||!/payload_sha256/.test(analyticsDeliveryMigration))failures.push("GA4 server delivery must remain persistently idempotent");
+
 for(const name of ["PGI_EXTERNAL_BILLING_ENABLED","PGI_PUBLIC_BASE_URL","PGI_STRIPE_SECRET_KEY","PGI_STRIPE_WEBHOOK_SECRET","PGI_STRIPE_LIVE_MODE","PGI_STRIPE_PRICE_LOOKUP_KEY","PGI_STRIPE_PORTAL_CONFIGURATION_ID"]){
   if(!compose.includes(name+":"))failures.push("docker compose missing optional Stripe contract "+name);
   if(!envExample.includes(name+"="))failures.push("production env example missing Stripe contract "+name);

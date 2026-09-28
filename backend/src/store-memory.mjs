@@ -35,6 +35,7 @@ export class MemoryStore{
     this.outbox=[];
     this.workQueue=[];
     this.idempotency=new Map();
+    this.analyticsDeliveries=new Map();
     this.audit=[];
     this.route={
       route_key:"sva-primary",active_carrier:null,standby_carrier:null,
@@ -757,6 +758,32 @@ export class MemoryStore{
     sw.status="rolled_back";this.#audit("carrier_switch.rollback",String(sw.id),{active:this.route.active_carrier});
     this.eventBus.publish("carrier.rollback",{active:this.route.active_carrier,generation:this.route.generation});
     return {switch:{...sw},route:{...this.route}};
+  }
+
+  async claimAnalyticsDelivery(input={}){
+    const key=String(input.delivery_key||"").trim(),eventName=String(input.event_name||"").trim(),transactionId=String(input.transaction_id||"").trim();
+    if(!key||!["purchase","refund"].includes(eventName)||!transactionId)throw problem(400,"INVALID_ANALYTICS_DELIVERY");
+    const payloadHash=createHash("sha256").update(JSON.stringify(input.payload||null)).digest("hex"),now=Date.now();
+    const existing=this.analyticsDeliveries.get(key);
+    if(existing){
+      if(existing.payload_sha256!==payloadHash)throw problem(409,"ANALYTICS_DELIVERY_COLLISION");
+      if(existing.state==="sent")return {claimed:false,duplicate:true};
+      if(existing.state==="pending"&&now-existing.updated_at<300000)return {claimed:false,in_progress:true};
+      existing.state="pending";existing.attempt_count++;existing.updated_at=now;existing.last_error=null;
+      return {claimed:true,retry:true};
+    }
+    this.analyticsDeliveries.set(key,{delivery_key:key,source:"stripe",source_event_id:String(input.source_event_id||""),event_name:eventName,transaction_id:transactionId,payload_sha256:payloadHash,state:"pending",attempt_count:1,provider_status:null,last_error:null,created_at:now,updated_at:now,sent_at:null});
+    return {claimed:true,retry:false};
+  }
+
+  async completeAnalyticsDelivery(key,result={}){
+    const row=this.analyticsDeliveries.get(String(key||""));
+    if(!row)return false;
+    row.state=result.sent===true?"sent":"failed";
+    row.provider_status=Number.isInteger(Number(result.status))?Number(result.status):null;
+    row.last_error=result.sent===true?null:String(result.error||"ANALYTICS_DELIVERY_FAILED").slice(0,240);
+    row.updated_at=Date.now();if(result.sent===true)row.sent_at=row.updated_at;
+    return true;
   }
 
   async idempotent(key,operation,requestBody,fn){

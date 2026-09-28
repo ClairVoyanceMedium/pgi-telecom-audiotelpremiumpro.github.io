@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createHmac} from "node:crypto";
-import {verifyStripeWebhook,normalizeStripeSubscriptionEvent,normalizeStripeBillingEvent,createStripeCheckout,stripeProviderState,stripeProviderReadiness,invalidateStripeProviderReadiness} from "../backend/src/stripe-billing.mjs";
+import {verifyStripeWebhook,normalizeStripeSubscriptionEvent,normalizeStripeBillingEvent,normalizeStripeRefundEvent,createStripeCheckout,stripeProviderState,stripeProviderReadiness,invalidateStripeProviderReadiness} from "../backend/src/stripe-billing.mjs";
 
 test("Stripe provider state fails closed until API and webhook are both configured",()=>{
   assert.deepEqual(stripeProviderState({externalBillingEnabled:false}),{api:false,webhook:false,connected:false});
@@ -193,7 +193,8 @@ test("Stripe Checkout verifies the remote price before creating a hosted subscri
         offer:{price_version_id:42,plan_key:"external-sva-access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,market_id:null},
         subscription:null
       },
-      "idem-test-1"
+      "idem-test-1",
+      {client_id:"123456789.987654321",session_id:"1790630000"}
     );
     assert.equal(result.provider,"stripe");
     assert.equal(result.price_id,"price_live_match");
@@ -209,6 +210,52 @@ test("Stripe Checkout verifies the remote price before creating a hosted subscri
     assert.match(checkoutForm.get("custom_text[submit][message]")||"",/Résiliation possible à tout moment/i);
     assert.equal(checkoutForm.get("metadata[contract_model]"),"indefinite_monthly_advance");
     assert.equal(checkoutForm.get("subscription_data[metadata][legal_version]"),"2026-09-26-b2b-b2c-v4");
+    assert.equal(checkoutForm.get("metadata[ga_client_id]"),"123456789.987654321");
+    assert.equal(checkoutForm.get("subscription_data[metadata][ga_client_id]"),"123456789.987654321");
+    assert.equal(checkoutForm.get("subscription_data[metadata][ga_session_id]"),"1790630000");
     assert.equal(calls[1].init.headers["Idempotency-Key"],"idem-test-1");
+  }finally{globalThis.fetch=original;}
+});
+
+
+test("Stripe paid invoice exposes only GA identifiers and verified payment facts",async()=>{
+  const original=globalThis.fetch,now=Math.floor(Date.now()/1000);
+  globalThis.fetch=async()=>({ok:true,status:200,json:async()=>({
+    id:"sub_ga4",customer:"cus_ga4",status:"active",cancel_at_period_end:false,
+    metadata:{tenant_public_id:"22222222-2222-4222-8222-222222222222",price_version_id:"42",ga_client_id:"123456789.987654321",ga_session_id:"1790630000"},
+    items:{data:[{current_period_start:now,current_period_end:now+2592000,price:{id:"price_ga4",unit_amount:300,currency:"eur",recurring:{interval:"month",interval_count:1}}}]}
+  })});
+  try{
+    const paid=await normalizeStripeBillingEvent({
+      id:"evt_ga4_paid",type:"invoice.paid",created:now,
+      data:{object:{id:"in_ga4_paid",amount_paid:300,currency:"eur",parent:{subscription_details:{subscription:"sub_ga4"}}}}
+    },{stripeSecretKey:"sk_test_example",stripeApiVersion:"2026-08-26.dahlia"});
+    assert.equal(paid.ga_client_id,"123456789.987654321");
+    assert.equal(paid.ga_session_id,"1790630000");
+    assert.equal(paid.provider_invoice_amount_paid_minor,300);
+    assert.equal(paid.provider_invoice_currency,"EUR");
+  }finally{globalThis.fetch=original;}
+});
+
+test("Stripe successful refund resolves the original invoice and consented GA context",async()=>{
+  const original=globalThis.fetch,now=Math.floor(Date.now()/1000),calls=[];
+  globalThis.fetch=async(url)=>{
+    calls.push(String(url));
+    if(String(url).endsWith("/v1/charges/ch_refund"))return {ok:true,status:200,json:async()=>({id:"ch_refund",invoice:"in_refund"})};
+    if(String(url).endsWith("/v1/invoices/in_refund"))return {ok:true,status:200,json:async()=>({id:"in_refund",parent:{subscription_details:{subscription:"sub_refund"}}})};
+    if(String(url).endsWith("/v1/subscriptions/sub_refund"))return {ok:true,status:200,json:async()=>({id:"sub_refund",metadata:{ga_client_id:"123456789.987654321",ga_session_id:"1790630000"}})};
+    throw new Error("unexpected Stripe request "+url);
+  };
+  try{
+    const refund=await normalizeStripeRefundEvent({
+      id:"evt_refund",type:"refund.created",created:now,
+      data:{object:{id:"re_refund",status:"succeeded",amount:150,currency:"eur",charge:"ch_refund"}}
+    },{stripeSecretKey:"sk_test_example",stripeApiVersion:"2026-08-26.dahlia"});
+    assert.equal(refund.refund_id,"re_refund");
+    assert.equal(refund.transaction_id,"in_refund");
+    assert.equal(refund.amount_minor,150);
+    assert.equal(refund.currency,"EUR");
+    assert.equal(refund.ga_client_id,"123456789.987654321");
+    assert.equal(calls.length,3);
   }finally{globalThis.fetch=original;}
 });

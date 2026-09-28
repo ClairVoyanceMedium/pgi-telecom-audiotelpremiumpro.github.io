@@ -176,3 +176,20 @@ Les tests automatisés contrôlent le consentement par défaut, GPC, l’absence
 ## Fiabilisation de la collecte GA4
 
 Le contrôleur de consentement charge désormais directement `gtag.js` avec le Measurement ID de production après acceptation, puis initialise `G-SZY50J75N7` avec un `page_view` automatique. Cette voie directe évite qu'une publication GTM absente ou incomplète bloque toute collecte GA4. GTM reste disponible pour les autres balises ; il ne doit pas contenir une seconde balise GA4 de page vue pour ce même flux afin d'éviter les doublons.
+
+
+## Revenus Stripe confirmés côté serveur
+
+Le raccordement serveur GA4 est préparé autour de Stripe comme source de vérité et reste désactivé tant que `PGI_GA4_MEASUREMENT_ENABLED` n'est pas activé avec un véritable `PGI_GA4_API_SECRET`.
+
+Lorsqu'un utilisateur a accepté la mesure d'audience avant Checkout, le navigateur peut transmettre uniquement les identifiants techniques GA4 `client_id` et `session_id` au backend. Ces identifiants sont validés, associés aux métadonnées Stripe du Checkout et de l'abonnement, puis réutilisés uniquement après réception d'un webhook Stripe signé.
+
+Flux achat :
+`invoice.paid` signé → vérification Stripe → facture et abonnement normalisés → montant réellement payé + devise + identifiant de facture → événement GA4 `purchase`.
+
+Flux remboursement :
+`refund.created` ou `refund.updated` signé et réussi → résolution charge → facture d'origine → abonnement → montant du remboursement individuel → événement GA4 `refund` rattaché à l'identifiant de facture d'origine.
+
+Les livraisons sont journalisées par clé stable pour empêcher un webhook Stripe répété de compter deux fois le même achat ou remboursement. Une indisponibilité GA4 ne modifie jamais le statut de paiement et ne bloque jamais le webhook métier Stripe.
+
+Le secret Measurement Protocol reste exclusivement dans l'environnement serveur. Il ne doit jamais être injecté dans un fichier JavaScript public, une page HTML, Stripe Metadata ou HubSpot.
