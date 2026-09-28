@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createHmac} from "node:crypto";
-import {verifyStripeWebhook,normalizeStripeSubscriptionEvent,normalizeStripeBillingEvent,createStripeCheckout,stripeProviderState,stripeProviderReadiness} from "../backend/src/stripe-billing.mjs";
+import {verifyStripeWebhook,normalizeStripeSubscriptionEvent,normalizeStripeBillingEvent,createStripeCheckout,stripeProviderState,stripeProviderReadiness,invalidateStripeProviderReadiness} from "../backend/src/stripe-billing.mjs";
 
 test("Stripe provider state fails closed until API and webhook are both configured",()=>{
   assert.deepEqual(stripeProviderState({externalBillingEnabled:false}),{api:false,webhook:false,connected:false});
@@ -57,6 +57,24 @@ test("Stripe Checkout live fails closed before price lookup when account activat
     );
     assert.deepEqual(calls,["https://api.stripe.com/v1/account"]);
   }finally{globalThis.fetch=original;}
+});
+
+test("Stripe account.updated can invalidate cached live readiness immediately",async()=>{
+  invalidateStripeProviderReadiness();
+  const config={externalBillingEnabled:true,stripeSecretKey:"sk_live_cache_refresh_"+ "e".repeat(24),stripeWebhookSecret:"whsec_live",publicBaseUrl:"https://example.test",stripeLiveMode:true,stripeApiVersion:"2026-08-26.dahlia"};
+  let ready=false,calls=0;
+  const fetchImpl=async()=>{calls++;return {ok:true,status:200,json:async()=>({charges_enabled:ready,payouts_enabled:ready,details_submitted:ready})};};
+  const first=await stripeProviderReadiness(config,{fetchImpl,nowMs:1000,cacheTtlMs:300000});
+  assert.equal(first.account_ready,false);
+  ready=true;
+  const cached=await stripeProviderReadiness(config,{fetchImpl,nowMs:2000,cacheTtlMs:300000});
+  assert.equal(cached.account_ready,false);
+  assert.equal(calls,1);
+  invalidateStripeProviderReadiness();
+  const refreshed=await stripeProviderReadiness(config,{fetchImpl,nowMs:3000,cacheTtlMs:300000});
+  assert.equal(refreshed.account_ready,true);
+  assert.equal(refreshed.fully_operational,true);
+  assert.equal(calls,2);
 });
 
 test("Stripe webhook signature is verified before JSON is trusted",async()=>{

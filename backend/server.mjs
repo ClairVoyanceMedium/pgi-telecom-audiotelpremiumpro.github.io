@@ -14,7 +14,7 @@ import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
-import {stripeProviderReadiness,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent} from "./src/stripe-billing.mjs";
+import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent} from "./src/stripe-billing.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
@@ -111,6 +111,10 @@ export function createBackend(options={}){
       if(method==="POST"&&pathname==="/api/v1/billing/stripe/webhook"){
         if(!config.externalBillingEnabled||!config.stripeWebhookSecret)return done(res,metrics,started,"billing.stripe_webhook",404,{error:{code:"STRIPE_WEBHOOK_DISABLED"}});
         const event=await verifyStripeWebhook(req,config);
+        if(String(event.type||"")==="account.updated"){
+          invalidateStripeProviderReadiness();
+          return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,account_readiness_invalidated:true});
+        }
         const normalized=await normalizeStripeBillingEvent(event,config);
         if(!normalized)return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,ignored:true,type:String(event.type||"")});
         const result=await store.applySubscriptionBillingEvent(normalized);
