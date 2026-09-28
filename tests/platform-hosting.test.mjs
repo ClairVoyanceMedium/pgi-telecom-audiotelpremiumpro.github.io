@@ -103,6 +103,8 @@ test("Railway deployment keeps app and database private-by-reference",()=>{
   assert.equal(railway.deploy.healthcheckPath,"/api/v1/ready");
   assert.ok(rootDocker.includes('CMD ["sh","scripts/start-platform.sh"]'));
   assert.match(rootDocker,/COPY backend \.\/backend/);
+  assert.ok(rootDocker.includes("llms.txt llms-full.txt fa0a7deb5d60bdf1260c8174ad8c71db.txt"));
+  assert.ok(docker.includes("llms.txt llms-full.txt fa0a7deb5d60bdf1260c8174ad8c71db.txt"));
   assert.match(start,/DATABASE_URL/);
   assert.match(start,/PGI_STATIC_DIR/);
   assert.match(start,/bootstrap-database\.mjs/);
