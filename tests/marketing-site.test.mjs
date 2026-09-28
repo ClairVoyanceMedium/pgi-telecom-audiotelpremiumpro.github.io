@@ -5,6 +5,7 @@ import fs from "node:fs";
 const html=fs.readFileSync("site/index.html","utf8");
 const css=fs.readFileSync("site/site.css","utf8");
 const js=fs.readFileSync("site/site.js","utf8");
+const tracking=fs.readFileSync("site/hubspot-tracking.js","utf8");
 const contactWidget=fs.readFileSync("site/contact-widget.js","utf8");
 const contactCss=fs.readFileSync("site/contact-widget.css","utf8");
 const robots=fs.readFileSync("robots.txt","utf8");
@@ -106,6 +107,21 @@ test("floating contact stays low-friction and submits directly without opening a
   assert.match(contactWidget,/floating_email_widget/);
   assert.match(contactWidget,/crm_sync/);
   assert.doesNotMatch(contactWidget,/track\([^)]*\{[^}]*\b(email|message|page_title|page_path)\s*:/i);
+});
+
+
+
+test("GA4 measurement model groups content, classifies AI referrals and tracks the commercial funnel without PII",()=>{
+  assert.match(tracking,/content_group/);
+  assert.match(tracking,/traffic_origin/);
+  for(const source of ["ai_chatgpt","ai_perplexity","ai_copilot","ai_gemini","ai_claude"])assert.ok(tracking.includes(source),source+" missing");
+  assert.match(tracking,/paymentReferrer/);
+  assert.match(tracking,/ignore_referrer:true/);
+  for(const event of ["select_content","order_form_start","order_form_submit","order_form_error","order_form_abandon","registration_view","email_verification_required","page_performance"])assert.ok(tracking.includes(event),event+" missing");
+  for(const metric of ["lcp_ms","cls_milli","ttfb_ms","interaction_latency_p98_ms"])assert.ok(tracking.includes(metric),metric+" missing");
+  assert.match(js,/if\(response\.ok\)window\.PGIAnalytics\?\.track\("generate_lead"/);
+  assert.doesNotMatch(tracking,/traffic_origin\s*:\s*document\.referrer/);
+  assert.doesNotMatch(tracking,/track\([^\n]*(first_name|last_name|company_name|phone)/i);
 });
 
 test("dedicated opening page preselects profiles and preserves an unfinished session draft",()=>{
