@@ -14,20 +14,45 @@ const headers = {
   "Content-Type": "application/json"
 };
 
-const params = new URLSearchParams({
-  projectId,
-  teamId,
-  limit: "100"
-});
+const baseParams = new URLSearchParams({projectId, teamId});
+const listParams = new URLSearchParams({projectId, teamId, limit: "100"});
 
-const listUrl =
-  `https://api.vercel.com/v1/vcr/repository/${encodeURIComponent(repository)}/images?${params}`;
-
-const response = await fetch(listUrl, {headers});
-if (response.status === 404) {
-  console.log(`VCR repository "${repository}" does not exist yet; nothing to prune.`);
-  process.exit(0);
+async function listRepositories() {
+  const url = `https://api.vercel.com/v1/vcr/repository?${listParams}`;
+  const response = await fetch(url, {headers});
+  if (!response.ok) {
+    throw new Error(`Unable to list VCR repositories: ${response.status} ${await response.text()}`);
+  }
+  const payload = await response.json();
+  return Array.isArray(payload.repositories) ? payload.repositories : [];
 }
+
+async function listImages(name) {
+  const url =
+    `https://api.vercel.com/v1/vcr/repository/${encodeURIComponent(name)}/images?${listParams}`;
+  return fetch(url, {headers});
+}
+
+let response = await listImages(repository);
+
+if (response.status === 404) {
+  const repositories = await listRepositories();
+  const names = repositories.map(item => item?.name).filter(Boolean);
+  console.log(
+    names.length
+      ? `Visible VCR repositories: ${names.join(", ")}`
+      : "No VCR repositories are currently visible for this project."
+  );
+
+  const exact = repositories.find(item => item?.name === repository);
+  if (!exact) {
+    console.log(`VCR repository "${repository}" does not exist yet; nothing to prune.`);
+    process.exit(0);
+  }
+
+  response = await listImages(exact.name);
+}
+
 if (!response.ok) {
   throw new Error(`Unable to list VCR images: ${response.status} ${await response.text()}`);
 }
@@ -51,9 +76,8 @@ console.log(
 );
 
 for (const image of stale) {
-  const deleteParams = new URLSearchParams({projectId, teamId});
   const deleteUrl =
-    `https://api.vercel.com/v1/vcr/repository/${encodeURIComponent(repository)}/images/${encodeURIComponent(image.id)}?${deleteParams}`;
+    `https://api.vercel.com/v1/vcr/repository/${encodeURIComponent(repository)}/images/${encodeURIComponent(image.id)}?${baseParams}`;
   const deleted = await fetch(deleteUrl, {method: "DELETE", headers});
   if (!deleted.ok && deleted.status !== 202 && deleted.status !== 204) {
     throw new Error(
