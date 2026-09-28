@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 
+const PRIVATE_CSP="default-src 'self'; script-src 'self' https://accounts.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://lh3.googleusercontent.com; connect-src 'self' https://accounts.google.com https://www.googleapis.com; frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests";
+const COCKPIT_CSP="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests";
+const PUBLIC_CSP="default-src 'self'; script-src 'self' 'unsafe-inline' https://*.hs-scripts.com https://*.hs-analytics.net https://www.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.hubspot.com https://www.google-analytics.com; connect-src 'self' https://*.hubspot.com https://*.hubapi.com https://*.hsforms.com https://www.google-analytics.com https://region1.google-analytics.com https://www.googletagmanager.com; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests";
+
 const MIME=Object.freeze({
   ".html":"text/html; charset=utf-8",
   ".css":"text/css; charset=utf-8",
@@ -47,10 +51,18 @@ export function createStaticSiteHandler(rootDir){
     const ext=path.extname(file).toLowerCase();
     const runtimeConfig=/\/assets\/(?:config|client-config)\.js$/.test(file);
     const html=ext===".html";
-    const privateUi=["/client.html","/cockpit","/cockpit/","/cockpit.html"].includes(String(pathname||""));
+    const requestPath=String(pathname||"");
+    const clientUi=requestPath==="/client.html";
+    const cockpitUi=["/cockpit","/cockpit/","/cockpit.html"].includes(requestPath);
+    const privateUi=clientUi||cockpitUi;
     res.setHeader("Content-Type",MIME[ext]||"application/octet-stream");
     res.setHeader("Content-Length",String(stat.size));
-    res.setHeader("Cache-Control",runtimeConfig||html?"no-store":"public, max-age=300");
+    if(runtimeConfig||privateUi)res.setHeader("Cache-Control","no-store");
+    else if(html)res.setHeader("Cache-Control","public, max-age=0, s-maxage=300, stale-while-revalidate=60");
+    else res.setHeader("Cache-Control","public, max-age=300, stale-while-revalidate=60");
+    if(clientUi)res.setHeader("Content-Security-Policy",PRIVATE_CSP);
+    else if(cockpitUi)res.setHeader("Content-Security-Policy",COCKPIT_CSP);
+    else if(html)res.setHeader("Content-Security-Policy",PUBLIC_CSP);
     if(privateUi)res.setHeader("X-Robots-Tag","noindex, nofollow, noarchive");
     if(method==="HEAD"){res.writeHead(200);res.end();return true;}
     res.writeHead(200);
