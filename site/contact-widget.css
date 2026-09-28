@@ -1,8 +1,9 @@
 .contact-widget{position:fixed;z-index:150;right:22px;bottom:22px;font-family:inherit}
-.contact-widget-button{display:flex;align-items:center;gap:10px;min-height:52px;padding:0 18px;border:2px solid #d2a04e;border-radius:999px;background:#fff;color:#24170f;box-shadow:0 14px 38px rgba(0,0,0,.28),0 0 0 1px rgba(255,255,255,.82) inset;cursor:pointer;font:800 13px/1 inherit;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+.contact-widget-button{display:flex;align-items:center;gap:10px;min-height:52px;padding:0 18px;border:2px solid #d2a04e;border-radius:999px;background:#fff;color:#24170f;box-shadow:0 14px 38px rgba(0,0,0,.28),0 0 0 1px rgba(255,255,255,.82) inset;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;font:800 13px/1 inherit;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
 .contact-widget-button:hover{border-color:#e0b76f;transform:translateY(-2px);box-shadow:0 18px 44px rgba(0,0,0,.32),0 0 0 1px rgba(255,255,255,.9) inset}
 .contact-widget-button:focus-visible{outline:3px solid rgba(232,179,110,.42);outline-offset:4px}
-.contact-widget-button svg{width:21px;height:21px;fill:none;stroke:#b87925;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.contact-widget-button svg{width:27px;height:27px;flex:0 0 27px;fill:none;stroke:#b87925;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.contact-widget-button.is-dragging{cursor:grabbing;transform:none;transition:none}
 .contact-widget-backdrop{position:fixed;z-index:1;inset:0;background:rgba(18,12,9,.5);backdrop-filter:blur(2px)}
 .contact-widget-backdrop[hidden]{display:none!important}
 .contact-widget.is-open .contact-widget-button{opacity:0;pointer-events:none}
@@ -32,5 +33,5 @@
 .contact-widget-privacy{margin:0;color:#746357;font-size:9.5px;line-height:1.45}
 .contact-widget-privacy a{color:#5b3c18;text-decoration:underline;text-underline-offset:2px}
 .contact-widget-honeypot{position:absolute!important;left:-10000px!important;width:1px!important;height:1px!important;overflow:hidden!important}
-@media(max-width:680px){.contact-widget{right:max(12px,env(safe-area-inset-right));bottom:max(80px,calc(68px + env(safe-area-inset-bottom)))}.contact-widget-button{width:54px;height:54px;min-height:54px;padding:0;justify-content:center}.contact-widget-button span{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.contact-widget-panel{left:12px;right:12px;top:50%;bottom:auto;transform:translateY(-50%);width:auto;max-height:calc(100dvh - 24px);border-radius:18px}.contact-widget-head{padding:17px 17px 14px}.contact-widget-form{padding:16px 17px 18px}}
+@media(max-width:680px){.contact-widget{right:max(12px,env(safe-area-inset-right));bottom:max(80px,calc(68px + env(safe-area-inset-bottom)))}.contact-widget-button{width:58px;height:58px;min-height:58px;padding:0;justify-content:center}.contact-widget-button svg{width:29px;height:29px;flex-basis:29px}.contact-widget-button span{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.contact-widget-panel{left:12px;right:12px;top:50%;bottom:auto;transform:translateY(-50%);width:auto;max-height:calc(100dvh - 24px);border-radius:18px}.contact-widget-head{padding:17px 17px 14px}.contact-widget-form{padding:16px 17px 18px}}
 @media(prefers-reduced-motion:reduce){.contact-widget-button,.contact-widget-close{transition:none}}

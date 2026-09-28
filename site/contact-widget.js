@@ -34,7 +34,52 @@ const email=form.elements.email;
 const message=form.elements.message;
 const submit=form.querySelector(".contact-widget-submit");
 const contactSource="floating_email_widget";
-let formStarted=false;
+const dragMargin=10;
+let formStarted=false,dragState=null,suppressClick=false;
+function clamp(value,min,max){return Math.min(Math.max(value,min),Math.max(min,max))}
+function placeWidget(left,top){
+  const width=toggle.offsetWidth||58,height=toggle.offsetHeight||58;
+  const maxLeft=window.innerWidth-width-dragMargin,maxTop=window.innerHeight-height-dragMargin;
+  root.style.left=clamp(Math.round(left),dragMargin,maxLeft)+"px";
+  root.style.top=clamp(Math.round(top),dragMargin,maxTop)+"px";
+  root.style.right="auto";
+  root.style.bottom="auto";
+}
+function clampWidgetToViewport(){
+  if(!root.style.left&&!root.style.top)return;
+  const rect=root.getBoundingClientRect();
+  placeWidget(rect.left,rect.top);
+}
+function beginDrag(event){
+  if(!panel.hidden||event.button>0)return;
+  const rect=root.getBoundingClientRect();
+  dragState={pointerId:event.pointerId,startX:event.clientX,startY:event.clientY,left:rect.left,top:rect.top,moved:false};
+  toggle.setPointerCapture?.(event.pointerId);
+}
+function moveDrag(event){
+  if(!dragState||event.pointerId!==dragState.pointerId)return;
+  const dx=event.clientX-dragState.startX,dy=event.clientY-dragState.startY;
+  if(!dragState.moved&&Math.hypot(dx,dy)<5)return;
+  dragState.moved=true;
+  suppressClick=true;
+  toggle.classList.add("is-dragging");
+  placeWidget(dragState.left+dx,dragState.top+dy);
+  event.preventDefault();
+}
+function endDrag(event){
+  if(!dragState||event.pointerId!==dragState.pointerId)return;
+  const moved=dragState.moved;
+  try{toggle.releasePointerCapture?.(event.pointerId)}catch(_e){}
+  dragState=null;
+  toggle.classList.remove("is-dragging");
+  if(moved)setTimeout(()=>{suppressClick=false},0);
+}
+toggle.addEventListener("pointerdown",beginDrag);
+toggle.addEventListener("pointermove",moveDrag);
+toggle.addEventListener("pointerup",endDrag);
+toggle.addEventListener("pointercancel",endDrag);
+window.addEventListener("resize",()=>requestAnimationFrame(clampWidgetToViewport));
+window.visualViewport?.addEventListener("resize",()=>requestAnimationFrame(clampWidgetToViewport));
 function contactContext(){
   const p=String(location.pathname||"/").toLowerCase();
   if(p==="/")return "home";
@@ -59,7 +104,10 @@ function setOpen(open){
   if(open){track("contact_widget_open");setTimeout(()=>email.focus({preventScroll:true}),0);}
   else if(wasOpen)setTimeout(()=>toggle.focus({preventScroll:true}),0);
 }
-toggle.addEventListener("click",()=>setOpen(panel.hidden));
+toggle.addEventListener("click",event=>{
+  if(suppressClick){event.preventDefault();return}
+  setOpen(panel.hidden);
+});
 backdrop.addEventListener("click",()=>setOpen(false));
 close.addEventListener("click",()=>setOpen(false));
 form.addEventListener("focusin",()=>{
