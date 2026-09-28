@@ -18,6 +18,9 @@ export function loadConfig(env=process.env){
   const stripePortalConfigurationId=String(env.PGI_STRIPE_PORTAL_CONFIGURATION_ID||"").trim();
   const stripePriceLookupKey=String(env.PGI_STRIPE_PRICE_LOOKUP_KEY||"pgi_audiotel_premium_pro_monthly_eur").trim();
   const stripeLiveMode=booleanValue(env.PGI_STRIPE_LIVE_MODE,false,"PGI_STRIPE_LIVE_MODE");
+  const ga4MeasurementEnabled=booleanValue(env.PGI_GA4_MEASUREMENT_ENABLED,false,"PGI_GA4_MEASUREMENT_ENABLED");
+  const ga4MeasurementId=String(env.PGI_GA4_MEASUREMENT_ID||"G-SZY50J75N7").trim();
+  const ga4ApiSecret=String(env.PGI_GA4_API_SECRET||"").trim();
   const b2cCommercialRequested=booleanValue(env.PGI_B2C_COMMERCIAL_READY,false,"PGI_B2C_COMMERCIAL_READY");
   const legalOperatorConfigured=String(env.PGI_LEGAL_OPERATOR_NAME||"").trim().length>=2;
   const consumerMediatorName=String(env.PGI_CONSUMER_MEDIATOR_NAME||"").trim();
@@ -82,6 +85,8 @@ export function loadConfig(env=process.env){
   if(stripePortalConfigurationId&&!/^bpc_[A-Za-z0-9]+$/.test(stripePortalConfigurationId))throw new Error("PGI_STRIPE_PORTAL_CONFIGURATION_ID invalid");
   if(!/^[A-Za-z0-9_\-]{3,200}$/.test(stripePriceLookupKey))throw new Error("PGI_STRIPE_PRICE_LOOKUP_KEY invalid");
   if(stripeSecretKey&&stripeLiveMode!==stripeSecretKey.startsWith("sk_live_"))throw new Error("PGI_STRIPE_LIVE_MODE must match the Stripe secret key mode");
+  if(ga4MeasurementId&&!/^G-[A-Z0-9]{6,20}$/.test(ga4MeasurementId))throw new Error("PGI_GA4_MEASUREMENT_ID invalid");
+  if(ga4MeasurementEnabled&&ga4ApiSecret.length<16)throw new Error("PGI_GA4_MEASUREMENT_ENABLED requires PGI_GA4_API_SECRET");
   if(emailVerificationEnabled){
     if(!resendApiKey.startsWith("re_")||resendApiKey.length<12)throw new Error("email verification requires a valid RESEND_API_KEY");
     if(emailVerificationPepper.length<32)throw new Error("email verification requires PGI_EMAIL_VERIFICATION_PEPPER >= 32 characters");
@@ -114,7 +119,7 @@ export function loadConfig(env=process.env){
 
   return Object.freeze({
     mode,authMode,host,port,releaseId,staticDir,trustProxy,protectMachineEndpoints,googleClientId,webauthnRpId,webauthnOrigin,
-    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,stripeSecretKey,stripeWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,b2cCommercialRequested,b2cCommercialReady,legalOperatorConfigured,consumerMediatorConfigured,onlineWithdrawalReady,emailVerificationEnabled,transactionalEmailEnabled,resendApiKey,resendReceivingApiKey,resendWebhookSecret,transactionalDomain,transactionalReplyTo,internalNotificationEmail,cronSecret,emailVerificationPepper,transactionalFromEmail,transactionalFromName,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
+    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,stripeSecretKey,stripeWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,ga4MeasurementEnabled,ga4MeasurementId,ga4ApiSecret,b2cCommercialRequested,b2cCommercialReady,legalOperatorConfigured,consumerMediatorConfigured,onlineWithdrawalReady,emailVerificationEnabled,transactionalEmailEnabled,resendApiKey,resendReceivingApiKey,resendWebhookSecret,transactionalDomain,transactionalReplyTo,internalNotificationEmail,cronSecret,emailVerificationPepper,transactionalFromEmail,transactionalFromName,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),
     bodyLimitBytes:integer(env.PGI_BODY_LIMIT_BYTES,262144,4096,10485760,"PGI_BODY_LIMIT_BYTES"),
@@ -122,6 +127,7 @@ export function loadConfig(env=process.env){
     heavyReadRateLimitPerMinute:integer(env.PGI_HEAVY_READ_RATE_LIMIT_PER_MINUTE,60,5,5000,"PGI_HEAVY_READ_RATE_LIMIT_PER_MINUTE"),
     writeRateLimitPerMinute:integer(env.PGI_WRITE_RATE_LIMIT_PER_MINUTE,120,5,5000,"PGI_WRITE_RATE_LIMIT_PER_MINUTE"),
     stripeWebhookToleranceSeconds:integer(env.PGI_STRIPE_WEBHOOK_TOLERANCE_SECONDS,300,60,900,"PGI_STRIPE_WEBHOOK_TOLERANCE_SECONDS"),
+    ga4MeasurementTimeoutMs:integer(env.PGI_GA4_MEASUREMENT_TIMEOUT_MS,3000,500,10000,"PGI_GA4_MEASUREMENT_TIMEOUT_MS"),
     resendWebhookToleranceSeconds:integer(env.PGI_RESEND_WEBHOOK_TOLERANCE_SECONDS,300,60,900,"PGI_RESEND_WEBHOOK_TOLERANCE_SECONDS"),
     resendTimeoutMs:integer(env.PGI_RESEND_TIMEOUT_MS,8000,1000,15000,"PGI_RESEND_TIMEOUT_MS"),
     emailVerificationTtlMinutes:integer(env.PGI_EMAIL_VERIFICATION_TTL_MINUTES,10,5,60,"PGI_EMAIL_VERIFICATION_TTL_MINUTES"),
