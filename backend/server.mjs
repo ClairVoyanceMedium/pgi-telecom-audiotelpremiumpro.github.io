@@ -146,7 +146,8 @@ export function createBackend(options={}){
         if(String(body.website||"").trim())return done(res,metrics,started,"public.hubspot_lead",202,{accepted:false});
         try{
           const pageUri=String(body.page_uri||"").trim()||(config.publicBaseUrl?config.publicBaseUrl+"/demande-ouverture/":"https://audiotel-premium-pro.com/demande-ouverture/");
-          const result=await submitHubSpotLead(body,{pageUri,pageName:"Demande d’ouverture Audiotel Premium Pro"});
+          const hutk=String(parseCookies(req.headers.cookie||"").hubspotutk||"").trim();
+          const result=await submitHubSpotLead(body,{pageUri,pageName:"Demande d’ouverture Audiotel Premium Pro",hutk});
           return done(res,metrics,started,"public.hubspot_lead",202,{accepted:true,provider_status:result.status});
         }catch(error){
           logHubSpotSyncFailure("public_lead",error);
@@ -226,7 +227,8 @@ export function createBackend(options={}){
         const registered=await store.selfServiceRegister(body,hashPassword(password));
         try{
           const pageUri=config.publicBaseUrl?config.publicBaseUrl+"/client.html?register=1":"https://audiotel-premium-pro.com/client.html?register=1";
-          await submitHubSpotLead({...body,processing_consent:body.privacy_notice_acknowledged===true},{pageUri,pageName:"Création de compte Audiotel Premium Pro",attempts:1,timeoutMs:2200});
+          const hutk=String(parseCookies(req.headers.cookie||"").hubspotutk||"").trim();
+          await submitHubSpotLead({...body,processing_consent:body.privacy_notice_acknowledged===true},{pageUri,pageName:"Création de compte Audiotel Premium Pro",hutk,attempts:1,timeoutMs:2200});
         }catch(error){logHubSpotSyncFailure("customer_registration",error);}
         const publicUser={id:registered.id,name:registered.display_name,email:registered.email,role:registered.customer_role,tenant:{id:registered.tenant_public_id,name:registered.tenant_name,status:registered.tenant_status}};
         if(config.emailVerificationEnabled){
