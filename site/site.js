@@ -64,18 +64,7 @@ document.querySelectorAll("[data-order-type]").forEach(link=>link.addEventListen
 }));
 form.addEventListener("input",saveDraft);
 form.addEventListener("change",saveDraft);
-async function captureLead(intent){
-  const payload={...intent,page_uri:location.href.split("#")[0],page_name:document.title};
-  try{
-    return await fetch("/api/v1/public/hubspot/lead",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      credentials:"same-origin",
-      keepalive:true,
-      body:JSON.stringify(payload)
-    });
-  }catch(_e){return null}
-}
+async function captureLead(intent){const payload={...intent,page_uri:location.href.split("#")[0],page_name:document.title};window.PGIAnalytics?.track("generate_lead");try{return await fetch("/api/v1/public/hubspot/lead",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",keepalive:true,body:JSON.stringify(payload)})}catch(_e){return null}}
 form.addEventListener("submit",async e=>{
   e.preventDefault();
   const type=selectedType();
@@ -84,7 +73,6 @@ form.addEventListener("submit",async e=>{
   if(intent.processing_consent!==true)return;
   try{sessionStorage.setItem(KEY,JSON.stringify(intent));sessionStorage.removeItem(DRAFT_KEY)}
   catch(_e){const s=document.getElementById("order-status");if(s)s.hidden=false;return}
-  if(window.PGIAnalytics)window.PGIAnalytics.track("generate_lead",{account_type:type,service_intent:intent.service_intent,lead_source:"public_marketing_site"});
   const b=form.querySelector('button[type="submit"]');if(b){b.disabled=true;b.setAttribute("aria-busy","true");b.innerHTML="Ouverture de l’inscription…"}
   await Promise.race([captureLead(intent),new Promise(resolve=>setTimeout(resolve,900))]);
   location.href="../client.html?register=1";
