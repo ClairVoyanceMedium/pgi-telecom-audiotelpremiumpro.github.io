@@ -87,6 +87,19 @@ test("public site provides a real registration handoff without leaking PII in th
   assert.doesNotMatch(js,/location\.href=.*email|URLSearchParams.*email/);
 });
 
+
+
+test("floating contact stays low-friction and submits directly without opening an email client",()=>{
+  assert.match(js,/contact-widget-button/);
+  assert.match(js,/Votre adresse email/);
+  assert.match(js,/Votre message/);
+  assert.match(js,/\/api\/v1\/public\/contact/);
+  assert.match(css,/\.contact-widget-panel/);
+  assert.match(css,/\.contact-widget-honeypot/);
+  assert.doesNotMatch(js,/mailto:/i);
+  assert.doesNotMatch(js,/Votre téléphone|Votre prénom|Objet de votre demande/);
+});
+
 test("dedicated opening page preselects profiles and preserves an unfinished session draft",()=>{
   assert.match(application,/id="order-form"/);
   assert.match(application,/Continuer vers l’espace sécurisé/);
