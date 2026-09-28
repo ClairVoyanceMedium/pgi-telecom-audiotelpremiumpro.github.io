@@ -148,6 +148,7 @@ export function createBackend(options={}){
 
       if(method==="POST"&&pathname==="/api/v1/public/contact"){
         requireSameOriginBrowser(req);
+        if(!config.transactionalEmailEnabled||!config.resendApiKey)return done(res,metrics,started,"public.contact",503,{error:{code:"CONTACT_UNAVAILABLE"}});
         const body=await readJson(req,config.bodyLimitBytes);
         if(String(body.website||"").trim())return done(res,metrics,started,"public.contact",202,{accepted:false});
         const email=normalizeEmail(body.email);
