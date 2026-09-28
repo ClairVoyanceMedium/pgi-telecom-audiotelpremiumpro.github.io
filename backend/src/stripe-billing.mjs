@@ -295,6 +295,7 @@ export async function normalizeStripeBillingEvent(event,config){
   normalized.ga_session_id=/^\d{1,20}$/.test(String(analyticsMeta.ga_session_id||""))?String(analyticsMeta.ga_session_id):null;
   normalized.provider_invoice_amount_paid_minor=Number.isInteger(Number(invoice?.amount_paid))?Number(invoice.amount_paid):null;
   normalized.provider_invoice_currency=invoice?.currency?String(invoice.currency).toUpperCase():null;
+  normalized.provider_invoice_billing_reason=invoice?.billing_reason?String(invoice.billing_reason):null;
   if(type==="invoice.paid"){
     if(["active","trialing"].includes(String(subscription?.status||"").toLowerCase()))normalized.status="active";
   }else if(!["cancelled","ended","suspended"].includes(normalized.status)){
@@ -319,6 +320,7 @@ export async function normalizeStripeRefundEvent(event,config){
   const invoiceId=idValue(charge?.invoice);
   if(!/^in_[A-Za-z0-9]+$/.test(String(invoiceId||"")))return null;
   const invoice=await stripeApi(config,"/v1/invoices/"+encodeURIComponent(invoiceId));
+  if(String(invoice?.billing_reason||"")!=="subscription_create")return null;
   const subscriptionId=invoiceSubscriptionReference(invoice);
   if(!/^sub_[A-Za-z0-9]+$/.test(String(subscriptionId||"")))return null;
   const subscription=await stripeApi(config,"/v1/subscriptions/"+encodeURIComponent(subscriptionId));
