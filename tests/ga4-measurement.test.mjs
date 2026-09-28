@@ -13,15 +13,17 @@ test("GA4 purchase uses verified invoice facts and no customer identity",()=>{
     provider_invoice_reference:"in_123ABC",
     provider_invoice_amount_paid_minor:300,
     provider_invoice_currency:"EUR",
+    provider_invoice_billing_reason:"subscription_create",
+    event_time:"2026-09-28T21:20:00.000Z",
     ga_client_id:"123456789.987654321",
-    ga_session_id:"1790630000"
+    ga_session_id:"1790629000"
   });
   assert.equal(payload.client_id,"123456789.987654321");
   assert.equal(payload.events[0].name,"purchase");
   assert.equal(payload.events[0].params.transaction_id,"in_123ABC");
   assert.equal(payload.events[0].params.value,3);
   assert.equal(payload.events[0].params.currency,"EUR");
-  assert.equal(payload.events[0].params.session_id,1790630000);
+  assert.equal(payload.events[0].params.session_id,1790629000);
   assert.equal(payload.events[0].params.items[0].item_id,"audiotel_premium_pro_platform");
   assert.doesNotMatch(JSON.stringify(payload),/@|email|phone|name.*client/i);
 });
@@ -59,4 +61,29 @@ test("GA4 Measurement Protocol uses the EU endpoint and keeps the secret server-
   assert.match(calls[0].url,/measurement_id=G-SZY50J75N7/);
   assert.match(calls[0].url,/api_secret=server-only-secret-value/);
   assert.equal(JSON.parse(calls[0].init.body).client_id,"123456789.987654321");
+});
+
+
+test("GA4 purchase ignores subscription renewals and stale sessions",()=>{
+  assert.equal(buildGa4PurchaseFromStripe({
+    event_type:"invoice.paid",provider_invoice_reference:"in_cycle",provider_invoice_amount_paid_minor:300,
+    provider_invoice_currency:"EUR",provider_invoice_billing_reason:"subscription_cycle",
+    event_time:"2026-10-28T21:20:00.000Z",ga_client_id:"123456789.987654321",ga_session_id:"1790629000"
+  }),null);
+  const initial=buildGa4PurchaseFromStripe({
+    event_type:"invoice.paid",provider_invoice_reference:"in_initial",provider_invoice_amount_paid_minor:300,
+    provider_invoice_currency:"EUR",provider_invoice_billing_reason:"subscription_create",
+    event_time:"2026-10-28T21:20:00.000Z",ga_client_id:"123456789.987654321",ga_session_id:"1790629000"
+  });
+  assert.ok(initial);
+  assert.equal("session_id" in initial.events[0].params,false);
+});
+
+test("GA4 refund never reuses an old browser session",()=>{
+  const payload=buildGa4RefundFromStripe({
+    transaction_id:"in_initial",amount_minor:100,currency:"EUR",
+    ga_client_id:"123456789.987654321",ga_session_id:"1790629000"
+  });
+  assert.ok(payload);
+  assert.equal("session_id" in payload.events[0].params,false);
 });
