@@ -8,6 +8,9 @@ const client=fs.readFileSync("client.html","utf8");
 const portal=fs.readFileSync("assets/client-portal.js","utf8");
 const billing=fs.readFileSync("assets/client-billing.js","utf8");
 const verification=fs.readFileSync("assets/customer-email-verification.js","utf8");
+const backend=fs.readFileSync("backend/server.mjs","utf8");
+const ga4Server=fs.readFileSync("backend/src/ga4-measurement.mjs","utf8");
+const config=fs.readFileSync("backend/src/config.mjs","utf8");
 
 test("analytics defaults to denied and respects GPC",()=>{
   for(const key of ["analytics_storage","ad_storage","ad_user_data","ad_personalization"])assert.match(tracking,new RegExp(key+':"denied"'));
@@ -61,4 +64,25 @@ test("direct GA4 loader sends the first page_view after consent",()=>{
   assert.match(tracking,/allow_google_signals:false/);
   assert.match(tracking,/loadGa4\(\);loadGtm\(\);loadHubSpot\(\);flush\(\)/);
   assert.match(tracking,/analytics_storage:granted\?"granted":"denied"/);
+});
+
+
+test("consented Checkout passes only GA technical identifiers for server revenue attribution",()=>{
+  assert.match(tracking,/function measurementContext\(\)/);
+  assert.match(tracking,/gaField\("client_id"/);
+  assert.match(tracking,/gaField\("session_id"/);
+  assert.match(tracking,/read\(\)!=="accepted"/);
+  assert.match(billing,/PGIAnalytics\?\.measurementContext/);
+  assert.match(billing,/\.\.\.\(analytics\|\|\{\}\)/);
+  assert.doesNotMatch(billing,/ga_client_id.*email|ga_session_id.*email/i);
+});
+
+test("GA4 API secret stays server-only and server purchase/refund use verified Stripe webhooks",()=>{
+  assert.match(config,/PGI_GA4_API_SECRET/);
+  assert.match(ga4Server,/region1\.google-analytics\.com\/mp\/collect/);
+  assert.match(backend,/verifyStripeWebhook/);
+  assert.match(backend,/buildGa4PurchaseFromStripe/);
+  assert.match(backend,/buildGa4RefundFromStripe/);
+  assert.match(backend,/deliverGa4StripeEvent/);
+  for(const browserSource of [tracking,site,billing,portal,verification])assert.doesNotMatch(browserSource,/PGI_GA4_API_SECRET|api_secret=/i);
 });
