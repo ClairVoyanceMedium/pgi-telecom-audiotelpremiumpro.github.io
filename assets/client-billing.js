@@ -55,8 +55,7 @@ export function createController(ctx){
     const idempotencyKey=kind==="manage"?null:api.newIdempotencyKey();
     state.billingBusy=true;if(button){button.disabled=true;button.textContent=kind==="manage"?tr("Ouverture de la facturation…"):tr("Ouverture du paiement…");}
     try{
-      const a=kind==="start"?await window.PGIAnalytics?.measurementContext?.():null;
-      const result=kind==="manage"?await action():await action(idempotencyKey,{subscription_terms_accepted:true,privacy_notice_acknowledged:true,immediate_performance_requested:true,legal_version:"2026-09-26-b2b-b2c-v4",...(a||{})});
+      const result=kind==="manage"?await action():await action(idempotencyKey,{subscription_terms_accepted:true,privacy_notice_acknowledged:true,immediate_performance_requested:true,legal_version:"2026-09-26-b2b-b2c-v4"});
       const target=result&&result.url?new URL(result.url,location.origin):null;if(!target||target.protocol!=="https:")throw new Error("INVALID_BILLING_URL");if(kind==="start")window.PGIAnalytics?.beginCheckout(offer);location.assign(target.href);
     }catch(err){ctx.toast(err&&err.code==="PAYMENT_PROVIDER_NOT_CONNECTED"?"Prestataire de paiement non connecté.":"Gestion de l’abonnement indisponible.");}
     finally{state.billingBusy=false;if(button){button.textContent=original;render(state.data||{});}}
