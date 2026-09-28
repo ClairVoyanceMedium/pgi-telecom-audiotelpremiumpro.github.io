@@ -38,7 +38,7 @@ function syncType(){
 }
 function snapshot(){
   const type=selectedType();
-  return {version:1,created_at:Date.now(),account_type:type,first_name:value("order-first-name").slice(0,80),last_name:value("order-last-name").slice(0,80),company_name:type==="business"?value("order-company").slice(0,200):"",email:value("order-email").slice(0,320),phone:value("order-phone").slice(0,40),service_intent:value("order-service-intent")};
+  return {version:1,created_at:Date.now(),account_type:type,first_name:value("order-first-name").slice(0,80),last_name:value("order-last-name").slice(0,80),company_name:type==="business"?value("order-company").slice(0,200):"",email:value("order-email").slice(0,320),phone:value("order-phone").slice(0,40),service_intent:value("order-service-intent"),processing_consent:Boolean(document.getElementById("order-processing-consent")?.checked),website:value("order-website")};
 }
 function saveDraft(){try{sessionStorage.setItem(DRAFT_KEY,JSON.stringify(snapshot()))}catch(_e){}}
 function hydrateDraft(){
@@ -64,14 +64,28 @@ document.querySelectorAll("[data-order-type]").forEach(link=>link.addEventListen
 }));
 form.addEventListener("input",saveDraft);
 form.addEventListener("change",saveDraft);
-form.addEventListener("submit",e=>{
+async function captureLead(intent){
+  const payload={...intent,page_uri:location.href.split("#")[0],page_name:document.title};
+  try{
+    return await fetch("/api/v1/public/hubspot/lead",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      credentials:"same-origin",
+      keepalive:true,
+      body:JSON.stringify(payload)
+    });
+  }catch(_e){return null}
+}
+form.addEventListener("submit",async e=>{
   e.preventDefault();
   const type=selectedType();
   if(!["individual","business"].includes(type))return;
   const intent={...snapshot(),source:"public_marketing_site"};
+  if(intent.processing_consent!==true)return;
   try{sessionStorage.setItem(KEY,JSON.stringify(intent));sessionStorage.removeItem(DRAFT_KEY)}
   catch(_e){const s=document.getElementById("order-status");if(s)s.hidden=false;return}
   const b=form.querySelector('button[type="submit"]');if(b){b.disabled=true;b.setAttribute("aria-busy","true");b.innerHTML="Ouverture de l’inscription…"}
+  await Promise.race([captureLead(intent),new Promise(resolve=>setTimeout(resolve,900))]);
   location.href="../client.html?register=1";
 });
 syncType();
