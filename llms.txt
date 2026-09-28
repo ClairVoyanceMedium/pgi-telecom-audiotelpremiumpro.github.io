@@ -11,8 +11,9 @@ Support: support@audiotel-premium-pro.com
 - Marque et service : Audiotel Premium Pro | PGI Telecom.
 - Domaine canonique : https://audiotel-premium-pro.com/
 - Offre plateforme affichée : 3 € TTC par mois.
-- Publics : particuliers et professionnels.
+- Publics : particuliers, porteurs de projet, indépendants, associations, cabinets et entreprises.
 - Fonctions présentées : suivi des appels, minutes facturables, reversements, portabilité, accès client et fonctions d’équipe selon le profil.
+- Le SIRET n’est pas requis pour déposer la demande initiale ; une immatriculation ou des justificatifs peuvent toutefois être exigés avant activation selon la situation.
 - L’activation d’un numéro SVA, sa tarification, son éligibilité, sa portabilité et ses reversements restent soumis aux validations techniques, contractuelles et réglementaires applicables.
 - Les simulations de reversement sont indicatives et ne constituent pas une garantie de revenu.
 
@@ -26,6 +27,7 @@ Support: support@audiotel-premium-pro.com
 - [Portabilité d’un numéro SVA](https://audiotel-premium-pro.com/portabilite-numero-sva/)
 - [Reversement Audiotel](https://audiotel-premium-pro.com/reversement-audiotel/)
 - [Comparateur Audiotel](https://audiotel-premium-pro.com/comparateur-audiotel/)
+- [Audiotel pour indépendants et porteurs de projet](https://audiotel-premium-pro.com/audiotel-independants/)
 - [Audiotel pour professionnels](https://audiotel-premium-pro.com/audiotel-professionnels/)
 - [Audiotel pour coaching](https://audiotel-premium-pro.com/audiotel-coaching/)
 - [Audiotel pour voyance et astrologie](https://audiotel-premium-pro.com/audiotel-voyance/)

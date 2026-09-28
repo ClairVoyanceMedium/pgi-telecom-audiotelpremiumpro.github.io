@@ -9,7 +9,7 @@ Last editorial review: 2026-09-26
 
 Audiotel Premium Pro is the public name of a PGI Telecom platform focused on Audiotel and French SVA (services à valeur ajoutée). The public site presents tools for following calls, billable minutes, expected/confirmed/validated reversements, portability requests, account access and operational monitoring.
 
-The public offer is designed for both individuals and professionals. Professional accounts may have additional team and role-management functions.
+The public offer is designed for individuals, project holders, independent professionals, associations, companies and teams. An initial request can be submitted without an existing SIRET, while activation may still require registration or supporting documents depending on the activity, status and operator requirements. Professional accounts may have additional team and role-management functions.
 
 The platform subscription currently displayed on the public site is 3 € TTC per month. Conditions linked to the actual SVA number, caller tariff, reversement rate, operator connectivity and eligibility are separate from that platform subscription and must be validated before activation.
 
@@ -85,6 +85,10 @@ Explains the distinction between expected, confirmed and validated reversement a
 https://audiotel-premium-pro.com/comparateur-audiotel/
 Provides transparent arithmetic examples to compare rate differences. Outputs are simulations, not promises.
 
+### Audiotel independents and project holders
+https://audiotel-premium-pro.com/audiotel-independants/
+Explains the initial request path for independent workers and project holders, including the fact that a SIRET is optional at the first request stage but may become required before activation.
+
 ### Audiotel professionals
 https://audiotel-premium-pro.com/audiotel-professionnels/
 Public page aimed at professional, independent and team use cases.
@@ -104,8 +108,9 @@ Public first step before secure account registration. No immediate payment is re
 ## 6. Audience
 
 The public site serves:
-- individuals;
+- individuals and project holders;
 - independent professionals;
+- associations and cabinets;
 - companies;
 - teams using an eligible telephone-service model.
 

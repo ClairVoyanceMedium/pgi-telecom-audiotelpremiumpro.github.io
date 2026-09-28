@@ -17,14 +17,16 @@ const manifest=fs.readFileSync("site/manifest.webmanifest","utf8");
 const guide=fs.readFileSync("site/seo/guide-audiotel-sva.html","utf8");
 
 test("public site targets both individuals and professionals",()=>{
-  assert.match(html,/AUDIOTEL · SVA · PARTICULIERS · PROFESSIONNELS/);
+  assert.match(html,/AUDIOTEL · SVA · PARTICULIERS · INDÉPENDANTS · ENTREPRISES/);
   assert.match(html,/Demander un compte particulier/);
   assert.match(html,/Demander un compte professionnel/);
-  assert.match(html,/Simple pour un particulier\. Complète pour une entreprise\./);
+  assert.match(html,/PARTICULIERS, PORTEURS DE PROJET/);
+  assert.match(html,/demande initiale.*sans SIRET/i);
 });
 
 test("public homepage links to focused SEO content without changing the signup flow",()=>{
   assert.match(html,/href="\/audiotel-voyance\//);
+  assert.match(html,/href="\/audiotel-independants\//);
   assert.match(html,/href="\/audiotel-coaching\//);
   assert.match(html,/href="\/audiotel-professionnels\//);
   assert.match(html,/href="\/reversement-audiotel\//);
@@ -125,6 +127,18 @@ test("marketing metadata declares the canonical social URL",()=>{
 test("public SEO sources never expose the legacy GitHub identity",()=>{
   for(const value of [html,robots,sitemap,buildStatic])assert.doesNotMatch(value,/clairvoyancemedium\.github\.io/i);
   assert.match(buildStatic,/audiotel-premium-pro\.com/);
+});
+
+test("independent and project-holder landing preserves broad eligibility without deleting niche SEO",()=>{
+  const independants=fs.readFileSync("site/seo/audiotel-independants.html","utf8");
+  const voyance=fs.readFileSync("site/seo/audiotel-voyance.html","utf8");
+  assert.match(independants,/avec ou sans SIRET/i);
+  assert.match(independants,/"@type":"FAQPage"/);
+  assert.match(independants,/"@type":"BreadcrumbList"/);
+  assert.match(independants,/hubspot-tracking\.js/);
+  assert.match(voyance,/Audiotel/i);
+  assert.match(sitemap,/audiotel-independants/);
+  assert.match(sitemap,/audiotel-voyance/);
 });
 
 test("public funnels preserve legal customer qualification and non-promissory finance wording",()=>{

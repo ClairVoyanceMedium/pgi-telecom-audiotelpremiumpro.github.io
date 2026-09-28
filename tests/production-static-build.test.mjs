@@ -26,11 +26,12 @@ test("production static build publishes marketing root and private cockpit",()=>
     const llmsFull=fs.readFileSync("dist/llms-full.txt","utf8");
     const hubspotTracking=fs.readFileSync("dist/site/hubspot-tracking.js","utf8");
     const indexNowKey=fs.readFileSync("dist/fa0a7deb5d60bdf1260c8174ad8c71db.txt","utf8").trim();
-    const seoSlugs=["audiotel-voyance","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","tarif-numero-sva","numero-surtaxe-08","portabilite-numero-sva","comparateur-audiotel","guide-audiotel-sva","demande-ouverture","mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","accord-traitement-donnees","cookies-traceurs","resilier-contrat","retractation"];
+    const seoSlugs=["audiotel-voyance","audiotel-independants","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","tarif-numero-sva","numero-surtaxe-08","portabilite-numero-sva","comparateur-audiotel","guide-audiotel-sva","demande-ouverture","mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","accord-traitement-donnees","cookies-traceurs","resilier-contrat","retractation"];
     const seoPages=seoSlugs.map(slug=>fs.readFileSync("dist/"+slug+"/index.html","utf8"));
 
     assert.match(root,/Pilotez votre activité/);
     assert.match(root,/Voyance &amp; astrologie/);
+    assert.match(root,/Indépendants &amp; porteurs de projet/);
     assert.match(root,/Solution Audiotel et SVA/);
     assert.match(root,/max-snippet:-1/);
     assert.doesNotMatch(root,/Cockpit \/ PGI Telecom/);
@@ -76,6 +77,11 @@ test("production static build publishes marketing root and private cockpit",()=>
       }[slug]||["/site/hubspot-tracking.js"];
       for(const src of scripts)assert.ok(allowedScripts.includes(src),"unexpected public script on "+slug+": "+src);
     });
+    const independants=seoPages[seoSlugs.indexOf("audiotel-independants")];
+    assert.match(independants,/avec ou sans SIRET/i);
+    assert.match(independants,/"@type":"FAQPage"/);
+    assert.match(independants,/"@type":"BreadcrumbList"/);
+    assert.match(independants,/src="\/site\/hubspot-tracking\.js"/);
     const comparator=seoPages[seoSlugs.indexOf("comparateur-audiotel")];
     assert.match(comparator,/1 800 € \/ mois/);
     assert.match(comparator,/0,10 € \/ min/);
