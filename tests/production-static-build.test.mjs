@@ -37,6 +37,8 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.doesNotMatch(root,/Cockpit \/ PGI Telecom/);
     assert.match(root,/href="site\/site\.css"/);
     assert.match(root,/src="site\/site\.js"/);
+    assert.match(root,/href="\/site\/contact-widget\.css"/);
+    assert.match(root,/src="\/site\/contact-widget\.js"/);
     assert.doesNotMatch(root,/\.\.\/assets\//);
     assert.match(root,/rel="canonical" href="https:\/\/audiotel-premium-pro\.com\/"/);
     assert.match(root,/property="og:url" content="https:\/\/audiotel-premium-pro\.com\/"/);
@@ -78,6 +80,7 @@ test("production static build publishes marketing root and private cockpit",()=>
       }[slug]||["/site/hubspot-tracking.js","/site/contact-widget.js"];
       for(const src of scripts)assert.ok(allowedScripts.includes(src),"unexpected public script on "+slug+": "+src);
       assert.ok(scripts.includes("/site/contact-widget.js"),"contact widget missing on "+slug);
+      assert.match(page,/href="\/site\/contact-widget\.css"/);
     });
     const independants=seoPages[seoSlugs.indexOf("audiotel-independants")];
     assert.match(independants,/avec ou sans SIRET/i);
