@@ -5,6 +5,7 @@ import {createBackend} from "../backend/server.mjs";
 import {PostgresStore} from "../backend/src/store-postgres.mjs";
 import {EventBus} from "../backend/src/event-bus.mjs";
 import {hashPassword} from "../backend/src/security.mjs";
+import {verificationTokenHash,emailVerificationCodeHash} from "../backend/src/resend-email.mjs";
 
 const url=process.env.PGI_TEST_DATABASE_URL;
 const run=Boolean(url);
@@ -178,6 +179,12 @@ test("full customer journey works without a real operator and remains fail-close
     assert.equal(state.contact.statut_commercial_pgi,"Dossier en préparation");
     assert.equal(state.deal.dealstage,"contractsent");
     assert.match(state.verificationCode||"",/^\d{6}$/);
+    const storedVerification=(await store.sql.unsafe(
+      "SELECT metadata#>>'{email_verification,token_hash}' AS token_hash,metadata#>>'{email_verification,code_hash}' AS code_hash FROM customer_principals WHERE email_normalized=$1",
+      [email]
+    ))[0];
+    assert.equal(storedVerification.token_hash,verificationTokenHash(payload.verification_token));
+    assert.equal(storedVerification.code_hash,emailVerificationCodeHash(cfg,payload.verification_token,state.verificationCode));
 
     response=await fetch(base+"/api/v1/customer/auth/email/verify",{
       method:"POST",headers:{"Content-Type":"application/json"},
