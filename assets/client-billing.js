@@ -19,7 +19,7 @@ export function createController(ctx){
     const currentSubscription=rows.some(x=>["active","past_due"].includes(String(x.status||"").toLowerCase()));
     const needsRecovery=rows.some(x=>["grace","retrying","suspended"].includes(String(x.recovery_stage||"").toLowerCase()));
     if(consent)consent.hidden=currentSubscription;
-    const connected=provider.connection_state&&provider.connection_state!=="not_connected";
+    const connected=provider.checkout_available===true&&provider.webhook_ingest_enabled===true;
     if(offer&&offer.amount_minor!=null){
       const cadence=offer.billing_interval==="year"?"an":"mois",offerPrice=money(n(offer.amount_minor)/100,offer.currency)+" TTC / "+cadence;
       if(offerDetail)offerDetail.textContent=offerPrice+" · "+tr("facturé mensuellement d’avance · résiliation à tout moment, effet fin de période");

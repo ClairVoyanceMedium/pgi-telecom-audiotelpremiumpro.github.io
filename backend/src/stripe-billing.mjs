@@ -70,7 +70,59 @@ export function stripeProviderState(config){
   const webhook=Boolean(config?.externalBillingEnabled&&config?.stripeWebhookSecret);
   return {api,webhook,connected:api&&webhook};
 }
+
+let stripeAccountReadinessCache={key:"",checkedAt:0,value:null};
+export async function stripeProviderReadiness(config,options={}){
+  const base=stripeProviderState(config),live=Boolean(config?.stripeLiveMode);
+  if(!base.api)return {...base,connected:false,account_checked:false,account_ready:false,charges_enabled:false,payouts_enabled:false,details_submitted:false,fully_operational:false,readiness_reason:"not_configured"};
+  if(!live)return {...base,account_checked:false,account_ready:true,charges_enabled:null,payouts_enabled:null,details_submitted:null,fully_operational:base.connected,readiness_reason:"test_mode"};
+
+  const nowMs=Number(options.nowMs??Date.now()),ttl=Math.max(0,Math.min(900000,Number(options.cacheTtlMs??300000)));
+  const key=String(config?.stripeSecretKey||""),cacheKey=[String(config?.stripeApiVersion||""),key.length,key.slice(-12)].join("|");
+  if(ttl>0&&stripeAccountReadinessCache.key===cacheKey&&stripeAccountReadinessCache.value&&nowMs-stripeAccountReadinessCache.checkedAt<ttl)return stripeAccountReadinessCache.value;
+
+  const fetchImpl=options.fetchImpl||globalThis.fetch;
+  if(typeof fetchImpl!=="function")return {...base,connected:false,account_checked:false,account_ready:false,charges_enabled:false,payouts_enabled:false,details_submitted:false,fully_operational:false,readiness_reason:"status_unavailable"};
+  let response,body={};
+  try{
+    response=await fetchImpl("https://api.stripe.com/v1/account",{
+      method:"GET",
+      headers:{Authorization:"Bearer "+requireStripe(config),"Stripe-Version":String(config?.stripeApiVersion||"2026-08-26.dahlia")},
+      signal:AbortSignal.timeout(8000)
+    });
+    try{body=await response.json();}catch{}
+  }catch{
+    const unavailable={...base,connected:false,account_checked:false,account_ready:false,charges_enabled:false,payouts_enabled:false,details_submitted:false,fully_operational:false,readiness_reason:"status_unavailable"};
+    if(ttl>0)stripeAccountReadinessCache={key:cacheKey,checkedAt:nowMs,value:unavailable};
+    return unavailable;
+  }
+  if(!response?.ok){
+    const unavailable={...base,connected:false,account_checked:false,account_ready:false,charges_enabled:false,payouts_enabled:false,details_submitted:false,fully_operational:false,readiness_reason:"status_unavailable"};
+    if(ttl>0)stripeAccountReadinessCache={key:cacheKey,checkedAt:nowMs,value:unavailable};
+    return unavailable;
+  }
+  const chargesEnabled=body?.charges_enabled===true,payoutsEnabled=body?.payouts_enabled===true,detailsSubmitted=body?.details_submitted===true;
+  const accountReady=chargesEnabled;
+  const value={
+    ...base,
+    connected:Boolean(base.webhook&&accountReady),
+    account_checked:true,
+    account_ready:accountReady,
+    charges_enabled:chargesEnabled,
+    payouts_enabled:payoutsEnabled,
+    details_submitted:detailsSubmitted,
+    fully_operational:Boolean(base.webhook&&chargesEnabled&&payoutsEnabled),
+    readiness_reason:accountReady?(payoutsEnabled?"ready":"payouts_pending"):"account_activation_required"
+  };
+  if(ttl>0)stripeAccountReadinessCache={key:cacheKey,checkedAt:nowMs,value};
+  return value;
+}
+
 export async function createStripeCheckout(config,billing,idempotencyKey){
+  if(config?.stripeLiveMode){
+    const readiness=await stripeProviderReadiness(config);
+    if(!readiness.account_ready)throw failure(503,readiness.readiness_reason==="account_activation_required"?"PAYMENT_ACCOUNT_NOT_READY":"PAYMENT_PROVIDER_UNAVAILABLE");
+  }
   const price=await resolvePrice(config,billing?.offer);
   const tenant=billing?.tenant||{},subscription=billing?.subscription||{};
   const metadata={

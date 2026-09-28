@@ -1,12 +1,62 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createHmac} from "node:crypto";
-import {verifyStripeWebhook,normalizeStripeSubscriptionEvent,normalizeStripeBillingEvent,createStripeCheckout,stripeProviderState} from "../backend/src/stripe-billing.mjs";
+import {verifyStripeWebhook,normalizeStripeSubscriptionEvent,normalizeStripeBillingEvent,createStripeCheckout,stripeProviderState,stripeProviderReadiness} from "../backend/src/stripe-billing.mjs";
 
 test("Stripe provider state fails closed until API and webhook are both configured",()=>{
   assert.deepEqual(stripeProviderState({externalBillingEnabled:false}),{api:false,webhook:false,connected:false});
   assert.deepEqual(stripeProviderState({externalBillingEnabled:true,stripeSecretKey:"sk_test_x",publicBaseUrl:"https://example.test"}),{api:true,webhook:false,connected:false});
   assert.deepEqual(stripeProviderState({externalBillingEnabled:true,stripeSecretKey:"sk_test_x",stripeWebhookSecret:"whsec_x",publicBaseUrl:"https://example.test"}),{api:true,webhook:true,connected:true});
+});
+
+
+
+test("Stripe live readiness blocks checkout semantics until charges are enabled",async()=>{
+  const config={externalBillingEnabled:true,stripeSecretKey:"sk_live_not_ready_"+ "a".repeat(24),stripeWebhookSecret:"whsec_live",publicBaseUrl:"https://example.test",stripeLiveMode:true,stripeApiVersion:"2026-08-26.dahlia"};
+  const fetchImpl=async(url)=>{
+    assert.equal(String(url),"https://api.stripe.com/v1/account");
+    return {ok:true,status:200,json:async()=>({charges_enabled:false,payouts_enabled:false,details_submitted:false,requirements:{disabled_reason:"requirements.past_due"}})};
+  };
+  const state=await stripeProviderReadiness(config,{fetchImpl,cacheTtlMs:0});
+  assert.equal(state.api,true);
+  assert.equal(state.webhook,true);
+  assert.equal(state.account_checked,true);
+  assert.equal(state.account_ready,false);
+  assert.equal(state.connected,false);
+  assert.equal(state.fully_operational,false);
+  assert.equal(state.readiness_reason,"account_activation_required");
+});
+
+test("Stripe live readiness distinguishes charges from payouts",async()=>{
+  const config={externalBillingEnabled:true,stripeSecretKey:"sk_live_ready_"+ "b".repeat(24),stripeWebhookSecret:"whsec_live",publicBaseUrl:"https://example.test",stripeLiveMode:true,stripeApiVersion:"2026-08-26.dahlia"};
+  const fetchImpl=async()=>({ok:true,status:200,json:async()=>({charges_enabled:true,payouts_enabled:false,details_submitted:true})});
+  const state=await stripeProviderReadiness(config,{fetchImpl,cacheTtlMs:0});
+  assert.equal(state.account_ready,true);
+  assert.equal(state.connected,true);
+  assert.equal(state.charges_enabled,true);
+  assert.equal(state.payouts_enabled,false);
+  assert.equal(state.fully_operational,false);
+  assert.equal(state.readiness_reason,"payouts_pending");
+});
+
+test("Stripe Checkout live fails closed before price lookup when account activation is incomplete",async()=>{
+  const original=globalThis.fetch,calls=[];
+  globalThis.fetch=async(url)=>{
+    calls.push(String(url));
+    if(String(url)==="https://api.stripe.com/v1/account")return {ok:true,status:200,json:async()=>({charges_enabled:false,payouts_enabled:false,details_submitted:false})};
+    throw new Error("checkout must not reach price or session APIs");
+  };
+  try{
+    await assert.rejects(
+      ()=>createStripeCheckout(
+        {externalBillingEnabled:true,stripeSecretKey:"sk_live_checkout_block_"+ "c".repeat(24),stripeWebhookSecret:"whsec_live",stripeLiveMode:true,stripeApiVersion:"2026-08-26.dahlia",publicBaseUrl:"https://pgi.example",stripePriceLookupKey:"pgi_audiotel_premium_pro_monthly_eur"},
+        {tenant:{id:"22222222-2222-4222-8222-222222222222",billing_email:"client@example.com"},offer:{price_version_id:42,plan_key:"external-sva-access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,market_id:null},subscription:null},
+        "idem-live-blocked"
+      ),
+      e=>e.code==="PAYMENT_ACCOUNT_NOT_READY"&&e.status===503
+    );
+    assert.deepEqual(calls,["https://api.stripe.com/v1/account"]);
+  }finally{globalThis.fetch=original;}
 });
 
 test("Stripe webhook signature is verified before JSON is trusted",async()=>{

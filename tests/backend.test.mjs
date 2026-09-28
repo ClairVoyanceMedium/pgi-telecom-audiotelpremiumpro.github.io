@@ -1,7 +1,7 @@
 import test from "node:test";
 import fs from "node:fs";
 import assert from "node:assert/strict";
-import {createBackend,evaluateReadiness,resolveTelephonyRoutingContext} from "../backend/server.mjs";
+import {createBackend,evaluateReadiness,resolveTelephonyRoutingContext,billingProviderStatus} from "../backend/server.mjs";
 import {loadConfig} from "../backend/src/config.mjs";
 import {hashPassword,verifyPassword,issueSession,verifySession,sessionCookie,csrfCookie,customerSessionCookie,customerCsrfCookie,clearCustomerSessionCookies} from "../backend/src/security.mjs";
 import {selectExpert} from "../backend/src/expert-router.mjs";
@@ -72,6 +72,32 @@ test("production config rejects missing or malformed release identity",()=>{
   assert.throws(()=>loadConfig({...base,PGI_RELEASE_ID:"abc"}),/PGI_RELEASE_ID/);
   const cfg=loadConfig({...base,PGI_RELEASE_ID:"a".repeat(40)});
   assert.equal(cfg.releaseId,"a".repeat(40));
+});
+
+test("billing provider status never reports live Stripe ready when account activation is incomplete",async()=>{
+  const original=globalThis.fetch;
+  globalThis.fetch=async url=>{
+    assert.equal(String(url),"https://api.stripe.com/v1/account");
+    return {ok:true,status:200,json:async()=>({charges_enabled:false,payouts_enabled:false,details_submitted:false})};
+  };
+  try{
+    const status=await billingProviderStatus(config({
+      externalBillingEnabled:true,
+      stripeSecretKey:"sk_live_backend_guard_"+ "d".repeat(24),
+      stripeWebhookSecret:"whsec_backend_guard",
+      stripeLiveMode:true,
+      stripeApiVersion:"2026-08-26.dahlia",
+      publicBaseUrl:"https://example.test"
+    }));
+    assert.equal(status.connection_state,"account_activation_required");
+    assert.equal(status.checkout_available,false);
+    assert.equal(status.customer_portal_available,true);
+    assert.equal(status.account_checked,true);
+    assert.equal(status.account_ready,false);
+    assert.equal(status.charges_enabled,false);
+    assert.equal(status.payouts_enabled,false);
+    assert.equal(status.fully_operational,false);
+  }finally{globalThis.fetch=original;}
 });
 
 test("password hashing and signed sessions reject tampering",()=>{
