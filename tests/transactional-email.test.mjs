@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {buildTransactionalMessage,emailHash,normalizeEmail} from "../backend/src/resend-email.mjs";
+import {buildTransactionalMessage,emailHash,normalizeEmail,forwardInboundEmailToInternal} from "../backend/src/resend-email.mjs";
 
 const config={publicBaseUrl:"https://audiotel-premium-pro.com"};
 
@@ -72,5 +72,81 @@ test("lead receipt confirmation is transactional, multilingual and does not clai
     assert.ok(m.subject.length>4,locale);
     assert.match(m.html,/Audiotel Premium Pro/,locale);
     assert.doesNotMatch(m.text,/service SVA.*activé|SVA service.*activated/i,locale);
+  }
+});
+
+
+test("inbound forwarding skips content retrieval when no dedicated receiving key is configured",async()=>{
+  const originalFetch=globalThis.fetch;
+  const calls=[];
+  globalThis.fetch=async(input,init={})=>{
+    const url=typeof input==="string"?input:String(input?.url||input);
+    calls.push({url,method:init.method||"GET",body:init.body||""});
+    if(url==="https://api.resend.com/emails"&&init.method==="POST")return Response.json({id:"forward-test"},{status:200});
+    throw new Error("Unexpected request "+String(init.method||"GET")+" "+url);
+  };
+  try{
+    const result=await forwardInboundEmailToInternal({
+      resendApiKey:"send-key",
+      transactionalDomain:"audiotel-premium-pro.com",
+      internalNotificationEmail:"ops@example.com",
+      transactionalFromName:"Audiotel Premium Pro",
+      resendTimeoutMs:1000
+    },{
+      email_id:"email_test_123",
+      from:"client@example.com",
+      to:["support@audiotel-premium-pro.com"],
+      received_for:["support@audiotel-premium-pro.com"],
+      subject:"Demande client",
+      attachments:[{filename:"document.pdf",content_type:"application/pdf"}]
+    });
+    assert.equal(result.forwarded,true);
+    assert.equal(calls.length,1);
+    assert.equal(calls[0].url,"https://api.resend.com/emails");
+    assert.equal(calls[0].method,"POST");
+    const body=JSON.parse(calls[0].body);
+    assert.match(body.text,/client@example\.com/);
+    assert.match(body.text,/document\.pdf/);
+  }finally{
+    globalThis.fetch=originalFetch;
+  }
+});
+
+test("inbound forwarding uses a separate key for full received-email content",async()=>{
+  const originalFetch=globalThis.fetch;
+  const calls=[];
+  globalThis.fetch=async(input,init={})=>{
+    const url=typeof input==="string"?input:String(input?.url||input);
+    calls.push({url,method:init.method||"GET",authorization:String(init.headers?.authorization||""),body:init.body||""});
+    if(url.includes("/emails/receiving/"))return Response.json({
+      from:"client@example.com",
+      to:["support@audiotel-premium-pro.com"],
+      subject:"Message complet",
+      text:"Bonjour, ceci est le contenu complet."
+    },{status:200});
+    if(url==="https://api.resend.com/emails"&&init.method==="POST")return Response.json({id:"forward-full"},{status:200});
+    throw new Error("Unexpected request "+String(init.method||"GET")+" "+url);
+  };
+  try{
+    const result=await forwardInboundEmailToInternal({
+      resendApiKey:"send-key",
+      resendReceivingApiKey:"read-key",
+      transactionalDomain:"audiotel-premium-pro.com",
+      internalNotificationEmail:"ops@example.com",
+      transactionalFromName:"Audiotel Premium Pro",
+      resendTimeoutMs:1000
+    },{
+      email_id:"email_test_456",
+      from:"client@example.com",
+      to:["support@audiotel-premium-pro.com"],
+      subject:"Message complet"
+    });
+    assert.equal(result.forwarded,true);
+    assert.equal(calls.length,2);
+    assert.equal(calls[0].authorization,"Bearer read-key");
+    assert.equal(calls[1].authorization,"Bearer send-key");
+    assert.match(JSON.parse(calls[1].body).text,/contenu complet/);
+  }finally{
+    globalThis.fetch=originalFetch;
   }
 });
