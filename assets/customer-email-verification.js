@@ -37,6 +37,7 @@ async function verify(e){
   try{
     const result=await post("/customer/auth/email/verify",{token:current.token,code});
     clearInterval(current.timer);ensurePanel().hidden=true;
+    if(window.PGIAnalytics){window.PGIAnalytics.identifyUser(result.user);window.PGIAnalytics.track("sign_up",{method:"email"});}
     if(typeof current.onVerified==="function")current.onVerified(result.user);
   }catch(err){
     const m={EMAIL_VERIFICATION_INVALID:"Code incorrect.",EMAIL_VERIFICATION_EXPIRED:"Ce code a expiré. Demandez-en un nouveau.",EMAIL_VERIFICATION_LOCKED:"Trop d’essais. Demandez un nouveau code."};
