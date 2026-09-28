@@ -50,6 +50,9 @@ test("same-origin static handler serves marketing at root and keeps private UI n
     const marketing=await fetch(base+"/");
     assert.equal(marketing.status,200);
     assert.equal(await marketing.text(),"marketing");
+    assert.match(marketing.headers.get("cache-control")||"",/s-maxage=300/);
+    assert.match(marketing.headers.get("content-security-policy")||"",/www\.googletagmanager\.com/);
+    assert.match(marketing.headers.get("content-security-policy")||"",/hs-scripts\.com/);
     const legacy=await fetch(base+"/site/",{redirect:"manual"});
     assert.equal(legacy.status,308);
     assert.equal(legacy.headers.get("location"),"/");
@@ -57,9 +60,15 @@ test("same-origin static handler serves marketing at root and keeps private UI n
     assert.equal(cockpit.status,200);
     assert.equal(await cockpit.text(),"cockpit");
     assert.match(cockpit.headers.get("x-robots-tag")||"",/noindex/);
+    assert.equal(cockpit.headers.get("cache-control"),"no-store");
+    assert.match(cockpit.headers.get("content-security-policy")||"",/frame-ancestors 'none'/);
+    assert.doesNotMatch(cockpit.headers.get("content-security-policy")||"",/accounts\.google\.com/);
     const client=await fetch(base+"/client.html",{method:"HEAD"});
     assert.equal(client.status,200);
     assert.match(client.headers.get("x-robots-tag")||"",/noindex/);
+    assert.equal(client.headers.get("cache-control"),"no-store");
+    assert.match(client.headers.get("content-security-policy")||"",/accounts\.google\.com/);
+    assert.match(client.headers.get("content-security-policy")||"",/www\.googleapis\.com/);
     const api=await fetch(base+"/api/v1/health");
     assert.equal(api.status,404);
   }finally{
