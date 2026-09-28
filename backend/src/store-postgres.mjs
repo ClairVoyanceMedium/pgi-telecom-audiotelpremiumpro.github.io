@@ -115,6 +115,39 @@ export class PostgresStore{
     await this.sql.end({timeout:5});
   }
 
+  async claimAnalyticsDelivery(input={}){
+    const key=String(input.delivery_key||"").trim(),eventName=String(input.event_name||"").trim(),transactionId=String(input.transaction_id||"").trim();
+    if(!key||!["purchase","refund"].includes(eventName)||!transactionId){const e=new Error("INVALID_ANALYTICS_DELIVERY");e.status=400;e.code="INVALID_ANALYTICS_DELIVERY";throw e;}
+    const payloadHash=createHash("sha256").update(JSON.stringify(input.payload||null)).digest("hex");
+    return this.sql.begin(async tx=>{
+      await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",[key]);
+      const rows=await tx.unsafe("SELECT delivery_key,payload_sha256,state,attempt_count,updated_at FROM analytics_event_deliveries WHERE delivery_key=$1 FOR UPDATE",[key]);
+      const row=rows[0];
+      if(row){
+        if(String(row.payload_sha256)!==payloadHash){const e=new Error("ANALYTICS_DELIVERY_COLLISION");e.status=409;e.code="ANALYTICS_DELIVERY_COLLISION";throw e;}
+        if(row.state==="sent")return {claimed:false,duplicate:true};
+        const updatedMs=Date.parse(row.updated_at),stale=!Number.isFinite(updatedMs)||Date.now()-updatedMs>=300000;
+        if(row.state==="pending"&&!stale)return {claimed:false,in_progress:true};
+        await tx.unsafe("UPDATE analytics_event_deliveries SET state='pending',attempt_count=attempt_count+1,last_error=NULL,updated_at=now() WHERE delivery_key=$1",[key]);
+        return {claimed:true,retry:true};
+      }
+      await tx.unsafe(
+        "INSERT INTO analytics_event_deliveries(delivery_key,source,source_event_id,event_name,transaction_id,payload_sha256,state,attempt_count) VALUES($1,'stripe',$2,$3,$4,$5,'pending',1)",
+        [key,String(input.source_event_id||""),eventName,transactionId,payloadHash]
+      );
+      return {claimed:true,retry:false};
+    });
+  }
+
+  async completeAnalyticsDelivery(key,result={}){
+    const sent=result.sent===true,status=Number(result.status);
+    await this.sql.unsafe(
+      "UPDATE analytics_event_deliveries SET state=$2,provider_status=$3,last_error=$4,updated_at=now(),sent_at=CASE WHEN $2='sent' THEN now() ELSE sent_at END WHERE delivery_key=$1",
+      [String(key||""),sent?"sent":"failed",Number.isInteger(status)?status:null,sent?null:String(result.error||"ANALYTICS_DELIVERY_FAILED").slice(0,240)]
+    );
+    return true;
+  }
+
   async summary(from,to,market=null){
     const rows=await this.readSql.unsafe(
       "WITH bounds AS ("+
