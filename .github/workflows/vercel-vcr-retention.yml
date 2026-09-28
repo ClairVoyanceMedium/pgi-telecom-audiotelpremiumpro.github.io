@@ -1,0 +1,42 @@
+name: Vercel VCR Retention
+
+on:
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vercel-vcr-retention
+  cancel-in-progress: true
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_PROJECT_ID: prj_Qjf77bDx4QwOcaV2yPKfUVv9TE0q
+      VERCEL_TEAM_ID: team_GhbILdoZUN5puKJdrKp5nPQg
+      VCR_REPOSITORY: dockerfile
+      VCR_KEEP: "10"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      - name: Explain inactive retention
+        if: env.VERCEL_TOKEN == ''
+        run: echo "VERCEL_TOKEN is not configured; VCR retention is safely skipped."
+
+      - name: Prune old VCR images
+        if: env.VERCEL_TOKEN != ''
+        run: node scripts/prune-vercel-vcr.mjs
