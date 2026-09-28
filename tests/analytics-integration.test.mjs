@@ -50,3 +50,12 @@ test("the Google payload allowlist excludes direct identifiers",()=>{
   assert.match(tracking,/\^\[A-Za-z0-9_-\]\{1,128\}\$/);
   for(const pii of ["email","phone","first_name","last_name","company_name","password"])assert.doesNotMatch(tracking,new RegExp("[\\\"']"+pii+"[\\\"']\\\\s*:"));
 });
+
+
+test("direct GA4 loader sends the first page_view after consent",()=>{
+  assert.match(tracking,/GA_SCRIPT_ID="pgi-ga4-loader"/);
+  assert.match(tracking,/googletagmanager\.com\/gtag\/js\?id=/);
+  assert.match(tracking,/gtag\("config",MEASUREMENT_ID,\{send_page_view:true\}\)/);
+  assert.match(tracking,/loadGa4\(\);loadGtm\(\);loadHubSpot\(\);flush\(\)/);
+  assert.match(tracking,/analytics_storage:granted\?"granted":"denied"/);
+});

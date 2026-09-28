@@ -2,7 +2,7 @@
 "use strict";
 const PORTAL_ID="149417663",REGION="eu1",GTM_ID="GTM-5L6NW5JZ",MEASUREMENT_ID="G-SZY50J75N7";
 const KEY="pgi_tracking_consent_v1",VERSION="2026-09-27-analytics-v1",MAX_AGE=180*24*60*60*1000;
-const HS_SCRIPT_ID="hs-script-loader",GTM_SCRIPT_ID="pgi-gtm-loader",LEAD_KEY="pgi_public_order_intent_v1";
+const HS_SCRIPT_ID="hs-script-loader",GTM_SCRIPT_ID="pgi-gtm-loader",GA_SCRIPT_ID="pgi-ga4-loader",LEAD_KEY="pgi_public_order_intent_v1";
 const PRIVATE_RE=/^\/(?:cockpit(?:\.html)?|admin(?:\.html)?)(?:\/|$)/i,CLIENT_RE=/^\/client(?:\.html)?(?:\/|$)/i;
 const HS_COOKIES=["hubspotutk","__hstc","__hssc","__hssrc","messagesUtk"];
 const PARAMS=Object.freeze({
@@ -47,6 +47,14 @@ function clearCookies(){
   });
 }
 function updateConsent(granted){window.gtag("consent","update",{...denied,analytics_storage:granted?"granted":"denied"})}
+function loadGa4(){
+  if(privatePage||window.__pgiGa4Configured)return;
+  window.__pgiGa4Configured=true;
+  const s=document.createElement("script");s.id=GA_SCRIPT_ID;s.async=true;s.src="https://www.googletagmanager.com/gtag/js?id="+encodeURIComponent(MEASUREMENT_ID);
+  (document.head||document.documentElement).appendChild(s);
+  window.gtag("js",new Date());
+  window.gtag("config",MEASUREMENT_ID,{send_page_view:true});
+}
 function loadGtm(){
   if(privatePage||document.getElementById(GTM_SCRIPT_ID))return;
   window.dataLayer.push({"gtm.start":Date.now(),event:"gtm.js"});
@@ -115,7 +123,7 @@ function accept(){
   if(navigator.globalPrivacyControl===true){write("rejected");reject();return false}
   write("accepted");updateConsent(true);
   window._hsq=window._hsq||[];window._hsq.push(["doNotTrack",{track:true}]);
-  loadGtm();loadHubSpot();flush();return true;
+  loadGa4();loadGtm();loadHubSpot();flush();return true;
 }
 function ensureStyle(){
   if(document.getElementById("pgi-tracking-consent-style"))return;

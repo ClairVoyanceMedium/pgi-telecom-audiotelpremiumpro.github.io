@@ -95,3 +95,8 @@ Ne jamais ajouter d’email, téléphone ou identifiant client dans une UTM.
 ## Vérification
 
 Les tests automatisés contrôlent le consentement par défaut, GPC, l’absence de double balise, les exclusions privées, les déclenchements métier et l’absence de PII. La production ne doit être déclarée active qu’après déploiement Vercel READY et observation réelle dans GA4 Temps réel ou DebugView.
+
+
+## Fiabilisation de la collecte GA4
+
+Le contrôleur de consentement charge désormais directement `gtag.js` avec le Measurement ID de production après acceptation, puis initialise `G-SZY50J75N7` avec un `page_view` automatique. Cette voie directe évite qu'une publication GTM absente ou incomplète bloque toute collecte GA4. GTM reste disponible pour les autres balises ; il ne doit pas contenir une seconde balise GA4 de page vue pour ce même flux afin d'éviter les doublons.
