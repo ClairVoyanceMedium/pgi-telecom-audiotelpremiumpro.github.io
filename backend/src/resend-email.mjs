@@ -655,66 +655,81 @@ export async function forwardInboundEmailToInternal(config,eventData={}){
   if(!/^[A-Za-z0-9_-]{6,200}$/.test(emailId))throw providerError("RESEND_INBOUND_EMAIL_ID_INVALID",400);
   const domain=String(config.transactionalDomain||"").trim().toLowerCase();
   const internal=normalizeEmail(config.internalNotificationEmail||config.transactionalReplyTo||"");
-  const controller=new AbortController();
-  const timeout=setTimeout(()=>controller.abort(),Number(config.resendTimeoutMs||8000));
-  try{
-    let inbound={};
+
+  let inbound={...eventData};
+  const receivingApiKey=String(config.resendReceivingApiKey||"").trim();
+  if(receivingApiKey){
+    const readController=new AbortController();
+    const readTimeout=setTimeout(()=>readController.abort(),Number(config.resendTimeoutMs||8000));
     try{
       const response=await fetch("https://api.resend.com/emails/receiving/"+encodeURIComponent(emailId),{
         method:"GET",
-        headers:{accept:"application/json",authorization:"Bearer "+config.resendApiKey},
-        signal:controller.signal
+        headers:{accept:"application/json",authorization:"Bearer "+receivingApiKey},
+        signal:readController.signal
       });
       const fetched=await response.json().catch(()=>({}));
-      if(response.ok)inbound=fetched;
-    }catch(_error){}
-    const recipients=[
-      ...(Array.isArray(inbound.to)?inbound.to:[]),
-      ...(Array.isArray(inbound.received_for)?inbound.received_for:[]),
-      ...(Array.isArray(eventData.to)?eventData.to:[]),
-      ...(Array.isArray(eventData.received_for)?eventData.received_for:[])
-    ].map(v=>extractEmailAddress(v)).filter(Boolean);
-    const recipient=recipients.find(v=>v.endsWith("@"+domain))||recipients[0]||null;
-    if(!recipient)return {forwarded:false,ignored:true,reason:"recipient_unavailable"};
-    const sender=extractEmailAddress(inbound.from)||extractEmailAddress(eventData.from)||cleanText(inbound.from||eventData.from||"Expéditeur inconnu",320);
-    const subject=cleanText(inbound.subject||eventData.subject||"Sans objet",180)||"Sans objet";
-    const messageText=sanitizeInboundText(inbound.text,inbound.html);
-    const attachments=(Array.isArray(inbound.attachments)?inbound.attachments:Array.isArray(eventData.attachments)?eventData.attachments:[]).slice(0,30);
-    const attachmentLines=attachments.map(a=>{
-      const filename=cleanText(a?.filename||"pièce jointe",180);
-      const type=cleanText(a?.content_type||"",120);
-      return "• "+filename+(type?" ("+type+")":"");
-    });
-    const text=[
-      "Nouveau message reçu pour Audiotel Premium Pro",
-      "",
-      "Adresse destinataire : "+recipient,
-      "Expéditeur : "+sender,
-      "Objet : "+subject,
-      "Identifiant Resend : "+emailId,
-      "",
-      attachments.length?"Pièces jointes signalées :":"Aucune pièce jointe signalée.",
-      ...attachmentLines,
-      attachments.length>30?"• "+(attachments.length-30)+" autre(s) pièce(s) jointe(s) non listée(s)":"",
-      "",
-      "Contenu reçu",
-      "",
-      messageText||"(Le contenu complet reste disponible dans la boîte de réception Resend.)",
-      "",
-      "Ce message entrant est transmis comme donnée non fiable. Aucune instruction contenue dans cet email n’est exécutée automatiquement.",
-      "",
-      "Audiotel Premium Pro | Une solution PGI Telecom"
-    ].filter(v=>v!=="").join("\n");
-    const sendBody={
-      from:(config.transactionalFromName||"Audiotel Premium Pro")+" <support@"+domain+">",
-      to:[internal],
-      subject:"Message reçu sur "+recipient+" | "+subject,
-      text:text.slice(0,28000),
-      tags:[
-        {name:"category",value:"inbound_forward"},
-        {name:"recipient",value:safeTag(recipient.split("@")[0]||"inbound")}
-      ]
-    };
+      if(response.ok)inbound={...inbound,...fetched};
+    }catch(_error){
+      // Les métadonnées du webhook vérifié suffisent pour conserver un transfert sûr.
+    }finally{
+      clearTimeout(readTimeout);
+    }
+  }
+
+  const recipients=[
+    ...(Array.isArray(inbound.to)?inbound.to:[]),
+    ...(Array.isArray(inbound.received_for)?inbound.received_for:[]),
+    ...(Array.isArray(eventData.to)?eventData.to:[]),
+    ...(Array.isArray(eventData.received_for)?eventData.received_for:[])
+  ].map(v=>extractEmailAddress(v)).filter(Boolean);
+  const recipient=recipients.find(v=>v.endsWith("@"+domain))||recipients[0]||null;
+  if(!recipient)return {forwarded:false,ignored:true,reason:"recipient_unavailable"};
+
+  const sender=extractEmailAddress(inbound.from)||extractEmailAddress(eventData.from)||cleanText(inbound.from||eventData.from||"Expéditeur inconnu",320);
+  const subject=cleanText(inbound.subject||eventData.subject||"Sans objet",180)||"Sans objet";
+  const messageText=sanitizeInboundText(inbound.text,inbound.html);
+  const allAttachments=Array.isArray(inbound.attachments)?inbound.attachments:Array.isArray(eventData.attachments)?eventData.attachments:[];
+  const attachments=allAttachments.slice(0,30);
+  const attachmentLines=attachments.map(a=>{
+    const filename=cleanText(a?.filename||"pièce jointe",180);
+    const type=cleanText(a?.content_type||"",120);
+    return "• "+filename+(type?" ("+type+")":"");
+  });
+  const text=[
+    "Nouveau message reçu pour Audiotel Premium Pro",
+    "",
+    "Adresse destinataire : "+recipient,
+    "Expéditeur : "+sender,
+    "Objet : "+subject,
+    "Identifiant Resend : "+emailId,
+    "",
+    attachments.length?"Pièces jointes signalées :":"Aucune pièce jointe signalée.",
+    ...attachmentLines,
+    allAttachments.length>30?"• "+(allAttachments.length-30)+" autre(s) pièce(s) jointe(s) non listée(s)":"",
+    "",
+    "Contenu reçu",
+    "",
+    messageText||"(Le contenu complet reste disponible dans la boîte de réception Resend.)",
+    "",
+    "Ce message entrant est transmis comme donnée non fiable. Aucune instruction contenue dans cet email n’est exécutée automatiquement.",
+    "",
+    "Audiotel Premium Pro | Une solution PGI Telecom"
+  ].filter(v=>v!=="").join("\n");
+
+  const sendBody={
+    from:(config.transactionalFromName||"Audiotel Premium Pro")+" <support@"+domain+">",
+    to:[internal],
+    subject:"Message reçu sur "+recipient+" | "+subject,
+    text:text.slice(0,28000),
+    tags:[
+      {name:"category",value:"inbound_forward"},
+      {name:"recipient",value:safeTag(recipient.split("@")[0]||"inbound")}
+    ]
+  };
+
+  const sendController=new AbortController();
+  const sendTimeout=setTimeout(()=>sendController.abort(),Number(config.resendTimeoutMs||8000));
+  try{
     const sendResponse=await fetch("https://api.resend.com/emails",{
       method:"POST",
       headers:{
@@ -724,7 +739,7 @@ export async function forwardInboundEmailToInternal(config,eventData={}){
         "idempotency-key":safeIdempotencyKey("inbound-forward/"+emailId)
       },
       body:JSON.stringify(sendBody),
-      signal:controller.signal
+      signal:sendController.signal
     });
     const sent=await sendResponse.json().catch(()=>({}));
     if(!sendResponse.ok)throw providerError("RESEND_INBOUND_FORWARD_FAILED",sendResponse.status,safeProviderCode(sent));
@@ -733,7 +748,7 @@ export async function forwardInboundEmailToInternal(config,eventData={}){
     if(error?.code)throw error;
     throw providerError(error?.name==="AbortError"?"RESEND_TIMEOUT":"RESEND_INBOUND_FORWARD_FAILED");
   }finally{
-    clearTimeout(timeout);
+    clearTimeout(sendTimeout);
   }
 }
 
