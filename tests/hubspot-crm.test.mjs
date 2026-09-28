@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import {buildHubSpotLeadSubmission,submitHubSpotLead,syncHubSpotCommercialLead,HUBSPOT_LEAD_FORM} from "../backend/src/hubspot-crm.mjs";
+import {buildHubSpotLeadSubmission,submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,HUBSPOT_LEAD_FORM} from "../backend/src/hubspot-crm.mjs";
 
 const sample={
   account_type:"business",
@@ -145,4 +145,39 @@ test("server orchestrates CRM sync and confirmation without creating HubSpot tas
   assert.match(server,/commercialStatus:"Dossier en préparation"/);
   assert.match(server,/templateKey:"lead_received"/);
   assert.doesNotMatch(server,/hs_task_subject|objects\/tasks/);
+});
+
+
+test("tenant lifecycle sync advances CRM and closes the open deal when service becomes active",async()=>{
+  const requests=[];
+  const response=(status,payload)=>({ok:status>=200&&status<300,status,text:async()=>JSON.stringify(payload||{})});
+  const fetchImpl=async(url,options={})=>{
+    const body=options.body?JSON.parse(options.body):null;
+    requests.push({url,method:options.method||"GET",body});
+    if(url.endsWith("/crm/v3/objects/contacts/search"))return response(200,{results:[{id:"125",properties:{email:"camille@example.test",statut_commercial_pgi:"En attente d’ouverture",lifecyclestage:"opportunity",hubspot_owner_id:"99851906"}}]});
+    if(url.endsWith("/crm/v3/objects/contacts/125")&&options.method==="PATCH")return response(200,{id:"125",properties:{...body.properties,email:"camille@example.test"}});
+    if(url.includes("/crm/v3/objects/contacts/125?associations=deals"))return response(200,{id:"125",associations:{deals:{results:[{id:"901"}]}}});
+    if(url.includes("/crm/v3/objects/deals/901?"))return response(200,{id:"901",properties:{pipeline:"default",dealstage:"6144336106",hubspot_owner_id:"99851906",deal_currency_code:"EUR"}});
+    if(url.endsWith("/crm/v3/objects/deals/901")&&options.method==="PATCH")return response(200,{id:"901",properties:body.properties});
+    throw new Error("Unexpected HubSpot request "+url+" "+options.method);
+  };
+  const store={tenantControlDetail:async()=>({
+    tenant:{legal_name:"Cabinet Exemple",display_name:"Cabinet Exemple"},
+    users:[{role:"owner",membership_status:"active",first_name:"Camille",last_name:"Martin",email:"camille@example.test",phone:"+33600000000",account_type:"business",service_intent:"portability"}]
+  })};
+  const result=await syncHubSpotCommercialTenant(store,"11111111-1111-4111-8111-111111111111","Client actif",{token:"pat-test-"+"z".repeat(40),fetchImpl});
+  assert.equal(result.synced,true);
+  const contactPatch=requests.find(x=>x.url.endsWith("/contacts/125")&&x.method==="PATCH");
+  assert.equal(contactPatch.body.properties.statut_commercial_pgi,"Client actif");
+  assert.equal(contactPatch.body.properties.lifecyclestage,"customer");
+  const dealPatch=requests.find(x=>x.url.endsWith("/objects/deals/901")&&x.method==="PATCH");
+  assert.equal(dealPatch.body.properties.dealstage,"closedwon");
+});
+
+test("server maps only objective lifecycle events to HubSpot",()=>{
+  const server=fs.readFileSync("backend/server.mjs","utf8");
+  for(const marker of ["billing_active","tenant_active","assignment_active","portability_complete","customer_exit"])assert.match(server,new RegExp(marker));
+  assert.match(server,/En attente d’ouverture/);
+  assert.match(server,/Client actif/);
+  assert.match(server,/Perdu \/ non abouti/);
 });

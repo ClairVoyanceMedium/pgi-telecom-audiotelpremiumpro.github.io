@@ -139,13 +139,14 @@ export async function syncHubSpotCommercialLead(input={},options={}){
       besoin__projet_audiotel:baseProps.besoin__projet_audiotel
     };
     if(!current.hubspot_owner_id)update.hubspot_owner_id=HUBSPOT_OWNER_ID;
-    if(!current.lifecyclestage)update.lifecyclestage="lead";
+    const lifecycle=commercialLifecycle(effectiveStatus,current.lifecyclestage);
+    if(lifecycle&&lifecycle!==current.lifecyclestage)update.lifecyclestage=lifecycle;
     if(effectiveStatus&&effectiveStatus!==current.statut_commercial_pgi)update.statut_commercial_pgi=effectiveStatus;
     contact=await hubSpotPrivateRequest("/crm/v3/objects/contacts/"+encodeURIComponent(contact.id),{
       token,fetchImpl,method:"PATCH",body:{properties:compactProperties(update)}
     });
   }else{
-    const createProps=compactProperties({...baseProps,statut_commercial_pgi:requestedStatus,hubspot_owner_id:HUBSPOT_OWNER_ID,lifecyclestage:"lead"});
+    const createProps=compactProperties({...baseProps,statut_commercial_pgi:requestedStatus,hubspot_owner_id:HUBSPOT_OWNER_ID,lifecyclestage:commercialLifecycle(requestedStatus,"")||"lead"});
     try{
       contact=await hubSpotPrivateRequest("/crm/v3/objects/contacts",{
         token,fetchImpl,method:"POST",body:{properties:createProps}
@@ -159,6 +160,30 @@ export async function syncHubSpotCommercialLead(input={},options={}){
   }
   const deal=await ensureCommercialDeal(contact,input,{token,fetchImpl,status:effectiveStatus});
   return {enabled:true,synced:true,contactId:String(contact.id),dealId:deal?.id?String(deal.id):null,dealCreated:Boolean(deal?.created)};
+}
+
+
+export async function syncHubSpotCommercialTenant(store,tenantPublicId,commercialStatus,options={}){
+  if(!store||typeof store.tenantControlDetail!=="function")return {enabled:false,synced:false,skipped:true,reason:"tenant_lookup_unavailable"};
+  const detail=await store.tenantControlDetail(String(tenantPublicId||"").trim());
+  const users=Array.isArray(detail?.users)?detail.users:[];
+  const owner=users.find(x=>x.role==="owner"&&x.membership_status==="active")||users.find(x=>x.role==="owner")||users[0]||null;
+  const firstName=clean(owner?.first_name,80),lastName=clean(owner?.last_name,80),contactEmail=clean(owner?.email,254);
+  if(!firstName||!lastName||!contactEmail)return {enabled:true,synced:false,skipped:true,reason:"tenant_owner_identity_incomplete"};
+  const accountType=String(owner?.account_type||"").trim().toLowerCase()==="business"?"business":"individual";
+  const rawIntent=String(owner?.service_intent||"").trim().toLowerCase();
+  const serviceIntent=["new_number","portability","advice"].includes(rawIntent)?rawIntent:"advice";
+  const input={
+    account_type:accountType,
+    first_name:firstName,
+    last_name:lastName,
+    company_name:accountType==="business"?clean(detail?.tenant?.legal_name||detail?.tenant?.display_name,160):"",
+    email:contactEmail,
+    phone:clean(owner?.phone,80),
+    service_intent:serviceIntent,
+    processing_consent:true
+  };
+  return syncHubSpotCommercialLead(input,{...options,commercialStatus});
 }
 
 async function findPrivateContact(contactEmail,{token,fetchImpl}){
@@ -175,7 +200,7 @@ async function findPrivateContact(contactEmail,{token,fetchImpl}){
 async function ensureCommercialDeal(contact,input,{token,fetchImpl,status}){
   const intentKey=String(input.service_intent||"advice").toLowerCase();
   if(!["new_number","portability","advice"].includes(intentKey))return null;
-  if(["Client actif","Perdu / non abouti"].includes(status))return null;
+  const terminal=["Client actif","Perdu / non abouti"].includes(status);
   const detail=await hubSpotPrivateRequest("/crm/v3/objects/contacts/"+encodeURIComponent(contact.id)+"?associations=deals&properties=email",{
     token,fetchImpl,method:"GET"
   });
@@ -202,6 +227,7 @@ async function ensureCommercialDeal(contact,input,{token,fetchImpl,status}){
     }
     return {...openDeal,created:false};
   }
+  if(terminal)return null;
   const associationTypeId=await defaultDealContactAssociationType({token,fetchImpl});
   const label=INTENT_LABELS[intentKey]||INTENT_LABELS.advice;
   const name=clean(input.company_name,120)||[clean(input.first_name,60),clean(input.last_name,60)].filter(Boolean).join(" ")||"Prospect Audiotel";
@@ -255,6 +281,20 @@ async function hubSpotPrivateRequest(path,{token,fetchImpl,method="GET",body=nul
     await new Promise(resolve=>setTimeout(resolve,150*attempt));
   }
   throw normalizeError(lastError||problem("HUBSPOT_PRIVATE_API_FAILED"));
+}
+
+function commercialLifecycle(status,current){
+  const existing=String(current||"").trim();
+  const lower=new Set(["","subscriber","lead","marketingqualifiedlead","salesqualifiedlead"]);
+  if(status==="Client actif"){
+    if(lower.has(existing)||existing==="opportunity")return "customer";
+    return existing||"customer";
+  }
+  if(status==="En attente d’ouverture"){
+    if(lower.has(existing))return "opportunity";
+    return existing||"opportunity";
+  }
+  return existing||"lead";
 }
 
 function advanceCommercialStatus(current,target){

@@ -18,7 +18,7 @@ import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCh
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
-import {submitHubSpotLead,syncHubSpotCommercialLead} from "./src/hubspot-crm.mjs";
+import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant} from "./src/hubspot-crm.mjs";
 import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
 
 export async function createDefaultBackend(){
@@ -119,6 +119,7 @@ export function createBackend(options={}){
         const normalized=await normalizeStripeBillingEvent(event,config);
         if(!normalized)return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,ignored:true,type:String(event.type||"")});
         const result=await store.applySubscriptionBillingEvent(normalized);
+        if(normalized.status==="active")await syncHubSpotTenantLifecycle(store,normalized.tenant_public_id,"En attente d’ouverture","billing_active");
         return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,duplicate:Boolean(result.duplicate)});
       }
       if(method==="POST"&&pathname==="/api/v1/email/resend/webhook"){
@@ -725,6 +726,7 @@ export function createBackend(options={}){
         if(!["owner","admin"].includes(context.customer_role))throw Object.assign(new Error("Customer role cannot request account exit"),{status:403,code:"CUSTOMER_RELATIONS_FORBIDDEN"});
         const body=await readJson(req,config.bodyLimitBytes),payload={tenant_id:context.tenant_id,...body};
         const result=await store.idempotent(req.headers["idempotency-key"],"customer.exit.create",payload,()=>store.createCustomerExitRequest(context.tenant_id,body,customerActor.sub));
+        await syncHubSpotTenantLifecycle(store,context.tenant_public_id,"Perdu / non abouti","customer_exit");
         return done(res,metrics,started,"customer.exit.create",201,{...result.value,replayed:result.replayed});
       }
       match=routeMatch(pathname,"/api/v1/customer/relations/:id/messages");
@@ -1278,6 +1280,7 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes);
         const payload={id:match.id,status:body.status,reason:body.reason||""};
         const result=await store.idempotent(req.headers["idempotency-key"],"tenant.status",payload,()=>store.setTenantStatus(match.id,body.status,actor,body.reason||""));
+        if(String(result.value?.status||"")==="active")await syncHubSpotTenantLifecycle(store,match.id,"En attente d’ouverture","tenant_active");
         return done(res,metrics,started,"platform.tenant_status",200,{...result.value,replayed:result.replayed});
       }
 
@@ -1287,6 +1290,7 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes);
         const payload={id:match.id,status:body.status,reason:body.reason||""};
         const result=await store.idempotent(req.headers["idempotency-key"],"assignment.status",payload,()=>store.setTenantAssignmentStatus(match.id,body.status,actor,body.reason||""));
+        if(String(result.value?.status||"")==="active")await syncHubSpotTenantLifecycle(store,result.value?.tenant_public_id,"Client actif","assignment_active");
         return done(res,metrics,started,"platform.assignment_status",200,{...result.value,replayed:result.replayed});
       }
 
@@ -1385,6 +1389,7 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes);
         const payload={id:match.id,...body};
         const result=await store.idempotent(req.headers["idempotency-key"],"portability.complete",payload,()=>store.completePortabilityRequest(match.id,body,actor));
+        await syncHubSpotTenantLifecycle(store,result.value?.tenant_public_id,"Client actif","portability_complete");
         return done(res,metrics,started,"platform.portability_complete",200,{...result.value,replayed:result.replayed});
       }
 
@@ -2128,6 +2133,12 @@ function openEventStream(req,res,eventBus,requestId,config,clients,filter=null){
   heartbeat.unref?.();
   req.on("close",()=>{clearInterval(heartbeat);unsubscribe();clients?.delete(res);});
 }
+async function syncHubSpotTenantLifecycle(store,tenantPublicId,commercialStatus,stage){
+  if(!tenantPublicId)return null;
+  try{return await syncHubSpotCommercialTenant(store,tenantPublicId,commercialStatus);}
+  catch(error){logHubSpotSyncFailure(stage,error);return null;}
+}
+
 function logHubSpotSyncFailure(stage,error){
   process.stderr.write(JSON.stringify({level:"warn",event:"hubspot_crm_sync_failed",stage:String(stage||"lead"),code:String(error?.code||"HUBSPOT_SUBMISSION_FAILED"),status:Number(error?.status)||null})+"\\n");
 }

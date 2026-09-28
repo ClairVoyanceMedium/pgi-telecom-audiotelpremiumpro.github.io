@@ -4058,7 +4058,8 @@ export class PostgresStore{
       if(!current)throw problem(404,"PORTABILITY_REQUEST_NOT_FOUND");
       if(current.status==="ported"){
         const existing=(await tx.unsafe("SELECT id,e164,display_number,tariff_code,service_rate_ttc_per_min::float8,currency,status FROM sva_numbers WHERE id=$1",[current.sva_number_id]))[0]||null;
-        return {request:current,number:existing,already_completed:true};
+        const tenantRef=(await tx.unsafe("SELECT public_id FROM tenants WHERE id=$1",[current.tenant_id]))[0]||null;
+        return {request:current,number:existing,already_completed:true,tenant_public_id:tenantRef?.public_id||null};
       }
       if(current.status!=="scheduled")throw problem(409,"PORTABILITY_NOT_SCHEDULED");
       if(current.ownership_status!=="verified")throw problem(409,"PORTABILITY_OWNERSHIP_VERIFICATION_REQUIRED");
@@ -4075,7 +4076,7 @@ export class PostgresStore{
       const operatorRef=confirmationReference||current.operator_portability_reference;
       if(!operatorRef)throw problem(409,"PORTABILITY_OPERATOR_REFERENCE_REQUIRED");
 
-      const tenant=(await tx.unsafe("SELECT id,display_name,status,tenant_type FROM tenants WHERE id=$1 FOR UPDATE",[current.tenant_id]))[0];
+      const tenant=(await tx.unsafe("SELECT id,public_id,display_name,status,tenant_type FROM tenants WHERE id=$1 FOR UPDATE",[current.tenant_id]))[0];
       if(!tenant||tenant.tenant_type==="internal")throw problem(409,"PORTABILITY_TENANT_INVALID");
       if(tenant.status!=="active")throw problem(409,"PORTABILITY_TENANT_NOT_ACTIVE");
       const market=(await tx.unsafe("SELECT id,country_code,status,default_currency FROM operating_markets WHERE country_code=$1 LIMIT 1",[current.country_code]))[0];
@@ -4165,7 +4166,7 @@ export class PostgresStore{
         "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'portability.completed','tenant_portability_request',$2,$3::jsonb)",
         [current.tenant_id,String(id),JSON.stringify({sva_number_id:number.id,assignment_id:assignment.id,e164:current.requested_e164,target_carrier_id:targetCarrierId})]
       );
-      return {request,number,assignment,carrier:{id:carrier.id,name:carrier.name},already_completed:false};
+      return {request,number,assignment,carrier:{id:carrier.id,name:carrier.name},already_completed:false,tenant_public_id:tenant.public_id};
     });
     this.eventBus.publish("portability.completed",{tenant_id:Number(result.request.tenant_id),request_id:id,sva_number_id:Number(result.number?.id),requested_e164:result.request.requested_e164});
     return result;
