@@ -53,6 +53,7 @@ test("production static build publishes marketing root and private cockpit",()=>
 
     assert.match(legacy,/rel="canonical" href="https:\/\/audiotel-premium-pro\.com\/"/);
     assert.match(robots,/Disallow: \/cockpit/);
+    for(const agent of ["Bingbot","OAI-SearchBot","Claude-SearchBot","PerplexityBot","Applebot"])assert.ok(robots.includes("User-agent: "+agent),agent+" missing from robots.txt");
     assert.match(robots,/Sitemap: https:\/\/audiotel-premium-pro\.com\/sitemap\.xml/);
     assert.match(sitemap,/<loc>https:\/\/audiotel-premium-pro\.com\/<\/loc>/);
     for(const slug of seoSlugs.filter(x=>x!=="mentions-legales"))assert.match(sitemap,new RegExp("<loc>https:\\/\\/audiotel-premium-pro\\.com\\/"+slug+"\\/<\\/loc>"));
