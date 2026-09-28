@@ -15,7 +15,7 @@ import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebA
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
 import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent} from "./src/stripe-billing.mjs";
-import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
+import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
 import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant} from "./src/hubspot-crm.mjs";
@@ -144,6 +144,20 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/public/withdrawal/status"){
         const schemaReady=typeof store.customerWithdrawalFeatureReady==="function"&&await store.customerWithdrawalFeatureReady();
         return done(res,metrics,started,"public.withdrawal_status",200,{available:config.onlineWithdrawalReady===true&&schemaReady});
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/public/contact"){
+        requireSameOriginBrowser(req);
+        const body=await readJson(req,config.bodyLimitBytes);
+        if(String(body.website||"").trim())return done(res,metrics,started,"public.contact",202,{accepted:false});
+        const email=normalizeEmail(body.email);
+        const message=String(body.message||"").trim();
+        if(message.length<2||message.length>4000){const e=new Error("Invalid contact message");e.status=400;e.code="INVALID_CONTACT_MESSAGE";throw e;}
+        const pagePath=String(body.page_path||"/").trim().slice(0,500)||"/";
+        const pageTitle=String(body.page_title||"").trim().slice(0,180);
+        const eventId="public-contact/"+randomUUID();
+        await sendPublicContactMessage(config,{email,message,pagePath,pageTitle,eventId});
+        return done(res,metrics,started,"public.contact",202,{accepted:true});
       }
 
       if(method==="POST"&&pathname==="/api/v1/public/hubspot/lead"){
