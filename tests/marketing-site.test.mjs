@@ -101,6 +101,11 @@ test("floating contact stays low-friction and submits directly without opening a
   assert.doesNotMatch(contactWidget,/mailto:/i);
   assert.doesNotMatch(contactWidget,/Votre téléphone|Votre prénom|Objet de votre demande/);
   assert.match(buildStatic,/site\/contact-widget\.js/);
+  for(const event of ["contact_widget_open","contact_form_start","contact_message_submit","contact_message_success","contact_message_error"])assert.ok(contactWidget.includes(event),event+" missing");
+  assert.match(contactWidget,/contact_context/);
+  assert.match(contactWidget,/floating_email_widget/);
+  assert.match(contactWidget,/crm_sync/);
+  assert.doesNotMatch(contactWidget,/track\([^)]*\{[^}]*\b(email|message|page_title|page_path)\s*:/i);
 });
 
 test("dedicated opening page preselects profiles and preserves an unfinished session draft",()=>{

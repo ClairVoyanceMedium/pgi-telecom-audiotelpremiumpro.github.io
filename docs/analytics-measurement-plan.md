@@ -1,6 +1,6 @@
 # Plan de mesure Analytics — PGI Telecom
 
-Dernière mise à jour : 27 septembre 2026.
+Dernière mise à jour : 28 septembre 2026.
 
 ## Identifiants
 
@@ -38,12 +38,21 @@ Le contrôleur unique `site/hubspot-tracking.js` pilote Google Analytics et HubS
 | `sign_up` | création, activation ou vérification réelle du compte réussie | `method`, `account_type`, `service_intent`, `lead_source` |
 | `login` | authentification email ou Google réussie | `method` |
 | `begin_checkout` | URL HTTPS Stripe créée par le backend | `currency`, `value` |
+| `contact_widget_open` | ouverture de la bulle de contact | `contact_context`, `contact_source` |
+| `contact_form_start` | premier focus dans le mini-formulaire | `contact_context`, `contact_source` |
+| `contact_message_submit` | tentative d’envoi du formulaire valide | `contact_context`, `contact_source` |
+| `contact_message_success` | envoi accepté par le backend | `contact_context`, `contact_source`, `crm_sync` |
+| `contact_message_error` | validation ou erreur réseau/serveur | `contact_context`, `contact_source`, `error_type` |
 
 Valeurs stables :
 
 - `account_type` : `business` ou `individual`.
 - `service_intent` : `new_number`, `portability`, `commercial_information`, `technical_support`, `other`.
 - `lead_source` : `public_marketing_site` pour le tunnel public.
+- `contact_source` : `floating_email_widget`.
+- `contact_context` : `home`, `pricing`, `portability`, `payouts`, `education`, `industry`, `opening`, `legal` ou `other`.
+- `crm_sync` : `synced` ou `not_synced`.
+- `error_type` : `validation` ou `network_or_server`.
 
 ## Événements préparés, non émis artificiellement
 
@@ -68,6 +77,8 @@ Portée événement :
 ## Données interdites
 
 Ne jamais envoyer à Google Analytics : nom, prénom, email, téléphone, adresse, société, contenu de message, mot de passe, jeton, secret, identifiant Stripe lisible ou toute autre donnée directement identifiante.
+
+Pour la bulle de contact, GA4 reçoit uniquement des événements techniques et une catégorie de page déterministe. L’adresse email, le message, le titre exact saisi et les paramètres de formulaire ne sont jamais transmis à Analytics. La page exacte et le message restent dans le circuit support/HubSpot, où ils sont nécessaires au traitement de la demande.
 
 Le User-ID, lorsqu’un utilisateur est authentifié et consentant, est construit uniquement depuis un identifiant interne opaque. Il ne doit jamais être dérivé d’un email ou d’un téléphone.
 

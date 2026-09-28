@@ -14,14 +14,23 @@ const PARAMS=Object.freeze({
   working_lead:["account_type","service_intent","lead_source"],
   close_convert_lead:["currency","value","account_type","service_intent","lead_source"],
   purchase:["transaction_id","currency","value"],
-  refund:["transaction_id","currency","value"]
+  refund:["transaction_id","currency","value"],
+  contact_widget_open:["contact_context","contact_source"],
+  contact_form_start:["contact_context","contact_source"],
+  contact_message_submit:["contact_context","contact_source"],
+  contact_message_success:["contact_context","contact_source","crm_sync"],
+  contact_message_error:["contact_context","contact_source","error_type"]
 });
 const VALUES=Object.freeze({
   account_type:new Set(["business","individual"]),
   service_intent:new Set(["new_number","portability","commercial_information","technical_support","other"]),
   lead_source:new Set(["public_marketing_site","client_portal"]),
   method:new Set(["email","google"]),
-  currency:new Set(["EUR"])
+  currency:new Set(["EUR"]),
+  contact_context:new Set(["home","pricing","portability","payouts","education","industry","opening","legal","other"]),
+  contact_source:new Set(["floating_email_widget"]),
+  crm_sync:new Set(["synced","not_synced"]),
+  error_type:new Set(["network_or_server","validation"])
 });
 const ALIASES=Object.freeze({service_intent:Object.freeze({advice:"commercial_information"})});
 const path=location.pathname||"/",privatePage=PRIVATE_RE.test(path),publicPage=!privatePage&&!CLIENT_RE.test(path);
