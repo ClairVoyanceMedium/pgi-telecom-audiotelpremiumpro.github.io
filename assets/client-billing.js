@@ -19,7 +19,9 @@ export function createController(ctx){
     const currentSubscription=rows.some(x=>["active","past_due"].includes(String(x.status||"").toLowerCase()));
     const needsRecovery=rows.some(x=>["grace","retrying","suspended"].includes(String(x.recovery_stage||"").toLowerCase()));
     if(consent)consent.hidden=currentSubscription;
-    const connected=provider.connection_state&&provider.connection_state!=="not_connected";
+    const connected=["connected","connected_payouts_pending"].includes(String(provider.connection_state||""));
+    const activationRequired=provider.connection_state==="account_activation_required";
+    const providerUnavailable=provider.connection_state==="account_status_unavailable";
     if(offer&&offer.amount_minor!=null){
       const cadence=offer.billing_interval==="year"?"an":"mois",offerPrice=money(n(offer.amount_minor)/100,offer.currency)+" TTC / "+cadence;
       if(offerDetail)offerDetail.textContent=offerPrice+" · "+tr("facturé mensuellement d’avance · résiliation à tout moment, effet fin de période");
@@ -30,8 +32,11 @@ export function createController(ctx){
       if(offerDetail)offerDetail.textContent=tr("Devise automatique")+" : "+resolvedCurrency+" · "+tr("tarif local à configurer");
       if(offerChip){offerChip.textContent=resolvedCurrency;offerChip.className="cp-chip warn";}
     }
-    if(stateEl)stateEl.textContent=needsRecovery?tr("Paiement à régulariser. Utilisez le portail sécurisé pour mettre à jour votre moyen de paiement."):connected?tr("Prestataire de paiement configuré."):tr("Architecture de paiement prête, prestataire non connecté.");
-    if(chipEl){chipEl.textContent=needsRecovery?tr("À RÉGULARISER"):connected?tr("PRÊT"):tr("NON CONNECTÉ");chipEl.className="cp-chip "+(needsRecovery?"warn":connected?"ok":"neutral");}
+    if(stateEl)stateEl.textContent=needsRecovery?tr("Paiement à régulariser. Utilisez le portail sécurisé pour mettre à jour votre moyen de paiement."):activationRequired?tr("Compte de paiement à finaliser avant tout encaissement."):providerUnavailable?tr("Vérification du prestataire temporairement indisponible."):connected?(provider.payouts_enabled===false?tr("Encaissements autorisés, versements Stripe à finaliser."):tr("Prestataire de paiement opérationnel.")):tr("Architecture de paiement prête, prestataire non connecté.");
+    if(chipEl){
+      chipEl.textContent=needsRecovery?tr("À RÉGULARISER"):activationRequired?tr("ACTIVATION REQUISE"):providerUnavailable?tr("VÉRIFICATION"):connected?(provider.payouts_enabled===false?tr("ENCAISSEMENT ACTIF"):tr("PRÊT")):tr("NON CONNECTÉ");
+      chipEl.className="cp-chip "+(needsRecovery||activationRequired||providerUnavailable||provider.payouts_enabled===false?"warn":connected?"ok":"neutral");
+    }
     if(start){start.disabled=b2cBlocked;start.setAttribute("aria-disabled",String(b2cBlocked||!provider.checkout_available||!offer));if(b2cBlocked)start.textContent=tr("Souscription particulier indisponible");else start.title=!offer?tr("Tarif indisponible pour ce compte."):!provider.checkout_available?tr("Paiement en ligne pas encore activé."):"";}
     if(manage){manage.textContent=needsRecovery?tr("Régulariser mon paiement"):tr("Gérer / résilier mon abonnement");manage.disabled=false;manage.setAttribute("aria-disabled",String(!provider.customer_portal_available||!rows.length));manage.title=!rows.length?tr("Aucun abonnement actif à gérer."):!provider.customer_portal_available?tr("Portail de facturation pas encore activé."):"";}
   }
@@ -41,7 +46,7 @@ export function createController(ctx){
     const data=state.data||{},provider=data.billing_provider||{},offer=data.billing_offer||null,rows=data.subscriptions||[];
     if(kind==="start"&&(data.tenant||{}).customer_type==="individual"&&!data.b2c_commercial_ready){ctx.toast("Souscription particulier indisponible.");return;}
     if(kind==="start"&&!offer){ctx.toast("Le tarif n’est pas encore disponible pour ce compte.");return;}
-    if(kind==="start"&&!provider.checkout_available){ctx.toast("Le paiement en ligne n’est pas encore activé. Votre dossier reste enregistré.");return;}
+    if(kind==="start"&&!provider.checkout_available){ctx.toast(provider.connection_state==="account_activation_required"?"Le compte Stripe doit être finalisé avant tout encaissement. Votre dossier reste enregistré.":provider.connection_state==="account_status_unavailable"?"La disponibilité du prestataire de paiement ne peut pas être confirmée pour le moment. Aucun paiement n’est lancé.":"Le paiement en ligne n’est pas encore activé. Votre dossier reste enregistré.");return;}
     if(kind==="start"){
       const terms=$("client-billing-terms");
       if(!terms||!terms.checked){ctx.toast("Acceptez les conditions d’abonnement et les CGU avant le paiement.");if(terms)terms.focus();return;}
