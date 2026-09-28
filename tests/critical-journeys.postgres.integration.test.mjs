@@ -171,6 +171,10 @@ test("full customer journey works without a real operator and remains fail-close
     assert.equal(payload.email_verification_required,true);
     assert.match(payload.verification_token,/^[A-Za-z0-9_-]{32,}$/);
     tenantPublicId=payload.user.tenant.id;
+    const metadataRow=(await store.sql.unsafe("SELECT jsonb_typeof(metadata) AS metadata_type,metadata->>'first_name' AS first_name,metadata->>'last_name' AS last_name FROM customer_principals WHERE email_normalized=$1",[email]))[0];
+    assert.equal(metadataRow.metadata_type,"object");
+    assert.equal(metadataRow.first_name,"Camille");
+    assert.equal(metadataRow.last_name,"Martin");
     assert.equal(state.contact.statut_commercial_pgi,"Dossier en préparation");
     assert.equal(state.deal.dealstage,"contractsent");
     assert.match(state.verificationCode||"",/^\d{6}$/);

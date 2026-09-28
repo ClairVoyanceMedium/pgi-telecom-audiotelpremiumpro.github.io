@@ -21,7 +21,7 @@ export async function drainTransactionalEmails({store,config,limit=50}={}){
     "   SELECT cp.id,cp.email,cp.display_name,cp.email_verified,cp.preferred_locale FROM customer_tenant_memberships m"+
     "   JOIN customer_principals cp ON cp.id=m.customer_principal_id"+
     "   WHERE m.tenant_id=o.tenant_id AND m.status='active' AND cp.status='active'"+
-    "   ORDER BY (m.role='owner') DESC,m.created_at ASC LIMIT 1"+
+    "   ORDER BY (m.role='owner') DESC,m.joined_at ASC LIMIT 1"+
     " ) owner ON true"+
     " WHERE o.event_type=ANY($1::text[]) AND o.created_at>=now()-interval '30 days'"+
     " AND NOT EXISTS(SELECT 1 FROM transactional_email_event_receipts r WHERE r.outbox_event_id=o.id)"+
@@ -57,7 +57,7 @@ export async function drainDunningTransactionalEmails({store,config,limit=50}={}
     " owner.id::text AS owner_principal_id,owner.email AS owner_email,owner.display_name AS owner_name,owner.preferred_locale AS owner_preferred_locale"+
     " FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id JOIN tenants t ON t.id=s.tenant_id"+
     " LEFT JOIN LATERAL (SELECT cp.id,cp.email,cp.display_name,cp.preferred_locale FROM customer_tenant_memberships m JOIN customer_principals cp ON cp.id=m.customer_principal_id"+
-    " WHERE m.tenant_id=s.tenant_id AND m.status='active' AND cp.status='active' ORDER BY (m.role='owner') DESC,m.created_at ASC LIMIT 1) owner ON true"+
+    " WHERE m.tenant_id=s.tenant_id AND m.status='active' AND cp.status='active' ORDER BY (m.role='owner') DESC,m.joined_at ASC LIMIT 1) owner ON true"+
     " WHERE p.plan_key='external-sva-access' AND t.tenant_type<>'internal' AND t.status<>'closed'"+
     " AND s.recovery_stage IN ('retrying','suspended') AND s.dunning_started_at IS NOT NULL"+
     " ORDER BY COALESCE(s.dunning_deadline_at,s.dunning_started_at),s.id LIMIT $1",

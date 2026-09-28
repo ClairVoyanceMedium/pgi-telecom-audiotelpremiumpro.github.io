@@ -3223,8 +3223,9 @@ export class PostgresStore{
       );
       let principal=(await tx.unsafe(
         "INSERT INTO customer_principals(email,display_name,status,preferred_locale,timezone,email_verified,metadata)"+
-        " VALUES($1,$2,'active',$3,$4,false,$5::jsonb) RETURNING id,email,display_name,status,email_verified,session_version",
-        [email,displayName,locale,timezone,JSON.stringify({first_name:firstName,last_name:lastName,phone:phone||null,signup_source:acquisitionSource==="public_marketing_site"?"public_marketing_site":"self_service_email",service_intent:serviceIntent||null,account_type:accountType,authority_confirmed:true})]
+        " VALUES($1,$2,'active',$3,$4,false,jsonb_build_object('first_name',$5,'last_name',$6,'phone',$7,'signup_source',$8,'service_intent',$9,'account_type',$10,'authority_confirmed',true))"+
+        " RETURNING id,email,display_name,status,email_verified,session_version",
+        [email,displayName,locale,timezone,firstName,lastName,phone||null,acquisitionSource==="public_marketing_site"?"public_marketing_site":"self_service_email",serviceIntent||null,accountType]
       ))[0];
       await tx.unsafe(
         "INSERT INTO customer_password_credentials(customer_principal_id,password_hash,status) VALUES($1::uuid,$2,'active')",
@@ -3257,7 +3258,7 @@ export class PostgresStore{
   async beginCustomerEmailVerification(principalId,record){
     const payload={required:true,token_hash:String(record?.token_hash||""),code_hash:String(record?.code_hash||""),expires_at:String(record?.expires_at||""),resend_after:String(record?.resend_after||""),attempts:0,sent_at:String(record?.sent_at||new Date().toISOString())};
     if(!/^[a-f0-9]{64}$/.test(payload.token_hash)||!/^[a-f0-9]{64}$/.test(payload.code_hash))throw problem(400,"INVALID_EMAIL_VERIFICATION_CHALLENGE");
-    const rows=await this.sql.unsafe("UPDATE customer_principals SET metadata=jsonb_set(COALESCE(metadata,'{}'::jsonb),'{email_verification}',$2::jsonb,true),updated_at=now() WHERE id=$1::uuid AND email_verified=false RETURNING id,email,display_name",[String(principalId),JSON.stringify(payload)]);
+    const rows=await this.sql.unsafe("UPDATE customer_principals SET metadata=jsonb_set(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END,'{email_verification}',$2::jsonb,true),updated_at=now() WHERE id=$1::uuid AND email_verified=false RETURNING id,email,display_name",[String(principalId),JSON.stringify(payload)]);
     if(!rows[0])throw problem(409,"EMAIL_ALREADY_VERIFIED");return rows[0];
   }
 
@@ -3272,7 +3273,7 @@ export class PostgresStore{
 
   async refreshCustomerEmailVerification(principalId,tokenHash,record){
     const payload={required:true,token_hash:String(tokenHash),code_hash:String(record?.code_hash||""),expires_at:String(record?.expires_at||""),resend_after:String(record?.resend_after||""),attempts:0,sent_at:String(record?.sent_at||new Date().toISOString())};
-    const rows=await this.sql.unsafe("UPDATE customer_principals SET metadata=jsonb_set(COALESCE(metadata,'{}'::jsonb),'{email_verification}',$3::jsonb,true),updated_at=now() WHERE id=$1::uuid AND email_verified=false AND metadata#>>'{email_verification,token_hash}'=$2 RETURNING id,email,display_name",[String(principalId),String(tokenHash),JSON.stringify(payload)]);
+    const rows=await this.sql.unsafe("UPDATE customer_principals SET metadata=jsonb_set(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END,'{email_verification}',$3::jsonb,true),updated_at=now() WHERE id=$1::uuid AND email_verified=false AND metadata#>>'{email_verification,token_hash}'=$2 RETURNING id,email,display_name",[String(principalId),String(tokenHash),JSON.stringify(payload)]);
     if(!rows[0])throw problem(409,"EMAIL_VERIFICATION_STALE");return rows[0];
   }
 
@@ -3286,11 +3287,11 @@ export class PostgresStore{
       const expiresAt=Date.parse(String(v.expires_at||""));if(!Number.isFinite(expiresAt)||expiresAt<Date.now())return {failure:"EMAIL_VERIFICATION_EXPIRED"};
       if(String(v.code_hash||"")!==String(codeHash)){
         const nextAttempts=attempts+1,next={...v,attempts:nextAttempts};
-        await tx.unsafe("UPDATE customer_principals SET metadata=jsonb_set(COALESCE(metadata,'{}'::jsonb),'{email_verification}',$2::jsonb,true),updated_at=now() WHERE id=$1::uuid",[String(row.id),JSON.stringify(next)]);
+        await tx.unsafe("UPDATE customer_principals SET metadata=jsonb_set(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END,'{email_verification}',$2::jsonb,true),updated_at=now() WHERE id=$1::uuid",[String(row.id),JSON.stringify(next)]);
         return {failure:nextAttempts>=maxAttempts?"EMAIL_VERIFICATION_LOCKED":"EMAIL_VERIFICATION_INVALID"};
       }
       const safe={required:false,verified_at:new Date().toISOString()};
-      const updated=(await tx.unsafe("UPDATE customer_principals SET email_verified=true,session_version=session_version+1,metadata=jsonb_set(COALESCE(metadata,'{}'::jsonb),'{email_verification}',$2::jsonb,true),updated_at=now() WHERE id=$1::uuid RETURNING id,email,display_name,email_verified,session_version",[String(row.id),JSON.stringify(safe)]))[0];
+      const updated=(await tx.unsafe("UPDATE customer_principals SET email_verified=true,session_version=session_version+1,metadata=jsonb_set(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END,'{email_verification}',$2::jsonb,true),updated_at=now() WHERE id=$1::uuid RETURNING id,email,display_name,email_verified,session_version",[String(row.id),JSON.stringify(safe)]))[0];
       return {row:updated};
     });
     if(result.failure){const status=result.failure==="EMAIL_VERIFICATION_EXPIRED"?410:result.failure==="EMAIL_VERIFICATION_LOCKED"?429:400;throw problem(status,result.failure);}
@@ -3397,7 +3398,7 @@ export class PostgresStore{
       );
       if(!rows[0])throw problem(404,"CUSTOMER_CREDENTIAL_NOT_FOUND");
       const principal=(await tx.unsafe(
-        "UPDATE customer_principals SET session_version=session_version+1,metadata=COALESCE(metadata,'{}'::jsonb)-'password_reset',updated_at=now()"+
+        "UPDATE customer_principals SET session_version=session_version+1,metadata=CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END-'password_reset',updated_at=now()"+
         " WHERE id=$1::uuid RETURNING id,email,display_name,preferred_locale,session_version",
         [String(principalId)]
       ))[0];
@@ -3419,7 +3420,7 @@ export class PostgresStore{
     if(!row)return null;
     const payload={token_hash:tokenHash,expires_at:expiresAt,requested_at:String(record?.requested_at||new Date().toISOString())};
     await this.sql.unsafe(
-      "UPDATE customer_principals SET metadata=jsonb_set(COALESCE(metadata,'{}'::jsonb),'{password_reset}',$2::jsonb,true),updated_at=now() WHERE id=$1::uuid",
+      "UPDATE customer_principals SET metadata=jsonb_set(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END,'{password_reset}',$2::jsonb,true),updated_at=now() WHERE id=$1::uuid",
       [String(row.id),JSON.stringify(payload)]
     );
     return row;
@@ -3443,7 +3444,7 @@ export class PostgresStore{
       );
       if(!updated[0])throw problem(400,"PASSWORD_RESET_INVALID");
       await tx.unsafe(
-        "UPDATE customer_principals SET session_version=session_version+1,metadata=COALESCE(metadata,'{}'::jsonb)-'password_reset',updated_at=now() WHERE id=$1::uuid",
+        "UPDATE customer_principals SET session_version=session_version+1,metadata=CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END-'password_reset',updated_at=now() WHERE id=$1::uuid",
         [String(row.id)]
       );
       return {id:row.id,email:row.email,display_name:row.display_name,preferred_locale:row.preferred_locale};
@@ -3459,7 +3460,7 @@ export class PostgresStore{
     if(conflict)throw problem(409,"CUSTOMER_ACCOUNT_EXISTS");
     const payload={new_email:newEmail,token_hash:tokenHash,expires_at:expiresAt,requested_at:String(record?.requested_at||new Date().toISOString())};
     const row=(await this.sql.unsafe(
-      "UPDATE customer_principals SET metadata=jsonb_set(COALESCE(metadata,'{}'::jsonb),'{email_change}',$2::jsonb,true),updated_at=now()"+
+      "UPDATE customer_principals SET metadata=jsonb_set(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END,'{email_change}',$2::jsonb,true),updated_at=now()"+
       " WHERE id=$1::uuid AND status='active' RETURNING id,email,display_name,preferred_locale",
       [String(principalId),JSON.stringify(payload)]
     ))[0];
@@ -3482,7 +3483,7 @@ export class PostgresStore{
       const conflict=(await tx.unsafe("SELECT id FROM customer_principals WHERE email_normalized=$1 AND id<>$2::uuid LIMIT 1",[newEmail,String(row.id)]))[0];
       if(conflict)throw problem(409,"CUSTOMER_ACCOUNT_EXISTS");
       await tx.unsafe(
-        "UPDATE customer_principals SET email=$2,email_verified=true,session_version=session_version+1,metadata=COALESCE(metadata,'{}'::jsonb)-'email_change',updated_at=now() WHERE id=$1::uuid",
+        "UPDATE customer_principals SET email=$2,email_verified=true,session_version=session_version+1,metadata=CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END-'email_change',updated_at=now() WHERE id=$1::uuid",
         [String(row.id),newEmail]
       );
       await tx.unsafe(
