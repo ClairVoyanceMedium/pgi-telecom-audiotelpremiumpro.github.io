@@ -174,17 +174,23 @@ export async function syncHubSpotSupportMessage(input={},options={}){
   let contact=await findPrivateContact(contactEmail,{token,fetchImpl});
   let contactCreated=false;
   if(!contact){
-    contact=await hubSpotPrivateRequest("/crm/v3/objects/contacts",{
-      token,fetchImpl,method:"POST",
-      body:{properties:{
-        email:contactEmail,
-        lifecyclestage:"lead",
-        hubspot_owner_id:HUBSPOT_OWNER_ID,
-        type_de_demande:"Autre",
-        besoin__projet_audiotel:"Contact depuis le site Audiotel Premium Pro"
-      }}
-    });
-    contactCreated=true;
+    try{
+      contact=await hubSpotPrivateRequest("/crm/v3/objects/contacts",{
+        token,fetchImpl,method:"POST",
+        body:{properties:{
+          email:contactEmail,
+          lifecyclestage:"lead",
+          hubspot_owner_id:HUBSPOT_OWNER_ID,
+          type_de_demande:"Autre",
+          besoin__projet_audiotel:"Contact depuis le site Audiotel Premium Pro"
+        }}
+      });
+      contactCreated=true;
+    }catch(error){
+      if(error?.status!==409)throw error;
+      contact=await findPrivateContact(contactEmail,{token,fetchImpl});
+      if(!contact)throw error;
+    }
   }
   const associationTypeId=await noteContactAssociationType({token,fetchImpl});
   const pagePath=clean(input.pagePath||input.page_path||"/",500)||"/";
@@ -194,7 +200,7 @@ export async function syncHubSpotSupportMessage(input={},options={}){
     "<br><br><strong>Email :</strong> "+escapeHubSpotHtml(contactEmail),
     pageTitle?"<br><strong>Page :</strong> "+escapeHubSpotHtml(pageTitle):"",
     "<br><strong>Chemin :</strong> "+escapeHubSpotHtml(pagePath),
-    "<br><br><strong>Message :</strong><br>"+escapeHubSpotHtml(message).replace(/\\n/g,"<br>")
+    "<br><br><strong>Message :</strong><br>"+escapeHubSpotHtml(message).replace(/\n/g,"<br>")
   ].join("");
   const note=await hubSpotPrivateRequest("/crm/v3/objects/notes",{
     token,fetchImpl,method:"POST",
