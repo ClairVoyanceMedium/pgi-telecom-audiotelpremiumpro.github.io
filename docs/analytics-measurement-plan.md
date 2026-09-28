@@ -1,6 +1,6 @@
 # Plan de mesure Analytics — PGI Telecom
 
-Dernière mise à jour : 28 septembre 2026.
+Dernière mise à jour : 29 septembre 2026.
 
 ## Identifiants
 
@@ -28,7 +28,7 @@ Le contrôleur unique `site/hubspot-tracking.js` pilote Google Analytics et HubS
 - Le bouton « Gérer mes préférences » rouvre le choix.
 - `/cockpit`, `/cockpit.html`, `/admin` et `/admin.html` sont exclus.
 - `/client.html` accepte uniquement les événements métier consentis ; le tag GTM correspondant a `send_page_view=false`.
-- GTM est la couche centrale : aucune balise GA4 directe distincte ne doit être ajoutée.
+- La balise GA4 directe est la voie primaire de collecte après consentement. GTM reste chargé pour les autres balises et ne doit pas contenir une seconde balise GA4 de page vue pour ce même flux, afin d’éviter les doublons.
 
 ## Événements actifs dans le code
 
@@ -121,7 +121,7 @@ Ne pas créer une dimension personnalisée pour `content_group`, la page, la sou
 
 `qualify_lead`, `working_lead`, `close_convert_lead`, `purchase` et `refund` figurent dans l’allowlist, mais aucun clic navigateur ne les simule.
 
-`purchase` et `refund` devront partir du webhook Stripe après confirmation serveur, via Measurement Protocol, avec déduplication par `transaction_id`, devise EUR et montant réellement encaissé ou remboursé. Aucun secret API GA4 n’est créé ni stocké dans ce dépôt.
+`purchase` et `refund` sont émis depuis les webhooks Stripe confirmés via Measurement Protocol lorsque la configuration serveur GA4 est activée. La livraison est dédupliquée par identifiant de transaction et utilise le montant et la devise réellement confirmés par Stripe. Aucun secret API GA4 n’est créé ni stocké dans ce dépôt.
 
 ## Événements clés GA4
 
@@ -192,4 +192,4 @@ Flux remboursement :
 
 Les livraisons sont journalisées par clé stable pour empêcher un webhook Stripe répété de compter deux fois le même achat ou remboursement. Une indisponibilité GA4 ne modifie jamais le statut de paiement et ne bloque jamais le webhook métier Stripe.
 
-Le secret Measurement Protocol reste exclusivement dans l'environnement serveur. Il ne doit jamais être injecté dans un fichier JavaScript public, une page HTML, Stripe Metadata ou HubSpot.
+Le secret Measurement Protocol reste exclusivement dans l'environnement serveur. Il ne doit jamais être injecté dans un fichier JavaScript public, une page HTML, Stripe Metadata ou HubSpot. Chaque envoi serveur force également `ad_user_data=DENIED` et `ad_personalization=DENIED` dans le bloc de consentement Measurement Protocol, afin qu’aucun usage publicitaire ne soit implicitement activé par ces conversions serveur.

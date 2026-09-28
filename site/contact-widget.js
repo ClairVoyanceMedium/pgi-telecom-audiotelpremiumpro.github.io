@@ -8,7 +8,8 @@ root.innerHTML=`
   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.75 5.75h16.5v12.5H3.75z"></path><path d="m4.5 6.5 7.5 6 7.5-6"></path></svg>
   <span>Nous contacter</span>
 </button>
-<section id="contact-widget-panel" class="contact-widget-panel" aria-label="Contacter Audiotel Premium Pro" hidden>
+<div class="contact-widget-backdrop" hidden></div>
+<section id="contact-widget-panel" class="contact-widget-panel" role="dialog" aria-modal="true" aria-label="Contacter Audiotel Premium Pro" hidden>
   <div class="contact-widget-head">
     <div><strong>Nous contacter</strong><span>Une question ? Écrivez-nous directement.</span></div>
     <button class="contact-widget-close" type="button" aria-label="Fermer">×</button>
@@ -25,6 +26,7 @@ root.innerHTML=`
 document.body.appendChild(root);
 const toggle=root.querySelector(".contact-widget-button");
 const panel=root.querySelector(".contact-widget-panel");
+const backdrop=root.querySelector(".contact-widget-backdrop");
 const close=root.querySelector(".contact-widget-close");
 const form=root.querySelector(".contact-widget-form");
 const status=root.querySelector(".contact-widget-status");
@@ -49,19 +51,32 @@ function track(name,extra={}){
   window.PGIAnalytics?.track(name,{contact_context:contactContext(),contact_source:contactSource,...extra});
 }
 function setOpen(open){
+  const wasOpen=!panel.hidden;
   panel.hidden=!open;
+  backdrop.hidden=!open;
   toggle.setAttribute("aria-expanded",String(open));
   root.classList.toggle("is-open",open);
-  if(open){track("contact_widget_open");setTimeout(()=>email.focus(),0);}
+  if(open){track("contact_widget_open");setTimeout(()=>email.focus({preventScroll:true}),0);}
+  else if(wasOpen)setTimeout(()=>toggle.focus({preventScroll:true}),0);
 }
 toggle.addEventListener("click",()=>setOpen(panel.hidden));
+backdrop.addEventListener("click",()=>setOpen(false));
 close.addEventListener("click",()=>setOpen(false));
 form.addEventListener("focusin",()=>{
   if(formStarted)return;
   formStarted=true;
   track("contact_form_start");
 },{once:true});
-document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!panel.hidden)setOpen(false)});
+document.addEventListener("keydown",e=>{
+  if(panel.hidden)return;
+  if(e.key==="Escape"){e.preventDefault();setOpen(false);return}
+  if(e.key!=="Tab")return;
+  const focusable=[...panel.querySelectorAll("button:not([disabled]),input:not([disabled]),textarea:not([disabled]),a[href]")].filter(el=>el.getClientRects().length>0);
+  if(!focusable.length)return;
+  const first=focusable[0],last=focusable[focusable.length-1];
+  if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}
+  else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}
+});
 form.addEventListener("submit",async e=>{
   e.preventDefault();
   status.className="contact-widget-status";

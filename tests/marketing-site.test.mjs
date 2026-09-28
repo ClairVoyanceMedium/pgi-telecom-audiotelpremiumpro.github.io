@@ -98,7 +98,11 @@ test("floating contact stays low-friction and submits directly without opening a
   assert.match(contactWidget,/Votre message/);
   assert.match(contactWidget,/\/api\/v1\/public\/contact/);
   assert.match(contactCss,/\.contact-widget-panel/);
+  assert.match(contactCss,/\.contact-widget-backdrop/);
   assert.match(contactCss,/\.contact-widget-honeypot/);
+  assert.match(contactWidget,/aria-modal="true"/);
+  assert.match(contactWidget,/contact-widget-backdrop/);
+  assert.match(contactWidget,/e\.key==="Tab"/);
   assert.doesNotMatch(contactWidget,/mailto:/i);
   assert.doesNotMatch(contactWidget,/Votre téléphone|Votre prénom|Objet de votre demande/);
   assert.match(buildStatic,/site\/contact-widget\.js/);

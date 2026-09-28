@@ -3,7 +3,8 @@
 .contact-widget-button:hover{border-color:#e0b76f;transform:translateY(-2px);box-shadow:0 18px 44px rgba(0,0,0,.32),0 0 0 1px rgba(255,255,255,.9) inset}
 .contact-widget-button:focus-visible{outline:3px solid rgba(232,179,110,.42);outline-offset:4px}
 .contact-widget-button svg{width:21px;height:21px;fill:none;stroke:#b87925;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
-.contact-widget.is-open::before{content:"";position:fixed;z-index:0;inset:0;background:rgba(18,12,9,.5);backdrop-filter:blur(2px);pointer-events:none}
+.contact-widget-backdrop{position:fixed;z-index:1;inset:0;background:rgba(18,12,9,.5);backdrop-filter:blur(2px)}
+.contact-widget-backdrop[hidden]{display:none!important}
 .contact-widget.is-open .contact-widget-button{opacity:0;pointer-events:none}
 .contact-widget-panel{position:fixed;z-index:2;left:50%;right:auto;top:50%;bottom:auto;transform:translate(-50%,-50%);width:min(430px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:0;border:1px solid #d2a04e;border-radius:22px;background:#fffdf9;color:#24170f;box-shadow:0 28px 80px rgba(0,0,0,.46),0 0 0 1px rgba(255,255,255,.72) inset;overflow:auto;overscroll-behavior:contain}
 .contact-widget-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:20px 20px 16px;border-bottom:1px solid rgba(128,86,37,.16);background:linear-gradient(180deg,#fff,#fffaf2)}

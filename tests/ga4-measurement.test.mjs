@@ -58,5 +58,7 @@ test("GA4 Measurement Protocol uses the EU endpoint and keeps the secret server-
   assert.match(calls[0].url,/^https:\/\/region1\.google-analytics\.com\/mp\/collect\?/);
   assert.match(calls[0].url,/measurement_id=G-SZY50J75N7/);
   assert.match(calls[0].url,/api_secret=server-only-secret-value/);
-  assert.equal(JSON.parse(calls[0].init.body).client_id,"123456789.987654321");
+  const sent=JSON.parse(calls[0].init.body);
+  assert.equal(sent.client_id,"123456789.987654321");
+  assert.deepEqual(sent.consent,{ad_user_data:"DENIED",ad_personalization:"DENIED"});
 });

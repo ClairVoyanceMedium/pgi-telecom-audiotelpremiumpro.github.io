@@ -98,7 +98,7 @@ export async function sendGa4Measurement(config,payload,options={}){
     const response=await fetchImpl(endpoint,{
       method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(payload),
+      body:JSON.stringify({...payload,consent:{ad_user_data:"DENIED",ad_personalization:"DENIED"}}),
       signal:AbortSignal.timeout(Number(config.ga4MeasurementTimeoutMs||3000))
     });
     return response.ok?{enabled:true,sent:true,status:response.status}:{enabled:true,sent:false,status:response.status,error:"GA4_MEASUREMENT_REJECTED"};
