@@ -19,6 +19,7 @@ import {createEmailVerificationChallenge,verificationTokenHash,emailVerification
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
 import {submitHubSpotLead,syncHubSpotCommercialLead} from "./src/hubspot-crm.mjs";
+import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
 
 export async function createDefaultBackend(){
   const config=loadConfig();
@@ -1084,6 +1085,22 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.performance_lab",200,await store.performanceResilienceLab());
       }
 
+      if(method==="GET"&&pathname==="/api/v1/platform/launch-readiness"){
+        requireRole(actor,["admin","finance","readonly"]);
+        const [system,performance,platform,carrier,schemaReady,billing]=await Promise.all([
+          store.systemSnapshot(),
+          store.performanceResilienceLab(),
+          store.wholesaleOverview(),
+          store.carrierAdminOverview(),
+          typeof store.customerWithdrawalFeatureReady==="function"?store.customerWithdrawalFeatureReady():Promise.resolve(false),
+          billingProviderStatus(config)
+        ]);
+        const withdrawalReady=config.onlineWithdrawalReady===true&&schemaReady===true;
+        return done(res,metrics,started,"platform.launch_readiness",200,evaluateLaunchReadiness({
+          config,system,performance,platform,carrier,billingProvider:billing,withdrawalReady
+        }));
+      }
+
       if(method==="POST"&&pathname==="/api/v1/platform/performance-lab/runs"){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
         const body=await readJson(req,config.bodyLimitBytes);
@@ -1968,7 +1985,7 @@ function routeClassRateLimit(req,config,buckets,metrics,pathname,method){
   const authPath=pathname.startsWith("/api/v1/auth/")||pathname.startsWith("/api/v1/customer/auth/");
   if(!authPath&&method!=="GET"&&method!=="HEAD"&&method!=="OPTIONS"){
     scope="write";limit=Number(config.writeRateLimitPerMinute||120);
-  }else if(method==="GET"&&/(?:analytics|control-tower|customer-profitability|performance-lab|digital-twin|evidence-pack|regulatory)/.test(pathname)){
+  }else if(method==="GET"&&/(?:analytics|control-tower|launch-readiness|customer-profitability|performance-lab|digital-twin|evidence-pack|regulatory)/.test(pathname)){
     scope="heavy_read";limit=Number(config.heavyReadRateLimitPerMinute||60);
   }
   if(!scope||limit<=0)return;

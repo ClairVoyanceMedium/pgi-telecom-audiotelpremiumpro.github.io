@@ -1495,7 +1495,8 @@ export class PostgresStore{
     const [routeRows,targets,switches]=await Promise.all([
       this.readSql.unsafe(
         "SELECT r.route_key,r.generation,r.active_carrier_id,r.active_connection_id,r.standby_carrier_id,r.standby_connection_id,r.updated_at,"+
-        " a.name AS active_carrier,s.name AS standby_carrier,ac.state AS active_connection_state,sc.state AS standby_connection_state"+
+        " a.name AS active_carrier,s.name AS standby_carrier,ac.state AS active_connection_state,sc.state AS standby_connection_state,"+
+        " ac.last_health_at AS active_connection_last_health_at,ac.last_health_status AS active_connection_last_health_status"+
         " FROM logical_carrier_routes r LEFT JOIN carriers a ON a.id=r.active_carrier_id LEFT JOIN carriers s ON s.id=r.standby_carrier_id"+
         " LEFT JOIN carrier_connections ac ON ac.id=r.active_connection_id LEFT JOIN carrier_connections sc ON sc.id=r.standby_connection_id"+
         " WHERE r.route_key='sva-primary'"
