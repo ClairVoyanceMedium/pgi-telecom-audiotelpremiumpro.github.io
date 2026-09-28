@@ -15,6 +15,7 @@ const files=[
   "site/index.html",
   "site/site.css",
   "site/site.js",
+  "site/contact-widget.js",
   "site/hubspot-tracking.js",
   "site/manifest.webmanifest",
   "sitemap.xml",
@@ -111,15 +112,15 @@ for(const file of files){
 fs.copyFileSync(path.join(root,"index.html"),path.join(dist,"cockpit.html"));
 const publicBaseUrl=resolvePublicBaseUrl();
 const marketingSource=fs.readFileSync(path.join(root,"site","index.html"),"utf8");
-const marketingSite=injectLegalNavigation(applyPublicMetadata(marketingSource,publicBaseUrl));
-const marketingRoot=injectLegalNavigation(applyPublicMetadata(
+const marketingSite=injectContactWidget(injectLegalNavigation(applyPublicMetadata(marketingSource,publicBaseUrl)));
+const marketingRoot=injectContactWidget(injectLegalNavigation(applyPublicMetadata(
   marketingSource
     .replaceAll("../assets/","assets/")
     .replaceAll("../client.html","client.html")
     .replace('href="site.css"','href="site/site.css"')
     .replace('src="site.js"','src="site/site.js"'),
   publicBaseUrl
-));
+)));
 fs.writeFileSync(path.join(dist,"site","index.html"),marketingSite,"utf8");
 fs.writeFileSync(path.join(dist,"index.html"),marketingRoot,"utf8");
 const seoPages=[
@@ -148,7 +149,7 @@ for(const slug of seoPages){
   const source=fs.readFileSync(path.join(root,"site","seo",slug+".html"),"utf8");
   const targetDir=path.join(dist,slug);
   fs.mkdirSync(targetDir,{recursive:true});
-  fs.writeFileSync(path.join(targetDir,"index.html"),injectLegalNavigation(applyLandingMetadata(source,publicBaseUrl,slug)),"utf8");
+  fs.writeFileSync(path.join(targetDir,"index.html"),injectContactWidget(injectLegalNavigation(applyLandingMetadata(source,publicBaseUrl,slug))),"utf8");
 }
 
 
@@ -328,6 +329,11 @@ function latestGitDate(sourcePath){
   }catch{
     return "";
   }
+}
+
+function injectContactWidget(html){
+  if(html.includes('/site/contact-widget.js'))return html;
+  return html.replace("</head>",'<script src="/site/contact-widget.js" defer></script>\n</head>');
 }
 
 function injectLegalNavigation(html){
