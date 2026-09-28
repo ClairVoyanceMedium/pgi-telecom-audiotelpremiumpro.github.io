@@ -116,7 +116,7 @@ export async function submitHubSpotLead(input={},options={}){
 }
 
 export async function syncHubSpotCommercialLead(input={},options={}){
-  const token=clean(options.token,800);
+  const token=clean(options.token||process.env.PGI_HUBSPOT_PRIVATE_APP_TOKEN||process.env.HUBSPOT_PRIVATE_APP_TOKEN,800);
   if(!token)return {enabled:false,synced:false,contactId:null,dealId:null,dealCreated:false};
   const fetchImpl=options.fetchImpl||globalThis.fetch;
   if(typeof fetchImpl!=="function")throw problem("HUBSPOT_FETCH_UNAVAILABLE");
