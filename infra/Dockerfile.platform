@@ -6,7 +6,7 @@ ENV NODE_ENV=production
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
-COPY index.html client.html sitemap.xml manifest.webmanifest service-worker.js robots.txt .nojekyll ./
+COPY index.html client.html sitemap.xml manifest.webmanifest service-worker.js robots.txt llms.txt llms-full.txt fa0a7deb5d60bdf1260c8174ad8c71db.txt .nojekyll ./
 COPY site ./site
 COPY assets ./assets
 COPY backend ./backend
