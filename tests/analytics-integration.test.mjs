@@ -33,7 +33,7 @@ test("private surfaces and automatic client page views stay excluded",()=>{
 });
 
 test("business events fire only after successful milestones",()=>{
-  assert.match(site,/PGIAnalytics\.track\("generate_lead"/);
+  assert.match(site,/PGIAnalytics\?\.track\("generate_lead"/);
   assert.match(tracking,/wrapped\.register=/);
   assert.match(tracking,/wrapped\.login=/);
   assert.match(tracking,/wrapped\.google=/);
