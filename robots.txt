@@ -6,4 +6,44 @@ Disallow: /cockpit.html
 Disallow: /backend/
 Disallow: /docs/
 
+User-agent: Bingbot
+Allow: /
+Disallow: /client.html
+Disallow: /cockpit
+Disallow: /cockpit.html
+Disallow: /backend/
+Disallow: /docs/
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /client.html
+Disallow: /cockpit
+Disallow: /cockpit.html
+Disallow: /backend/
+Disallow: /docs/
+
+User-agent: Claude-SearchBot
+Allow: /
+Disallow: /client.html
+Disallow: /cockpit
+Disallow: /cockpit.html
+Disallow: /backend/
+Disallow: /docs/
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /client.html
+Disallow: /cockpit
+Disallow: /cockpit.html
+Disallow: /backend/
+Disallow: /docs/
+
+User-agent: Applebot
+Allow: /
+Disallow: /client.html
+Disallow: /cockpit
+Disallow: /cockpit.html
+Disallow: /backend/
+Disallow: /docs/
+
 Sitemap: https://audiotel-premium-pro.com/sitemap.xml
