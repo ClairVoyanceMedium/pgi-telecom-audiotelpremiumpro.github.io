@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {buildTransactionalMessage,emailHash,normalizeEmail,forwardInboundEmailToInternal} from "../backend/src/resend-email.mjs";
+import {buildTransactionalMessage,emailHash,normalizeEmail,forwardInboundEmailToInternal,sendPublicContactMessage} from "../backend/src/resend-email.mjs";
 
 const config={publicBaseUrl:"https://audiotel-premium-pro.com"};
 
@@ -146,6 +146,45 @@ test("inbound forwarding uses a separate key for full received-email content",as
     assert.equal(calls[0].authorization,"Bearer read-key");
     assert.equal(calls[1].authorization,"Bearer send-key");
     assert.match(JSON.parse(calls[1].body).text,/contenu complet/);
+  }finally{
+    globalThis.fetch=originalFetch;
+  }
+});
+
+
+test("public contact message is delivered internally with visitor Reply-To and escaped HTML",async()=>{
+  const originalFetch=globalThis.fetch;
+  const calls=[];
+  globalThis.fetch=async(input,init={})=>{
+    const url=typeof input==="string"?input:String(input?.url||input);
+    calls.push({url,method:init.method||"GET",body:init.body||""});
+    if(url==="https://api.resend.com/emails"&&init.method==="POST")return Response.json({id:"contact-test"},{status:200});
+    throw new Error("Unexpected request "+String(init.method||"GET")+" "+url);
+  };
+  try{
+    const result=await sendPublicContactMessage({
+      resendApiKey:"send-key",
+      transactionalDomain:"audiotel-premium-pro.com",
+      internalNotificationEmail:"contact.audiotel.premium.pro@gmail.com",
+      transactionalFromName:"Audiotel Premium Pro",
+      resendTimeoutMs:1000
+    },{
+      email:"Client@example.com",
+      message:"Bonjour <script>alert(1)</script>\nJ’ai une question.",
+      pagePath:"/tarif-numero-sva/",
+      pageTitle:"Tarif numéro SVA",
+      eventId:"public-contact/test-123"
+    });
+    assert.equal(result.sent,true);
+    assert.equal(calls.length,1);
+    const body=JSON.parse(calls[0].body);
+    assert.equal(body.to[0],"contact.audiotel.premium.pro@gmail.com");
+    assert.equal(body.reply_to,"client@example.com");
+    assert.match(body.from,/support@audiotel-premium-pro\.com/);
+    assert.match(body.text,/J’ai une question/);
+    assert.match(body.text,/\/tarif-numero-sva\//);
+    assert.doesNotMatch(body.html,/<script>/i);
+    assert.match(body.html,/&lt;script&gt;/i);
   }finally{
     globalThis.fetch=originalFetch;
   }

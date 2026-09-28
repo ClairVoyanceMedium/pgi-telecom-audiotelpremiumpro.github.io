@@ -801,3 +801,53 @@ test("FreeSWITCH normalization preserves PDD, hangup side and distinct RTP loss 
   assert.equal(out.payload.quality.rtt_ms,55);
   assert.equal(out.payload.quality.mos,4.31);
 });
+
+
+test("public contact endpoint stays minimal and routes replies to the visitor",async()=>{
+  const originalFetch=globalThis.fetch;
+  const providerCalls=[];
+  globalThis.fetch=async(input,init={})=>{
+    const url=typeof input==="string"?input:String(input?.url||input);
+    if(url==="https://api.resend.com/emails"&&init.method==="POST"){
+      providerCalls.push(JSON.parse(String(init.body||"{}")));
+      return Response.json({id:"contact-provider-test"},{status:200});
+    }
+    throw new Error("Unexpected provider request "+String(init.method||"GET")+" "+url);
+  };
+  const app=createBackend({config:config({
+    transactionalEmailEnabled:true,
+    resendApiKey:"re_test_contact_"+ "x".repeat(24),
+    transactionalDomain:"audiotel-premium-pro.com",
+    internalNotificationEmail:"contact.audiotel.premium.pro@gmail.com",
+    transactionalReplyTo:"contact.audiotel.premium.pro@gmail.com",
+    transactionalFromName:"Audiotel Premium Pro",
+    resendTimeoutMs:1000
+  })});
+  const address=await app.listen(),base=`http://127.0.0.1:${address.port}`;
+  try{
+    let response=await originalFetch(base+"/api/v1/public/contact",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({email:"client@example.com",message:"Bonjour, je souhaite un renseignement.",page_path:"/numero-sva/",page_title:"Numéro SVA",website:""})
+    });
+    assert.equal(response.status,202);
+    assert.equal((await response.json()).accepted,true);
+    assert.equal(providerCalls.length,1);
+    assert.equal(providerCalls[0].to[0],"contact.audiotel.premium.pro@gmail.com");
+    assert.equal(providerCalls[0].reply_to,"client@example.com");
+    assert.match(providerCalls[0].from,/support@audiotel-premium-pro\.com/);
+    assert.match(providerCalls[0].text,/je souhaite un renseignement/);
+
+    response=await originalFetch(base+"/api/v1/public/contact",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({email:"spam@example.com",message:"spam",website:"filled-by-bot"})
+    });
+    assert.equal(response.status,202);
+    assert.equal((await response.json()).accepted,false);
+    assert.equal(providerCalls.length,1);
+  }finally{
+    globalThis.fetch=originalFetch;
+    await app.close();
+  }
+});
