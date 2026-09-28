@@ -5,6 +5,7 @@ import fs from "node:fs";
 const html=fs.readFileSync("site/index.html","utf8");
 const css=fs.readFileSync("site/site.css","utf8");
 const js=fs.readFileSync("site/site.js","utf8");
+const contactWidget=fs.readFileSync("site/contact-widget.js","utf8");
 const robots=fs.readFileSync("robots.txt","utf8");
 const sitemap=fs.readFileSync("sitemap.xml","utf8");
 const cockpit=fs.readFileSync("index.html","utf8");
@@ -90,14 +91,15 @@ test("public site provides a real registration handoff without leaking PII in th
 
 
 test("floating contact stays low-friction and submits directly without opening an email client",()=>{
-  assert.match(js,/contact-widget-button/);
-  assert.match(js,/Votre adresse email/);
-  assert.match(js,/Votre message/);
-  assert.match(js,/\/api\/v1\/public\/contact/);
+  assert.match(contactWidget,/contact-widget-button/);
+  assert.match(contactWidget,/Votre adresse email/);
+  assert.match(contactWidget,/Votre message/);
+  assert.match(contactWidget,/\/api\/v1\/public\/contact/);
   assert.match(css,/\.contact-widget-panel/);
   assert.match(css,/\.contact-widget-honeypot/);
-  assert.doesNotMatch(js,/mailto:/i);
-  assert.doesNotMatch(js,/Votre téléphone|Votre prénom|Objet de votre demande/);
+  assert.doesNotMatch(contactWidget,/mailto:/i);
+  assert.doesNotMatch(contactWidget,/Votre téléphone|Votre prénom|Objet de votre demande/);
+  assert.match(buildStatic,/site\/contact-widget\.js/);
 });
 
 test("dedicated opening page preselects profiles and preserves an unfinished session draft",()=>{
