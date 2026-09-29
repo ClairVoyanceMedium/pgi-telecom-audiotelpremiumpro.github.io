@@ -225,3 +225,14 @@ html{scroll-padding-top:150px}
 .cp-remember strong{font-size:10px;color:#d9dde1}
 .cp-remember small{font-size:8.5px;font-weight:550;line-height:1.35;color:var(--muted)}
 .cp-remember input{accent-color:#d7a76a}
+
+
+/* client-brand-home-link-v35 */
+.cp-home-link{display:inline-flex;align-items:center;flex:0 0 auto;border-radius:10px}
+.cp-home-link:focus-visible{outline:2px solid #c99a6b;outline-offset:4px}
+.cp-logo-auth{width:min(250px,68vw);max-height:73px}
+.cp-logo-header{width:min(205px,36vw);max-height:55px}
+@media(max-width:680px){
+  .cp-logo-auth{width:min(230px,72vw);max-height:68px}
+  .cp-logo-header{width:min(185px,48vw);max-height:51px}
+}
