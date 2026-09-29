@@ -207,7 +207,7 @@ Le contrôleur GA4 mesure désormais, après consentement uniquement, les intera
 
 Les valeurs de `section_id` sont limitées à : `hero`, `calculator`, `proof`, `platform`, `pricing`, `how_it_works`, `faq`, `audiences`, `opening`, `benefits`, `decision_strip`, `final_cta`.
 
-La configuration GA4 fixe explicitement `page_location` à `origin + pathname`. Les paramètres de requête et fragments ne sont donc pas envoyés dans la page vue automatique, ce qui évite notamment de collecter des jetons, codes ou paramètres techniques présents dans certaines URL du parcours client.
+La configuration GA4 utilise une fonction de nettoyage de `page_location` : elle conserve uniquement les paramètres marketing nécessaires à l’attribution (`utm_*`, `gclid`, `dclid`, `gbraid`, `wbraid`, `gad_source`, `gad_campaignid`) et supprime les autres paramètres de requête ainsi que les fragments. Cela préserve l’attribution des campagnes sans envoyer de jetons, codes ou paramètres techniques potentiellement sensibles présents dans certaines URL du parcours client.
 
 Dimensions personnalisées de portée événement à enregistrer dans GA4 pour exploiter ces nouveaux événements dans les rapports :
 - `section_id`
