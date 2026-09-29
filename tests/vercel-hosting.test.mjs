@@ -26,6 +26,7 @@ test("production config accepts Vercel Git commit SHA",()=>{
   assert.match(config.databaseUrl,/neon\.tech/);
   assert.equal(config.trustProxy,true);
   assert.equal(config.protectMachineEndpoints,true);
+  assert.equal(config.publicBaseUrl,"https://audiotel-premium-pro.com");
 });
 
 test("Vercel container is API-only and never migrates on cold start",()=>{
@@ -46,9 +47,12 @@ test("Vercel container is API-only and never migrates on cold start",()=>{
   assert.doesNotMatch(docker,/DATABASE_PUBLIC_URL/);
   const build=fs.readFileSync("scripts/build-static.mjs","utf8");
   const server=fs.readFileSync("backend/server.mjs","utf8");
+  const backendConfig=fs.readFileSync("backend/src/config.mjs","utf8");
   assert.match(build,/audiotel-premium-pro\.com/);
   assert.match(build,/PGI_PUBLIC_BASE_URL/);
   assert.doesNotMatch(build,/VERCEL_PROJECT_PRODUCTION_URL|VERCEL_URL/);
+  assert.match(backendConfig,/https:\/\/audiotel-premium-pro\.com/);
+  assert.doesNotMatch(backendConfig,/VERCEL_PROJECT_PRODUCTION_URL/);
   assert.match(build,/marketingRoot/);
   assert.match(build,/cockpit\.html/);
   assert.match(build,/Sitemap:/);
