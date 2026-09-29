@@ -236,3 +236,10 @@ html{scroll-padding-top:150px}
   .cp-logo-auth{width:min(230px,72vw);max-height:68px}
   .cp-logo-header{width:min(185px,48vw);max-height:51px}
 }
+
+
+/* client-mobile-logo-v36 */
+@media(max-width:680px){
+  .cp-logo-auth{width:min(250px,76vw);max-height:72px}
+  .cp-logo-header{width:min(210px,54vw);max-height:58px}
+}
