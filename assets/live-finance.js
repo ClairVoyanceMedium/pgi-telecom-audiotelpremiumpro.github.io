@@ -7,8 +7,8 @@ function money(v,c){try{return new Intl.NumberFormat("fr-FR",{style:"currency",c
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(ch){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[ch]})}
 function ui(){
  if($("live-jackpot-card"))return;
- var box=document.querySelector(".panel.realtime .live-stats");if(!box)return;
- box.insertAdjacentHTML("beforebegin",'<div id="live-jackpot-card" class="live-jackpot" data-active="false"><div class="lj-head"><div><span class="lj-label">JACKPOT GLOBAL EN DIRECT</span><strong id="live-jackpot">0,00 €</strong><span id="live-jackpot-calls">Aucun appel en cours</span></div><div class="lj-speed"><span>VITESSE ACTUELLE</span><b id="live-jackpot-rate">0,00 € / seconde</b></div></div><div class="lj-period"><span>Aujourd’hui + direct</span><b id="live-jackpot-period">0,00 €</b></div><div class="lj-ranking"><div class="lj-ranking-title"><span>TOP CLIENTS EN DIRECT</span><small>Classement par revenu opérateur généré maintenant</small></div><div id="live-jackpot-ranking"><small>Aucun client en appel.</small></div></div><small>Estimation seconde par seconde. Les CDR et rapprochements opérateur restent l’autorité comptable.</small></div>');
+ var box=document.querySelector(".main .topbar");if(!box)return;
+ box.insertAdjacentHTML("afterend",'<div id="live-jackpot-card" class="live-jackpot live-jackpot-featured" data-active="false"><div class="lj-head"><div><span class="lj-label">JACKPOT GLOBAL EN DIRECT</span><strong id="live-jackpot">0,00 €</strong><span id="live-jackpot-calls">Le pouls financier de la plateforme · aucun appel en cours</span></div><div class="lj-speed"><span>VITESSE ACTUELLE</span><b id="live-jackpot-rate">0,00 € / seconde</b></div></div><div class="lj-period"><span>Aujourd’hui + direct</span><b id="live-jackpot-period">0,00 €</b></div><div class="lj-ranking"><div class="lj-ranking-title"><span>TOP CLIENTS EN DIRECT</span><small>Classement par revenu opérateur généré maintenant</small></div><div id="live-jackpot-ranking"><small>Aucun client en appel.</small></div></div><small>Estimation seconde par seconde. Les CDR et rapprochements opérateur restent l’autorité comptable.</small></div>');
  if(!$("live-finance-css")){var l=document.createElement("link");l.id="live-finance-css";l.rel="stylesheet";l.href="assets/live-finance.css";document.head.appendChild(l)}
 }
 function renderRanking(){
@@ -19,7 +19,7 @@ function paint(){
  ui();var d=s.data||{},calls=n(d.live_calls),cur=d.live_currency||d.currency||"EUR",mixed=!!d.live_mixed_currency,elapsed=Math.max(0,Math.min(30,(Date.now()-(s.at||Date.now()))/1000));
  var live=Math.max(0,n(d.live_upstream_payout_ht)+elapsed*n(d.live_upstream_rate_ht_per_second)),card=$("live-jackpot-card");if(card)card.dataset.active=calls>0?"true":"false";
  if($("live-jackpot"))$("live-jackpot").textContent=mixed?"Multi-devises":money(live,cur);
- if($("live-jackpot-calls"))$("live-jackpot-calls").textContent=calls?calls+" appel"+(calls>1?"s":"")+" actifs":"Aucun appel en cours";
+ if($("live-jackpot-calls"))$("live-jackpot-calls").textContent=calls?calls+" appel"+(calls>1?"s":"")+" actifs · performance en direct":"Le pouls financier de la plateforme · aucun appel en cours";
  if($("live-jackpot-rate"))$("live-jackpot-rate").textContent=calls&&!mixed?"+"+money(d.live_upstream_rate_ht_per_second,cur)+" / seconde":"0,00 € / seconde";
  if($("live-jackpot-period"))$("live-jackpot-period").textContent=mixed?"—":money(n(d.expected_payout_ht)+live,cur);
  renderRanking();

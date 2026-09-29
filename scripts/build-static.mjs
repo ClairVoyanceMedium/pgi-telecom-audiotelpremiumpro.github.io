@@ -42,6 +42,7 @@ const files=[
   "assets/customer-email-verification.js",
   "assets/client-live-finance.js",
   "assets/client-live-finance.css",
+  "assets/password-visibility.js",
   "assets/client-analytics-plus.js",
   "assets/client-account-proof.js",
   "assets/client-experience-command-center.js",
@@ -340,7 +341,17 @@ function simplifyPublicShell(html){
     .replace(/<nav aria-label="Navigation principale">[\s\S]*?<\/nav>/,nav)
     .replace(/<a class="header-login" href="[^"]*client\.html">[\s\S]*?<\/a>/,'<a class="header-login" href="/client.html"><span>Déjà client ?</span><strong>Se connecter</strong></a>')
     .replace(/<section class="section section-dark"><div class="wrap"><div class="section-head"><p class="eyebrow">DOCUMENTS (?:JURIDIQUES|ASSOCIÉS)<\/p><h2>[\s\S]*?<\/h2><\/div><div class="footer-links">[\s\S]*?<\/div><\/div><\/section>/g,legalAccess)
-    .replaceAll("<span>Solution PGI Telecom</span>","<span>Une solution PGI Telecom</span>");
+    .replaceAll("<span>Solution PGI Telecom</span>","<span>Une solution PGI Telecom</span>")
+    .replaceAll("Demander l’ouverture de mon compte","Démarrer maintenant")
+    .replaceAll("Découvrir la plateforme","Voir les avantages")
+    .replaceAll("Comparer un écart économique","Simuler vos économies")
+    .replaceAll("Comparer les économies potentielles","Simuler vos économies")
+    .replaceAll("Préparer ma demande","Démarrer maintenant")
+    .replaceAll("<span>Plateforme Audiotel &amp; SVA</span>","<span>Audiotel simple &amp; économique</span>")
+    .replaceAll("<span>3 € TTC / mois pour la plateforme</span>","<span>3 € / mois</span>")
+    .replaceAll("<span>3 € TTC / mois</span>","<span>3 € / mois</span>")
+    .replaceAll("<span>Particulier ou professionnel</span>","<span>Particuliers &amp; pros</span>")
+    .replaceAll("<span>Activation soumise à validation</span>","<span>Activation après validation</span>");
 }
 
 function injectContactWidget(html){

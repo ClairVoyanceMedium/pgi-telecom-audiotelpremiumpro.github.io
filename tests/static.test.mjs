@@ -725,3 +725,21 @@ test("client can explicitly keep a secure session for 30 days",()=>{
   assert.match(config,/PGI_CUSTOMER_REMEMBER_TTL_SECONDS,2592000,86400,7776000/);
   assert.match(clientPortalCss,/customer-remember-session-v149/);
 });
+
+test("passwords can be shown on client and staff login without changing stored credentials",()=>{
+  const passwordUi=read("assets/password-visibility.js");
+  assert.match(clientPortal,/assets\/password-visibility\.js/);
+  assert.match(index,/assets\/password-visibility\.js/);
+  assert.match(passwordUi,/Afficher le mot de passe/);
+  assert.match(passwordUi,/Masquer le mot de passe/);
+  assert.match(passwordUi,/input\.type=show\?"text":"password"/);
+  assert.match(passwordUi,/paddingRight="46px"/);
+});
+test("client and staff jackpots are promoted to the top of each dashboard",()=>{
+  assert.match(clientLiveFinance,/#client-main \.cp-intro/);
+  assert.match(clientLiveFinance,/VOTRE JACKPOT EN DIRECT/);
+  assert.doesNotMatch(clientLiveFinance,/var box=\$\("client-overview"\)/);
+  assert.match(adminLiveFinance,/\.main \.topbar/);
+  assert.match(adminLiveFinance,/live-jackpot-featured/);
+  assert.doesNotMatch(adminLiveFinance,/\.panel\.realtime \.live-stats/);
+});

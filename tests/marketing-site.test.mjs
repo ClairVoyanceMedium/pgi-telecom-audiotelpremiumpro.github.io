@@ -38,7 +38,7 @@ test("focused SEO pages remain published without cluttering the homepage",()=>{
 });
 
 test("public pricing and savings simulation stay explicit and non-guaranteed",()=>{
-  assert.match(html,/3 € TTC \/ mois/);
+  assert.match(html,/3 € \/ mois/);
   assert.match(html,/Facturé mensuellement d’avance/);
   assert.match(html,/Contrat à durée indéterminée/);
   assert.match(html,/Résiliation possible à tout moment/);
@@ -289,4 +289,14 @@ test("existing customers get an explicit login entry in every public shell",()=>
   assert.match(buildStatic,/Se connecter/);
   assert.match(contactCss,/hero-savings-and-client-login-v147/);
   assert.match(contactCss,/header-actions \.header-login\{display:inline-flex!important/);
+});
+
+test("public commercial copy is concise while legal and machine-readable price stays precise",()=>{
+  assert.match(html,/AUDIOTEL PAS CHER · 3 € \/ MOIS/);
+  assert.match(html,/Pour seulement 3 € par mois/);
+  assert.match(html,/Prix TTC : 3 € \/ mois/);
+  assert.match(buildStatic,/Démarrer maintenant/);
+  assert.match(buildStatic,/Audiotel simple &amp; économique/);
+  assert.match(buildStatic,/Activation après validation/);
+  assert.match(html,/3 € TTC\/mois/);
 });
