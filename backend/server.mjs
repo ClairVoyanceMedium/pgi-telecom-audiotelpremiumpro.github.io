@@ -94,7 +94,8 @@ export function createBackend(options={}){
         const ga4=ga4MeasurementState(config);
         return done(res,metrics,started,"health",200,{
           status:"ok",timestamp:new Date().toISOString(),version:config.version,release:config.releaseId||null,mode:config.mode,
-          analytics_server_ready:ga4.enabled
+          analytics_server_ready:ga4.enabled,
+          hubspot_crm_ready:Boolean(process.env.PGI_HUBSPOT_PRIVATE_APP_TOKEN||process.env.HUBSPOT_PRIVATE_APP_TOKEN)
         });
       }
       if(method==="GET"&&pathname==="/api/v1/ready"){
