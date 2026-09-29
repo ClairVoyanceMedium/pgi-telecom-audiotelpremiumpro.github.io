@@ -38,12 +38,12 @@ test("focused SEO pages remain published without cluttering the homepage",()=>{
 });
 
 test("public pricing and savings simulation stay explicit and non-guaranteed",()=>{
-  assert.match(html,/3 € \/ mois/);
+  assert.match(html,/3 € TTC \/ mois/);
   assert.match(html,/Le mois en cours est offert/);
   assert.match(html,/Sans engagement de durée/);
   assert.match(html,/Résiliation possible à tout moment/);
   assert.match(html,/Écart de reversement estimé \/ minute/);
-  assert.match(html,/Économies potentielles \/ mois/);
+  assert.match(html,/Gain potentiel \/ mois/);
   assert.match(html,/Simulation indicative et non contractuelle/);
   assert.match(html,/ne constituent pas une garantie d’économies/);
   assert.doesNotMatch(html,/revenu garanti|gains garantis|économies garanties/i);
@@ -144,7 +144,7 @@ test("dedicated opening page preselects profiles and preserves an unfinished ses
 test("marketing conversion is simplified, product-led and non-manipulative",()=>{
   assert.match(html,/NUMÉRO SURTAXÉ · AUDIOTEL · SUIVI EN LIGNE/);
   assert.match(html,/Monétisez vos appels/);
-  assert.match(html,/Simuler vos économies/);
+  assert.match(html,/Simuler votre gain potentiel/);
   assert.match(html,/Demander mon numéro/);
   assert.match(html,/audiotel-brand-logo-v33\.png/);
   assert.doesNotMatch(html,/places restantes|plus que \d+|compte à rebours|dernière chance|clients en ligne/i);
@@ -277,16 +277,16 @@ test("hero replaces the fixed 1800 euro decoration with the real savings simulat
   assert.doesNotMatch(html,/class="hero-card"/);
   assert.doesNotMatch(html,/1 800 € HT/);
   assert.match(html,/class="hero-savings"/);
-  assert.match(html,/Économies potentielles \/ mois/);
+  assert.match(html,/Gain potentiel \/ mois/);
   assert.equal((html.match(/id="simulateur"/g)||[]).length,1);
 });
 
 test("existing customers get an explicit login entry in every public shell",()=>{
   assert.match(html,/header-login[^>]*href="\/client\.html"/);
   assert.match(html,/Déjà client \?/);
-  assert.match(html,/Se connecter/);
+  assert.match(html,/Se connecter à mon compte client/);
   assert.match(buildStatic,/header-login/);
-  assert.match(buildStatic,/Se connecter/);
+  assert.match(buildStatic,/Se connecter à mon compte client/);
   assert.match(contactCss,/hero-savings-and-client-login-v147/);
   assert.match(contactCss,/header-actions \.header-login\{display:inline-flex!important/);
 });
@@ -294,7 +294,7 @@ test("existing customers get an explicit login entry in every public shell",()=>
 test("public commercial copy is concise while legal and machine-readable price stays precise",()=>{
   assert.match(html,/NUMÉRO SURTAXÉ · AUDIOTEL · SUIVI EN LIGNE/);
   assert.match(html,/Le mois en cours est offert/);
-  assert.match(html,/prix TTC 3 € \/ mois/i);
+  assert.match(html,/3 € TTC \/ mois/i);
   assert.match(buildStatic,/Demander mon numéro/);
   assert.match(buildStatic,/Numéro surtaxé &amp; espace client/);
   assert.match(buildStatic,/Activation après validation/);
@@ -307,7 +307,7 @@ test("fixed monthly subscription is never presented as a starting price",()=>{
 });
 
 test("mobile offer states the fixed subscription and frames competitive value as an objective",()=>{
-  assert.match(html,/3 € \/ mois/);
+  assert.match(html,/3 € TTC \/ mois/);
   assert.match(html,/Des reversements plus généreux\./);
   assert.doesNotMatch(html,/À partir de <strong>3 €/);
 });
@@ -323,10 +323,10 @@ test("subscription is clearly marketed as no-commitment while keeping the period
 
 test("current month is offered before the fixed monthly subscription starts",()=>{
   assert.match(html,/Mois en cours offert/);
-  assert.match(html,/Puis 3 € \/ mois/);
+  assert.match(html,/Puis 3 € TTC \/ mois/);
   assert.match(html,/à partir du mois suivant/i);
   assert.match(application,/Mois en cours offert/);
-  assert.match(application,/Puis 3 € \/ mois/);
+  assert.match(application,/Puis 3 € TTC \/ mois/);
 });
 
 test("homepage leads with business benefits while preserving technical SEO facts",()=>{
@@ -353,4 +353,21 @@ test("homepage explains the product before selling benefits",()=>{
   assert.match(html,/Demander mon numéro/);
   assert.match(application,/DEMANDE DE NUMÉRO SURTAXÉ/);
   assert.match(application,/Demandez votre numéro surtaxé ou la portabilité/);
+});
+
+test("pricing and simulator use explicit TTC and current-offer comparison",()=>{
+  assert.doesNotMatch(html,/>[^<]*3 € \/ mois[^<]*</);
+  assert.doesNotMatch(html,/>[^<]*3 € par mois[^<]*</);
+  assert.match(html,/3 € TTC \/ mois/);
+  assert.match(html,/3 € TTC par mois/);
+  assert.match(html,/Simuler votre gain potentiel/);
+  assert.match(html,/Comparez votre offre actuelle à la nôtre/);
+  assert.match(html,/reversement de votre offre actuelle avec la proposition Audiotel Premium Pro/);
+  assert.match(html,/Écart de reversement entre les deux offres \/ minute/);
+  assert.match(html,/Gain potentiel \/ mois/);
+});
+test("public login makes clear that access is for existing clients",()=>{
+  assert.match(html,/Déjà client \?/);
+  assert.match(html,/Se connecter à mon compte client/);
+  assert.match(buildStatic,/Se connecter à mon compte client/);
 });
