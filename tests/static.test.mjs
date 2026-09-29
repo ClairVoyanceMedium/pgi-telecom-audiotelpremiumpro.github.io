@@ -701,3 +701,11 @@ test("public marketing pages prevent document-level horizontal drift",()=>{
   assert.match(siteCss,/body\{margin:0;position:relative;width:100%;min-width:0;max-width:100%;overflow-x:hidden!important;overscroll-behavior-x:none;touch-action:pan-y pinch-zoom/);
   assert.match(siteCss,/\.wrap\{width:var\(--wrap\);max-width:100%;min-width:0/);
 });
+
+test("client and cockpit footers remain readable on mobile",()=>{
+  assert.match(clientPortalJs,/class="cp-footer-links"/);
+  assert.doesNotMatch(clientPortalJs,/data-legal-links><a[^;]+ · /);
+  assert.match(clientAdminTheme,/client-footer-responsive-v145/);
+  assert.match(clientAdminTheme,/grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(css,/cockpit-footer-responsive-v145/);
+});

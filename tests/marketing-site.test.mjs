@@ -231,3 +231,12 @@ test("public forms keep validation inside the responsive layout instead of nativ
   assert.match(contactWidget,/checkValidity\(\)/);
   assert.match(contactCss,/font-size:16px/);
 });
+
+test("public footers stay readable and separated on mobile",()=>{
+  assert.match(contactCss,/responsive-global-footer-v145/);
+  assert.match(contactCss,/footer \.footer-legal/);
+  assert.match(contactCss,/grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(contactCss,/overflow-wrap:normal;word-break:normal/);
+  assert.match(buildStatic,/class="footer-legal"/);
+  assert.match(buildStatic,/class="site-footer"/);
+});

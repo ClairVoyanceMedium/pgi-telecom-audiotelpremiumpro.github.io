@@ -339,8 +339,10 @@ function injectContactWidget(html){
 }
 
 function injectLegalNavigation(html){
-  if(html.includes('aria-label="Informations juridiques"'))return html;
-  const nav='<div class="wrap"><nav class="footer-links" aria-label="Informations juridiques"><a href="/mentions-legales/">Mentions légales</a><a href="/conditions-utilisation/">CGU</a><a href="/conditions-abonnement/">Conditions</a><a href="/confidentialite/">Confidentialité</a><a href="/accord-traitement-donnees/">DPA</a><a href="/cookies-traceurs/">Cookies</a><a href="/resilier-contrat/">Résilier votre contrat</a><a href="/retractation/">Rétractation</a></nav></div>';
+  const marker='aria-label="Informations juridiques"';
+  if(html.includes(marker))return html.replaceAll('class="footer-links" '+marker,'class="footer-legal" '+marker);
+  if(html.includes('class="site-footer"'))return html;
+  const nav='<div class="wrap footer-legal-wrap"><nav class="footer-legal" aria-label="Informations juridiques"><a href="/mentions-legales/">Mentions légales</a><a href="/conditions-utilisation/">CGU</a><a href="/conditions-abonnement/">Conditions</a><a href="/confidentialite/">Confidentialité</a><a href="/accord-traitement-donnees/">DPA</a><a href="/cookies-traceurs/">Cookies</a><a href="/resilier-contrat/">Résilier votre contrat</a><a href="/retractation/">Rétractation</a></nav></div>';
   return html.replace("</footer>",nav+"</footer>");
 }
 
