@@ -147,7 +147,7 @@ export async function createStripeCheckout(config,billing,idempotencyKey,analyti
     subscription_data:{metadata,description:"Abonnement plateforme Audiotel Premium Pro, durée indéterminée, facturation mensuelle d’avance. Reversements SVA distincts."},
     billing_address_collection:"required",
     tax_id_collection:{enabled:true},
-    custom_text:{submit:{message:"3 € TTC/mois, facturé mensuellement d’avance. Contrat à durée indéterminée. Résiliation possible à tout moment avec effet à la fin de la période en cours. Les reversements SVA restent distincts."}},
+    custom_text:{submit:{message:"3 € TTC/mois, sans engagement de durée, facturé mensuellement d’avance. Résiliable à tout moment avec effet normal à la fin de la période déjà payée. Les reversements SVA restent distincts."}},
     locale:"auto"
   };
   const customer=String(subscription.provider_customer_reference||"");

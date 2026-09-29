@@ -137,3 +137,9 @@ test("online consumer withdrawal is direct, explicit, durable and acknowledged",
   assert.match(migration,/CREATE TABLE customer_withdrawal_requests/);
   assert.doesNotMatch(migration,/requester_ip\s+text/);
 });
+
+test("subscription terms state no minimum commitment consistently",()=>{
+  const terms=read("site/seo/conditions-abonnement.html");
+  assert.match(terms,/sans engagement de durée/i);
+  assert.match(terms,/résiliation à tout moment/i);
+});

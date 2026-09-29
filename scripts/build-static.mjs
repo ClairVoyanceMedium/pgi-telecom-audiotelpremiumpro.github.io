@@ -351,7 +351,8 @@ function simplifyPublicShell(html){
     .replaceAll("<span>3 € TTC / mois pour la plateforme</span>","<span>3 € / mois</span>")
     .replaceAll("<span>3 € TTC / mois</span>","<span>3 € / mois</span>")
     .replaceAll("<span>Particulier ou professionnel</span>","<span>Particuliers &amp; pros</span>")
-    .replaceAll("<span>Activation soumise à validation</span>","<span>Activation après validation</span>");
+    .replaceAll("<span>Activation soumise à validation</span>","<span>Activation après validation</span>")
+    .replaceAll("<span>Activation après validation</span>","<span>Activation après validation</span><span>Sans engagement de durée</span>");
 }
 
 function injectContactWidget(html){

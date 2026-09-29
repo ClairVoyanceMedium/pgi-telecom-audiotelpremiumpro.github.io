@@ -311,3 +311,12 @@ test("mobile offer states the fixed subscription and frames competitive value as
   assert.match(html,/Des reversements plus généreux\./);
   assert.doesNotMatch(html,/À partir de <strong>3 €/);
 });
+
+test("subscription is clearly marketed as no-commitment while keeping the period-end effect explicit",()=>{
+  assert.match(html,/Sans engagement de durée/);
+  assert.match(html,/Résiliable à tout moment/);
+  assert.match(html,/effet normal à la fin de la période déjà payée/);
+  assert.match(application,/Sans engagement de durée/);
+  assert.match(application,/Résiliable à tout moment/);
+  assert.match(buildStatic,/Sans engagement de durée/);
+});
