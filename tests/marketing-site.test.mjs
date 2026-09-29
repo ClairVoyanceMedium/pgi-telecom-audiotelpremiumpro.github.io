@@ -415,3 +415,13 @@ test("hero brand signature is metallic and portability is marketed as free with 
   assert.match(css,/-webkit-text-fill-color:transparent/);
   assert.match(terms,/PGI Telecom ne facture pas de frais de portabilité entrante au titre de la plateforme/);
 });
+
+
+test("reversement page targets the best-reversement query through technical metadata only",()=>{
+  const payouts=fs.readFileSync("site/seo/reversement-audiotel.html","utf8");
+  assert.match(payouts,/Meilleur reversement Audiotel : comparer taux et gains \| PGI Telecom/);
+  assert.match(payouts,/"@type":"BreadcrumbList"/);
+  assert.match(payouts,/"@type":"FAQPage"/);
+  assert.match(payouts,/"dateModified":"2026-09-29"/);
+  assert.match(sitemap,/reversement-audiotel\/<\/loc><lastmod>2026-09-29<\/lastmod>/);
+});
