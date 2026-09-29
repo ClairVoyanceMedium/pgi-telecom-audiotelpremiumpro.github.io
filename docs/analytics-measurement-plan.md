@@ -193,3 +193,25 @@ Flux remboursement :
 Les livraisons sont journalisées par clé stable pour empêcher un webhook Stripe répété de compter deux fois le même achat ou remboursement. Une indisponibilité GA4 ne modifie jamais le statut de paiement et ne bloque jamais le webhook métier Stripe.
 
 Le secret Measurement Protocol reste exclusivement dans l'environnement serveur. Il ne doit jamais être injecté dans un fichier JavaScript public, une page HTML, Stripe Metadata ou HubSpot. Chaque envoi serveur force également `ad_user_data=DENIED` et `ad_personalization=DENIED` dans le bloc de consentement Measurement Protocol, afin qu’aucun usage publicitaire ne soit implicitement activé par ces conversions serveur.
+
+
+## Couverture comportementale étendue — 29 septembre 2026
+
+Le contrôleur GA4 mesure désormais, après consentement uniquement, les interactions suivantes sans envoyer de texte libre ni de données personnelles :
+
+- `section_view` : première exposition réelle d’une section importante avec `section_id` à faible cardinalité ;
+- `scroll_depth` : franchissement unique des seuils 25 %, 50 %, 75 % et 90 % avec `scroll_percent` ;
+- `site_error` : erreur JavaScript ou promesse rejetée, avec uniquement `error_type=js_error` ou `promise_rejection` ;
+- clics d’ancres internes majeures de l’accueil via `select_content` ;
+- premier usage du calculateur d’accueil via le sélecteur réel `data-savings-calculator`.
+
+Les valeurs de `section_id` sont limitées à : `hero`, `calculator`, `proof`, `platform`, `pricing`, `how_it_works`, `faq`, `audiences`, `opening`, `benefits`, `decision_strip`, `final_cta`.
+
+La configuration GA4 fixe explicitement `page_location` à `origin + pathname`. Les paramètres de requête et fragments ne sont donc pas envoyés dans la page vue automatique, ce qui évite notamment de collecter des jetons, codes ou paramètres techniques présents dans certaines URL du parcours client.
+
+Dimensions personnalisées de portée événement à enregistrer dans GA4 pour exploiter ces nouveaux événements dans les rapports :
+- `section_id`
+- `scroll_percent`
+- `error_type`
+
+Ces définitions complètent les dimensions déjà prévues et ne remplacent aucune dimension native GA4.
