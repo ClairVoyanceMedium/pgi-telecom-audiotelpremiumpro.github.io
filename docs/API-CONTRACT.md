@@ -450,3 +450,10 @@ Lorsqu’un tenant passe à l’état `active` et qu’aucun utilisateur client 
 L’email ne contient **jamais de mot de passe en clair ni de mot de passe temporaire**. Il contient un lien temporaire et à usage unique vers `client.html?invite=...` afin que le client choisisse lui-même un mot de passe d’au moins 12 caractères. Le serveur ne conserve que le hash du jeton d’invitation puis le hash scrypt du mot de passe choisi.
 
 Après activation, le client peut modifier son mot de passe dans les réglages de sécurité. Le flux « Mot de passe oublié ? » envoie déjà un lien de réinitialisation temporaire et à usage unique.
+
+
+### Option « Rester connecté »
+
+La connexion client accepte le booléen `remember_me`. Lorsqu’il vaut `true`, la session client est signée pour 30 jours par défaut (`PGI_CUSTOMER_REMEMBER_TTL_SECONDS=2592000`, borne maximale 90 jours). Sans cette option, la durée normale `PGI_SESSION_TTL_SECONDS` reste utilisée.
+
+Les cookies restent `__Host-`, `Secure`, `SameSite=Strict`; le cookie de session reste `HttpOnly`. Le choix ne stocke jamais le mot de passe dans le navigateur. Une déconnexion, un changement de mot de passe ou une réinitialisation invalide l’accès selon les règles de session existantes.

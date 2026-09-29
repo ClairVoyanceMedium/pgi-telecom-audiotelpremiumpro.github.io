@@ -341,8 +341,9 @@ export function createBackend(options={}){
           return done(res,metrics,started,"customer.auth.google",409,{error:{code:"CUSTOMER_TENANT_REQUIRED"},tenants:memberships.map(x=>({id:x.public_id,slug:x.slug,name:x.display_name,role:x.role}))});
         }
         authBuckets.delete(authKey);
-        const issued=issueSession({secret:config.sessionSecret,user:{id:auth.id,role:"customer",name:auth.display_name||auth.email,actor_type:"customer",tenant_id:Number(membership.tenant_id),tenant_public_id:membership.public_id,customer_role:membership.role,authorization_version:Number(membership.authorization_version),session_version:Number(auth.session_version)},ttlSeconds:config.sessionTtlSeconds});
-        return done(res,metrics,started,"customer.auth.google",200,{user:{id:auth.id,name:auth.display_name||auth.email,email:auth.email,role:membership.role,tenant:{id:membership.public_id,name:membership.display_name}}},{"Set-Cookie":[customerSessionCookie(issued.token,config.sessionTtlSeconds),customerCsrfCookie(issued.csrf,config.sessionTtlSeconds)]});
+        const sessionTtl=body.remember_me===true?Number(config.customerRememberTtlSeconds||2592000):config.sessionTtlSeconds;
+        const issued=issueSession({secret:config.sessionSecret,user:{id:auth.id,role:"customer",name:auth.display_name||auth.email,actor_type:"customer",tenant_id:Number(membership.tenant_id),tenant_public_id:membership.public_id,customer_role:membership.role,authorization_version:Number(membership.authorization_version),session_version:Number(auth.session_version)},ttlSeconds:sessionTtl});
+        return done(res,metrics,started,"customer.auth.google",200,{user:{id:auth.id,name:auth.display_name||auth.email,email:auth.email,role:membership.role,tenant:{id:membership.public_id,name:membership.display_name}},remembered:body.remember_me===true},{"Set-Cookie":[customerSessionCookie(issued.token,sessionTtl),customerCsrfCookie(issued.csrf,sessionTtl)]});
       }
 
       if(method==="POST"&&pathname==="/api/v1/customer/auth/login"){
@@ -381,13 +382,14 @@ export function createBackend(options={}){
         await store.recordCustomerAuthSuccess(auth.id);authBuckets.delete(authKey);
         const refreshed=await store.customerAuthLookup(email);
         const current=(refreshed?.memberships||[]).find(x=>Number(x.tenant_id)===Number(membership.tenant_id))||membership;
+        const sessionTtl=body.remember_me===true?Number(config.customerRememberTtlSeconds||2592000):config.sessionTtlSeconds;
         const issued=issueSession({
           secret:config.sessionSecret,
           user:{id:auth.id,role:"customer",name:auth.display_name||auth.email,actor_type:"customer",tenant_id:Number(current.tenant_id),tenant_public_id:current.public_id,customer_role:current.role,authorization_version:Number(current.authorization_version),session_version:Number(refreshed?.session_version||auth.session_version)},
-          ttlSeconds:config.sessionTtlSeconds
+          ttlSeconds:sessionTtl
         });
-        return done(res,metrics,started,"customer.auth.login",200,{user:{id:auth.id,name:auth.display_name||auth.email,email:auth.email,role:current.role,tenant:{id:current.public_id,name:current.display_name}}},{
-          "Set-Cookie":[customerSessionCookie(issued.token,config.sessionTtlSeconds),customerCsrfCookie(issued.csrf,config.sessionTtlSeconds)]
+        return done(res,metrics,started,"customer.auth.login",200,{user:{id:auth.id,name:auth.display_name||auth.email,email:auth.email,role:current.role,tenant:{id:current.public_id,name:current.display_name}},remembered:body.remember_me===true},{
+          "Set-Cookie":[customerSessionCookie(issued.token,sessionTtl),customerCsrfCookie(issued.csrf,sessionTtl)]
         });
       }
 

@@ -218,3 +218,10 @@ html{scroll-padding-top:150px}
 @media print{.cp-mobile-nav,.cp-mobile-menu-dialog{display:none!important}}
 
 /* mobile-width-hardening-v137 */html,body{width:100%;max-width:100%;overflow-x:hidden;overflow-x:clip;overscroll-behavior-x:none}.cp-app,.cp-main,.cp-header,.cp-panel,.cp-row{min-width:0;max-width:100%}.cp-table-wrap,.cp-periods,.cp-section-nav,.cp-search-scopes{max-width:100%;overscroll-behavior-x:contain}@media(max-width:680px){body{min-width:0}.cp-main{overflow-x:clip}input:not([type=checkbox]):not([type=radio]),select,textarea{font-size:16px}.cp-svg{max-width:100%;overflow:hidden}.cp-chip{min-width:0;max-width:50%;overflow:hidden;text-overflow:ellipsis}.cp-mobile-menu-dialog,.cp-mobile-sheet{width:100%;max-width:100%;margin:0}}@media(max-width:380px){.cp-status-wrap{flex-direction:column}.cp-legend{min-width:0;width:100%}}
+
+/* customer-remember-session-v149 */
+.cp-remember{align-items:center!important;padding:9px 11px!important;background:rgba(255,255,255,.018)!important}
+.cp-remember span{display:grid;gap:2px}
+.cp-remember strong{font-size:10px;color:#d9dde1}
+.cp-remember small{font-size:8.5px;font-weight:550;line-height:1.35;color:var(--muted)}
+.cp-remember input{accent-color:#d7a76a}

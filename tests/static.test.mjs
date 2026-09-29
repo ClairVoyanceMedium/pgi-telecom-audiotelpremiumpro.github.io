@@ -713,3 +713,15 @@ test("client and cockpit footers remain readable on mobile",()=>{
 test("client login shell contains no visible escaped newline artifact",()=>{
   assert.doesNotMatch(clientPortal,/\\n<script src="assets\/client-live-finance\.js"/);
 });
+
+test("client can explicitly keep a secure session for 30 days",()=>{
+  const server=read("backend/server.mjs"),config=read("backend/src/config.mjs");
+  assert.match(clientPortal,/id="customer-remember"/);
+  assert.match(clientPortal,/Rester connecté/);
+  assert.match(clientPortal,/30 jours/);
+  assert.match(clientPortalApi,/remember_me:remember===true/);
+  assert.match(clientPortalJs,/customer-remember/);
+  assert.match(server,/body\.remember_me===true\?Number\(config\.customerRememberTtlSeconds\|\|2592000\):config\.sessionTtlSeconds/);
+  assert.match(config,/PGI_CUSTOMER_REMEMBER_TTL_SECONDS,2592000,86400,7776000/);
+  assert.match(clientPortalCss,/customer-remember-session-v149/);
+});

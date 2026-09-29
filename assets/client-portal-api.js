@@ -50,9 +50,9 @@ return payload;
 function get(path,timeoutMs){return request(path,timeoutMs?{timeoutMs:timeoutMs}:{});}
 function post(path,body,idempotencyKey){return request(path,{method:"POST",body:body||{},idempotencyKey:idempotencyKey});}
 root.PGICustomerApi=Object.freeze({
-login:function(email,password,tenant){return post("/customer/auth/login",{email:email,password:password,tenant:tenant||null});},
+login:function(email,password,tenant,remember){return post("/customer/auth/login",{email:email,password:password,tenant:tenant||null,remember_me:remember===true});},
 register:function(payload){return post("/customer/auth/register",Object.assign(payload,root.PGIOrderMeta||{}));},
-google:function(credential,tenant,invite){return post("/customer/auth/google",{credential:credential,tenant:tenant||null,invite:invite||null});},
+google:function(credential,tenant,invite,remember){return post("/customer/auth/google",{credential:credential,tenant:tenant||null,invite:invite||null,remember_me:remember===true});},
 activate:function(token,displayName,password){return post("/customer/auth/activate",{token:token,display_name:displayName,password:password});},
 me:function(){return get("/customer/auth/me",5000);},
 logout:function(){return post("/customer/auth/logout",{});},

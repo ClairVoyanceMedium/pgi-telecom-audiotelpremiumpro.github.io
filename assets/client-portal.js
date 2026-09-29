@@ -218,7 +218,8 @@ async function handleGoogleCredential(response,tenantOverride){
   var invite=new URLSearchParams(location.search).get("invite")||"";
   var tenant=tenantOverride||$("customer-tenant").value||"";
   try{
-    var result=await window.PGICustomerApi.google(credential,tenant,invite);state.googleCredential=null;
+    var remember=Boolean($("customer-remember")&&$("customer-remember").checked);
+    var result=await window.PGICustomerApi.google(credential,tenant,invite,remember);state.googleCredential=null;
     if(result&&result.pending_contract){
       setAuthMessage(tr("Compte Google créé. Votre accès sera activé dès que votre contrat sera rattaché."),false);
       return;
@@ -335,8 +336,9 @@ async function submitRegistration(e){
 async function submitLogin(e){
   e.preventDefault();setAuthMessage("");
   var email=$("customer-email").value.trim(),password=$("customer-password").value,tenant=$("customer-tenant").value||"";
+  var remember=Boolean($("customer-remember")&&$("customer-remember").checked);
   try{
-    var result=await window.PGICustomerApi.login(email,password,tenant);state.user=result.user;showApp();
+    var result=await window.PGICustomerApi.login(email,password,tenant,remember);state.user=result.user;showApp();
   }catch(err){
     if(err.code==="CUSTOMER_TENANT_REQUIRED"&&err.payload&&Array.isArray(err.payload.tenants)&&err.payload.tenants.length){
       var sel=$("customer-tenant");sel.innerHTML=err.payload.tenants.map(function(x){return '<option value="'+esc(x.id)+'">'+esc(x.name+" · "+x.role)+'</option>';}).join("");$("tenant-choice-wrap").hidden=false;setAuthMessage("Choisissez le compte à ouvrir.",false);return;
