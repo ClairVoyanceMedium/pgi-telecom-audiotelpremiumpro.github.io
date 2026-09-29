@@ -20,25 +20,21 @@ const llmsFull=fs.readFileSync("llms-full.txt","utf8");
 const manifest=fs.readFileSync("site/manifest.webmanifest","utf8");
 const guide=fs.readFileSync("site/seo/guide-audiotel-sva.html","utf8");
 
-test("public site targets both individuals and professionals",()=>{
-  assert.match(html,/AUDIOTEL · SVA · PARTICULIERS · INDÉPENDANTS · ENTREPRISES/);
-  assert.match(html,/Demander un compte particulier/);
-  assert.match(html,/Demander un compte professionnel/);
-  assert.match(html,/PARTICULIERS, PORTEURS DE PROJET/);
-  assert.match(html,/demande initiale.*sans SIRET/i);
+test("public site targets both individuals and professionals without overloading the homepage",()=>{
+  assert.match(html,/Sans SIRET au départ/);
+  assert.match(html,/Particulier, projet ou professionnel/);
+  assert.match(application,/Particulier \/ porteur de projet/);
+  assert.match(application,/Professionnel \/ entreprise/);
 });
 
-test("public homepage links to focused SEO content without changing the signup flow",()=>{
-  assert.match(html,/href="\/audiotel-voyance\//);
-  assert.match(html,/href="\/audiotel-independants\//);
-  assert.match(html,/href="\/audiotel-coaching\//);
-  assert.match(html,/href="\/audiotel-professionnels\//);
-  assert.match(html,/href="\/reversement-audiotel\//);
-  assert.match(html,/href="\/numero-sva\//);
-  assert.match(html,/href="\/comparateur-audiotel\//);
+test("focused SEO pages remain published without cluttering the homepage",()=>{
+  for(const slug of ["audiotel-voyance","audiotel-independants","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","comparateur-audiotel"]){
+    assert.match(sitemap,new RegExp(slug));
+    assert.ok(!html.includes('href="/'+slug+'/'),"homepage should not foreground "+slug);
+  }
   assert.match(html,/href="\/demande-ouverture\//);
-  assert.match(html,/Objectif PGI : une offre plus compétitive/);
-  assert.doesNotMatch(html,/href="#commande"/);
+  assert.match(html,/id="simulateur"/);
+  assert.ok(html.indexOf('id="simulateur"')<html.indexOf('class="proof-strip"'));
 });
 
 test("public pricing and revenue example stay explicit and non-guaranteed",()=>{
@@ -81,11 +77,11 @@ test("public site remains self-contained and mobile responsive",()=>{
 });
 
 
-test("public site provides a real registration handoff without leaking PII in the URL",()=>{
-  assert.match(html,/id="order-form"/);
-  assert.match(html,/order_account_type/);
-  assert.match(html,/id="order-service-intent"/);
-  assert.match(html,/Demander l’ouverture/);
+test("registration handoff stays on the dedicated opening page without leaking PII in the URL",()=>{
+  assert.doesNotMatch(html,/id="order-form"/);
+  assert.match(application,/id="order-form"/);
+  assert.match(application,/order_account_type/);
+  assert.match(application,/id="order-service-intent"/);
   assert.match(js,/sessionStorage\.setItem\(KEY,JSON\.stringify\(intent\)\)/);
   assert.match(js,/location\.href="\.\.\/client\.html\?register=1"/);
   assert.doesNotMatch(js,/location\.href=.*email|URLSearchParams.*email/);
@@ -145,10 +141,11 @@ test("dedicated opening page preselects profiles and preserves an unfinished ses
   assert.match(js,/sessionStorage\.removeItem\(DRAFT_KEY\)/);
 });
 
-test("marketing conversion uses trust and legitimate urgency without fabricated scarcity",()=>{
-  assert.match(html,/Préparez votre dossier maintenant/);
-  assert.match(html,/Aucun paiement à cette étape/);
-  assert.match(html,/Validation avant mise en service/);
+test("marketing conversion is simplified, price-led and non-manipulative",()=>{
+  assert.match(html,/AUDIOTEL PAS CHER/);
+  assert.match(html,/3 € TTC par mois/);
+  assert.match(html,/Simuler mon potentiel/);
+  assert.match(html,/Aucun paiement n’est demandé/);
   assert.match(html,/audiotel-brand-logo-v33\.png/);
   assert.doesNotMatch(html,/places restantes|plus que \d+|compte à rebours|dernière chance|clients en ligne/i);
 });
@@ -221,7 +218,7 @@ test("guide cites current official sources for regulatory explanations",()=>{
 
 
 test("public forms keep validation inside the responsive layout instead of native mobile bubbles",()=>{
-  assert.match(html,/site\/form-ux\.js/);
+  assert.doesNotMatch(html,/site\/form-ux\.js/);
   assert.match(application,/site\/form-ux\.js/);
   assert.match(formUx,/form\.noValidate=true/);
   assert.match(formUx,/form\.checkValidity\(\)/);
@@ -239,4 +236,16 @@ test("public footers stay readable and separated on mobile",()=>{
   assert.match(contactCss,/overflow-wrap:normal;word-break:normal/);
   assert.match(buildStatic,/class="footer-legal"/);
   assert.match(buildStatic,/class="site-footer"/);
+});
+
+test("public navigation is intentionally reduced to one clear conversion path",()=>{
+  assert.match(buildStatic,/function simplifyPublicShell/);
+  assert.match(buildStatic,/\/#simulateur/);
+  assert.match(buildStatic,/\/#tarif/);
+  assert.match(buildStatic,/\/#fonctionnement/);
+  assert.match(buildStatic,/\/#faq/);
+  assert.match(buildStatic,/Une solution PGI Telecom/);
+  assert.doesNotMatch(html,/id="avantages"|id="metiers"|id="commande"/);
+  assert.match(html,/Audiotel pas cher/);
+  assert.match(html,/Une solution PGI Telecom/);
 });

@@ -114,15 +114,15 @@ for(const file of files){
 fs.copyFileSync(path.join(root,"index.html"),path.join(dist,"cockpit.html"));
 const publicBaseUrl=resolvePublicBaseUrl();
 const marketingSource=fs.readFileSync(path.join(root,"site","index.html"),"utf8");
-const marketingSite=injectContactWidget(injectLegalNavigation(applyPublicMetadata(marketingSource,publicBaseUrl)));
-const marketingRoot=injectContactWidget(injectLegalNavigation(applyPublicMetadata(
+const marketingSite=injectContactWidget(injectLegalNavigation(simplifyPublicShell(applyPublicMetadata(marketingSource,publicBaseUrl))));
+const marketingRoot=injectContactWidget(injectLegalNavigation(simplifyPublicShell(applyPublicMetadata(
   marketingSource
     .replaceAll("../assets/","assets/")
     .replaceAll("../client.html","client.html")
     .replace('href="site.css"','href="site/site.css"')
     .replace('src="site.js"','src="site/site.js"'),
   publicBaseUrl
-)));
+))));
 fs.writeFileSync(path.join(dist,"site","index.html"),marketingSite,"utf8");
 fs.writeFileSync(path.join(dist,"index.html"),marketingRoot,"utf8");
 const seoPages=[
@@ -151,7 +151,7 @@ for(const slug of seoPages){
   const source=fs.readFileSync(path.join(root,"site","seo",slug+".html"),"utf8");
   const targetDir=path.join(dist,slug);
   fs.mkdirSync(targetDir,{recursive:true});
-  fs.writeFileSync(path.join(targetDir,"index.html"),injectContactWidget(injectLegalNavigation(applyLandingMetadata(source,publicBaseUrl,slug))),"utf8");
+  fs.writeFileSync(path.join(targetDir,"index.html"),injectContactWidget(injectLegalNavigation(simplifyPublicShell(applyLandingMetadata(source,publicBaseUrl,slug)))),"utf8");
 }
 
 
@@ -331,6 +331,13 @@ function latestGitDate(sourcePath){
   }catch{
     return "";
   }
+}
+
+function simplifyPublicShell(html){
+  const nav='<nav aria-label="Navigation principale"><a href="/#simulateur">Simulateur</a><a href="/#tarif">Tarif</a><a href="/#fonctionnement">Comment ça marche</a><a href="/#faq">Questions</a></nav>';
+  return html
+    .replace(/<nav aria-label="Navigation principale">[\s\S]*?<\/nav>/,nav)
+    .replaceAll("<span>Solution PGI Telecom</span>","<span>Une solution PGI Telecom</span>");
 }
 
 function injectContactWidget(html){
