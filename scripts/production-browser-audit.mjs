@@ -23,10 +23,22 @@ page.on("console",msg=>{if(msg.type()==="error")consoleErrors.push(msg.text())})
 page.on("pageerror",err=>pageErrors.push(String(err)));
 
 await page.evaluateOnNewDocument(()=>{
-  window.__pgiAuditVitals={lcp:0,cls:0,inp:0};
+  window.__pgiAuditVitals={lcp:0,lcp_element:null,lcp_url:null,cls:0,inp:0};
   try{
     new PerformanceObserver(list=>{
-      for(const e of list.getEntries())window.__pgiAuditVitals.lcp=Math.max(window.__pgiAuditVitals.lcp,e.startTime||0);
+      for(const e of list.getEntries()){
+        if((e.startTime||0)>=window.__pgiAuditVitals.lcp){
+          window.__pgiAuditVitals.lcp=e.startTime||0;
+          const el=e.element;
+          window.__pgiAuditVitals.lcp_element=el?{
+            tag:String(el.tagName||"").toLowerCase(),
+            id:el.id||"",
+            className:typeof el.className==="string"?el.className:"",
+            text:String(el.textContent||"").trim().replace(/\s+/g," ").slice(0,180)
+          }:null;
+          window.__pgiAuditVitals.lcp_url=e.url||null;
+        }
+      }
     }).observe({type:"largest-contentful-paint",buffered:true});
   }catch(_e){}
   try{
