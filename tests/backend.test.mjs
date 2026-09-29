@@ -757,6 +757,12 @@ test("customer password changes require the authenticated customer flow",()=>{as
 
 test("Google customer auth validates on the backend and keeps tenant selection",()=>{assert.match(backendServer,/verifyGoogleIdToken/);assert.match(backendServer,/\/api\/v1\/customer\/auth\/google/);assert.match(backendServer,/CUSTOMER_TENANT_REQUIRED/);});
 
+test("public health exposes only the aggregate GA4 server readiness flag",()=>{
+  assert.match(backendServer,/analytics_server_ready:ga4\.enabled/);
+  assert.doesNotMatch(backendServer,/api_secret_configured/);
+  assert.doesNotMatch(backendServer,/ga4ApiSecret.*health/);
+});
+
 test("billing orchestration is ready without connecting a payment provider",()=>{
   assert.match(backendServer,/\/api\/v1\/customer\/billing\/status/);
   assert.match(backendServer,/\/api\/v1\/customer\/billing\/checkout-session/);
