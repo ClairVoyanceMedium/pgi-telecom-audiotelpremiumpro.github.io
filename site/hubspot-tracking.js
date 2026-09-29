@@ -106,6 +106,21 @@ function clearCookies(){
   });
 }
 function updateConsent(granted){window.gtag("consent","update",{...denied,analytics_storage:granted?"granted":"denied"})}
+function analyticsPageLocation(){
+  const url=new URL(location.href);
+  const allowed=new Set([
+    "utm_id","utm_source","utm_medium","utm_campaign","utm_term","utm_content",
+    "utm_source_platform","utm_creative_format","utm_marketing_tactic",
+    "gclid","dclid","gbraid","wbraid","gad_source","gad_campaignid"
+  ]);
+  const clean=new URLSearchParams();
+  for(const [key,value] of url.searchParams){
+    const normalized=String(key||"").toLowerCase();
+    if(allowed.has(normalized)&&String(value||"").length<=200)clean.append(normalized,String(value));
+  }
+  const query=clean.toString();
+  return location.origin+location.pathname+(query?"?"+query:"");
+}
 function loadGa4(){
   if(privatePage||window.__pgiGa4Configured)return;
   window.__pgiGa4Configured=true;
@@ -116,7 +131,7 @@ function loadGa4(){
   window.gtag("set",context);
   window.gtag("config",MEASUREMENT_ID,{
     send_page_view:true,
-    page_location:location.origin+location.pathname,
+    page_location:analyticsPageLocation(),
     page_title:document.title,
     content_group:context.content_group,
     allow_google_signals:false,
