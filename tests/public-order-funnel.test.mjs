@@ -4,6 +4,7 @@ import fs from "node:fs";
 
 const site=fs.readFileSync("site/site.js","utf8");
 const siteHtml=fs.readFileSync("site/index.html","utf8");
+const application=fs.readFileSync("site/seo/demande-ouverture.html","utf8");
 const audience=fs.readFileSync("assets/client-audience.js","utf8");
 const portal=fs.readFileSync("assets/client-portal.js","utf8");
 const api=fs.readFileSync("assets/client-portal-api.js","utf8");
@@ -20,8 +21,9 @@ test("public order intent is private, short-lived and consumed by registration",
   assert.match(site,/sessionStorage\.setItem/);
   assert.match(site,/catch\(_e\).*hidden=false;return/s);
   assert.match(site,/button\[type="submit"\]/);
-  assert.match(siteHtml,/id="order-status"/);
-  assert.match(siteHtml,/JavaScript doit être activé/);
+  assert.doesNotMatch(siteHtml,/id="order-status"/);
+  assert.match(application,/id="order-status"/);
+  assert.match(application,/JavaScript doit être activé/);
 });
 
 test("client registration prevents duplicate button submits while request is pending",()=>{
