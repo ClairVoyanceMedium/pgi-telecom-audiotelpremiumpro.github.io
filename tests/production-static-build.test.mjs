@@ -61,7 +61,8 @@ test("production static build publishes marketing root and private cockpit",()=>
     for(const slug of seoSlugs.filter(x=>x!=="mentions-legales"))assert.match(sitemap,new RegExp("<loc>https:\\/\\/audiotel-premium-pro\\.com\\/"+slug+"\\/<\\/loc>"));
     assert.doesNotMatch(sitemap,/mentions-legales/);
     for(const forbidden of ["client.html","cockpit","backend/","docs/"])assert.ok(!sitemap.includes(forbidden));
-    assert.doesNotMatch(sitemap,/<changefreq>|<priority>/);\n    assert.match(sitemap,/<loc>https:\\/\\/audiotel-premium-pro\\.com\\/reversement-audiotel\\/<\\/loc>\\s*<lastmod>2026-09-29<\\/lastmod>/);
+    assert.doesNotMatch(sitemap,/<changefreq>|<priority>/);
+    assert.match(sitemap,/<loc>https:\/\/audiotel-premium-pro\.com\/reversement-audiotel\/<\/loc>\s*<lastmod>2026-09-29<\/lastmod>/);
     assert.ok(llms.includes("Audiotel Premium Pro | PGI Telecom"));
     assert.match(llms,/guide-audiotel-sva/);
     assert.match(llmsFull,/Official French references/);
