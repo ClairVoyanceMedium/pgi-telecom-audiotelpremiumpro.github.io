@@ -404,3 +404,14 @@ test("hero carries PGI Telecom signature and explains the higher-revenue-at-same
   assert.match(html,/Audiotel Premium Pro \| Une solution PGI Telecom/);
   assert.match(html,/À activité identique, un meilleur reversement peut vous permettre de gagner plus sans travailler davantage/);
 });
+
+test("hero brand signature is metallic and portability is marketed as free with a contractual qualifier",()=>{
+  assert.match(html,/hero-brand-signature/);
+  assert.match(html,/Audiotel Premium Pro \| Une solution PGI Telecom/);
+  assert.match(html,/NUMÉRO SURTAXÉ · AUDIOTEL · SUIVI EN LIGNE · PORTABILITÉ GRATUITE/);
+  assert.match(css,/metallic-brand-signature-v154/);
+  assert.match(css,/hero-brand-signature\{[\s\S]*font-size:15px/);
+  assert.match(css,/linear-gradient\(180deg,#f8fafb/);
+  assert.match(css,/-webkit-text-fill-color:transparent/);
+  assert.match(terms,/PGI Telecom ne facture pas de frais de portabilité entrante au titre de la plateforme/);
+});

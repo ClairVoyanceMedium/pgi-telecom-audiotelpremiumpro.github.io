@@ -55,3 +55,22 @@ main,header,footer,section,.site-header,.header-inner,.hero-grid,.calculator-gri
 .hero-lead>span:last-child{font-size:15px;color:#bca99c}
 .hero-savings-results .main span,.hero-savings-results .main strong{color:var(--ok)}
 @media(max-width:680px){.hero-lead{gap:7px}.hero-lead>span:last-child{font-size:14px}}
+
+/* metallic-brand-signature-v154 */
+.hero-brand-signature{
+  margin-bottom:7px;
+  font-size:15px;
+  line-height:1.15;
+  letter-spacing:.13em;
+  color:#d8dde1;
+  background:linear-gradient(180deg,#f8fafb 0%,#c8cdd2 24%,#ffffff 43%,#8f969d 63%,#d7dce0 82%,#a5abb1 100%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  -webkit-text-fill-color:transparent;
+  text-shadow:0 1px 0 rgba(255,255,255,.12),0 3px 10px rgba(180,190,198,.12);
+}
+.hero-service-line{font-size:11px;margin-bottom:14px}
+@media(max-width:680px){
+  .hero-brand-signature{font-size:13px;letter-spacing:.10em}
+  .hero-service-line{font-size:9.5px;letter-spacing:.11em}
+}
