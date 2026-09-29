@@ -23,7 +23,7 @@ test("transactional recipient normalization is strict and hashing is determinist
 test("all production service templates render both plain text and html",()=>{
   const keys=[
     "email_verification","password_reset","password_changed","email_change_confirmation","email_changed","email_change_notice_old","passkey_added",
-    "lead_received","registration_received","registration_internal","account_activated","account_suspended",
+    "lead_received","registration_received","customer_access_invitation","registration_internal","account_activated","account_suspended",
     "subscription_created","payment_succeeded","payment_recovered","payment_failed","payment_action_required",
     "payment_reminder","subscription_suspended","subscription_cancelled","payout_available","portability_received","portability_internal",
     "support_received","support_opened","support_internal","support_customer_reply","support_response","support_resolved"
@@ -188,4 +188,12 @@ test("public contact message is delivered internally with visitor Reply-To and e
   }finally{
     globalThis.fetch=originalFetch;
   }
+});
+
+test("customer access invitation uses a one-time link and never sends a plaintext password",()=>{
+  const m=buildTransactionalMessage(config,"customer_access_invitation",{name:"Client Test",action_url:"https://audiotel-premium-pro.com/client.html?invite=secure-token"});
+  assert.match(m.subject,/accès/i);
+  assert.match(m.text,/choisir votre mot de passe/i);
+  assert.match(m.html,/client\.html\?invite=secure-token/);
+  assert.doesNotMatch(m.text,/mot de passe temporaire|votre mot de passe est/i);
 });

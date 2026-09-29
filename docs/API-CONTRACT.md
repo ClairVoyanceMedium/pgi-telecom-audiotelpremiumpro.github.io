@@ -441,3 +441,12 @@ L'`activation_ready` du cockpit exige désormais Trust Center + ARCEP 2026 lorsq
 `GET /platform/tenants/:id/consumption-receipts` lets authorized staff inspect the same receipts. `GET /platform/tenants/:id/consumption-receipts/:receipt/reconcile` recomputes the receipt using the authoritative call facts and validated tenant distributions with the original period and metric baselines, then returns `match` or `difference` with metric-level differences.
 
 A receipt is evidence of what the dashboard aggregate represented when it was created. A later reconciliation can legitimately report a difference if authoritative source data for the frozen period changed later, for example because a late CDR arrived or a validated settlement state changed.
+
+
+### Activation sécurisée de l’accès client après validation
+
+Lorsqu’un tenant passe à l’état `active` et qu’aucun utilisateur client actif n’est encore rattaché, le backend crée automatiquement une invitation `owner` vers l’adresse de facturation disponible et tente l’envoi d’un email transactionnel d’activation.
+
+L’email ne contient **jamais de mot de passe en clair ni de mot de passe temporaire**. Il contient un lien temporaire et à usage unique vers `client.html?invite=...` afin que le client choisisse lui-même un mot de passe d’au moins 12 caractères. Le serveur ne conserve que le hash du jeton d’invitation puis le hash scrypt du mot de passe choisi.
+
+Après activation, le client peut modifier son mot de passe dans les réglages de sécurité. Le flux « Mot de passe oublié ? » envoie déjà un lien de réinitialisation temporaire et à usage unique.

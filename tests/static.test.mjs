@@ -709,3 +709,7 @@ test("client and cockpit footers remain readable on mobile",()=>{
   assert.match(clientAdminTheme,/grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(css,/cockpit-footer-responsive-v145/);
 });
+
+test("client login shell contains no visible escaped newline artifact",()=>{
+  assert.doesNotMatch(clientPortal,/\\n<script src="assets\/client-live-finance\.js"/);
+});

@@ -1245,7 +1245,9 @@ export function createBackend(options={}){
         const token=randomBytes(32).toString("base64url");
         const tokenHash=createHash("sha256").update(token).digest("hex");
         const result=await store.idempotent(req.headers["idempotency-key"],"customer.invitation.create",{tenant:match.id,email:body.email,role:body.role||"readonly"},()=>store.createCustomerPortalInvitation(match.id,body,tokenHash));
-        return done(res,metrics,started,"platform.customer_invitation",201,{...result.value,activation_path:"client.html?invite="+encodeURIComponent(token),replayed:result.replayed});
+        const activationPath=result.replayed?null:"client.html?invite="+encodeURIComponent(token);
+        const emailSent=result.replayed?false:await sendCustomerAccessInvitation(config,{...result.value,display_name:body.display_name,preferred_locale:body.preferred_locale},token,"manual");
+        return done(res,metrics,started,"platform.customer_invitation",201,{...result.value,activation_path:activationPath,email_sent:emailSent,replayed:result.replayed});
       }
 
       match=routeMatch(pathname,"/api/v1/platform/tenants/:id/control-center");
@@ -1310,8 +1312,29 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes);
         const payload={id:match.id,status:body.status,reason:body.reason||""};
         const result=await store.idempotent(req.headers["idempotency-key"],"tenant.status",payload,()=>store.setTenantStatus(match.id,body.status,actor,body.reason||""));
-        if(String(result.value?.status||"")==="active")await syncHubSpotTenantLifecycle(store,match.id,"En attente d’ouverture","tenant_active");
-        return done(res,metrics,started,"platform.tenant_status",200,{...result.value,replayed:result.replayed});
+        let customerAccess=null;
+        if(String(result.value?.status||"")==="active"){
+          await syncHubSpotTenantLifecycle(store,match.id,"En attente d’ouverture","tenant_active");
+          if(!result.replayed&&result.value?.changed!==false){
+            try{
+              const detail=await store.tenantControlDetail(match.id);
+              const users=Array.isArray(detail?.users)?detail.users:[];
+              const hasPortalUser=users.some(x=>String(x.membership_status||"")==="active"&&String(x.status||"")==="active");
+              const email=String(detail?.tenant?.billing_email||"").trim().toLowerCase();
+              if(!hasPortalUser&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+                const token=randomBytes(32).toString("base64url");
+                const tokenHash=createHash("sha256").update(token).digest("hex");
+                const invitation=await store.createCustomerPortalInvitation(match.id,{email,role:"owner",expires_in_hours:72},tokenHash);
+                const emailSent=await sendCustomerAccessInvitation(config,{...invitation,display_name:detail?.tenant?.display_name,preferred_locale:detail?.tenant?.preferred_locale},token,"tenant-active");
+                customerAccess={invitation_created:true,email_sent:emailSent};
+              }else customerAccess={invitation_created:false,email_sent:false,reason:hasPortalUser?"existing_user":"missing_billing_email"};
+            }catch(error){
+              logSecurityEmailFailure("customer_access_auto_invitation",error);
+              customerAccess={invitation_created:false,email_sent:false,reason:"invitation_unavailable"};
+            }
+          }
+        }
+        return done(res,metrics,started,"platform.tenant_status",200,{...result.value,customer_access:customerAccess,replayed:result.replayed});
       }
 
       match=routeMatch(pathname,"/api/v1/platform/tenant-number-assignments/:id/status");
@@ -2185,6 +2208,28 @@ function logHubSpotSyncFailure(stage,error){
 }
 function logSecurityEmailFailure(template,error){
   process.stderr.write(JSON.stringify({level:"warn",event:"security_email_send_failed",template:String(template||"security"),code:String(error?.code||"EMAIL_SEND_FAILED")})+"\n");
+}
+async function sendCustomerAccessInvitation(config,target,token,reason="manual"){
+  const email=String(target?.email||"").trim().toLowerCase();
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return false;
+  const base=String(config.publicBaseUrl||"https://audiotel-premium-pro.com").replace(/\/+$/,"");
+  const actionUrl=base+"/client.html?invite="+encodeURIComponent(String(token||""));
+  const eventId="customer-access-invitation/"+String(target?.id||target?.tenant_public_id||email)+"/"+String(reason||"manual");
+  try{
+    await sendTransactionalEmail(config,{
+      to:email,
+      name:String(target?.display_name||target?.tenant_name||email),
+      senderRole:"support",
+      templateKey:"customer_access_invitation",
+      data:{name:String(target?.display_name||target?.tenant_name||email),locale:target?.preferred_locale,action_url:actionUrl},
+      idempotencyKey:eventId,
+      internalEventId:eventId
+    });
+    return true;
+  }catch(error){
+    logSecurityEmailFailure("customer_access_invitation",error);
+    return false;
+  }
 }
 function logHttpRequest(config,{requestId,traceId,route,method,status,durationMs}){
   if(config?.mode!=="production")return;

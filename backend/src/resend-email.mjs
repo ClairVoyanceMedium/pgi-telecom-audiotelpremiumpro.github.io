@@ -263,6 +263,14 @@ export function buildTransactionalMessage(config,templateKey,data={}){
       paragraphs:["Votre demande d’ouverture Audiotel Premium Pro a bien été enregistrée.","Vous pouvez suivre les étapes de votre dossier depuis votre espace client. La création du compte ne vaut pas activation d’un service SVA."],
       cta:{label:"Accéder à mon espace",url:portalUrl}
     },
+    customer_access_invitation:{
+      subject:"Votre accès Audiotel Premium Pro est prêt",
+      title:"Créez votre mot de passe",
+      lead:greeting,
+      paragraphs:["Votre dossier a été validé et votre espace client peut maintenant être activé.","Pour votre sécurité, aucun mot de passe n’est envoyé par email. Utilisez le bouton ci-dessous pour choisir votre mot de passe personnel."],
+      cta:actionUrl?{label:"Choisir mon mot de passe",url:actionUrl}:null,
+      foot:"Ce lien est temporaire et à usage unique. Une fois connecté, vous pourrez modifier votre mot de passe depuis les réglages de sécurité de votre espace client."
+    },
     registration_internal:{
       subject:"Nouvelle demande d’ouverture Audiotel Premium Pro",
       title:"Nouvelle demande d’ouverture",
