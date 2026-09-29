@@ -1,0 +1,52 @@
+name: One-off Production Browser Audit
+
+on:
+  push:
+    branches: ["audit/production-20260929"]
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      - name: Inspect published GTM container
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://www.googletagmanager.com/gtm.js?id=GTM-5L6NW5JZ" -o /tmp/gtm.js
+          node - <<'NODE'
+          const fs=require("fs");
+          const c=fs.readFileSync("/tmp/gtm.js","utf8");
+          const needle="G-SZY50J75N7";
+          const positions=[];
+          for(let i=c.indexOf(needle);i>=0;i=c.indexOf(needle,i+1))positions.push(i);
+          const contexts=positions.map(i=>c.slice(Math.max(0,i-220),Math.min(c.length,i+needle.length+220)));
+          console.log("PGI_GTM_MEASUREMENT_ID_OCCURRENCES="+positions.length);
+          contexts.forEach((x,i)=>console.log("PGI_GTM_CONTEXT_"+(i+1)+"="+x.replace(/\s+/g," ").slice(0,600)));
+          NODE
+
+      - name: Locate Chrome
+        shell: bash
+        run: |
+          set -euo pipefail
+          chrome="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$chrome"
+          echo "CHROME_BIN=$chrome" >> "$GITHUB_ENV"
+
+      - name: Install isolated browser driver
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund puppeteer-core@24
+
+      - name: Audit real production page after consent
+        run: node scripts/production-browser-audit.mjs
