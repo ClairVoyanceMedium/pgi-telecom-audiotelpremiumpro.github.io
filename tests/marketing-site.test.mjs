@@ -379,7 +379,7 @@ test("homepage prioritizes portability, fast intake and clearer revenue comparis
   assert.match(html,/Calculer votre revenu supplémentaire/);
   assert.match(html,/CALCULATEUR DE REVENU POTENTIEL/);
   assert.match(html,/revenu potentiel supplémentaire par mois et sur 12 mois/);
-  assert.match(html,/Business Live : suivez en direct, seconde après seconde, le montant estimé qui vous est attribué pendant vos appels/);
+  assert.match(html,/Business Live : suivez en direct le montant estimé qui vous est attribué pendant chaque appel/);
 });
 test("public branding and client access wording are explicit",()=>{
   assert.match(html,/Se connecter à mon espace client/);
