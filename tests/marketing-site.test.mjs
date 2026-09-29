@@ -308,6 +308,6 @@ test("fixed monthly subscription is never presented as a starting price",()=>{
 
 test("mobile offer states the fixed subscription and frames competitive value as an objective",()=>{
   assert.match(html,/3 € abonnement/);
-  assert.match(html,/Notre objectif : être plus avantageux que les offres concurrentes à périmètre comparable/);
+  assert.match(html,/Objectif : des reversements plus généreux/);
   assert.doesNotMatch(html,/À partir de <strong>3 €/);
 });
