@@ -29,10 +29,10 @@ test("production static build publishes marketing root and private cockpit",()=>
     const seoSlugs=["audiotel-voyance","audiotel-independants","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","tarif-numero-sva","numero-surtaxe-08","portabilite-numero-sva","comparateur-audiotel","guide-audiotel-sva","demande-ouverture","mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","accord-traitement-donnees","cookies-traceurs","resilier-contrat","retractation"];
     const seoPages=seoSlugs.map(slug=>fs.readFileSync("dist/"+slug+"/index.html","utf8"));
 
-    assert.match(root,/Pilotez votre activité/);
-    assert.match(root,/Voyance &amp; astrologie/);
-    assert.match(root,/Indépendants &amp; porteurs de projet/);
-    assert.match(root,/Solution Audiotel et SVA/);
+    assert.match(root,/Monétisez vos appels/);
+    assert.match(root,/BESOIN D’UN NUMÉRO SURTAXÉ/);
+    assert.match(root,/href="\/reversement-audiotel\//);
+    assert.match(root,/href="\/numero-sva\//);
     assert.match(root,/max-snippet:-1/);
     assert.doesNotMatch(root,/Cockpit \/ PGI Telecom/);
     assert.match(root,/href="site\/site\.css"/);
