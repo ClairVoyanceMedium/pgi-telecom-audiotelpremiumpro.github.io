@@ -399,3 +399,8 @@ test("hero copy is condensed and the primary potential gain is highlighted in gr
   assert.match(css,/hero-savings-results \.main span,.hero-savings-results \.main strong\{color:var\(--ok\)\}/);
   assert.match(html,/Business Live : suivez en direct, seconde après seconde, le montant estimé qui vous est attribué pendant chaque appel/);
 });
+
+test("hero carries PGI Telecom signature and explains the higher-revenue-at-same-activity benefit",()=>{
+  assert.match(html,/Audiotel Premium \| Une solution PGI Telecom/);
+  assert.match(html,/À activité identique, un meilleur reversement peut vous permettre de gagner plus sans travailler davantage/);
+});
