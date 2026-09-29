@@ -101,3 +101,17 @@ main,header,footer,section,.site-header,.header-inner,.hero-grid,.calculator-gri
   .hero-lead-offer{display:grid;gap:3px}
   .hero-lead-offer span{text-align:left}
 }
+
+
+/* hero-spacing-and-logo-v156 */
+.brand-full img{width:340px;max-height:82px}
+.hero-service-line{margin-bottom:22px}
+.hero-lead-cards{margin-top:32px}
+@media(max-width:980px){
+  .brand-full img{width:275px;max-height:76px}
+}
+@media(max-width:680px){
+  .brand-full img{width:220px;max-height:64px}
+  .hero-service-line{margin-bottom:19px}
+  .hero-lead-cards{margin-top:27px}
+}
