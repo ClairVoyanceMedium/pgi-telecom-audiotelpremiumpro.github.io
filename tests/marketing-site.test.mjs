@@ -21,7 +21,7 @@ const manifest=fs.readFileSync("site/manifest.webmanifest","utf8");
 const guide=fs.readFileSync("site/seo/guide-audiotel-sva.html","utf8");
 
 test("public site targets both individuals and professionals without overloading the homepage",()=>{
-  assert.match(html,/Sans SIRET au départ/);
+  assert.match(html,/Démarrez sans SIRET/);
   assert.match(html,/Particulier, projet ou professionnel/);
   assert.match(application,/Particulier \/ porteur de projet/);
   assert.match(application,/Professionnel \/ entreprise/);
@@ -37,26 +37,26 @@ test("focused SEO pages remain published without cluttering the homepage",()=>{
   assert.ok(html.indexOf('id="simulateur"')<html.indexOf('class="proof-strip"'));
 });
 
-test("public pricing and revenue example stay explicit and non-guaranteed",()=>{
+test("public pricing and savings simulation stay explicit and non-guaranteed",()=>{
   assert.match(html,/3 € TTC \/ mois/);
   assert.match(html,/Facturé mensuellement d’avance/);
   assert.match(html,/Contrat à durée indéterminée/);
   assert.match(html,/Résiliation possible à tout moment/);
-  assert.match(html,/0,10 € HT \/ min/);
-  assert.match(html,/1 800 € HT/);
-  assert.match(html,/Simulation non contractuelle/);
-  assert.match(html,/pas une promesse commerciale/);
-  assert.match(html,/ne constituent pas une garantie de revenus/);
-  assert.doesNotMatch(html,/revenu garanti|gains garantis/i);
+  assert.match(html,/Écart favorable estimé \/ minute/);
+  assert.match(html,/Économies potentielles \/ mois/);
+  assert.match(html,/Simulation indicative et non contractuelle/);
+  assert.match(html,/ne constituent pas une garantie d’économies/);
+  assert.doesNotMatch(html,/revenu garanti|gains garantis|économies garanties/i);
 });
 
-test("calculator uses transparent minutes times rate arithmetic",()=>{
+test("homepage savings calculator uses transparent volume times favorable-gap arithmetic",()=>{
   assert.match(js,/const minutes=h\*60\*d/);
-  assert.match(js,/const perMonth=minutes\*r/);
+  assert.match(js,/const perMonth=minutes\*g/);
   assert.match(js,/perMonth\*12/);
-  assert.match(html,/id="rate"/);
-  assert.match(html,/id="hours"/);
-  assert.match(html,/id="days"/);
+  assert.match(html,/id="saving-gap"/);
+  assert.match(html,/id="saving-hours"/);
+  assert.match(html,/id="saving-days"/);
+  assert.match(html,/data-savings-calculator/);
 });
 
 test("marketing surface is indexable while private surfaces remain noindex",()=>{
@@ -144,7 +144,7 @@ test("dedicated opening page preselects profiles and preserves an unfinished ses
 test("marketing conversion is simplified, price-led and non-manipulative",()=>{
   assert.match(html,/AUDIOTEL PAS CHER/);
   assert.match(html,/3 € TTC par mois/);
-  assert.match(html,/Simuler mon potentiel/);
+  assert.match(html,/Simuler vos économies/);
   assert.match(html,/La demande démarre sans paiement/);
   assert.match(html,/audiotel-brand-logo-v33\.png/);
   assert.doesNotMatch(html,/places restantes|plus que \d+|compte à rebours|dernière chance|clients en ligne/i);
@@ -262,7 +262,7 @@ test("legal access blocks stay understandable on mobile",()=>{
 
 test("homepage modules are compact and each carries a clear marketing promise",()=>{
   assert.match(html,/class="home-page"/);
-  assert.match(html,/Simulez votre potentiel Audiotel immédiatement/);
+  assert.match(html,/SIMULATEUR D’ÉCONOMIES/);
   assert.match(html,/Tout votre Audiotel sous contrôle, sans complexité/);
   assert.match(html,/3 € TTC\/mois : simple, visible, sans détour/);
   assert.match(html,/Votre Audiotel prêt en quatre étapes claires/);
@@ -271,4 +271,22 @@ test("homepage modules are compact and each carries a clear marketing promise",(
   assert.equal((html.match(/<article>/g)||[]).filter(Boolean).length<10,true);
   assert.match(contactCss,/\.home-page \.section\{padding:64px 0\}/);
   assert.match(contactCss,/\.home-page \.tech-grid article\{padding:18px/);
+});
+
+test("hero replaces the fixed 1800 euro decoration with the real savings simulator",()=>{
+  assert.doesNotMatch(html,/class="hero-card"/);
+  assert.doesNotMatch(html,/1 800 € HT/);
+  assert.match(html,/class="hero-savings"/);
+  assert.match(html,/Économies potentielles \/ mois/);
+  assert.equal((html.match(/id="simulateur"/g)||[]).length,1);
+});
+
+test("existing customers get an explicit login entry in every public shell",()=>{
+  assert.match(html,/header-login[^>]*href="\/client\.html"/);
+  assert.match(html,/Déjà client \?/);
+  assert.match(html,/Se connecter/);
+  assert.match(buildStatic,/header-login/);
+  assert.match(buildStatic,/Se connecter/);
+  assert.match(contactCss,/hero-savings-and-client-login-v147/);
+  assert.match(contactCss,/header-actions \.header-login\{display:inline-flex!important/);
 });
