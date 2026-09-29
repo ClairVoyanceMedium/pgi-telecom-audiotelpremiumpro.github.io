@@ -73,16 +73,16 @@ test("HubSpot enrichment falls back safely when optional CRM fields are not part
   assert.equal(second.lifecyclestage,"lead");
 });
 
-test("public forms and secure registration are wired to the same CRM capture",()=>{
+test("public opening form and secure registration are wired to the same CRM capture",()=>{
   const site=fs.readFileSync("site/site.js","utf8");
   const home=fs.readFileSync("site/index.html","utf8");
   const order=fs.readFileSync("site/seo/demande-ouverture.html","utf8");
   const server=fs.readFileSync("backend/server.mjs","utf8");
   assert.match(site,/\/api\/v1\/public\/hubspot\/lead/);
   assert.match(site,/keepalive:true/);
-  assert.match(home,/id="order-processing-consent"/);
+  assert.match(home,/href="\/demande-ouverture\/"/);
+  assert.doesNotMatch(home,/id="order-processing-consent"/);
   assert.match(order,/id="order-processing-consent"/);
-  assert.match(home,/CRM HubSpot/);
   assert.match(order,/CRM HubSpot/);
   assert.match(server,/pathname==="\/api\/v1\/public\/hubspot\/lead"/);
   assert.match(server,/submitHubSpotLead\(\.\.\.body|submitHubSpotLead\(body/);
