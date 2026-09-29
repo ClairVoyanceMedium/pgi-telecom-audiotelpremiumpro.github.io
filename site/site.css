@@ -115,3 +115,36 @@ main,header,footer,section,.site-header,.header-inner,.hero-grid,.calculator-gri
   .hero-service-line{margin-bottom:19px}
   .hero-lead-cards{margin-top:27px}
 }
+
+
+/* clickable-hero-and-premium-grey-v157 */
+.hero-lead-link{
+  color:inherit;
+  text-decoration:none;
+  cursor:pointer;
+  transition:transform .18s ease,border-color .18s ease,background .18s ease,box-shadow .18s ease;
+}
+.hero-lead-link:hover{
+  transform:translateY(-2px);
+  border-color:rgba(232,179,110,.28);
+  box-shadow:0 12px 30px rgba(0,0,0,.14);
+}
+.hero-lead-link:focus-visible{
+  outline:2px solid rgba(232,179,110,.8);
+  outline-offset:3px;
+}
+.hero-brand-signature{
+  font-size:18px;
+  font-weight:800;
+  letter-spacing:.115em;
+  color:#c9c9c7;
+  background:none;
+  -webkit-background-clip:border-box;
+  background-clip:border-box;
+  -webkit-text-fill-color:currentColor;
+  text-shadow:0 1px 8px rgba(0,0,0,.18);
+}
+@media(max-width:680px){
+  .brand-full img{width:240px;max-height:70px}
+  .hero-brand-signature{font-size:15.5px;letter-spacing:.085em}
+}
