@@ -119,6 +119,20 @@ export async function stripeProviderReadiness(config,options={}){
   return value;
 }
 
+function parisParts(ms){
+  const parts=new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).formatToParts(new Date(ms));
+  return Object.fromEntries(parts.filter(x=>x.type!=="literal").map(x=>[x.type,Number(x.value)]));
+}
+function parisMidnightUtcMs(year,month,day){
+  const guess=Date.UTC(year,month-1,day,0,0,0),p=parisParts(guess);
+  const localAsUtc=Date.UTC(p.year,p.month-1,p.day,p.hour,p.minute,p.second);
+  return guess-(localAsUtc-guess);
+}
+export function currentMonthOfferTrialEnd(nowMs=Date.now()){
+  const p=parisParts(nowMs),year=p.month===12?p.year+1:p.year,month=p.month===12?1:p.month+1;
+  const nextMonthParis=parisMidnightUtcMs(year,month,1),stripeSafetyMs=nowMs+48*60*60*1000;
+  return Math.floor(Math.max(nextMonthParis,stripeSafetyMs)/1000);
+}
 export async function createStripeCheckout(config,billing,idempotencyKey,analyticsContext={}){
   if(config?.stripeLiveMode){
     const readiness=await stripeProviderReadiness(config);
@@ -131,7 +145,8 @@ export async function createStripeCheckout(config,billing,idempotencyKey,analyti
     price_version_id:String(billing?.offer?.price_version_id||""),
     plan_key:String(billing?.offer?.plan_key||"external-sva-access"),
     legal_version:"2026-09-26-b2b-b2c-v4",
-    contract_model:"indefinite_monthly_advance"
+    contract_model:"indefinite_monthly_advance",
+    introductory_offer:"current_month_free"
   };
   if(billing?.offer?.market_id!=null)metadata.market_id=String(billing.offer.market_id);
   const gaClientId=String(analyticsContext?.client_id||"").trim(),gaSessionId=String(analyticsContext?.session_id||"").trim();
@@ -144,10 +159,11 @@ export async function createStripeCheckout(config,billing,idempotencyKey,analyti
     client_reference_id:String(tenant.id||""),
     line_items:[{price:price.id,quantity:1}],
     metadata,
-    subscription_data:{metadata,description:"Abonnement plateforme Audiotel Premium Pro, durée indéterminée, facturation mensuelle d’avance. Reversements SVA distincts."},
+    subscription_data:{metadata,description:"Abonnement plateforme Audiotel Premium Pro : mois en cours offert, puis 3 € TTC/mois à partir du mois suivant, sans engagement de durée. Reversements SVA distincts.",trial_end:currentMonthOfferTrialEnd()},
+    payment_method_collection:"always",
     billing_address_collection:"required",
     tax_id_collection:{enabled:true},
-    custom_text:{submit:{message:"3 € TTC/mois, sans engagement de durée, facturé mensuellement d’avance. Résiliable à tout moment avec effet normal à la fin de la période déjà payée. Les reversements SVA restent distincts."}},
+    custom_text:{submit:{message:"Le mois en cours est offert. Puis 3 € TTC/mois à partir du mois suivant. Sans engagement de durée, résiliable à tout moment. Les reversements SVA restent distincts."}},
     locale:"auto"
   };
   const customer=String(subscription.provider_customer_reference||"");

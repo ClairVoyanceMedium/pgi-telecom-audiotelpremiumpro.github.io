@@ -143,3 +143,10 @@ test("subscription terms state no minimum commitment consistently",()=>{
   assert.match(terms,/sans engagement de durée/i);
   assert.match(terms,/résiliation à tout moment/i);
 });
+
+test("subscription terms state that the current month is free and billing starts the following month",()=>{
+  const terms=read("site/seo/conditions-abonnement.html");
+  assert.match(terms,/mois civil .* souscription .* offert/i);
+  assert.match(terms,/À compter du mois suivant/i);
+  assert.match(terms,/3 € TTC par mois/i);
+});

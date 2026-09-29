@@ -737,9 +737,17 @@ test("passwords can be shown on client and staff login without changing stored c
 });
 test("client and staff jackpots are promoted to the top of each dashboard",()=>{
   assert.match(clientLiveFinance,/#client-main \.cp-intro/);
-  assert.match(clientLiveFinance,/VOTRE JACKPOT EN DIRECT/);
+  assert.match(clientLiveFinance,/VOTRE CASH LIVE/);
   assert.doesNotMatch(clientLiveFinance,/var box=\$\("client-overview"\)/);
   assert.match(adminLiveFinance,/\.main \.topbar/);
-  assert.match(adminLiveFinance,/live-jackpot-featured/);
+  assert.match(adminLiveFinance,/CASH LIVE GLOBAL/);
   assert.doesNotMatch(adminLiveFinance,/\.panel\.realtime \.live-stats/);
+});
+
+test("finance counters are branded Cash Live without renaming stable internal APIs",()=>{
+  assert.match(clientLiveFinance,/VOTRE CASH LIVE/);
+  assert.match(adminLiveFinance,/CASH LIVE GLOBAL/);
+  assert.doesNotMatch(clientLiveFinance,/VOTRE JACKPOT EN DIRECT/);
+  assert.doesNotMatch(adminLiveFinance,/JACKPOT GLOBAL EN DIRECT/);
+  assert.match(clientPortalApi,/\/customer\/jackpot/);
 });

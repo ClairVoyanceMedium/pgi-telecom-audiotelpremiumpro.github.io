@@ -264,7 +264,7 @@ test("homepage modules are compact and each carries a clear marketing promise",(
   assert.match(html,/class="home-page"/);
   assert.match(html,/SIMULATEUR D’ÉCONOMIES/);
   assert.match(html,/Tout votre Audiotel sous contrôle, sans complexité/);
-  assert.match(html,/3 € TTC\/mois : simple, visible, sans détour/);
+  assert.match(html,/Commencez sans payer le mois en cours/);
   assert.match(html,/Votre Audiotel prêt en quatre étapes claires/);
   assert.match(html,/Les réponses qui comptent vraiment/);
   assert.match(html,/Donnez vie à votre projet Audiotel/);
@@ -292,17 +292,17 @@ test("existing customers get an explicit login entry in every public shell",()=>
 });
 
 test("public commercial copy is concise while legal and machine-readable price stays precise",()=>{
-  assert.match(html,/AUDIOTEL PAS CHER · 3 € \/ MOIS/);
-  assert.match(html,/Pour seulement 3 € par mois/);
-  assert.match(html,/Prix TTC : 3 € \/ mois/);
+  assert.match(html,/AUDIOTEL PAS CHER · MOIS EN COURS OFFERT/);
+  assert.match(html,/Le mois en cours est offert/);
+  assert.match(html,/prix TTC 3 € \/ mois/i);
   assert.match(buildStatic,/Démarrer maintenant/);
   assert.match(buildStatic,/Audiotel simple &amp; économique/);
   assert.match(buildStatic,/Activation après validation/);
-  assert.match(html,/3 € TTC\/mois/);
+  assert.match(html,/3 € TTC par mois/);
 });
 
 test("fixed monthly subscription is never presented as a starting price",()=>{
-  assert.match(html,/Abonnement <strong>3 € \/ mois<\/strong>/);
+  assert.match(html,/Mois en cours offert/);
   assert.doesNotMatch(html,/À partir de <strong>3 €/);
 });
 
@@ -315,8 +315,16 @@ test("mobile offer states the fixed subscription and frames competitive value as
 test("subscription is clearly marketed as no-commitment while keeping the period-end effect explicit",()=>{
   assert.match(html,/Sans engagement de durée/);
   assert.match(html,/Résiliable à tout moment/);
-  assert.match(html,/effet normal à la fin de la période déjà payée/);
+  assert.match(html,/prend normalement effet à la fin de la période déjà payée/);
   assert.match(application,/Sans engagement de durée/);
   assert.match(application,/Résiliable à tout moment/);
   assert.match(buildStatic,/Sans engagement de durée/);
+});
+
+test("current month is offered before the fixed monthly subscription starts",()=>{
+  assert.match(html,/Mois en cours offert/);
+  assert.match(html,/Puis 3 € \/ mois/);
+  assert.match(html,/à partir du mois suivant/i);
+  assert.match(application,/Mois en cours offert/);
+  assert.match(application,/Puis 3 € \/ mois/);
 });

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createHmac} from "node:crypto";
-import {verifyStripeWebhook,normalizeStripeSubscriptionEvent,normalizeStripeBillingEvent,normalizeStripeRefundEvent,createStripeCheckout,stripeProviderState,stripeProviderReadiness,invalidateStripeProviderReadiness} from "../backend/src/stripe-billing.mjs";
+import {verifyStripeWebhook,normalizeStripeSubscriptionEvent,normalizeStripeBillingEvent,normalizeStripeRefundEvent,createStripeCheckout,currentMonthOfferTrialEnd,stripeProviderState,stripeProviderReadiness,invalidateStripeProviderReadiness} from "../backend/src/stripe-billing.mjs";
 
 test("Stripe provider state fails closed until API and webhook are both configured",()=>{
   assert.deepEqual(stripeProviderState({externalBillingEnabled:false}),{api:false,webhook:false,connected:false});
@@ -206,8 +206,11 @@ test("Stripe Checkout verifies the remote price before creating a hosted subscri
     assert.match(body,/subscription_data%5Bdescription%5D=/);
     assert.match(body,/custom_text%5Bsubmit%5D%5Bmessage%5D=/);
     const checkoutForm=new URLSearchParams(body);
-    assert.match(checkoutForm.get("custom_text[submit][message]")||"",/facturé mensuellement d’avance/i);
-    assert.match(checkoutForm.get("custom_text[submit][message]")||"",/Résiliation possible à tout moment/i);
+    assert.match(checkoutForm.get("custom_text[submit][message]")||"",/mois en cours est offert/i);
+    assert.match(checkoutForm.get("custom_text[submit][message]")||"",/à partir du mois suivant/i);
+    assert.ok(Number(checkoutForm.get("subscription_data[trial_end]"))>Math.floor(Date.now()/1000));
+    assert.match(checkoutForm.get("custom_text[submit][message]")||"",/résiliable à tout moment/i);
+    assert.equal(checkoutForm.get("payment_method_collection"),"always");
     assert.equal(checkoutForm.get("metadata[contract_model]"),"indefinite_monthly_advance");
     assert.equal(checkoutForm.get("subscription_data[metadata][legal_version]"),"2026-09-26-b2b-b2c-v4");
     assert.equal(checkoutForm.get("metadata[ga_client_id]"),"123456789.987654321");
@@ -258,4 +261,19 @@ test("Stripe successful refund resolves the original invoice and consented GA co
     assert.equal(refund.ga_client_id,"123456789.987654321");
     assert.equal(calls.length,3);
   }finally{globalThis.fetch=original;}
+});
+
+test("current month offer starts paid billing in the following month",()=>{
+  const now=Date.UTC(2026,8,15,12,0,0);
+  const end=currentMonthOfferTrialEnd(now);
+  assert.ok(end>=Math.floor(Date.UTC(2026,9,1,0,0,0)/1000));
+  assert.ok(end<=Math.floor(Date.UTC(2026,9,1,0,0,0)/1000)+1);
+});
+
+test("current month offer follows the Europe Paris calendar around midnight",()=>{
+  const parisOct1JustAfterMidnight=Date.UTC(2026,8,30,22,30,0);
+  const end=currentMonthOfferTrialEnd(parisOct1JustAfterMidnight);
+  const endDate=new Date(end*1000);
+  assert.equal(endDate.getUTCMonth(),9);
+  assert.ok(endDate.getUTCDate()>=31||endDate.getUTCDate()===1);
 });

@@ -348,8 +348,8 @@ function simplifyPublicShell(html){
     .replaceAll("Comparer les économies potentielles","Simuler vos économies")
     .replaceAll("Préparer ma demande","Démarrer maintenant")
     .replaceAll("<span>Plateforme Audiotel &amp; SVA</span>","<span>Audiotel simple &amp; économique</span>")
-    .replaceAll("<span>3 € TTC / mois pour la plateforme</span>","<span>3 € / mois</span>")
-    .replaceAll("<span>3 € TTC / mois</span>","<span>3 € / mois</span>")
+    .replaceAll("<span>3 € TTC / mois pour la plateforme</span>","<span>Mois en cours offert · puis 3 € / mois</span>")
+    .replaceAll("<span>3 € TTC / mois</span>","<span>Mois en cours offert · puis 3 € / mois</span>")
     .replaceAll("<span>Particulier ou professionnel</span>","<span>Particuliers &amp; pros</span>")
     .replaceAll("<span>Activation soumise à validation</span>","<span>Activation après validation</span>")
     .replaceAll("<span>Activation après validation</span>","<span>Activation après validation</span><span>Sans engagement de durée</span>");
