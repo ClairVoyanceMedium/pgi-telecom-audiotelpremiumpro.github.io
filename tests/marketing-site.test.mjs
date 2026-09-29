@@ -100,7 +100,7 @@ test("floating contact stays low-friction and submits directly without opening a
   assert.match(contactCss,/\.contact-widget-honeypot/);
   assert.match(contactWidget,/aria-modal="true"/);
   assert.match(contactWidget,/contact-widget-backdrop/);
-  assert.match(contactWidget,/e\.key==="Tab"/);
+  assert.match(contactWidget,/e\.key!=="Tab"/);
   assert.match(contactWidget,/pointerdown/);
   assert.match(contactWidget,/pointermove/);
   assert.match(contactWidget,/setPointerCapture/);
