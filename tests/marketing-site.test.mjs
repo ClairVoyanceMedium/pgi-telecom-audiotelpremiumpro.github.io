@@ -145,7 +145,7 @@ test("marketing conversion is simplified, price-led and non-manipulative",()=>{
   assert.match(html,/AUDIOTEL PAS CHER/);
   assert.match(html,/3 € TTC par mois/);
   assert.match(html,/Simuler mon potentiel/);
-  assert.match(html,/Aucun paiement n’est demandé/);
+  assert.match(html,/La demande démarre sans paiement/);
   assert.match(html,/audiotel-brand-logo-v33\.png/);
   assert.doesNotMatch(html,/places restantes|plus que \d+|compte à rebours|dernière chance|clients en ligne/i);
 });
@@ -248,4 +248,27 @@ test("public navigation is intentionally reduced to one clear conversion path",(
   assert.doesNotMatch(html,/id="avantages"|id="metiers"|id="commande"/);
   assert.match(html,/Audiotel pas cher/);
   assert.match(html,/Une solution PGI Telecom/);
+});
+
+test("legal access blocks stay understandable on mobile",()=>{
+  assert.match(buildStatic,/legal-access-section/);
+  assert.match(buildStatic,/Besoin d’un document précis/);
+  assert.match(buildStatic,/Conditions d’abonnement/);
+  assert.match(buildStatic,/Résilier mon abonnement/);
+  assert.match(contactCss,/legal-access-and-home-compact-v146/);
+  assert.match(contactCss,/\.legal-access-links\{display:grid/);
+  assert.match(contactCss,/grid-template-columns:1fr;gap:8px/);
+});
+
+test("homepage modules are compact and each carries a clear marketing promise",()=>{
+  assert.match(html,/class="home-page"/);
+  assert.match(html,/Simulez votre potentiel Audiotel immédiatement/);
+  assert.match(html,/Tout votre Audiotel sous contrôle, sans complexité/);
+  assert.match(html,/3 € TTC\/mois : simple, visible, sans détour/);
+  assert.match(html,/Votre Audiotel prêt en quatre étapes claires/);
+  assert.match(html,/Les réponses qui comptent vraiment/);
+  assert.match(html,/Donnez vie à votre projet Audiotel/);
+  assert.equal((html.match(/<article>/g)||[]).filter(Boolean).length<10,true);
+  assert.match(contactCss,/\.home-page \.section\{padding:64px 0\}/);
+  assert.match(contactCss,/\.home-page \.tech-grid article\{padding:18px/);
 });

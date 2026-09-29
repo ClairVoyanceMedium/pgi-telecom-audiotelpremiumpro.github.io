@@ -335,8 +335,10 @@ function latestGitDate(sourcePath){
 
 function simplifyPublicShell(html){
   const nav='<nav aria-label="Navigation principale"><a href="/#simulateur">Simulateur</a><a href="/#tarif">Tarif</a><a href="/#fonctionnement">Comment ça marche</a><a href="/#faq">Questions</a></nav>';
+  const legalAccess='<section class="section section-dark legal-access-section"><div class="wrap"><div class="section-head legal-access-head"><p class="eyebrow">DOCUMENTS UTILES</p><h2>Besoin d’un document précis ?</h2><p>Accédez directement aux informations les plus utiles.</p></div><nav class="legal-access-links" aria-label="Documents contractuels"><a href="/conditions-abonnement/"><strong>Conditions d’abonnement</strong><span>Prix, paiement, résiliation et règles du contrat.</span></a><a href="/confidentialite/"><strong>Confidentialité</strong><span>Comment vos données sont utilisées et protégées.</span></a><a href="/resilier-contrat/"><strong>Résilier mon abonnement</strong><span>Accéder directement à la démarche de résiliation.</span></a><a href="/retractation/"><strong>Droit de rétractation</strong><span>Consulter ou exercer le droit applicable.</span></a></nav></div></section>';
   return html
     .replace(/<nav aria-label="Navigation principale">[\s\S]*?<\/nav>/,nav)
+    .replace(/<section class="section section-dark"><div class="wrap"><div class="section-head"><p class="eyebrow">DOCUMENTS (?:JURIDIQUES|ASSOCIÉS)<\/p><h2>[\s\S]*?<\/h2><\/div><div class="footer-links">[\s\S]*?<\/div><\/div><\/section>/g,legalAccess)
     .replaceAll("<span>Solution PGI Telecom</span>","<span>Une solution PGI Telecom</span>");
 }
 
