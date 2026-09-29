@@ -15,7 +15,7 @@ import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebA
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
 import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
-import {sanitizeGa4CheckoutContext,buildGa4PurchaseFromStripe,buildGa4RefundFromStripe,sendGa4Measurement} from "./src/ga4-measurement.mjs";
+import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStripe,buildGa4RefundFromStripe,sendGa4Measurement} from "./src/ga4-measurement.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
@@ -91,8 +91,10 @@ export function createBackend(options={}){
       let match=null;
 
       if(method==="GET"&&pathname==="/api/v1/health"){
+        const ga4=ga4MeasurementState(config);
         return done(res,metrics,started,"health",200,{
-          status:"ok",timestamp:new Date().toISOString(),version:config.version,release:config.releaseId||null,mode:config.mode
+          status:"ok",timestamp:new Date().toISOString(),version:config.version,release:config.releaseId||null,mode:config.mode,
+          analytics_server_ready:ga4.enabled
         });
       }
       if(method==="GET"&&pathname==="/api/v1/ready"){
