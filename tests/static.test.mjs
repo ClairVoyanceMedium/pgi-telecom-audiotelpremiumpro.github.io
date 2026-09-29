@@ -97,8 +97,8 @@ test("les cockpits affichent les reversements en direct sans les confondre avec 
   assert.match(jackpotMigration,/Expand-only and non-destructive/);
   assert.match(jackpotMigration,/never delete or alter accounting data/);
   assert.doesNotMatch(jackpotMigration,/DROP\s+(TABLE|COLUMN|CONSTRAINT)/i);
-  assert.match(site,/Des prix bas soutenus par le bouche-à-oreille/);
-  assert.match(site,/préserver des tarifs bas/);
+  assert.match(site,/tarifs avantageux/);
+  assert.match(site,/À activité identique, un meilleur reversement peut vous permettre de gagner plus sans travailler davantage/);
   assert.doesNotMatch(site,/tarif garanti|prix garanti/i);
 });
 
