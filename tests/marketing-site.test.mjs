@@ -300,3 +300,8 @@ test("public commercial copy is concise while legal and machine-readable price s
   assert.match(buildStatic,/Activation après validation/);
   assert.match(html,/3 € TTC\/mois/);
 });
+
+test("fixed monthly subscription is never presented as a starting price",()=>{
+  assert.match(html,/Abonnement <strong>3 € \/ mois<\/strong>/);
+  assert.doesNotMatch(html,/À partir de <strong>3 €/);
+});
