@@ -19,10 +19,11 @@ const llms=fs.readFileSync("llms.txt","utf8");
 const llmsFull=fs.readFileSync("llms-full.txt","utf8");
 const manifest=fs.readFileSync("site/manifest.webmanifest","utf8");
 const guide=fs.readFileSync("site/seo/guide-audiotel-sva.html","utf8");
+const terms=fs.readFileSync("site/seo/conditions-abonnement.html","utf8");
 
 test("public site targets both individuals and professionals without overloading the homepage",()=>{
-  assert.match(html,/Particulier, porteur de projet ou professionnel/);
-  assert.match(html,/Particulier, porteur de projet ou professionnel/);
+  assert.match(html,/BESOIN D’UN NUMÉRO SURTAXÉ \? \(PARTICULIER \/ PROFESSIONNEL\)/);
+  assert.match(html,/particuliers et professionnels/i);
   assert.match(application,/Particulier \/ porteur de projet/);
   assert.match(application,/Professionnel \/ entreprise/);
 });
@@ -30,7 +31,7 @@ test("public site targets both individuals and professionals without overloading
 test("focused SEO pages remain published without cluttering the homepage",()=>{
   for(const slug of ["audiotel-voyance","audiotel-independants","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","comparateur-audiotel"]){
     assert.match(sitemap,new RegExp(slug));
-    assert.ok(!html.includes('href="/'+slug+'/'),"homepage should not foreground "+slug);
+    if(!["reversement-audiotel","numero-sva"].includes(slug))assert.ok(!html.includes('href="/'+slug+'/'),"homepage should not foreground "+slug);
   }
   assert.match(html,/href="\/demande-ouverture\//);
   assert.match(html,/id="simulateur"/);
@@ -42,8 +43,8 @@ test("public pricing and savings simulation stay explicit and non-guaranteed",()
   assert.match(html,/Le mois en cours est offert/);
   assert.match(html,/Sans engagement de durée/);
   assert.match(html,/Résiliation possible à tout moment/);
-  assert.match(html,/Écart de reversement estimé \/ minute/);
-  assert.match(html,/Gain potentiel \/ mois/);
+  assert.match(html,/Écart de reversement entre les deux offres \/ minute/);
+  assert.match(html,/Gain potentiel en plus \/ mois/);
   assert.match(html,/Simulation indicative et non contractuelle/);
   assert.match(html,/ne constituent pas une garantie d’économies/);
   assert.doesNotMatch(html,/revenu garanti|gains garantis|économies garanties/i);
@@ -262,9 +263,9 @@ test("legal access blocks stay understandable on mobile",()=>{
 
 test("homepage modules are compact and each carries a clear marketing promise",()=>{
   assert.match(html,/class="home-page"/);
-  assert.match(html,/SIMULATEUR D’ÉCONOMIES/);
+  assert.match(html,/CALCULATEUR DE REVENU POTENTIEL/);
   assert.match(html,/Un numéro surtaxé et un espace client pour tout suivre/);
-  assert.match(html,/Le mois en cours est offert, puis 3€ \/ mois/);
+  assert.match(html,/Le mois en cours est offert, puis 3€ TTC \/ mois/);
   assert.match(html,/De la demande au suivi de vos appels, en quatre étapes/);
   assert.match(html,/Ce que vous achetez, comment ça fonctionne et ce que vous payez/);
   assert.match(html,/Demandez votre numéro surtaxé/);
@@ -277,7 +278,7 @@ test("hero replaces the fixed 1800 euro decoration with the real savings simulat
   assert.doesNotMatch(html,/class="hero-card"/);
   assert.doesNotMatch(html,/1 800 € HT/);
   assert.match(html,/class="hero-savings"/);
-  assert.match(html,/Gain potentiel \/ mois/);
+  assert.match(html,/Gain potentiel en plus \/ mois/);
   assert.equal((html.match(/id="simulateur"/g)||[]).length,1);
 });
 
@@ -344,8 +345,8 @@ test("homepage leads with business benefits while preserving technical SEO facts
 test("homepage explains the product before selling benefits",()=>{
   assert.match(html,/NUMÉRO SURTAXÉ · AUDIOTEL · SUIVI EN LIGNE/);
   assert.match(html,/Monétisez vos appels/);
-  assert.match(html,/demander un numéro 08 surtaxé/i);
-  assert.match(html,/suivez vos appels, vos minutes et vos reversements/i);
+  assert.match(html,/BESOIN D’UN NUMÉRO SURTAXÉ/i);
+  assert.match(html,/vos appels, vos minutes, vos estimations et vos reversements/i);
   assert.match(html,/CE QUI EST INCLUS/);
   assert.match(html,/Numéro surtaxé et un espace client pour tout suivre/i);
   assert.match(html,/REVERSEMENTS/);
@@ -362,9 +363,9 @@ test("pricing and simulator use explicit TTC and current-offer comparison",()=>{
   assert.match(html,/3€ TTC par mois/);
   assert.match(html,/Calculer votre revenu supplémentaire/);
   assert.match(html,/Comparez votre offre actuelle à Audiotel Premium Pro/);
-  assert.match(html,/reversement de votre offre actuelle avec la proposition Audiotel Premium Pro/);
+  assert.match(html,/reversement par minute de votre offre actuelle et comparez-le à la proposition Audiotel Premium Pro/);
   assert.match(html,/Écart de reversement entre les deux offres \/ minute/);
-  assert.match(html,/Gain potentiel \/ mois/);
+  assert.match(html,/Gain potentiel en plus \/ mois/);
 });
 test("public login makes clear that access is for existing clients",()=>{
   assert.match(html,/Déjà client \?/);
@@ -373,7 +374,7 @@ test("public login makes clear that access is for existing clients",()=>{
 });
 
 test("homepage prioritizes portability, fast intake and clearer revenue comparison",()=>{
-  assert.match(html,/demander la portabilité de votre numéro actuel/i);
+  assert.match(html,/Demandez sa portabilité/i);
   assert.match(html,/Demande rapide, possible sans SIRET au dépôt initial/);
   assert.match(html,/Conseil, expertise, coaching, voyance, assistance commerciale ou autre service/);
   assert.match(html,/Calculer votre revenu supplémentaire/);
@@ -385,15 +386,15 @@ test("public branding and client access wording are explicit",()=>{
   assert.match(html,/Se connecter à mon espace client/);
   assert.match(html,/AUDIOTEL PREMIUM PRO \| UNE SOLUTION PGI TELECOM/);
   assert.match(html,/Audiotel Premium Pro \| Une solution PGI Telecom/);
-  assert.match(css,/brand-full img\{width:276px/);
-  assert.match(css,/@media\(max-width:980px\)\{\.brand-full img\{width:225px/);
-  assert.match(css,/brand-full img\{width:180px;max-height:54px/);
+  assert.match(css,/brand-full img\{width:340px;max-height:82px\}/);
+  assert.match(css,/@media\(max-width:980px\)[\s\S]*brand-full img\{width:275px;max-height:76px\}/);
+  assert.match(css,/@media\(max-width:680px\)[\s\S]*brand-full img\{width:240px;max-height:70px\}/);
 });
 
 test("hero copy is condensed and the primary potential gain is highlighted in green",()=>{
   assert.match(html,/Déjà un numéro surtaxé \?/);
   assert.match(html,/Demandez sa portabilité/);
-  assert.match(html,/Besoin d’un nouveau numéro \?/);
+  assert.match(html,/BESOIN D’UN NUMÉRO SURTAXÉ \? \(PARTICULIER \/ PROFESSIONNEL\)/);
   assert.match(html,/Conseil, expertise, coaching, voyance, assistance commerciale ou autre service/);
   assert.match(css,/hero-copy-and-green-potential-v153/);
   assert.match(css,/hero-savings-results \.main span,.hero-savings-results \.main strong\{color:var\(--ok\)\}/);
@@ -405,14 +406,14 @@ test("hero carries PGI Telecom signature and explains the higher-revenue-at-same
   assert.match(html,/À activité identique, un meilleur reversement peut vous permettre de gagner plus sans travailler davantage/);
 });
 
-test("hero brand signature is metallic and portability is marketed as free with a contractual qualifier",()=>{
+test("hero brand signature uses the validated premium grey and portability keeps its contractual qualifier",()=>{
   assert.match(html,/hero-brand-signature/);
   assert.match(html,/Audiotel Premium Pro \| Une solution PGI Telecom/);
   assert.match(html,/NUMÉRO SURTAXÉ · AUDIOTEL · SUIVI EN LIGNE · PORTABILITÉ GRATUITE/);
-  assert.match(css,/metallic-brand-signature-v154/);
-  assert.match(css,/hero-brand-signature\{[\s\S]*font-size:15px/);
-  assert.match(css,/linear-gradient\(180deg,#f8fafb/);
-  assert.match(css,/-webkit-text-fill-color:transparent/);
+  assert.match(css,/clickable-hero-and-premium-grey-v157/);
+  assert.match(css,/hero-brand-signature\{[\s\S]*font-size:18px/);
+  assert.match(css,/color:#c9c9c7/);
+  assert.match(css,/-webkit-text-fill-color:currentColor/);
   assert.match(terms,/PGI Telecom ne facture pas de frais de portabilité entrante au titre de la plateforme/);
 });
 
