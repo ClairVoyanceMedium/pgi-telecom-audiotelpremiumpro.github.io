@@ -210,7 +210,9 @@ function accept(){
 }
 function contentIdForLink(link){
   const raw=String(link?.getAttribute("href")||"").trim();
-  if(!raw||raw.startsWith("mailto:")||raw.startsWith("tel:")||raw.startsWith("javascript:"))return "";
+  if(!raw||raw.startsWith("javascript:"))return "";
+  if(raw.startsWith("mailto:"))return "email_contact";
+  if(raw.startsWith("tel:"))return "phone_contact";
   if(raw.startsWith("#")){
     const anchor=raw.slice(1).toLowerCase();
     const anchors={simulateur:"home_calculator",tarif:"home_pricing",fonctionnement:"home_how_it_works",faq:"home_faq",metiers:"home_industries",demande:"opening_form"};
