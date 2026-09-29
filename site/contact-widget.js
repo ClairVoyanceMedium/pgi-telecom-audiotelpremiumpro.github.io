@@ -129,7 +129,7 @@ form.addEventListener("submit",async e=>{
   e.preventDefault();
   status.className="contact-widget-status";
   status.textContent="";
-  if(!form.reportValidity()){track("contact_message_error",{error_type:"validation"});return;}
+  if(!form.checkValidity()){track("contact_message_error",{error_type:"validation"});status.textContent="Merci de compléter les champs obligatoires.";status.classList.add("bad");const invalid=form.querySelector(":invalid");if(invalid){invalid.scrollIntoView({block:"center",inline:"nearest"});try{invalid.focus({preventScroll:true})}catch(_e){invalid.focus()}}return;}
   const payload={
     email:String(email.value||"").trim(),
     message:String(message.value||"").trim(),

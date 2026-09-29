@@ -7,6 +7,7 @@ const css=fs.readFileSync("site/site.css","utf8");
 const js=fs.readFileSync("site/site.js","utf8");
 const tracking=fs.readFileSync("site/hubspot-tracking.js","utf8");
 const contactWidget=fs.readFileSync("site/contact-widget.js","utf8");
+const formUx=fs.readFileSync("site/form-ux.js","utf8");
 const contactCss=fs.readFileSync("site/contact-widget.css","utf8");
 const robots=fs.readFileSync("robots.txt","utf8");
 const sitemap=fs.readFileSync("sitemap.xml","utf8");
@@ -112,6 +113,7 @@ test("floating contact stays low-friction and submits directly without opening a
   assert.doesNotMatch(contactWidget,/mailto:/i);
   assert.doesNotMatch(contactWidget,/Votre téléphone|Votre prénom|Objet de votre demande/);
   assert.match(buildStatic,/site\/contact-widget\.js/);
+  assert.match(buildStatic,/site\/form-ux\.js/);
   for(const event of ["contact_widget_open","contact_form_start","contact_message_submit","contact_message_success","contact_message_error"])assert.ok(contactWidget.includes(event),event+" missing");
   assert.match(contactWidget,/contact_context/);
   assert.match(contactWidget,/floating_email_widget/);
@@ -215,4 +217,17 @@ test("guide cites current official sources for regulatory explanations",()=>{
   assert.match(guide,/www\.arcep\.fr\/mes-demarches-et-services\/consommateurs/);
   assert.match(guide,/www\.economie\.gouv\.fr\/particuliers/);
   assert.match(guide,/Quels sont les principaux types de numéros en 08 \?/);
+});
+
+
+test("public forms keep validation inside the responsive layout instead of native mobile bubbles",()=>{
+  assert.match(html,/site\/form-ux\.js/);
+  assert.match(application,/site\/form-ux\.js/);
+  assert.match(formUx,/form\.noValidate=true/);
+  assert.match(formUx,/form\.checkValidity\(\)/);
+  assert.match(formUx,/stopImmediatePropagation/);
+  assert.match(formUx,/scrollIntoView\(\{block:"center",inline:"nearest"/);
+  assert.doesNotMatch(contactWidget,/reportValidity\(\)/);
+  assert.match(contactWidget,/checkValidity\(\)/);
+  assert.match(contactCss,/font-size:16px/);
 });

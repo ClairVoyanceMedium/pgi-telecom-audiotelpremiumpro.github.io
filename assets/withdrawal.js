@@ -8,6 +8,7 @@ const continueButton=document.getElementById("withdrawal-review-button");
 const confirmButton=document.getElementById("withdrawal-confirm-button");
 const backButton=document.getElementById("withdrawal-back-button");
 if(!form||!review||!status||!continueButton||!confirmButton||!backButton)return;
+form.noValidate=true;
 
 let busy=false;
 let available=false;
@@ -56,7 +57,9 @@ function payload(){
 }
 function showReview(){
   if(!available){setStatus("La rétractation en ligne n’est pas disponible pour le moment. Vous pouvez conserver une trace datée de votre demande en écrivant à support@audiotel-premium-pro.com.","error");return;}
-  if(!form.reportValidity())return;
+  form.checkValidity();
+  const invalid=form.querySelector(":invalid");
+  if(invalid){setStatus("Merci de compléter les champs obligatoires avant de continuer.","error");invalid.scrollIntoView({block:"center",inline:"nearest"});try{invalid.focus({preventScroll:true})}catch(_e){invalid.focus()}return;}
   if(value("website"))return;
   const box=review.querySelector("[data-withdrawal-summary]");
   box.replaceChildren(

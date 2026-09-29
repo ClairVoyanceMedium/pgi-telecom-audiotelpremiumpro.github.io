@@ -15,6 +15,7 @@ const files=[
   "site/index.html",
   "site/site.css",
   "site/site.js",
+  "site/form-ux.js",
   "site/contact-widget.js",
   "site/contact-widget.css",
   "site/hubspot-tracking.js",
