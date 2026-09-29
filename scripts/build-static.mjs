@@ -348,13 +348,13 @@ function simplifyPublicShell(html){
     .replaceAll("Comparer les économies potentielles","Calculer votre revenu supplémentaire")
     .replaceAll("Préparer ma demande","Demander mon numéro")
     .replaceAll("<span>Plateforme Audiotel &amp; SVA</span>","<span>Numéro surtaxé &amp; espace client</span>")
-    .replaceAll("<span>3 € TTC / mois pour la plateforme</span>","<span>Mois en cours offert · puis 3 € / mois</span>")
-    .replaceAll("<span>3 € TTC / mois</span>","<span>Mois en cours offert · puis 3 € / mois</span>")
+    .replaceAll("<span>3€ TTC / mois pour la plateforme</span>","<span>Mois en cours offert · puis 3€ / mois</span>")
+    .replaceAll("<span>3€ TTC / mois</span>","<span>Mois en cours offert · puis 3€ / mois</span>")
     .replaceAll("<span>Particulier ou professionnel</span>","<span>Particuliers, indépendants &amp; entreprises</span>")
     .replaceAll("<span>Activation soumise à validation</span>","<span>Activation après validation</span>")
     .replaceAll("<span>Activation après validation</span>","<span>Activation après validation</span><span>Sans engagement de durée</span>")
-    .replaceAll("3 € / mois","3 € TTC / mois")
-    .replaceAll("3 € par mois","3 € TTC par mois");
+    .replaceAll("3€ / mois","3€ TTC / mois")
+    .replaceAll("3€ par mois","3€ TTC par mois");
 }
 
 function injectContactWidget(html){
