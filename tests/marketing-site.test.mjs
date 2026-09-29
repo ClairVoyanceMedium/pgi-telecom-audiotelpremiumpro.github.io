@@ -161,7 +161,7 @@ test("marketing page exposes structured service data without fabricated social p
   assert.ok(html.includes("support@audiotel-premium-pro.com"));
   assert.match(html,/"price":"3\.00"/);
   assert.match(html,/"priceCurrency":"EUR"/);
-  assert.match(html,/0,10 € par jour/);
+  assert.match(html,/"serviceType":\["Numéro surtaxé Audiotel"/);
   assert.doesNotMatch(html,/aggregateRating|"review"|bestRating|ratingValue/);
 });
 
