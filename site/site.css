@@ -48,3 +48,10 @@ main,header,footer,section,.site-header,.header-inner,.hero-grid,.calculator-gri
 /* mobile-offer-proof-v151 */
 .mobile-order-offer{display:grid;gap:2px;min-width:0}.mobile-order-offer>strong{font-size:15px;line-height:1.1;color:#fff4e8}.mobile-order-offer>small{display:block;max-width:310px;font-size:9px;line-height:1.25;color:#bca89a;font-weight:600}.mobile-order-cta>b{white-space:nowrap}
 @media(max-width:480px){.mobile-order-offer>strong{font-size:14px}.mobile-order-offer>small{font-size:8.5px;max-width:235px}.mobile-order-cta>b{font-size:11px;padding-inline:12px}}
+
+/* hero-copy-and-green-potential-v153 */
+.hero-lead{display:grid;gap:8px}
+.hero-lead>span{display:block}
+.hero-lead>span:last-child{font-size:15px;color:#bca99c}
+.hero-savings-results .main span,.hero-savings-results .main strong{color:var(--ok)}
+@media(max-width:680px){.hero-lead{gap:7px}.hero-lead>span:last-child{font-size:14px}}

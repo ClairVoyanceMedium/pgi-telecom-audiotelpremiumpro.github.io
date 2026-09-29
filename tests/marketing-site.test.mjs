@@ -375,7 +375,7 @@ test("public login makes clear that access is for existing clients",()=>{
 test("homepage prioritizes portability, fast intake and clearer revenue comparison",()=>{
   assert.match(html,/demander la portabilité de votre numéro actuel/i);
   assert.match(html,/Demande rapide, possible sans SIRET au dépôt initial/);
-  assert.match(html,/conseil, expertise, accompagnement, information spécialisée, coaching, voyance ou assistance commerciale/);
+  assert.match(html,/Conseil, expertise, coaching, voyance, assistance commerciale ou autre service/);
   assert.match(html,/Calculer votre revenu supplémentaire/);
   assert.match(html,/CALCULATEUR DE REVENU POTENTIEL/);
   assert.match(html,/revenu potentiel supplémentaire par mois et sur 12 mois/);
@@ -388,4 +388,14 @@ test("public branding and client access wording are explicit",()=>{
   assert.match(css,/brand-full img\{width:276px/);
   assert.match(css,/@media\(max-width:980px\)\{\.brand-full img\{width:225px/);
   assert.match(css,/brand-full img\{width:180px;max-height:54px/);
+});
+
+test("hero copy is condensed and the primary potential gain is highlighted in green",()=>{
+  assert.match(html,/Déjà un numéro surtaxé \?/);
+  assert.match(html,/Demandez sa portabilité/);
+  assert.match(html,/Besoin d’un nouveau numéro \?/);
+  assert.match(html,/Conseil, expertise, coaching, voyance, assistance commerciale ou autre service/);
+  assert.match(css,/hero-copy-and-green-potential-v153/);
+  assert.match(css,/hero-savings-results \.main span,.hero-savings-results \.main strong\{color:var\(--ok\)\}/);
+  assert.match(html,/Business Live : suivez en direct, seconde après seconde, le montant estimé qui vous est attribué pendant chaque appel/);
 });
