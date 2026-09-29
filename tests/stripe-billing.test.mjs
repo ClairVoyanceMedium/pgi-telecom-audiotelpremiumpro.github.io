@@ -266,8 +266,9 @@ test("Stripe successful refund resolves the original invoice and consented GA co
 test("current month offer starts paid billing in the following month",()=>{
   const now=Date.UTC(2026,8,15,12,0,0);
   const end=currentMonthOfferTrialEnd(now);
-  assert.ok(end>=Math.floor(Date.UTC(2026,9,1,0,0,0)/1000));
-  assert.ok(end<=Math.floor(Date.UTC(2026,9,1,0,0,0)/1000)+1);
+  const parisOct1Midnight=Math.floor(Date.UTC(2026,8,30,22,0,0)/1000);
+  assert.ok(end>=parisOct1Midnight);
+  assert.ok(end<=parisOct1Midnight+1);
 });
 
 test("current month offer follows the Europe Paris calendar around midnight",()=>{
