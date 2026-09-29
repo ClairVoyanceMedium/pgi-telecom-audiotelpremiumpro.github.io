@@ -27,7 +27,10 @@ const PARAMS=Object.freeze({
   order_form_abandon:["form_context"],
   registration_view:["registration_source"],
   email_verification_required:["account_type","service_intent","lead_source"],
-  page_performance:["metric_name","metric_rating","metric_value"]
+  page_performance:["metric_name","metric_rating","metric_value"],
+  section_view:["section_id"],
+  scroll_depth:["scroll_percent"],
+  site_error:["error_type"]
 });
 const VALUES=Object.freeze({
   account_type:new Set(["business","individual"]),
@@ -38,13 +41,15 @@ const VALUES=Object.freeze({
   contact_context:new Set(["home","pricing","portability","payouts","education","industry","opening","legal","other"]),
   contact_source:new Set(["floating_email_widget"]),
   crm_sync:new Set(["synced","not_synced"]),
-  error_type:new Set(["network_or_server","validation"]),
+  error_type:new Set(["network_or_server","validation","js_error","promise_rejection"]),
   content_type:new Set(["cta","navigation","resource","internal_link","faq","tool"]),
   form_context:new Set(["home","opening"]),
   error_field:new Set(["account_type","identity","email","service_intent","consent","other"]),
   registration_source:new Set(["public_order"]),
   metric_name:new Set(["lcp_ms","cls_milli","ttfb_ms","interaction_latency_p98_ms"]),
-  metric_rating:new Set(["good","needs_improvement","poor"])
+  metric_rating:new Set(["good","needs_improvement","poor"]),
+  section_id:new Set(["hero","calculator","proof","platform","pricing","how_it_works","faq","audiences","opening","benefits","decision_strip","final_cta"]),
+  scroll_percent:new Set(["25","50","75","90"])
 });
 const ALIASES=Object.freeze({service_intent:Object.freeze({advice:"commercial_information"})});
 const path=location.pathname||"/",privatePage=PRIVATE_RE.test(path),publicPage=!privatePage&&!CLIENT_RE.test(path);
@@ -111,6 +116,8 @@ function loadGa4(){
   window.gtag("set",context);
   window.gtag("config",MEASUREMENT_ID,{
     send_page_view:true,
+    page_location:location.origin+location.pathname,
+    page_title:document.title,
     content_group:context.content_group,
     allow_google_signals:false,
     allow_ad_personalization_signals:false,
@@ -203,7 +210,12 @@ function accept(){
 }
 function contentIdForLink(link){
   const raw=String(link?.getAttribute("href")||"").trim();
-  if(!raw||raw.startsWith("#")||raw.startsWith("mailto:")||raw.startsWith("tel:")||raw.startsWith("javascript:"))return "";
+  if(!raw||raw.startsWith("mailto:")||raw.startsWith("tel:")||raw.startsWith("javascript:"))return "";
+  if(raw.startsWith("#")){
+    const anchor=raw.slice(1).toLowerCase();
+    const anchors={simulateur:"home_calculator",tarif:"home_pricing",fonctionnement:"home_how_it_works",faq:"home_faq",metiers:"home_industries",demande:"opening_form"};
+    return anchors[anchor]||"";
+  }
   let url;try{url=new URL(raw,location.href)}catch(_e){return ""}
   if(url.origin!==location.origin)return "";
   const p=url.pathname.replace(/\/+$/,"")||"/";
@@ -230,7 +242,7 @@ function bindContentMeasurement(){
   document.querySelectorAll("details").forEach((details,index)=>details.addEventListener("toggle",()=>{
     if(details.open)track("select_content",{content_type:"faq",content_id:(contentGroup().toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"").slice(0,50)||"page")+"_faq_"+String(index+1)});
   }));
-  const calculator=document.querySelector("[data-calculator]");
+  const calculator=document.querySelector("[data-calculator],[data-savings-calculator]");
   if(calculator){
     let used=false;
     calculator.addEventListener("input",()=>{if(!used){used=true;track("select_content",{content_type:"tool",content_id:"homepage_calculator"})}});
@@ -240,6 +252,52 @@ function bindContentMeasurement(){
     let used=false;
     comparatorInputs.forEach(input=>input.addEventListener("input",()=>{if(!used){used=true;track("select_content",{content_type:"tool",content_id:"audiotel_comparator"})}}));
   }
+}
+function bindSectionMeasurement(){
+  if(privatePage||typeof IntersectionObserver!=="function")return;
+  const selectors=[
+    [".hero","hero"],["#simulateur","calculator"],[".proof-strip","proof"],["#plateforme","platform"],
+    ["#tarif","pricing"],["#fonctionnement","how_it_works"],["#faq,.faq-section","faq"],["#metiers","audiences"],
+    ["#demande","opening"],[".benefits","benefits"],[".decision-strip","decision_strip"],[".final-cta","final_cta"]
+  ];
+  const seen=new Set(),targets=[];
+  for(const [selector,id] of selectors){
+    const el=document.querySelector(selector);
+    if(el&&!seen.has(el)){seen.add(el);targets.push([el,id])}
+  }
+  if(!targets.length)return;
+  const byElement=new Map(targets);
+  const observer=new IntersectionObserver(entries=>{
+    for(const entry of entries){
+      if(!entry.isIntersecting||entry.intersectionRatio<0.35)continue;
+      const id=byElement.get(entry.target);if(!id)continue;
+      track("section_view",{section_id:id});observer.unobserve(entry.target);
+    }
+  },{threshold:[0.35]});
+  targets.forEach(([el])=>observer.observe(el));
+}
+function bindScrollMeasurement(){
+  if(privatePage)return;
+  const thresholds=[25,50,75,90],sent=new Set();
+  let scheduled=false;
+  const check=()=>{
+    scheduled=false;
+    const doc=document.documentElement,max=Math.max(0,doc.scrollHeight-window.innerHeight);
+    if(max<=0)return;
+    const pct=Math.max(0,Math.min(100,Math.round((window.scrollY/max)*100)));
+    for(const threshold of thresholds){
+      if(pct>=threshold&&!sent.has(threshold)){sent.add(threshold);track("scroll_depth",{scroll_percent:String(threshold)})}
+    }
+  };
+  const schedule=()=>{if(!scheduled){scheduled=true;requestAnimationFrame(check)}};
+  window.addEventListener("scroll",schedule,{passive:true});
+  window.addEventListener("resize",schedule,{passive:true});
+  schedule();
+}
+function bindErrorMeasurement(){
+  if(privatePage)return;
+  window.addEventListener("error",()=>track("site_error",{error_type:"js_error"}));
+  window.addEventListener("unhandledrejection",()=>track("site_error",{error_type:"promise_rejection"}));
 }
 function bindOrderFunnel(){
   const form=document.getElementById("order-form");if(!form)return;
@@ -307,6 +365,9 @@ function show(){banner().hidden=false}
 function boot(){
   wrapCustomerApi();
   bindContentMeasurement();
+  bindSectionMeasurement();
+  bindScrollMeasurement();
+  bindErrorMeasurement();
   bindOrderFunnel();
   bindPerformanceMeasurement();
   bindRegistrationMeasurement();
