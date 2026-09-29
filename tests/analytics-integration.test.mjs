@@ -86,3 +86,21 @@ test("GA4 API secret stays server-only and server purchase/refund use verified S
   assert.match(backend,/deliverGa4StripeEvent/);
   for(const browserSource of [tracking,site,billing,portal,verification])assert.doesNotMatch(browserSource,/PGI_GA4_API_SECRET|api_secret=/i);
 });
+
+
+test("extended engagement analytics stay low-cardinality and privacy-safe",()=>{
+  for(const event of ["section_view","scroll_depth","site_error"])assert.ok(tracking.includes(event),event+" missing");
+  assert.match(tracking,/section_id:new Set\(\["hero","calculator","proof","platform","pricing","how_it_works","faq","audiences","opening","benefits","decision_strip","final_cta"\]\)/);
+  assert.match(tracking,/scroll_percent:new Set\(\["25","50","75","90"\]\)/);
+  assert.match(tracking,/\[data-calculator\],\[data-savings-calculator\]/);
+  assert.match(tracking,/page_location:location\.origin\+location\.pathname/);
+  assert.doesNotMatch(tracking,/page_location:location\.href/);
+});
+
+test("home anchor navigation is measured without recording arbitrary URLs",()=>{
+  assert.match(tracking,/simulateur:"home_calculator"/);
+  assert.match(tracking,/tarif:"home_pricing"/);
+  assert.match(tracking,/fonctionnement:"home_how_it_works"/);
+  assert.match(tracking,/faq:"home_faq"/);
+  assert.match(tracking,/metiers:"home_industries"/);
+});
