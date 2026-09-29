@@ -263,11 +263,11 @@ test("legal access blocks stay understandable on mobile",()=>{
 test("homepage modules are compact and each carries a clear marketing promise",()=>{
   assert.match(html,/class="home-page"/);
   assert.match(html,/SIMULATEUR D’ÉCONOMIES/);
-  assert.match(html,/Tout votre Audiotel sous contrôle, sans complexité/);
+  assert.match(html,/Suivez ce qui compte vraiment pour faire avancer votre activité/);
   assert.match(html,/Commencez sans payer le mois en cours/);
-  assert.match(html,/Votre Audiotel prêt en quatre étapes claires/);
-  assert.match(html,/Les réponses qui comptent vraiment/);
-  assert.match(html,/Donnez vie à votre projet Audiotel/);
+  assert.match(html,/Vous avancez simplement, étape par étape/);
+  assert.match(html,/Simple à comprendre avant de se lancer/);
+  assert.match(html,/Faites passer votre projet à l’étape supérieure/);
   assert.equal((html.match(/<article>/g)||[]).filter(Boolean).length<10,true);
   assert.match(contactCss,/\.home-page \.section\{padding:64px 0\}/);
   assert.match(contactCss,/\.home-page \.tech-grid article\{padding:18px/);
@@ -292,11 +292,11 @@ test("existing customers get an explicit login entry in every public shell",()=>
 });
 
 test("public commercial copy is concise while legal and machine-readable price stays precise",()=>{
-  assert.match(html,/AUDIOTEL PAS CHER · MOIS EN COURS OFFERT/);
+  assert.match(html,/FAITES GRANDIR VOTRE BUSINESS · MOIS EN COURS OFFERT/);
   assert.match(html,/Le mois en cours est offert/);
   assert.match(html,/prix TTC 3 € \/ mois/i);
   assert.match(buildStatic,/Démarrer maintenant/);
-  assert.match(buildStatic,/Audiotel simple &amp; économique/);
+  assert.match(buildStatic,/Simple pour votre business/);
   assert.match(buildStatic,/Activation après validation/);
   assert.match(html,/3 € TTC par mois/);
 });
@@ -327,4 +327,16 @@ test("current month is offered before the fixed monthly subscription starts",()=
   assert.match(html,/à partir du mois suivant/i);
   assert.match(application,/Mois en cours offert/);
   assert.match(application,/Puis 3 € \/ mois/);
+});
+
+test("homepage leads with business benefits while preserving technical SEO facts",()=>{
+  assert.match(html,/Donnez plus de valeur à votre business/);
+  assert.match(html,/VOTRE BUSINESS EN UN COUP D’ŒIL/);
+  assert.match(html,/BUSINESS LIVE/);
+  assert.match(html,/UNE OFFRE PENSÉE POUR ENTREPRENDRE/);
+  assert.match(html,/DE L’IDÉE AU BUSINESS/);
+  assert.match(html,/Faites passer votre projet à l’étape supérieure/);
+  assert.match(html,/<title>[^<]*Audiotel/i);
+  assert.match(html,/"@type":"Service"/);
+  assert.match(html,/SVA/i);
 });

@@ -737,17 +737,30 @@ test("passwords can be shown on client and staff login without changing stored c
 });
 test("client and staff jackpots are promoted to the top of each dashboard",()=>{
   assert.match(clientLiveFinance,/#client-main \.cp-intro/);
-  assert.match(clientLiveFinance,/VOTRE CASH LIVE/);
+  assert.match(clientLiveFinance,/VOTRE BUSINESS LIVE/);
   assert.doesNotMatch(clientLiveFinance,/var box=\$\("client-overview"\)/);
   assert.match(adminLiveFinance,/\.main \.topbar/);
-  assert.match(adminLiveFinance,/CASH LIVE GLOBAL/);
+  assert.match(adminLiveFinance,/BUSINESS LIVE GLOBAL/);
   assert.doesNotMatch(adminLiveFinance,/\.panel\.realtime \.live-stats/);
 });
 
-test("finance counters are branded Cash Live without renaming stable internal APIs",()=>{
-  assert.match(clientLiveFinance,/VOTRE CASH LIVE/);
-  assert.match(adminLiveFinance,/CASH LIVE GLOBAL/);
+test("finance counters are branded Business Live without renaming stable internal APIs",()=>{
+  assert.match(clientLiveFinance,/VOTRE BUSINESS LIVE/);
+  assert.match(adminLiveFinance,/BUSINESS LIVE GLOBAL/);
   assert.doesNotMatch(clientLiveFinance,/VOTRE JACKPOT EN DIRECT/);
   assert.doesNotMatch(adminLiveFinance,/JACKPOT GLOBAL EN DIRECT/);
   assert.match(clientPortalApi,/\/customer\/jackpot/);
+});
+
+test("Business Live stays centered and highlights active money flow",()=>{
+  const clientLiveFinanceCss=read("assets/client-live-finance.css");
+  const adminLiveFinanceCss=read("assets/live-finance.css");
+  assert.match(clientLiveFinance,/VOTRE BUSINESS LIVE/);
+  assert.match(adminLiveFinance,/BUSINESS LIVE GLOBAL/);
+  assert.match(clientLiveFinanceCss,/cp-jackpot-main\{text-align:center\}/);
+  assert.match(clientLiveFinanceCss,/data-active=true.*animation:blGlow/);
+  assert.match(adminLiveFinanceCss,/lj-head>div:first-child\{text-align:center\}/);
+  assert.match(adminLiveFinanceCss,/data-active=true.*animation:blGlow/);
+  assert.match(clientLiveFinanceCss,/prefers-reduced-motion:reduce/);
+  assert.match(adminLiveFinanceCss,/prefers-reduced-motion:reduce/);
 });

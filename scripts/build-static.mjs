@@ -343,14 +343,14 @@ function simplifyPublicShell(html){
     .replace(/<section class="section section-dark"><div class="wrap"><div class="section-head"><p class="eyebrow">DOCUMENTS (?:JURIDIQUES|ASSOCIÉS)<\/p><h2>[\s\S]*?<\/h2><\/div><div class="footer-links">[\s\S]*?<\/div><\/div><\/section>/g,legalAccess)
     .replaceAll("<span>Solution PGI Telecom</span>","<span>Une solution PGI Telecom</span>")
     .replaceAll("Demander l’ouverture de mon compte","Démarrer maintenant")
-    .replaceAll("Découvrir la plateforme","Voir les avantages")
+    .replaceAll("Découvrir la plateforme","Découvrir les avantages")
     .replaceAll("Comparer un écart économique","Simuler vos économies")
     .replaceAll("Comparer les économies potentielles","Simuler vos économies")
     .replaceAll("Préparer ma demande","Démarrer maintenant")
-    .replaceAll("<span>Plateforme Audiotel &amp; SVA</span>","<span>Audiotel simple &amp; économique</span>")
+    .replaceAll("<span>Plateforme Audiotel &amp; SVA</span>","<span>Simple pour votre business</span>")
     .replaceAll("<span>3 € TTC / mois pour la plateforme</span>","<span>Mois en cours offert · puis 3 € / mois</span>")
     .replaceAll("<span>3 € TTC / mois</span>","<span>Mois en cours offert · puis 3 € / mois</span>")
-    .replaceAll("<span>Particulier ou professionnel</span>","<span>Particuliers &amp; pros</span>")
+    .replaceAll("<span>Particulier ou professionnel</span>","<span>Pour votre projet ou votre business</span>")
     .replaceAll("<span>Activation soumise à validation</span>","<span>Activation après validation</span>")
     .replaceAll("<span>Activation après validation</span>","<span>Activation après validation</span><span>Sans engagement de durée</span>");
 }
