@@ -108,15 +108,19 @@ function clearCookies(){
 function updateConsent(granted){window.gtag("consent","update",{...denied,analytics_storage:granted?"granted":"denied"})}
 function analyticsPageLocation(){
   const url=new URL(location.href);
-  const allowed=new Set([
-    "utm_id","utm_source","utm_medium","utm_campaign","utm_term","utm_content",
-    "utm_source_platform","utm_creative_format","utm_marketing_tactic",
-    "gclid","dclid","gbraid","wbraid","gad_source","gad_campaignid"
+  const clickIds=new Set([
+    "gclid","dclid","gbraid","wbraid","gad_source","gad_campaignid",
+    "msclkid","fbclid","ttclid","li_fat_id","twclid","srsltid",
+    "epik","scclid","rdt_cid"
   ]);
   const clean=new URLSearchParams();
   for(const [key,value] of url.searchParams){
     const normalized=String(key||"").toLowerCase();
-    if(allowed.has(normalized)&&String(value||"").length<=200)clean.append(normalized,String(value));
+    const marketingKey=/^utm_[a-z0-9_]{1,48}$/.test(normalized)||clickIds.has(normalized);
+    if(!marketingKey)continue;
+    const safeValue=String(value||"").trim();
+    if(!safeValue||safeValue.length>200||safeValue.includes("@")||/[\u0000-\u001f\u007f]/.test(safeValue))continue;
+    clean.append(normalized,safeValue);
   }
   const query=clean.toString();
   return location.origin+location.pathname+(query?"?"+query:"");
