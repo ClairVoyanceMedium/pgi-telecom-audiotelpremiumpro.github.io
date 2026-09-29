@@ -197,7 +197,7 @@ test("public funnels preserve legal customer qualification and non-promissory fi
   assert.match(number,/particuliers et professionnels/i);
   assert.match(comparator,/écart économique potentiel/i);
   assert.doesNotMatch(comparator,/<title>[^<]*gain potentiel/i);
-  assert.match(liveFinance,/ESTIMATION PERSONNELLE/);
+  assert.match(liveFinance,/ESTIMATION EN COURS/);
   assert.match(liveFinance,/reversements validés font foi/);
 });
 
@@ -315,7 +315,7 @@ test("mobile offer states the fixed subscription and frames competitive value as
 
 test("subscription is clearly marketed as no-commitment while keeping the period-end effect explicit",()=>{
   assert.match(html,/Sans engagement de durée/);
-  assert.match(html,/Résiliable à tout moment/);
+  assert.match(html,/Résiliation possible à tout moment/);
   assert.match(html,/prend normalement effet à la fin de la période déjà payée/);
   assert.match(application,/Sans engagement de durée/);
   assert.match(application,/Résiliable à tout moment/);
@@ -392,7 +392,7 @@ test("public branding and client access wording are explicit",()=>{
 });
 
 test("hero copy is condensed and the primary potential gain is highlighted in green",()=>{
-  assert.match(html,/Déjà un numéro surtaxé \?/);
+  assert.match(html,/DÉJÀ UN NUMÉRO SURTAXÉ \?/);
   assert.match(html,/Demandez sa portabilité/);
   assert.match(html,/BESOIN D’UN NUMÉRO SURTAXÉ \? \(PARTICULIER \/ PROFESSIONNEL\)/);
   assert.match(html,/Conseil, expertise, coaching, voyance, assistance commerciale ou autre service/);
