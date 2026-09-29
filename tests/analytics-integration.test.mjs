@@ -95,11 +95,14 @@ test("extended engagement analytics stay low-cardinality and privacy-safe",()=>{
   assert.match(tracking,/\[data-calculator\],\[data-savings-calculator\]/);
   assert.match(tracking,/function analyticsPageLocation\(\)/);
   assert.match(tracking,/page_location:analyticsPageLocation\(\)/);
-  for(const key of ["utm_source","utm_medium","utm_campaign","utm_term","utm_content","gclid","gbraid","wbraid"]){
+  assert.match(tracking,/\^utm_\[a-z0-9_\]\{1,48\}\$/);
+  for(const key of ["gclid","gbraid","wbraid","msclkid","fbclid","ttclid","li_fat_id","srsltid"]){
     assert.ok(tracking.includes('"'+key+'"'),key+" campaign parameter missing");
   }
+  const sanitizer=tracking.slice(tracking.indexOf("function analyticsPageLocation()"),tracking.indexOf("function loadGa4()"));
+  assert.match(sanitizer,/safeValue\.includes\("@"\)/);
+  assert.doesNotMatch(sanitizer,/token|email|phone|code/);
   assert.doesNotMatch(tracking,/page_location:location\.href/);
-  assert.doesNotMatch(tracking,/"token","code","email"/);
 });
 
 test("home anchor navigation is measured without recording arbitrary URLs",()=>{
