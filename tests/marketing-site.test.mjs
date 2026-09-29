@@ -401,6 +401,6 @@ test("hero copy is condensed and the primary potential gain is highlighted in gr
 });
 
 test("hero carries PGI Telecom signature and explains the higher-revenue-at-same-activity benefit",()=>{
-  assert.match(html,/Audiotel Premium \| Une solution PGI Telecom/);
+  assert.match(html,/Audiotel Premium Pro \| Une solution PGI Telecom/);
   assert.match(html,/À activité identique, un meilleur reversement peut vous permettre de gagner plus sans travailler davantage/);
 });
