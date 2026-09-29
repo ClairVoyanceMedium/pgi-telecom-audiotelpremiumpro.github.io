@@ -144,7 +144,7 @@ test("dedicated opening page preselects profiles and preserves an unfinished ses
 test("marketing conversion is simplified, product-led and non-manipulative",()=>{
   assert.match(html,/NUMÉRO SURTAXÉ · AUDIOTEL · SUIVI EN LIGNE/);
   assert.match(html,/Monétisez vos appels/);
-  assert.match(html,/Simuler votre gain potentiel/);
+  assert.match(html,/Calculer votre revenu supplémentaire/);
   assert.match(html,/Demander mon numéro/);
   assert.match(html,/audiotel-brand-logo-v33\.png/);
   assert.doesNotMatch(html,/places restantes|plus que \d+|compte à rebours|dernière chance|clients en ligne/i);
@@ -284,9 +284,9 @@ test("hero replaces the fixed 1800 euro decoration with the real savings simulat
 test("existing customers get an explicit login entry in every public shell",()=>{
   assert.match(html,/header-login[^>]*href="\/client\.html"/);
   assert.match(html,/Déjà client \?/);
-  assert.match(html,/Se connecter à mon compte client/);
+  assert.match(html,/Se connecter à mon espace client/);
   assert.match(buildStatic,/header-login/);
-  assert.match(buildStatic,/Se connecter à mon compte client/);
+  assert.match(buildStatic,/Se connecter à mon espace client/);
   assert.match(contactCss,/hero-savings-and-client-login-v147/);
   assert.match(contactCss,/header-actions \.header-login\{display:inline-flex!important/);
 });
@@ -360,14 +360,32 @@ test("pricing and simulator use explicit TTC and current-offer comparison",()=>{
   assert.doesNotMatch(html,/>[^<]*3 € par mois[^<]*</);
   assert.match(html,/3 € TTC \/ mois/);
   assert.match(html,/3 € TTC par mois/);
-  assert.match(html,/Simuler votre gain potentiel/);
-  assert.match(html,/Comparez votre offre actuelle à la nôtre/);
+  assert.match(html,/Calculer votre revenu supplémentaire/);
+  assert.match(html,/Comparez votre offre actuelle à Audiotel Premium Pro/);
   assert.match(html,/reversement de votre offre actuelle avec la proposition Audiotel Premium Pro/);
   assert.match(html,/Écart de reversement entre les deux offres \/ minute/);
   assert.match(html,/Gain potentiel \/ mois/);
 });
 test("public login makes clear that access is for existing clients",()=>{
   assert.match(html,/Déjà client \?/);
-  assert.match(html,/Se connecter à mon compte client/);
-  assert.match(buildStatic,/Se connecter à mon compte client/);
+  assert.match(html,/Se connecter à mon espace client/);
+  assert.match(buildStatic,/Se connecter à mon espace client/);
+});
+
+test("homepage prioritizes portability, fast intake and clearer revenue comparison",()=>{
+  assert.match(html,/demander la portabilité de votre numéro actuel/i);
+  assert.match(html,/Demande rapide, possible sans SIRET au dépôt initial/);
+  assert.match(html,/conseil, expertise, accompagnement, information spécialisée, coaching, voyance ou assistance commerciale/);
+  assert.match(html,/Calculer votre revenu supplémentaire/);
+  assert.match(html,/CALCULATEUR DE REVENU POTENTIEL/);
+  assert.match(html,/revenu potentiel supplémentaire par mois et sur 12 mois/);
+  assert.match(html,/Business Live : suivez en direct, seconde après seconde, le montant estimé qui vous est attribué pendant vos appels/);
+});
+test("public branding and client access wording are explicit",()=>{
+  assert.match(html,/Se connecter à mon espace client/);
+  assert.match(html,/AUDIOTEL PREMIUM PRO \| UNE SOLUTION PGI TELECOM/);
+  assert.match(html,/Audiotel Premium Pro \| Une solution PGI Telecom/);
+  assert.match(css,/brand-full img\{width:276px/);
+  assert.match(css,/@media\(max-width:980px\)\{\.brand-full img\{width:225px/);
+  assert.match(css,/brand-full img\{width:180px;max-height:54px/);
 });
