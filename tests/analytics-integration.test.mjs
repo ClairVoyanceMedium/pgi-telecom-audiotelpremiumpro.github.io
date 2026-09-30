@@ -55,6 +55,13 @@ test("the Google payload allowlist excludes direct identifiers",()=>{
 });
 
 
+test("GTM stays in standby while direct GA4 is the browser source of truth",()=>{
+  assert.match(tracking,/GTM_MODE="standby"/);
+  assert.match(tracking,/GTM_MODE!==\"active\"/);
+  assert.match(tracking,/pgi_gtm_role:"non_ga4"/);
+  assert.match(tracking,/gtmMode:GTM_MODE/);
+});
+
 test("direct GA4 loader sends the first page_view after consent",()=>{
   assert.match(tracking,/GA_SCRIPT_ID="pgi-ga4-loader"/);
   assert.match(tracking,/googletagmanager\.com\/gtag\/js\?id=/);

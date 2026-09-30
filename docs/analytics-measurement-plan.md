@@ -30,6 +30,28 @@ Le contrôleur unique `site/hubspot-tracking.js` pilote Google Analytics et HubS
 - `/client.html` accepte uniquement les événements métier consentis ; le tag GTM correspondant a `send_page_view=false`.
 - La balise GA4 directe est la voie primaire de collecte après consentement. GTM reste chargé pour les autres balises et ne doit pas contenir une seconde balise GA4 de page vue pour ce même flux, afin d’éviter les doublons.
 
+## État de production GTM — anti-doublon
+
+Le conteneur Web `GTM-5L6NW5JZ` est conservé mais le site le maintient actuellement en **mode veille** (`GTM_MODE=standby`). Cette décision est volontaire : une version historique du conteneur avait été publiée avec une balise GA4 sur les pages publiques et une balise dédiée à `/client.html`, alors que la collecte navigateur est désormais assurée directement par `gtag.js` avec `G-SZY50J75N7`. Charger simultanément ces deux chemins sans nettoyage du conteneur créerait un risque de double `page_view` et de double comptage d’événements.
+
+Règle de production actuelle :
+
+- **GA4 navigateur** : voie directe `gtag.js`, après consentement uniquement ;
+- **GA4 serveur** : Measurement Protocol uniquement pour les événements Stripe confirmés prévus ;
+- **GTM** : conteneur conservé mais non chargé tant que sa version publiée n’est pas nettoyée ;
+- **HubSpot** : chargement direct après consentement, indépendant de GTM ;
+- **cockpit/admin** : toujours exclus de la mesure publique.
+
+Conditions obligatoires avant de repasser `GTM_MODE` à `active` :
+
+1. aucune balise **Google tag / GA4 Configuration** ne doit viser `G-SZY50J75N7` ;
+2. aucune balise **GA4 Event** ne doit réémettre les événements déjà envoyés par `site/hubspot-tracking.js` ;
+3. aucune balise HubSpot ne doit recharger le script HubSpot déjà géré directement ;
+4. les futures balises publicitaires doivent respecter leurs catégories de consentement dédiées avant déclenchement ;
+5. Preview/Tag Assistant doit confirmer l’absence de doublon avant publication.
+
+Lorsque GTM sera réactivé, son rôle sera limité aux balises non GA4 et il sera marqué dans la couche de données par `pgi_gtm_role=non_ga4`.
+
 ## Événements actifs dans le code
 
 | Événement | Déclenchement fiable | Paramètres autorisés |

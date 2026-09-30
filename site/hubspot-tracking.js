@@ -1,6 +1,7 @@
 (()=>{
 "use strict";
 const PORTAL_ID="149417663",REGION="eu1",GTM_ID="GTM-5L6NW5JZ",MEASUREMENT_ID="G-SZY50J75N7";
+const GTM_MODE="standby";
 const KEY="pgi_tracking_consent_v1",VERSION="2026-09-27-analytics-v1",MAX_AGE=180*24*60*60*1000;
 const HS_SCRIPT_ID="hs-script-loader",GTM_SCRIPT_ID="pgi-gtm-loader",GA_SCRIPT_ID="pgi-ga4-loader",LEAD_KEY="pgi_public_order_intent_v1";
 const PRIVATE_RE=/^\/(?:cockpit(?:\.html)?|admin(?:\.html)?)(?:\/|$)/i,CLIENT_RE=/^\/client(?:\.html)?(?:\/|$)/i;
@@ -144,10 +145,11 @@ function loadGa4(){
   });
 }
 function loadGtm(){
-  if(privatePage||document.getElementById(GTM_SCRIPT_ID))return;
-  window.dataLayer.push({"gtm.start":Date.now(),event:"gtm.js"});
+  if(GTM_MODE!=="active"||privatePage||document.getElementById(GTM_SCRIPT_ID))return false;
+  window.dataLayer.push({"gtm.start":Date.now(),event:"gtm.js",pgi_gtm_role:"non_ga4"});
   const j=document.createElement("script");j.id=GTM_SCRIPT_ID;j.async=true;j.src="https://www.googletagmanager.com/gtm.js?id="+encodeURIComponent(GTM_ID);
   (document.head||document.documentElement).appendChild(j);
+  return true;
 }
 function loadHubSpot(){
   if(!publicPage||document.getElementById(HS_SCRIPT_ID))return;
@@ -399,7 +401,7 @@ function boot(){
   if(navigator.globalPrivacyControl===true){write("rejected");reject();return}
   if(choice==="accepted")accept();else if(choice==="rejected")reject();else show();
 }
-window.PGIAnalytics=Object.freeze({track,identify,identifyUser,clearUser,beginCheckout,measurementContext,measurementId:MEASUREMENT_ID,containerId:GTM_ID});
+window.PGIAnalytics=Object.freeze({track,identify,identifyUser,clearUser,beginCheckout,measurementContext,measurementId:MEASUREMENT_ID,containerId:GTM_ID,gtmMode:GTM_MODE});
 window.PGITrackingPreferences={status:()=>read()||"unset",accept:()=>{const ok=accept(),b=document.getElementById("pgi-tracking-consent");if(b)b.hidden=true;return ok},reject:()=>{write("rejected");const b=document.getElementById("pgi-tracking-consent");if(b)b.hidden=true;reject()},open:show};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot,{once:true});else boot();
 })();
