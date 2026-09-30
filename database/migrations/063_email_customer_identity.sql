@@ -23,6 +23,6 @@ COMMENT ON COLUMN transactional_email_deliveries.provider_message_id IS
 'RFC Message-ID returned by Resend webhooks, used only to correlate customer replies with the original transactional thread.';
 
 COMMENT ON TABLE inbound_email_customer_links IS
-'Privacy-minimised inbound e-mail correlation ledger. Stores no subject or message body; links a verified inbound provider ID to a customer tenant.';
+'Privacy-minimised inbound e-mail correlation ledger. Stores linkage metadata only and never persists received message content.';
 
 COMMIT;
