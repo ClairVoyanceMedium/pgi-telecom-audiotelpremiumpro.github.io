@@ -12,7 +12,7 @@ import {assessOperationalSlo} from "./slo-assurance.mjs";
 const require=createRequire(import.meta.url);
 const core=require("../../assets/core.js");
 
-export class MemoryStore{
+function demoDossierRef(publicId){return "APP-"+new Date().getUTCFullYear()+"-"+String(publicId||"").replace(/-/g,"").slice(0,10).toUpperCase();}\n\nexport class MemoryStore{
   constructor(config,eventBus){
     this.config=config;
     this.eventBus=eventBus;
@@ -973,7 +973,7 @@ export class MemoryStore{
   async createTenant(payload={}){
     const name=String(payload.display_name||"").trim();
     if(name.length<2)throw problem(400,"TENANT_DISPLAY_NAME_REQUIRED");
-    return {public_id:randomUUID(),slug:"demo-"+Date.now(),display_name:name,legal_name:String(payload.legal_name||name),tenant_type:String(payload.tenant_type||"customer"),status:"pending",country_code:String(payload.country_code||"FR").toUpperCase(),billing_email:payload.billing_email||null,preferred_locale:payload.preferred_locale||"fr-FR",default_currency:payload.default_currency||"EUR",timezone:payload.timezone||"Europe/Paris"};
+    const public_id=randomUUID();return {public_id,dossier_ref:demoDossierRef(public_id),slug:"demo-"+Date.now(),display_name:name,legal_name:String(payload.legal_name||name),tenant_type:String(payload.tenant_type||"customer"),status:"pending",country_code:String(payload.country_code||"FR").toUpperCase(),billing_email:payload.billing_email||null,preferred_locale:payload.preferred_locale||"fr-FR",default_currency:payload.default_currency||"EUR",timezone:payload.timezone||"Europe/Paris"};
   }
 
   async listTenants(params={}){
@@ -1116,7 +1116,7 @@ export class MemoryStore{
     if(input.legal_terms_accepted!==true||input.privacy_notice_acknowledged!==true)throw problem(400,"REGISTRATION_LEGAL_TERMS_REQUIRED");
     if(String(input.legal_version||"")!=="2026-09-26-b2b-b2c-v4")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
     this.customerLegalAcceptances.push({acceptance_type:"account_terms",document_version:"2026-09-26-b2b-b2c-v4",documents:{cgu:"/conditions-utilisation/",conditions:"/conditions-abonnement/",privacy:"/confidentialite/",cookies:"/cookies-traceurs/"},account_type:accountType,evidence:{source:"self_service_registration",authority_confirmed:true,privacy_notice_acknowledged:true},accepted_at:new Date().toISOString()});
-    return {id:randomUUID(),email,display_name:(first+" "+last).trim(),status:"active",email_verified:false,session_version:1,tenant_id:1,tenant_public_id:"00000000-0000-4000-8000-000000000001",tenant_name:accountType==="business"?(company||(first+" "+last).trim()):(first+" "+last).trim(),tenant_status:"pending",customer_role:"owner",authorization_version:1,customer_type:accountType};
+    return {id:randomUUID(),email,display_name:(first+" "+last).trim(),status:"active",email_verified:false,session_version:1,tenant_id:1,tenant_public_id:"00000000-0000-4000-8000-000000000001",dossier_ref:"APP-"+new Date().getUTCFullYear()+"-DEMO000001",tenant_name:accountType==="business"?(company||(first+" "+last).trim()):(first+" "+last).trim(),tenant_status:"pending",customer_role:"owner",authorization_version:1,customer_type:accountType};
   }
   async customerGoogleSignIn(){throw problem(403,"GOOGLE_INVITATION_REQUIRED");}
   async customerAuthLookup(){return null;}
@@ -1194,7 +1194,7 @@ export class MemoryStore{
   async tenantConsumptionReceipts(){return [];}
   async tenantConsumptionToday(){return {schema_version:"audiotel-consumption-receipt/1",range:{from:new Date().toISOString(),to:new Date().toISOString()},tenant_timezone:"Europe/Paris",metric_ranges:{},metrics:{currency:"EUR",calls_total:0,calls_connected:0,calls_abandoned:0,calls_failed:0,billable_seconds:0,generated_revenue_ttc:0,net_payout_ht:0},snapshot_sha256:"0".repeat(64),generated_at:new Date().toISOString(),basis:"demo"};}
   async reconcileTenantConsumptionReceipt(){throw problem(404,"CONSUMPTION_RECEIPT_NOT_FOUND");}
-  async customerPortalOverview(tenantId,from,to){void tenantId;const voice=await this.voiceIntelligence(from,to),live=await this.liveFinancialSnapshot();return {tenant:{display_name:"Société Démo",default_currency:"EUR",status:"active",customer_type:"business"},financial_by_currency:[],live_financial_by_currency:live.by_currency,series:[],activity_breakdown:[],numbers:[],settlements:[],subscriptions:[],destinations:[],service_incidents:[],operational_alerts:[],recent_calls:[],voice_quality:voice.summary,range:{from,to}};}
+  async customerPortalOverview(tenantId,from,to){void tenantId;const voice=await this.voiceIntelligence(from,to),live=await this.liveFinancialSnapshot();return {tenant:{display_name:"Société Démo",dossier_ref:"APP-"+new Date().getUTCFullYear()+"-DEMO000001",default_currency:"EUR",status:"active",customer_type:"business"},financial_by_currency:[],live_financial_by_currency:live.by_currency,series:[],activity_breakdown:[],numbers:[],settlements:[],subscriptions:[],destinations:[],service_incidents:[],operational_alerts:[],recent_calls:[],voice_quality:voice.summary,range:{from,to}};}
   async customerServiceIncidents(_tenantId,params={}){if(params.incident_id)throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");return {data:[],alerts:[]};}
   async createCustomerServiceIncident(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
   async addCustomerServiceIncidentNote(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
