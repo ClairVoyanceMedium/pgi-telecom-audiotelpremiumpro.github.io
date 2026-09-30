@@ -2464,7 +2464,7 @@ export class PostgresStore{
       " cp.email_normalized LIKE $1||'%' OR lower(cp.display_name) LIKE $1||'%' OR lower(COALESCE(cp.metadata->>'first_name','')) LIKE $1||'%' OR lower(COALESCE(cp.metadata->>'last_name','')) LIKE $1||'%'"+
       " OR lower(btrim(COALESCE(cp.metadata->>'first_name','')||' '||COALESCE(cp.metadata->>'last_name',''))) LIKE $1||'%'"+
       " OR (regexp_replace($1,'[^0-9+]','','g')<>'' AND regexp_replace(COALESCE(cp.metadata->>'phone',''),'[^0-9+]','','g') LIKE regexp_replace($1,'[^0-9+]','','g')||'%')))"+
-      " OR EXISTS (SELECT 1 FROM tenant_number_assignments qa JOIN sva_numbers qn ON qn.id=qa.sva_number_id WHERE qa.tenant_id=t.id AND regexp_replace(COALESCE(qn.e164,qn.display_number,''),'[^0-9]','','g') LIKE regexp_replace($1,'[^0-9]','','g')||'%')) )"+
+      " OR EXISTS (SELECT 1 FROM tenant_number_assignments qa JOIN sva_numbers qn ON qn.id=qa.sva_number_id WHERE qa.tenant_id=t.id AND regexp_replace($1,'[^0-9]','','g')<>'' AND regexp_replace(COALESCE(qn.e164,qn.display_number,''),'[^0-9]','','g') LIKE regexp_replace($1,'[^0-9]','','g')||'%')) )"+
       " AND ($2::text IS NULL OR t.status=$2) AND ($3::text IS NULL OR t.country_code=$3)"+
       " AND ($4::text IS NULL OR ($4='active' AND pgi_tenant_has_premium_call_access(t.id,NULL,now()))"+
       " OR ($4='unpaid' AND NOT EXISTS (SELECT 1 FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id WHERE s.tenant_id=t.id AND p.plan_key='external-sva-access' AND s.status='active' AND s.current_period_end>now()))"+
