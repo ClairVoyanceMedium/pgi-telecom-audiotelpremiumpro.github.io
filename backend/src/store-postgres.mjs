@@ -2418,7 +2418,7 @@ export class PostgresStore{
     }
 
     const rows=await this.readSql.unsafe(
-      "SELECT DISTINCT t.id,t.public_id,t.display_name,t.legal_name,t.created_at,t.status FROM tenants t"+
+      "SELECT t.id,t.public_id,t.display_name,t.legal_name,t.created_at,t.status FROM tenants t"+
       " WHERE t.tenant_type<>'internal' AND (t.billing_email=$1 OR EXISTS ("+
       " SELECT 1 FROM customer_tenant_memberships m JOIN customer_principals cp ON cp.id=m.customer_principal_id"+
       " WHERE m.tenant_id=t.id AND m.status='active' AND cp.status='active' AND cp.email_normalized=$1))"+
