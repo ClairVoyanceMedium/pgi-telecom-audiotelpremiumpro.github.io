@@ -41,6 +41,7 @@ const files=[
   "assets/withdrawal.css",
   "assets/customer-email-verification.js",
   "assets/client-live-finance.js",
+  "assets/call-time-summary.js",
   "assets/client-live-finance.css",
   "assets/password-visibility.js",
   "assets/client-analytics-plus.js",

@@ -10,6 +10,7 @@ const clientPortalJs=read("assets/client-portal.js");
 const clientBilling=read("assets/client-billing.js");
 const customerEmailVerification=read("assets/customer-email-verification.js");
 const clientLiveFinance=read("assets/client-live-finance.js");
+const callTimeSummary=read("assets/call-time-summary.js");
 const adminLiveFinance=read("assets/live-finance.js");
 const clientMobile=read("assets/client-mobile.js");
 const clientPortalCss=read("assets/client-portal.css");
@@ -526,6 +527,22 @@ test("admin export center exposes complete download copy and PDF actions",()=>{a
 
 
 test("customer portal exposes extended analytics and password management",()=>{for(const id of ["asr-chart","value-chart","duration-chart","client-security-dialog","client-password-form"])assert.ok(clientPortal.includes('id="'+id+'"'),id);assert.match(clientPortalApi,/changePassword/);assert.match(clientPortalJs,/function changePassword/);assert.match(clientPortalJs,/svgLine\("asr-chart"/);});
+
+test("client and admin expose tenant-safe cumulative call time cards",()=>{
+  assert.match(clientPortal,/call-time-summary\.js/);
+  assert.match(index,/call-time-summary\.js/);
+  assert.match(callTimeSummary,/keys=\["today","week","month","year"\]/);
+  assert.match(callTimeSummary,/prefix\+"-call-time-"\+key/);
+  assert.match(callTimeSummary,/prefix\+"-call-count-"\+key/);
+  assert.match(callTimeSummary,/PGICustomerApi/);
+  assert.match(callTimeSummary,/\.comparison/);
+  assert.match(callTimeSummary,/PGIApi/);
+  assert.match(callTimeSummary,/\.summary/);
+  assert.match(callTimeSummary,/Tous les clients et numéros/);
+  assert.match(callTimeSummary,/Vos appels uniquement/);
+  assert.match(buildStatic,/assets\/call-time-summary\.js/);
+  assert.match(app,/pgi:dashboard-loaded/);
+});
 
 test("client and admin dashboards expose today with rich printable downloadable analytics",()=>{
   assert.match(index,/data-period="today"[^>]*>Aujourd’hui</);
