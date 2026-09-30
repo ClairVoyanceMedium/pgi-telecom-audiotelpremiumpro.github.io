@@ -256,6 +256,12 @@ test("full customer journey works without a real operator and remains fail-close
     const webhook=await response.json();
     assert.equal(webhook.received,true);
     assert.equal(webhook.duplicate,false);
+    const subscriptionOutbox=(await store.sql.unsafe(
+      "SELECT o.id,o.payload FROM outbox_events o JOIN tenants t ON t.id=o.tenant_id WHERE t.public_id=$1::uuid AND o.event_type='subscription.changed' ORDER BY o.id DESC LIMIT 1",
+      [tenantPublicId]
+    ))[0];
+    assert.ok(subscriptionOutbox,"subscription.changed outbox event missing");
+    assert.equal(subscriptionOutbox.payload?.event_type,"customer.subscription.created",JSON.stringify(subscriptionOutbox.payload));
     assert.equal(state.contact.statut_commercial_pgi,"En attente d’ouverture");
     assert.equal(state.contact.lifecyclestage,"opportunity");
     assert.equal(state.deal.dealstage,"6144336106");
@@ -267,8 +273,15 @@ test("full customer journey works without a real operator and remains fail-close
     const dispatch=await response.json();
     assert.equal(dispatch.ok,true);
     assert.ok(dispatch.delivery.accepted>=1);
-    assert.ok(state.emails.some(x=>x.subject==="Votre demande d’ouverture a bien été reçue"));
-    assert.ok(state.emails.some(x=>x.subject==="Abonnement Audiotel Premium Pro créé"));
+    const subscriptionDeliveries=await store.sql.unsafe(
+      "SELECT template_key,state,last_error_code FROM transactional_email_deliveries WHERE outbox_event_id=$1 ORDER BY id",
+      [subscriptionOutbox.id]
+    );
+    assert.ok(subscriptionDeliveries.some(x=>x.template_key==="subscription_created"&&["accepted","sent","delivered","clicked"].includes(String(x.state))),
+      "subscription_created delivery missing: "+JSON.stringify(subscriptionDeliveries));
+    const emailSubjects=state.emails.map(x=>x.subject);
+    assert.ok(emailSubjects.includes("Votre demande d’ouverture a bien été reçue"),JSON.stringify(emailSubjects));
+    assert.ok(emailSubjects.includes("Abonnement Audiotel Premium Pro créé"),JSON.stringify(emailSubjects));
 
     const policy=await store.operationalPolicyEvaluation({intent:"activate_number",tenant_public_id:tenantPublicId});
     assert.notEqual(policy.decision,"ALLOWED");
