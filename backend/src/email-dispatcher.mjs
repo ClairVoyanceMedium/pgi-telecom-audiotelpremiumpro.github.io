@@ -71,7 +71,8 @@ export async function drainDunningTransactionalEmails({store,config,limit=50}={}
     const templateKey=row.recovery_stage==="suspended"?"subscription_suspended":"payment_reminder";
     const idem="dunning/"+row.subscription_id+"/"+stamp+"/"+row.recovery_stage;
     const event={id:null,tenant_id:row.tenant_id,event_type:"subscription.dunning",aggregate_type:"tenant_subscription",aggregate_id:String(row.subscription_id),payload:{},tenant_name:row.tenant_name,owner_name:row.owner_name,owner_principal_id:row.owner_principal_id,owner_preferred_locale:row.owner_preferred_locale};
-    const message={scope:"customer",to,name:row.owner_name||row.tenant_name,templateKey,senderRole:"billing",idempotencyKey:idem,internalEventId:idem,data:{name:row.owner_name||row.tenant_name,locale:row.owner_preferred_locale}};
+    const dossierRef=typeof store?.tenantDossierReferenceById==="function"?await store.tenantDossierReferenceById(row.tenant_id):null;
+    const message={scope:"customer",to,name:row.owner_name||row.tenant_name,templateKey,senderRole:"billing",idempotencyKey:idem,internalEventId:idem,data:{name:row.owner_name||row.tenant_name,locale:row.owner_preferred_locale,dossier_ref:dossierRef}};
     const sent=await dispatchMessage(store,config,event,message);
     result.processed++;
     if(sent.state==="accepted"||sent.state==="existing")result.accepted++;
@@ -85,6 +86,7 @@ export async function applyResendWebhookEvent(store,verified){
   if(!store?.sql)throw failure(503,"EMAIL_DELIVERY_STORE_UNAVAILABLE");
   const event=verified?.event||{},type=String(event.type||""),data=event.data||{};
   const svixId=String(verified?.svixId||""),emailId=String(data.email_id||data.id||"");
+  const providerMessageId=String(data.message_id||"").trim().slice(0,600)||null;
   const occurredAt=event.created_at&&Number.isFinite(Date.parse(event.created_at))?new Date(event.created_at).toISOString():new Date().toISOString();
   const rawTo=Array.isArray(data.to)?data.to[0]:data.to;
   const recipient=validEmail(rawTo)?normalizeEmail(rawTo):null;
@@ -96,6 +98,9 @@ export async function applyResendWebhookEvent(store,verified){
       [svixId,type,emailId,String(verified.payloadSha256||""),occurredAt]
     );
     if(!inserted.length)return {duplicate:true};
+    if(providerMessageId&&type!=="email.received"){
+      await tx.unsafe("UPDATE transactional_email_deliveries SET provider_message_id=COALESCE(provider_message_id,$2),updated_at=now() WHERE provider_email_id=$1",[emailId,providerMessageId]);
+    }
     const state=webhookState(type);
     const timestampColumn=webhookTimestampColumn(type);
     if(timestampColumn){
@@ -116,7 +121,7 @@ export async function applyResendWebhookEvent(store,verified){
       );
     }
     await tx.unsafe("UPDATE transactional_email_webhook_events SET processed_at=now() WHERE svix_id=$1",[svixId]);
-    return {duplicate:false,email_id:emailId,event_type:type,state,suppressed:Boolean(recipient&&(permanentBounce||type==="email.complained"||type==="email.suppressed"))};
+    return {duplicate:false,email_id:emailId,event_type:type,state,provider_message_id:providerMessageId,suppressed:Boolean(recipient&&(permanentBounce||type==="email.complained"||type==="email.suppressed"))};
   });
 }
 
@@ -125,7 +130,8 @@ async function messagesForEvent(store,config,event){
   const customerEmail=validEmail(event.billing_email)?event.billing_email:validEmail(event.owner_email)?event.owner_email:validEmail(p.email)?p.email:null;
   const customerName=event.owner_name||event.tenant_name||"";
   const internal=validEmail(config.internalNotificationEmail)?config.internalNotificationEmail:null;
-  const base={name:customerName,tenant_name:event.tenant_name,country_code:event.country_code,locale:event.owner_preferred_locale||p.preferred_locale||null};
+  const dossierRef=typeof store?.tenantDossierReferenceById==="function"?await store.tenantDossierReferenceById(event.tenant_id):null;
+  const base={name:customerName,tenant_name:event.tenant_name,country_code:event.country_code,locale:event.owner_preferred_locale||p.preferred_locale||null,dossier_ref:dossierRef};
   if(event.event_type==="customer.self_registered"){
     const email=validEmail(p.email)?p.email:customerEmail;
     return [

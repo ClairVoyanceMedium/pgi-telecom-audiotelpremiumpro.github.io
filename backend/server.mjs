@@ -19,7 +19,7 @@ import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStrip
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
-import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage} from "./src/hubspot-crm.mjs";
+import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail} from "./src/hubspot-crm.mjs";
 import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
 
 export async function createDefaultBackend(){
@@ -140,8 +140,21 @@ export function createBackend(options={}){
         const result=await applyResendWebhookEvent(store,verified);
         let inbound=null;
         if(String(verified.event?.type||"")==="email.received"&&!result.duplicate){
-          try{inbound=await forwardInboundEmailToInternal(config,verified.event?.data||{});}
-          catch(error){logSecurityEmailFailure("inbound_forward",error);throw error;}
+          try{
+            const processed=await forwardInboundEmailToInternal(config,verified.event?.data||{},{
+              resolveCustomer:typeof store.resolveInboundCustomer==="function"?input=>store.resolveInboundCustomer(input):null
+            });
+            let crmSync=false;
+            if(processed.customer_matched){
+              try{const crm=await syncHubSpotInboundEmail(store,processed);crmSync=Boolean(crm?.synced);}
+              catch(error){logHubSpotSyncFailure("inbound_email",error);}
+            }
+            inbound={
+              forwarded:Boolean(processed.forwarded),ignored:Boolean(processed.ignored),
+              customer_matched:Boolean(processed.customer_matched),customer_ambiguous:Boolean(processed.customer_ambiguous),
+              dossier_ref:processed.dossier_ref||null,match_method:processed.match_method||null,crm_sync:crmSync
+            };
+          }catch(error){logSecurityEmailFailure("inbound_forward",error);throw error;}
         }
         return done(res,metrics,started,"email.resend_webhook",200,{received:true,duplicate:Boolean(result.duplicate),event_type:result.event_type||verified.event.type,inbound});
       }
@@ -276,7 +289,7 @@ export function createBackend(options={}){
         {
           const pageUri=config.publicBaseUrl?config.publicBaseUrl+"/client.html?register=1":"https://audiotel-premium-pro.com/client.html?register=1";
           const hutk=String(parseCookies(req.headers.cookie||"").hubspotutk||"").trim();
-          const crmInput={...body,processing_consent:body.privacy_notice_acknowledged===true};
+          const crmInput={...body,dossier_ref:registered.dossier_ref,processing_consent:body.privacy_notice_acknowledged===true};
           try{await submitHubSpotLead(crmInput,{pageUri,pageName:"Création de compte Audiotel Premium Pro",hutk,attempts:1,timeoutMs:2200});}
           catch(error){logHubSpotSyncFailure("customer_registration_form",error);}
           try{await syncHubSpotCommercialLead(crmInput,{pageUri,pageName:"Création de compte Audiotel Premium Pro",hutk,commercialStatus:"Dossier en préparation"});}
@@ -286,7 +299,7 @@ export function createBackend(options={}){
         if(config.emailVerificationEnabled){
           const challenge=createEmailVerificationChallenge(config);
           await store.beginCustomerEmailVerification(registered.id,challenge.record);
-          try{await sendResendVerificationCode(config,{email:registered.email,name:registered.display_name,code:challenge.code,locale:body.preferred_locale||undefined,idempotencyKey:"email-verification/"+challenge.record.code_hash});}
+          try{await sendResendVerificationCode(config,{email:registered.email,name:registered.display_name,code:challenge.code,locale:body.preferred_locale||undefined,dossier_ref:registered.dossier_ref,idempotencyKey:"email-verification/"+challenge.record.code_hash});}
           catch(_error){return done(res,metrics,started,"customer.auth.register_email",503,{error:{code:"EMAIL_DELIVERY_UNAVAILABLE",message:"Verification email unavailable"},account_created:true,email_verification_required:true,user:publicUser});}
           return done(res,metrics,started,"customer.auth.register",201,{account_created:true,onboarding:true,email_verification_required:true,verification_token:challenge.token,user:publicUser});
         }
@@ -315,7 +328,7 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes),token=String(body.token||"").trim();
         if(token.length<32){const e=new Error("Invalid email verification");e.status=400;e.code="EMAIL_VERIFICATION_INVALID";throw e;}
         const tokenHash=verificationTokenHash(token),target=await store.customerEmailVerificationResendTarget(tokenHash),challenge=createEmailVerificationChallenge(config,token);
-        try{await sendResendVerificationCode(config,{email:target.email,name:target.display_name||target.email,code:challenge.code,locale:body.preferred_locale||target.preferred_locale||undefined,idempotencyKey:"email-verification/"+challenge.record.code_hash});}
+        try{await sendResendVerificationCode(config,{email:target.email,name:target.display_name||target.email,code:challenge.code,locale:body.preferred_locale||target.preferred_locale||undefined,dossier_ref:target.dossier_ref||undefined,idempotencyKey:"email-verification/"+challenge.record.code_hash});}
         catch(_error){return done(res,metrics,started,"customer.auth.email_resend",503,{error:{code:"EMAIL_DELIVERY_UNAVAILABLE",message:"Verification email unavailable"}});}
         await store.refreshCustomerEmailVerification(target.id,tokenHash,challenge.record);
         return done(res,metrics,started,"customer.auth.email_resend",200,{sent:true,resend_after_seconds:config.emailVerificationResendSeconds});
@@ -1352,7 +1365,7 @@ export function createBackend(options={}){
                 const token=randomBytes(32).toString("base64url");
                 const tokenHash=createHash("sha256").update(token).digest("hex");
                 const invitation=await store.createCustomerPortalInvitation(match.id,{email,role:"owner",expires_in_hours:72},tokenHash);
-                const emailSent=await sendCustomerAccessInvitation(config,{...invitation,display_name:detail?.tenant?.display_name,preferred_locale:detail?.tenant?.preferred_locale},token,"tenant-active");
+                const emailSent=await sendCustomerAccessInvitation(config,{...invitation,display_name:detail?.tenant?.display_name,preferred_locale:detail?.tenant?.preferred_locale,dossier_ref:detail?.tenant?.dossier_ref},token,"tenant-active");
                 customerAccess={invitation_created:true,email_sent:emailSent};
               }else customerAccess={invitation_created:false,email_sent:false,reason:hasPortalUser?"existing_user":"missing_billing_email"};
             }catch(error){
@@ -2248,7 +2261,7 @@ async function sendCustomerAccessInvitation(config,target,token,reason="manual")
       name:String(target?.display_name||target?.tenant_name||email),
       senderRole:"support",
       templateKey:"customer_access_invitation",
-      data:{name:String(target?.display_name||target?.tenant_name||email),locale:target?.preferred_locale,action_url:actionUrl},
+      data:{name:String(target?.display_name||target?.tenant_name||email),locale:target?.preferred_locale,action_url:actionUrl,dossier_ref:target?.dossier_ref||null},
       idempotencyKey:eventId,
       internalEventId:eventId
     });

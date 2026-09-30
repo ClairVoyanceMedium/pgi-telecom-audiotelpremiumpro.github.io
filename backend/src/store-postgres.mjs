@@ -47,6 +47,29 @@ function dossierLookup(value){
   if(id<=0n||id>BigInt(Number.MAX_SAFE_INTEGER))return null;
   return {id:Number(id),year:Number(m[1])};
 }
+function dossierHints(...values){
+  const found=[];
+  for(const value of values){
+    const matches=String(value||"").match(/\bAPP-\d{4}-[0-9A-Z]{5,18}\b/gi)||[];
+    for(const match of matches){
+      const normalized=match.toUpperCase();
+      if(dossierLookup(normalized)&&!found.includes(normalized))found.push(normalized);
+      if(found.length>=5)return found;
+    }
+  }
+  return found;
+}
+function emailThreadReferences(...values){
+  const found=[];
+  for(const value of values){
+    const matches=String(value||"").match(/<[^<>\r\n]{1,500}>/g)||[];
+    for(const match of matches){
+      if(!found.includes(match))found.push(match);
+      if(found.length>=20)return found;
+    }
+  }
+  return found;
+}
 function roundMetric(value){const n=Number(value||0);return Number.isFinite(n)?Math.round(n*1e6)/1e6:0;}
 function normalizeConsumptionRanges(ranges,from,to){
   const out={};
@@ -2352,6 +2375,70 @@ export class PostgresStore{
     return result;
   }
 
+  async tenantDossierReferenceById(tenantId){
+    const id=Number(tenantId);
+    if(!Number.isSafeInteger(id)||id<=0)return null;
+    const row=(await this.readSql.unsafe("SELECT id,created_at FROM tenants WHERE id=$1 AND tenant_type<>'internal' LIMIT 1",[id]))[0];
+    return row?dossierReference(row.id,row.created_at):null;
+  }
+
+  async resolveInboundCustomer(input={}){
+    const sender=String(input.email||"").trim().toLowerCase();
+    const providerEmailId=String(input.provider_email_id||"").trim().slice(0,200);
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sender)||sender.length>320)return {matched:false,ambiguous:false,reason:"invalid_sender"};
+    const hints=dossierHints(input.subject,input.text);
+    const threadRefs=emailThreadReferences(input.in_reply_to,input.references);
+    const senderHash=createHash("sha256").update(sender).digest("hex");
+    const finalize=async(row,matchMethod)=>{
+      const result={
+        matched:true,ambiguous:false,match_method:matchMethod,
+        tenant_id:Number(row.id),tenant_public_id:String(row.public_id),
+        display_name:String(row.display_name||row.legal_name||"Client"),
+        dossier_ref:dossierReference(row.id,row.created_at)
+      };
+      if(providerEmailId){
+        await this.sql.unsafe(
+          "INSERT INTO inbound_email_customer_links(provider_email_id,tenant_id,sender_hash,match_method,received_at) VALUES($1,$2,$3,$4,COALESCE($5::timestamptz,now()))"+
+          " ON CONFLICT(provider_email_id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id,sender_hash=EXCLUDED.sender_hash,match_method=EXCLUDED.match_method,received_at=EXCLUDED.received_at",
+          [providerEmailId,result.tenant_id,senderHash,matchMethod,input.received_at||null]
+        );
+      }
+      return result;
+    };
+
+    if(threadRefs.length){
+      const threadRows=await this.readSql.unsafe(
+        "SELECT DISTINCT t.id,t.public_id,t.display_name,t.legal_name,t.created_at FROM transactional_email_deliveries d"+
+        " JOIN tenants t ON t.id=d.tenant_id WHERE t.tenant_type<>'internal' AND d.provider_message_id=ANY($1::text[])"+
+        " ORDER BY t.id DESC LIMIT 5",
+        [threadRefs]
+      );
+      const unique=new Map(threadRows.map(row=>[String(row.id),row]));
+      if(unique.size===1)return finalize([...unique.values()][0],"thread");
+    }
+
+    const rows=await this.readSql.unsafe(
+      "SELECT t.id,t.public_id,t.display_name,t.legal_name,t.created_at,t.status FROM tenants t"+
+      " WHERE t.tenant_type<>'internal' AND (t.billing_email=$1 OR EXISTS ("+
+      " SELECT 1 FROM customer_tenant_memberships m JOIN customer_principals cp ON cp.id=m.customer_principal_id"+
+      " WHERE m.tenant_id=t.id AND m.status='active' AND cp.status='active' AND cp.email_normalized=$1))"+
+      " ORDER BY CASE t.status WHEN 'active' THEN 0 WHEN 'pending' THEN 1 WHEN 'suspended' THEN 2 ELSE 3 END,t.id DESC LIMIT 20",
+      [sender]
+    );
+    const candidates=rows.map(row=>({...row,dossier_ref:dossierReference(row.id,row.created_at)}));
+    if(!candidates.length)return {matched:false,ambiguous:false,reason:"unknown_sender",hinted_dossier_ref:hints[0]||null};
+
+    if(hints.length){
+      const hinted=candidates.find(row=>hints.includes(row.dossier_ref));
+      if(hinted)return finalize(hinted,"email_dossier");
+    }
+    if(candidates.length===1)return finalize(candidates[0],"email");
+    return {
+      matched:false,ambiguous:true,reason:"multiple_customer_dossiers",hinted_dossier_ref:hints[0]||null,
+      candidates:candidates.slice(0,5).map(row=>({tenant_public_id:String(row.public_id),display_name:String(row.display_name||row.legal_name||"Client"),dossier_ref:row.dossier_ref}))
+    };
+  }
+
   async tenantDuplicateCandidates(input={}){
     const email=String(input.email||input.billing_email||"").trim().toLowerCase().slice(0,320);
     const name=String(input.company_name||input.legal_name||input.display_name||"").trim().slice(0,200);
@@ -3359,8 +3446,16 @@ export class PostgresStore{
   }
 
   async customerEmailVerificationResendTarget(tokenHash){
-    const rows=await this.sql.unsafe("SELECT id,email,display_name,preferred_locale,metadata->'email_verification' AS verification FROM customer_principals WHERE email_verified=false AND metadata#>>'{email_verification,token_hash}'=$1 LIMIT 1",[String(tokenHash)]);
+    const rows=await this.sql.unsafe(
+      "SELECT cp.id,cp.email,cp.display_name,cp.preferred_locale,cp.metadata->'email_verification' AS verification,t.id AS tenant_id,t.created_at AS tenant_created_at"+
+      " FROM customer_principals cp LEFT JOIN LATERAL ("+
+      " SELECT m.tenant_id FROM customer_tenant_memberships m WHERE m.customer_principal_id=cp.id AND m.status='active' ORDER BY (m.role='owner') DESC,m.joined_at ASC LIMIT 1"+
+      " ) membership ON true LEFT JOIN tenants t ON t.id=membership.tenant_id"+
+      " WHERE cp.email_verified=false AND cp.metadata#>>'{email_verification,token_hash}'=$1 LIMIT 1",
+      [String(tokenHash)]
+    );
     const row=rows[0];if(!row)throw problem(400,"EMAIL_VERIFICATION_INVALID");
+    row.dossier_ref=row.tenant_id?dossierReference(row.tenant_id,row.tenant_created_at):null;
     const v=row.verification||{};if(v.required!==true)throw problem(400,"EMAIL_VERIFICATION_INVALID");
     const resendAt=Date.parse(String(v.resend_after||""));
     if(Number.isFinite(resendAt)&&resendAt>Date.now()){const e=problem(429,"EMAIL_VERIFICATION_RESEND_TOO_SOON");e.retry_after_seconds=Math.max(1,Math.ceil((resendAt-Date.now())/1000));throw e;}

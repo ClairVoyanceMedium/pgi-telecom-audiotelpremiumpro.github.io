@@ -111,6 +111,10 @@ const hyperscaleDoc=fs.readFileSync("docs/HYPERSCALE.md","utf8");
 const scaleHpa=fs.readFileSync("infra/scale/api-hpa.example.yaml","utf8");
 const postgresStore=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
 const backendServer=fs.readFileSync("backend/server.mjs","utf8");
+const resendEmailSource=fs.readFileSync("backend/src/resend-email.mjs","utf8");
+const emailDispatcherSource=fs.readFileSync("backend/src/email-dispatcher.mjs","utf8");
+const hubSpotCrmSource=fs.readFileSync("backend/src/hubspot-crm.mjs","utf8");
+const emailCustomerIdentityMigration=fs.readFileSync("database/migrations/063_email_customer_identity.sql","utf8");
 const stripeBillingSource=fs.readFileSync("backend/src/stripe-billing.mjs","utf8");
 const wholesaleDoc=fs.readFileSync("docs/WHOLESALE-SVA.md","utf8");
 
@@ -403,6 +407,13 @@ for(const name of ["PGI_WORK_QUEUE_BATCH_SIZE","PGI_WORK_QUEUE_LEASE_SECONDS","P
 }
 if(!/4096 tenant buckets/.test(hyperscaleDoc)||!/Control plane et data plane/.test(hyperscaleDoc))failures.push("hyperscale runbook must document bucket routing and plane separation");
 if(!/autoscaling\/v2/.test(scaleHpa)||!/maxReplicas: 100/.test(scaleHpa))failures.push("hyperscale API example must retain horizontal autoscaling");
+if(!/provider_message_id/.test(emailCustomerIdentityMigration)||!/inbound_email_customer_links/.test(emailCustomerIdentityMigration)||!/sender_hash/.test(emailCustomerIdentityMigration))failures.push("inbound email correlation must remain privacy-minimised and thread-aware");
+if(/message_body|\bsubject\s+text\b/i.test(emailCustomerIdentityMigration))failures.push("inbound email correlation ledger must not persist message subjects or bodies");
+if(!/async resolveInboundCustomer\(/.test(postgresStore)||!/finalize\(\[\.\.\.unique\.values\(\)\]\[0\],"thread"\)/.test(postgresStore)||!/finalize\(candidates\[0\],"email"\)/.test(postgresStore)||!/reason:"unknown_sender"/.test(postgresStore))failures.push("customer email recognition must resolve trusted email/thread evidence without trusting dossier references alone");
+if(!/X-PGI-Dossier/.test(resendEmailSource)||!/in-reply-to/.test(resendEmailSource)||!/customer_matched/.test(resendEmailSource))failures.push("transactional and inbound emails must carry dossier/thread correlation metadata");
+if(!/providerMessageId/.test(emailDispatcherSource)||!/provider_message_id/.test(emailDispatcherSource))failures.push("Resend delivery webhooks must preserve RFC Message-ID for reply threading");
+if(!/numero_dossier_pgi/.test(hubSpotCrmSource)||!/syncHubSpotInboundEmail/.test(hubSpotCrmSource))failures.push("HubSpot must receive dossier references and matched inbound email history");
+if(!/resolveInboundCustomer/.test(backendServer)||!/syncHubSpotInboundEmail/.test(backendServer))failures.push("Resend inbound orchestration must identify customers and sync matched mail to HubSpot");
 
 
 

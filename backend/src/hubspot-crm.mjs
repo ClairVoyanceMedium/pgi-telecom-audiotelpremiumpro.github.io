@@ -3,6 +3,8 @@ const HUBSPOT_FORM_ID="436e33ad-e5e7-4e7c-b024-f211293ad9bd";
 const HUBSPOT_OWNER_ID="99851906";
 const HUBSPOT_FORM_ENDPOINT="https://api.hsforms.com/submissions/v3/integration/submit/"+HUBSPOT_PORTAL_ID+"/"+HUBSPOT_FORM_ID;
 const HUBSPOT_API_BASE="https://api.hubapi.com";
+const HUBSPOT_DOSSIER_PROPERTY="numero_dossier_pgi";
+let hubSpotDossierPropertyState=null;
 const HUBSPOT_PIPELINE_ID="default";
 const HUBSPOT_STAGE_BY_STATUS=Object.freeze({
   "Nouveau prospect":"appointmentscheduled",
@@ -120,6 +122,8 @@ export async function syncHubSpotCommercialLead(input={},options={}){
   if(!token)return {enabled:false,synced:false,contactId:null,dealId:null,dealCreated:false};
   const fetchImpl=options.fetchImpl||globalThis.fetch;
   if(typeof fetchImpl!=="function")throw problem("HUBSPOT_FETCH_UNAVAILABLE");
+  const dossierRef=normalizeDossierReference(input.dossier_ref);
+  const dossierPropertyReady=dossierRef?await ensureHubSpotDossierProperty({token,fetchImpl}):false;
   const payload=buildHubSpotLeadSubmission(input,{...options,enrich:true});
   const baseProps=Object.fromEntries(payload.fields.map(x=>[x.name,x.value]));
   const contactEmail=baseProps.email;
@@ -136,7 +140,8 @@ export async function syncHubSpotCommercialLead(input={},options={}){
       company:baseProps.company,
       type_de_client:baseProps.type_de_client,
       type_de_demande:baseProps.type_de_demande,
-      besoin__projet_audiotel:baseProps.besoin__projet_audiotel
+      besoin__projet_audiotel:baseProps.besoin__projet_audiotel,
+      ...(dossierPropertyReady&&dossierRef?{[HUBSPOT_DOSSIER_PROPERTY]:dossierRef}:{})
     };
     if(!current.hubspot_owner_id)update.hubspot_owner_id=HUBSPOT_OWNER_ID;
     const lifecycle=commercialLifecycle(effectiveStatus,current.lifecyclestage);
@@ -146,7 +151,7 @@ export async function syncHubSpotCommercialLead(input={},options={}){
       token,fetchImpl,method:"PATCH",body:{properties:compactProperties(update)}
     });
   }else{
-    const createProps=compactProperties({...baseProps,statut_commercial_pgi:requestedStatus,hubspot_owner_id:HUBSPOT_OWNER_ID,lifecyclestage:commercialLifecycle(requestedStatus,"")||"lead"});
+    const createProps=compactProperties({...baseProps,statut_commercial_pgi:requestedStatus,hubspot_owner_id:HUBSPOT_OWNER_ID,lifecyclestage:commercialLifecycle(requestedStatus,"")||"lead",...(dossierPropertyReady&&dossierRef?{[HUBSPOT_DOSSIER_PROPERTY]:dossierRef}:{})});
     try{
       contact=await hubSpotPrivateRequest("/crm/v3/objects/contacts",{
         token,fetchImpl,method:"POST",body:{properties:createProps}
@@ -159,7 +164,7 @@ export async function syncHubSpotCommercialLead(input={},options={}){
     }
   }
   const deal=await ensureCommercialDeal(contact,input,{token,fetchImpl,status:effectiveStatus});
-  return {enabled:true,synced:true,contactId:String(contact.id),dealId:deal?.id?String(deal.id):null,dealCreated:Boolean(deal?.created)};
+  return {enabled:true,synced:true,contactId:String(contact.id),dealId:deal?.id?String(deal.id):null,dealCreated:Boolean(deal?.created),dossierRef:dossierRef||null,dossierPropertySynced:Boolean(dossierRef&&dossierPropertyReady)};
 }
 
 
@@ -232,9 +237,74 @@ export async function syncHubSpotCommercialTenant(store,tenantPublicId,commercia
     email:contactEmail,
     phone:clean(owner?.phone,80),
     service_intent:serviceIntent,
+    dossier_ref:normalizeDossierReference(detail?.tenant?.dossier_ref),
     processing_consent:true
   };
   return syncHubSpotCommercialLead(input,{...options,commercialStatus});
+}
+
+export async function syncHubSpotInboundEmail(store,input={},options={}){
+  if(!input?.customer_matched||!input?.tenant_public_id)return {enabled:true,synced:false,skipped:true,reason:"customer_not_matched"};
+  const token=clean(options.token||process.env.PGI_HUBSPOT_PRIVATE_APP_TOKEN||process.env.HUBSPOT_PRIVATE_APP_TOKEN,800);
+  if(!token)return {enabled:false,synced:false,skipped:true,reason:"hubspot_not_configured"};
+  const fetchImpl=options.fetchImpl||globalThis.fetch;
+  const sender=email(input.sender_email);
+  const dossierRef=normalizeDossierReference(input.dossier_ref);
+  try{await syncHubSpotCommercialTenant(store,input.tenant_public_id,"Dossier en préparation",{token,fetchImpl});}catch(_error){}
+  const contact=await findPrivateContact(sender,{token,fetchImpl});
+  if(!contact)return {enabled:true,synced:false,skipped:true,reason:"contact_unavailable"};
+  const dossierPropertyReady=dossierRef?await ensureHubSpotDossierProperty({token,fetchImpl}):false;
+  if(dossierRef&&dossierPropertyReady&&contact.properties?.[HUBSPOT_DOSSIER_PROPERTY]!==dossierRef){
+    await hubSpotPrivateRequest("/crm/v3/objects/contacts/"+encodeURIComponent(contact.id),{
+      token,fetchImpl,method:"PATCH",body:{properties:{[HUBSPOT_DOSSIER_PROPERTY]:dossierRef}}
+    });
+  }
+  const associationTypeId=await noteContactAssociationType({token,fetchImpl});
+  const noteBody=[
+    "<strong>E-mail entrant rattaché automatiquement au dossier client</strong>",
+    dossierRef?"<br><br><strong>Référence dossier :</strong> "+escapeHubSpotHtml(dossierRef):"",
+    "<br><strong>Expéditeur :</strong> "+escapeHubSpotHtml(sender),
+    input.recipient?"<br><strong>Destinataire :</strong> "+escapeHubSpotHtml(clean(input.recipient,320)):"",
+    input.original_subject?"<br><strong>Objet :</strong> "+escapeHubSpotHtml(clean(input.original_subject,180)):"",
+    input.match_method?"<br><strong>Rattachement :</strong> "+escapeHubSpotHtml(clean(input.match_method,40)):"",
+    input.message_excerpt?"<br><br><strong>Extrait :</strong><br>"+escapeHubSpotHtml(clean(input.message_excerpt,1200)).replace(/\n/g,"<br>"):""
+  ].join("");
+  const note=await hubSpotPrivateRequest("/crm/v3/objects/notes",{
+    token,fetchImpl,method:"POST",
+    body:{properties:{hs_timestamp:new Date().toISOString(),hs_note_body:noteBody,hubspot_owner_id:HUBSPOT_OWNER_ID},
+      associations:[{to:{id:String(contact.id)},types:[{associationCategory:"HUBSPOT_DEFINED",associationTypeId}]}]}
+  });
+  return {enabled:true,synced:true,contactId:String(contact.id),noteId:note?.id?String(note.id):null,dossierRef:dossierRef||null,dossierPropertySynced:Boolean(dossierRef&&dossierPropertyReady)};
+}
+
+async function ensureHubSpotDossierProperty({token,fetchImpl}){
+  if(hubSpotDossierPropertyState===true)return true;
+  if(hubSpotDossierPropertyState===false)return false;
+  try{
+    await hubSpotPrivateRequest("/crm/v3/properties/contacts/"+encodeURIComponent(HUBSPOT_DOSSIER_PROPERTY),{token,fetchImpl,method:"GET"});
+    hubSpotDossierPropertyState=true;return true;
+  }catch(error){
+    if(error?.status!==404){
+      if(error?.status===401||error?.status===403)hubSpotDossierPropertyState=false;
+      return false;
+    }
+  }
+  try{
+    await hubSpotPrivateRequest("/crm/v3/properties/contacts",{
+      token,fetchImpl,method:"POST",
+      body:{groupName:"contactinformation",name:HUBSPOT_DOSSIER_PROPERTY,label:"Numéro de dossier PGI",type:"string",fieldType:"text",description:"Référence client automatique Audiotel Premium Pro (APP-AAAA-XXXXXXXXX)."}
+    });
+    hubSpotDossierPropertyState=true;return true;
+  }catch(error){
+    if(error?.status===409){hubSpotDossierPropertyState=true;return true;}
+    if(error?.status===401||error?.status===403)hubSpotDossierPropertyState=false;
+    return false;
+  }
+}
+
+function normalizeDossierReference(value){
+  const ref=String(value||"").trim().toUpperCase();
+  return /^APP-\d{4}-[0-9A-Z]{5,18}$/.test(ref)?ref:null;
 }
 
 async function findPrivateContact(contactEmail,{token,fetchImpl}){
@@ -271,6 +341,8 @@ async function ensureCommercialDeal(contact,input,{token,fetchImpl,status}){
     if(current.dealstage!==targetStage)changes.dealstage=targetStage;
     if(!current.hubspot_owner_id)changes.hubspot_owner_id=HUBSPOT_OWNER_ID;
     if(!current.deal_currency_code)changes.deal_currency_code="EUR";
+    const dossierRef=normalizeDossierReference(input.dossier_ref);
+    if(dossierRef&&!String(current.dealname||"").includes(dossierRef))changes.dealname=clean(String(current.dealname||"Dossier Audiotel")+" — "+dossierRef,200);
     if(Object.keys(changes).length){
       openDeal=await hubSpotPrivateRequest("/crm/v3/objects/deals/"+encodeURIComponent(openDeal.id),{
         token,fetchImpl,method:"PATCH",body:{properties:changes}
@@ -282,10 +354,12 @@ async function ensureCommercialDeal(contact,input,{token,fetchImpl,status}){
   const associationTypeId=await defaultDealContactAssociationType({token,fetchImpl});
   const label=INTENT_LABELS[intentKey]||INTENT_LABELS.advice;
   const name=clean(input.company_name,120)||[clean(input.first_name,60),clean(input.last_name,60)].filter(Boolean).join(" ")||"Prospect Audiotel";
+  const dossierRef=normalizeDossierReference(input.dossier_ref);
+  const dealName=clean(name+" — "+label.label+(dossierRef?" — "+dossierRef:""),200);
   const created=await hubSpotPrivateRequest("/crm/v3/objects/deals",{
     token,fetchImpl,method:"POST",body:{
       properties:{
-        dealname:clean(name+" — "+label.label,200),
+        dealname:dealName,
         pipeline:HUBSPOT_PIPELINE_ID,
         dealstage:targetStage,
         hubspot_owner_id:HUBSPOT_OWNER_ID,
