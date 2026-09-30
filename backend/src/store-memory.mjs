@@ -971,6 +971,12 @@ export class MemoryStore{
     return {duplicate:false,subscription_id:1,tenant_id:null,status:String(payload.status||"active")};
   }
 
+  async tenantDossierReferenceById(tenantId){void tenantId;return "APP-"+new Date().getUTCFullYear()+"-DEMO000001";}
+  async resolveInboundCustomer(input={}){
+    const email=String(input.email||"").trim().toLowerCase();
+    if(email==="demo@example.test")return {matched:true,ambiguous:false,match_method:"email",tenant_id:1,tenant_public_id:"00000000-0000-4000-8000-000000000001",display_name:"Société Démo",dossier_ref:"APP-"+new Date().getUTCFullYear()+"-DEMO000001"};
+    return {matched:false,ambiguous:false,reason:"unknown_sender"};
+  }
   async tenantDuplicateCandidates(input={}){void input;return {data:[]};}
   async createTenant(payload={}){
     const name=String(payload.display_name||"").trim();
