@@ -88,7 +88,7 @@ function safeSnapshot(data){
     exported_at:new Date().toISOString(),
     range:data?.range||null,
     metric_resets:data?.metric_resets||null,
-    tenant:data?.tenant?{display_name:data.tenant.display_name,country_code:data.tenant.country_code,default_currency:data.tenant.default_currency}:null,
+    tenant:data?.tenant?{dossier_ref:data.tenant.dossier_ref,display_name:data.tenant.display_name,country_code:data.tenant.country_code,default_currency:data.tenant.default_currency}:null,
     financial_by_currency:data?.financial_by_currency||[],
     series:data?.series||[],
     activity_breakdown:["hour","weekday","number","duration","carrier"].flatMap(dim=>rowsFor(data,dim)),
