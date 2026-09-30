@@ -65,79 +65,56 @@ test("la marque client reste Audiotel Premium Pro et la plateforme reste multise
   assert.doesNotMatch(clientPortalJs,/Frais de plateforme HT/);
 });
 
-test("les cockpits affichent les reversements en direct sans les confondre avec les montants consolidés",()=>{
+test("Business Live reste cumulatif jusqu’à une remise à zéro manuelle et isolé des bilans",()=>{
   const server=read("backend/server.mjs"),store=read("backend/src/store-postgres.mjs"),site=read("site/index.html");
+  const platformJackpotMigration=read("database/migrations/063_platform_business_live_baseline.sql");
   assert.match(clientPortal,/client-live-finance\.js/);
   assert.match(index,/live-finance\.js/);
-  for(const asset of ["client-live-finance.js","client-live-finance.css","live-finance.js","live-finance.css"]){
-    assert.ok(buildStatic.includes('"assets/'+asset+'"'),"production build missing "+asset);
-  }
+  for(const asset of ["client-live-finance.js","client-live-finance.css","live-finance.js","live-finance.css"])assert.ok(buildStatic.includes('"assets/'+asset+'"'),"production build missing "+asset);
   for(const id of ["client-live-money","client-live-amount","client-period-payout-estimate","client-live-recalc","client-jackpot-reset","client-jackpot-rate"])assert.ok(clientLiveFinance.includes('id="'+id+'"'),"missing client live #"+id);
-  for(const id of ["live-jackpot-card","live-jackpot","live-jackpot-period","live-jackpot-ranking"])assert.ok(adminLiveFinance.includes('id="'+id+'"'),"missing admin live #"+id);
-  assert.match(clientLiveFinance,/client_rate_ht_per_second/);
+  for(const id of ["live-jackpot-card","live-jackpot","live-jackpot-period","live-jackpot-ranking","live-jackpot-reset","live-jackpot-since"])assert.ok(adminLiveFinance.includes('id="'+id+'"'),"missing admin live #"+id);
+  assert.match(clientLiveFinance,/cumul conservé|Cumul conservé/i);
   assert.match(clientLiveFinance,/customer\.jackpot\.reset/);
-  assert.match(clientLiveFinance,/\/customer\/events/);
   assert.match(clientPortalApi,/\/customer\/jackpot/);
-  assert.match(adminLiveFinance,/live_upstream_payout_ht/);
-  assert.match(adminLiveFinance,/live-jackpot-ranking/);
-  assert.match(api,/\/dashboard\/live-finance/);
-  assert.match(server,/\/api\/v1\/customer\/events/);
-  assert.match(server,/\/api\/v1\/customer\/jackpot/);
-  assert.match(server,/can_reset:\["owner","admin"\]\.includes\(context\.customer_role\)/);
-  assert.match(server,/CUSTOMER_JACKPOT_RESET_FORBIDDEN/);
-  assert.match(server,/\/api\/v1\/dashboard\/live-finance/);
-  assert.match(server,/live_call\.started/);
-  assert.match(server,/live_call\.ended/);
-  assert.match(store,/liveFinancialSnapshot/);
-  assert.match(store,/customerJackpotSnapshot/);
-  assert.match(store,/liveFinancialByTenant/);
-  assert.match(store,/customer_jackpot_baselines/);
-  assert.match(store,/tenant_scoped_live_call_financial_sessions/);
-  const jackpotMigration=read("database/migrations/056_motivational_jackpot.sql");
-  assert.match(jackpotMigration,/CREATE TABLE customer_jackpot_baselines/);
-  assert.match(jackpotMigration,/Expand-only and non-destructive/);
-  assert.match(jackpotMigration,/never delete or alter accounting data/);
-  assert.doesNotMatch(jackpotMigration,/DROP\s+(TABLE|COLUMN|CONSTRAINT)/i);
+  assert.match(adminLiveFinance,/jackpot_upstream_payout_ht/);
+  assert.match(adminLiveFinance,/resetLiveFinance/);
+  assert.match(adminLiveFinance,/remise à zéro manuelle uniquement/i);
+  assert.match(api,/\/dashboard\/live-finance\/reset/);
+  assert.match(server,/\/api\/v1\/dashboard\/live-finance\/reset/);
+  assert.match(server,/platformJackpotSnapshot/);
+  assert.match(server,/createPlatformJackpotReset/);
+  assert.match(store,/platform_jackpot_baselines/);
+  assert.match(store,/status IN \('active','ended'\)/);
+  assert.match(platformJackpotMigration,/CREATE TABLE platform_jackpot_baselines/);
+  assert.match(platformJackpotMigration,/official analytics, settlements, revenue distributions or customer reporting/i);
+  assert.doesNotMatch(platformJackpotMigration,/DROP\s+(TABLE|COLUMN|CONSTRAINT)/i);
+  assert.doesNotMatch(adminLiveFinance,/setHours\(0,0,0,0\)/);
   assert.match(site,/tarifs avantageux/);
-  assert.match(site,/À activité identique, un meilleur reversement peut vous permettre de gagner plus sans travailler davantage/);
-  assert.doesNotMatch(site,/tarif garanti|prix garanti/i);
 });
 
-test("le cockpit garde une liste d'appels compacte et une remise à zéro sélective",()=>{
+test("le cockpit garde les bilans officiels continus et réserve le reset visible à Business Live",()=>{
   assert.ok(index.includes('id="reset-metrics"'));
-  assert.equal((index.match(/id="reset-metrics"/g)||[]).length,1);
+  assert.match(index,/id="reset-metrics"[^>]*hidden/);
   assert.ok(index.includes('id="calls-table"'));
-  assert.match(index,/Remettre des métriques à zéro/);
-  assert.doesNotMatch(index,/y compris clients, repartiront de zéro/);
+  assert.doesNotMatch(index,/>Remettre des métriques à zéro</);
   assert.match(app,/renderCallTable\(tableRows,state\.marketCurrency/);
   assert.match(callTools,/import\("\.\/call-list\.js"\)/);
   assert.match(callList,/rows\.slice\(0,8\)/);
-  assert.match(callList,/Afficher les /);
-  assert.match(callList,/Réduire la liste/);
-  assert.match(app,/import\("\.\/metric-reset\.js"\)/);
-  assert.match(app,/metric_key:key/);
-  assert.match(app,/scope:"global"/);
+  assert.match(adminLiveFinance,/Remettre Business Live à zéro/);
+  assert.match(adminLiveFinance,/bilans jour\/semaine\/mois\/année/);
   assert.doesNotMatch(app,/DELETE\s+FROM\s+calls/i);
 });
 
-test("les remises à zéro cockpit et client sont sélectives et isolées",()=>{
+test("les baselines statistiques avancées restent hors du parcours utilisateur courant",()=>{
   const server=read("backend/server.mjs"),store=read("backend/src/store-postgres.mjs");
   for(const key of ["calls","minutes","revenue","payout","quality"])assert.match(metricReset,new RegExp('\\["'+key+'",'));
-  for(const label of ["Appels & décroché","Minutes & durées","Chiffre d’affaires","Reversements & marge","Qualité & expérience"])assert.ok(metricReset.includes(label));
   assert.match(metricReset,/Les CDR, règlements, contrats et traces d’audit ne sont pas supprimés/);
   assert.match(server,/\/api\/v1\/customer\/metrics\/reset/);
-  assert.match(server,/CUSTOMER_METRIC_RESET_FORBIDDEN/);
-  assert.match(server,/effectiveMetricRanges\(requestedRange\.from,requestedRange\.to,context\.tenant_id\)/);
-  assert.match(server,/effectiveMetricRanges\(requestedRange\.from,requestedRange\.to\)/);
-  assert.match(store,/scope='global' AND tenant_id=\$2/);
-  assert.match(store,/scope='global'/);
   assert.match(store,/createCustomerMetricReset/);
-  assert.match(clientPortal,/id="client-metrics-reset"/);
-  assert.match(clientPortalApi,/resetMetrics:function/);
-  assert.match(clientPortalApi,/\/customer\/metrics\/reset/);
-  assert.match(clientPortalJs,/\["owner","admin"\]/);
-  assert.match(clientPortalJs,/resetMetrics\(keys/);
-  assert.match(clientPortalJs,/metric_net_payout_by_currency/);
+  assert.match(clientPortal,/id="client-metrics-reset"[^>]*hidden/);
+  assert.doesNotMatch(clientMobile,/data-client-action="reset"/);
+  assert.doesNotMatch(clientMobile,/client-metrics-reset/);
+  assert.match(clientPortalJs,/resetButton\.hidden=true/);
   assert.match(app,/invalidateAppBootstrap\(\)/);
 });
 
@@ -555,8 +532,8 @@ test("client and admin dashboards expose today with rich printable downloadable 
   for(const token of ["activity_breakdown","analyticsCsv","safeSnapshot","conic-gradient"])assert.match(clientAnalyticsPlus,new RegExp(token));
   assert.match(clientAdminTheme,/print-color-adjust:exact/);
   assert.match(clientAdminTheme,/--accent:#d7a76a/);
-  assert.match(clientMobile,/data-client-action="reset"/);
-  assert.match(clientMobile,/client-metrics-reset/);
+  assert.doesNotMatch(clientMobile,/data-client-action="reset"/);
+  assert.doesNotMatch(clientMobile,/client-metrics-reset/);
 });
 
 
