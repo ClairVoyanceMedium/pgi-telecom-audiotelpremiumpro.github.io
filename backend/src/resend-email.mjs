@@ -47,14 +47,14 @@ export function emailVerificationCodeHash(config,token,code){
   return createHmac("sha256",pepper).update(String(token||"")+":"+String(code||"")).digest("hex");
 }
 
-export async function sendResendVerificationCode(config,{email,name,code,locale,idempotencyKey}){
+export async function sendResendVerificationCode(config,{email,name,code,locale,dossier_ref,idempotencyKey}){
   if(!config.emailVerificationEnabled)throw providerError("EMAIL_VERIFICATION_DISABLED");
   return sendTransactionalEmail(config,{
     to:email,
     name,
     senderRole:"notifications",
     templateKey:"email_verification",
-    data:{code,ttl_minutes:Number(config.emailVerificationTtlMinutes||10),locale},
+    data:{code,ttl_minutes:Number(config.emailVerificationTtlMinutes||10),locale,dossier_ref},
     idempotencyKey,
     internalEventId:idempotencyKey
   });
@@ -70,8 +70,12 @@ export async function sendTransactionalEmail(config,options={}){
   const fromEmail=local+"@"+domain;
   const replyTo=normalizeEmail("support@"+domain);
   const message=buildTransactionalMessage(config,options.templateKey,options.data||{});
+  const dossierRef=normalizeDossierReference(options.data?.dossier_ref);
   const eventId=String(options.internalEventId||options.idempotencyKey||"").trim().slice(0,180);
   const idem=safeIdempotencyKey(options.idempotencyKey||eventId||("email-"+Date.now()));
+  const messageHeaders={};
+  if(eventId)messageHeaders["X-PGI-Event-ID"]=eventId;
+  if(dossierRef)messageHeaders["X-PGI-Dossier"]=dossierRef;
   const controller=new AbortController();
   const timeout=setTimeout(()=>controller.abort(),Number(config.resendTimeoutMs||8000));
   const body={
@@ -81,7 +85,7 @@ export async function sendTransactionalEmail(config,options={}){
     subject:message.subject,
     text:message.text,
     html:message.html,
-    headers:eventId?{"X-PGI-Event-ID":eventId}:{},
+    headers:messageHeaders,
     tags:[
       {name:"category",value:safeTag(String(options.templateKey||"transactional"))},
       {name:"sender",value:safeTag(senderRole)}
@@ -446,7 +450,13 @@ export function buildTransactionalMessage(config,templateKey,data={}){
   const model=cases[key];
   if(!model)throw providerError("EMAIL_TEMPLATE_NOT_FOUND",500);
   const localized=localizeTransactionalModel(key,model,data.locale,data.name);
-  return renderMessage(localized,{logoUrl,homeUrl,privacyUrl,termsUrl,locale:normalizeLocale(data.locale)});
+  const dossierRef=normalizeDossierReference(data.dossier_ref);
+  const decorated=dossierRef?{
+    ...localized,
+    subject:cleanText(localized.subject+" — "+dossierRef,180),
+    paragraphs:[safeDetail(dossierReferenceLabel(data.locale),dossierRef),...(localized.paragraphs||[])]
+  }:localized;
+  return renderMessage(decorated,{logoUrl,homeUrl,privacyUrl,termsUrl,locale:normalizeLocale(data.locale)});
 }
 
 function renderMessage(model,brand={}){
@@ -706,6 +716,27 @@ function localizeTransactionalModel(key,model,locale,name){
 function safeDetail(label,value){
   const v=cleanText(value||"",200);
   return v?cleanText(label,80)+" : "+v:"";
+}
+function normalizeDossierReference(value){
+  const ref=String(value||"").trim().toUpperCase();
+  return /^APP-\d{4}-[0-9A-Z]{5,18}$/.test(ref)?ref:null;
+}
+function dossierReferenceLabel(locale){
+  const lang=normalizeLocale(locale).split("-")[0];
+  return ({fr:"Référence dossier",en:"Customer file reference",es:"Referencia de expediente",it:"Riferimento pratica",pt:"Referência do processo",de:"Kundenakten-Referenz",sv:"Kundärendereferens"})[lang]||"Référence dossier";
+}
+function inboundHeader(headers,name){
+  const target=String(name||"").toLowerCase();
+  if(Array.isArray(headers)){
+    const item=headers.find(x=>String(x?.name||x?.key||"").toLowerCase()===target);
+    return cleanText(item?.value||"",1200);
+  }
+  if(headers&&typeof headers==="object"){
+    const key=Object.keys(headers).find(k=>k.toLowerCase()===target);
+    const value=key?headers[key]:"";
+    return cleanText(Array.isArray(value)?value.join(" "):value,1200);
+  }
+  return "";
 }
 function cleanText(value,max=500){
   return String(value??"").replace(/[\u0000-\u001f\u007f]+/g," ").replace(/\s+/g," ").trim().slice(0,max);
