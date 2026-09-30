@@ -27,5 +27,6 @@ test -n "$PGI_DATABASE_URL" || {
 # Neon is migrated out-of-band before deployment. Vercel instances are ephemeral
 # and must never race database bootstrap/migrations during cold starts.
 # Deployment refresh: apply current production integration secrets.
+# Deployment refresh: custom analytics date range.
 node scripts/build-static.mjs
 exec node backend/server.mjs
