@@ -3446,8 +3446,16 @@ export class PostgresStore{
   }
 
   async customerEmailVerificationResendTarget(tokenHash){
-    const rows=await this.sql.unsafe("SELECT id,email,display_name,preferred_locale,metadata->'email_verification' AS verification FROM customer_principals WHERE email_verified=false AND metadata#>>'{email_verification,token_hash}'=$1 LIMIT 1",[String(tokenHash)]);
+    const rows=await this.sql.unsafe(
+      "SELECT cp.id,cp.email,cp.display_name,cp.preferred_locale,cp.metadata->'email_verification' AS verification,t.id AS tenant_id,t.created_at AS tenant_created_at"+
+      " FROM customer_principals cp LEFT JOIN LATERAL ("+
+      " SELECT m.tenant_id FROM customer_tenant_memberships m WHERE m.customer_principal_id=cp.id AND m.status='active' ORDER BY (m.role='owner') DESC,m.joined_at ASC LIMIT 1"+
+      " ) membership ON true LEFT JOIN tenants t ON t.id=membership.tenant_id"+
+      " WHERE cp.email_verified=false AND cp.metadata#>>'{email_verification,token_hash}'=$1 LIMIT 1",
+      [String(tokenHash)]
+    );
     const row=rows[0];if(!row)throw problem(400,"EMAIL_VERIFICATION_INVALID");
+    row.dossier_ref=row.tenant_id?dossierReference(row.tenant_id,row.tenant_created_at):null;
     const v=row.verification||{};if(v.required!==true)throw problem(400,"EMAIL_VERIFICATION_INVALID");
     const resendAt=Date.parse(String(v.resend_after||""));
     if(Number.isFinite(resendAt)&&resendAt>Date.now()){const e=problem(429,"EMAIL_VERIFICATION_RESEND_TOO_SOON");e.retry_after_seconds=Math.max(1,Math.ceil((resendAt-Date.now())/1000));throw e;}
