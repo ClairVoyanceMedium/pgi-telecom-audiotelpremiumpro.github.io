@@ -282,7 +282,7 @@ export function createBackend(options={}){
           try{await syncHubSpotCommercialLead(crmInput,{pageUri,pageName:"Création de compte Audiotel Premium Pro",hutk,commercialStatus:"Dossier en préparation"});}
           catch(error){logHubSpotSyncFailure("customer_registration_commercial",error);}
         }
-        const publicUser={id:registered.id,name:registered.display_name,email:registered.email,role:registered.customer_role,tenant:{id:registered.tenant_public_id,name:registered.tenant_name,status:registered.tenant_status}};
+        const publicUser={id:registered.id,name:registered.display_name,email:registered.email,role:registered.customer_role,tenant:{id:registered.tenant_public_id,name:registered.tenant_name,status:registered.tenant_status,dossier_ref:registered.dossier_ref}};
         if(config.emailVerificationEnabled){
           const challenge=createEmailVerificationChallenge(config);
           await store.beginCustomerEmailVerification(registered.id,challenge.record);
