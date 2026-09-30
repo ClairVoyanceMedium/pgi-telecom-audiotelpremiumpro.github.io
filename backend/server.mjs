@@ -990,7 +990,14 @@ export function createBackend(options={}){
 
       if(method==="GET"&&pathname==="/api/v1/dashboard/live-finance"){
         requireRole(actor,["admin","finance","readonly"]);
-        return done(res,metrics,started,"dashboard.live_finance",200,await store.liveFinancialByTenant(50));
+        const [jackpot,ranking]=await Promise.all([store.platformJackpotSnapshot(),store.liveFinancialByTenant(50)]);
+        return done(res,metrics,started,"dashboard.live_finance",200,{...jackpot,active_calls:ranking.active_calls,by_client:ranking.by_client,can_reset:actor.role==="admin"});
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/dashboard/live-finance/reset"){
+        requireRole(actor,["admin"]);
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.jackpot.reset",{scope:"platform"},()=>store.createPlatformJackpotReset(actor));
+        return done(res,metrics,started,"platform.jackpot.reset",201,{...result.value,replayed:result.replayed});
       }
 
       if(method==="GET"&&pathname==="/api/v1/dashboard/analytics"){
