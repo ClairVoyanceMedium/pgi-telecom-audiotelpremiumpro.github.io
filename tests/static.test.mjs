@@ -10,6 +10,7 @@ const clientPortalJs=read("assets/client-portal.js");
 const clientBilling=read("assets/client-billing.js");
 const customerEmailVerification=read("assets/customer-email-verification.js");
 const clientLiveFinance=read("assets/client-live-finance.js");
+const callTimeSummary=read("assets/call-time-summary.js");
 const adminLiveFinance=read("assets/live-finance.js");
 const clientMobile=read("assets/client-mobile.js");
 const clientPortalCss=read("assets/client-portal.css");
@@ -527,7 +528,7 @@ test("admin export center exposes complete download copy and PDF actions",()=>{a
 
 test("customer portal exposes extended analytics and password management",()=>{for(const id of ["asr-chart","value-chart","duration-chart","client-security-dialog","client-password-form"])assert.ok(clientPortal.includes('id="'+id+'"'),id);assert.match(clientPortalApi,/changePassword/);assert.match(clientPortalJs,/function changePassword/);assert.match(clientPortalJs,/svgLine\("asr-chart"/);});
 
-test("client and admin dashboards expose today with rich printable downloadable analytics",()=>{
+test("client and admin expose tenant-safe cumulative call time cards",()=>{\n  assert.match(clientPortal,/call-time-summary\\.js/);\n  assert.match(index,/call-time-summary\\.js/);\n  for(const key of ["today","week","month","year"]){assert.ok(callTimeSummary.includes("client-call-time-"+key),key);assert.ok(callTimeSummary.includes("admin-call-time-"+key),key);}\n  assert.match(callTimeSummary,/PGICustomerApi\\.comparison/);\n  assert.match(callTimeSummary,/PGIApi\\.summary/);\n  assert.match(callTimeSummary,/Tous les clients et numéros/);\n  assert.match(callTimeSummary,/Vos appels uniquement/);\n  assert.match(buildStatic,/assets\\/call-time-summary\\.js/);\n  assert.match(app,/pgi:dashboard-loaded/);\n});\n\ntest("client and admin dashboards expose today with rich printable downloadable analytics",()=>{
   assert.match(index,/data-period="today"[^>]*>Aujourd’hui</);
   assert.match(clientPortal,/data-range="today"[^>]*>Aujourd’hui</);
   assert.match(clientPortalJs,/range:"today"/);
