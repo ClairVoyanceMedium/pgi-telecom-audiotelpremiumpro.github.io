@@ -3868,6 +3868,7 @@ export class PostgresStore{
         " WHERE p.plan_key='external-sva-access' AND p.status='active' AND v.market_id IS NULL AND v.currency='EUR'"+
         " AND v.effective_from<=now() AND (v.effective_to IS NULL OR v.effective_to>now()) ORDER BY v.effective_from DESC LIMIT 1"
       ))[0]||null;
+      for(const row of [offer,referenceOffer])if(row){row.amount_minor=Number(row.amount_minor);row.interval_count=Number(row.interval_count);}
       const subscription=(await tx.unsafe(
         "SELECT s.id,s.status,s.billing_currency,s.current_period_start,s.current_period_end,s.cancel_at_period_end,s.last_payment_status,"+
         " s.billing_provider,s.provider_customer_reference,s.provider_subscription_reference,s.price_version_id,s.recovery_stage,s.dunning_started_at,"+
