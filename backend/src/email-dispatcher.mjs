@@ -121,7 +121,7 @@ export async function applyResendWebhookEvent(store,verified){
 }
 
 async function messagesForEvent(store,config,event){
-  const p=event.payload||{};
+  const p=jsonObject(event.payload);
   const customerEmail=validEmail(event.billing_email)?event.billing_email:validEmail(event.owner_email)?event.owner_email:validEmail(p.email)?p.email:null;
   const customerName=event.owner_name||event.tenant_name||"";
   const internal=validEmail(config.internalNotificationEmail)?config.internalNotificationEmail:null;
@@ -268,6 +268,11 @@ function webhookTimestampColumn(type){
     "email.sent":"sent_at","email.delivered":"delivered_at","email.delivery_delayed":"delayed_at","email.bounced":"bounced_at",
     "email.complained":"complained_at","email.failed":"failed_at","email.suppressed":"suppressed_at","email.clicked":"clicked_at"
   })[type]||null;
+}
+function jsonObject(value){
+  if(value&&typeof value==="object"&&!Array.isArray(value))return value;
+  if(typeof value==="string"){try{const parsed=JSON.parse(value);return parsed&&typeof parsed==="object"&&!Array.isArray(parsed)?parsed:{};}catch{}}
+  return {};
 }
 function validEmail(value){return EMAIL_RE.test(String(value||"").trim())&&String(value||"").trim().length<=320;}
 function failure(status,code){const e=new Error(code);e.status=status;e.code=code;e.expose=true;return e;}

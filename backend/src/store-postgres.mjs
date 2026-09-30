@@ -2259,8 +2259,9 @@ export class PostgresStore{
         [tenant.id,String(subscriptionId),JSON.stringify({provider,event_type:eventType,status,provider_event_id:eventId,price_version_id:priceVersionId})]
       );
       await tx.unsafe(
-        "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'subscription.changed','tenant_subscription',$2,$3::jsonb)",
-        [tenant.id,String(subscriptionId),JSON.stringify({status,provider,event_type:eventType,provider_invoice_reference:providerInvoiceReference,provider_invoice_url:providerInvoiceUrl,provider_invoice_pdf_url:providerInvoicePdfUrl,last_payment_status:lastPaymentStatus,payment_attempt_count:paymentAttemptCount})]
+        "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'subscription.changed','tenant_subscription',$2,"+
+        "jsonb_build_object('status',$3::text,'provider',$4::text,'event_type',$5::text,'provider_invoice_reference',$6::text,'provider_invoice_url',$7::text,'provider_invoice_pdf_url',$8::text,'last_payment_status',$9::text,'payment_attempt_count',$10::int))",
+        [tenant.id,String(subscriptionId),status,provider,eventType,providerInvoiceReference,providerInvoiceUrl,providerInvoicePdfUrl,lastPaymentStatus,paymentAttemptCount]
       );
       const paidCurrent=status==="active"&&periodEnd&&Date.parse(periodEnd)>Date.parse(eventTime)&&(!lastPaymentStatus||["paid","succeeded","success"].includes(lastPaymentStatus));
       if(appliedLatest&&paidCurrent){

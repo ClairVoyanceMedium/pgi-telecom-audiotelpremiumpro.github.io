@@ -261,7 +261,8 @@ test("full customer journey works without a real operator and remains fail-close
       [tenantPublicId]
     ))[0];
     assert.ok(subscriptionOutbox,"subscription.changed outbox event missing");
-    assert.equal(subscriptionOutbox.payload?.event_type,"customer.subscription.created",JSON.stringify(subscriptionOutbox.payload));
+    const subscriptionPayload=typeof subscriptionOutbox.payload==="string"?JSON.parse(subscriptionOutbox.payload):subscriptionOutbox.payload;
+    assert.equal(subscriptionPayload?.event_type,"customer.subscription.created",JSON.stringify(subscriptionOutbox.payload));
     assert.equal(state.contact.statut_commercial_pgi,"En attente d’ouverture");
     assert.equal(state.contact.lifecyclestage,"opportunity");
     assert.equal(state.deal.dealstage,"6144336106");
