@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import {buildHubSpotLeadSubmission,submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,HUBSPOT_LEAD_FORM} from "../backend/src/hubspot-crm.mjs";
+import {buildHubSpotLeadSubmission,submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail,HUBSPOT_LEAD_FORM} from "../backend/src/hubspot-crm.mjs";
 
 const sample={
   account_type:"business",
@@ -214,4 +214,62 @@ test("support contact sync deduplicates by email, creates a CRM contact and logs
   assert.match(note.body.properties.hs_note_body,/&lt;script&gt;/);
   assert.equal(note.body.associations[0].to.id,"501");
   assert.equal(requests.some(x=>x.url.includes("/objects/deals")),false);
+});
+
+
+test("HubSpot reçoit automatiquement la référence dossier dans le contact et l'opportunité",async()=>{
+  const requests=[];
+  const dossier="APP-2026-00K8M4P2Q";
+  const response=(status,payload)=>({ok:status>=200&&status<300,status,text:async()=>JSON.stringify(payload||{})});
+  const fetchImpl=async(url,options={})=>{
+    const body=options.body?JSON.parse(options.body):null;
+    requests.push({url,method:options.method||"GET",body});
+    if(url.endsWith("/crm/v3/properties/contacts/numero_dossier_pgi"))return response(200,{name:"numero_dossier_pgi",type:"string"});
+    if(url.endsWith("/crm/v3/objects/contacts/search"))return response(200,{results:[{id:"710",properties:{email:"camille@example.test",statut_commercial_pgi:"Nouveau prospect",lifecyclestage:"lead",hubspot_owner_id:"99851906"}}]});
+    if(url.endsWith("/crm/v3/objects/contacts/710")&&options.method==="PATCH")return response(200,{id:"710",properties:body.properties});
+    if(url.includes("/crm/v3/objects/contacts/710?associations=deals"))return response(200,{id:"710",associations:{deals:{results:[]}}});
+    if(url.endsWith("/crm/v4/associations/deals/contacts/labels"))return response(200,{results:[{category:"HUBSPOT_DEFINED",typeId:3,label:null}]});
+    if(url.endsWith("/crm/v3/objects/deals")&&options.method==="POST")return response(201,{id:"711",properties:body.properties});
+    throw new Error("Unexpected HubSpot request "+url+" "+options.method);
+  };
+  const result=await syncHubSpotCommercialLead({...sample,dossier_ref:dossier},{token:"pat-test-"+"d".repeat(40),fetchImpl,commercialStatus:"Dossier en préparation"});
+  assert.equal(result.synced,true);
+  assert.equal(result.dossierRef,dossier);
+  assert.equal(result.dossierPropertySynced,true);
+  const contactPatch=requests.find(x=>x.url.endsWith("/contacts/710")&&x.method==="PATCH");
+  assert.equal(contactPatch.body.properties.numero_dossier_pgi,dossier);
+  const dealCreate=requests.find(x=>x.url.endsWith("/objects/deals")&&x.method==="POST");
+  assert.match(dealCreate.body.properties.dealname,new RegExp(dossier));
+});
+
+test("un email entrant déjà reconnu est journalisé dans HubSpot sans créer un inconnu",async()=>{
+  const requests=[];
+  const dossier="APP-2026-00K8M4P2Q";
+  const response=(status,payload)=>({ok:status>=200&&status<300,status,text:async()=>JSON.stringify(payload||{})});
+  const fetchImpl=async(url,options={})=>{
+    const body=options.body?JSON.parse(options.body):null;
+    requests.push({url,method:options.method||"GET",body});
+    if(url.endsWith("/crm/v3/objects/contacts/search"))return response(200,{results:[{id:"720",properties:{email:"camille@example.test",statut_commercial_pgi:"Dossier en préparation",lifecyclestage:"lead",hubspot_owner_id:"99851906"}}]});
+    if(url.endsWith("/crm/v3/objects/contacts/720")&&options.method==="PATCH")return response(200,{id:"720",properties:{...body.properties,email:"camille@example.test"}});
+    if(url.includes("/crm/v3/objects/contacts/720?associations=deals"))return response(200,{id:"720",associations:{deals:{results:[{id:"721"}]}}});
+    if(url.includes("/crm/v3/objects/deals/721?"))return response(200,{id:"721",properties:{pipeline:"default",dealstage:"contractsent",dealname:"Cabinet Exemple — Portabilité — "+dossier,hubspot_owner_id:"99851906",deal_currency_code:"EUR"}});
+    if(url.endsWith("/crm/v4/associations/notes/contacts/labels"))return response(200,{results:[{category:"HUBSPOT_DEFINED",typeId:202,label:null}]});
+    if(url.endsWith("/crm/v3/objects/notes")&&options.method==="POST")return response(201,{id:"722",properties:body.properties});
+    throw new Error("Unexpected HubSpot request "+url+" "+options.method);
+  };
+  const store={tenantControlDetail:async()=>({
+    tenant:{legal_name:"Cabinet Exemple",display_name:"Cabinet Exemple",dossier_ref:dossier},
+    users:[{role:"owner",membership_status:"active",first_name:"Camille",last_name:"Martin",email:"camille@example.test",phone:"+33600000000",account_type:"business",service_intent:"portability"}]
+  })};
+  const result=await syncHubSpotInboundEmail(store,{
+    customer_matched:true,tenant_public_id:"11111111-1111-4111-8111-111111111111",
+    sender_email:"camille@example.test",recipient:"support@audiotel-premium-pro.com",
+    original_subject:"Question client",message_excerpt:"Bonjour, j’ai une question.",dossier_ref:dossier,match_method:"email"
+  },{token:"pat-test-"+"i".repeat(40),fetchImpl});
+  assert.equal(result.synced,true);
+  assert.equal(result.noteId,"722");
+  const note=requests.find(x=>x.url.endsWith("/objects/notes")&&x.method==="POST");
+  assert.match(note.body.properties.hs_note_body,new RegExp(dossier));
+  assert.match(note.body.properties.hs_note_body,/Question client/);
+  assert.equal(requests.filter(x=>x.url.endsWith("/crm/v3/objects/contacts")&&x.method==="POST").length,0);
 });
