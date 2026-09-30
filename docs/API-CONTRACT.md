@@ -300,6 +300,12 @@ Webhook public Stripe. Le backend lit le corps brut, vérifie `Stripe-Signature`
 
 La facturation d’abonnement et les reversements SVA restent deux flux séparés. L’abonnement suit `client → prestataire de paiement → PGI`. Le modèle SVA nominal suit `opérateur SVA → PGI → marge PGI → net client`. Le règlement opérateur est rapproché appel par appel, puis PGI matérialise sa marge contractuelle et la dette nette envers le client. Le net client ne devient `payable` qu’après encaissement amont et validation des garde-fous KYC, bancaires et de conformité du flux de fonds.
 
+### GET /dashboard/live-finance
+Retourne le Business Live du cockpit PGI. Le montant principal est cumulatif depuis la dernière baseline plateforme et inclut les appels terminés comme les appels encore actifs. La réponse expose aussi le direct courant et le classement des clients actifs. Ce compteur n'altère jamais les bilans officiels.
+
+### POST /dashboard/live-finance/reset
+Crée une nouvelle baseline Business Live plateforme. Réservé au rôle administrateur, idempotent et audité. La remise à zéro ne modifie ni CDR, ni statistiques jour/semaine/mois/année, ni règlements, ni distributions de revenus.
+
 ### GET /customer/jackpot
 Retourne le jackpot motivant du tenant, indépendant des métriques officielles. Le montant est une estimation opérationnelle calculée à la seconde depuis la dernière baseline jackpot, y compris lorsqu'une remise à zéro intervient pendant un appel actif. Les CDR et rapprochements restent l'autorité comptable.
 

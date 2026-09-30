@@ -31,6 +31,7 @@ export class MemoryStore{
     this.nextVoiceVersionId=1;
     this.baselines=[];
     this.jackpotBaselines=[];
+    this.platformJackpotBaselines=[{id:0,effective_from:new Date().toISOString(),reason:"Activation du Business Live plateforme",created_by:null}];
     this.rawEventKeys=new Set();
     this.outbox=[];
     this.workQueue=[];
@@ -206,6 +207,24 @@ export class MemoryStore{
       if(row.status==="active"){g.active_calls++;g.live_client_net_ht+=value;g.client_rate_ht_per_second+=Number(row.net_client_rate_ht_per_min||0)/60}else g.completed_calls++;
     }
     return {as_of:new Date(now).toISOString(),reset_at:resetAt,default_currency:"EUR",currency_count:groups.size,by_currency:[...groups.values()],estimate:true,accounting_impact:"none"};
+  }
+
+  async platformJackpotSnapshot(){
+    const all=this.platformJackpotBaselines.slice().sort((a,b)=>Date.parse(b.effective_from||b.created_at)-Date.parse(a.effective_from||a.created_at));
+    const resetAt=(all[0]&&all[0].effective_from)||new Date().toISOString(),resetMs=Date.parse(resetAt),now=Date.now(),groups=new Map();
+    for(const row of this.liveFinancialSessions){
+      if(!["active","ended"].includes(row.status))continue;
+      const start=Math.max(Date.parse(row.billable_started_at),resetMs),end=row.status==="active"?now:Date.parse(row.ended_at||row.updated_at||row.billable_started_at);
+      if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)continue;
+      const cur=row.currency||"EUR";
+      if(!groups.has(cur))groups.set(cur,{currency:cur,active_calls:0,completed_calls:0,jackpot_upstream_payout_ht:0,jackpot_client_net_ht:0,jackpot_pgi_margin_ht:0,live_upstream_payout_ht:0,upstream_rate_ht_per_second:0});
+      const g=groups.get(cur),up=Number(row.upstream_payout_rate_ht_per_min||0),net=Number(row.net_client_rate_ht_per_min||0),margin=Math.max(0,up-net),seconds=Math.max(0,Math.min(86400,(end-start)/1000));
+      g.jackpot_upstream_payout_ht+=seconds/60*up;
+      g.jackpot_client_net_ht+=seconds/60*net;
+      g.jackpot_pgi_margin_ht+=seconds/60*margin;
+      if(row.status==="active"){g.active_calls++;g.live_upstream_payout_ht+=seconds/60*up;g.upstream_rate_ht_per_second+=up/60}else g.completed_calls++;
+    }
+    return {as_of:new Date(now).toISOString(),reset_at:resetAt,currency_count:groups.size,by_currency:[...groups.values()].map(roundFinance),estimate:true,accounting_impact:"none"};
   }
 
   async liveFinancialByTenant(limit=50){
@@ -615,6 +634,14 @@ export class MemoryStore{
     return {...row};
   }
 
+
+  async createPlatformJackpotReset(actor){
+    const now=new Date().toISOString(),row={id:this.nextBaselineId++,effective_from:now,reason:"Remise à zéro du Business Live plateforme",created_by:actor&&actor.sub||null,created_at:now};
+    this.platformJackpotBaselines.push(row);
+    this.#audit("platform.jackpot.reset",String(row.id),{accounting_impact:"none",reporting_impact:"none"});
+    this.eventBus.publish("platform.jackpot.reset",{reset_at:now});
+    return {jackpot_reset_at:now,accounting_impact:"none",reporting_impact:"none"};
+  }
 
   async createCustomerJackpotReset(tenantId,customerPrincipalId){
     const id=Number(tenantId),now=new Date().toISOString(),row={id:this.nextBaselineId++,tenant_id:id,scope:"global",scope_id:null,metric_key:"jackpot",reason:"Remise à zéro du jackpot personnel",created_at:now,effective_from:now,created_by:null,created_by_customer_principal_id:customerPrincipalId||null};

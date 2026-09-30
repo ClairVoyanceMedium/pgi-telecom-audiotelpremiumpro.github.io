@@ -155,8 +155,8 @@ function render(data){
   $("customer-user-name").textContent=(state.user&&state.user.name)||"Utilisateur";
   $("customer-user-role").textContent=statusLabel((state.user&&state.user.role)||"readonly");
   import("./client-access-visibility.js").then(m=>m.a(data,state.demo));
-  var resetButton=$("client-metrics-reset"),canReset=state.demo||/^(owner|admin)$/.test(state.user?.role||"");
-  if(resetButton)resetButton.hidden=!canReset;
+  var resetButton=$("client-metrics-reset");
+  if(resetButton)resetButton.hidden=true;
   var a=aggregate(data),rate=a.calls?a.connected/a.calls*100:0;
   $("kpi-calls").textContent=nf(a.calls);$("kpi-answer-rate").textContent=nf(rate,1)+" % décrochés";
   $("kpi-minutes").textContent=nf(a.billable/60,1);$("kpi-revenue").textContent=money(a.revenue,a.currency);$("kpi-payout").textContent=money(a.payout,a.currency);

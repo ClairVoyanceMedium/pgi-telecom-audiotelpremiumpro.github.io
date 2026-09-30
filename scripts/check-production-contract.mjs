@@ -84,6 +84,8 @@ const consumptionReceiptMigration=fs.readFileSync("database/migrations/052_consu
 const clientAccountProofUi=fs.readFileSync("assets/client-account-proof.js","utf8");
 const tenantConsumptionCheckUi=fs.readFileSync("assets/tenant-consumption-check.js","utf8");
 const clientPortalHtml=fs.readFileSync("client.html","utf8");
+const adminLiveFinanceUi=fs.readFileSync("assets/live-finance.js","utf8");
+const platformJackpotMigration=fs.readFileSync("database/migrations/063_platform_business_live_baseline.sql","utf8");
 const performanceLoad=fs.readFileSync("scripts/performance-load.mjs","utf8");
 const syntheticProbe=fs.readFileSync("scripts/synthetic-probe.mjs","utf8");
 const resilienceDrillScript=fs.readFileSync("scripts/resilience-drill.mjs","utf8");
@@ -359,6 +361,11 @@ if(!/RPO/.test(resilienceDoc)||!/RTO/.test(resilienceDoc)||!/tenant_scoped_/.tes
 if(!/tenant_usage_events/.test(usageLedgerMigration)||!/prevent_usage_event_mutation/.test(usageLedgerMigration)||!/tenant_billing_cycles/.test(usageLedgerMigration))failures.push("metered billing must retain immutable usage and billing-cycle foundations");
 if(!/object_assets/.test(objectLifecycleMigration)||!/data_retention_policies/.test(objectLifecycleMigration)||!/data_subject_requests/.test(objectLifecycleMigration)||!/legal_hold/.test(objectLifecycleMigration))failures.push("object storage lifecycle must retain retention, privacy and legal-hold controls");
 if(!/dashboard_dimension_rollups_daily/.test(dashboardDimensionMigration)||!/dimension_type/.test(dashboardDimensionMigration)||!/duration/.test(dashboardDimensionMigration))failures.push("dashboard analytics must retain bounded dimension rollups");
+if(!/platform_jackpot_baselines/.test(platformJackpotMigration)||!/official analytics/.test(platformJackpotMigration))failures.push("Business Live platform reset must stay isolated from official reporting");
+if(!/platformJackpotSnapshot/.test(postgresStore)||!/createPlatformJackpotReset/.test(postgresStore))failures.push("Business Live platform persistence and reset are required");
+if(!/\/api\/v1\/dashboard\/live-finance\/reset/.test(backendServer)||!/resetLiveFinance/.test(apiClient))failures.push("Business Live cockpit reset endpoint and client action are required");
+if(!/jackpot_upstream_payout_ht/.test(adminLiveFinanceUi)||!/remise à zéro manuelle uniquement/i.test(adminLiveFinanceUi))failures.push("Business Live cockpit must remain cumulative until manual reset");
+if(!/id="reset-metrics"[^>]*hidden/.test(indexSource)||!clientPortalHtml.includes('id="client-metrics-reset" class="cp-ghost" type="button" hidden'))failures.push("official metric reset controls must remain hidden from normal cockpit and client workflows");
 if(!/\/api\/v1\/dashboard\/analytics/.test(backendServer)||!/dashboardAnalytics/.test(postgresStore))failures.push("backend must expose scalable dashboard analytics");
 if(!/analytics:function/.test(apiClient))failures.push("frontend API client must expose dashboard analytics");
 if(!/\/api\/v1\/app\/bootstrap/.test(backendServer)||!/\/api\/v1\/dashboard\/bootstrap/.test(backendServer))failures.push("dashboard startup must retain consolidated bootstrap endpoints");

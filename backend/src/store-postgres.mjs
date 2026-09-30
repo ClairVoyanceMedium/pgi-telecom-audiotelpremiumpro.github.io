@@ -278,6 +278,23 @@ export class PostgresStore{
     return {as_of:new Date().toISOString(),reset_at:resetAt,default_currency:tenant.default_currency||"EUR",currency_count:byCurrency.length,by_currency:byCurrency,estimate:true,accounting_impact:"none"};
   }
 
+  async platformJackpotSnapshot(){
+    const resetRows=await this.readSql.unsafe("SELECT effective_from FROM platform_jackpot_baselines ORDER BY effective_from DESC,id DESC LIMIT 1");
+    const resetAt=new Date(resetRows[0]?.effective_from||new Date()).toISOString();
+    const rows=await this.readSql.unsafe(
+      "SELECT currency,count(*) FILTER(WHERE status='active')::int AS active_calls,count(*) FILTER(WHERE status='ended')::int AS completed_calls,"+
+      " COALESCE(sum(CASE WHEN COALESCE(ended_at,now())>GREATEST(billable_started_at,$1::timestamptz) THEN LEAST(86400,GREATEST(0,EXTRACT(EPOCH FROM (COALESCE(ended_at,now())-GREATEST(billable_started_at,$1::timestamptz)))))/60.0*upstream_payout_rate_ht_per_min ELSE 0 END),0)::float8 AS jackpot_upstream_payout_ht,"+
+      " COALESCE(sum(CASE WHEN COALESCE(ended_at,now())>GREATEST(billable_started_at,$1::timestamptz) THEN LEAST(86400,GREATEST(0,EXTRACT(EPOCH FROM (COALESCE(ended_at,now())-GREATEST(billable_started_at,$1::timestamptz)))))/60.0*net_client_rate_ht_per_min ELSE 0 END),0)::float8 AS jackpot_client_net_ht,"+
+      " COALESCE(sum(CASE WHEN COALESCE(ended_at,now())>GREATEST(billable_started_at,$1::timestamptz) THEN LEAST(86400,GREATEST(0,EXTRACT(EPOCH FROM (COALESCE(ended_at,now())-GREATEST(billable_started_at,$1::timestamptz)))))/60.0*GREATEST(0,upstream_payout_rate_ht_per_min-net_client_rate_ht_per_min) ELSE 0 END),0)::float8 AS jackpot_pgi_margin_ht,"+
+      " COALESCE(sum(CASE WHEN status='active' AND now()>GREATEST(billable_started_at,$1::timestamptz) THEN LEAST(86400,GREATEST(0,EXTRACT(EPOCH FROM (now()-GREATEST(billable_started_at,$1::timestamptz)))))/60.0*upstream_payout_rate_ht_per_min ELSE 0 END),0)::float8 AS live_upstream_payout_ht,"+
+      " COALESCE(sum(upstream_payout_rate_ht_per_min) FILTER(WHERE status='active')/60.0,0)::float8 AS upstream_rate_ht_per_second"+
+      " FROM live_call_financial_sessions WHERE status IN ('active','ended') AND COALESCE(ended_at,now())>$1::timestamptz AND billable_started_at<=now() GROUP BY currency ORDER BY currency",
+      [resetAt]
+    );
+    const byCurrency=rows.map(row=>numberFields(row,["active_calls","completed_calls","jackpot_upstream_payout_ht","jackpot_client_net_ht","jackpot_pgi_margin_ht","live_upstream_payout_ht","upstream_rate_ht_per_second"]));
+    return {as_of:new Date().toISOString(),reset_at:resetAt,currency_count:byCurrency.length,by_currency:byCurrency,estimate:true,accounting_impact:"none",reporting_impact:"none"};
+  }
+
   async liveFinancialByTenant(limit=50){
     const safe=clampInt(limit,50,1,100);
     const rows=await this.readSql.unsafe(
@@ -1470,6 +1487,15 @@ export class PostgresStore{
     return row;
   }
 
+
+  async createPlatformJackpotReset(actor){
+    const userId=numericActor(actor);
+    const rows=await this.sql.unsafe("INSERT INTO platform_jackpot_baselines(reason,effective_from,created_by) VALUES('Remise à zéro du Business Live plateforme',now(),$1) RETURNING id,effective_from",[userId]);
+    const row=rows[0];
+    await this.sql.unsafe("INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'platform.jackpot.reset','platform_jackpot_baseline',$2,$3::jsonb)",[userId,String(row.id),JSON.stringify({metric_key:"business_live",accounting_impact:"none",reporting_impact:"none"})]);
+    this.eventBus.publish("platform.jackpot.reset",{reset_at:row.effective_from});
+    return {jackpot_reset_at:row.effective_from,accounting_impact:"none",reporting_impact:"none"};
+  }
 
   async createCustomerJackpotReset(tenantId,customerPrincipalId){
     const id=Number(tenantId),principal=String(customerPrincipalId||"");
