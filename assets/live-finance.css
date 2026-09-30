@@ -2,4 +2,4 @@
 /* business-live-v152 */
 .lj-head>div:first-child{text-align:center}.live-jackpot[data-active=true]{animation:blGlow 1.45s ease-in-out infinite alternate}@keyframes blGlow{to{border-color:rgba(240,200,137,.94);box-shadow:0 0 32px rgba(223,175,113,.42),0 22px 56px rgba(0,0,0,.28)}}@media(prefers-reduced-motion:reduce){.live-jackpot[data-active=true]{animation:none}}
 
-.lj-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding-top:10px;border-top:1px solid rgba(223,175,113,.14)}.lj-actions small{margin-left:auto;color:#a98e79;font-size:8px}.lj-actions .secondary-btn{min-height:38px}@media(max-width:620px){.lj-actions{align-items:stretch}.lj-actions .secondary-btn{flex:1 1 100%}.lj-actions small{margin-left:0;width:100%}}
+.lj-actions{display:flex;gap:9px;align-items:center;padding-top:10px;border-top:1px solid rgba(223,175,113,.14)}.lj-actions small{margin-left:auto;color:#a98e79;font-size:8px}@media(max-width:620px){.lj-actions{display:grid}.lj-actions small{margin:0}}
