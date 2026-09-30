@@ -126,6 +126,8 @@ function mockProviders(originalFetch,state){
 test("full customer journey works without a real operator and remains fail-closed for SVA activation",{skip:!run},async()=>{
   const bus=new EventBus();
   const store=await PostgresStore.connect(storeConfig(),bus);
+  // Isolate this end-to-end journey from e-mail outbox events produced by earlier integration suites.
+  await store.sql.unsafe("INSERT INTO transactional_email_event_receipts(outbox_event_id,disposition,error_code,processed_at) SELECT id,'ignored',NULL,now() FROM outbox_events ON CONFLICT(outbox_event_id) DO NOTHING");
   const cfg=backendConfig();
   const app=createBackend({config:cfg,store,eventBus:bus});
   const address=await app.listen();
