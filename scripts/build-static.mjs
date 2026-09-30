@@ -44,6 +44,7 @@ const files=[
   "assets/client-live-finance.css",
   "assets/password-visibility.js",
   "assets/client-analytics-plus.js",
+  "assets/client-number-control.js",
   "assets/client-account-proof.js",
   "assets/client-experience-command-center.js",
   "assets/client-portability.js",

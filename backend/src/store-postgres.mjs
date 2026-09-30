@@ -4426,6 +4426,30 @@ export class PostgresStore{
         " FROM tenant_scoped_sva_numbers n LEFT JOIN tenant_scoped_number_assignments a ON a.sva_number_id=n.id"+
         " ORDER BY n.status,n.display_number LIMIT 100"
       );
+      const numberPerformance=await tx.unsafe(
+        "SELECT f.sva_number_id,n.display_number,n.e164,n.tariff_code,COALESCE(f.currency,n.currency) AS currency,n.number_type,n.service_rate_ttc_per_min::float8,"+
+        " count(*)::bigint AS calls_total,count(*) FILTER(WHERE f.call_status='connected')::bigint AS calls_connected,"+
+        " count(*) FILTER(WHERE f.call_status='abandoned')::bigint AS calls_abandoned,"+
+        " COALESCE(sum(f.billable_seconds),0)::float8 AS billable_seconds,"+
+        " COALESCE(sum(f.retail_service_amount_ttc),0)::float8 AS generated_revenue_ttc,"+
+        " COALESCE(sum(f.expected_payout_ht),0)::float8 AS expected_payout_ht,"+
+        " COALESCE(sum(CASE WHEN pt.id IS NULL THEN 0 ELSE GREATEST(0,f.expected_payout_ht-LEAST(f.expected_payout_ht,"+
+        " f.expected_payout_ht*pt.platform_fee_bps/10000.0+pt.platform_fee_ht_per_min*(f.billable_seconds/60.0))) END),0)::float8 AS estimated_client_net_ht,"+
+        " count(pt.id)::bigint AS payout_term_matches"+
+        " FROM tenant_scoped_call_facts f"+
+        " LEFT JOIN tenant_scoped_sva_numbers n ON n.id=f.sva_number_id"+
+        " LEFT JOIN LATERAL ("+
+        " SELECT p.id,p.platform_fee_bps,p.platform_fee_ht_per_min::float8 FROM tenant_payout_terms p"+
+        " WHERE p.tenant_id=$3 AND p.status='active' AND p.effective_from<=f.started_at"+
+        " AND (p.effective_to IS NULL OR p.effective_to>f.started_at)"+
+        " AND (p.market_id IS NULL OR p.market_id=f.market_id) AND (p.sva_number_id IS NULL OR p.sva_number_id=f.sva_number_id)"+
+        " ORDER BY (p.sva_number_id IS NOT NULL) DESC,(p.market_id IS NOT NULL) DESC,p.effective_from DESC,p.id DESC LIMIT 1"+
+        " ) pt ON TRUE"+
+        " WHERE f.started_at >= $1::timestamptz AND f.started_at <= $2::timestamptz AND f.sva_number_id IS NOT NULL"+
+        " GROUP BY f.sva_number_id,n.display_number,n.e164,n.tariff_code,f.currency,n.currency,n.number_type,n.service_rate_ttc_per_min"+
+        " ORDER BY calls_total DESC,n.display_number LIMIT 100",
+        [callsFrom,to,id]
+      );
       const settlements=await tx.unsafe(
         "SELECT id,market_id,currency,period_start,period_end,upstream_payout_ht::float8,platform_fee_ht::float8,net_payout_ht::float8,"+
         " unallocated_amount_ht::float8,held_amount_ht::float8,collection_model,status,payment_due_date,paid_at,statement_reference"+
@@ -4464,7 +4488,7 @@ export class PostgresStore{
         " FROM tenant_scoped_portal_call_details WHERE started_at>=$1::timestamptz AND started_at<=$2::timestamptz"+
         " ORDER BY started_at DESC,call_id DESC LIMIT 20",[callsFrom,to]
       );
-      return {tenant,financial_by_currency:financial,metric_net_payout_by_currency:metricPayout,live_financial_by_currency:liveFinancial.map(row=>numberFields(row,["active_calls","estimated_service_revenue_ttc","estimated_upstream_payout_ht","estimated_client_net_ht","service_rate_ttc_per_second","upstream_rate_ht_per_second","client_rate_ht_per_second"])),series,activity_breakdown:activityBreakdown,numbers,settlements,subscriptions,portability_requests:portabilityRequests,destinations,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,recent_calls:recentCalls,voice_quality:voiceQuality[0]||null,range:{from,to},metric_ranges:mr};
+      return {tenant,financial_by_currency:financial,metric_net_payout_by_currency:metricPayout,live_financial_by_currency:liveFinancial.map(row=>numberFields(row,["active_calls","estimated_service_revenue_ttc","estimated_upstream_payout_ht","estimated_client_net_ht","service_rate_ttc_per_second","upstream_rate_ht_per_second","client_rate_ht_per_second"])),series,activity_breakdown:activityBreakdown,numbers,number_performance:numberPerformance,settlements,subscriptions,portability_requests:portabilityRequests,destinations,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,recent_calls:recentCalls,voice_quality:voiceQuality[0]||null,range:{from,to},metric_ranges:mr};
     });
   }
 
