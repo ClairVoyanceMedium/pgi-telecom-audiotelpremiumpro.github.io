@@ -4504,8 +4504,8 @@ export class PostgresStore{
       const tz=String(tenant.timezone||"Europe/Paris");
       const bounds=(await tx.unsafe(
         "SELECT now() AS current_to,"+
-        " ((date_trunc('month',now() AT TIME ZONE $1)-interval '11 months') AT TIME ZONE $1) AS current_from,"+
-        " (((date_trunc('month',now() AT TIME ZONE $1)-interval '11 months')-interval '1 year') AT TIME ZONE $1) AS previous_from,"+
+        " ((date_trunc('day',now() AT TIME ZONE $1)-interval '364 days') AT TIME ZONE $1) AS current_from,"+
+        " (((date_trunc('day',now() AT TIME ZONE $1)-interval '364 days')-interval '1 year') AT TIME ZONE $1) AS previous_from,"+
         " (((now() AT TIME ZONE $1)-interval '1 year') AT TIME ZONE $1) AS previous_to",
         [tz]
       ))[0];
@@ -4521,7 +4521,7 @@ export class PostgresStore{
       const where=
         " WHERE ((f.started_at >= $1::timestamptz AND f.started_at <= $2::timestamptz)"+
         " OR (f.started_at >= $3::timestamptz AND f.started_at <= $4::timestamptz))";
-      const [summary,monthly]=await Promise.all([
+      const [summary,daily]=await Promise.all([
         tx.unsafe(
           "SELECT CASE WHEN f.started_at >= $3::timestamptz THEN 'current' ELSE 'previous' END AS period,f.currency,"+
           " count(*)::bigint AS calls_total,count(*) FILTER(WHERE f.call_status='connected')::bigint AS calls_connected,"+
@@ -4530,34 +4530,36 @@ export class PostgresStore{
           " COALESCE(sum(f.expected_payout_ht),0)::float8 AS expected_payout_ht,"+
           " COALESCE(sum(CASE WHEN pt.id IS NULL THEN 0 ELSE GREATEST(0,f.expected_payout_ht-LEAST(f.expected_payout_ht,"+
           " f.expected_payout_ht*pt.platform_fee_bps/10000.0+pt.platform_fee_ht_per_min*(f.billable_seconds/60.0))) END),0)::float8 AS estimated_client_net_ht,"+
-          " count(pt.id)::bigint AS payout_term_matches"+
+          " (count(pt.id)=count(*)) AS net_available,count(pt.id)::bigint AS payout_term_matches"+
           " FROM tenant_scoped_call_facts f"+termsJoin+where+
           " GROUP BY period,f.currency ORDER BY f.currency,period",
           args
         ),
         tx.unsafe(
           "SELECT CASE WHEN f.started_at >= $3::timestamptz THEN 'current' ELSE 'previous' END AS period,f.currency,"+
-          " EXTRACT(MONTH FROM f.started_at AT TIME ZONE $6)::int AS month_number,"+
-          " date_trunc('month',f.started_at AT TIME ZONE $6) AS bucket_local,"+
+          " CASE WHEN f.started_at >= $3::timestamptz THEN ((f.started_at AT TIME ZONE $6)::date-($3::timestamptz AT TIME ZONE $6)::date)::int"+
+          " ELSE ((f.started_at AT TIME ZONE $6)::date-($1::timestamptz AT TIME ZONE $6)::date)::int END AS day_index,"+
+          " (f.started_at AT TIME ZONE $6)::date AS bucket_date,"+
           " count(*)::bigint AS calls_total,count(*) FILTER(WHERE f.call_status='connected')::bigint AS calls_connected,"+
           " COALESCE(sum(f.billable_seconds),0)::float8 AS billable_seconds,"+
           " COALESCE(sum(f.retail_service_amount_ttc),0)::float8 AS generated_revenue_ttc,"+
           " COALESCE(sum(f.expected_payout_ht),0)::float8 AS expected_payout_ht,"+
           " COALESCE(sum(CASE WHEN pt.id IS NULL THEN 0 ELSE GREATEST(0,f.expected_payout_ht-LEAST(f.expected_payout_ht,"+
           " f.expected_payout_ht*pt.platform_fee_bps/10000.0+pt.platform_fee_ht_per_min*(f.billable_seconds/60.0))) END),0)::float8 AS estimated_client_net_ht,"+
-          " count(pt.id)::bigint AS payout_term_matches"+
+          " (count(pt.id)=count(*)) AS net_available,count(pt.id)::bigint AS payout_term_matches"+
           " FROM tenant_scoped_call_facts f"+termsJoin+where+
-          " GROUP BY period,f.currency,month_number,bucket_local ORDER BY f.currency,period,bucket_local",
+          " GROUP BY period,f.currency,day_index,bucket_date ORDER BY f.currency,period,day_index",
           args
         )
       ]);
-      const currencies=[...new Set([...summary,...monthly].map(x=>String(x.currency||tenant.default_currency||"EUR")))].sort();
+      const currencies=[...new Set([...summary,...daily].map(x=>String(x.currency||tenant.default_currency||"EUR")))].sort();
       return {
-        schema_version:"audiotel-annual-progress/1",
+        schema_version:"audiotel-annual-progress/2",
+        granularity:"day",
         tenant:{public_id:tenant.public_id,display_name:tenant.display_name,default_currency:tenant.default_currency,timezone:tz},
         ranges:{current:{from:bounds.current_from,to:bounds.current_to},previous:{from:bounds.previous_from,to:bounds.previous_to}},
         currencies:currencies.length?currencies:[tenant.default_currency||"EUR"],
-        summary,monthly
+        summary,daily
       };
     });
   }

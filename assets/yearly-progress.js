@@ -18,46 +18,41 @@ function pct(current,previous){
   return {value:v,label:(v>0?"+":"")+nf(v,1)+" %",tone:v>0.05?"up":v<-0.05?"down":"flat"};
 }
 function currencyRows(data,currency,period){return (data.summary||[]).find(x=>x.currency===currency&&x.period===period)||{};}
-function monthlyMap(data,currency,period){
+function dailyMap(data,currency,period){
   const map=new Map();
-  (data.monthly||[]).filter(x=>x.currency===currency&&x.period===period).forEach(x=>map.set(Number(x.month_number),x));
+  (data.daily||[]).filter(x=>x.currency===currency&&x.period===period).forEach(x=>map.set(Number(x.day_index),x));
   return map;
 }
-function monthOrder(data){
+function dayOrder(data){
   const from=new Date(data?.ranges?.current?.from||Date.now()),out=[];
-  let y=from.getUTCFullYear(),m=from.getUTCMonth();
-  for(let i=0;i<12;i++){const d=new Date(Date.UTC(y,m+i,1));out.push({month:d.getUTCMonth()+1,label:monthFmt.format(d).replace(".","")});}
+  for(let i=0;i<365;i++){
+    const d=new Date(from.getTime()+i*86400000);
+    out.push({day:i,label:new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"2-digit"}).format(d)});
+  }
   return out;
 }
 function path(points){return points.map((p,i)=>(i?"L ":"M ")+p.x.toFixed(1)+" "+p.y.toFixed(1)).join(" ");}
 function chart(title,orders,currentMap,previousMap,key,format){
-  const current=orders.map(x=>num(currentMap.get(x.month)?.[key])),previous=orders.map(x=>num(previousMap.get(x.month)?.[key]));
-  const max=Math.max(1,...current,...previous),w=600,h=180,pad=26,step=(w-pad*2)/11;
+  const current=orders.map(x=>num(currentMap.get(x.day)?.[key])),previous=orders.map(x=>num(previousMap.get(x.day)?.[key]));
+  const max=Math.max(1,...current,...previous),w=900,h=210,pad=30,step=(w-pad*2)/Math.max(1,orders.length-1);
   const pts=vals=>vals.map((v,i)=>({x:pad+i*step,y:h-pad-(v/max)*(h-pad*2),v}));
   const cpts=pts(current),ppts=pts(previous);
-  const xlabels=orders.map((x,i)=>'<text class="yp-label" x="'+(pad+i*step).toFixed(1)+'" y="'+(h-5)+'" text-anchor="middle">'+esc(x.label)+'</text>').join("");
-  const cdots=cpts.map((p,i)=>'<circle class="yp-dot-current" cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="3"><title>'+esc(orders[i].label+" · période actuelle : "+format(p.v))+'</title></circle>').join("");
-  const pdots=ppts.map((p,i)=>'<circle class="yp-dot-previous" cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="2.5"><title>'+esc(orders[i].label+" · année précédente : "+format(p.v))+'</title></circle>').join("");
-  return '<article class="yp-chart"><div class="yp-chart-head"><h4>'+esc(title)+'</h4><div class="yp-legend"><span class="current"><i></i>12 mois actuels</span><span class="previous"><i></i>année précédente</span></div></div><svg class="yp-svg" viewBox="0 0 600 180" role="img" aria-label="'+esc(title+", comparaison sur 12 mois")+'"><line class="yp-axis" x1="26" y1="154" x2="574" y2="154"></line><line class="yp-axis" x1="26" y1="26" x2="26" y2="154"></line><path class="yp-previous" d="'+path(ppts)+'"></path><path class="yp-current" d="'+path(cpts)+'"></path>'+pdots+cdots+xlabels+'</svg></article>';
-}
-function summarySentence(cur,prev,currency){
-  const rev=pct(cur.generated_revenue_ttc,prev.generated_revenue_ttc),calls=pct(cur.calls_total,prev.calls_total);
-  if(num(cur.calls_total)===0&&num(prev.calls_total)===0)return"Aucune activité comparable n’est encore disponible sur ces deux périodes.";
-  const revText=rev.value==null?"une nouvelle activité de revenus":(rev.value>=0?"une progression des revenus de "+rev.label:"un recul des revenus de "+rev.label.replace("-",""));
-  const callText=calls.value==null?"une nouvelle activité d’appels":(calls.value>=0?"des appels en hausse de "+calls.label:"des appels en baisse de "+calls.label.replace("-",""));
-  return "Sur les 12 mois comparés, le client présente "+revText+" et "+callText+". Revenu actuel : "+money(cur.generated_revenue_ttc,currency)+".";
+  const labelStep=30;
+  const xlabels=orders.map((x,i)=>(i%labelStep===0||i===orders.length-1)?'<text class="yp-label" x="'+(pad+i*step).toFixed(1)+'" y="'+(h-6)+'" text-anchor="middle">'+esc(x.label)+'</text>':"").join("");
+  const hits=orders.map((x,i)=>'<circle cx="'+cpts[i].x.toFixed(1)+'" cy="'+cpts[i].y.toFixed(1)+'" r="4" fill="transparent"><title>'+esc(x.label+" · actuel : "+format(cpts[i].v)+" · année précédente : "+format(ppts[i].v))+'</title></circle>').join("");
+  return '<article class="yp-chart"><div class="yp-chart-head"><h4>'+esc(title)+'</h4><div class="yp-legend"><span class="current"><i></i>365 jours actuels</span><span class="previous"><i></i>même période N-1</span></div></div><svg class="yp-svg" viewBox="0 0 900 210" role="img" aria-label="'+esc(title+", comparaison jour par jour sur 365 jours")+'"><line class="yp-axis" x1="30" y1="180" x2="870" y2="180"></line><line class="yp-axis" x1="30" y1="30" x2="30" y2="180"></line><path class="yp-previous" d="'+path(ppts)+'"></path><path class="yp-current" d="'+path(cpts)+'"></path>'+hits+xlabels+'</svg></article>';
 }
 function render(root,data,mode){
   css();root.hidden=false;root.classList.add("yp");
   const currencies=data.currencies?.length?data.currencies:[data.tenant?.default_currency||"EUR"];
   const currency=root.dataset.currency&&currencies.includes(root.dataset.currency)?root.dataset.currency:(currencies.includes("EUR")?"EUR":currencies[0]);
   root.dataset.currency=currency;
-  const cur=currencyRows(data,currency,"current"),prev=currencyRows(data,currency,"previous"),orders=monthOrder(data),cm=monthlyMap(data,currency,"current"),pm=monthlyMap(data,currency,"previous");
+  const cur=currencyRows(data,currency,"current"),prev=currencyRows(data,currency,"previous"),orders=dayOrder(data),cm=dailyMap(data,currency,"current"),pm=dailyMap(data,currency,"previous");
   const rev=pct(cur.generated_revenue_ttc,prev.generated_revenue_ttc),calls=pct(cur.calls_total,prev.calls_total),mins=pct(num(cur.billable_seconds)/60,num(prev.billable_seconds)/60);
-  const completeCur=num(cur.calls_total)===0||num(cur.payout_term_matches)>=num(cur.calls_total),completePrev=num(prev.calls_total)===0||num(prev.payout_term_matches)>=num(prev.calls_total);
+  const completeCur=cur.net_payout_available===true||String(cur.net_available)==="true",completePrev=prev.net_payout_available===true||String(prev.net_available)==="true";
   const net=completeCur&&completePrev?pct(cur.estimated_client_net_ht,prev.estimated_client_net_ht):null;
   const kpi=(label,value,change,note)=>'<div class="yp-kpi"><span>'+esc(label)+'</span><strong>'+esc(value)+'</strong>'+(change?'<small class="yp-change '+change.tone+'">'+esc(change.label)+'</small>':"")+'<small>'+esc(note)+'</small></div>';
-  root.innerHTML='<div class="yp-head"><div><p class="panel-kicker">PROGRESSION SUR 12 MOIS</p><'+(mode==="admin"?"h3":"h2")+'>Évolution par rapport à l’année précédente</'+(mode==="admin"?"h3":"h2")+'><p>Comparaison mois par mois des 12 derniers mois avec les 12 mois correspondants un an plus tôt.</p></div><div class="yp-controls"><label>Devise <select data-yp-currency>'+currencies.map(c=>'<option value="'+esc(c)+'" '+(c===currency?"selected":"")+'>'+esc(c)+'</option>').join("")+'</select></label></div></div>'+
+  root.innerHTML='<div class="yp-head"><div><p class="panel-kicker">PROGRESSION SUR 365 JOURS</p><'+(mode==="admin"?"h3":"h2")+'>Évolution par rapport à l’année précédente</'+(mode==="admin"?"h3":"h2")+'><p>Comparaison jour par jour des 365 derniers jours avec la même période un an plus tôt.</p></div><div class="yp-controls"><label>Devise <select data-yp-currency>'+currencies.map(c=>'<option value="'+esc(c)+'" '+(c===currency?"selected":"")+'>'+esc(c)+'</option>').join("")+'</select></label></div></div>'+
     '<div class="yp-kpis">'+
       kpi("Revenus générés",money(cur.generated_revenue_ttc,currency),rev,"contre "+money(prev.generated_revenue_ttc,currency))+
       kpi("Appels",nf(cur.calls_total),calls,"contre "+nf(prev.calls_total))+
@@ -66,8 +61,8 @@ function render(root,data,mode){
     '</div>'+
     '<p class="yp-summary">'+esc(summarySentence(cur,prev,currency))+'</p>'+
     '<div class="yp-grid">'+
-      chart("Revenus générés TTC par mois",orders,cm,pm,"generated_revenue_ttc",v=>money(v,currency))+
-      chart("Nombre d’appels par mois",orders,cm,pm,"calls_total",v=>nf(v))+
+      chart("Revenus générés TTC jour par jour",orders,cm,pm,"generated_revenue_ttc",v=>money(v,currency))+
+      chart("Nombre d’appels jour par jour",orders,cm,pm,"calls_total",v=>nf(v))+
     '</div>'+
     '<p class="yp-note">Les comparaisons utilisent l’historique réel de la plateforme et ne sont pas affectées par une remise à zéro visuelle des métriques. Le net client reste une estimation tant que le rapprochement opérateur n’est pas définitif.</p>';
   root.querySelector("[data-yp-currency]")?.addEventListener("change",e=>{root.dataset.currency=e.target.value;render(root,data,mode);});

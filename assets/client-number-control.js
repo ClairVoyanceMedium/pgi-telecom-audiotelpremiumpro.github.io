@@ -89,8 +89,8 @@ function csvCell(value){
   const s=String(value??"");return /[;"\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;
 }
 function ledgerCsv(rows){
-  const out=[["Période début","Période fin","Devise","Reversement opérateur HT","Frais plateforme HT","Net client HT","Montant retenu HT","Non affecté HT","Statut","Échéance","Payé le","Référence"]];
-  for(const x of rows)out.push([x.period_start,x.period_end,x.currency,x.upstream_payout_ht,x.platform_fee_ht,x.net_payout_ht,x.held_amount_ht,x.unallocated_amount_ht,x.status,x.payment_due_date||"",x.paid_at||"",x.statement_reference||""]);
+  const out=[["Période début","Période fin","Devise","Net client HT","Montant retenu HT","Statut","Échéance","Payé le","Référence"]];
+  for(const x of rows)out.push([x.period_start,x.period_end,x.currency,x.net_payout_ht,x.held_amount_ht,x.status,x.payment_due_date||"",x.paid_at||"",x.statement_reference||""]);
   return "\ufeff"+out.map(r=>r.map(csvCell).join(";")).join("\r\n");
 }
 function downloadLedger(rows){
@@ -107,12 +107,12 @@ function renderLedger(data){
   }).join("");
   const body=rows.length?rows.map(x=>{
     const timing=x.paid_at?"Payé "+dateOnly(x.paid_at):x.payment_due_date?"Échéance "+dateOnly(x.payment_due_date):"—";
-    return "<tr><td>"+esc(dateOnly(x.period_start)+" → "+dateOnly(x.period_end))+"</td><td>"+esc(money(x.upstream_payout_ht,x.currency))+"</td><td>"+esc(money(x.platform_fee_ht,x.currency))+"</td><td><strong>"+esc(money(x.net_payout_ht,x.currency))+"</strong></td><td>"+esc(money(x.held_amount_ht,x.currency))+"</td><td>"+esc(money(x.unallocated_amount_ht,x.currency))+"</td><td>"+chip(x.status)+"</td><td>"+esc(timing)+"</td><td>"+esc(x.statement_reference||"—")+"</td></tr>";
-  }).join(""):'<tr><td colspan="9" class="cp-empty">Aucune période de reversement disponible.</td></tr>';
-  mount.innerHTML='<article class="cp-panel cp-finance-ledger"><div class="cp-panel-head"><div><p class="cp-kicker">TRANSPARENCE FINANCIÈRE</p><h2>Grand livre des reversements</h2></div><div class="cp-ledger-actions"><button id="client-ledger-export" class="cp-ghost" type="button"'+(rows.length?"":" disabled")+'>Exporter CSV</button></div></div>'+
+    return "<tr><td>"+esc(dateOnly(x.period_start)+" → "+dateOnly(x.period_end))+"</td><td><strong>"+esc(money(x.net_payout_ht,x.currency))+"</strong></td><td>"+esc(money(x.held_amount_ht,x.currency))+"</td><td>"+chip(x.status)+"</td><td>"+esc(timing)+"</td><td>"+esc(x.statement_reference||"—")+"</td></tr>";
+  }).join(""):'<tr><td colspan="6" class="cp-empty">Aucune période de reversement disponible.</td></tr>';
+  mount.innerHTML='<article class="cp-panel cp-finance-ledger"><div class="cp-panel-head"><div><p class="cp-kicker">MES REVERSEMENTS</p><h2>Historique de mes montants nets</h2></div><div class="cp-ledger-actions"><button id="client-ledger-export" class="cp-ghost" type="button"'+(rows.length?"":" disabled")+'>Exporter CSV</button></div></div>'+
     '<div class="cp-ledger-summary">'+(summary||'<span>Aucune période consolidée</span>')+'</div>'+
-    '<p class="cp-muted">Détail des montants opérateur, frais de plateforme, net client, retenues et écarts non affectés. Les statuts évoluent jusqu’au rapprochement et au paiement effectif.</p>'+
-    '<div class="cp-table-wrap"><table class="cp-table cp-ledger-table"><caption class="cp-visually-hidden">Grand livre des reversements</caption><thead><tr><th>Période</th><th>Opérateur HT</th><th>Frais HT</th><th>Net client HT</th><th>Retenu</th><th>Non affecté</th><th>Statut</th><th>Règlement</th><th>Référence</th></tr></thead><tbody>'+body+'</tbody></table></div></article>';
+    '<p class="cp-muted">Vos reversements nets, retenues éventuelles, statuts et dates de règlement. Les données commerciales internes de la plateforme ne sont pas exposées dans l’espace client.</p>'+
+    '<div class="cp-table-wrap"><table class="cp-table cp-ledger-table"><caption class="cp-visually-hidden">Historique de mes reversements</caption><thead><tr><th>Période</th><th>Net client HT</th><th>Retenu</th><th>Statut</th><th>Règlement</th><th>Référence</th></tr></thead><tbody>'+body+'</tbody></table></div></article>';
   $("client-ledger-export")?.addEventListener("click",()=>downloadLedger(rows));
 }
 function render(data){
