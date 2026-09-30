@@ -93,7 +93,7 @@ saveVoiceServiceDraft:function(id,payload,idempotencyKey){return post("/customer
 simulateVoiceService:function(id,payload){return post("/customer/voice-studio/services/"+encodeURIComponent(id)+"/simulate",payload||{});},
 publishVoiceService:function(id,idempotencyKey){return post("/customer/voice-studio/services/"+encodeURIComponent(id)+"/publish",{},idempotencyKey);},
 rollbackVoiceService:function(id,versionId,idempotencyKey){return post("/customer/voice-studio/services/"+encodeURIComponent(id)+"/rollback",{version_id:versionId},idempotencyKey);},
-annualProgress:function(){return get("/customer/annual-progress",12000);},
+annualProgress:function(from,to){var q=new URLSearchParams();if(from)q.set("from",from);if(to)q.set("to",to);var s=q.toString();return get("/customer/annual-progress"+(s?"?"+s:""),15000);},
 comparison:function(from,to){var q=new URLSearchParams({from:from,to:to});return get("/customer/comparison?"+q.toString(),10000);},
 calls:function(from,to,cursor,limit,filters){
   var q=new URLSearchParams({from:from,to:to,limit:String(limit||100)});

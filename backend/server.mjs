@@ -871,7 +871,8 @@ export function createBackend(options={}){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
         requireCustomerPermission(context,"analytics.read");
-        return done(res,metrics,started,"customer.annual_progress",200,scopeCustomerAnnualProgressData(await store.customerAnnualProgress(context.tenant_id)));
+        const from=String(url.searchParams.get("from")||"").trim()||null,to=String(url.searchParams.get("to")||"").trim()||null;
+        return done(res,metrics,started,"customer.annual_progress",200,scopeCustomerAnnualProgressData(await store.customerAnnualProgress(context.tenant_id,from,to)));
       }
 
       if(method==="GET"&&pathname==="/api/v1/customer/comparison"){
@@ -1265,7 +1266,8 @@ export function createBackend(options={}){
       match=routeMatch(pathname,"/api/v1/platform/tenants/:id/annual-progress");
       if(method==="GET"&&match){
         requireRole(actor,["admin","finance","readonly"]);
-        return done(res,metrics,started,"platform.tenant_annual_progress",200,await store.tenantAnnualProgress(match.id));
+        const from=String(url.searchParams.get("from")||"").trim()||null,to=String(url.searchParams.get("to")||"").trim()||null;
+        return done(res,metrics,started,"platform.tenant_annual_progress",200,await store.tenantAnnualProgress(match.id,from,to));
       }
 
       match=routeMatch(pathname,"/api/v1/platform/tenants/:id/control-center");

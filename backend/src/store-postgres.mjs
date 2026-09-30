@@ -4492,9 +4492,12 @@ export class PostgresStore{
     });
   }
 
-  async customerAnnualProgress(tenantId){
+  async customerAnnualProgress(tenantId,requestedFrom=null,requestedTo=null){
     const id=Number(tenantId);
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    const fromInput=requestedFrom==null||requestedFrom===""?null:String(requestedFrom).trim();
+    const toInput=requestedTo==null||requestedTo===""?null:String(requestedTo).trim();
+    for(const value of [fromInput,toInput])if(value&&!/^\d{4}-\d{2}-\d{2}$/.test(value))throw problem(400,"INVALID_DATE_RANGE");
     return this.withTenantReadContext(id,async tx=>{
       const tenant=(await tx.unsafe(
         "SELECT id,public_id::text AS public_id,display_name,default_currency,COALESCE(NULLIF(timezone,''),'Europe/Paris') AS timezone FROM tenants WHERE id=$1",
@@ -4503,13 +4506,30 @@ export class PostgresStore{
       if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
       const tz=String(tenant.timezone||"Europe/Paris");
       const bounds=(await tx.unsafe(
-        "SELECT now() AS current_to,"+
-        " ((date_trunc('day',now() AT TIME ZONE $1)-interval '364 days') AT TIME ZONE $1) AS current_from,"+
-        " (((date_trunc('day',now() AT TIME ZONE $1)-interval '364 days')-interval '1 year') AT TIME ZONE $1) AS previous_from,"+
-        " (((now() AT TIME ZONE $1)-interval '1 year') AT TIME ZONE $1) AS previous_to",
-        [tz]
+        "WITH base AS ("+
+        " SELECT (now() AT TIME ZONE $1)::date AS today,"+
+        " LEAST(COALESCE($3::date,(now() AT TIME ZONE $1)::date),(now() AT TIME ZONE $1)::date) AS to_date"+
+        "), local AS ("+
+        " SELECT today,to_date,COALESCE($2::date,to_date-364) AS from_date,"+
+        " ($3::date IS NOT NULL AND $3::date>today) AS end_capped FROM base"+
+        ") SELECT today,from_date AS current_from_date,to_date AS current_to_date,"+
+        " (from_date AT TIME ZONE $1) AS current_from,"+
+        " CASE WHEN to_date=today THEN now() ELSE ((to_date+1) AT TIME ZONE $1)-interval '1 microsecond' END AS current_to,"+
+        " (from_date-interval '1 year')::date AS previous_from_date,"+
+        " (to_date-interval '1 year')::date AS previous_to_date,"+
+        " ((from_date-interval '1 year')::date AT TIME ZONE $1) AS previous_from,"+
+        " CASE WHEN to_date=today THEN now()-interval '1 year' ELSE ((((to_date-interval '1 year')::date+1) AT TIME ZONE $1)-interval '1 microsecond') END AS previous_to,"+
+        " end_capped,(to_date-from_date+1)::int AS day_count FROM local",
+        [tz,fromInput,toInput]
       ))[0];
+      if(!bounds||Number(bounds.day_count)<=0)throw problem(400,"INVALID_DATE_RANGE");
+      if(Number(bounds.day_count)>1827)throw problem(400,"DATE_RANGE_TOO_LARGE");
       const args=[bounds.previous_from,bounds.previous_to,bounds.current_from,bounds.current_to,id,tz];
+      const rangeCte=
+        "WITH ranges(period,from_ts,to_ts,anchor_date) AS (VALUES"+
+        " ('previous'::text,$1::timestamptz,$2::timestamptz,($1::timestamptz AT TIME ZONE $6)::date),"+
+        " ('current'::text,$3::timestamptz,$4::timestamptz,($3::timestamptz AT TIME ZONE $6)::date)"+
+        ") ";
       const termsJoin=
         " LEFT JOIN LATERAL ("+
         " SELECT p.id,p.platform_fee_bps,p.platform_fee_ht_per_min::float8 FROM tenant_payout_terms p"+
@@ -4518,27 +4538,24 @@ export class PostgresStore{
         " AND (p.market_id IS NULL OR p.market_id=f.market_id) AND (p.sva_number_id IS NULL OR p.sva_number_id=f.sva_number_id)"+
         " ORDER BY (p.sva_number_id IS NOT NULL) DESC,(p.market_id IS NOT NULL) DESC,p.effective_from DESC,p.id DESC LIMIT 1"+
         " ) pt ON TRUE";
-      const where=
-        " WHERE ((f.started_at >= $1::timestamptz AND f.started_at <= $2::timestamptz)"+
-        " OR (f.started_at >= $3::timestamptz AND f.started_at <= $4::timestamptz))";
       const [summary,daily]=await Promise.all([
         tx.unsafe(
-          "SELECT CASE WHEN f.started_at >= $3::timestamptz THEN 'current' ELSE 'previous' END AS period,f.currency,"+
-          " count(*)::bigint AS calls_total,count(*) FILTER(WHERE f.call_status='connected')::bigint AS calls_connected,"+
+          rangeCte+
+          "SELECT r.period,f.currency,count(*)::bigint AS calls_total,"+
+          " count(*) FILTER(WHERE f.call_status='connected')::bigint AS calls_connected,"+
           " COALESCE(sum(f.billable_seconds),0)::float8 AS billable_seconds,"+
           " COALESCE(sum(f.retail_service_amount_ttc),0)::float8 AS generated_revenue_ttc,"+
           " COALESCE(sum(f.expected_payout_ht),0)::float8 AS expected_payout_ht,"+
           " COALESCE(sum(CASE WHEN pt.id IS NULL THEN 0 ELSE GREATEST(0,f.expected_payout_ht-LEAST(f.expected_payout_ht,"+
           " f.expected_payout_ht*pt.platform_fee_bps/10000.0+pt.platform_fee_ht_per_min*(f.billable_seconds/60.0))) END),0)::float8 AS estimated_client_net_ht,"+
           " (count(pt.id)=count(*)) AS net_available,count(pt.id)::bigint AS payout_term_matches"+
-          " FROM tenant_scoped_call_facts f"+termsJoin+where+
-          " GROUP BY period,f.currency ORDER BY f.currency,period",
+          " FROM ranges r JOIN tenant_scoped_call_facts f ON f.started_at>=r.from_ts AND f.started_at<=r.to_ts"+termsJoin+
+          " GROUP BY r.period,f.currency ORDER BY f.currency,r.period",
           args
         ),
         tx.unsafe(
-          "SELECT CASE WHEN f.started_at >= $3::timestamptz THEN 'current' ELSE 'previous' END AS period,f.currency,"+
-          " CASE WHEN f.started_at >= $3::timestamptz THEN ((f.started_at AT TIME ZONE $6)::date-($3::timestamptz AT TIME ZONE $6)::date)::int"+
-          " ELSE ((f.started_at AT TIME ZONE $6)::date-($1::timestamptz AT TIME ZONE $6)::date)::int END AS day_index,"+
+          rangeCte+
+          "SELECT r.period,f.currency,((f.started_at AT TIME ZONE $6)::date-r.anchor_date)::int AS day_index,"+
           " (f.started_at AT TIME ZONE $6)::date AS bucket_date,"+
           " count(*)::bigint AS calls_total,count(*) FILTER(WHERE f.call_status='connected')::bigint AS calls_connected,"+
           " COALESCE(sum(f.billable_seconds),0)::float8 AS billable_seconds,"+
@@ -4547,30 +4564,35 @@ export class PostgresStore{
           " COALESCE(sum(CASE WHEN pt.id IS NULL THEN 0 ELSE GREATEST(0,f.expected_payout_ht-LEAST(f.expected_payout_ht,"+
           " f.expected_payout_ht*pt.platform_fee_bps/10000.0+pt.platform_fee_ht_per_min*(f.billable_seconds/60.0))) END),0)::float8 AS estimated_client_net_ht,"+
           " (count(pt.id)=count(*)) AS net_available,count(pt.id)::bigint AS payout_term_matches"+
-          " FROM tenant_scoped_call_facts f"+termsJoin+where+
-          " GROUP BY period,f.currency,day_index,bucket_date ORDER BY f.currency,period,day_index",
+          " FROM ranges r JOIN tenant_scoped_call_facts f ON f.started_at>=r.from_ts AND f.started_at<=r.to_ts"+termsJoin+
+          " GROUP BY r.period,f.currency,day_index,bucket_date ORDER BY f.currency,r.period,day_index",
           args
         )
       ]);
       const currencies=[...new Set([...summary,...daily].map(x=>String(x.currency||tenant.default_currency||"EUR")))].sort();
       return {
-        schema_version:"audiotel-annual-progress/2",
+        schema_version:"audiotel-annual-progress/3",
         granularity:"day",
         tenant:{public_id:tenant.public_id,display_name:tenant.display_name,default_currency:tenant.default_currency,timezone:tz},
-        ranges:{current:{from:bounds.current_from,to:bounds.current_to},previous:{from:bounds.previous_from,to:bounds.previous_to}},
+        ranges:{
+          current:{from:bounds.current_from,to:bounds.current_to,from_date:String(bounds.current_from_date),to_date:String(bounds.current_to_date)},
+          previous:{from:bounds.previous_from,to:bounds.previous_to,from_date:String(bounds.previous_from_date),to_date:String(bounds.previous_to_date)}
+        },
+        selection:{custom:Boolean(fromInput||toInput),end_capped:Boolean(bounds.end_capped),day_count:Number(bounds.day_count)},
+        limits:{today:String(bounds.today),max_days:1827},
         currencies:currencies.length?currencies:[tenant.default_currency||"EUR"],
         summary,daily
       };
     });
   }
 
-  async tenantAnnualProgress(publicId){
+  async tenantAnnualProgress(publicId,requestedFrom=null,requestedTo=null){
     publicId=String(publicId||"").trim();
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
     const tenant=(await this.readSql.unsafe("SELECT id,tenant_type FROM tenants WHERE public_id=$1::uuid",[publicId]))[0];
     if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
     if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
-    return this.customerAnnualProgress(Number(tenant.id));
+    return this.customerAnnualProgress(Number(tenant.id),requestedFrom,requestedTo);
   }
 
   async customerPortalComparison(tenantId,from,to,metricRanges=null){
