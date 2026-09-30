@@ -385,9 +385,19 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const directoryByNumber=await store.listTenants({number:"33890000001",limit:10});
     assert.equal(directoryByNumber.data.length,1);
     assert.equal(directoryByNumber.data[0].display_name,"External Test");
+    assert.match(directoryByNumber.data[0].dossier_ref,/^APP-\d{4}-[0-9A-Z]+$/);
+
+    const directoryByDossier=await store.listTenants({q:directoryByNumber.data[0].dossier_ref,limit:10});
+    assert.equal(directoryByDossier.data.length,1);
+    assert.equal(directoryByDossier.data[0].public_id,externalIdentity[0].public_id);
+
+    const directoryBySvaUniversal=await store.listTenants({q:"33890000001",limit:10});
+    assert.equal(directoryBySvaUniversal.data.length,1);
+    assert.equal(directoryBySvaUniversal.data[0].public_id,externalIdentity[0].public_id);
 
     const controlDetail=await store.tenantControlDetail(externalIdentity[0].public_id);
     assert.equal(controlDetail.tenant.display_name,"External Test");
+    assert.equal(controlDetail.tenant.dossier_ref,directoryByNumber.data[0].dossier_ref);
     assert.equal(controlDetail.tenant.premium_call_access,true);
     assert.equal(controlDetail.subscriptions[0].status,"active");
     assert.equal(controlDetail.lines.length,1);
@@ -400,12 +410,18 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
 
     const externalTenantRow=(await store.sql.unsafe("SELECT id FROM tenants WHERE slug='integration-external' LIMIT 1"))[0];
     const relationPrincipal=(await store.sql.unsafe(
-      "INSERT INTO customer_principals(email,display_name,status,email_verified) VALUES('relations-integration@example.test','Relations Integration','active',true) RETURNING id::text AS id"
+      "INSERT INTO customer_principals(email,display_name,status,email_verified,metadata) VALUES('relations-integration@example.test','Relations Integration','active',true,jsonb_build_object('first_name','Relations','last_name','Integration','phone','+33611223344')) RETURNING id::text AS id"
     ))[0];
     await store.sql.unsafe(
       "INSERT INTO customer_tenant_memberships(tenant_id,customer_principal_id,role,status) VALUES($1,$2::uuid,'owner','active')",
       [Number(externalTenantRow.id),relationPrincipal.id]
     );
+    for(const query of ["Relations","Integration","relations-integration@example.test","+33611223344"]){
+      const found=await store.listTenants({q:query,limit:10});
+      assert.equal(found.data.length,1,query);
+      assert.equal(found.data[0].public_id,externalIdentity[0].public_id,query);
+      assert.equal(found.data[0].dossier_ref,directoryByNumber.data[0].dossier_ref,query);
+    }
     const experienceDefaults=await store.customerExperiencePreferences(Number(externalTenantRow.id),relationPrincipal.id);
     assert.equal(experienceDefaults.alerts.calls_below.enabled,false);
     const experienceSaved=await store.saveCustomerExperiencePreferences(Number(externalTenantRow.id),relationPrincipal.id,{alerts:{
