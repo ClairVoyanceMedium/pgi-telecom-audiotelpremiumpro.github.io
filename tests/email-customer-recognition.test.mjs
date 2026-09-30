@@ -61,9 +61,9 @@ test("un email entrant reconnu est préclassé avec le dossier et reste directem
 test("le code conserve le numéro de dossier comme indice et non comme authentification",()=>{
   const store=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
   assert.match(store,/async resolveInboundCustomer\(/);
-  assert.match(store,/match_method:"thread"/);
-  assert.match(store,/match_method:"email_dossier"/);
-  assert.match(store,/match_method:"email"/);
+  assert.match(store,/finalize\(\[\.\.\.unique\.values\(\)\]\[0\],"thread"\)/);
+  assert.match(store,/finalize\(hinted,"email_dossier"\)/);
+  assert.match(store,/finalize\(candidates\[0\],"email"\)/);
   assert.match(store,/reason:"unknown_sender"/);
   const resolverStart=store.indexOf("async resolveInboundCustomer(");
   const resolverEnd=store.indexOf("\n  async tenantDuplicateCandidates",resolverStart);
