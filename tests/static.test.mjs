@@ -67,7 +67,6 @@ test("la marque client reste Audiotel Premium Pro et la plateforme reste multise
 
 test("Business Live reste cumulatif jusqu’à une remise à zéro manuelle et isolé des bilans",()=>{
   const server=read("backend/server.mjs"),store=read("backend/src/store-postgres.mjs"),site=read("site/index.html");
-  const platformJackpotMigration=read("database/migrations/063_platform_business_live_baseline.sql");
   assert.match(clientPortal,/client-live-finance\.js/);
   assert.match(index,/live-finance\.js/);
   for(const asset of ["client-live-finance.js","client-live-finance.css","live-finance.js","live-finance.css"])assert.ok(buildStatic.includes('"assets/'+asset+'"'),"production build missing "+asset);
@@ -83,11 +82,11 @@ test("Business Live reste cumulatif jusqu’à une remise à zéro manuelle et i
   assert.match(server,/\/api\/v1\/dashboard\/live-finance\/reset/);
   assert.match(server,/platformJackpotSnapshot/);
   assert.match(server,/createPlatformJackpotReset/);
-  assert.match(store,/platform_jackpot_baselines/);
+  assert.match(store,/audit_log WHERE action=\'platform.jackpot.reset\'/);
   assert.match(store,/status IN \('active','ended'\)/);
-  assert.match(platformJackpotMigration,/CREATE TABLE platform_jackpot_baselines/);
-  assert.match(platformJackpotMigration,/official analytics, settlements, revenue distributions or customer reporting/i);
-  assert.doesNotMatch(platformJackpotMigration,/DROP\s+(TABLE|COLUMN|CONSTRAINT)/i);
+  assert.match(store,/entity_type,entity_id,details/);
+  assert.match(store,/accounting_impact:"none"/);
+  assert.match(store,/reporting_impact:"none"/);
   assert.doesNotMatch(adminLiveFinance,/setHours\(0,0,0,0\)/);
   assert.match(site,/tarifs avantageux/);
 });
