@@ -225,6 +225,7 @@ state.diagnostics.apiStatus="ok";
 state.diagnostics.lastSyncMs=Math.max(0,performance.now()-syncStarted);
 state.lastSyncAt=Date.now();
 render();
+try{window.dispatchEvent(new CustomEvent("pgi:dashboard-loaded",{detail:{period:state.period,market:state.market}}));}catch(_e){}
 startProductionEvents();
 }catch(e){
 if(e&&e.status===401){
