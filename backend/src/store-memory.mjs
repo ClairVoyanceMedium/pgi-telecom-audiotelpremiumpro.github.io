@@ -12,7 +12,9 @@ import {assessOperationalSlo} from "./slo-assurance.mjs";
 const require=createRequire(import.meta.url);
 const core=require("../../assets/core.js");
 
-function demoDossierRef(publicId){return "APP-"+new Date().getUTCFullYear()+"-"+String(publicId||"").replace(/-/g,"").slice(0,10).toUpperCase();}\n\nexport class MemoryStore{
+function demoDossierRef(publicId){return "APP-"+new Date().getUTCFullYear()+"-"+String(publicId||"").replace(/-/g,"").slice(0,10).toUpperCase();}
+
+export class MemoryStore{
   constructor(config,eventBus){
     this.config=config;
     this.eventBus=eventBus;
