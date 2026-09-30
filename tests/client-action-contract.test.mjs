@@ -22,3 +22,13 @@ test("customer portal does not expose placeholder javascript or empty action lin
   assert.doesNotMatch(html,/href\s*=\s*["']javascript:/i);
   assert.doesNotMatch(html,/href\s*=\s*["']\s*["']/i);
 });
+
+
+test("customer logo returns home only while disconnected",()=>{
+  const html=fs.readFileSync("client.html","utf8");
+  const auth=html.slice(html.indexOf('id="customer-auth"'),html.indexOf('id="customer-app"'));
+  const app=html.slice(html.indexOf('id="customer-app"'));
+  assert.match(auth,/<a class="cp-home-link" href="\/" aria-label="Retour à l’accueil Audiotel Premium Pro">/);
+  assert.match(app,/<span class="cp-home-link cp-home-link-static"><img class="cp-logo-full cp-logo-header"/);
+  assert.doesNotMatch(app,/<a class="cp-home-link"[^>]*href="\/"/);
+});
