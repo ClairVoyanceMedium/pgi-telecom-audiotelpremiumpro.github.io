@@ -5884,7 +5884,7 @@ export class PostgresStore{
     const tenant=base[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
     if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
     const id=Number(tenant.id);
-    const [subs,lines,portability,destinations,experts,alerts,settlements,payoutTerms,controls,audit,activity,serviceIncidents,operationalAlerts,users,invitations]=await Promise.all([
+    const [subs,lines,portability,destinations,experts,alerts,settlements,payoutTerms,controls,audit,activity,serviceIncidents,operationalAlerts,users,invitations,linePerformance]=await Promise.all([
       this.readSql.unsafe(
         "SELECT s.id,s.status,s.billing_currency,s.starts_at,s.current_period_start,s.current_period_end,s.ends_at,"+
         " s.billing_provider,s.provider_customer_reference,s.provider_subscription_reference,s.cancel_at_period_end,s.last_payment_status,s.last_event_at,"+
@@ -5893,7 +5893,7 @@ export class PostgresStore{
         " LEFT JOIN service_plan_price_versions v ON v.id=s.price_version_id WHERE s.tenant_id=$1 ORDER BY s.created_at DESC,s.id DESC LIMIT 10",[id]
       ),
       this.readSql.unsafe(
-        "SELECT a.id,sn.display_number,sn.e164,sn.currency,sn.number_type,m.country_code AS market,a.tariff_code,a.assignment_type,a.status,a.kyc_status,"+
+        "SELECT a.id,sn.id AS sva_number_id,sn.display_number,sn.e164,sn.currency,sn.number_type,sn.service_rate_ttc_per_min::float8,m.country_code AS market,a.tariff_code,a.assignment_type,a.status,a.kyc_status,"+
         " c.name AS regulatory_assignor,a.valid_from,a.valid_to,pgi_tenant_has_premium_call_access($1,m.id,now()) AS premium_call_access"+
         " FROM tenant_number_assignments a JOIN sva_numbers sn ON sn.id=a.sva_number_id LEFT JOIN operating_markets m ON m.id=sn.market_id"+
         " LEFT JOIN carriers c ON c.id=a.regulatory_assignor_carrier_id WHERE a.tenant_id=$1 ORDER BY a.created_at DESC,a.id DESC LIMIT 100",[id]
@@ -5957,12 +5957,50 @@ export class PostgresStore{
       ),
       this.readSql.unsafe(
         "SELECT id,email,role,status,expires_at,accepted_at,created_at FROM customer_tenant_invitations WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 100",[id]
+      ),
+      this.readSql.unsafe(
+        "WITH latest_assignment AS ("+
+        " SELECT DISTINCT ON (a.sva_number_id) a.id AS assignment_id,a.sva_number_id,a.status AS assignment_status,a.kyc_status,a.tariff_code,a.valid_from,a.valid_to"+
+        " FROM tenant_number_assignments a WHERE a.tenant_id=$1 ORDER BY a.sva_number_id,(a.status='active') DESC,a.id DESC"+
+        "), call_roll AS ("+
+        " SELECT c.sva_number_id,count(*)::bigint AS calls_30d,count(*) FILTER(WHERE c.call_status='connected')::bigint AS connected_30d,"+
+        " COALESCE(sum(c.billable_seconds),0)::float8 AS billable_seconds_30d,COALESCE(sum(c.retail_service_amount_ttc),0)::float8 AS revenue_ttc_30d,"+
+        " COALESCE(sum(c.expected_payout_ht),0)::float8 AS upstream_expected_ht_30d,COALESCE(sum(c.confirmed_payout_ht),0)::float8 AS upstream_confirmed_ht_30d,"+
+        " COALESCE(sum(c.paid_payout_ht),0)::float8 AS upstream_paid_ht_30d,"+
+        " COALESCE(sum(CASE WHEN pt.id IS NULL THEN 0 ELSE LEAST(COALESCE(c.expected_payout_ht,0),COALESCE(c.expected_payout_ht,0)*pt.platform_fee_bps/10000.0+pt.platform_fee_ht_per_min*(COALESCE(c.billable_seconds,0)/60.0)) END),0)::float8 AS platform_fee_estimated_ht_30d,"+
+        " COALESCE(sum(CASE WHEN pt.id IS NULL THEN 0 ELSE GREATEST(0,COALESCE(c.expected_payout_ht,0)-LEAST(COALESCE(c.expected_payout_ht,0),COALESCE(c.expected_payout_ht,0)*pt.platform_fee_bps/10000.0+pt.platform_fee_ht_per_min*(COALESCE(c.billable_seconds,0)/60.0))) END),0)::float8 AS client_net_estimated_ht_30d,"+
+        " count(pt.id)::bigint AS payout_term_matches,max(c.started_at) AS last_call_at"+
+        " FROM calls c LEFT JOIN LATERAL ("+
+        " SELECT p.id,p.platform_fee_bps,p.platform_fee_ht_per_min::float8 FROM tenant_payout_terms p"+
+        " WHERE p.tenant_id=$1 AND p.status='active' AND p.effective_from<=c.started_at"+
+        " AND (p.effective_to IS NULL OR p.effective_to>c.started_at) AND (p.market_id IS NULL OR p.market_id=c.market_id) AND (p.sva_number_id IS NULL OR p.sva_number_id=c.sva_number_id)"+
+        " ORDER BY (p.sva_number_id IS NOT NULL) DESC,(p.market_id IS NOT NULL) DESC,p.effective_from DESC,p.id DESC LIMIT 1"+
+        " ) pt ON TRUE"+
+        " WHERE c.tenant_id=$1 AND c.started_at>=now()-interval '30 days' GROUP BY c.sva_number_id"+
+        "), live AS ("+
+        " SELECT sva_number_id,count(*)::bigint AS active_calls,"+
+        " COALESCE(sum(upstream_payout_rate_ht_per_min)/60.0,0)::float8 AS upstream_rate_ht_per_second,"+
+        " COALESCE(sum(net_client_rate_ht_per_min)/60.0,0)::float8 AS client_rate_ht_per_second"+
+        " FROM live_call_financial_sessions WHERE tenant_id=$1 AND status='active' AND billable_started_at>now()-interval '24 hours' GROUP BY sva_number_id"+
+        ") SELECT la.assignment_id,sn.id AS sva_number_id,sn.display_number,sn.e164,sn.currency,sn.number_type,sn.service_rate_ttc_per_min::float8,"+
+        " la.assignment_status,la.kyc_status,la.tariff_code,la.valid_from,la.valid_to,"+
+        " COALESCE(cr.calls_30d,0)::bigint AS calls_30d,COALESCE(cr.connected_30d,0)::bigint AS connected_30d,COALESCE(cr.billable_seconds_30d,0)::float8 AS billable_seconds_30d,"+
+        " COALESCE(cr.revenue_ttc_30d,0)::float8 AS revenue_ttc_30d,COALESCE(cr.upstream_expected_ht_30d,0)::float8 AS upstream_expected_ht_30d,"+
+        " COALESCE(cr.upstream_confirmed_ht_30d,0)::float8 AS upstream_confirmed_ht_30d,COALESCE(cr.upstream_paid_ht_30d,0)::float8 AS upstream_paid_ht_30d,"+
+        " COALESCE(cr.platform_fee_estimated_ht_30d,0)::float8 AS platform_fee_estimated_ht_30d,COALESCE(cr.client_net_estimated_ht_30d,0)::float8 AS client_net_estimated_ht_30d,"+
+        " COALESCE(cr.payout_term_matches,0)::bigint AS payout_term_matches,cr.last_call_at,"+
+        " COALESCE(l.active_calls,0)::bigint AS active_calls,COALESCE(l.upstream_rate_ht_per_second,0)::float8 AS upstream_rate_ht_per_second,COALESCE(l.client_rate_ht_per_second,0)::float8 AS client_rate_ht_per_second,"+
+        " (SELECT count(*)::int FROM tenant_call_destinations d WHERE d.tenant_id=$1 AND (d.sva_number_id IS NULL OR d.sva_number_id=sn.id) AND d.status='active') AS active_routes,"+
+        " (SELECT count(*)::int FROM tenant_service_incidents i WHERE i.tenant_id=$1 AND (i.sva_number_id IS NULL OR i.sva_number_id=sn.id) AND i.status NOT IN ('resolved','closed')) AS open_incidents"+
+        " FROM latest_assignment la JOIN sva_numbers sn ON sn.id=la.sva_number_id LEFT JOIN call_roll cr ON cr.sva_number_id=sn.id LEFT JOIN live l ON l.sva_number_id=sn.id"+
+        " ORDER BY (la.assignment_status='active') DESC,COALESCE(cr.calls_30d,0) DESC,sn.display_number LIMIT 100",
+        [id]
       )
     ]);
     const access=await this.readSql.unsafe("SELECT pgi_tenant_has_premium_call_access($1,NULL,now()) AS allowed",[id]);
     return {
       tenant:{...tenant,premium_call_access:Boolean(access[0]?.allowed)},
-      subscriptions:subs,lines,portability,destinations,experts,alerts,settlements,payout_terms:payoutTerms,controls,audit,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,users,invitations,
+      subscriptions:subs,lines,portability,destinations,experts,alerts,settlements,payout_terms:payoutTerms,controls,audit,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,users,invitations,line_performance:linePerformance,
       activity:activity[0]||{calls_30d:0,connected_30d:0,billable_seconds_30d:0,revenue_ttc_30d:0,margin_ht_30d:0,last_call_at:null}
     };
   }

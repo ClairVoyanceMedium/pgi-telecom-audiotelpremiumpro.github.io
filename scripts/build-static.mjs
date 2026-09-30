@@ -81,6 +81,7 @@ const files=[
   "assets/customer-relations.js",
   "assets/customer-admin.css",
   "assets/tenant-control-detail.js",
+  "assets/tenant-line-command.js",
   "assets/tenant-consumption-check.js",
   "assets/customer-360-detail.js",
   "assets/customer-internal-notes.js",
