@@ -31,7 +31,7 @@ export class MemoryStore{
     this.nextVoiceVersionId=1;
     this.baselines=[];
     this.jackpotBaselines=[];
-    this.platformJackpotBaselines=[{id:0,effective_from:new Date().toISOString(),reason:"Activation du Business Live plateforme",created_by:null}];
+    this.platformJackpotBaselines=[{id:0,effective_from:new Date(0).toISOString(),reason:"Origine du Business Live plateforme",created_by:null}];
     this.rawEventKeys=new Set();
     this.outbox=[];
     this.workQueue=[];
