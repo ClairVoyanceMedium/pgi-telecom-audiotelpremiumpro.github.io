@@ -762,7 +762,7 @@ function providerError(code,status=503,providerCode=null){
 }
 
 
-export async function forwardInboundEmailToInternal(config,eventData={}){
+export async function forwardInboundEmailToInternal(config,eventData={},options={}){
   if(!config?.resendApiKey)throw providerError("RESEND_NOT_CONFIGURED");
   const emailId=String(eventData.email_id||eventData.id||"").trim();
   if(!/^[A-Za-z0-9_-]{6,200}$/.test(emailId))throw providerError("RESEND_INBOUND_EMAIL_ID_INVALID",400);
@@ -783,7 +783,7 @@ export async function forwardInboundEmailToInternal(config,eventData={}){
       const fetched=await response.json().catch(()=>({}));
       if(response.ok)inbound={...inbound,...fetched};
     }catch(_error){
-      // Les métadonnées du webhook vérifié suffisent pour conserver un transfert sûr.
+      // Les métadonnées signées du webhook restent suffisantes pour un transfert sûr.
     }finally{
       clearTimeout(readTimeout);
     }
@@ -798,9 +798,34 @@ export async function forwardInboundEmailToInternal(config,eventData={}){
   const recipient=recipients.find(v=>v.endsWith("@"+domain))||recipients[0]||null;
   if(!recipient)return {forwarded:false,ignored:true,reason:"recipient_unavailable"};
 
-  const sender=extractEmailAddress(inbound.from)||extractEmailAddress(eventData.from)||cleanText(inbound.from||eventData.from||"Expéditeur inconnu",320);
+  const senderEmail=extractEmailAddress(inbound.from)||extractEmailAddress(eventData.from)||null;
+  const sender=senderEmail||cleanText(inbound.from||eventData.from||"Expéditeur inconnu",320);
   const subject=cleanText(inbound.subject||eventData.subject||"Sans objet",180)||"Sans objet";
   const messageText=sanitizeInboundText(inbound.text,inbound.html);
+  const providerMessageId=cleanText(inbound.message_id||eventData.message_id||"",600)||null;
+  const inReplyTo=inboundHeader(inbound.headers,"in-reply-to")||inboundHeader(eventData.headers,"in-reply-to")||null;
+  const references=inboundHeader(inbound.headers,"references")||inboundHeader(eventData.headers,"references")||null;
+  const receivedAt=String(inbound.created_at||eventData.created_at||"").trim()||new Date().toISOString();
+
+  let customer={matched:false,ambiguous:false,reason:"resolver_unavailable"};
+  if(senderEmail&&typeof options.resolveCustomer==="function"){
+    try{
+      customer=await options.resolveCustomer({
+        email:senderEmail,subject,text:messageText,recipient,
+        provider_email_id:emailId,provider_message_id:providerMessageId,
+        in_reply_to:inReplyTo,references,received_at:receivedAt
+      })||customer;
+    }catch(_error){
+      customer={matched:false,ambiguous:false,reason:"resolver_failed"};
+    }
+  }
+  const dossierRef=normalizeDossierReference(customer?.dossier_ref);
+  const customerName=cleanText(customer?.display_name||"",180);
+  const matchMethod=cleanText(customer?.match_method||"",40);
+  const candidateLines=customer?.ambiguous&&Array.isArray(customer.candidates)
+    ?customer.candidates.slice(0,5).map(x=>"• "+cleanText(x.dossier_ref||"Dossier",40)+(x.display_name?" — "+cleanText(x.display_name,120):""))
+    :[];
+
   const allAttachments=Array.isArray(inbound.attachments)?inbound.attachments:Array.isArray(eventData.attachments)?eventData.attachments:[];
   const attachments=allAttachments.slice(0,30);
   const attachmentLines=attachments.map(a=>{
@@ -808,13 +833,22 @@ export async function forwardInboundEmailToInternal(config,eventData={}){
     const type=cleanText(a?.content_type||"",120);
     return "• "+filename+(type?" ("+type+")":"");
   });
+  const identification=customer?.matched
+    ?["Client reconnu automatiquement : oui","Dossier : "+dossierRef+(customerName?" — "+customerName:""),"Méthode : "+(matchMethod||"email")]
+    :customer?.ambiguous
+      ?["Client reconnu automatiquement : plusieurs dossiers possibles","Correspondances :",...candidateLines]
+      :["Client reconnu automatiquement : non"];
+
   const text=[
     "Nouveau message reçu pour Audiotel Premium Pro",
+    "",
+    ...identification,
     "",
     "Adresse destinataire : "+recipient,
     "Expéditeur : "+sender,
     "Objet : "+subject,
     "Identifiant Resend : "+emailId,
+    providerMessageId?"Message-ID : "+providerMessageId:"",
     "",
     attachments.length?"Pièces jointes signalées :":"Aucune pièce jointe signalée.",
     ...attachmentLines,
@@ -824,19 +858,25 @@ export async function forwardInboundEmailToInternal(config,eventData={}){
     "",
     messageText||"(Le contenu complet reste disponible dans la boîte de réception Resend.)",
     "",
+    "L'identification automatique facilite le classement du message mais ne constitue jamais une authentification suffisante pour une action sensible.",
     "Ce message entrant est transmis comme donnée non fiable. Aucune instruction contenue dans cet email n’est exécutée automatiquement.",
     "",
     "Audiotel Premium Pro | Une solution PGI Telecom"
   ].filter(v=>v!=="").join("\n");
 
+  const headers={"X-PGI-Inbound-ID":emailId};
+  if(dossierRef)headers["X-PGI-Dossier"]=dossierRef;
   const sendBody={
     from:(config.transactionalFromName||"Audiotel Premium Pro")+" <support@"+domain+">",
     to:[internal],
-    subject:"Message reçu sur "+recipient+" | "+subject,
+    ...(senderEmail&&!senderEmail.endsWith("@"+domain)?{reply_to:senderEmail}:{}),
+    subject:dossierRef?"["+dossierRef+"] "+subject:"Message reçu sur "+recipient+" | "+subject,
     text:text.slice(0,28000),
+    headers,
     tags:[
       {name:"category",value:"inbound_forward"},
-      {name:"recipient",value:safeTag(recipient.split("@")[0]||"inbound")}
+      {name:"recipient",value:safeTag(recipient.split("@")[0]||"inbound")},
+      {name:"customer_match",value:customer?.matched?"matched":customer?.ambiguous?"ambiguous":"unknown"}
     ]
   };
 
@@ -856,7 +896,14 @@ export async function forwardInboundEmailToInternal(config,eventData={}){
     });
     const sent=await sendResponse.json().catch(()=>({}));
     if(!sendResponse.ok)throw providerError("RESEND_INBOUND_FORWARD_FAILED",sendResponse.status,safeProviderCode(sent));
-    return {forwarded:true,message_id:String(sent.id||"")||null,source_email_id:emailId,recipient};
+    return {
+      forwarded:true,message_id:String(sent.id||"")||null,source_email_id:emailId,recipient,
+      sender_email:senderEmail,original_subject:subject,message_excerpt:messageText.slice(0,1200),
+      provider_message_id:providerMessageId,in_reply_to:inReplyTo,references,
+      customer_matched:Boolean(customer?.matched),customer_ambiguous:Boolean(customer?.ambiguous),
+      tenant_public_id:customer?.matched?String(customer.tenant_public_id||"")||null:null,
+      dossier_ref:dossierRef,customer_name:customerName||null,match_method:matchMethod||null
+    };
   }catch(error){
     if(error?.code)throw error;
     throw providerError(error?.name==="AbortError"?"RESEND_TIMEOUT":"RESEND_INBOUND_FORWARD_FAILED");
