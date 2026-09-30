@@ -867,6 +867,13 @@ export function createBackend(options={}){
         return done(res,metrics,started,"customer.metrics.reset",201,{...result.value,replayed:result.replayed});
       }
 
+      if(method==="GET"&&pathname==="/api/v1/customer/annual-progress"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"analytics.read");
+        return done(res,metrics,started,"customer.annual_progress",200,await store.customerAnnualProgress(context.tenant_id));
+      }
+
       if(method==="GET"&&pathname==="/api/v1/customer/comparison"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
@@ -1253,6 +1260,12 @@ export function createBackend(options={}){
         const activationPath=result.replayed?null:"client.html?invite="+encodeURIComponent(token);
         const emailSent=result.replayed?false:await sendCustomerAccessInvitation(config,{...result.value,display_name:body.display_name,preferred_locale:body.preferred_locale},token,"manual");
         return done(res,metrics,started,"platform.customer_invitation",201,{...result.value,activation_path:activationPath,email_sent:emailSent,replayed:result.replayed});
+      }
+
+      match=routeMatch(pathname,"/api/v1/platform/tenants/:id/annual-progress");
+      if(method==="GET"&&match){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.tenant_annual_progress",200,await store.tenantAnnualProgress(match.id));
       }
 
       match=routeMatch(pathname,"/api/v1/platform/tenants/:id/control-center");

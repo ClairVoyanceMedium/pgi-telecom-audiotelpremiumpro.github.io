@@ -4492,6 +4492,85 @@ export class PostgresStore{
     });
   }
 
+  async customerAnnualProgress(tenantId){
+    const id=Number(tenantId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    return this.withTenantReadContext(id,async tx=>{
+      const tenant=(await tx.unsafe(
+        "SELECT id,public_id::text AS public_id,display_name,default_currency,COALESCE(NULLIF(timezone,''),'Europe/Paris') AS timezone FROM tenants WHERE id=$1",
+        [id]
+      ))[0];
+      if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+      const tz=String(tenant.timezone||"Europe/Paris");
+      const bounds=(await tx.unsafe(
+        "SELECT now() AS current_to,"+
+        " ((date_trunc('month',now() AT TIME ZONE $1)-interval '11 months') AT TIME ZONE $1) AS current_from,"+
+        " (((date_trunc('month',now() AT TIME ZONE $1)-interval '11 months')-interval '1 year') AT TIME ZONE $1) AS previous_from,"+
+        " (((now() AT TIME ZONE $1)-interval '1 year') AT TIME ZONE $1) AS previous_to",
+        [tz]
+      ))[0];
+      const args=[bounds.previous_from,bounds.previous_to,bounds.current_from,bounds.current_to,id,tz];
+      const termsJoin=
+        " LEFT JOIN LATERAL ("+
+        " SELECT p.id,p.platform_fee_bps,p.platform_fee_ht_per_min::float8 FROM tenant_payout_terms p"+
+        " WHERE p.tenant_id=$5 AND p.status='active' AND p.effective_from<=f.started_at"+
+        " AND (p.effective_to IS NULL OR p.effective_to>f.started_at)"+
+        " AND (p.market_id IS NULL OR p.market_id=f.market_id) AND (p.sva_number_id IS NULL OR p.sva_number_id=f.sva_number_id)"+
+        " ORDER BY (p.sva_number_id IS NOT NULL) DESC,(p.market_id IS NOT NULL) DESC,p.effective_from DESC,p.id DESC LIMIT 1"+
+        " ) pt ON TRUE";
+      const where=
+        " WHERE ((f.started_at >= $1::timestamptz AND f.started_at <= $2::timestamptz)"+
+        " OR (f.started_at >= $3::timestamptz AND f.started_at <= $4::timestamptz))";
+      const [summary,monthly]=await Promise.all([
+        tx.unsafe(
+          "SELECT CASE WHEN f.started_at >= $3::timestamptz THEN 'current' ELSE 'previous' END AS period,f.currency,"+
+          " count(*)::bigint AS calls_total,count(*) FILTER(WHERE f.call_status='connected')::bigint AS calls_connected,"+
+          " COALESCE(sum(f.billable_seconds),0)::float8 AS billable_seconds,"+
+          " COALESCE(sum(f.retail_service_amount_ttc),0)::float8 AS generated_revenue_ttc,"+
+          " COALESCE(sum(f.expected_payout_ht),0)::float8 AS expected_payout_ht,"+
+          " COALESCE(sum(CASE WHEN pt.id IS NULL THEN 0 ELSE GREATEST(0,f.expected_payout_ht-LEAST(f.expected_payout_ht,"+
+          " f.expected_payout_ht*pt.platform_fee_bps/10000.0+pt.platform_fee_ht_per_min*(f.billable_seconds/60.0))) END),0)::float8 AS estimated_client_net_ht,"+
+          " count(pt.id)::bigint AS payout_term_matches"+
+          " FROM tenant_scoped_call_facts f"+termsJoin+where+
+          " GROUP BY period,f.currency ORDER BY f.currency,period",
+          args
+        ),
+        tx.unsafe(
+          "SELECT CASE WHEN f.started_at >= $3::timestamptz THEN 'current' ELSE 'previous' END AS period,f.currency,"+
+          " EXTRACT(MONTH FROM f.started_at AT TIME ZONE $6)::int AS month_number,"+
+          " date_trunc('month',f.started_at AT TIME ZONE $6) AS bucket_local,"+
+          " count(*)::bigint AS calls_total,count(*) FILTER(WHERE f.call_status='connected')::bigint AS calls_connected,"+
+          " COALESCE(sum(f.billable_seconds),0)::float8 AS billable_seconds,"+
+          " COALESCE(sum(f.retail_service_amount_ttc),0)::float8 AS generated_revenue_ttc,"+
+          " COALESCE(sum(f.expected_payout_ht),0)::float8 AS expected_payout_ht,"+
+          " COALESCE(sum(CASE WHEN pt.id IS NULL THEN 0 ELSE GREATEST(0,f.expected_payout_ht-LEAST(f.expected_payout_ht,"+
+          " f.expected_payout_ht*pt.platform_fee_bps/10000.0+pt.platform_fee_ht_per_min*(f.billable_seconds/60.0))) END),0)::float8 AS estimated_client_net_ht,"+
+          " count(pt.id)::bigint AS payout_term_matches"+
+          " FROM tenant_scoped_call_facts f"+termsJoin+where+
+          " GROUP BY period,f.currency,month_number,bucket_local ORDER BY f.currency,period,bucket_local",
+          args
+        )
+      ]);
+      const currencies=[...new Set([...summary,...monthly].map(x=>String(x.currency||tenant.default_currency||"EUR")))].sort();
+      return {
+        schema_version:"audiotel-annual-progress/1",
+        tenant:{public_id:tenant.public_id,display_name:tenant.display_name,default_currency:tenant.default_currency,timezone:tz},
+        ranges:{current:{from:bounds.current_from,to:bounds.current_to},previous:{from:bounds.previous_from,to:bounds.previous_to}},
+        currencies:currencies.length?currencies:[tenant.default_currency||"EUR"],
+        summary,monthly
+      };
+    });
+  }
+
+  async tenantAnnualProgress(publicId){
+    publicId=String(publicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    const tenant=(await this.readSql.unsafe("SELECT id,tenant_type FROM tenants WHERE public_id=$1::uuid",[publicId]))[0];
+    if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+    if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+    return this.customerAnnualProgress(Number(tenant.id));
+  }
+
   async customerPortalComparison(tenantId,from,to,metricRanges=null){
     const id=Number(tenantId);
     if(!Number.isFinite(Date.parse(from))||!Number.isFinite(Date.parse(to)))throw problem(400,"INVALID_RANGE");

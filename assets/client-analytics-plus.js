@@ -117,3 +117,4 @@ if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",
 if(window.PGIClientPortalData)render(window.PGIClientPortalData);
 
 void import("./client-account-proof.js").catch(()=>{});
+void import("./yearly-progress.js").then(m=>m.mountClientAnnualProgress()).catch(()=>{});
