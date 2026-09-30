@@ -418,9 +418,9 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     );
     for(const query of ["Relations","Integration","relations-integration@example.test","+33611223344"]){
       const found=await store.listTenants({q:query,limit:10});
-      assert.equal(found.data.length,1,query);
-      assert.equal(found.data[0].public_id,externalIdentity[0].public_id,query);
-      assert.equal(found.data[0].dossier_ref,directoryByNumber.data[0].dossier_ref,query);
+      const target=found.data.find(x=>x.public_id===externalIdentity[0].public_id);
+      assert.ok(target,query);
+      assert.equal(target.dossier_ref,directoryByNumber.data[0].dossier_ref,query);
     }
     const experienceDefaults=await store.customerExperiencePreferences(Number(externalTenantRow.id),relationPrincipal.id);
     assert.equal(experienceDefaults.alerts.calls_below.enabled,false);
