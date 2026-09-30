@@ -26,5 +26,6 @@ test -n "$PGI_DATABASE_URL" || {
 
 # Neon is migrated out-of-band before deployment. Vercel instances are ephemeral
 # and must never race database bootstrap/migrations during cold starts.
+# Deployment refresh: apply GA4 server-side environment variables.
 node scripts/build-static.mjs
 exec node backend/server.mjs
