@@ -99,6 +99,14 @@ Expose :
 - jitter_ms
 - latency_ms
 
+## Dossiers clients automatiques
+
+Chaque tenant client possède une référence dossier déterministe de la forme `APP-AAAA-XXXXXXXXX`, calculée côté serveur à partir de son identité interne et de son année de création. Cette référence est stable, non séquentielle dans l'interface et n'est jamais une clé d'autorisation.
+
+`GET /platform/tenants?q=...` accepte un champ de recherche universel : référence dossier exacte, nom, prénom, nom complet, société, e-mail, téléphone ou numéro SVA. L'accès reste réservé au staff autorisé. Le dossier Customer 360 agrège ensuite identité, abonnement, KYC, lignes SVA, portabilité, activité, reversements, incidents, historique d'audit et notes internes privées sans dupliquer les données sources.
+
+La création manuelle d'un tenant comme l'inscription autonome retournent automatiquement `dossier_ref`. Le portail client peut afficher cette référence pour faciliter les échanges avec PGI.
+
 ## POST /metrics/baselines
 
 Crée une nouvelle baseline. Ne supprime aucune donnée.

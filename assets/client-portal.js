@@ -40,7 +40,7 @@ function demoData(range){
   var recent=[];for(var j=0;j<20;j++){var s=new Date(to.getTime()-j*5400000),connected=j%6!==3;recent.push({call_id:j+1,display_number:j%3===0?"0892 98 76 54":"0892 12 34 56",market:"FR",currency:"EUR",started_at:s.toISOString(),ringing_at:new Date(s.getTime()+2100+(j%4)*180).toISOString(),call_status:connected?"connected":j%2?"abandoned":"failed",conversation_seconds:connected?110+j*13:0,billable_seconds:connected?110+j*13:0,retail_service_amount_ttc:connected?Math.round((1.45+j*.11)*100)/100:0,post_dial_delay_ms:2100+(j%4)*180,sip_final_code:connected?200:(j%2?487:503),hangup_cause:connected?"NORMAL_CLEARING":(j%2?"ORIGINATOR_CANCEL":"NORMAL_TEMPORARY_FAILURE"),hangup_party:connected?(j%2?"caller":"callee"):"network",codec:"PCMA",origin_carrier:j%2?"Orange":"SFR",host_carrier:"Opérateur hôte Démo",packet_loss_percent:.28+(j%3)*.11,jitter_ms:2.8+(j%4)*.4,latency_ms:38+(j%5)*3,rtt_ms:72+(j%5)*4,mos:4.25-(j%4)*.04,packets_lost:j%3,dtmf_errors:0});}
   return {
     user:{name:"Camille Martin",role:"owner"},
-    tenant:{display_name:"Société Démo",default_currency:"EUR",country_code:"FR",status:"active"},
+    tenant:{display_name:"Société Démo",dossier_ref:"APP-2026-DEMO000001",default_currency:"EUR",country_code:"FR",status:"active"},
     financial_by_currency:[{currency:"EUR",calls_total:sums.calls_total,calls_connected:sums.calls_connected,calls_abandoned:sums.calls_abandoned,calls_failed:sums.calls_failed,billable_seconds:sums.billable_seconds,generated_revenue_ttc:Math.round(sums.generated_revenue_ttc*100)/100,updated_at:new Date().toISOString()}],
     series:series,
     numbers:[
@@ -151,7 +151,7 @@ function renderDestinations(data){
 function render(data){
   window.PGIClientPortalData=data;state.data=data;state.user=data.user||state.user;
   $("tenant-name").textContent=(data.tenant&&data.tenant.display_name)||"Mon compte";
-  $("tenant-meta").textContent=[data.tenant&&data.tenant.country_code,data.tenant&&data.tenant.default_currency,state.demo?"Démonstration":null].filter(Boolean).join(" · ");
+  $("tenant-meta").textContent=[data.tenant&&data.tenant.dossier_ref?("Dossier "+data.tenant.dossier_ref):null,data.tenant&&data.tenant.country_code,data.tenant&&data.tenant.default_currency,state.demo?"Démonstration":null].filter(Boolean).join(" · ");
   $("customer-user-name").textContent=(state.user&&state.user.name)||"Utilisateur";
   $("customer-user-role").textContent=statusLabel((state.user&&state.user.role)||"readonly");
   import("./client-access-visibility.js").then(m=>m.a(data,state.demo));
@@ -432,7 +432,7 @@ async function copyPlainText(text){
   var ok=document.execCommand("copy");ta.remove();if(!ok)throw new Error("COPY_FAILED");
 }
 async function buildClientReportRows(data){
-  var a=aggregate(data),calls=await fetchCallsForExport(),rows=[["RAPPORT AUDIOTEL PREMIUM PRO"],["Titulaire / activité",(data.tenant&&data.tenant.display_name)||""],["Période",data.range&&data.range.from||"",data.range&&data.range.to||""],["Appels",a.calls],["Appels décrochés",a.connected],["Minutes facturables",n(a.billable)/60],["Montant service TTC",a.revenue,a.currency],["Reversement net validé",a.payout,a.currency],[],["MÉTRIQUES DU TABLEAU DE BORD"]];
+  var a=aggregate(data),calls=await fetchCallsForExport(),rows=[["RAPPORT AUDIOTEL PREMIUM PRO"],["Référence dossier",(data.tenant&&data.tenant.dossier_ref)||""],["Titulaire / activité",(data.tenant&&data.tenant.display_name)||""],["Période",data.range&&data.range.from||"",data.range&&data.range.to||""],["Appels",a.calls],["Appels décrochés",a.connected],["Minutes facturables",n(a.billable)/60],["Montant service TTC",a.revenue,a.currency],["Reversement net validé",a.payout,a.currency],[],["MÉTRIQUES DU TABLEAU DE BORD"]];
   rows=rows.concat(clientMetricRows());
   rows.push([],["NUMÉROS"],["Numéro","Tarif","État"]);
   (data.numbers||[]).forEach(function(x){rows.push([x.display_number||x.e164,x.tariff_code,statusLabel(x.assignment_status||x.status)]);});

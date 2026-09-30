@@ -20,6 +20,33 @@ const core=require("../../assets/core.js");
 
 const CONSUMPTION_RECEIPT_SCHEMA="audiotel-consumption-receipt/1";
 const CONSUMPTION_METRIC_KEYS=["calls","minutes","revenue","payout","quality"];
+const DOSSIER_MULTIPLIER=104729n;
+const DOSSIER_OFFSET=32416190071n;
+function dossierReference(id,createdAt){
+  let n;try{n=BigInt(String(id));}catch{return null;}
+  if(n<=0n)return null;
+  const d=new Date(createdAt||Date.now()),year=Number.isFinite(d.getTime())?d.getUTCFullYear():new Date().getUTCFullYear();
+  const code=(n*DOSSIER_MULTIPLIER+DOSSIER_OFFSET).toString(36).toUpperCase().padStart(9,"0");
+  return "APP-"+year+"-"+code;
+}
+function base36BigInt(value){
+  let out=0n;
+  for(const ch of String(value||"").toUpperCase()){
+    const code=ch.charCodeAt(0),digit=code>=48&&code<=57?code-48:code>=65&&code<=90?code-55:-1;
+    if(digit<0||digit>=36)return null;
+    out=out*36n+BigInt(digit);
+  }
+  return out;
+}
+function dossierLookup(value){
+  const m=/^APP-(\d{4})-([0-9A-Z]{5,18})$/i.exec(String(value||"").trim());
+  if(!m)return null;
+  const encoded=base36BigInt(m[2]);if(encoded==null||encoded<=DOSSIER_OFFSET)return null;
+  const delta=encoded-DOSSIER_OFFSET;if(delta%DOSSIER_MULTIPLIER!==0n)return null;
+  const id=delta/DOSSIER_MULTIPLIER;
+  if(id<=0n||id>BigInt(Number.MAX_SAFE_INTEGER))return null;
+  return {id:Number(id),year:Number(m[1])};
+}
 function roundMetric(value){const n=Number(value||0);return Number.isFinite(n)?Math.round(n*1e6)/1e6:0;}
 function normalizeConsumptionRanges(ranges,from,to){
   const out={};
@@ -2403,15 +2430,18 @@ export class PostgresStore{
       );
       return tenant;
     });
-    this.eventBus.publish("tenant.created",{public_id:result.public_id,display_name:result.display_name,country_code:result.country_code,status:result.status});
-    return result;
+    const dossier_ref=dossierReference(result.id,result.created_at);
+    this.eventBus.publish("tenant.created",{public_id:result.public_id,dossier_ref,display_name:result.display_name,country_code:result.country_code,status:result.status});
+    return {...result,dossier_ref};
   }
 
   async listTenants(params={}){
     const limit=clampInt(params.limit,50,1,250);
     const cursor=decodeNumericCursor(params.cursor);
-    const q=String(params.q||"").trim().toLowerCase();
-    if(q.length>120)throw problem(400,"TENANT_SEARCH_TOO_LONG");
+    const rawQ=String(params.q||"").trim();
+    const dossier=dossierLookup(rawQ);
+    const q=dossier?"":rawQ.toLowerCase();
+    if(rawQ.length>120)throw problem(400,"TENANT_SEARCH_TOO_LONG");
     const status=params.status?String(params.status):null;
     if(status&&!["pending","active","suspended","closed"].includes(status))throw problem(400,"INVALID_TENANT_STATUS");
     const country=params.country?String(params.country).trim().toUpperCase():null;
@@ -2428,8 +2458,13 @@ export class PostgresStore{
       " SELECT t.id,t.public_id,t.slug,t.display_name,t.legal_name,t.tenant_type,t.status,t.country_code,t.billing_email,"+
       " t.preferred_locale,t.default_currency,t.timezone,t.home_region,t.capacity_tier,t.created_at"+
       " FROM tenants t WHERE t.tenant_type<>'internal'"+
-      " AND ($1::text IS NULL OR t.slug_search LIKE $1||'%' OR t.display_name_search LIKE $1||'%' OR t.legal_name_search LIKE $1||'%' OR lower(t.country_code)=$1"+
-      " OR EXISTS (SELECT 1 FROM customer_tenant_memberships cm JOIN customer_principals cp ON cp.id=cm.customer_principal_id WHERE cm.tenant_id=t.id AND cp.email_normalized=$1))"+
+      " AND ($10::bigint IS NULL OR (t.id=$10 AND EXTRACT(YEAR FROM t.created_at)::int=$11))"+
+      " AND ($10::bigint IS NOT NULL OR $1::text IS NULL OR t.slug_search LIKE $1||'%' OR t.display_name_search LIKE $1||'%' OR t.legal_name_search LIKE $1||'%' OR lower(t.country_code)=$1"+
+      " OR EXISTS (SELECT 1 FROM customer_tenant_memberships cm JOIN customer_principals cp ON cp.id=cm.customer_principal_id WHERE cm.tenant_id=t.id AND ("+
+      " cp.email_normalized LIKE $1||'%' OR lower(cp.display_name) LIKE $1||'%' OR lower(COALESCE(cp.metadata->>'first_name','')) LIKE $1||'%' OR lower(COALESCE(cp.metadata->>'last_name','')) LIKE $1||'%'"+
+      " OR lower(btrim(COALESCE(cp.metadata->>'first_name','')||' '||COALESCE(cp.metadata->>'last_name',''))) LIKE $1||'%'"+
+      " OR (regexp_replace($1,'[^0-9+]','','g')<>'' AND regexp_replace(COALESCE(cp.metadata->>'phone',''),'[^0-9+]','','g') LIKE regexp_replace($1,'[^0-9+]','','g')||'%')))"+
+      " OR EXISTS (SELECT 1 FROM tenant_number_assignments qa JOIN sva_numbers qn ON qn.id=qa.sva_number_id WHERE qa.tenant_id=t.id AND regexp_replace($1,'[^0-9]','','g')<>'' AND regexp_replace(COALESCE(qn.e164,qn.display_number,''),'[^0-9]','','g') LIKE regexp_replace($1,'[^0-9]','','g')||'%'))"+
       " AND ($2::text IS NULL OR t.status=$2) AND ($3::text IS NULL OR t.country_code=$3)"+
       " AND ($4::text IS NULL OR ($4='active' AND pgi_tenant_has_premium_call_access(t.id,NULL,now()))"+
       " OR ($4='unpaid' AND NOT EXISTS (SELECT 1 FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id WHERE s.tenant_id=t.id AND p.plan_key='external-sva-access' AND s.status='active' AND s.current_period_end>now()))"+
@@ -2446,12 +2481,12 @@ export class PostgresStore{
       " LEFT JOIN LATERAL (SELECT count(*) AS assignment_count,count(*) FILTER (WHERE status='active') AS active_assignments FROM tenant_number_assignments a WHERE a.tenant_id=page.id) a ON true"+
       " LEFT JOIN LATERAL (SELECT x.status,x.current_period_end,x.last_payment_status,x.cancel_at_period_end,x.billing_provider FROM tenant_subscriptions x JOIN service_plans sp ON sp.id=x.service_plan_id WHERE x.tenant_id=page.id AND sp.plan_key='external-sva-access' ORDER BY x.created_at DESC,x.id DESC LIMIT 1) s ON true"+
       " ORDER BY page.id DESC",
-      [q||null,status,country,billing,number||null,kyc,cursor,createdSince?createdSince.toISOString():null,limit+1]
+      [q||null,status,country,billing,number||null,kyc,cursor,createdSince?createdSince.toISOString():null,limit+1,dossier?.id||null,dossier?.year||null]
     );
     const hasMore=rows.length>limit;
     const page=hasMore?rows.slice(0,limit):rows;
     const nextCursor=hasMore&&page.length?encodeNumericCursor(Number(page.at(-1)._cursor_id)):null;
-    return {data:page.map(row=>{const {_cursor_id,...publicRow}=row;return publicRow;}),next_cursor:nextCursor};
+    return {data:page.map(row=>{const {_cursor_id,...publicRow}=row;return {...publicRow,dossier_ref:dossierReference(_cursor_id,row.created_at)};}),next_cursor:nextCursor};
   }
 
   async listTenantAssignments(params={}){
@@ -3307,8 +3342,8 @@ export class PostgresStore{
         [tenant.id,String(tenant.id),JSON.stringify({tenant_public_id:tenant.public_id,customer_principal_id:principal.id,email,country_code:country,account_type:accountType,acquisition_source:acquisitionSource,service_intent:serviceIntent||null})]
       );
       principal=(await tx.unsafe("SELECT id,email,display_name,status,email_verified,session_version FROM customer_principals WHERE id=$1::uuid",[principal.id]))[0];
-      const refreshedTenant=(await tx.unsafe("SELECT id,public_id,display_name,status,authorization_version FROM tenants WHERE id=$1",[tenant.id]))[0];
-      return {...principal,tenant_id:refreshedTenant.id,tenant_public_id:refreshedTenant.public_id,tenant_name:refreshedTenant.display_name,tenant_status:refreshedTenant.status,customer_role:"owner",authorization_version:refreshedTenant.authorization_version};
+      const refreshedTenant=(await tx.unsafe("SELECT id,public_id,display_name,status,authorization_version,created_at FROM tenants WHERE id=$1",[tenant.id]))[0];
+      return {...principal,tenant_id:refreshedTenant.id,tenant_public_id:refreshedTenant.public_id,tenant_name:refreshedTenant.display_name,tenant_status:refreshedTenant.status,dossier_ref:dossierReference(refreshedTenant.id,refreshedTenant.created_at),customer_role:"owner",authorization_version:refreshedTenant.authorization_version};
     });
     this.eventBus.publish("customer.self_registered",{tenant_public_id:result.tenant_public_id,email:result.email,country_code:country,acquisition_source:acquisitionSource,service_intent:serviceIntent||null});
     return result;
@@ -4356,10 +4391,10 @@ export class PostgresStore{
     const earliestFrom=[callsFrom,minutesFrom,revenueFrom].sort((a,b)=>Date.parse(a)-Date.parse(b))[0];
     return this.withTenantReadContext(id,async tx=>{
       const tenantRows=await tx.unsafe(
-        "SELECT t.id,t.public_id,t.display_name,t.legal_name,t.status,t.country_code,t.preferred_locale,t.default_currency,t.timezone,"+
+        "SELECT t.id,t.public_id,t.display_name,t.legal_name,t.status,t.country_code,t.preferred_locale,t.default_currency,t.timezone,t.created_at,"+
         " CASE WHEN k.entity_type='individual' THEN 'individual' ELSE 'business' END AS customer_type,COALESCE(k.status,'not_started') AS kyc_status,k.registration_number FROM tenants t LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id WHERE t.id=$1",[id]
       );
-      const tenant=tenantRows[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+      const tenant=tenantRows[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");tenant.dossier_ref=dossierReference(tenant.id,tenant.created_at);
       const financial=await tx.unsafe(
         "SELECT f.currency,"+
         " count(*) FILTER(WHERE f.started_at >= $2::timestamptz)::bigint AS calls_total,"+
@@ -6131,7 +6166,7 @@ export class PostgresStore{
     ]);
     const access=await this.readSql.unsafe("SELECT pgi_tenant_has_premium_call_access($1,NULL,now()) AS allowed",[id]);
     return {
-      tenant:{...tenant,premium_call_access:Boolean(access[0]?.allowed)},
+      tenant:{...tenant,dossier_ref:dossierReference(id,tenant.created_at),premium_call_access:Boolean(access[0]?.allowed)},
       subscriptions:subs,lines,portability,destinations,experts,alerts,settlements,payout_terms:payoutTerms,controls,audit,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,users,invitations,line_performance:linePerformance,
       activity:activity[0]||{calls_30d:0,connected_30d:0,billable_seconds_30d:0,revenue_ttc_30d:0,margin_ht_30d:0,last_call_at:null}
     };

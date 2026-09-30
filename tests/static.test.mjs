@@ -371,7 +371,8 @@ test("le contrôle clients permet recherche pays impayés et suspension depuis l
 test("le dossier client 1.22 centralise les opérations sans alourdir le shell",()=>{
   assert.match(customerAdmin,/tenant-control-detail\.js/);
   assert.match(customerAdmin,/data-dossier/);
-  assert.match(customerAdmin,/p\.number=compact/);
+  assert.match(customerAdmin,/if\(q\)p\.q=q/);
+  assert.match(customerAdmin,/Dossier, nom, prénom, société, e-mail, téléphone ou n° SVA/);
   assert.match(customerAdmin,/Nouveau client/);
   assert.match(customerAdmin,/Créer en attente/);
   assert.match(api,/createTenant:function/);

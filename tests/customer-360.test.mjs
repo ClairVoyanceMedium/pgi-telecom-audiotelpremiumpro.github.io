@@ -34,6 +34,21 @@ test("Customer 360 enriches the dossier with real identities and signup metadata
   assert.match(detail360,/Inscrit /);
 });
 
+test("chaque client reçoit une référence dossier automatique et recherchable",()=>{
+  assert.match(store,/function dossierReference/);
+  assert.match(store,/function dossierLookup/);
+  assert.match(store,/dossier_ref:dossierReference/);
+  assert.match(store,/metadata->>'first_name'/);
+  assert.match(store,/metadata->>'last_name'/);
+  assert.match(store,/metadata->>'phone'/);
+  assert.match(store,/tenant_number_assignments qa JOIN sva_numbers qn/);
+  assert.match(admin,/Dossier, nom, prénom, société, e-mail, téléphone ou n° SVA/);
+  assert.match(admin,/dossier_ref/);
+  assert.match(detail,/Dossier /);
+  assert.match(detail360,/Référence dossier/);
+  assert.match(server,/dossier_ref:registered\.dossier_ref/);
+});
+
 test("self-service registration blocks high-confidence duplicates",()=>{
   assert.match(store,/CUSTOMER_ACCOUNT_EXISTS/);
   assert.match(store,/CUSTOMER_REGISTRATION_EXISTS/);
