@@ -61,7 +61,7 @@ test("la marque client reste Audiotel Premium Pro et la plateforme reste multise
   assert.doesNotMatch(index,/voyance|voyant/i);
   assert.match(tenantControlDetail,/Intervenants \/ services \/ postes/);
   assert.doesNotMatch(tenantControlDetail,/Agents \/ postes optionnels/);
-  assert.match(clientPortalJs,/Frais de plateforme HT/);
+  assert.doesNotMatch(clientPortalJs,/Frais de plateforme HT/);
 });
 
 test("les cockpits affichent les reversements en direct sans les confondre avec les montants consolidés",()=>{

@@ -62,7 +62,7 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.doesNotMatch(sitemap,/mentions-legales/);
     for(const forbidden of ["client.html","cockpit","backend/","docs/"])assert.ok(!sitemap.includes(forbidden));
     assert.doesNotMatch(sitemap,/<changefreq>|<priority>/);
-    assert.match(sitemap,/<loc>https:\/\/audiotel-premium-pro\.com\/reversement-audiotel\/<\/loc>\s*<lastmod>2026-09-29<\/lastmod>/);
+    const reversementLastmod=execFileSync("git",["log","-1","--format=%cs","--","site/seo/reversement-audiotel.html"],{encoding:"utf8"}).trim();\n    assert.match(reversementLastmod,/^\\d{4}-\\d{2}-\\d{2}$/);\n    assert.ok(sitemap.includes("<loc>https://audiotel-premium-pro.com/reversement-audiotel/</loc>\\n    <lastmod>"+reversementLastmod+"</lastmod>"));
     assert.ok(llms.includes("Audiotel Premium Pro | PGI Telecom"));
     assert.match(llms,/guide-audiotel-sva/);
     assert.match(llmsFull,/Official French references/);
