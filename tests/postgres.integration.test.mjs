@@ -391,6 +391,55 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(directoryByDossier.data.length,1);
     assert.equal(directoryByDossier.data[0].public_id,externalIdentity[0].public_id);
 
+    await store.sql.unsafe(
+      "INSERT INTO customer_principals(email,display_name,status,email_verified,metadata) VALUES('mail-recognition@example.test','Mail Recognition','active',true,jsonb_build_object('first_name','Mail','last_name','Recognition','phone','+33699887766')) ON CONFLICT(email_normalized) DO NOTHING"
+    );
+    const mailPrincipal=(await store.sql.unsafe("SELECT id::text AS id FROM customer_principals WHERE email_normalized='mail-recognition@example.test' LIMIT 1"))[0];
+    const extForMail=(await store.sql.unsafe("SELECT id FROM tenants WHERE public_id=$1::uuid LIMIT 1",[externalIdentity[0].public_id]))[0];
+    await store.sql.unsafe(
+      "INSERT INTO customer_tenant_memberships(tenant_id,customer_principal_id,role,status) VALUES($1,$2::uuid,'owner','active') ON CONFLICT(tenant_id,customer_principal_id) DO UPDATE SET status='active'",
+      [Number(extForMail.id),mailPrincipal.id]
+    );
+
+    const inboundByEmail=await store.resolveInboundCustomer({
+      email:"mail-recognition@example.test",
+      subject:"Question client",
+      text:"Bonjour",
+      provider_email_id:"provider-inbound-email-test"
+    });
+    assert.equal(inboundByEmail.matched,true);
+    assert.equal(inboundByEmail.match_method,"email");
+    assert.equal(inboundByEmail.public_id,undefined);
+    assert.equal(inboundByEmail.tenant_public_id,externalIdentity[0].public_id);
+    assert.equal(inboundByEmail.dossier_ref,directoryByNumber.data[0].dossier_ref);
+
+    const recipientHash="a".repeat(64);
+    await store.sql.unsafe(
+      "INSERT INTO transactional_email_deliveries(tenant_id,idempotency_key,template_key,sender_role,recipient_hash,provider_email_id,provider_message_id,state) VALUES($1,'integration/thread-correlation','support_response','support',$2,'provider-outbound-thread','<pgi-thread-integration@example.test>','delivered') ON CONFLICT(idempotency_key) DO UPDATE SET provider_message_id=EXCLUDED.provider_message_id",
+      [Number(extForMail.id),recipientHash]
+    );
+    const inboundByThread=await store.resolveInboundCustomer({
+      email:"changed-address@example.test",
+      subject:"Re: Question client",
+      text:"Je réponds depuis une nouvelle adresse.",
+      in_reply_to:"<pgi-thread-integration@example.test>",
+      provider_email_id:"provider-inbound-thread-test"
+    });
+    assert.equal(inboundByThread.matched,true);
+    assert.equal(inboundByThread.match_method,"thread");
+    assert.equal(inboundByThread.tenant_public_id,externalIdentity[0].public_id);
+    assert.equal(inboundByThread.dossier_ref,directoryByNumber.data[0].dossier_ref);
+
+    const untrustedDossierOnly=await store.resolveInboundCustomer({
+      email:"unknown-sender@example.test",
+      subject:"Dossier "+directoryByNumber.data[0].dossier_ref,
+      text:"Merci de modifier mes coordonnées.",
+      provider_email_id:"provider-inbound-untrusted-test"
+    });
+    assert.equal(untrustedDossierOnly.matched,false);
+    assert.equal(untrustedDossierOnly.reason,"unknown_sender");
+    assert.equal(untrustedDossierOnly.hinted_dossier_ref,directoryByNumber.data[0].dossier_ref);
+
     const directoryBySvaUniversal=await store.listTenants({q:"33890000001",limit:10});
     assert.equal(directoryBySvaUniversal.data.length,1);
     assert.equal(directoryBySvaUniversal.data[0].public_id,externalIdentity[0].public_id);
