@@ -78,7 +78,7 @@ test("production static build publishes marketing root and private cockpit",()=>
       assert.doesNotMatch(page,/__CANONICAL__|__BASE__|__LOGO__/);
       const scripts=[...page.matchAll(/<script[^>]+src="([^"]+)"/gi)].map(x=>x[1]);
       const allowedScripts={
-        "demande-ouverture":["/site/site.js","/site/hubspot-tracking.js","/site/contact-widget.js"],
+        "demande-ouverture":["/site/form-ux.js","/site/site.js","/site/hubspot-tracking.js","/site/contact-widget.js"],
         "retractation":["/site/hubspot-tracking.js","/assets/config.js","/assets/withdrawal.js","/site/contact-widget.js"]
       }[slug]||["/site/hubspot-tracking.js","/site/contact-widget.js"];
       for(const src of scripts)assert.ok(allowedScripts.includes(src),"unexpected public script on "+slug+": "+src);
