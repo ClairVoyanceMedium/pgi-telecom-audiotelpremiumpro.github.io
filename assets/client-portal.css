@@ -256,3 +256,12 @@ html,body,.cp-app{overflow-anchor:none}
   .cp-jackpot-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
   .cp-jackpot-actions button{min-height:36px!important;padding:0 6px!important;font-size:7.5px!important}
 }
+
+
+/* audiotel-brand-dialog-v156 */
+.cp-brand-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.cp-brand-dialog-actions .cp-primary,.cp-brand-dialog-actions .cp-ghost{min-width:132px}
+@media(max-width:560px){
+  .cp-brand-dialog-actions{display:grid;grid-template-columns:1fr 1fr}
+  .cp-brand-dialog-actions .cp-primary,.cp-brand-dialog-actions .cp-ghost{width:100%;min-width:0;min-height:42px}
+}
