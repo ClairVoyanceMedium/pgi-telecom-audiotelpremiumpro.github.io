@@ -1075,6 +1075,8 @@ export class MemoryStore{
   async serviceIncidentDetail(id){void id;throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");}
   async updateServiceIncident(id,input={}){void id;void input;throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");}
   async addServiceIncidentNote(id,input={}){void id;void input;throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");}
+  async serviceIncidentSupportContext(id){void id;throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");}
+  async recordServiceIncidentEmailNote(id,input={}){void id;void input;throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");}
   async simulateTenantRouting(publicId,input={}){void publicId;return this.simulateTenantRoutingById(1,input);}
   async simulateTenantRoutingById(tenantId,input={}){
     void tenantId;
