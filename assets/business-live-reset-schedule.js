@@ -23,8 +23,14 @@ async function save(){
  try{
   const p=payload(),api=context.scope==="platform"?window.PGIApi:window.PGICustomerApi;
   const fn=context.scope==="platform"?api?.saveLiveFinanceSchedule:api?.saveJackpotSchedule;
-  if(typeof fn!=="function")throw new Error("API indisponible");
-  const result=await fn(p,api.newIdempotencyKey());
+  let result;
+  if(context.demo===true){
+   result={...p,next_run_at:null,last_run_at:null,run_count:0};
+   try{localStorage.setItem("pgi_demo_business_live_reset_schedule",JSON.stringify(result))}catch(_e){}
+  }else{
+   if(typeof fn!=="function")throw new Error("API indisponible");
+   result=await fn(p,api.newIdempotencyKey());
+  }
   context.schedule=result.reset_schedule||result;status.textContent=p.enabled?"Automatisation enregistrée.":"Automatisation désactivée.";
   if(typeof context.onSaved==="function")await context.onSaved(context.schedule);
   setTimeout(()=>dialog?.close(),350);
@@ -32,7 +38,7 @@ async function save(){
  finally{button.disabled=false}
 }
 export function openBusinessLiveResetSchedule(options={}){
- ensureCss();context={scope:options.scope==="platform"?"platform":"tenant",schedule:options.schedule||null,onSaved:options.onSaved};
+ ensureCss();context={scope:options.scope==="platform"?"platform":"tenant",demo:options.demo===true,schedule:options.schedule||null,onSaved:options.onSaved};
  dialog?.remove();document.body.insertAdjacentHTML("beforeend",markup(context.schedule));dialog=$("business-live-reset-schedule-dialog");
  $("bls-frequency").value=context.schedule?.frequency||"daily";$("bls-weekday").value=String(context.schedule?.weekday||1);syncFields();
  $("bls-frequency").addEventListener("change",syncFields);$("bls-save").addEventListener("click",save);dialog.addEventListener("close",()=>{dialog?.remove();dialog=null});
