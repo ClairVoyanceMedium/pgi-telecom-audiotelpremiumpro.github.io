@@ -42,7 +42,7 @@ const files=[
   "assets/customer-email-verification.js",
   "assets/client-live-finance.js",
   "assets/call-time-summary.js",
-  "assets/client-live-finance.css",
+  "assets/client-live-finance.css",\n  "assets/business-live-schedule.js",\n  "assets/business-live-schedule.css",
   "assets/password-visibility.js",
   "assets/client-analytics-plus.js",
   "assets/client-number-control.js",
