@@ -18,7 +18,6 @@ var commands=[
 ["period-week","Période","Afficher cette semaine","Lundi à aujourd’hui","semaine"],
 ["period-month","Période","Afficher ce mois","Depuis le 1er","mois month"],
 ["period-year","Période","Afficher cette année","Depuis janvier","annee year annuel"],
-["refresh","Action","Actualiser maintenant","Synchroniser les données","refresh synchro actualiser mise a jour"],
 ["priority","Action","Ouvrir l’action prioritaire","Prochaine étape recommandée","priorite prochaine action"],
 ["analysis","Action","Basculer analyse / vue essentielle","Cockpit mobile","mobile graphiques analyse essentiel"],
 ["export","Action","Ouvrir le centre d’export","Appels, synthèse, finance et PDF","csv export appels finance rapport fichier"],
