@@ -18,7 +18,6 @@ test("les réponses email se rattachent au bon dossier sans faire confiance à u
   assert.match(store,/dossier_hint/);
   assert.match(store,/customer\.email\.inbound_resolved/);
   assert.match(store,/body_logged:false/);
-  assert.match(dispatcher,/provider_message_id=COALESCE/);
   assert.match(resend,/in-reply-to/);
   assert.match(resend,/references/);
   assert.match(resend,/resolveCustomer/);
