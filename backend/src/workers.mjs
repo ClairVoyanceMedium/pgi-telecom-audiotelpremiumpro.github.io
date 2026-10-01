@@ -1,6 +1,7 @@
 import {randomUUID} from "node:crypto";
 import {evaluateAlerts} from "./alerts.mjs";
 import {drainTransactionalEmails,drainDunningTransactionalEmails} from "./email-dispatcher.mjs";
+import {retrieveStripeCardCheckout} from "./stripe-connect.mjs";
 
 export function startWorkers({store,eventBus,config,queueHandlers={}}){
   let stopped=false;
@@ -65,6 +66,28 @@ export function startWorkers({store,eventBus,config,queueHandlers={}}){
       if(typeof store.scanPortabilityAutomation==="function")await store.scanPortabilityAutomation(100);
       if(typeof store.scanOutboundPortabilityAutomation==="function")await store.scanOutboundPortabilityAutomation(100);
       if(typeof store.runDueBusinessLiveResets==="function")await store.runDueBusinessLiveResets(250);
+      if(config.stripeSecretKey&&typeof store.openCardPaymentReconciliationBatch==="function"&&typeof store.applyCardPaymentProviderEvent==="function"){
+        const batch=await store.openCardPaymentReconciliationBatch(25);
+        for(const item of batch){
+          try{
+            const snapshot=await retrieveStripeCardCheckout(config,item.provider_account_reference,item.provider_checkout_session_reference);
+            if(snapshot.status!=="open"){
+              await store.applyCardPaymentProviderEvent({
+                provider:"stripe",
+                provider_event_id:"worker:"+snapshot.provider_checkout_session_reference+":"+snapshot.status,
+                event_type:"checkout.session.reconciled",
+                event_time:new Date().toISOString(),
+                connected_account_reference:item.provider_account_reference,
+                request_public_id:item.request_public_id,
+                status:snapshot.status,
+                provider_checkout_session_reference:snapshot.provider_checkout_session_reference,
+                provider_payment_intent_reference:snapshot.provider_payment_intent_reference,
+                payload_sha256:"0".repeat(64)
+              });
+            }
+          }catch(_error){}
+        }
+      }
       stats.lastAlertsSuccessAt=new Date().toISOString();
     }catch{
       stats.alertsErrors++;
