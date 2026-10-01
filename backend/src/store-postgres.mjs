@@ -4181,6 +4181,112 @@ export class PostgresStore{
     });
   }
 
+  async customerCardPaymentAccount(tenantId){
+    const id=Number(tenantId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    return this.withTenantReadContext(id,async tx=>{
+      const rows=await tx.unsafe(
+        "SELECT id,tenant_id,provider,provider_account_reference,status,charges_enabled,payouts_enabled,details_submitted,application_fee_bps,requirements_state,last_synced_at,created_at,updated_at FROM tenant_card_payment_accounts WHERE tenant_id=$1 LIMIT 1",
+        [id]
+      );
+      return rows[0]||null;
+    });
+  }
+
+  async upsertCustomerCardPaymentAccount(tenantId,input={}){
+    const id=Number(tenantId),ref=String(input.provider_account_reference||"").trim();
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    if(!/^acct_[A-Za-z0-9]+$/.test(ref))throw problem(400,"INVALID_CONNECT_ACCOUNT");
+    const fee=Math.max(0,Math.min(3000,Number(input.application_fee_bps)||490));
+    return this.withTenantContext(id,async tx=>{
+      const rows=await tx.unsafe(
+        "INSERT INTO tenant_card_payment_accounts(tenant_id,provider_account_reference,status,charges_enabled,payouts_enabled,details_submitted,application_fee_bps,requirements_state,last_synced_at,metadata)"+
+        " VALUES($1,$2,$3,$4,$5,$6,$7,$8,now(),$9::jsonb)"+
+        " ON CONFLICT(tenant_id) DO UPDATE SET provider_account_reference=EXCLUDED.provider_account_reference,status=EXCLUDED.status,charges_enabled=EXCLUDED.charges_enabled,payouts_enabled=EXCLUDED.payouts_enabled,details_submitted=EXCLUDED.details_submitted,application_fee_bps=tenant_card_payment_accounts.application_fee_bps,requirements_state=EXCLUDED.requirements_state,last_synced_at=now(),metadata=tenant_card_payment_accounts.metadata||EXCLUDED.metadata"+
+        " RETURNING id,tenant_id,provider,provider_account_reference,status,charges_enabled,payouts_enabled,details_submitted,application_fee_bps,requirements_state,last_synced_at,created_at,updated_at",
+        [id,ref,String(input.status||"pending"),input.charges_enabled===true,input.payouts_enabled===true,input.details_submitted===true,fee,input.requirements_state||null,JSON.stringify(input.metadata&&typeof input.metadata==="object"?input.metadata:{})]
+      );
+      return rows[0];
+    });
+  }
+
+  async syncCustomerCardPaymentAccount(tenantId,input={}){
+    const id=Number(tenantId),ref=String(input.provider_account_reference||"").trim();
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    return this.withTenantContext(id,async tx=>{
+      const rows=await tx.unsafe(
+        "UPDATE tenant_card_payment_accounts SET status=$3,charges_enabled=$4,payouts_enabled=$5,details_submitted=$6,requirements_state=$7,last_synced_at=now() WHERE tenant_id=$1 AND provider_account_reference=$2 RETURNING id,tenant_id,provider,provider_account_reference,status,charges_enabled,payouts_enabled,details_submitted,application_fee_bps,requirements_state,last_synced_at,created_at,updated_at",
+        [id,ref,String(input.status||"restricted"),input.charges_enabled===true,input.payouts_enabled===true,input.details_submitted===true,input.requirements_state||null]
+      );
+      if(!rows[0])throw problem(404,"CARD_PAYMENT_ACCOUNT_NOT_FOUND");
+      return rows[0];
+    });
+  }
+
+  async createCustomerCardPaymentRequest(tenantId,principalId,input={}){
+    const id=Number(tenantId),amount=Math.trunc(Number(input.amount_minor)),currency=String(input.currency||"EUR").trim().toUpperCase();
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    if(!Number.isInteger(amount)||amount<100||amount>100000000)throw problem(400,"INVALID_CARD_PAYMENT_AMOUNT");
+    if(!/^[A-Z]{3}$/.test(currency))throw problem(400,"INVALID_CARD_PAYMENT_CURRENCY");
+    const description=String(input.description||"").trim().slice(0,180);
+    if(description.length<2)throw problem(400,"INVALID_CARD_PAYMENT_DESCRIPTION");
+    const feeBps=Math.max(0,Math.min(3000,Math.trunc(Number(input.application_fee_bps)||490)));
+    const feeMinor=Math.min(amount,Math.max(0,Math.round(amount*feeBps/10000)));
+    return this.withTenantContext(id,async tx=>{
+      const rows=await tx.unsafe(
+        "INSERT INTO tenant_card_payment_requests(tenant_id,card_payment_account_id,customer_email,description,currency,amount_minor,application_fee_bps,application_fee_minor,status,created_by_customer_principal_id,metadata)"+
+        " SELECT $1,a.id,$2,$3,$4,$5,$6,$7,'created',$8::uuid,$9::jsonb FROM tenant_card_payment_accounts a WHERE a.tenant_id=$1 AND a.status='active' AND a.charges_enabled=true"+
+        " RETURNING public_id::text AS public_id,amount_minor::bigint AS amount_minor,currency,application_fee_bps,application_fee_minor::bigint AS application_fee_minor,status,created_at",
+        [id,input.customer_email||null,description,currency,amount,feeBps,feeMinor,String(principalId),JSON.stringify(input.metadata&&typeof input.metadata==="object"?input.metadata:{})]
+      );
+      if(!rows[0])throw problem(409,"CARD_PAYMENT_ACCOUNT_NOT_READY");
+      return {...rows[0],amount_minor:Number(rows[0].amount_minor),application_fee_minor:Number(rows[0].application_fee_minor)};
+    });
+  }
+
+  async attachCustomerCardPaymentCheckout(tenantId,publicId,input={}){
+    const id=Number(tenantId),pid=String(publicId||"");
+    return this.withTenantContext(id,async tx=>{
+      const rows=await tx.unsafe(
+        "UPDATE tenant_card_payment_requests SET provider_checkout_session_reference=$3,status='open',expires_at=$4::timestamptz,metadata=metadata||$5::jsonb WHERE tenant_id=$1 AND public_id=$2::uuid RETURNING public_id::text AS public_id,provider_checkout_session_reference,status,expires_at,amount_minor::bigint AS amount_minor,currency,application_fee_bps,application_fee_minor::bigint AS application_fee_minor",
+        [id,pid,String(input.provider_checkout_session_reference||""),input.expires_at||null,JSON.stringify(input.metadata&&typeof input.metadata==="object"?input.metadata:{})]
+      );
+      if(!rows[0])throw problem(404,"CARD_PAYMENT_REQUEST_NOT_FOUND");
+      return {...rows[0],amount_minor:Number(rows[0].amount_minor),application_fee_minor:Number(rows[0].application_fee_minor)};
+    });
+  }
+
+  async failCustomerCardPaymentRequest(tenantId,publicId,reason="checkout_failed"){
+    const id=Number(tenantId);
+    return this.withTenantContext(id,async tx=>{
+      const rows=await tx.unsafe(
+        "UPDATE tenant_card_payment_requests SET status='failed',metadata=metadata||jsonb_build_object('failure_reason',$3) WHERE tenant_id=$1 AND public_id=$2::uuid AND status='created' RETURNING public_id::text AS public_id,status",
+        [id,String(publicId||""),String(reason||"checkout_failed").slice(0,120)]
+      );
+      return rows[0]||null;
+    });
+  }
+
+  async customerCardPaymentOverview(tenantId){
+    const id=Number(tenantId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    return this.withTenantReadContext(id,async tx=>{
+      const account=(await tx.unsafe(
+        "SELECT provider_account_reference,status,charges_enabled,payouts_enabled,details_submitted,application_fee_bps,requirements_state,last_synced_at FROM tenant_card_payment_accounts WHERE tenant_id=$1 LIMIT 1",
+        [id]
+      ))[0]||null;
+      const summary=(await tx.unsafe(
+        "SELECT count(*)::int AS payments_total,count(*) FILTER(WHERE status='paid')::int AS payments_paid,COALESCE(sum(amount_minor) FILTER(WHERE status='paid'),0)::bigint AS volume_paid_minor,COALESCE(sum(application_fee_minor) FILTER(WHERE status='paid'),0)::bigint AS pgi_fee_paid_minor FROM tenant_card_payment_requests WHERE tenant_id=$1",
+        [id]
+      ))[0]||{};
+      const rows=await tx.unsafe(
+        "SELECT public_id::text AS public_id,customer_email,description,currency,amount_minor::bigint AS amount_minor,application_fee_bps,application_fee_minor::bigint AS application_fee_minor,status,paid_at,refunded_at,expires_at,created_at FROM tenant_card_payment_requests WHERE tenant_id=$1 ORDER BY created_at DESC,id DESC LIMIT 40",
+        [id]
+      );
+      return {account,summary:{payments_total:Number(summary.payments_total||0),payments_paid:Number(summary.payments_paid||0),volume_paid_minor:Number(summary.volume_paid_minor||0),pgi_fee_paid_minor:Number(summary.pgi_fee_paid_minor||0)},payments:rows.map(x=>({...x,amount_minor:Number(x.amount_minor),application_fee_minor:Number(x.application_fee_minor)}))};
+    });
+  }
+
   async customerPortabilityRequests(tenantId){
     const id=Number(tenantId);
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
