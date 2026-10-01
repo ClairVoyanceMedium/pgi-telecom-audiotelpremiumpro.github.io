@@ -166,24 +166,19 @@ export async function syncHubSpotCommercialLead(input={},options={}){
 
 export async function syncHubSpotSupportMessage(input={},options={}){
   const token=clean(options.token||process.env.PGI_HUBSPOT_PRIVATE_APP_TOKEN||process.env.HUBSPOT_PRIVATE_APP_TOKEN,800);
-  if(!token)return {enabled:false,synced:false,contactId:null,noteId:null,contactCreated:false};
+  if(!token)return {enabled:false,synced:false,contactId:null,ticketId:null,contactCreated:false};
   const fetchImpl=options.fetchImpl||globalThis.fetch;
   const contactEmail=email(input.email);
   const message=clean(input.message,4000);
   if(message.length<2)throw problem("HUBSPOT_CONTACT_MESSAGE_INVALID");
+
   let contact=await findPrivateContact(contactEmail,{token,fetchImpl});
   let contactCreated=false;
   if(!contact){
     try{
       contact=await hubSpotPrivateRequest("/crm/v3/objects/contacts",{
         token,fetchImpl,method:"POST",
-        body:{properties:{
-          email:contactEmail,
-          lifecyclestage:"lead",
-          hubspot_owner_id:HUBSPOT_OWNER_ID,
-          type_de_demande:"Autre",
-          besoin__projet_audiotel:"Contact depuis le site Audiotel Premium Pro"
-        }}
+        body:{properties:{email:contactEmail,hubspot_owner_id:HUBSPOT_OWNER_ID}}
       });
       contactCreated=true;
     }catch(error){
@@ -192,27 +187,42 @@ export async function syncHubSpotSupportMessage(input={},options={}){
       if(!contact)throw error;
     }
   }
-  const associationTypeId=await noteContactAssociationType({token,fetchImpl});
+
   const pagePath=clean(input.pagePath||input.page_path||"/",500)||"/";
   const pageTitle=clean(input.pageTitle||input.page_title||"",180);
   const pageContext=supportPageContext(pagePath);
-  const noteBody=[
-    "<strong>Message reçu depuis la bulle de contact du site</strong>",
-    "<br><br><strong>Email :</strong> "+escapeHubSpotHtml(contactEmail),
-    pageTitle?"<br><strong>Page :</strong> "+escapeHubSpotHtml(pageTitle):"",
-    "<br><strong>Catégorie de page :</strong> "+escapeHubSpotHtml(pageContext),
-    "<br><strong>Chemin :</strong> "+escapeHubSpotHtml(pagePath),
-    "<br><br><strong>Message :</strong><br>"+escapeHubSpotHtml(message).replace(/\n/g,"<br>")
-  ].join("");
-  const note=await hubSpotPrivateRequest("/crm/v3/objects/notes",{
+  const ticketSubject=clean("Contact site — "+pageContext,180);
+  const ticketContent=[
+    "Message reçu depuis la bulle de contact du site Audiotel Premium Pro.",
+    "",
+    "Page : "+(pageTitle||pageContext),
+    "Catégorie : "+pageContext,
+    "Chemin : "+pagePath,
+    "",
+    "Message :",
+    message
+  ].join("\n");
+
+  const associationTypeId=await ticketContactAssociationType({token,fetchImpl});
+  const ticket=await hubSpotPrivateRequest("/crm/v3/objects/tickets",{
     token,fetchImpl,method:"POST",
     body:{
-      properties:{hs_timestamp:new Date().toISOString(),hs_note_body:noteBody,hubspot_owner_id:HUBSPOT_OWNER_ID},
+      properties:{
+        subject:ticketSubject,
+        content:ticketContent,
+        hs_pipeline:"0",
+        hs_pipeline_stage:"1",
+        hs_ticket_priority:"MEDIUM",
+        source_type:"FORM",
+        hs_ticket_category:"GENERAL_INQUIRY",
+        hubspot_owner_id:HUBSPOT_OWNER_ID
+      },
       associations:[{to:{id:String(contact.id)},types:[{associationCategory:"HUBSPOT_DEFINED",associationTypeId}]}]
     }
   });
-  return {enabled:true,synced:true,contactId:String(contact.id),noteId:note?.id?String(note.id):null,contactCreated};
+  return {enabled:true,synced:true,contactId:String(contact.id),ticketId:ticket?.id?String(ticket.id):null,contactCreated};
 }
+
 
 export async function syncHubSpotCommercialTenant(store,tenantPublicId,commercialStatus,options={}){
   if(!store||typeof store.tenantControlDetail!=="function")return {enabled:false,synced:false,skipped:true,reason:"tenant_lookup_unavailable"};
@@ -348,6 +358,14 @@ async function ensureCommercialDeal(contact,input,{token,fetchImpl,status}){
     }
   });
   return {...created,created:true};
+}
+
+async function ticketContactAssociationType({token,fetchImpl}){
+  const labels=await hubSpotPrivateRequest("/crm/v4/associations/tickets/contacts/labels",{token,fetchImpl,method:"GET"});
+  const match=(labels?.results||[]).find(x=>x.category==="HUBSPOT_DEFINED"&&(x.label==null||x.label===""));
+  const id=Number(match?.typeId);
+  if(!Number.isInteger(id)||id<=0)throw problem("HUBSPOT_TICKET_CONTACT_ASSOCIATION_UNAVAILABLE");
+  return id;
 }
 
 async function noteContactAssociationType({token,fetchImpl}){

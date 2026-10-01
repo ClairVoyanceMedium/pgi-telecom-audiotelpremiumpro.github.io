@@ -184,7 +184,7 @@ export function createBackend(options={}){
         ]);
         if(crmResult.status==="rejected")logHubSpotSyncFailure("public_contact",crmResult.reason);
         if(mailResult.status==="rejected")throw mailResult.reason;
-        return done(res,metrics,started,"public.contact",202,{accepted:true,crm_sync:crmResult.status==="fulfilled"&&Boolean(crmResult.value?.synced)});
+        return done(res,metrics,started,"public.contact",202,{accepted:true,crm_sync:crmResult.status==="fulfilled"&&Boolean(crmResult.value?.synced),ticket_created:crmResult.status==="fulfilled"&&Boolean(crmResult.value?.ticketId)});
       }
 
       if(method==="POST"&&pathname==="/api/v1/public/hubspot/lead"){

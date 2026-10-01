@@ -183,7 +183,7 @@ test("server maps only objective lifecycle events to HubSpot",()=>{
 });
 
 
-test("support contact sync deduplicates by email, creates a CRM contact and logs the site message without a deal",async()=>{
+test("support contact sync deduplicates by email and creates a HubSpot ticket without a deal or customer dossier",async()=>{
   const requests=[];
   const response=(status,payload)=>({ok:status>=200&&status<300,status,text:async()=>JSON.stringify(payload||{})});
   const fetchImpl=async(url,options={})=>{
@@ -191,8 +191,8 @@ test("support contact sync deduplicates by email, creates a CRM contact and logs
     requests.push({url,method:options.method||"GET",body});
     if(url.endsWith("/crm/v3/objects/contacts/search"))return response(200,{results:[]});
     if(url.endsWith("/crm/v3/objects/contacts")&&options.method==="POST")return response(201,{id:"501",properties:body.properties});
-    if(url.endsWith("/crm/v4/associations/notes/contacts/labels"))return response(200,{results:[{category:"HUBSPOT_DEFINED",typeId:202,label:null}]});
-    if(url.endsWith("/crm/v3/objects/notes")&&options.method==="POST")return response(201,{id:"601",properties:body.properties});
+    if(url.endsWith("/crm/v4/associations/tickets/contacts/labels"))return response(200,{results:[{category:"HUBSPOT_DEFINED",typeId:16,label:null}]});
+    if(url.endsWith("/crm/v3/objects/tickets")&&options.method==="POST")return response(201,{id:"701",properties:body.properties});
     throw new Error("Unexpected HubSpot request "+url+" "+options.method);
   };
   const result=await syncHubSpotSupportMessage({
@@ -203,15 +203,23 @@ test("support contact sync deduplicates by email, creates a CRM contact and logs
   },{token:"pat-test-"+"s".repeat(40),fetchImpl});
   assert.equal(result.synced,true);
   assert.equal(result.contactId,"501");
-  assert.equal(result.noteId,"601");
+  assert.equal(result.ticketId,"701");
   assert.equal(result.contactCreated,true);
+
   const created=requests.find(x=>x.url.endsWith("/objects/contacts")&&x.method==="POST");
+  assert.deepEqual(Object.keys(created.body.properties).sort(),["email","hubspot_owner_id"]);
   assert.equal(created.body.properties.email,"visiteur@example.test");
-  assert.equal(created.body.properties.type_de_demande,"Autre");
-  const note=requests.find(x=>x.url.endsWith("/objects/notes")&&x.method==="POST");
-  assert.match(note.body.properties.hs_note_body,/tarif-numero-sva/);
-  assert.match(note.body.properties.hs_note_body,/Tarifs et comparaison/);
-  assert.match(note.body.properties.hs_note_body,/&lt;script&gt;/);
-  assert.equal(note.body.associations[0].to.id,"501");
+
+  const ticket=requests.find(x=>x.url.endsWith("/objects/tickets")&&x.method==="POST");
+  assert.equal(ticket.body.properties.hs_pipeline,"0");
+  assert.equal(ticket.body.properties.hs_pipeline_stage,"1");
+  assert.equal(ticket.body.properties.source_type,"FORM");
+  assert.equal(ticket.body.properties.hs_ticket_category,"GENERAL_INQUIRY");
+  assert.equal(ticket.body.associations[0].to.id,"501");
+  assert.match(ticket.body.properties.content,/tarif-numero-sva/);
+  assert.match(ticket.body.properties.content,/Tarifs et comparaison/);
+  assert.match(ticket.body.properties.content,/<script>alert\(1\)<\/script>/);
+
   assert.equal(requests.some(x=>x.url.includes("/objects/deals")),false);
+  assert.equal(requests.some(x=>x.url.includes("/objects/notes")),false);
 });

@@ -111,6 +111,7 @@ const hyperscaleDoc=fs.readFileSync("docs/HYPERSCALE.md","utf8");
 const scaleHpa=fs.readFileSync("infra/scale/api-hpa.example.yaml","utf8");
 const postgresStore=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
 const backendServer=fs.readFileSync("backend/server.mjs","utf8");
+const hubspotCrm=fs.readFileSync("backend/src/hubspot-crm.mjs","utf8");
 const emailDispatcher=fs.readFileSync("backend/src/email-dispatcher.mjs","utf8");
 const stripeBillingSource=fs.readFileSync("backend/src/stripe-billing.mjs","utf8");
 const wholesaleDoc=fs.readFileSync("docs/WHOLESALE-SVA.md","utf8");
@@ -207,6 +208,7 @@ if(!/Dossier, nom, prénom, société, e-mail, téléphone ou n° SVA/.test(cust
 if(!/jsonb_build_object\('provider_message_id'/.test(emailDispatcher)||!/metadata->>'provider_message_id'/.test(postgresStore))failures.push("inbound email routing must reuse the existing email delivery metadata without requiring a production schema change");
 if(!/resolveInboundCustomerEmail/.test(postgresStore)||!/sender_plus_dossier/.test(postgresStore)||!/dossier_hint/.test(postgresStore))failures.push("inbound email routing must prefer trusted thread or sender identity and treat dossier-only claims as hints");
 if(!/syncHubSpotInboundEmail/.test(backendServer)||!/syncHubSpotCommercialTenant\(store,registered\.tenant_public_id/.test(backendServer))failures.push("verified inbound email and registration must sync HubSpot from the customer source of truth");
+if(!/syncHubSpotSupportMessage/.test(backendServer)||!/ticket_created/.test(backendServer))failures.push("public contact bubble must expose HubSpot ticket creation status");
 if(!/CREATE TABLE tenant_internal_notes/.test(customerInternalNotesMigration)||!/archived_at timestamptz/.test(customerInternalNotesMigration)||!/Private PGI staff notes/.test(customerInternalNotesMigration))failures.push("Customer internal notes must stay private, persistent and soft-archivable");
 if(!/\/api\/v1\/platform\/tenants\/:id\/internal-notes/.test(backendServer)||!/tenant-internal-notes\/:id\/archive/.test(backendServer)||!/\/platform\/tenants\//.test(customerInternalNotesUi)||!/internal-notes/.test(customerInternalNotesUi))failures.push("Customer internal notes must use dedicated lazy admin APIs");
 if(!/body_logged:false/.test(postgresStore)||!/tenant\.internal_note\.create/.test(postgresStore)||!/tenant\.internal_note\.archive/.test(postgresStore))failures.push("Customer internal notes must be audited without copying note bodies");
@@ -435,3 +437,5 @@ if(failures.length){
   process.exit(1);
 }
 console.log("Production contract: OK");
+
+if(!/ticketContactAssociationType/.test(hubspotCrm)||!/crm\/v3\/objects\/tickets/.test(hubspotCrm)||!/hs_pipeline_stage:"1"/.test(hubspotCrm)||!/source_type:"FORM"/.test(hubspotCrm))failures.push("public contact bubble must create a support ticket, not a commercial dossier");

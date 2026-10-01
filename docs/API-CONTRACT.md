@@ -478,3 +478,14 @@ Les cookies restent `__Host-`, `Secure`, `SameSite=Strict`; le cookie de session
 Les emails reçus sont corrélés au dossier client sans utiliser la référence `APP-...` comme moyen d'authentification. L'ordre de confiance est : réponse à un email transactionnel déjà émis (Message-ID / In-Reply-To / References), puis adresse email exacte déjà rattachée au tenant, puis combinaison adresse + référence dossier. Une référence dossier citée seule par une adresse inconnue reste un indice non vérifié et ne déclenche pas de rattachement client fiable.
 
 Le système ne crée aucune table client parallèle et ne nécessite aucune migration Neon pour ce mécanisme. Le Message-ID technique des emails sortants est conservé dans le champ metadata déjà existant du journal de livraison. Lorsqu'un email entrant est rattaché de façon fiable, la résolution est inscrite dans le journal d'audit existant sans copier le corps du message ni l'adresse de l'expéditeur. Les emails vérifiés sont ensuite journalisés dans HubSpot sur le contact et, lorsqu'il existe, sur la transaction associée.
+
+
+## Bulle de contact publique
+
+`POST /api/v1/public/contact` est un flux de support, distinct de l'ouverture commerciale.
+
+- Chaque soumission acceptée crée un ticket HubSpot dans `Support Pipeline`, statut `New`, source `Form`, catégorie `General inquiry`.
+- Si l'adresse email existe déjà dans HubSpot, le ticket est associé à ce contact.
+- Si l'adresse est inconnue, un contact minimal est créé uniquement avec l'email et le propriétaire HubSpot afin de permettre le suivi et la réponse.
+- Ce flux ne crée aucun deal, aucun dossier client `APP-...`, aucun statut commercial et n'inscrit pas automatiquement le visiteur dans le pipeline prospects.
+- Le ticket contient le message, la page d'origine et sa catégorie fonctionnelle.
