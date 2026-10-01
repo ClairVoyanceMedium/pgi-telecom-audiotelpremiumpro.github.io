@@ -145,8 +145,8 @@ test("service operations are observable and staff can inspect full history",()=>
 test("service center remains lazy and outside the critical PWA shell",()=>{
   assert.match(clientPortal,/import\("\.\/client-service-center\.js"\)/);
   assert.match(tenantDetail,/tenant-service-admin\.js/);
-  assert.match(clientService,/Centre de service|CENTRE DE SERVICE/);
-  assert.match(tenantService,/Centre de service & incidents/);
+  assert.match(clientService,/Contact & Support|CONTACT & SUPPORT/);
+  assert.match(tenantService,/Contact & support client/);
   assert.match(buildStatic,/client-service-center\.js/);
   assert.match(buildStatic,/tenant-service-admin\.js/);
   assert.match(checkStatic,/client-service-center\.js/);
