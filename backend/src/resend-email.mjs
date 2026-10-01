@@ -731,7 +731,7 @@ function providerError(code,status=503,providerCode=null){
 }
 
 
-export async function forwardInboundEmailToInternal(config,eventData={}){
+export async function forwardInboundEmailToInternal(config,eventData={},options={}){
   if(!config?.resendApiKey)throw providerError("RESEND_NOT_CONFIGURED");
   const emailId=String(eventData.email_id||eventData.id||"").trim();
   if(!/^[A-Za-z0-9_-]{6,200}$/.test(emailId))throw providerError("RESEND_INBOUND_EMAIL_ID_INVALID",400);
@@ -767,11 +767,26 @@ export async function forwardInboundEmailToInternal(config,eventData={}){
   const recipient=recipients.find(v=>v.endsWith("@"+domain))||recipients[0]||null;
   if(!recipient)return {forwarded:false,ignored:true,reason:"recipient_unavailable"};
 
-  const sender=extractEmailAddress(inbound.from)||extractEmailAddress(eventData.from)||cleanText(inbound.from||eventData.from||"Expéditeur inconnu",320);
+  const senderEmail=extractEmailAddress(inbound.from)||extractEmailAddress(eventData.from)||null;
+  const sender=senderEmail||cleanText(inbound.from||eventData.from||"Expéditeur inconnu",320);
   const subject=cleanText(inbound.subject||eventData.subject||"Sans objet",180)||"Sans objet";
   const messageText=sanitizeInboundText(inbound.text,inbound.html);
+  const sourceMessageId=normalizeInboundMessageId(inbound.message_id||eventData.message_id||inboundHeaderValue(inbound,"message-id"));
+  const referenceIds=[...new Set([
+    ...inboundMessageIds(inbound.in_reply_to||eventData.in_reply_to||inboundHeaderValue(inbound,"in-reply-to")),
+    ...inboundMessageIds(inbound.references||eventData.references||inboundHeaderValue(inbound,"references"))
+  ])].slice(0,30);
   const allAttachments=Array.isArray(inbound.attachments)?inbound.attachments:Array.isArray(eventData.attachments)?eventData.attachments:[];
   const attachments=allAttachments.slice(0,30);
+  const routingContext={
+    provider_email_id:emailId,message_id:sourceMessageId,sender_email:senderEmail,recipient,subject,text:messageText,
+    references:referenceIds,attachments:attachments.map(a=>cleanText(a?.filename||"pièce jointe",180))
+  };
+  let customerRouting=null,routingError=null;
+  if(typeof options.resolveCustomer==="function"){
+    try{customerRouting=await options.resolveCustomer(routingContext);}
+    catch(error){routingError=error;}
+  }
   const attachmentLines=attachments.map(a=>{
     const filename=cleanText(a?.filename||"pièce jointe",180);
     const type=cleanText(a?.content_type||"",120);
@@ -784,6 +799,10 @@ export async function forwardInboundEmailToInternal(config,eventData={}){
     "Expéditeur : "+sender,
     "Objet : "+subject,
     "Identifiant Resend : "+emailId,
+    customerRouting?.resolved&&customerRouting.dossier_ref?"Dossier PGI : "+customerRouting.dossier_ref:
+      customerRouting?.candidate_dossier_ref?"Référence dossier déclarée : "+customerRouting.candidate_dossier_ref+" (non vérifiée)":
+      "Dossier PGI : non identifié automatiquement",
+    customerRouting?.resolved?"Rattachement : vérifié automatiquement ("+String(customerRouting.resolution_method||"résolution interne")+")":"Rattachement : aucun rattachement client fiable",
     "",
     attachments.length?"Pièces jointes signalées :":"Aucune pièce jointe signalée.",
     ...attachmentLines,
@@ -825,7 +844,11 @@ export async function forwardInboundEmailToInternal(config,eventData={}){
     });
     const sent=await sendResponse.json().catch(()=>({}));
     if(!sendResponse.ok)throw providerError("RESEND_INBOUND_FORWARD_FAILED",sendResponse.status,safeProviderCode(sent));
-    return {forwarded:true,message_id:String(sent.id||"")||null,source_email_id:emailId,recipient};
+    const result={forwarded:true,message_id:String(sent.id||"")||null,source_email_id:emailId,recipient,dossier_resolved:Boolean(customerRouting?.resolved)};
+    Object.defineProperty(result,"routing_context",{value:routingContext,enumerable:false});
+    Object.defineProperty(result,"customer_routing",{value:customerRouting,enumerable:false});
+    Object.defineProperty(result,"routing_error",{value:routingError,enumerable:false});
+    return result;
   }catch(error){
     if(error?.code)throw error;
     throw providerError(error?.name==="AbortError"?"RESEND_TIMEOUT":"RESEND_INBOUND_FORWARD_FAILED");
@@ -834,6 +857,31 @@ export async function forwardInboundEmailToInternal(config,eventData={}){
   }
 }
 
+function inboundHeaderValue(inbound,name){
+  const wanted=String(name||"").toLowerCase();
+  const directKey=wanted.replace(/-/g,"_");
+  if(inbound&&inbound[directKey]!=null)return Array.isArray(inbound[directKey])?inbound[directKey].join(" "):String(inbound[directKey]);
+  const headers=inbound&&inbound.headers;
+  if(Array.isArray(headers)){
+    const row=headers.find(h=>String(h?.name||h?.key||"").toLowerCase()===wanted);
+    if(row)return String(row.value??row.val??"");
+  }else if(headers&&typeof headers==="object"){
+    for(const [key,value] of Object.entries(headers))if(String(key).toLowerCase()===wanted)return Array.isArray(value)?value.join(" "):String(value||"");
+  }
+  return "";
+}
+function normalizeInboundMessageId(value){
+  const raw=String(value||"").trim();
+  const bracket=/<([^<>]+)>/.exec(raw);
+  const id=String(bracket?.[1]||raw).trim().replace(/^<|>$/g,"").toLowerCase();
+  return id&&id.length<=998?id:null;
+}
+function inboundMessageIds(value){
+  const raw=Array.isArray(value)?value.join(" "):String(value||"");
+  const bracketed=[...raw.matchAll(/<([^<>]+)>/g)].map(m=>normalizeInboundMessageId(m[1])).filter(Boolean);
+  if(bracketed.length)return bracketed;
+  return raw.split(/[\s,]+/).map(normalizeInboundMessageId).filter(Boolean);
+}
 function extractEmailAddress(value){
   const raw=String(value||"").trim();
   const bracket=/<([^<>]+)>/.exec(raw);

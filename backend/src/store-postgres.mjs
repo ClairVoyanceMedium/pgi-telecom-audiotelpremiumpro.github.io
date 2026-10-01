@@ -2489,6 +2489,100 @@ export class PostgresStore{
     return {data:page.map(row=>{const {_cursor_id,...publicRow}=row;return {...publicRow,dossier_ref:dossierReference(_cursor_id,row.created_at)};}),next_cursor:nextCursor};
   }
 
+
+  async resolveInboundCustomerEmail(input={}){
+    const providerEmailId=String(input.provider_email_id||input.email_id||"").trim().slice(0,200);
+    if(!providerEmailId)throw problem(400,"INBOUND_EMAIL_ID_REQUIRED");
+    const sender=String(input.sender_email||"").trim().toLowerCase().slice(0,320);
+    const senderValid=/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sender);
+    const refs=[...new Set((Array.isArray(input.references)?input.references:[])
+      .map(v=>String(v||"").trim().toLowerCase().replace(/^<|>$/g,""))
+      .filter(Boolean))].slice(0,30);
+    const subject=String(input.subject||"").slice(0,500);
+    const body=String(input.text||"").slice(0,10000);
+    const dossierMatch=(subject+"\n"+body).match(/\bAPP-\d{4}-[0-9A-Z]{5,18}\b/i);
+    const claimedRef=dossierMatch?String(dossierMatch[0]).toUpperCase():null;
+    const claimed=dossierLookup(claimedRef);
+
+    const threadRows=refs.length?await this.sql.unsafe(
+      "SELECT DISTINCT t.id,t.public_id,t.display_name,t.created_at FROM transactional_email_deliveries d"+
+      " JOIN tenants t ON t.id=d.tenant_id WHERE d.tenant_id IS NOT NULL AND t.tenant_type<>'internal'"+
+      " AND lower(d.provider_message_id)=ANY($1::text[]) ORDER BY t.id DESC LIMIT 4",
+      [refs]
+    ):[];
+
+    const senderRows=senderValid?await this.sql.unsafe(
+      "SELECT DISTINCT t.id,t.public_id,t.display_name,t.created_at FROM tenants t WHERE t.tenant_type<>'internal' AND t.status<>'closed' AND ("+
+      " lower(COALESCE(t.billing_email,''))=$1 OR EXISTS ("+
+      " SELECT 1 FROM customer_tenant_memberships m JOIN customer_principals cp ON cp.id=m.customer_principal_id"+
+      " WHERE m.tenant_id=t.id AND m.status='active' AND cp.status='active' AND cp.email_normalized=$1))"+
+      " ORDER BY t.id DESC LIMIT 4",
+      [sender]
+    ):[];
+
+    let dossierRow=null;
+    if(claimed){
+      const rows=await this.sql.unsafe(
+        "SELECT id,public_id,display_name,created_at FROM tenants WHERE id=$1 AND tenant_type<>'internal' AND EXTRACT(YEAR FROM created_at)::int=$2 LIMIT 1",
+        [claimed.id,claimed.year]
+      );
+      dossierRow=rows[0]||null;
+    }
+
+    let chosen=null,resolutionMethod="unresolved";
+    if(threadRows.length===1){
+      chosen=threadRows[0];resolutionMethod="thread";
+    }else if(threadRows.length>1){
+      const narrowed=threadRows.filter(row=>
+        senderRows.some(x=>Number(x.id)===Number(row.id))||
+        (dossierRow&&Number(dossierRow.id)===Number(row.id))
+      );
+      if(narrowed.length===1){chosen=narrowed[0];resolutionMethod="thread";}
+      else resolutionMethod="ambiguous";
+    }
+
+    let identityConflict=false;
+    if(!chosen&&dossierRow&&senderRows.length){
+      const same=senderRows.find(x=>Number(x.id)===Number(dossierRow.id));
+      if(same){chosen=same;resolutionMethod="sender_plus_dossier";}
+      else identityConflict=true;
+    }
+    if(!chosen&&!identityConflict&&senderRows.length===1){
+      chosen=senderRows[0];resolutionMethod="sender_exact";
+    }else if(!chosen&&senderRows.length>1){
+      resolutionMethod="ambiguous";
+    }else if(!chosen&&identityConflict){
+      resolutionMethod="ambiguous";
+    }else if(!chosen&&dossierRow){
+      resolutionMethod="dossier_hint";
+    }
+
+    const dossierRef=chosen?dossierReference(chosen.id,chosen.created_at):null;
+    const hintedRef=!chosen&&dossierRow?dossierReference(dossierRow.id,dossierRow.created_at):null;
+    const senderHash=senderValid?createHash("sha256").update(sender).digest("hex"):null;
+    const messageId=String(input.message_id||"").trim().toLowerCase().replace(/^<|>$/g,"").slice(0,998)||null;
+    await this.sql.unsafe(
+      "INSERT INTO inbound_email_correlations(provider_email_id,message_id,tenant_id,sender_hash,resolution_method,dossier_reference,resolution_verified)"+
+      " VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(provider_email_id) DO NOTHING",
+      [providerEmailId,messageId,chosen?Number(chosen.id):null,senderHash,resolutionMethod,dossierRef||hintedRef,Boolean(chosen)]
+    );
+    if(chosen){
+      await this.sql.unsafe(
+        "INSERT INTO audit_log(tenant_id,action,entity_type,entity_id,details) VALUES($1,'customer.email.inbound_resolved','inbound_email',$2,$3::jsonb)",
+        [Number(chosen.id),providerEmailId,JSON.stringify({resolution_method:resolutionMethod,dossier_ref:dossierRef,body_logged:false,sender_logged:false})]
+      );
+    }
+    return {
+      resolved:Boolean(chosen),
+      tenant_public_id:chosen?String(chosen.public_id):null,
+      dossier_ref:dossierRef,
+      display_name:chosen?chosen.display_name:null,
+      resolution_method:resolutionMethod,
+      verified:Boolean(chosen),
+      candidate_dossier_ref:hintedRef
+    };
+  }
+
   async listTenantAssignments(params={}){
     const limit=clampInt(params.limit,50,1,250),cursor=decodeNumericCursor(params.cursor);
     const tenantPublicId=String(params.tenant_public_id||"").trim();

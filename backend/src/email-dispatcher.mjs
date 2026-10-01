@@ -7,6 +7,10 @@ const OUTBOX_TYPES=[
 ];
 const TERMINAL_SEND_STATES=new Set(["accepted","sent","delivered","delayed","clicked","bounced","complained","suppressed"]);
 const EMAIL_RE=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function normalizeProviderMessageId(value){
+  const raw=String(value||"").trim().replace(/^<|>$/g,"").toLowerCase();
+  return raw&&raw.length<=998?raw:null;
+}
 
 export async function drainTransactionalEmails({store,config,limit=50}={}){
   if(!config?.transactionalEmailEnabled)return {enabled:false,processed:0,accepted:0,suppressed:0,failed:0};
@@ -85,6 +89,7 @@ export async function applyResendWebhookEvent(store,verified){
   if(!store?.sql)throw failure(503,"EMAIL_DELIVERY_STORE_UNAVAILABLE");
   const event=verified?.event||{},type=String(event.type||""),data=event.data||{};
   const svixId=String(verified?.svixId||""),emailId=String(data.email_id||data.id||"");
+  const providerMessageId=normalizeProviderMessageId(data.message_id);
   const occurredAt=event.created_at&&Number.isFinite(Date.parse(event.created_at))?new Date(event.created_at).toISOString():new Date().toISOString();
   const rawTo=Array.isArray(data.to)?data.to[0]:data.to;
   const recipient=validEmail(rawTo)?normalizeEmail(rawTo):null;
@@ -104,6 +109,12 @@ export async function applyResendWebhookEvent(store,verified){
       await tx.unsafe(
         "UPDATE transactional_email_deliveries SET state=$2,"+timestampColumn+"=COALESCE("+timestampColumn+",$3::timestamptz),updated_at=now() WHERE provider_email_id=$1",
         [emailId,state,occurredAt]
+      );
+    }
+    if(providerMessageId){
+      await tx.unsafe(
+        "UPDATE transactional_email_deliveries SET provider_message_id=COALESCE(provider_message_id,$2),updated_at=now() WHERE provider_email_id=$1",
+        [emailId,providerMessageId]
       );
     }
     const permanentBounce=type==="email.bounced"&&bounceType==="permanent";

@@ -203,6 +203,9 @@ if(!/NOUVELLES INSCRIPTIONS/.test(customerAdmin)||!/created_since/.test(customer
 if(!/function dossierReference/.test(postgresStore)||!/function dossierLookup/.test(postgresStore)||!/dossier_ref:dossierReference/.test(postgresStore))failures.push("every customer must expose a stable automatic dossier reference without a parallel customer table");
 if(!/metadata->>'first_name'/.test(postgresStore)||!/metadata->>'last_name'/.test(postgresStore)||!/metadata->>'phone'/.test(postgresStore)||!/tenant_number_assignments qa JOIN sva_numbers qn/.test(postgresStore))failures.push("customer directory search must resolve identity, phone and SVA number");
 if(!/Dossier, nom, prénom, société, e-mail, téléphone ou n° SVA/.test(customerAdmin)||!/dossier_ref/.test(customerAdmin))failures.push("customer cockpit must expose universal dossier search and dossier references");
+if(!/provider_message_id/.test(inboundEmailRoutingMigration)||!/CREATE TABLE inbound_email_correlations/.test(inboundEmailRoutingMigration))failures.push("inbound email routing must persist RFC thread identifiers without storing message bodies");
+if(!/resolveInboundCustomerEmail/.test(postgresStore)||!/sender_plus_dossier/.test(postgresStore)||!/dossier_hint/.test(postgresStore))failures.push("inbound email routing must prefer trusted thread or sender identity and treat dossier-only claims as hints");
+if(!/syncHubSpotInboundEmail/.test(backendServer)||!/syncHubSpotCommercialTenant\(store,registered\.tenant_public_id/.test(backendServer))failures.push("verified inbound email and registration must sync HubSpot from the customer source of truth");
 if(!/CREATE TABLE tenant_internal_notes/.test(customerInternalNotesMigration)||!/archived_at timestamptz/.test(customerInternalNotesMigration)||!/Private PGI staff notes/.test(customerInternalNotesMigration))failures.push("Customer internal notes must stay private, persistent and soft-archivable");
 if(!/\/api\/v1\/platform\/tenants\/:id\/internal-notes/.test(backendServer)||!/tenant-internal-notes\/:id\/archive/.test(backendServer)||!/\/platform\/tenants\//.test(customerInternalNotesUi)||!/internal-notes/.test(customerInternalNotesUi))failures.push("Customer internal notes must use dedicated lazy admin APIs");
 if(!/body_logged:false/.test(postgresStore)||!/tenant\.internal_note\.create/.test(postgresStore)||!/tenant\.internal_note\.archive/.test(postgresStore))failures.push("Customer internal notes must be audited without copying note bodies");
@@ -317,6 +320,7 @@ for(const name of ["PGI_GA4_MEASUREMENT_ENABLED","PGI_GA4_MEASUREMENT_ID","PGI_G
 if(!/PGI_GA4_MEASUREMENT_ENABLED/.test(preflight)||!/PGI_GA4_API_SECRET/.test(preflight))failures.push("preflight must fail closed when GA4 server measurement is enabled");
 const ga4Measurement=fs.readFileSync("backend/src/ga4-measurement.mjs","utf8");
 const analyticsDeliveryMigration=fs.readFileSync("database/migrations/062_analytics_event_delivery.sql","utf8");
+const inboundEmailRoutingMigration=fs.readFileSync("database/migrations/063_email_thread_customer_resolution.sql","utf8");
 if(!/region1\.google-analytics\.com\/mp\/collect/.test(ga4Measurement)||!/buildGa4PurchaseFromStripe/.test(ga4Measurement)||!/buildGa4RefundFromStripe/.test(ga4Measurement))failures.push("GA4 server measurement must use the EU Measurement Protocol endpoint for purchase/refund");
 if(!/analytics_event_deliveries/.test(analyticsDeliveryMigration)||!/payload_sha256/.test(analyticsDeliveryMigration))failures.push("GA4 server delivery must remain persistently idempotent");
 

@@ -225,6 +225,7 @@ export async function syncHubSpotCommercialTenant(store,tenantPublicId,commercia
   const rawIntent=String(owner?.service_intent||"").trim().toLowerCase();
   const serviceIntent=["new_number","portability","advice"].includes(rawIntent)?rawIntent:"advice";
   const input={
+    dossier_ref:clean(detail?.tenant?.dossier_ref,40),
     account_type:accountType,
     first_name:firstName,
     last_name:lastName,
@@ -235,6 +236,55 @@ export async function syncHubSpotCommercialTenant(store,tenantPublicId,commercia
     processing_consent:true
   };
   return syncHubSpotCommercialLead(input,{...options,commercialStatus});
+}
+
+
+
+export async function syncHubSpotInboundEmail(store,tenantPublicId,inbound={},options={}){
+  const token=clean(options.token||process.env.PGI_HUBSPOT_PRIVATE_APP_TOKEN||process.env.HUBSPOT_PRIVATE_APP_TOKEN,800);
+  if(!token)return {enabled:false,synced:false,skipped:true,reason:"hubspot_not_configured"};
+  if(!store||typeof store.tenantControlDetail!=="function")return {enabled:true,synced:false,skipped:true,reason:"tenant_lookup_unavailable"};
+  const fetchImpl=options.fetchImpl||globalThis.fetch;
+  const detail=await store.tenantControlDetail(String(tenantPublicId||"").trim());
+  const users=Array.isArray(detail?.users)?detail.users:[];
+  const owner=users.find(x=>x.role==="owner"&&x.membership_status==="active")||users.find(x=>x.role==="owner")||users[0]||null;
+  const ownerEmail=clean(owner?.email,254);
+  if(!ownerEmail)return {enabled:true,synced:false,skipped:true,reason:"tenant_owner_email_unavailable"};
+
+  let contact=await findPrivateContact(ownerEmail,{token,fetchImpl});
+  if(!contact){
+    await syncHubSpotCommercialTenant(store,tenantPublicId,"Dossier en préparation",{token,fetchImpl});
+    contact=await findPrivateContact(ownerEmail,{token,fetchImpl});
+  }
+  if(!contact)return {enabled:true,synced:false,skipped:true,reason:"hubspot_contact_unavailable"};
+
+  const dossierRef=clean(detail?.tenant?.dossier_ref,40);
+  const sender=clean(inbound.sender_email,320)||"Expéditeur non normalisé";
+  const subject=clean(inbound.subject,300)||"Sans objet";
+  const body=clean(inbound.text,4000);
+  const routing=options.routing||{};
+  const attachmentNames=(Array.isArray(inbound.attachments)?inbound.attachments:[]).map(x=>clean(x,180)).filter(Boolean).slice(0,20);
+  const noteBody=[
+    "<strong>Email entrant rattaché automatiquement au dossier PGI</strong>",
+    dossierRef?"<br><br><strong>Référence dossier :</strong> "+escapeHubSpotHtml(dossierRef):"",
+    "<br><strong>Expéditeur :</strong> "+escapeHubSpotHtml(sender),
+    "<br><strong>Objet :</strong> "+escapeHubSpotHtml(subject),
+    "<br><strong>Méthode de rattachement :</strong> "+escapeHubSpotHtml(clean(routing.resolution_method,80)||"dossier vérifié"),
+    attachmentNames.length?"<br><strong>Pièces jointes signalées :</strong> "+escapeHubSpotHtml(attachmentNames.join(", ")):"",
+    body?"<br><br><strong>Contenu reçu :</strong><br>"+escapeHubSpotHtml(body).replace(/\n/g,"<br>"):""
+  ].join("");
+
+  const associations=[{to:{id:String(contact.id)},types:[{associationCategory:"HUBSPOT_DEFINED",associationTypeId:await noteContactAssociationType({token,fetchImpl})}]}];
+  const dealId=await preferredContactDealId(contact.id,{token,fetchImpl});
+  if(dealId){
+    const dealAssociationTypeId=await noteDealAssociationType({token,fetchImpl});
+    if(dealAssociationTypeId)associations.push({to:{id:String(dealId)},types:[{associationCategory:"HUBSPOT_DEFINED",associationTypeId:dealAssociationTypeId}]});
+  }
+  const note=await hubSpotPrivateRequest("/crm/v3/objects/notes",{
+    token,fetchImpl,method:"POST",
+    body:{properties:{hs_timestamp:new Date().toISOString(),hs_note_body:noteBody,hubspot_owner_id:HUBSPOT_OWNER_ID},associations}
+  });
+  return {enabled:true,synced:true,contactId:String(contact.id),dealId:dealId?String(dealId):null,noteId:note?.id?String(note.id):null,dossierRef};
 }
 
 async function findPrivateContact(contactEmail,{token,fetchImpl}){
@@ -269,6 +319,7 @@ async function ensureCommercialDeal(contact,input,{token,fetchImpl,status}){
     const current=openDeal.properties||{};
     const changes={};
     if(current.dealstage!==targetStage)changes.dealstage=targetStage;
+    if(dossierRef&&String(current.dealname||"").indexOf(dossierRef)<0)changes.dealname=dealName;
     if(!current.hubspot_owner_id)changes.hubspot_owner_id=HUBSPOT_OWNER_ID;
     if(!current.deal_currency_code)changes.deal_currency_code="EUR";
     if(Object.keys(changes).length){
@@ -282,10 +333,12 @@ async function ensureCommercialDeal(contact,input,{token,fetchImpl,status}){
   const associationTypeId=await defaultDealContactAssociationType({token,fetchImpl});
   const label=INTENT_LABELS[intentKey]||INTENT_LABELS.advice;
   const name=clean(input.company_name,120)||[clean(input.first_name,60),clean(input.last_name,60)].filter(Boolean).join(" ")||"Prospect Audiotel";
+  const dossierRef=/^APP-\d{4}-[0-9A-Z]{5,18}$/i.test(clean(input.dossier_ref,40))?clean(input.dossier_ref,40).toUpperCase():"";
+  const dealName=clean([name,dossierRef,label.label].filter(Boolean).join(" — "),200);
   const created=await hubSpotPrivateRequest("/crm/v3/objects/deals",{
     token,fetchImpl,method:"POST",body:{
       properties:{
-        dealname:clean(name+" — "+label.label,200),
+        dealname:dealName,
         pipeline:HUBSPOT_PIPELINE_ID,
         dealstage:targetStage,
         hubspot_owner_id:HUBSPOT_OWNER_ID,
@@ -303,6 +356,28 @@ async function noteContactAssociationType({token,fetchImpl}){
   const id=Number(match?.typeId);
   if(!Number.isInteger(id)||id<=0)throw problem("HUBSPOT_NOTE_CONTACT_ASSOCIATION_UNAVAILABLE");
   return id;
+}
+
+
+async function preferredContactDealId(contactId,{token,fetchImpl}){
+  const detail=await hubSpotPrivateRequest("/crm/v3/objects/contacts/"+encodeURIComponent(contactId)+"?associations=deals&properties=email",{token,fetchImpl,method:"GET"});
+  const ids=(detail?.associations?.deals?.results||[]).map(x=>String(x.id)).slice(0,20);
+  let fallback=ids[0]||null;
+  for(const id of ids){
+    try{
+      const deal=await hubSpotPrivateRequest("/crm/v3/objects/deals/"+encodeURIComponent(id)+"?properties=pipeline,dealstage",{token,fetchImpl,method:"GET"});
+      if(deal?.properties?.pipeline===HUBSPOT_PIPELINE_ID&&!["closedwon","closedlost"].includes(deal?.properties?.dealstage))return id;
+    }catch(_error){}
+  }
+  return fallback;
+}
+async function noteDealAssociationType({token,fetchImpl}){
+  try{
+    const labels=await hubSpotPrivateRequest("/crm/v4/associations/notes/deals/labels",{token,fetchImpl,method:"GET"});
+    const match=(labels?.results||[]).find(x=>x.category==="HUBSPOT_DEFINED"&&(x.label==null||x.label===""));
+    const id=Number(match?.typeId);
+    return Number.isInteger(id)&&id>0?id:null;
+  }catch(_error){return null;}
 }
 
 function supportPageContext(pathname){

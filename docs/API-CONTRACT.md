@@ -471,3 +471,10 @@ Après activation, le client peut modifier son mot de passe dans les réglages d
 La connexion client accepte le booléen `remember_me`. Lorsqu’il vaut `true`, la session client est signée pour 30 jours par défaut (`PGI_CUSTOMER_REMEMBER_TTL_SECONDS=2592000`, borne maximale 90 jours). Sans cette option, la durée normale `PGI_SESSION_TTL_SECONDS` reste utilisée.
 
 Les cookies restent `__Host-`, `Secure`, `SameSite=Strict`; le cookie de session reste `HttpOnly`. Le choix ne stocke jamais le mot de passe dans le navigateur. Une déconnexion, un changement de mot de passe ou une réinitialisation invalide l’accès selon les règles de session existantes.
+
+
+## Rattachement automatique des emails entrants
+
+Les emails reçus sont corrélés au dossier client sans utiliser la référence `APP-...` comme moyen d'authentification. L'ordre de confiance est : réponse à un email transactionnel déjà émis (Message-ID / In-Reply-To / References), puis adresse email exacte déjà rattachée au tenant, puis combinaison adresse + référence dossier. Une référence dossier citée seule par une adresse inconnue reste un indice non vérifié et ne déclenche pas de rattachement client fiable.
+
+Le système ne conserve pas le corps du message dans la table de corrélation. Il stocke uniquement les identifiants techniques nécessaires au fil de discussion, un hash de l'expéditeur, la méthode de résolution et, lorsqu'il est vérifié, le tenant correspondant. Les emails vérifiés sont ensuite journalisés dans HubSpot sur le contact et, lorsqu'il existe, sur la transaction associée.

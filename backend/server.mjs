@@ -19,7 +19,7 @@ import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStrip
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
-import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage} from "./src/hubspot-crm.mjs";
+import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail} from "./src/hubspot-crm.mjs";
 import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
 
 export async function createDefaultBackend(){
@@ -138,12 +138,21 @@ export function createBackend(options={}){
         if(!config.transactionalEmailEnabled||!config.resendWebhookSecret)return done(res,metrics,started,"email.resend_webhook",404,{error:{code:"RESEND_WEBHOOK_DISABLED"}});
         const verified=await verifyResendWebhook(req,config);
         const result=await applyResendWebhookEvent(store,verified);
-        let inbound=null;
+        let inbound=null,crmSync=null;
         if(String(verified.event?.type||"")==="email.received"&&!result.duplicate){
-          try{inbound=await forwardInboundEmailToInternal(config,verified.event?.data||{});}
-          catch(error){logSecurityEmailFailure("inbound_forward",error);throw error;}
+          try{
+            inbound=await forwardInboundEmailToInternal(config,verified.event?.data||{}, {
+              resolveCustomer:typeof store.resolveInboundCustomerEmail==="function"?context=>store.resolveInboundCustomerEmail(context):null
+            });
+          }catch(error){logSecurityEmailFailure("inbound_forward",error);throw error;}
+          if(inbound?.routing_error)logSecurityEmailFailure("inbound_routing",inbound.routing_error);
+          const routing=inbound?.customer_routing,context=inbound?.routing_context;
+          if(routing?.resolved&&routing.tenant_public_id&&context){
+            try{crmSync=await syncHubSpotInboundEmail(store,routing.tenant_public_id,context,{routing});}
+            catch(error){logHubSpotSyncFailure("inbound_email",error);}
+          }
         }
-        return done(res,metrics,started,"email.resend_webhook",200,{received:true,duplicate:Boolean(result.duplicate),event_type:result.event_type||verified.event.type,inbound});
+        return done(res,metrics,started,"email.resend_webhook",200,{received:true,duplicate:Boolean(result.duplicate),event_type:result.event_type||verified.event.type,inbound,crm_sync:Boolean(crmSync?.synced)});
       }
       if(method==="GET"&&pathname==="/api/v1/internal/email/dispatch"){
         authorizeEmailCron(req,config);
@@ -279,7 +288,7 @@ export function createBackend(options={}){
           const crmInput={...body,processing_consent:body.privacy_notice_acknowledged===true};
           try{await submitHubSpotLead(crmInput,{pageUri,pageName:"Création de compte Audiotel Premium Pro",hutk,attempts:1,timeoutMs:2200});}
           catch(error){logHubSpotSyncFailure("customer_registration_form",error);}
-          try{await syncHubSpotCommercialLead(crmInput,{pageUri,pageName:"Création de compte Audiotel Premium Pro",hutk,commercialStatus:"Dossier en préparation"});}
+          try{await syncHubSpotCommercialTenant(store,registered.tenant_public_id,"Dossier en préparation",{pageUri,pageName:"Création de compte Audiotel Premium Pro",hutk});}
           catch(error){logHubSpotSyncFailure("customer_registration_commercial",error);}
         }
         const publicUser={id:registered.id,name:registered.display_name,email:registered.email,role:registered.customer_role,tenant:{id:registered.tenant_public_id,name:registered.tenant_name,status:registered.tenant_status,dossier_ref:registered.dossier_ref}};
