@@ -8,6 +8,7 @@ const server=fs.readFileSync("backend/server.mjs","utf8");
 const clientApi=fs.readFileSync("assets/client-portal-api.js","utf8");
 const adminApi=fs.readFileSync("assets/api-client.js","utf8");
 const clientUi=fs.readFileSync("assets/client-live-finance.js","utf8");
+const clientScheduleLoader=fs.readFileSync("assets/business-live-schedule-client.js","utf8");
 const adminUi=fs.readFileSync("assets/live-finance.js","utf8");
 const scheduleUi=fs.readFileSync("assets/business-live-schedule.js","utf8");
 const buildStatic=fs.readFileSync("scripts/build-static.mjs","utf8");
@@ -26,7 +27,8 @@ test("Business Live scheduled resets are persistent tenant-safe display baseline
 });
 
 test("client and cockpit expose free day week month recurrence with date time and timezone",()=>{
-  assert.match(clientUi,/business-live-schedule\.js/);
+  assert.match(clientScheduleLoader,/business-live-schedule\.js/);
+  assert.match(clientScheduleLoader,/can_manage/);
   assert.match(adminUi,/business-live-schedule\.js/);
   for(const token of ["data-bl-value","data-bl-unit","data-bl-date","data-bl-time","data-bl-timezone"])assert.match(scheduleUi,new RegExp(token));
   assert.match(scheduleUi,/120 jours/);
@@ -35,6 +37,7 @@ test("client and cockpit expose free day week month recurrence with date time an
   assert.match(clientApi,/saveJackpotSchedule/);
   assert.match(adminApi,/liveFinanceSchedule/);
   assert.match(adminApi,/saveLiveFinanceSchedule/);
+  assert.match(buildStatic,/business-live-schedule-client\.js/);
   assert.match(buildStatic,/business-live-schedule\.js/);
   assert.match(buildStatic,/business-live-schedule\.css/);
 });
