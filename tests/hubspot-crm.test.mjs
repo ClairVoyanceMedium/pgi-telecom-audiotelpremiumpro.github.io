@@ -83,6 +83,9 @@ test("public opening form and secure registration are wired to the same CRM capt
   assert.match(home,/href="\/demande-ouverture\/"/);
   assert.doesNotMatch(home,/id="order-processing-consent"/);
   assert.match(order,/id="order-processing-consent"/);
+  assert.match(order,/id="order-marketing-consent"/);
+  assert.match(site,/marketing_consent/);
+  assert.match(order,/Je peux me désinscrire à tout moment/);
   assert.match(order,/CRM HubSpot/);
   assert.match(server,/pathname==="\/api\/v1\/public\/hubspot\/lead"/);
   assert.match(server,/submitHubSpotLead\(\.\.\.body|submitHubSpotLead\(body/);
@@ -222,4 +225,40 @@ test("support contact sync deduplicates by email and creates a HubSpot ticket wi
 
   assert.equal(requests.some(x=>x.url.includes("/objects/deals")),false);
   assert.equal(requests.some(x=>x.url.includes("/objects/notes")),false);
+});
+
+test("explicit marketing opt-in subscribes Marketing Information and records consent evidence",async()=>{
+  const requests=[];
+  const response=(status,payload)=>({ok:status>=200&&status<300,status,text:async()=>JSON.stringify(payload||{})});
+  const fetchImpl=async(url,options={})=>{
+    const body=options.body?JSON.parse(options.body):null;
+    requests.push({url,method:options.method||"GET",body});
+    if(url.endsWith("/crm/v3/objects/contacts/search"))return response(200,{results:[{id:"502",properties:{email:"visiteur@example.test"}}]});
+    if(url.endsWith("/crm/v4/associations/tickets/contacts/labels"))return response(200,{results:[{category:"HUBSPOT_DEFINED",typeId:16,label:null}]});
+    if(url.endsWith("/crm/v3/objects/tickets")&&options.method==="POST")return response(201,{id:"702",properties:body.properties});
+    if(url.includes("/communication-preferences/v4/statuses/")&&options.method==="POST")return response(200,{});
+    if(url.endsWith("/crm/v4/associations/notes/contacts/labels"))return response(200,{results:[{category:"HUBSPOT_DEFINED",typeId:202,label:null}]});
+    if(url.endsWith("/crm/v3/objects/notes")&&options.method==="POST")return response(201,{id:"602",properties:body.properties});
+    throw new Error("Unexpected HubSpot request "+url+" "+options.method);
+  };
+  const result=await syncHubSpotSupportMessage({
+    email:"visiteur@example.test",
+    message:"Je souhaite des informations.",
+    pagePath:"/",
+    pageTitle:"Accueil",
+    marketing_consent:true,
+    marketing_consent_version:"2026-10-01-v1",
+    source:"floating_email_widget"
+  },{token:"pat-test-"+"m".repeat(40),fetchImpl});
+  assert.equal(result.marketingConsentRequested,true);
+  assert.equal(result.marketingSubscriptionSynced,true);
+  assert.equal(result.marketingConsentRecorded,true);
+  const pref=requests.find(x=>x.url.includes("/communication-preferences/v4/statuses/"));
+  assert.equal(pref.body.subscriptionId,3728444113);
+  assert.equal(pref.body.statusState,"SUBSCRIBED");
+  assert.equal(pref.body.legalBasis,"CONSENT_WITH_NOTICE");
+  assert.equal(pref.body.channel,"EMAIL");
+  const note=requests.find(x=>x.url.endsWith("/objects/notes")&&x.method==="POST");
+  assert.match(note.body.properties.hs_note_body,/Consentement marketing e-mail explicite/);
+  assert.match(note.body.properties.hs_note_body,/2026-10-01-v1/);
 });

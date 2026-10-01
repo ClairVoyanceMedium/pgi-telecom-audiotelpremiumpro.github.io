@@ -47,9 +47,19 @@ const clientPremiumPlus=read("assets/client-premium-plus.js");
 const passkeyClient=read("assets/passkey-client.js");
 const css=read("assets/styles.css");
 const siteCss=read("site/site.css");
+const contactWidget=read("site/contact-widget.js");
+const publicOrder=read("site/seo/demande-ouverture.html");
 const sw=read("service-worker.js");
 const manifest=read("manifest.webmanifest");
 const buildStatic=read("scripts/build-static.mjs");
+
+test("public contact and opening forms keep marketing consent optional explicit and versioned",()=>{
+  assert.match(contactWidget,/name="marketing_consent" type="checkbox"/);
+  assert.match(contactWidget,/marketing_consent_version:"2026-10-01-v1"/);
+  assert.match(contactWidget,/Je peux me désinscrire à tout moment/);
+  assert.match(publicOrder,/id="order-marketing-consent"/);
+  assert.doesNotMatch(publicOrder,/id="order-marketing-consent"[^>]*required/);
+});
 
 test("la marque client reste Audiotel Premium Pro et la plateforme reste multisectorielle",()=>{
   assert.match(clientPortal,/PGI Telecom/);
@@ -395,8 +405,10 @@ test("le dossier client 1.22 centralise les opérations sans alourdir le shell",
 test("le centre de service premium garde un dossier unique et un routage simulable",()=>{
   for(const id of ["client-service-center","service-incident-open","service-alert-list","service-incident-list","routing-simulate","routing-simulation-result"])assert.ok(clientPortal.includes('id="'+id+'"'),id);
   assert.match(clientPortalJs,/client-service-center\.js/);
-  assert.match(clientServiceCenter,/CENTRE DE SERVICE/);
-  assert.match(clientServiceCenter,/Dossier créé/);
+  assert.match(clientServiceCenter,/CONTACT & SUPPORT/);
+  assert.match(clientServiceCenter,/Question générale \/ Contact/);
+  assert.match(clientPortal,/href="#client-service-center">Contact \/ Support<\/a>/);
+  assert.match(clientPortal,/Contacter Audiotel Premium Pro/);
   assert.match(clientServiceCenter,/Tester mon routage|Routage disponible|Aucun routage disponible/);
   assert.match(clientPortalApi,/createIncident:function/);
   assert.match(clientPortalApi,/addIncidentNote:function/);

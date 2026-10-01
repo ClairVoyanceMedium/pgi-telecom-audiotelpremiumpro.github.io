@@ -112,6 +112,9 @@ const scaleHpa=fs.readFileSync("infra/scale/api-hpa.example.yaml","utf8");
 const postgresStore=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
 const backendServer=fs.readFileSync("backend/server.mjs","utf8");
 const hubspotCrm=fs.readFileSync("backend/src/hubspot-crm.mjs","utf8");
+const publicContactWidget=fs.readFileSync("site/contact-widget.js","utf8");
+const publicOrderPage=fs.readFileSync("site/seo/demande-ouverture.html","utf8");
+const publicSiteScript=fs.readFileSync("site/site.js","utf8");
 const emailDispatcher=fs.readFileSync("backend/src/email-dispatcher.mjs","utf8");
 const stripeBillingSource=fs.readFileSync("backend/src/stripe-billing.mjs","utf8");
 const wholesaleDoc=fs.readFileSync("docs/WHOLESALE-SVA.md","utf8");
@@ -359,7 +362,7 @@ if(!/scanTenantServiceIncidents/.test(postgresStore)||!/scanTenantServiceInciden
 if(!/listServiceIncidents/.test(postgresStore)||!/platform\/service-incidents/.test(backendServer)||!/serviceIncidentOutbox/.test(postgresStore))failures.push("service operations must retain a central queue and durable event outbox");
 if(!/routing_unavailable/.test(postgresStore)||!/portability_attention/.test(postgresStore))failures.push("service operations must retain proactive routing and portability attention detection");
 if(!/simulateTenantRoutingById/.test(postgresStore)||!/dry_run:true/.test(postgresStore)||!/routing\/simulate/.test(backendServer))failures.push("routing preview must remain a dry-run before real activation");
-if(!/CENTRE DE SERVICE/.test(clientServiceCenter)||!/Dossier créé/.test(clientServiceCenter)||!/Centre de service & incidents/.test(tenantServiceAdmin))failures.push("customer and admin service-center interfaces must remain available");
+if(!/CONTACT & SUPPORT/.test(clientServiceCenter)||!/Question générale \/ Contact/.test(clientServiceCenter)||!/Contact & support client/.test(tenantServiceAdmin)||!clientPortalHtml.includes('href="#client-service-center">Contact / Support</a>'))failures.push("customer and admin contact-support interfaces must remain visible and bidirectional");
 if(!/platform_regions/.test(multiRegionMigration)||!/tenant_residency_policies/.test(multiRegionMigration)||!/disaster_recovery_targets/.test(multiRegionMigration)||!/region_failover_events/.test(multiRegionMigration))failures.push("multi-region DR foundation must retain region, residency and failover controls");
 if(!/traceparent/.test(backendServer)||!/pgi_http_request_duration_ms_bucket/.test(backendServer)||!/pgi_work_queue_dead_lettered/.test(backendServer))failures.push("backend must retain trace correlation, latency histograms and queue metrics");
 if(!/PGIApiFastErrorBudgetBurn/.test(prometheusAlerts)||!/PGIWorkQueueDeadLetter/.test(prometheusAlerts))failures.push("Prometheus SLO rules must retain burn-rate and dead-letter alerts");
@@ -439,3 +442,5 @@ if(failures.length){
 console.log("Production contract: OK");
 
 if(!/ticketContactAssociationType/.test(hubspotCrm)||!/crm\/v3\/objects\/tickets/.test(hubspotCrm)||!/hs_pipeline_stage:"1"/.test(hubspotCrm)||!/source_type:"FORM"/.test(hubspotCrm))failures.push("public contact bubble must create a support ticket, not a commercial dossier");
+if(!/HUBSPOT_MARKETING_SUBSCRIPTION_ID=3728444113/.test(hubspotCrm)||!/communication-preferences\/v4\/statuses/.test(hubspotCrm)||!/CONSENT_WITH_NOTICE/.test(hubspotCrm)||!/Consentement marketing e-mail explicite/.test(hubspotCrm))failures.push("explicit marketing consent must be synced to HubSpot preferences and retain auditable CRM evidence");
+if(!/name="marketing_consent" type="checkbox"/.test(publicContactWidget)||!/marketing_consent_version:"2026-10-01-v1"/.test(publicContactWidget)||!/id="order-marketing-consent"/.test(publicOrderPage)||!/marketing_consent/.test(publicSiteScript))failures.push("public marketing consent must remain optional, explicit and versioned");

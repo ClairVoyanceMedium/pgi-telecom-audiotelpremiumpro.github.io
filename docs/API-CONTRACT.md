@@ -489,3 +489,16 @@ Le système ne crée aucune table client parallèle et ne nécessite aucune migr
 - Si l'adresse est inconnue, un contact minimal est créé uniquement avec l'email et le propriétaire HubSpot afin de permettre le suivi et la réponse.
 - Ce flux ne crée aucun deal, aucun dossier client `APP-...`, aucun statut commercial et n'inscrit pas automatiquement le visiteur dans le pipeline prospects.
 - Le ticket contient le message, la page d'origine et sa catégorie fonctionnelle.
+
+
+## Consentement marketing public
+
+Les formulaires publics de contact et de demande d’ouverture proposent une case marketing facultative, non précochée et indépendante du traitement de la demande. La version de preuve actuelle est `2026-10-01-v1`.
+
+Lorsqu’elle est cochée, le backend tente d’inscrire l’adresse e-mail au type d’abonnement HubSpot `Marketing Information` (`3728444113`) via Communication Preferences v4 avec la base `CONSENT_WITH_NOTICE`. Une note HubSpot horodatée conserve aussi le texte accepté, la source et la version afin de garder une preuve exploitable. Une défaillance de synchronisation marketing ne doit jamais empêcher l’envoi d’un ticket ou la création d’une demande commerciale.
+
+Une case non cochée signifie uniquement qu’aucun nouveau consentement marketing n’est donné. Elle ne désabonne pas automatiquement une personne qui aurait déjà consenti ; la désinscription reste gérée par les mécanismes de préférences/désabonnement.
+
+## Contact et support client authentifié
+
+L’espace client expose un onglet `Contact / Support` qui s’appuie sur le centre de service tenant-scopé existant. Le client peut ouvrir une question générale ou un incident, suivre son statut et ajouter des messages. Le cockpit administrateur peut consulter l’historique, prendre en charge la demande, changer son statut et envoyer des réponses visibles dans l’espace client. Ce flux ne crée pas un second dossier commercial ni un nouveau client.
