@@ -502,3 +502,18 @@ Une case non cochée signifie uniquement qu’aucun nouveau consentement marketi
 ## Contact et support client authentifié
 
 L’espace client expose un onglet `Contact / Support` qui s’appuie sur le centre de service tenant-scopé existant. Le client peut ouvrir une question générale ou un incident, suivre son statut et ajouter des messages. Le cockpit administrateur peut consulter l’historique, prendre en charge la demande, changer son statut et envoyer des réponses visibles dans l’espace client. Ce flux ne crée pas un second dossier commercial ni un nouveau client.
+
+
+## Support omnicanal unifié
+
+Les demandes authentifiées de l’espace client utilisent l’identifiant public du ticket interne dans l’objet e-mail sous la forme `[Ticket <uuid>]`. La création du ticket et chaque nouveau message client déclenchent une notification vers la boîte interne avec `Reply-To` positionné sur l’adresse du client. La création et les messages sont également synchronisés vers un ticket HubSpot de support dédupliqué par contact et sujet.
+
+Les réponses visibles envoyées depuis le cockpit administrateur sont envoyées au client par e-mail et ajoutées au même ticket HubSpot. Pour les réponses opérées depuis Gmail par l’automatisation, une copie BCC vers `support-journal@audiotel-premium-pro.com` permet au webhook Resend de journaliser la réponse comme note staff dans le ticket interne sans la retransférer vers Gmail.
+
+Une réponse client à un objet contenant `[Ticket <uuid>]` est reconnue par le webhook Resend, vérifiée par le mécanisme de résolution d’identité existant, enregistrée dans l’historique du ticket interne et synchronisée vers le ticket HubSpot correspondant. Les identifiants de messages déjà traités sont conservés dans `tenant_service_incidents.metadata` afin d’éviter les doublons sans nouvelle migration Neon.
+
+Les transferts Resend vers la boîte interne utilisent l’expéditeur d’origine en `Reply-To`, conservent les informations de fil `In-Reply-To` / `References` lorsqu’elles existent et transfèrent jusqu’à dix pièces jointes via les URLs temporaires fournies par l’API Receiving.
+
+Les demandes de support ne créent jamais automatiquement un deal commercial. Un dossier APP existant peut être affiché comme contexte, mais le support reste porté par un ticket.
+
+Les objectifs de première réponse et de résolution des tickets internes sont calculés en minutes ouvrées Europe/Paris, du lundi au vendredi de 08:30 à 19:00. Les niveaux exposés au client sont formulés en termes d’impact plutôt qu’en priorité technique brute.
