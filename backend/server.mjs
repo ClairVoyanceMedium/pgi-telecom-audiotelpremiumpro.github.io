@@ -180,11 +180,16 @@ export function createBackend(options={}){
         const eventId="public-contact/"+randomUUID();
         const [mailResult,crmResult]=await Promise.allSettled([
           sendPublicContactMessage(config,{email,message,pagePath,pageTitle,eventId}),
-          syncHubSpotSupportMessage({email,message,pagePath,pageTitle})
+          syncHubSpotSupportMessage({
+            email,message,pagePath,pageTitle,
+            marketing_consent:body.marketing_consent===true,
+            marketing_consent_version:String(body.marketing_consent_version||"").trim().slice(0,80),
+            source:"floating_email_widget"
+          })
         ]);
         if(crmResult.status==="rejected")logHubSpotSyncFailure("public_contact",crmResult.reason);
         if(mailResult.status==="rejected")throw mailResult.reason;
-        return done(res,metrics,started,"public.contact",202,{accepted:true,crm_sync:crmResult.status==="fulfilled"&&Boolean(crmResult.value?.synced),ticket_created:crmResult.status==="fulfilled"&&Boolean(crmResult.value?.ticketId)});
+        return done(res,metrics,started,"public.contact",202,{accepted:true,crm_sync:crmResult.status==="fulfilled"&&Boolean(crmResult.value?.synced),ticket_created:crmResult.status==="fulfilled"&&Boolean(crmResult.value?.ticketId),marketing_consent_recorded:crmResult.status==="fulfilled"&&Boolean(crmResult.value?.marketingConsentRecorded),marketing_subscription_synced:crmResult.status==="fulfilled"&&Boolean(crmResult.value?.marketingSubscriptionSynced)});
       }
 
       if(method==="POST"&&pathname==="/api/v1/public/hubspot/lead"){

@@ -17,10 +17,11 @@ root.innerHTML=`
   <form class="contact-widget-form" novalidate>
     <label>Votre adresse email<input name="email" type="email" autocomplete="email" inputmode="email" maxlength="320" required placeholder="vous@exemple.fr"></label>
     <label>Votre message<textarea name="message" rows="5" maxlength="4000" required placeholder="Comment pouvons-nous vous aider ?"></textarea></label>
+    <label class="contact-widget-marketing"><input name="marketing_consent" type="checkbox" value="yes"><span>J’accepte de recevoir par e-mail les actualités, offres et informations commerciales d’Audiotel Premium Pro. Je peux me désinscrire à tout moment.</span></label>
     <label class="contact-widget-honeypot" aria-hidden="true">Site web<input name="website" type="text" tabindex="-1" autocomplete="off"></label>
     <button class="contact-widget-submit" type="submit">Envoyer mon message</button>
     <p class="contact-widget-status" role="status" aria-live="polite"></p>
-    <p class="contact-widget-privacy">Vos informations sont utilisées uniquement pour traiter votre demande. <a href="/confidentialite/">Confidentialité</a></p>
+    <p class="contact-widget-privacy">Vos informations servent à traiter votre demande. Les communications commerciales ne sont envoyées que si vous cochez volontairement la case ci-dessus. <a href="/confidentialite/">Confidentialité</a></p>
   </form>
 </section>`;
 document.body.appendChild(root);
@@ -135,7 +136,9 @@ form.addEventListener("submit",async e=>{
     message:String(message.value||"").trim(),
     website:String(form.elements.website?.value||"").trim(),
     page_path:location.pathname+location.search,
-    page_title:document.title
+    page_title:document.title,
+    marketing_consent:Boolean(form.elements.marketing_consent?.checked),
+    marketing_consent_version:"2026-10-01-v1"
   };
   if(payload.message.length<2){track("contact_message_error",{error_type:"validation"});status.textContent="Merci de préciser votre message.";status.classList.add("bad");message.focus();return}
   track("contact_message_submit");

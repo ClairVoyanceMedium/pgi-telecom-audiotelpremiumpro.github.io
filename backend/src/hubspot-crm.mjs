@@ -4,6 +4,9 @@ const HUBSPOT_OWNER_ID="99851906";
 const HUBSPOT_FORM_ENDPOINT="https://api.hsforms.com/submissions/v3/integration/submit/"+HUBSPOT_PORTAL_ID+"/"+HUBSPOT_FORM_ID;
 const HUBSPOT_API_BASE="https://api.hubapi.com";
 const HUBSPOT_PIPELINE_ID="default";
+const HUBSPOT_MARKETING_SUBSCRIPTION_ID=3728444113;
+const MARKETING_CONSENT_VERSION="2026-10-01-v1";
+const MARKETING_CONSENT_TEXT="J’accepte de recevoir par e-mail les actualités, offres et informations commerciales d’Audiotel Premium Pro. Je peux me désinscrire à tout moment.";
 const HUBSPOT_STAGE_BY_STATUS=Object.freeze({
   "Nouveau prospect":"appointmentscheduled",
   "Qualification":"qualifiedtobuy",
@@ -159,7 +162,8 @@ export async function syncHubSpotCommercialLead(input={},options={}){
     }
   }
   const deal=await ensureCommercialDeal(contact,input,{token,fetchImpl,status:effectiveStatus});
-  return {enabled:true,synced:true,contactId:String(contact.id),dealId:deal?.id?String(deal.id):null,dealCreated:Boolean(deal?.created)};
+  const marketing=await applyHubSpotMarketingConsent(contact,input,{token,fetchImpl,source:clean(input.source,80)||"public_opening_form"});
+  return {enabled:true,synced:true,contactId:String(contact.id),dealId:deal?.id?String(deal.id):null,dealCreated:Boolean(deal?.created),...marketing};
 }
 
 
@@ -220,7 +224,8 @@ export async function syncHubSpotSupportMessage(input={},options={}){
       associations:[{to:{id:String(contact.id)},types:[{associationCategory:"HUBSPOT_DEFINED",associationTypeId}]}]
     }
   });
-  return {enabled:true,synced:true,contactId:String(contact.id),ticketId:ticket?.id?String(ticket.id):null,contactCreated};
+  const marketing=await applyHubSpotMarketingConsent(contact,input,{token,fetchImpl,source:clean(input.source,80)||"floating_email_widget"});
+  return {enabled:true,synced:true,contactId:String(contact.id),ticketId:ticket?.id?String(ticket.id):null,contactCreated,...marketing};
 }
 
 
@@ -295,6 +300,42 @@ export async function syncHubSpotInboundEmail(store,tenantPublicId,inbound={},op
     body:{properties:{hs_timestamp:new Date().toISOString(),hs_note_body:noteBody,hubspot_owner_id:HUBSPOT_OWNER_ID},associations}
   });
   return {enabled:true,synced:true,contactId:String(contact.id),dealId:dealId?String(dealId):null,noteId:note?.id?String(note.id):null,dossierRef};
+}
+
+async function applyHubSpotMarketingConsent(contact,input={},options={}){
+  if(input.marketing_consent!==true)return {marketingConsentRequested:false,marketingSubscriptionSynced:false,marketingConsentRecorded:false};
+  const token=options.token,fetchImpl=options.fetchImpl||globalThis.fetch;
+  const contactEmail=email(input.email);
+  const consentAt=new Date().toISOString();
+  const version=clean(input.marketing_consent_version,80)||MARKETING_CONSENT_VERSION;
+  const source=clean(options.source||input.source,80)||"unknown";
+  const explanation="Consentement explicite recueilli sur Audiotel Premium Pro ; source="+source+" ; version="+version+" ; date="+consentAt+".";
+  let marketingSubscriptionSynced=false,marketingConsentRecorded=false,marketingSubscriptionError=null;
+  try{
+    await hubSpotPrivateRequest("/communication-preferences/v4/statuses/"+encodeURIComponent(contactEmail),{
+      token,fetchImpl,method:"POST",
+      body:{subscriptionId:HUBSPOT_MARKETING_SUBSCRIPTION_ID,statusState:"SUBSCRIBED",legalBasis:"CONSENT_WITH_NOTICE",legalBasisExplanation:explanation,channel:"EMAIL"}
+    });
+    marketingSubscriptionSynced=true;
+  }catch(error){marketingSubscriptionError=clean(error?.code||"HUBSPOT_MARKETING_SUBSCRIPTION_FAILED",120);}
+  try{
+    const associationTypeId=await noteContactAssociationType({token,fetchImpl});
+    const noteBody=[
+      "<strong>Consentement marketing e-mail explicite</strong>",
+      "<br><br><strong>Texte accepté :</strong> "+escapeHubSpotHtml(MARKETING_CONSENT_TEXT),
+      "<br><strong>Version :</strong> "+escapeHubSpotHtml(version),
+      "<br><strong>Source :</strong> "+escapeHubSpotHtml(source),
+      "<br><strong>Date UTC :</strong> "+escapeHubSpotHtml(consentAt),
+      "<br><strong>Type d’abonnement HubSpot :</strong> Marketing Information ("+HUBSPOT_MARKETING_SUBSCRIPTION_ID+")",
+      "<br><strong>Synchronisation préférences HubSpot :</strong> "+(marketingSubscriptionSynced?"réussie":"non confirmée")
+    ].join("");
+    await hubSpotPrivateRequest("/crm/v3/objects/notes",{
+      token,fetchImpl,method:"POST",
+      body:{properties:{hs_timestamp:consentAt,hs_note_body:noteBody,hubspot_owner_id:HUBSPOT_OWNER_ID},associations:[{to:{id:String(contact.id)},types:[{associationCategory:"HUBSPOT_DEFINED",associationTypeId}]}]}
+    });
+    marketingConsentRecorded=true;
+  }catch(_error){}
+  return {marketingConsentRequested:true,marketingSubscriptionSynced,marketingConsentRecorded,marketingConsentVersion:version,marketingConsentAt:consentAt,marketingSubscriptionError};
 }
 
 async function findPrivateContact(contactEmail,{token,fetchImpl}){

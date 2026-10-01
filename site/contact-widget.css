@@ -22,6 +22,9 @@
 .contact-widget-form textarea{min-height:118px;padding:11px 12px;resize:vertical}
 .contact-widget-form input::placeholder,.contact-widget-form textarea::placeholder{color:#9a897b}
 .contact-widget-form input:focus,.contact-widget-form textarea:focus{border-color:#c8923f;box-shadow:0 0 0 3px rgba(210,160,78,.16)}
+.contact-widget-form .contact-widget-marketing{display:grid;grid-template-columns:18px 1fr;align-items:start;gap:9px;padding:11px 12px;border:1px solid rgba(99,72,49,.18);border-radius:12px;background:#fffaf2;font-size:9.8px;font-weight:650;line-height:1.45;color:#5b4536;cursor:pointer}
+.contact-widget-form .contact-widget-marketing input{width:16px;height:16px;min-height:16px;margin:1px 0 0;padding:0;border-radius:4px;accent-color:#b87925;box-shadow:none}
+.contact-widget-form .contact-widget-marketing span{display:block;min-width:0}
 .contact-widget-submit{min-height:48px;border:1px solid #c8923f;border-radius:12px;background:linear-gradient(180deg,#f3cc91,#dca85a);color:#24160e;cursor:pointer;font:850 13px/1 inherit;box-shadow:0 8px 20px rgba(185,121,37,.18)}
 .contact-widget-submit:hover{filter:brightness(1.03)}
 .contact-widget-submit:focus-visible{outline:3px solid rgba(210,160,78,.34);outline-offset:2px}
