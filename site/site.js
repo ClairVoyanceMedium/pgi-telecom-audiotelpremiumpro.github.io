@@ -1,3 +1,20 @@
+(function migrateLegacyRootServiceWorker(){
+  if(!("serviceWorker" in navigator))return;
+  try{
+    navigator.serviceWorker.getRegistrations().then(async function(regs){
+      var legacy=false;
+      for(const reg of regs){
+        try{
+          if(new URL(reg.scope).pathname==="/"){legacy=true;await reg.unregister()}
+        }catch(_e){}
+      }
+      if(legacy&&navigator.serviceWorker.controller&&sessionStorage.getItem("pgi-public-sw-migrated")!=="1"){
+        sessionStorage.setItem("pgi-public-sw-migrated","1");
+        location.reload();
+      }
+    }).catch(function(){});
+  }catch(_e){}
+})();
 (()=>{
 const $=id=>document.getElementById(id);
 const gap=$("saving-gap"),hours=$("saving-hours"),days=$("saving-days");
