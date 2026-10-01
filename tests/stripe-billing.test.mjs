@@ -231,12 +231,13 @@ test("Stripe paid invoice exposes only GA identifiers and verified payment facts
   try{
     const paid=await normalizeStripeBillingEvent({
       id:"evt_ga4_paid",type:"invoice.paid",created:now,
-      data:{object:{id:"in_ga4_paid",amount_paid:300,currency:"eur",parent:{subscription_details:{subscription:"sub_ga4"}}}}
+      data:{object:{id:"in_ga4_paid",amount_paid:300,currency:"eur",billing_reason:"subscription_create",parent:{subscription_details:{subscription:"sub_ga4"}}}}
     },{stripeSecretKey:"sk_test_example",stripeApiVersion:"2026-08-26.dahlia"});
     assert.equal(paid.ga_client_id,"123456789.987654321");
     assert.equal(paid.ga_session_id,"1790630000");
     assert.equal(paid.provider_invoice_amount_paid_minor,300);
     assert.equal(paid.provider_invoice_currency,"EUR");
+    assert.equal(paid.provider_invoice_billing_reason,"subscription_create");
   }finally{globalThis.fetch=original;}
 });
 
@@ -245,7 +246,7 @@ test("Stripe successful refund resolves the original invoice and consented GA co
   globalThis.fetch=async(url)=>{
     calls.push(String(url));
     if(String(url).endsWith("/v1/charges/ch_refund"))return {ok:true,status:200,json:async()=>({id:"ch_refund",invoice:"in_refund"})};
-    if(String(url).endsWith("/v1/invoices/in_refund"))return {ok:true,status:200,json:async()=>({id:"in_refund",parent:{subscription_details:{subscription:"sub_refund"}}})};
+    if(String(url).endsWith("/v1/invoices/in_refund"))return {ok:true,status:200,json:async()=>({id:"in_refund",billing_reason:"subscription_create",parent:{subscription_details:{subscription:"sub_refund"}}})};
     if(String(url).endsWith("/v1/subscriptions/sub_refund"))return {ok:true,status:200,json:async()=>({id:"sub_refund",metadata:{ga_client_id:"123456789.987654321",ga_session_id:"1790630000"}})};
     throw new Error("unexpected Stripe request "+url);
   };

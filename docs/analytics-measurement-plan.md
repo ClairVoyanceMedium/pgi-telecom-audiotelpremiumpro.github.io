@@ -143,7 +143,7 @@ Ne pas créer une dimension personnalisée pour `content_group`, la page, la sou
 
 `qualify_lead`, `working_lead`, `close_convert_lead`, `purchase` et `refund` figurent dans l’allowlist, mais aucun clic navigateur ne les simule.
 
-`purchase` et `refund` sont émis depuis les webhooks Stripe confirmés via Measurement Protocol lorsque la configuration serveur GA4 est activée. La livraison est dédupliquée par identifiant de transaction et utilise le montant et la devise réellement confirmés par Stripe. Aucun secret API GA4 n’est créé ni stocké dans ce dépôt.
+`purchase` et `refund` sont émis depuis les webhooks Stripe confirmés via Measurement Protocol lorsque la configuration serveur GA4 est activée. `purchase` représente uniquement la première facture effectivement payée lors de la création de l’abonnement. Les renouvellements mensuels ne sont pas réinjectés dans une ancienne session navigateur. `refund` corrige uniquement un achat initial mesuré et ne réutilise jamais un ancien `session_id`. La livraison est dédupliquée par identifiant de transaction et utilise le montant et la devise réellement confirmés par Stripe. Le revenu récurrent et la LTV restent une vérité Stripe/CRM.
 
 ## Événements clés GA4
 

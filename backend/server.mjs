@@ -120,7 +120,7 @@ export function createBackend(options={}){
           invalidateStripeProviderReadiness();
           return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,account_readiness_invalidated:true});
         }
-        const refund=await normalizeStripeRefundEvent(event,config);
+        const refund=config.ga4MeasurementEnabled&&config.ga4ApiSecret?await normalizeStripeRefundEvent(event,config):null;
         if(refund){
           const analytics=await deliverGa4StripeEvent(store,config,"refund",refund.provider_event_id,refund.refund_id,buildGa4RefundFromStripe(refund));
           return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,type:String(event.type||""),analytics});
