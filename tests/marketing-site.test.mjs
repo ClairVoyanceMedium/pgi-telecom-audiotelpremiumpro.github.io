@@ -426,3 +426,13 @@ test("reversement page targets the best-reversement query through technical meta
   assert.match(payouts,/"dateModified":"2026-09-29"/);
   assert.match(sitemap,/reversement-audiotel\/<\/loc><lastmod>2026-09-29<\/lastmod>/);
 });
+
+test("homepage hero uses the premium diagonal professional visual without replacing the simulator",()=>{
+  assert.match(html,/audiotel-hero-professionnels-diagonal\.webp/);
+  assert.match(html,/UNE ACTIVITÉ QUI SE PILOTE/);
+  assert.match(html,/Appels, paiements et suivi réunis dans un même espace/);
+  assert.equal((html.match(/id="simulateur"/g)||[]).length,1);
+  assert.match(css,/premium-diagonal-hero-v162/);
+  assert.match(buildStatic,/audiotel-hero-professionnels-diagonal\.webp/);
+});
+
