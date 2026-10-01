@@ -1442,7 +1442,19 @@ if(!document.hidden)probeApiHealth();
 function registerServiceWorker(){
 if(!("serviceWorker" in navigator))return;
 window.addEventListener("load",function(){
-navigator.serviceWorker.register("./service-worker.js").catch(function(){});
+navigator.serviceWorker.getRegistrations().then(function(regs){
+return Promise.all(regs.map(function(reg){
+try{
+var scopePath=new URL(reg.scope).pathname;
+if(scopePath==="/")return reg.unregister();
+}catch(_e){}
+return false;
+}));
+}).finally(function(){
+navigator.serviceWorker.register("/service-worker.js",{scope:"/cockpit"}).then(function(reg){
+try{reg.update()}catch(_e){}
+}).catch(function(){});
+});
 },{once:true});
 }
 function clock(){
