@@ -327,7 +327,7 @@ Crée une nouvelle baseline `jackpot` pour le tenant authentifié. L'opération 
 Crée, modifie ou désactive la programmation automatique propre au tenant authentifié. Réservé aux rôles client `owner` et `admin`. Une programmation peut être quotidienne, hebdomadaire, mensuelle ou répétée tous les N jours à partir d'une date choisie. L'exécution crée exclusivement une nouvelle baseline Business Live ; les données sources et les bilans officiels restent intacts.
 
 ### GET /internal/business-live/reset-schedules/run
-Route machine protégée par `CRON_SECRET`. Le déclencheur central recherche uniquement les échéances dues, verrouille chaque planification avant exécution et enregistre une trace idempotente de chaque passage. Aucun cron individuel n'est créé par client.
+Route machine protégée par `CRON_SECRET`. Le déclencheur central recherche uniquement les échéances dues dans la `work_queue` persistante existante, verrouille chaque planification avant exécution et journalise chaque passage dans `audit_log`. Aucun cron individuel n'est créé par client et aucune migration Neon supplémentaire n'est requise.
 
 ### GET /customer/portal?from=...&to=...
 Appel consolidé du portail client : trafic, séries journalières, numéros, reversements, abonnement, destinations de routage, qualité voix agrégée et derniers appels avec diagnostic technique. Les données sont lues dans le contexte SQL du tenant et peuvent utiliser la réplique de lecture.
