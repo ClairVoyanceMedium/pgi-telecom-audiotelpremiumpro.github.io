@@ -248,11 +248,11 @@ html{scroll-padding-top:150px}
 /* client-initial-position-v153 */
 html,body,.cp-app{overflow-anchor:none}
 @media(max-width:760px){
-  .cp-jackpot-actions{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .cp-jackpot-actions{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
   .cp-jackpot-actions button{min-height:38px!important;padding:0 8px!important;font-size:8px!important;line-height:1.15;white-space:normal}
   .cp-jackpot-actions small{grid-column:1/-1}
 }
 @media(max-width:430px){
-  .cp-jackpot-actions{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .cp-jackpot-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
   .cp-jackpot-actions button{min-height:36px!important;padding:0 6px!important;font-size:7.5px!important}
 }
