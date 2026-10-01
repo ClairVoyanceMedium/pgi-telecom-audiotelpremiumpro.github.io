@@ -4878,7 +4878,7 @@ export class PostgresStore{
     if(title.length<3||title.length>180)throw problem(400,"INVALID_INCIDENT_TITLE");
     if(description.length<3||description.length>5000)throw problem(400,"INVALID_INCIDENT_DESCRIPTION");
     if(svaNumberId!=null&&(!Number.isInteger(svaNumberId)||svaNumberId<=0))throw problem(400,"INVALID_INCIDENT_NUMBER");
-    const sla=serviceIncidentSla(severity);
+    const deadlines=serviceIncidentDeadlines(severity,new Date());
     const result=await this.sql.begin(async tx=>{
       const tenant=(await tx.unsafe("SELECT id,status,tenant_type FROM tenants WHERE id=$1 FOR UPDATE",[id]))[0];
       if(!tenant||tenant.tenant_type==="internal")throw problem(404,"TENANT_NOT_FOUND");
@@ -4891,9 +4891,9 @@ export class PostgresStore{
       const rows=await tx.unsafe(
         "INSERT INTO tenant_service_incidents(tenant_id,sva_number_id,category,severity,status,source,title,description,created_by_customer_principal_id,"+
         " first_response_due_at,target_resolution_at,last_customer_update_at,diagnostic_snapshot)"+
-        " VALUES($1,$2,$3,$4,'open','customer',$5,$6,$7::uuid,now()+make_interval(mins=>$8),now()+make_interval(mins=>$9),now(),$10::jsonb)"+
+        " VALUES($1,$2,$3,$4,'open','customer',$5,$6,$7::uuid,$8::timestamptz,$9::timestamptz,now(),$10::jsonb)"+
         " RETURNING id,public_id,tenant_id,sva_number_id,category,severity,status,source,title,description,assigned_team,first_response_due_at,target_resolution_at,created_at,updated_at",
-        [id,svaNumberId,category,severity,title,description,principal,sla.response,sla.resolution,JSON.stringify(diagnostic)]
+        [id,svaNumberId,category,severity,title,description,principal,deadlines.response,deadlines.resolution,JSON.stringify(diagnostic)]
       );
       const incident=rows[0];
       await tx.unsafe(
@@ -4956,16 +4956,16 @@ export class PostgresStore{
     if(!["telephony","portability","billing","payout","account","routing","quality","other"].includes(category))throw problem(400,"INVALID_INCIDENT_CATEGORY");
     if(!["low","normal","high","critical"].includes(severity))throw problem(400,"INVALID_INCIDENT_SEVERITY");
     if(title.length<3||title.length>180||description.length<3||description.length>5000)throw problem(400,"INVALID_INCIDENT_CONTENT");
-    const actorId=numericActor(actor),sla=serviceIncidentSla(severity);
+    const actorId=numericActor(actor),deadlines=serviceIncidentDeadlines(severity,new Date());
     const result=await this.sql.begin(async tx=>{
       const tenant=(await tx.unsafe("SELECT id,tenant_type,status FROM tenants WHERE public_id=$1::uuid FOR UPDATE",[tenantPublicId]))[0];
       if(!tenant||tenant.tenant_type==="internal")throw problem(404,"TENANT_NOT_FOUND");
       const diagnostic=await tenantDiagnosticSnapshot(tx,Number(tenant.id),null);
       const incident=(await tx.unsafe(
         "INSERT INTO tenant_service_incidents(tenant_id,category,severity,status,source,title,description,owner_user_id,first_response_due_at,target_resolution_at,first_responded_at,last_pgi_update_at,diagnostic_snapshot)"+
-        " VALUES($1,$2,$3,'investigating','admin',$4,$5,$6,now()+make_interval(mins=>$7),now()+make_interval(mins=>$8),now(),now(),$9::jsonb)"+
+        " VALUES($1,$2,$3,'investigating','admin',$4,$5,$6,$7::timestamptz,$8::timestamptz,now(),now(),$9::jsonb)"+
         " RETURNING id,public_id,tenant_id,category,severity,status,title,description,assigned_team,first_response_due_at,target_resolution_at,created_at",
-        [tenant.id,category,severity,title,description,actorId,sla.response,sla.resolution,JSON.stringify(diagnostic)]
+        [tenant.id,category,severity,title,description,actorId,deadlines.response,deadlines.resolution,JSON.stringify(diagnostic)]
       ))[0];
       await tx.unsafe(
         "INSERT INTO tenant_service_incident_events(incident_id,tenant_id,event_type,actor_type,actor_user_id,message,customer_visible,details)"+
@@ -5025,16 +5025,16 @@ export class PostgresStore{
       const current=(await tx.unsafe("SELECT * FROM tenant_service_incidents WHERE public_id=$1::uuid FOR UPDATE",[publicId]))[0];
       if(!current)throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");
       const nextStatus=status||current.status,nextSeverity=severity||current.severity;
-      const sla=serviceIncidentSla(nextSeverity);
+      const deadlines=serviceIncidentDeadlines(nextSeverity,new Date(current.created_at));
       const rows=await tx.unsafe(
         "UPDATE tenant_service_incidents SET status=$2,severity=$3,owner_user_id=COALESCE(owner_user_id,$4),"+
         " first_responded_at=COALESCE(first_responded_at,now()),last_pgi_update_at=now(),"+
-        " first_response_due_at=CASE WHEN $3<>severity THEN created_at+make_interval(mins=>$5) ELSE first_response_due_at END,"+
-        " target_resolution_at=CASE WHEN $3<>severity THEN created_at+make_interval(mins=>$6) ELSE target_resolution_at END,"+
+        " first_response_due_at=CASE WHEN $3<>severity THEN $5::timestamptz ELSE first_response_due_at END,"+
+        " target_resolution_at=CASE WHEN $3<>severity THEN $6::timestamptz ELSE target_resolution_at END,"+
         " resolved_at=CASE WHEN $2='resolved' THEN COALESCE(resolved_at,now()) WHEN $2 NOT IN ('resolved','closed') THEN NULL ELSE resolved_at END,"+
         " closed_at=CASE WHEN $2='closed' THEN COALESCE(closed_at,now()) WHEN $2<>'closed' THEN NULL ELSE closed_at END,updated_at=now()"+
         " WHERE id=$1 RETURNING id,public_id,tenant_id,category,severity,status,title,assigned_team,first_response_due_at,target_resolution_at,first_responded_at,resolved_at,closed_at,updated_at",
-        [current.id,nextStatus,nextSeverity,actorId,sla.response,sla.resolution]
+        [current.id,nextStatus,nextSeverity,actorId,deadlines.response,deadlines.resolution]
       );
       if(nextStatus!==current.status){
         await tx.unsafe(
@@ -5089,6 +5089,34 @@ export class PostgresStore{
     });
     this.eventBus.publish("service.incident.staff_note",{incident_id:publicId});
     return result;
+  }
+
+
+  async serviceIncidentSupportContext(incidentPublicId){
+    const publicId=String(incidentPublicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_INCIDENT_ID");
+    const rows=await this.readSql.unsafe("SELECT i.id,i.public_id::text AS public_id,i.tenant_id,i.category,i.severity,i.status,i.title,i.description,i.metadata,t.public_id::text AS tenant_public_id,t.dossier_ref,t.billing_email,cp.email AS customer_email,cp.display_name AS customer_name FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id LEFT JOIN LATERAL (SELECT p.email,p.display_name FROM customer_tenant_memberships m JOIN customer_principals p ON p.id=m.customer_principal_id WHERE m.tenant_id=i.tenant_id AND m.status='active' AND p.status IN ('active','pending') ORDER BY (m.role='owner') DESC,m.joined_at ASC LIMIT 1) cp ON true WHERE i.public_id=$1::uuid LIMIT 1",[publicId]);
+    const row=rows[0];if(!row)throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");row.customer_email=String(row.customer_email||row.billing_email||"").trim().toLowerCase()||null;return row;
+  }
+
+  async recordServiceIncidentEmailNote(incidentPublicId,input={}){
+    const publicId=String(incidentPublicId||"").trim(),body=String(input.body||"").trim(),authorType=String(input.authorType||"customer").toLowerCase(),providerEmailId=String(input.providerEmailId||"").trim().slice(0,200),messageId=String(input.messageId||"").trim().slice(0,500),tenantPublicId=String(input.tenantPublicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_INCIDENT_ID");
+    if(!["customer","staff"].includes(authorType))throw problem(400,"INVALID_INCIDENT_EMAIL_AUTHOR");
+    if(!body||body.length>5000)throw problem(400,"INVALID_INCIDENT_NOTE");
+    const result=await this.sql.begin(async tx=>{
+      const incident=(await tx.unsafe("SELECT i.id,i.tenant_id,i.status,i.metadata,t.public_id::text AS tenant_public_id FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE i.public_id=$1::uuid FOR UPDATE",[publicId]))[0];
+      if(!incident)throw problem(404,"SERVICE_INCIDENT_NOT_FOUND");if(tenantPublicId&&incident.tenant_public_id!==tenantPublicId)throw problem(409,"SERVICE_INCIDENT_TENANT_MISMATCH");
+      const metadata=incident.metadata&&typeof incident.metadata==="object"?incident.metadata:{},seen=Array.isArray(metadata.email_provider_ids)?metadata.email_provider_ids.map(String):[];
+      if(providerEmailId&&seen.includes(providerEmailId))return {duplicate:true,incident_public_id:publicId};
+      const row=(await tx.unsafe("INSERT INTO tenant_service_incident_notes(incident_id,tenant_id,author_type,body,customer_visible) VALUES($1,$2,$3,$4,true) RETURNING id,incident_id,author_type,body,created_at",[incident.id,incident.tenant_id,authorType,body]))[0];
+      await tx.unsafe("INSERT INTO tenant_service_incident_events(incident_id,tenant_id,event_type,actor_type,message,customer_visible,details) VALUES($1,$2,'note',$3,$4,true,$5::jsonb)",[incident.id,incident.tenant_id,authorType,authorType==="customer"?"Réponse client reçue par e-mail":"Réponse Audiotel Premium Pro envoyée par e-mail",JSON.stringify({provider_email_id:providerEmailId||null,message_id:messageId||null})]);
+      const nextMeta={...metadata,email_provider_ids:[...seen,providerEmailId].filter(Boolean).slice(-100)};if(messageId)nextMeta.last_email_message_id=messageId;
+      await tx.unsafe("UPDATE tenant_service_incidents SET metadata=$2::jsonb,"+(authorType==="customer"?" last_customer_update_at=now(),status=CASE WHEN status='waiting_customer' THEN 'investigating' ELSE status END,":" first_responded_at=COALESCE(first_responded_at,now()),last_pgi_update_at=now(),")+" updated_at=now() WHERE id=$1",[incident.id,JSON.stringify(nextMeta)]);
+      await serviceIncidentOutbox(tx,Number(incident.tenant_id),"service.incident.note",incident.id,publicId,{source:authorType==="customer"?"email_customer":"email_staff",note_id:Number(row.id)});
+      return {...row,duplicate:false,incident_public_id:publicId};
+    });
+    this.eventBus.publish(authorType==="customer"?"service.incident.customer_note":"service.incident.staff_note",{incident_id:publicId,source:"email"});return result;
   }
 
   async customerVoiceStudio(tenantId){
@@ -7409,13 +7437,20 @@ async function serviceIncidentOutbox(tx,tenantId,eventType,incidentId,publicId,p
   );
 }
 function serviceIncidentSla(severity){
-  const map={
-    critical:{response:15,resolution:120},
-    high:{response:30,resolution:240},
-    normal:{response:120,resolution:1440},
-    low:{response:240,resolution:2880}
-  };
+  const map={critical:{response:60,resolution:120},high:{response:60,resolution:240},normal:{response:120,resolution:1440},low:{response:240,resolution:2880}};
   return map[String(severity||"normal")]||map.normal;
+}
+function serviceIncidentDeadlines(severity,start){
+  const sla=serviceIncidentSla(severity);return {response:addServiceBusinessMinutes(start,sla.response),resolution:addServiceBusinessMinutes(start,sla.resolution)};
+}
+function addServiceBusinessMinutes(start,minutes){
+  let cursor=new Date(start),remaining=Math.max(1,Number(minutes)||1),guard=0;cursor.setUTCSeconds(0,0);if(cursor.getTime()<new Date(start).getTime())cursor=new Date(cursor.getTime()+60000);
+  while(remaining>0&&guard<25000){if(isServiceBusinessMinute(cursor))remaining--;cursor=new Date(cursor.getTime()+60000);guard++;}
+  if(remaining>0)throw problem(500,"SERVICE_SLA_CALCULATION_FAILED");return cursor.toISOString();
+}
+function isServiceBusinessMinute(date){
+  const parts=new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Paris",weekday:"short",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(date),map=Object.fromEntries(parts.map(p=>[p.type,p.value]));
+  if(!["Mon","Tue","Wed","Thu","Fri"].includes(map.weekday))return false;const minute=Number(map.hour)*60+Number(map.minute);return minute>=510&&minute<1140;
 }
 async function tenantDiagnosticSnapshot(tx,tenantId,svaNumberId=null){
   const [activity,destinations,portability]=await Promise.all([
