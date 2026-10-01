@@ -114,15 +114,34 @@ export function createBackend(options={}){
         res.pgiRoute="metrics";
         return metricsResponse(res,metrics,store,workers);
       }
-      if(method==="POST"&&pathname==="/api/v1/billing/stripe/webhook"){
-        if(!config.externalBillingEnabled||!config.stripeWebhookSecret)return done(res,metrics,started,"billing.stripe_webhook",404,{error:{code:"STRIPE_WEBHOOK_DISABLED"}});
-        const event=await verifyStripeWebhook(req,config);
+      if(method==="POST"&&pathname==="/api/v1/billing/stripe/connect-webhook"){
+        if(!config.externalBillingEnabled||!config.stripeConnectWebhookSecret)return done(res,metrics,started,"billing.stripe_connect_webhook",404,{error:{code:"STRIPE_CONNECT_WEBHOOK_DISABLED"}});
+        const event=await verifyStripeWebhook(req,config,config.stripeConnectWebhookSecret);
+        const type=String(event.type||"");
+        if(["account.updated","capability.updated"].includes(type)){
+          const object=event?.data?.object||{};
+          const accountId=[event.account,object.account,object.id].map(x=>String(x||"")).find(x=>/^acct_[A-Za-z0-9]+$/.test(x))||null;
+          let account_synced=false;
+          if(accountId&&typeof store.syncCardPaymentAccountByProviderReference==="function"){
+            try{
+              const remote=await retrieveStripeConnectedAccount(config,accountId);
+              const synced=await store.syncCardPaymentAccountByProviderReference(normalizeStripeConnectedAccount(remote));
+              account_synced=Boolean(synced);
+            }catch(_error){}
+          }
+          return done(res,metrics,started,"billing.stripe_connect_webhook",200,{received:true,type,account_synced});
+        }
         const connectPayment=await normalizeStripeConnectPaymentEvent(config,event);
         if(connectPayment){
           connectPayment.payload_sha256=hashStripeEventPayload(event);
           const result=await store.applyCardPaymentProviderEvent(connectPayment);
-          return done(res,metrics,started,"billing.stripe_connect_webhook",200,{received:true,type:String(event.type||""),duplicate:Boolean(result.duplicate),updated:Boolean(result.updated)});
+          return done(res,metrics,started,"billing.stripe_connect_webhook",200,{received:true,type,duplicate:Boolean(result.duplicate),updated:Boolean(result.updated)});
         }
+        return done(res,metrics,started,"billing.stripe_connect_webhook",200,{received:true,ignored:true,type});
+      }
+      if(method==="POST"&&pathname==="/api/v1/billing/stripe/webhook"){
+        if(!config.externalBillingEnabled||!config.stripeWebhookSecret)return done(res,metrics,started,"billing.stripe_webhook",404,{error:{code:"STRIPE_WEBHOOK_DISABLED"}});
+        const event=await verifyStripeWebhook(req,config);
         if(String(event.type||"")==="account.updated"){
           invalidateStripeProviderReadiness();
           return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,account_readiness_invalidated:true});

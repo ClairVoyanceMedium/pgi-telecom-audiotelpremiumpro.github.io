@@ -154,6 +154,7 @@ export async function createStripeCheckout(config,billing,idempotencyKey,analyti
   if(/^\d{1,20}$/.test(gaSessionId)&&metadata.ga_client_id)metadata.ga_session_id=gaSessionId;
   const params={
     mode:"subscription",
+    integration_identifier:"pgi_subscription_hjprszwa",
     success_url:baseUrl(config)+"/client.html?billing=success&session_id={CHECKOUT_SESSION_ID}",
     cancel_url:baseUrl(config)+"/client.html?billing=cancelled",
     client_reference_id:String(tenant.id||""),
@@ -196,8 +197,8 @@ function signatureParts(header){
   for(const part of String(header||"").split(",")){const i=part.indexOf("=");if(i<1)continue;const k=part.slice(0,i).trim(),v=part.slice(i+1).trim();if(k==="t")out.t=Number(v);if(k==="v1"&&v)out.v1.push(v);}
   return out;
 }
-export async function verifyStripeWebhook(req,config){
-  const secret=String(config?.stripeWebhookSecret||"");
+export async function verifyStripeWebhook(req,config,secretOverride=null){
+  const secret=String(secretOverride||config?.stripeWebhookSecret||"");
   if(!secret)throw failure(404,"STRIPE_WEBHOOK_DISABLED");
   const raw=await readRaw(req,Number(config?.bodyLimitBytes||262144));
   const parsed=signatureParts(req.headers?.["stripe-signature"]);

@@ -4223,6 +4223,16 @@ export class PostgresStore{
     });
   }
 
+  async syncCardPaymentAccountByProviderReference(input={}){
+    const ref=String(input.provider_account_reference||"").trim();
+    if(!/^acct_[A-Za-z0-9]+$/.test(ref))throw problem(400,"INVALID_CONNECT_ACCOUNT");
+    const rows=await this.sql.unsafe(
+      "UPDATE tenant_card_payment_accounts SET status=$2,charges_enabled=$3,payouts_enabled=$4,details_submitted=$5,requirements_state=$6,last_synced_at=now() WHERE provider_account_reference=$1 RETURNING id,tenant_id,provider,provider_account_reference,status,charges_enabled,payouts_enabled,details_submitted,application_fee_bps,requirements_state,last_synced_at,created_at,updated_at",
+      [ref,String(input.status||"restricted"),input.charges_enabled===true,input.payouts_enabled===true,input.details_submitted===true,input.requirements_state||null]
+    );
+    return rows[0]||null;
+  }
+
   async createCustomerCardPaymentRequest(tenantId,principalId,input={}){
     const id=Number(tenantId),amount=Math.trunc(Number(input.amount_minor)),currency=String(input.currency||"EUR").trim().toUpperCase();
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");

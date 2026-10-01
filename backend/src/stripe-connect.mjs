@@ -72,6 +72,7 @@ export function stripeConnectState(config){
   return {
     provider:"stripe_connect",
     configured:/^sk_(test|live)_/.test(key),
+    webhook_configured:/^whsec_[A-Za-z0-9]+$/.test(String(config?.stripeConnectWebhookSecret||"")),
     live_mode:key.startsWith("sk_live_"),
     application_fee_bps:STRIPE_CONNECT_APPLICATION_FEE_BPS,
     application_fee_percent:STRIPE_CONNECT_APPLICATION_FEE_BPS/100,
@@ -169,6 +170,7 @@ export async function createStripeCardCheckout(config,input={}){
   const base=baseUrl(config);
   const fields={
     mode:"payment",
+    integration_identifier:"pgi_connect_qmktvexr",
     success_url:base+"/paiement-cb-result.html?status=success&session_id={CHECKOUT_SESSION_ID}",
     cancel_url:base+"/paiement-cb-result.html?status=cancelled",
     client_reference_id:requestId,
@@ -219,6 +221,34 @@ function stripeEventTime(event){
   return Number.isFinite(n)&&n>0?new Date(n*1000).toISOString():new Date().toISOString();
 }
 
+function requestIdFromMetadata(value){
+  const meta=value?.metadata&&typeof value.metadata==="object"?value.metadata:{};
+  const id=String(meta.pgi_card_payment_request||"").trim();
+  return /^[0-9a-f-]{36}$/i.test(id)?id:null;
+}
+async function resolveStripePaymentContext(config,connectedAccount,{object,chargeId,paymentIntentId}={}){
+  let requestId=requestIdFromMetadata(object);
+  let chargeRef=stripeObjectId(chargeId,"ch_")||stripeObjectId(object?.latest_charge,"ch_")||stripeObjectId(object?.charge,"ch_");
+  let paymentIntentRef=stripeObjectId(paymentIntentId,"pi_")||stripeObjectId(object?.payment_intent,"pi_");
+  let charge=null;
+  if(chargeRef){
+    try{
+      charge=await jsonRequest(config,"/v1/charges/"+encodeURIComponent(chargeRef),{connectedAccount});
+      requestId=requestId||requestIdFromMetadata(charge);
+      paymentIntentRef=paymentIntentRef||stripeObjectId(charge?.payment_intent,"pi_");
+    }catch{}
+  }
+  let intent=null;
+  if(paymentIntentRef&&!requestId){
+    try{
+      intent=await jsonRequest(config,"/v1/payment_intents/"+encodeURIComponent(paymentIntentRef),{connectedAccount});
+      requestId=requestId||requestIdFromMetadata(intent);
+      chargeRef=chargeRef||stripeObjectId(intent?.latest_charge,"ch_");
+    }catch{}
+  }
+  return {requestId,chargeRef,paymentIntentRef,charge,intent};
+}
+
 export async function normalizeStripeConnectPaymentEvent(config,event={}){
   const type=String(event?.type||""),obj=event?.data?.object||{},connectedAccount=String(event?.account||"");
   if(!/^acct_[A-Za-z0-9]+$/.test(connectedAccount))return null;
@@ -240,29 +270,58 @@ export async function normalizeStripeConnectPaymentEvent(config,event={}){
     };
   }
 
-  if(type==="charge.refunded"){
-    const requestId=String(obj?.metadata?.pgi_card_payment_request||"").trim();
+  if(["payment_intent.succeeded","payment_intent.payment_failed"].includes(type)){
+    const requestId=requestIdFromMetadata(obj);
+    if(!requestId)return null;
     return {
       provider:"stripe",provider_event_id:String(event.id||""),event_type:type,event_time:stripeEventTime(event),
-      connected_account_reference:connectedAccount,request_public_id:/^[0-9a-f-]{36}$/i.test(requestId)?requestId:null,
-      status:"refunded",provider_checkout_session_reference:null,
-      provider_payment_intent_reference:stripeObjectId(obj.payment_intent,"pi_"),
-      provider_charge_reference:stripeObjectId(obj.id,"ch_")
+      connected_account_reference:connectedAccount,request_public_id:requestId,
+      status:type==="payment_intent.succeeded"?"paid":"failed",
+      provider_checkout_session_reference:null,
+      provider_payment_intent_reference:stripeObjectId(obj.id,"pi_"),
+      provider_charge_reference:stripeObjectId(obj.latest_charge,"ch_")
     };
   }
 
-  if(type==="charge.dispute.created"){
-    const chargeId=stripeObjectId(obj.charge,"ch_");
-    if(!chargeId)return null;
-    let charge={};
-    try{charge=await jsonRequest(config,"/v1/charges/"+encodeURIComponent(chargeId),{connectedAccount});}catch{return null}
-    const requestId=String(charge?.metadata?.pgi_card_payment_request||"").trim();
+  if(["charge.refunded","refund.created","refund.updated","refund.failed"].includes(type)){
+    const refundEvent=type.startsWith("refund.");
+    const chargeId=refundEvent?obj.charge:obj.id;
+    const paymentIntentId=refundEvent?obj.payment_intent:obj.payment_intent;
+    const context=await resolveStripePaymentContext(config,connectedAccount,{object:obj,chargeId,paymentIntentId});
+    if(!context.requestId)return null;
+    let fullRefund=false;
+    if(type==="charge.refunded"){
+      fullRefund=obj.refunded===true||(Number(obj.amount)>0&&Number(obj.amount_refunded)>=Number(obj.amount));
+    }else if(type!=="refund.failed"&&String(obj.status||"").toLowerCase()==="succeeded"){
+      const charge=context.charge;
+      fullRefund=Boolean(charge&&(charge.refunded===true||(Number(charge.amount)>0&&Number(charge.amount_refunded)>=Number(charge.amount))));
+    }
     return {
       provider:"stripe",provider_event_id:String(event.id||""),event_type:type,event_time:stripeEventTime(event),
-      connected_account_reference:connectedAccount,request_public_id:/^[0-9a-f-]{36}$/i.test(requestId)?requestId:null,
-      status:"disputed",provider_checkout_session_reference:null,
-      provider_payment_intent_reference:stripeObjectId(charge.payment_intent,"pi_"),
-      provider_charge_reference:chargeId
+      connected_account_reference:connectedAccount,request_public_id:context.requestId,
+      status:fullRefund?"refunded":"ignored",
+      provider_checkout_session_reference:null,
+      provider_payment_intent_reference:context.paymentIntentRef,
+      provider_charge_reference:context.chargeRef,
+      refund_full:fullRefund,
+      refund_status:refundEvent?String(obj.status||"").toLowerCase():null
+    };
+  }
+
+  if(["charge.dispute.created","charge.dispute.updated","charge.dispute.closed"].includes(type)){
+    const chargeId=stripeObjectId(obj.charge,"ch_");
+    if(!chargeId)return null;
+    const context=await resolveStripePaymentContext(config,connectedAccount,{object:obj,chargeId});
+    if(!context.requestId)return null;
+    const disputeStatus=String(obj.status||"").toLowerCase();
+    const status=type==="charge.dispute.closed"&&disputeStatus==="won"?"paid":"disputed";
+    return {
+      provider:"stripe",provider_event_id:String(event.id||""),event_type:type,event_time:stripeEventTime(event),
+      connected_account_reference:connectedAccount,request_public_id:context.requestId,status,
+      provider_checkout_session_reference:null,
+      provider_payment_intent_reference:context.paymentIntentRef,
+      provider_charge_reference:context.chargeRef,
+      dispute_status:disputeStatus
     };
   }
 
