@@ -11,6 +11,10 @@
     {
       "path": "/api/v1/internal/email/dispatch",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/v1/internal/business-live/reset-dispatch",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
