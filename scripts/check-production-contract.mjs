@@ -112,6 +112,7 @@ const scaleHpa=fs.readFileSync("infra/scale/api-hpa.example.yaml","utf8");
 const postgresStore=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
 const backendServer=fs.readFileSync("backend/server.mjs","utf8");
 const hubspotCrm=fs.readFileSync("backend/src/hubspot-crm.mjs","utf8");
+const resendEmailSource=fs.readFileSync("backend/src/resend-email.mjs","utf8");
 const publicContactWidget=fs.readFileSync("site/contact-widget.js","utf8");
 const publicOrderPage=fs.readFileSync("site/seo/demande-ouverture.html","utf8");
 const publicSiteScript=fs.readFileSync("site/site.js","utf8");
@@ -442,5 +443,8 @@ if(failures.length){
 console.log("Production contract: OK");
 
 if(!/ticketContactAssociationType/.test(hubspotCrm)||!/crm\/v3\/objects\/tickets/.test(hubspotCrm)||!/hs_pipeline_stage:"1"/.test(hubspotCrm)||!/source_type:"FORM"/.test(hubspotCrm))failures.push("public contact bubble must create a support ticket, not a commercial dossier");
+if(!/sendSupportTicketNotification/.test(backendServer)||!/sendSupportTicketReply/.test(backendServer)||!/recordServiceIncidentEmailNote/.test(backendServer)||!/syncHubSpotCustomerIncident/.test(backendServer))failures.push("authenticated support must bridge portal messages, email replies and HubSpot tickets");
+if(!/reply_to:senderEmail/.test(resendEmailSource)||!/support-journal@/.test(resendEmailSource)||!/receivedAttachmentPaths/.test(resendEmailSource)||!/In-Reply-To/.test(resendEmailSource))failures.push("inbound support forwarding must retain Reply-To, threading metadata and attachments");
+if(!/isServiceBusinessMinute/.test(postgresStore)||!/Europe\/Paris/.test(postgresStore))failures.push("support SLA deadlines must use Europe/Paris business hours");
 if(!/HUBSPOT_MARKETING_SUBSCRIPTION_ID=3728444113/.test(hubspotCrm)||!/communication-preferences\/v4\/statuses/.test(hubspotCrm)||!/CONSENT_WITH_NOTICE/.test(hubspotCrm)||!/Consentement marketing e-mail explicite/.test(hubspotCrm))failures.push("explicit marketing consent must be synced to HubSpot preferences and retain auditable CRM evidence");
 if(!/name="marketing_consent" type="checkbox"/.test(publicContactWidget)||!/marketing_consent_version:"2026-10-01-v1"/.test(publicContactWidget)||!/id="order-marketing-consent"/.test(publicOrderPage)||!/marketing_consent/.test(publicSiteScript))failures.push("public marketing consent must remain optional, explicit and versioned");
