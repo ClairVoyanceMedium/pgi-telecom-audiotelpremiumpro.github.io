@@ -2,13 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-const [migration,opsMigration,integrityMigration,store,workers,server,clientApi,adminApi,clientPortal,clientService,tenantDetail,tenantService,buildStatic,checkStatic,sizeCheck]=await Promise.all([
+const [migration,opsMigration,integrityMigration,store,workers,server,resendEmail,clientApi,adminApi,clientPortal,clientService,tenantDetail,tenantService,buildStatic,checkStatic,sizeCheck]=await Promise.all([
   readFile(new URL("../database/migrations/032_service_excellence.sql",import.meta.url),"utf8"),
   readFile(new URL("../database/migrations/033_service_operations_queue.sql",import.meta.url),"utf8"),
   readFile(new URL("../database/migrations/034_service_incident_tenant_integrity.sql",import.meta.url),"utf8"),
   readFile(new URL("../backend/src/store-postgres.mjs",import.meta.url),"utf8"),
   readFile(new URL("../backend/src/workers.mjs",import.meta.url),"utf8"),
   readFile(new URL("../backend/server.mjs",import.meta.url),"utf8"),
+  readFile(new URL("../backend/src/resend-email.mjs",import.meta.url),"utf8"),
   readFile(new URL("../assets/client-portal-api.js",import.meta.url),"utf8"),
   readFile(new URL("../assets/api-client.js",import.meta.url),"utf8"),
   readFile(new URL("../assets/client-portal.js",import.meta.url),"utf8"),
@@ -140,6 +141,22 @@ test("service operations are observable and staff can inspect full history",()=>
   assert.match(adminApi,/serviceIncident:function/);
   assert.match(tenantService,/data-service-detail/);
   assert.match(tenantService,/Historique/);
+});
+
+test("support email bridge keeps Reply-To, portal ticket ids and business-hour SLA",()=>{
+  assert.match(resendEmail,/reply_to:senderEmail/);
+  assert.match(resendEmail,/support-journal@/);
+  assert.match(resendEmail,/receivedAttachmentPaths/);
+  assert.match(resendEmail,/In-Reply-To/);
+  assert.match(resendEmail,/sendSupportTicketNotification/);
+  assert.match(resendEmail,/sendSupportTicketReply/);
+  assert.match(server,/supportTicketIdFromSubject/);
+  assert.match(server,/recordServiceIncidentEmailNote/);
+  assert.match(server,/syncHubSpotCustomerIncident/);
+  assert.match(store,/serviceIncidentSupportContext/);
+  assert.match(store,/recordServiceIncidentEmailNote/);
+  assert.match(store,/Europe\/Paris/);
+  assert.match(store,/isServiceBusinessMinute/);
 });
 
 test("service center remains lazy and outside the critical PWA shell",()=>{
