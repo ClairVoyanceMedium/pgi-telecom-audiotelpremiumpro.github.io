@@ -48,7 +48,6 @@ const multiRegionMigration=fs.readFileSync("database/migrations/013_multi_region
 const usageLedgerMigration=fs.readFileSync("database/migrations/014_metered_usage_ledger.sql","utf8");
 const objectLifecycleMigration=fs.readFileSync("database/migrations/015_object_storage_data_lifecycle.sql","utf8");
 const dashboardDimensionMigration=fs.readFileSync("database/migrations/016_dashboard_dimension_rollups.sql","utf8");
-const businessLiveScheduleMigration=fs.readFileSync("database/migrations/063_business_live_reset_schedules.sql","utf8");
 const businessLiveScheduleSource=fs.readFileSync("backend/src/business-live-schedule.mjs","utf8");
 const vercelConfig=fs.readFileSync("vercel.json","utf8");
 const qualityRollupMigration=fs.readFileSync("database/migrations/017_quality_rollups.sql","utf8");
@@ -381,8 +380,7 @@ if(!/audit_log WHERE action=\'platform\.jackpot\.reset\'/.test(postgresStore)||!
 if(!/platformJackpotSnapshot/.test(postgresStore)||!/createPlatformJackpotReset/.test(postgresStore))failures.push("Business Live platform persistence and reset are required");
 if(!/\/api\/v1\/dashboard\/live-finance\/reset/.test(backendServer)||!/resetLiveFinance/.test(apiClient))failures.push("Business Live cockpit reset endpoint and client action are required");
 if(!/\/dashboard\/live-finance\/reset-schedule/.test(apiClient)||!/\/customer\/jackpot\/reset-schedule/.test(clientPortalApi))failures.push("Business Live admin and customer schedule APIs are required");
-if(!/runDueBusinessLiveResets/.test(postgresStore)||!/FOR UPDATE SKIP LOCKED/.test(postgresStore)||!/business_live_reset_schedule_runs/.test(postgresStore))failures.push("Business Live scheduled execution must be persistent and concurrency safe");
-if(!/business_live_reset_schedules/.test(businessLiveScheduleMigration)||!/business_live_reset_schedule_runs/.test(businessLiveScheduleMigration))failures.push("Business Live schedule persistence migration is required");
+if(!/runDueBusinessLiveResets/.test(postgresStore)||!/FOR UPDATE SKIP LOCKED/.test(postgresStore)||!/queue_name=\'business_live_reset\'/.test(postgresStore)||!/work_queue/.test(postgresStore))failures.push("Business Live scheduled execution must reuse the durable work queue and remain concurrency safe");
 if(!/interval_days/.test(businessLiveScheduleSource)||!/monthly/.test(businessLiveScheduleSource)||!/weekly/.test(businessLiveScheduleSource))failures.push("Business Live schedule engine must support daily weekly monthly and arbitrary day intervals");
 if(!/\/api\/v1\/internal\/business-live\/reset-schedules\/run/.test(backendServer)||!/\/api\/v1\/internal\/business-live\/reset-schedules\/run/.test(vercelConfig)||!vercelConfig.includes('"schedule": "* * * * *"'))failures.push("Business Live scheduler must run every minute through the protected central cron");
 if(!/jackpot_upstream_payout_ht/.test(adminLiveFinanceUi)||!/Automatiser/.test(adminLiveFinanceUi))failures.push("Business Live cockpit must expose manual and scheduled reset controls");
