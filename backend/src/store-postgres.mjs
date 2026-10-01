@@ -13,6 +13,7 @@ import {assessShadowBilling} from "./shadow-billing.mjs";
 import {assessOperationalRisk} from "./risk-engine.mjs";
 import {assessOperationalSlo} from "./slo-assurance.mjs";
 import {relationCaseDeadlines,relationNextActions,relationActionPolicy,sanitizeRelationPayload,safeAgentContext,RELATION_POLICY_VERSION} from "./customer-relations-policy.mjs";
+import {normalizeBusinessLiveSchedule,nextBusinessLiveRun,businessLiveScheduleFromRow} from "./business-live-schedule.mjs";
 import {createRequire} from "node:module";
 
 const require=createRequire(import.meta.url);
@@ -1563,6 +1564,109 @@ export class PostgresStore{
     });
     this.eventBus.publish("customer.metrics.reset",{tenant_id:id,metric_keys:keys});
     return {data:rows,metric_keys:keys,effective_from:rows[0]?.effective_from||null};
+  }
+
+
+  async businessLiveResetSchedule({scope,tenantId=null}={}){
+    const normalizedScope=String(scope||"");
+    if(!["platform","tenant"].includes(normalizedScope))throw problem(400,"BUSINESS_LIVE_SCOPE_INVALID");
+    const id=tenantId==null?null:Number(tenantId);
+    if(normalizedScope==="tenant"&&(!Number.isInteger(id)||id<=0))throw problem(400,"INVALID_TENANT_CONTEXT");
+    const key=normalizedScope==="platform"?"platform":"tenant:"+id;
+    const rows=await this.readSql.unsafe(
+      "SELECT id,schedule_key,scope,tenant_id,enabled,frequency,timezone,local_time::text AS local_time,weekday,month_day,interval_days,anchor_date,next_run_at,last_run_at,run_count,last_error,created_at,updated_at"+
+      " FROM business_live_reset_schedules WHERE schedule_key=$1 LIMIT 1",
+      [key]
+    );
+    return businessLiveScheduleFromRow(rows[0]||null);
+  }
+
+  async upsertBusinessLiveResetSchedule({scope,tenantId=null,schedule={},staffActor=null,customerPrincipalId=null}={}){
+    const normalizedScope=String(scope||"");
+    if(!["platform","tenant"].includes(normalizedScope))throw problem(400,"BUSINESS_LIVE_SCOPE_INVALID");
+    const id=tenantId==null?null:Number(tenantId);
+    if(normalizedScope==="tenant"&&(!Number.isInteger(id)||id<=0))throw problem(400,"INVALID_TENANT_CONTEXT");
+    const staffId=normalizedScope==="platform"?numericActor(staffActor):null;
+    const principal=normalizedScope==="tenant"?String(customerPrincipalId||""):null;
+    if(normalizedScope==="tenant"&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(principal))throw problem(400,"INVALID_CUSTOMER_PRINCIPAL");
+    const normalized=normalizeBusinessLiveSchedule(schedule,{timezone:"Europe/Paris"});
+    const nextRun=normalized.enabled?nextBusinessLiveRun(normalized,new Date()):null;
+    const key=normalizedScope==="platform"?"platform":"tenant:"+id;
+    const rows=await this.sql.unsafe(
+      "INSERT INTO business_live_reset_schedules(schedule_key,scope,tenant_id,enabled,frequency,timezone,local_time,weekday,month_day,interval_days,anchor_date,next_run_at,configured_by_staff_id,configured_by_customer_principal_id)"+
+      " VALUES($1,$2,$3,$4,$5,$6,$7::time,$8,$9,$10,$11::date,$12,$13,$14::uuid)"+
+      " ON CONFLICT(schedule_key) DO UPDATE SET enabled=EXCLUDED.enabled,frequency=EXCLUDED.frequency,timezone=EXCLUDED.timezone,local_time=EXCLUDED.local_time,weekday=EXCLUDED.weekday,month_day=EXCLUDED.month_day,interval_days=EXCLUDED.interval_days,anchor_date=EXCLUDED.anchor_date,next_run_at=EXCLUDED.next_run_at,last_error=NULL,configured_by_staff_id=EXCLUDED.configured_by_staff_id,configured_by_customer_principal_id=EXCLUDED.configured_by_customer_principal_id,updated_at=now()"+
+      " RETURNING id,schedule_key,scope,tenant_id,enabled,frequency,timezone,local_time::text AS local_time,weekday,month_day,interval_days,anchor_date,next_run_at,last_run_at,run_count,last_error,created_at,updated_at",
+      [key,normalizedScope,normalizedScope==="tenant"?id:null,normalized.enabled,normalized.frequency,normalized.timezone,normalized.time,normalized.weekday,normalized.month_day,normalized.interval_days,normalized.anchor_date,nextRun?nextRun.toISOString():null,staffId,principal]
+    );
+    const row=rows[0],details={enabled:normalized.enabled,frequency:normalized.frequency,time:normalized.time,timezone:normalized.timezone,weekday:normalized.weekday,month_day:normalized.month_day,interval_days:normalized.interval_days,anchor_date:normalized.anchor_date,next_run_at:nextRun?nextRun.toISOString():null};
+    await this.sql.unsafe(
+      normalizedScope==="platform"
+        ?"INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'platform.jackpot.schedule','business_live_reset_schedule',$2,$3::jsonb)"
+        :"INSERT INTO audit_log(tenant_id,action,entity_type,entity_id,details) VALUES($1,'customer.jackpot.schedule','business_live_reset_schedule',$2,$3::jsonb)",
+      normalizedScope==="platform"
+        ?[staffId,String(row.id),JSON.stringify(details)]
+        :[id,String(row.id),JSON.stringify({...details,customer_principal_id:principal})]
+    );
+    this.eventBus.publish(normalizedScope==="platform"?"platform.jackpot.schedule":"customer.jackpot.schedule",{tenant_id:normalizedScope==="tenant"?id:null,schedule_id:row.id,next_run_at:nextRun?nextRun.toISOString():null,enabled:normalized.enabled});
+    return businessLiveScheduleFromRow(row);
+  }
+
+  async runDueBusinessLiveResets(limit=250){
+    const safe=clampInt(limit,250,1,1000);
+    const candidates=await this.sql.unsafe(
+      "SELECT id FROM business_live_reset_schedules WHERE enabled=true AND next_run_at IS NOT NULL AND next_run_at<=now() ORDER BY next_run_at,id LIMIT $1",
+      [safe]
+    );
+    let executed=0,failed=0;const results=[];
+    for(const candidate of candidates){
+      try{
+        const result=await this.sql.begin(async tx=>{
+          const locked=await tx.unsafe(
+            "SELECT id,schedule_key,scope,tenant_id,enabled,frequency,timezone,local_time::text AS local_time,weekday,month_day,interval_days,anchor_date,next_run_at,last_run_at,run_count,last_error,created_at,updated_at"+
+            " FROM business_live_reset_schedules WHERE id=$1 AND enabled=true AND next_run_at IS NOT NULL AND next_run_at<=now() FOR UPDATE SKIP LOCKED",
+            [candidate.id]
+          );
+          const row=locked[0];if(!row)return null;
+          const scheduledFor=new Date(row.next_run_at);
+          const nextRun=nextBusinessLiveRun(businessLiveScheduleFromRow(row),new Date());
+          let resetReference,resetAt;
+          if(row.scope==="platform"){
+            const reset=await tx.unsafe(
+              "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES(NULL,'platform.jackpot.reset','business_live','platform',$1::jsonb) RETURNING id,created_at AS effective_from",
+              [JSON.stringify({metric_key:"business_live",automatic:true,schedule_id:Number(row.id),scheduled_for:scheduledFor.toISOString(),accounting_impact:"none",reporting_impact:"none"})]
+            );
+            resetReference="audit:"+String(reset[0].id);resetAt=reset[0].effective_from;
+          }else{
+            const baseline=await tx.unsafe(
+              "INSERT INTO customer_jackpot_baselines(tenant_id,reason,effective_from) VALUES($1,'Remise à zéro automatique du Business Live',now()) RETURNING id,effective_from",
+              [Number(row.tenant_id)]
+            );
+            resetReference="baseline:"+String(baseline[0].id);resetAt=baseline[0].effective_from;
+            await tx.unsafe(
+              "INSERT INTO audit_log(tenant_id,action,entity_type,entity_id,details) VALUES($1,'customer.jackpot.reset','customer_jackpot_baseline',$2,$3::jsonb)",
+              [Number(row.tenant_id),String(baseline[0].id),JSON.stringify({metric_key:"jackpot",automatic:true,schedule_id:Number(row.id),scheduled_for:scheduledFor.toISOString(),accounting_impact:"none"})]
+            );
+          }
+          await tx.unsafe(
+            "INSERT INTO business_live_reset_schedule_runs(schedule_id,scope,tenant_id,scheduled_for,reset_reference) VALUES($1,$2,$3,$4,$5)",
+            [Number(row.id),row.scope,row.scope==="tenant"?Number(row.tenant_id):null,scheduledFor.toISOString(),resetReference]
+          );
+          await tx.unsafe(
+            "UPDATE business_live_reset_schedules SET last_run_at=$2,next_run_at=$3,run_count=run_count+1,last_error=NULL,updated_at=now() WHERE id=$1",
+            [Number(row.id),new Date(resetAt).toISOString(),nextRun.toISOString()]
+          );
+          return {schedule_id:Number(row.id),scope:row.scope,tenant_id:row.scope==="tenant"?Number(row.tenant_id):null,scheduled_for:scheduledFor.toISOString(),reset_at:new Date(resetAt).toISOString(),next_run_at:nextRun.toISOString(),reset_reference:resetReference};
+        });
+        if(!result)continue;
+        executed++;results.push(result);
+        this.eventBus.publish(result.scope==="platform"?"platform.jackpot.reset":"customer.jackpot.reset",{tenant_id:result.tenant_id,reset_at:result.reset_at,automatic:true,schedule_id:result.schedule_id});
+      }catch(error){
+        failed++;
+        try{await this.sql.unsafe("UPDATE business_live_reset_schedules SET last_error=left($2,500),updated_at=now() WHERE id=$1",[candidate.id,String(error?.message||"Scheduled Business Live reset failed")]);}catch{}
+      }
+    }
+    return {scanned:candidates.length,executed,failed,results};
   }
 
   async carrierRouting(){
