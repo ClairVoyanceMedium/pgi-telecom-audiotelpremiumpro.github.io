@@ -113,7 +113,7 @@ export async function applyResendWebhookEvent(store,verified){
     }
     if(providerMessageId){
       await tx.unsafe(
-        "UPDATE transactional_email_deliveries SET provider_message_id=COALESCE(provider_message_id,$2),updated_at=now() WHERE provider_email_id=$1",
+        "UPDATE transactional_email_deliveries SET metadata=COALESCE(metadata,'{}'::jsonb)||jsonb_build_object('provider_message_id',$2),updated_at=now() WHERE provider_email_id=$1",
         [emailId,providerMessageId]
       );
     }
