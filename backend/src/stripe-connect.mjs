@@ -208,3 +208,63 @@ export async function createStripeCardCheckout(config,input={}){
 export function hashStripeEventPayload(event){
   return createHash("sha256").update(JSON.stringify(event||{})).digest("hex");
 }
+
+
+function stripeObjectId(value,prefix){
+  const id=typeof value==="string"?value:(value&&typeof value.id==="string"?value.id:"");
+  return id.startsWith(prefix)?id:null;
+}
+function stripeEventTime(event){
+  const n=Number(event?.created);
+  return Number.isFinite(n)&&n>0?new Date(n*1000).toISOString():new Date().toISOString();
+}
+
+export async function normalizeStripeConnectPaymentEvent(config,event={}){
+  const type=String(event?.type||""),obj=event?.data?.object||{},connectedAccount=String(event?.account||"");
+  if(!/^acct_[A-Za-z0-9]+$/.test(connectedAccount))return null;
+
+  if(["checkout.session.completed","checkout.session.async_payment_succeeded","checkout.session.async_payment_failed","checkout.session.expired"].includes(type)){
+    const meta=obj?.metadata&&typeof obj.metadata==="object"?obj.metadata:{};
+    const requestId=String(meta.pgi_card_payment_request||obj.client_reference_id||"").trim();
+    if(!/^[0-9a-f-]{36}$/i.test(requestId))return null;
+    let status="open";
+    if(type==="checkout.session.expired")status="expired";
+    else if(type==="checkout.session.async_payment_failed")status="failed";
+    else if(type==="checkout.session.async_payment_succeeded"||String(obj.payment_status||"").toLowerCase()==="paid")status="paid";
+    return {
+      provider:"stripe",provider_event_id:String(event.id||""),event_type:type,event_time:stripeEventTime(event),
+      connected_account_reference:connectedAccount,request_public_id:requestId,status,
+      provider_checkout_session_reference:stripeObjectId(obj.id,"cs_"),
+      provider_payment_intent_reference:stripeObjectId(obj.payment_intent,"pi_"),
+      provider_charge_reference:null
+    };
+  }
+
+  if(type==="charge.refunded"){
+    const requestId=String(obj?.metadata?.pgi_card_payment_request||"").trim();
+    return {
+      provider:"stripe",provider_event_id:String(event.id||""),event_type:type,event_time:stripeEventTime(event),
+      connected_account_reference:connectedAccount,request_public_id:/^[0-9a-f-]{36}$/i.test(requestId)?requestId:null,
+      status:"refunded",provider_checkout_session_reference:null,
+      provider_payment_intent_reference:stripeObjectId(obj.payment_intent,"pi_"),
+      provider_charge_reference:stripeObjectId(obj.id,"ch_")
+    };
+  }
+
+  if(type==="charge.dispute.created"){
+    const chargeId=stripeObjectId(obj.charge,"ch_");
+    if(!chargeId)return null;
+    let charge={};
+    try{charge=await jsonRequest(config,"/v1/charges/"+encodeURIComponent(chargeId),{connectedAccount});}catch{return null}
+    const requestId=String(charge?.metadata?.pgi_card_payment_request||"").trim();
+    return {
+      provider:"stripe",provider_event_id:String(event.id||""),event_type:type,event_time:stripeEventTime(event),
+      connected_account_reference:connectedAccount,request_public_id:/^[0-9a-f-]{36}$/i.test(requestId)?requestId:null,
+      status:"disputed",provider_checkout_session_reference:null,
+      provider_payment_intent_reference:stripeObjectId(charge.payment_intent,"pi_"),
+      provider_charge_reference:chargeId
+    };
+  }
+
+  return null;
+}
