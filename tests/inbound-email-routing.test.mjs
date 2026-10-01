@@ -25,10 +25,15 @@ test("les réponses email se rattachent au bon dossier sans faire confiance à u
   assert.match(server,/resolveInboundCustomerEmail/);
 });
 
-test("HubSpot reçoit le dossier depuis PostgreSQL et le rend repérable dans la transaction",()=>{
+test("HubSpot conserve le dossier existant comme contexte sans transformer le support en transaction commerciale",()=>{
   assert.match(server,/syncHubSpotCommercialTenant\(store,registered\.tenant_public_id/);
   assert.match(hubspot,/dossier_ref:clean\(detail\?\.tenant\?\.dossier_ref/);
-  assert.match(hubspot,/dealName/);
-  assert.match(hubspot,/Email entrant rattaché automatiquement au dossier PGI/);
-  assert.match(hubspot,/Référence dossier/);
+  assert.match(hubspot,/Email entrant de support rattaché automatiquement/);
+  assert.match(hubspot,/Référence dossier existante/);
+  const start=hubspot.indexOf("export async function syncHubSpotInboundEmail");
+  const end=hubspot.indexOf("export async function syncHubSpotCustomerIncident",start);
+  const source=hubspot.slice(start,end);
+  assert.match(source,/ensureSupportTicket/);
+  assert.doesNotMatch(source,/syncHubSpotCommercialTenant/);
+  assert.doesNotMatch(source,/ensureCommercialDeal/);
 });
