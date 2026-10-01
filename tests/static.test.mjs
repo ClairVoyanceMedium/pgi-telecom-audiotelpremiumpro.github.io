@@ -75,7 +75,7 @@ test("la marque client reste Audiotel Premium Pro et la plateforme reste multise
   assert.doesNotMatch(clientPortalJs,/Frais de plateforme HT/);
 });
 
-test("Business Live reste cumulatif jusqu’à une remise à zéro manuelle et isolé des bilans",()=>{
+test("Business Live reste cumulatif jusqu’à une remise à zéro manuelle ou programmée et isolé des bilans",()=>{
   const server=read("backend/server.mjs"),store=read("backend/src/store-postgres.mjs"),site=read("site/index.html");
   assert.match(clientPortal,/client-live-finance\.js/);
   assert.match(index,/live-finance\.js/);
@@ -87,7 +87,7 @@ test("Business Live reste cumulatif jusqu’à une remise à zéro manuelle et i
   assert.match(clientPortalApi,/\/customer\/jackpot/);
   assert.match(adminLiveFinance,/jackpot_upstream_payout_ht/);
   assert.match(adminLiveFinance,/resetLiveFinance/);
-  assert.match(adminLiveFinance,/remise à zéro manuelle uniquement/i);
+  assert.match(adminLiveFinance,/remise à zéro manuelle ou programmée/i);
   assert.match(api,/\/dashboard\/live-finance\/reset/);
   assert.match(server,/\/api\/v1\/dashboard\/live-finance\/reset/);
   assert.match(server,/platformJackpotSnapshot/);
