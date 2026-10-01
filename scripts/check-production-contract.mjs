@@ -18,6 +18,7 @@ const restoreDrill=fs.readFileSync("scripts/restore-drill.sh","utf8");
 const migrationRunner=fs.readFileSync("backend/migrate.mjs","utf8");
 const migrationSafety=fs.readFileSync("scripts/check-migrations.mjs","utf8");
 const apiClient=fs.readFileSync("assets/api-client.js","utf8");
+const clientPortalApi=fs.readFileSync("assets/client-portal-api.js","utf8");
 const dataClient=fs.readFileSync("assets/data-client.js","utf8");
 const commandPalette=fs.readFileSync("assets/command-palette.js","utf8");
 const commandPaletteLoader=fs.readFileSync("assets/command-palette-loader.js","utf8");
