@@ -8,12 +8,10 @@ const server=read("backend/server.mjs");
 const hubspot=read("backend/src/hubspot-crm.mjs");
 const resend=read("backend/src/resend-email.mjs");
 const dispatcher=read("backend/src/email-dispatcher.mjs");
-const migration=read("database/migrations/063_email_thread_customer_resolution.sql");
 
 test("les réponses email se rattachent au bon dossier sans faire confiance à une simple référence APP",()=>{
-  assert.match(migration,/provider_message_id/);
-  assert.match(migration,/CREATE TABLE inbound_email_correlations/);
-  assert.match(migration,/Stores no email body/i);
+  assert.match(dispatcher,/jsonb_build_object\('provider_message_id'/);
+  assert.match(store,/metadata->>'provider_message_id'/);
   assert.match(store,/resolveInboundCustomerEmail/);
   assert.match(store,/sender_plus_dossier/);
   assert.match(store,/sender_exact/);
