@@ -370,3 +370,15 @@ html.cp-initial-top-lock body{position:fixed!important;inset:0!important;width:1
   .cp-product-lockup-header strong{font-size:23px!important}
   .cp-product-lockup-header span{font-size:12px!important}
 }
+
+
+/* client-header-spacing-v158 */
+@media(max-width:760px){
+  .cp-company-title{
+    margin-top:18px!important;
+    padding-top:2px!important;
+  }
+}
+@media(max-width:430px){
+  .cp-company-title{margin-top:20px!important}
+}
