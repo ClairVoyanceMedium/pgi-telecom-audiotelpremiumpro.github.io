@@ -343,3 +343,30 @@ body{
   .cp-product-lockup-header strong{font-size:22px!important}
   .cp-product-lockup-header span{font-size:11.5px!important}
 }
+
+
+/* client-white-wordmark-v157 */
+html.cp-initial-top-lock,html.cp-initial-top-lock body{overflow:hidden!important;overscroll-behavior:none!important}
+html.cp-initial-top-lock body{position:fixed!important;inset:0!important;width:100%!important;height:100dvh!important}
+@media(max-width:760px){
+  .cp-brand img.cp-logo-header{
+    width:min(190px,50vw)!important;
+    height:auto!important;
+    max-width:none!important;
+    max-height:none!important;
+    flex:0 0 auto!important;
+    object-fit:contain!important;
+    padding:0!important;
+    border:0!important;
+    border-radius:2px!important;
+    background:#fff!important;
+    filter:drop-shadow(0 6px 16px rgba(0,0,0,.28))!important;
+  }
+  .cp-product-lockup-header strong{font-size:24px!important;line-height:1!important}
+  .cp-product-lockup-header span{font-size:12.5px!important;letter-spacing:.075em!important}
+}
+@media(max-width:430px){
+  .cp-brand img.cp-logo-header{width:min(180px,49vw)!important;height:auto!important;max-width:none!important;max-height:none!important}
+  .cp-product-lockup-header strong{font-size:23px!important}
+  .cp-product-lockup-header span{font-size:12px!important}
+}
