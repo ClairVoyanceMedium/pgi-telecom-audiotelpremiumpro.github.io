@@ -1384,6 +1384,11 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.customer_profitability",200,await store.customerProfitability(params));
       }
 
+      if(method==="GET"&&pathname==="/api/v1/platform/card-payments/summary"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.card_payments.summary",200,{provider:stripeConnectState(config),...(await store.platformCardPaymentSummary())});
+      }
+
       if(method==="GET"&&pathname==="/api/v1/platform/tenants/summary"){
         requireRole(actor,["admin","finance","readonly"]);
         return done(res,metrics,started,"platform.tenant_summary",200,await store.customerAdminSummary());
