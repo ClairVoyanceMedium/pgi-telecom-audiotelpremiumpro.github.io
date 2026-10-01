@@ -15,7 +15,7 @@ import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebA
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData,scopeCustomerAnnualProgressData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
 import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
-import {STRIPE_CONNECT_APPLICATION_FEE_BPS,stripeConnectState,createStripeConnectedAccount,retrieveStripeConnectedAccount,normalizeStripeConnectedAccount,createStripeConnectOnboardingLink,createStripeCardCheckout,normalizeStripeConnectPaymentEvent,hashStripeEventPayload} from "./src/stripe-connect.mjs";
+import {STRIPE_CONNECT_APPLICATION_FEE_BPS,stripeConnectState,createStripeConnectedAccount,retrieveStripeConnectedAccount,normalizeStripeConnectedAccount,createStripeConnectOnboardingLink,createStripeCardCheckout,retrieveStripeCardCheckout,normalizeStripeConnectPaymentEvent,hashStripeEventPayload} from "./src/stripe-connect.mjs";
 import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStripe,buildGa4RefundFromStripe,sendGa4Measurement} from "./src/ga4-measurement.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
@@ -750,6 +750,28 @@ export function createBackend(options={}){
             const remote=await retrieveStripeConnectedAccount(config,overview.account.provider_account_reference);
             const normalized=normalizeStripeConnectedAccount(remote);
             await store.syncCustomerCardPaymentAccount(context.tenant_id,normalized);
+            const open=(overview.payments||[]).filter(x=>x.status==="open"&&x.provider_checkout_session_reference).slice(0,8);
+            const states=await Promise.all(open.map(async x=>{
+              try{return {request:x,snapshot:await retrieveStripeCardCheckout(config,overview.account.provider_account_reference,x.provider_checkout_session_reference)}}catch(_error){return null}
+            }));
+            let changed=false;
+            for(const item of states.filter(Boolean)){
+              if(item.snapshot.status!=="open"){
+                const applied=await store.applyCardPaymentProviderEvent({
+                  provider:"stripe",
+                  provider_event_id:"reconcile:"+item.snapshot.provider_checkout_session_reference+":"+item.snapshot.status,
+                  event_type:"checkout.session.reconciled",
+                  event_time:new Date().toISOString(),
+                  connected_account_reference:overview.account.provider_account_reference,
+                  request_public_id:item.request.public_id,
+                  status:item.snapshot.status,
+                  provider_checkout_session_reference:item.snapshot.provider_checkout_session_reference,
+                  provider_payment_intent_reference:item.snapshot.provider_payment_intent_reference,
+                  payload_sha256:"0".repeat(64)
+                });
+                changed=changed||Boolean(applied.updated);
+              }
+            }
             overview=await store.customerCardPaymentOverview(context.tenant_id);
           }catch(error){sync_error=String(error?.code||"STRIPE_CONNECT_STATUS_UNAVAILABLE")}
         }
