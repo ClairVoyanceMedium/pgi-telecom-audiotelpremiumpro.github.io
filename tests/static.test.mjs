@@ -414,7 +414,7 @@ test("le centre de service premium garde un dossier unique et un routage simulab
   assert.match(clientPortalApi,/addIncidentNote:function/);
   assert.match(clientPortalApi,/simulateRouting:function/);
   assert.match(tenantControlDetail,/tenant-service-admin\.js/);
-  assert.match(tenantServiceAdmin,/Centre de service & incidents/);
+  assert.match(tenantServiceAdmin,/Contact & support client/);
   assert.match(api,/createServiceIncident:function/);
   assert.match(api,/updateServiceIncident:function/);
   assert.match(api,/simulateTenantRouting:function/);
