@@ -9,6 +9,10 @@ function validSessionId(value){
   const v=cleanText(value,40);
   return /^\d{1,20}$/.test(v)?v:"";
 }
+function freshSessionId(value,eventTime){
+  const v=validSessionId(value),eventSeconds=Math.floor(Date.parse(String(eventTime||""))/1000),sessionSeconds=Number(v);
+  return v&&Number.isFinite(eventSeconds)&&Math.abs(eventSeconds-sessionSeconds)<=86400?v:"";
+}
 function validTransactionId(value){
   const v=cleanText(value,128);
   return /^[A-Za-z0-9_-]{1,128}$/.test(v)?v:"";
@@ -33,13 +37,13 @@ export function sanitizeGa4CheckoutContext(input={}){
   return client_id?{client_id,...(session_id?{session_id}:{})}:null;
 }
 export function buildGa4PurchaseFromStripe(normalized={}){
-  if(String(normalized.event_type||"")!=="invoice.paid")return null;
+  if(String(normalized.event_type||"")!=="invoice.paid"||String(normalized.provider_invoice_billing_reason||"")!=="subscription_create")return null;
   const client_id=validClientId(normalized.ga_client_id);
   const transaction_id=validTransactionId(normalized.provider_invoice_reference);
   const currency=validCurrency(normalized.provider_invoice_currency||normalized.provider_price_currency);
   const amountMinor=Number(normalized.provider_invoice_amount_paid_minor);
   if(!client_id||!transaction_id||!currency||!Number.isInteger(amountMinor)||amountMinor<0)return null;
-  const session_id=validSessionId(normalized.ga_session_id);
+  const session_id=freshSessionId(normalized.ga_session_id,normalized.event_time);
   const value=Math.round((amountMinor/100)*100)/100;
   return {
     client_id,
@@ -49,7 +53,6 @@ export function buildGa4PurchaseFromStripe(normalized={}){
         transaction_id,
         currency,
         value,
-        ...(session_id?{session_id:Number(session_id)}:{}),
         engagement_time_msec:1,
         items:[{
           item_id:"audiotel_premium_pro_platform",
@@ -67,7 +70,6 @@ export function buildGa4RefundFromStripe(input={}){
   const currency=validCurrency(input.currency);
   const amountMinor=Number(input.amount_minor);
   if(!client_id||!transaction_id||!currency||!Number.isInteger(amountMinor)||amountMinor<=0)return null;
-  const session_id=validSessionId(input.ga_session_id);
   const value=Math.round((amountMinor/100)*100)/100;
   return {
     client_id,
