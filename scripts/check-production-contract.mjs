@@ -376,7 +376,7 @@ if(!/dashboard_dimension_rollups_daily/.test(dashboardDimensionMigration)||!/dim
 if(!/audit_log WHERE action=\'platform\.jackpot\.reset\'/.test(postgresStore)||!/reporting_impact:"none"/.test(postgresStore))failures.push("Business Live platform reset must use the existing audit log and stay isolated from official reporting");
 if(!/platformJackpotSnapshot/.test(postgresStore)||!/createPlatformJackpotReset/.test(postgresStore))failures.push("Business Live platform persistence and reset are required");
 if(!/\/api\/v1\/dashboard\/live-finance\/reset/.test(backendServer)||!/resetLiveFinance/.test(apiClient))failures.push("Business Live cockpit reset endpoint and client action are required");
-if(!/jackpot_upstream_payout_ht/.test(adminLiveFinanceUi)||!/remise à zéro manuelle uniquement/i.test(adminLiveFinanceUi))failures.push("Business Live cockpit must remain cumulative until manual reset");
+if(!/jackpot_upstream_payout_ht/.test(adminLiveFinanceUi)||!/remise à zéro manuelle ou programmée/i.test(adminLiveFinanceUi))failures.push("Business Live cockpit must remain cumulative until an explicit manual or scheduled reset");
 if(!/id="reset-metrics"[^>]*hidden/.test(indexSource)||!clientPortalHtml.includes('id="client-metrics-reset" class="cp-ghost" type="button" hidden'))failures.push("official metric reset controls must remain hidden from normal cockpit and client workflows");
 if(!/\/api\/v1\/dashboard\/analytics/.test(backendServer)||!/dashboardAnalytics/.test(postgresStore))failures.push("backend must expose scalable dashboard analytics");
 if(!/analytics:function/.test(apiClient))failures.push("frontend API client must expose dashboard analytics");
