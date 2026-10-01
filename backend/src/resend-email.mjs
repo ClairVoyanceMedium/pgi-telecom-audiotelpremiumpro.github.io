@@ -184,6 +184,74 @@ export async function sendPublicContactMessage(config,options={}){
   }
 }
 
+
+export async function sendSupportTicketNotification(config,options={}){
+  if(!config?.resendApiKey)throw providerError("RESEND_NOT_CONFIGURED");
+  const domain=String(config.transactionalDomain||"").trim().toLowerCase();
+  const internal=normalizeEmail(config.internalNotificationEmail||config.transactionalReplyTo||"");
+  const customer=normalizeEmail(options.customerEmail);
+  const ticketId=supportTicketId(options.ticketId);
+  const title=cleanText(options.title||"Demande de support",180)||"Demande de support";
+  const message=cleanText(options.message||"",5000);
+  const eventType=String(options.eventType||"new_ticket")==="customer_message"?"Nouveau message client":"Nouveau ticket client";
+  const subject=supportTicketSubject(ticketId,title);
+  const eventId=String(options.eventId||("support-notify/"+ticketId+"/"+Date.now())).trim().slice(0,180);
+  const text=[
+    eventType+" — Audiotel Premium Pro","",
+    "Ticket : "+ticketId,"Client : "+customer,
+    options.dossierRef?"Dossier commercial existant : "+cleanText(options.dossierRef,40):"",
+    options.category?"Catégorie : "+cleanText(options.category,80):"",
+    options.severity?"Impact : "+cleanText(options.severity,40):"",
+    "","Message","",message||"(aucun contenu)","",
+    "Répondre à ce message répond au client. Pour conserver la réponse dans l’espace client, le traitement automatisé doit également journaliser le fil support.","",
+    "Audiotel Premium Pro | Une solution PGI Telecom"
+  ].filter(Boolean).join("\n");
+  return sendDirectResend(config,{
+    from:(config.transactionalFromName||"Audiotel Premium Pro")+" <support@"+domain+">",
+    to:[internal],reply_to:customer,subject,text,
+    headers:{"X-PGI-Ticket-ID":ticketId,"X-PGI-Support-Source":"client_portal"},
+    tags:[{name:"category",value:"support_ticket"},{name:"sender",value:"support"}]
+  },eventId,"RESEND_SUPPORT_NOTIFY_FAILED");
+}
+
+export async function sendSupportTicketReply(config,options={}){
+  if(!config?.resendApiKey)throw providerError("RESEND_NOT_CONFIGURED");
+  const domain=String(config.transactionalDomain||"").trim().toLowerCase();
+  const customer=normalizeEmail(options.customerEmail);
+  const ticketId=supportTicketId(options.ticketId);
+  const title=cleanText(options.title||"Demande de support",180)||"Demande de support";
+  const message=cleanText(options.message||"",5000);
+  if(!message)throw providerError("INVALID_SUPPORT_REPLY",400);
+  const subject=supportTicketSubject(ticketId,title);
+  const eventId=String(options.eventId||("support-reply/"+ticketId+"/"+Date.now())).trim().slice(0,180);
+  const text=["Bonjour,","",message,"","Vous pouvez répondre directement à cet e-mail. Votre réponse sera rattachée à votre ticket "+ticketId+".","",
+    "Service clients et technique | Audiotel Premium Pro","Une solution PGI Telecom"].join("\n");
+  return sendDirectResend(config,{
+    from:(config.transactionalFromName||"Audiotel Premium Pro")+" <support@"+domain+">",
+    to:[customer],reply_to:"support@"+domain,subject,text,
+    headers:{"X-PGI-Ticket-ID":ticketId,"X-PGI-Support-Source":"admin_portal"},
+    tags:[{name:"category",value:"support_reply"},{name:"sender",value:"support"}]
+  },eventId,"RESEND_SUPPORT_REPLY_FAILED");
+}
+
+async function sendDirectResend(config,body,eventId,errorCode){
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),Number(config.resendTimeoutMs||8000));
+  try{
+    const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{accept:"application/json",authorization:"Bearer "+config.resendApiKey,"content-type":"application/json","idempotency-key":safeIdempotencyKey(eventId)},body:JSON.stringify(body),signal:controller.signal});
+    const payload=await response.json().catch(()=>({}));
+    if(!response.ok)throw providerError(errorCode,response.status,safeProviderCode(payload));
+    return {sent:true,message_id:String(payload.id||"")||null};
+  }catch(error){
+    if(error?.code)throw error;
+    throw providerError(error?.name==="AbortError"?"RESEND_TIMEOUT":errorCode);
+  }finally{clearTimeout(timeout);}
+}
+function supportTicketId(value){
+  const v=String(value||"").trim().toLowerCase();
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(v))throw providerError("INVALID_SUPPORT_TICKET_ID",400);
+  return v;
+}
+function supportTicketSubject(ticketId,title){return cleanText("[Ticket "+ticketId+"] "+title,240);}
 export function buildTransactionalMessage(config,templateKey,data={}){
   const key=String(templateKey||"").trim();
   const name=cleanText(data.name||"",120);
@@ -778,6 +846,7 @@ export async function forwardInboundEmailToInternal(config,eventData={},options=
   ])].slice(0,30);
   const allAttachments=Array.isArray(inbound.attachments)?inbound.attachments:Array.isArray(eventData.attachments)?eventData.attachments:[];
   const attachments=allAttachments.slice(0,30);
+  const forwardAttachments=await receivedAttachmentPaths(config,emailId,allAttachments);
   const routingContext={
     provider_email_id:emailId,message_id:sourceMessageId,sender_email:senderEmail,recipient,subject,text:messageText,
     references:referenceIds,attachments:attachments.map(a=>cleanText(a?.filename||"pièce jointe",180))
@@ -817,11 +886,26 @@ export async function forwardInboundEmailToInternal(config,eventData={},options=
     "Audiotel Premium Pro | Une solution PGI Telecom"
   ].filter(v=>v!=="").join("\n");
 
+  const journalOnly=recipient==="support-journal@"+domain;
+  if(journalOnly){
+    const result={forwarded:false,journal_only:true,source_email_id:emailId,recipient,dossier_resolved:Boolean(customerRouting?.resolved)};
+    Object.defineProperty(result,"routing_context",{value:routingContext,enumerable:false});
+    Object.defineProperty(result,"customer_routing",{value:customerRouting,enumerable:false});
+    Object.defineProperty(result,"routing_error",{value:routingError,enumerable:false});
+    return result;
+  }
+  const headers={};
+  if(sourceMessageId)headers["X-PGI-Original-Message-ID"]=safeMailHeader(sourceMessageId,500);
+  if(referenceIds[0])headers["In-Reply-To"]=safeMailHeader(referenceIds[0],500);
+  if(referenceIds.length)headers.References=safeMailHeader(referenceIds.join(" "),1800);
   const sendBody={
     from:(config.transactionalFromName||"Audiotel Premium Pro")+" <support@"+domain+">",
     to:[internal],
+    ...(senderEmail?{reply_to:senderEmail}:{}),
     subject:"Message reçu sur "+recipient+" | "+subject,
     text:text.slice(0,28000),
+    ...(Object.keys(headers).length?{headers}:{}),
+    ...(forwardAttachments.length?{attachments:forwardAttachments}:{}),
     tags:[
       {name:"category",value:"inbound_forward"},
       {name:"recipient",value:safeTag(recipient.split("@")[0]||"inbound")}
@@ -857,6 +941,20 @@ export async function forwardInboundEmailToInternal(config,eventData={},options=
   }
 }
 
+
+async function receivedAttachmentPaths(config,emailId,attachments=[]){
+  const key=String(config?.resendReceivingApiKey||"").trim();
+  if(!key||!attachments.length)return [];
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),Number(config.resendTimeoutMs||8000));
+  try{
+    const response=await fetch("https://api.resend.com/emails/receiving/"+encodeURIComponent(emailId)+"/attachments",{method:"GET",headers:{accept:"application/json",authorization:"Bearer "+key},signal:controller.signal});
+    if(!response.ok)return [];
+    const payload=await response.json().catch(()=>({}));
+    const rows=Array.isArray(payload?.data)?payload.data:Array.isArray(payload?.attachments)?payload.attachments:Array.isArray(payload)?payload:[];
+    return rows.filter(x=>/^https:\/\//i.test(String(x?.download_url||x?.downloadUrl||""))).slice(0,10).map(x=>({path:String(x.download_url||x.downloadUrl),filename:cleanText(x.filename||"piece-jointe",180)||"piece-jointe"}));
+  }catch(_error){return [];}finally{clearTimeout(timeout);}
+}
+function safeMailHeader(value,max=1000){return String(value||"").replace(/[\r\n]+/g," ").trim().slice(0,max);}
 function inboundHeaderValue(inbound,name){
   const wanted=String(name||"").toLowerCase();
   const directKey=wanted.replace(/-/g,"_");
