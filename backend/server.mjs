@@ -15,6 +15,7 @@ import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebA
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData,scopeCustomerAnnualProgressData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
 import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
+import {STRIPE_CONNECT_APPLICATION_FEE_BPS,stripeConnectState,createStripeConnectedAccount,retrieveStripeConnectedAccount,normalizeStripeConnectedAccount,createStripeConnectOnboardingLink,createStripeCardCheckout} from "./src/stripe-connect.mjs";
 import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStripe,buildGa4RefundFromStripe,sendGa4Measurement} from "./src/ga4-measurement.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
@@ -732,6 +733,86 @@ export function createBackend(options={}){
         const session=await createStripePortalSession(config,billing);
         return done(res,metrics,started,"customer.billing.portal",201,{...session,billing_provider:provider});
       }
+      if(method==="GET"&&pathname==="/api/v1/customer/card-payments/status"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"finance.read");
+        let overview=await store.customerCardPaymentOverview(context.tenant_id);
+        let sync_error=null;
+        if(overview.account?.provider_account_reference){
+          try{
+            const remote=await retrieveStripeConnectedAccount(config,overview.account.provider_account_reference);
+            const normalized=normalizeStripeConnectedAccount(remote);
+            await store.syncCustomerCardPaymentAccount(context.tenant_id,normalized);
+            overview=await store.customerCardPaymentOverview(context.tenant_id);
+          }catch(error){sync_error=String(error?.code||"STRIPE_CONNECT_STATUS_UNAVAILABLE")}
+        }
+        return done(res,metrics,started,"customer.card_payments.status",200,{provider:stripeConnectState(config),sync_error,...overview});
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/card-payments/connect"){
+        requireCustomerCsrf(req,customerActor,config);
+        const idempotencyKey=String(req.headers["idempotency-key"]||"").trim();
+        if(!idempotencyKey||idempotencyKey.length>200){const e=new Error("Idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"billing.manage");
+        const billing=await store.customerBillingPreparation(context.tenant_id);
+        let local=await store.customerCardPaymentAccount(context.tenant_id);
+        if(!local){
+          const account=await createStripeConnectedAccount(config,{
+            email:billing.tenant?.billing_email||context.email,
+            country_code:billing.tenant?.country_code||"FR",
+            idempotency_key:"connect-account/"+String(billing.tenant?.id||context.tenant_id)
+          });
+          local=await store.upsertCustomerCardPaymentAccount(context.tenant_id,{
+            ...normalizeStripeConnectedAccount(account),
+            application_fee_bps:STRIPE_CONNECT_APPLICATION_FEE_BPS,
+            metadata:{source:"customer_card_payment_activation"}
+          });
+        }else{
+          try{
+            const remote=await retrieveStripeConnectedAccount(config,local.provider_account_reference);
+            local=await store.syncCustomerCardPaymentAccount(context.tenant_id,normalizeStripeConnectedAccount(remote));
+          }catch(_error){}
+        }
+        const link=await createStripeConnectOnboardingLink(config,local.provider_account_reference,{idempotency_key:idempotencyKey});
+        return done(res,metrics,started,"customer.card_payments.connect",201,{provider:stripeConnectState(config),account:{status:local.status,charges_enabled:local.charges_enabled,details_submitted:local.details_submitted,application_fee_bps:Number(local.application_fee_bps||STRIPE_CONNECT_APPLICATION_FEE_BPS)},onboarding:link});
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/card-payments/checkout-session"){
+        requireCustomerCsrf(req,customerActor,config);
+        const idempotencyKey=String(req.headers["idempotency-key"]||"").trim();
+        if(!idempotencyKey||idempotencyKey.length>200){const e=new Error("Idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"billing.manage");
+        const body=await readJson(req,config.bodyLimitBytes);
+        const account=await store.customerCardPaymentAccount(context.tenant_id);
+        if(!account||account.status!=="active"||account.charges_enabled!==true)return done(res,metrics,started,"customer.card_payments.checkout",409,{error:{code:"CARD_PAYMENT_ACCOUNT_NOT_READY"},provider:stripeConnectState(config),account});
+        const amountMinor=Math.trunc(Number(body.amount_minor));
+        if(!Number.isInteger(amountMinor)||amountMinor<500||amountMinor>100000000){const e=new Error("Card payment amount must be between 5 EUR and 1,000,000 EUR equivalent");e.status=400;e.code="INVALID_CARD_PAYMENT_AMOUNT";throw e;}
+        const request=await store.createCustomerCardPaymentRequest(context.tenant_id,context.id,{
+          amount_minor:amountMinor,currency:String(body.currency||"EUR").toUpperCase(),description:body.description,customer_email:body.customer_email||null,
+          application_fee_bps:Number(account.application_fee_bps||STRIPE_CONNECT_APPLICATION_FEE_BPS),
+          metadata:{source:"customer_generated_payment_link"}
+        });
+        try{
+          const session=await createStripeCardCheckout(config,{
+            connected_account:account.provider_account_reference,
+            tenant_public_id:context.tenant_public_id,
+            request_public_id:request.public_id,
+            amount_minor:request.amount_minor,
+            currency:request.currency,
+            description:body.description,
+            customer_email:body.customer_email||null,
+            application_fee_bps:request.application_fee_bps,
+            idempotency_key:idempotencyKey
+          });
+          const saved=await store.attachCustomerCardPaymentCheckout(context.tenant_id,request.public_id,session);
+          return done(res,metrics,started,"customer.card_payments.checkout",201,{payment:saved,checkout:{url:session.checkout_url,expires_at:session.expires_at},provider:stripeConnectState(config)});
+        }catch(error){
+          await store.failCustomerCardPaymentRequest(context.tenant_id,request.public_id,error?.code||"checkout_failed").catch(()=>{});
+          throw error;
+        }
+      }
+
       if(method==="GET"&&pathname==="/api/v1/customer/portability"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
