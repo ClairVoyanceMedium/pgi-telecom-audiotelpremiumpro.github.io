@@ -536,7 +536,7 @@ async function init(){
   initGoogle();
   ensureBilling().then(function(x){x.handleReturn();}).catch(function(){});
   var cfg=window.PGI_CONFIG||{};
-  state.demo=cfg.mode==="demo"||!cfg.apiBaseUrl;
+  state.demo=cfg.mode==="demo"||!cfg.apiBaseUrl||new URLSearchParams(location.search).get("demo")==="1";
   var authHash=new URLSearchParams(String(location.hash||"").replace(/^#/,""));
   var resetToken=authHash.get("password-reset")||"",emailChangeToken=authHash.get("email-change")||"";
   if(resetToken){showReset();return;}
