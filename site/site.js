@@ -92,3 +92,43 @@ form.addEventListener("submit",async e=>{
 });
 syncType();
 })();
+
+;(()=>{
+const box=document.getElementById("simulateur");
+if(!box||document.getElementById("public-advanced-comparator"))return;
+const head=box.querySelector(".hero-savings-head");
+if(head&&!head.querySelector(".public-demo-badge"))head.insertAdjacentHTML("beforeend",'<span class="public-demo-badge">TARIFS DÉMO · NON CONTRACTUELS</span>');
+const note=box.querySelector(".hero-savings-note");
+const wrap=document.createElement("div");
+wrap.id="public-advanced-comparator";wrap.className="public-advanced-comparator";
+wrap.innerHTML='<div class="public-advanced-head"><div><span>COMPARATEUR AVANCÉ</span><strong>Testez votre propre scénario</strong></div><small>Les valeurs Audiotel ci-dessous sont des hypothèses de démonstration jusqu’au branchement des tarifs réels.</small></div>'+
+'<div class="public-advanced-fields"><label>Votre reversement actuel<div><input id="public-current-rate" type="number" min="0" max="2" step="0.01" value="0.40"><span>€/min</span></div></label><label>Hypothèse Audiotel de démonstration<div><input id="public-demo-rate" type="number" min="0" max="2" step="0.01" value="0.46"><span>€/min</span></div></label></div>'+
+'<div class="public-advanced-results"><div><span>Écart potentiel / mois</span><strong id="public-advanced-month">—</strong></div><div><span>Écart potentiel / an</span><strong id="public-advanced-year">—</strong></div><div><span>Volume comparé</span><strong id="public-advanced-minutes">—</strong></div></div>'+
+'<p>Cette simulation sert uniquement à comparer des scénarios à volume identique. Elle ne constitue ni un tarif, ni une promesse de reversement.</p>';
+(note||box).insertAdjacentElement(note?"beforebegin":"beforeend",wrap);
+const suite=document.createElement("section");suite.className="public-advantage-suite";suite.setAttribute("aria-label","Différenciateurs Audiotel Premium Pro");
+suite.innerHTML='<div class="public-advantage-head"><span>PLATEFORME DE PILOTAGE</span><h2>Plus qu’un numéro surtaxé : un centre de pilotage complet</h2><p>Les modules sont conçus pour fonctionner ensemble dans le même espace client, avec activation réelle seulement lorsque les branchements correspondants sont disponibles.</p></div>'+
+'<div class="public-advantage-grid">'+
+'<article><b>01</b><strong>Business Live</strong><span>Suivi du montant en direct, objectifs, projections et automatisation de remise à zéro.</span></article>'+
+'<article><b>02</b><strong>Portabilité suivie</strong><span>Étapes visibles du dossier, des contrôles jusqu’à l’activation effective du numéro.</span></article>'+
+'<article><b>03</b><strong>Routage intelligent</strong><span>Architecture préparée pour horaires, priorités, débordement et plusieurs intervenants.</span></article>'+
+'<article><b>04</b><strong>Rapprochement financier</strong><span>Net validé, payé, retenu et écart à rapprocher dans un même centre financier.</span></article>'+
+'<article><b>05</b><strong>Conformité & confiance</strong><span>KYC, documents, support et prérequis visibles sans simuler une validation externe.</span></article>'+
+'<article><b>06</b><strong>Paiement multicanal</strong><span>Architecture préparée pour réunir SVA, carte bancaire à la minute et forfait après branchement adapté.</span></article>'+
+'</div>';
+box.insertAdjacentElement("afterend",suite);
+const money=new Intl.NumberFormat("fr-FR",{style:"currency",currency:"EUR",maximumFractionDigits:0});
+const nf=new Intl.NumberFormat("fr-FR",{maximumFractionDigits:0});
+function calc(){
+ const cur=Math.max(0,Number(document.getElementById("public-current-rate")?.value)||0);
+ const demo=Math.max(0,Number(document.getElementById("public-demo-rate")?.value)||0);
+ const h=Math.max(0,Number(document.getElementById("saving-hours")?.value)||0);
+ const d=Math.max(0,Number(document.getElementById("saving-days")?.value)||0);
+ const mins=h*60*d,gain=Math.max(0,demo-cur)*mins;
+ document.getElementById("public-advanced-month").textContent=money.format(gain);
+ document.getElementById("public-advanced-year").textContent=money.format(gain*12);
+ document.getElementById("public-advanced-minutes").textContent=nf.format(mins)+" min/mois";
+}
+["public-current-rate","public-demo-rate","saving-hours","saving-days"].forEach(id=>document.getElementById(id)?.addEventListener("input",calc));
+calc();
+})();
