@@ -302,6 +302,10 @@ async function ensureCommercialDeal(contact,input,{token,fetchImpl,status}){
   const intentKey=String(input.service_intent||"advice").toLowerCase();
   if(!["new_number","portability","advice"].includes(intentKey))return null;
   const terminal=["Client actif","Perdu / non abouti"].includes(status);
+  const label=INTENT_LABELS[intentKey]||INTENT_LABELS.advice;
+  const name=clean(input.company_name,120)||[clean(input.first_name,60),clean(input.last_name,60)].filter(Boolean).join(" ")||"Prospect Audiotel";
+  const dossierRef=/^APP-\d{4}-[0-9A-Z]{5,18}$/i.test(clean(input.dossier_ref,40))?clean(input.dossier_ref,40).toUpperCase():"";
+  const dealName=clean([name,dossierRef,label.label].filter(Boolean).join(" — "),200);
   const detail=await hubSpotPrivateRequest("/crm/v3/objects/contacts/"+encodeURIComponent(contact.id)+"?associations=deals&properties=email",{
     token,fetchImpl,method:"GET"
   });
@@ -331,10 +335,6 @@ async function ensureCommercialDeal(contact,input,{token,fetchImpl,status}){
   }
   if(terminal)return null;
   const associationTypeId=await defaultDealContactAssociationType({token,fetchImpl});
-  const label=INTENT_LABELS[intentKey]||INTENT_LABELS.advice;
-  const name=clean(input.company_name,120)||[clean(input.first_name,60),clean(input.last_name,60)].filter(Boolean).join(" ")||"Prospect Audiotel";
-  const dossierRef=/^APP-\d{4}-[0-9A-Z]{5,18}$/i.test(clean(input.dossier_ref,40))?clean(input.dossier_ref,40).toUpperCase():"";
-  const dealName=clean([name,dossierRef,label.label].filter(Boolean).join(" — "),200);
   const created=await hubSpotPrivateRequest("/crm/v3/objects/deals",{
     token,fetchImpl,method:"POST",body:{
       properties:{
