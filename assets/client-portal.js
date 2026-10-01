@@ -206,12 +206,36 @@ function releaseInitialTopLock(){
   document.documentElement.classList.remove("cp-initial-top-lock");
   scrollAppTop();
 }
+function isFirstPageNavigation(){
+  try{
+    var nav=performance.getEntriesByType&&performance.getEntriesByType("navigation")[0];
+    return !nav||nav.type==="navigate";
+  }catch(_e){return true}
+}
 function releaseInitialLockAtBusinessLive(){
   clearClientHash();
   document.documentElement.classList.remove("cp-initial-top-lock");
-  scrollToBusinessLive(0);
-  requestAnimationFrame(function(){scrollToBusinessLive(0);requestAnimationFrame(function(){scrollToBusinessLive(0)})});
-  [60,160,320,650,1000].forEach(function(ms){setTimeout(function(){scrollToBusinessLive(0)},ms)});
+  var cancelled=false,cleanups=[];
+  function cancelLandingGuard(){cancelled=true;cleanups.forEach(function(fn){try{fn()}catch(_e){}});cleanups=[]}
+  ["pointerdown","touchstart","wheel","keydown"].forEach(function(type){
+    var fn=function(){cancelLandingGuard()};
+    window.addEventListener(type,fn,{passive:true,once:true});
+    cleanups.push(function(){window.removeEventListener(type,fn)});
+  });
+  function land(){if(!cancelled)scrollToBusinessLive(0)}
+  land();
+  requestAnimationFrame(function(){land();requestAnimationFrame(land)});
+  var delays=isFirstPageNavigation()?[60,160,320,650,1000,1450,1900,2500,3200]:[60,160,320,650,1000];
+  delays.forEach(function(ms,index){setTimeout(function(){land();if(index===delays.length-1)cancelLandingGuard()},ms)});
+  if(isFirstPageNavigation()&&"ResizeObserver" in window){
+    var target=$("client-live-money"),header=document.querySelector(".cp-header");
+    if(target){
+      var ro=new ResizeObserver(function(){land()});
+      ro.observe(target);if(header)ro.observe(header);
+      var stop=function(){try{ro.disconnect()}catch(_e){}};
+      cleanups.push(stop);setTimeout(stop,3300);
+    }
+  }
 }
 function showApp(){
   $("customer-auth").hidden=true;$("customer-app").hidden=false;clearClientHash();
@@ -572,7 +596,10 @@ async function init(){
 }
 window.addEventListener("pageshow",function(){
   var app=$("customer-app");
-  if(app&&!app.hidden)setTimeout(function(){scrollToBusinessLive(0)},0);
+  if(app&&!app.hidden){
+    setTimeout(function(){scrollToBusinessLive(0)},0);
+    if(isFirstPageNavigation())setTimeout(function(){scrollToBusinessLive(0)},1400);
+  }
 });
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init,{once:true});else init();
 })();
