@@ -43,6 +43,8 @@ const files=[
   "assets/client-live-finance.js",
   "assets/call-time-summary.js",
   "assets/client-live-finance.css",
+  "assets/business-live-reset-schedule.js",
+  "assets/business-live-reset-schedule.css",
   "assets/password-visibility.js",
   "assets/client-analytics-plus.js",
   "assets/client-number-control.js",
