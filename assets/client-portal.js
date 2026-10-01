@@ -1,5 +1,6 @@
 (function(){
 "use strict";
+try{if("scrollRestoration" in history)history.scrollRestoration="manual"}catch(_e){}
 var state={range:"today",data:null,user:null,demo:false,googleCredential:null,billingBusy:false};
 var I=window.PGIClientI18n||{locale:"fr-FR",t:function(x){return x;},apply:function(){}};
 function tr(x){return I.t?I.t(x):x;}
@@ -182,10 +183,11 @@ async function loadPortal(){
 }
 window.PGIReload=loadPortal;
 function scrollAppTop(){
-  try{if("scrollRestoration" in history)history.scrollRestoration="manual"}catch(_e){}
-  var top=function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0};
+  if(/^#client-/.test(String(location.hash||"")))history.replaceState(null,"",location.pathname+location.search);
+  var top=function(){window.scrollTo({top:0,left:0,behavior:"auto"});document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0};
   top();
   requestAnimationFrame(function(){top();requestAnimationFrame(top)});
+  setTimeout(top,80);setTimeout(top,240);
 }
 function showApp(){
   $("customer-auth").hidden=true;$("customer-app").hidden=false;scrollAppTop();
@@ -523,6 +525,7 @@ function bind(){
   $("google-tenant-continue").addEventListener("click",function(){handleGoogleCredential(null,$("customer-tenant").value||"");});
   qsa("[data-client-export]").forEach(function(b){b.addEventListener("click",function(){var d=$("client-export-dialog");if(d&&d.open)d.close();exportClient(b.dataset.clientExport);});});
   qsa("[data-range]").forEach(function(btn){btn.addEventListener("click",function(){state.range=btn.dataset.range;qsa("[data-range]").forEach(function(x){x.classList.toggle("active",x===btn);});loadPortal().catch(function(){toast("Actualisation impossible");});});});
+  qsa('.cp-section-nav a[href^="#client-"]').forEach(function(a){a.addEventListener("click",function(e){e.preventDefault();var id=String(a.getAttribute("href")||"").slice(1),target=$(id);if(target)target.scrollIntoView({behavior:"auto",block:"start"});});});
 }
 async function init(){
   if(I.apply)I.apply(document.body);
