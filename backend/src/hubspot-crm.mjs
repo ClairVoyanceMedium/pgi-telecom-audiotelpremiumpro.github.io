@@ -172,60 +172,15 @@ export async function syncHubSpotSupportMessage(input={},options={}){
   const token=clean(options.token||process.env.PGI_HUBSPOT_PRIVATE_APP_TOKEN||process.env.HUBSPOT_PRIVATE_APP_TOKEN,800);
   if(!token)return {enabled:false,synced:false,contactId:null,ticketId:null,contactCreated:false};
   const fetchImpl=options.fetchImpl||globalThis.fetch;
-  const contactEmail=email(input.email);
-  const message=clean(input.message,4000);
+  const contactEmail=email(input.email),message=clean(input.message,4000);
   if(message.length<2)throw problem("HUBSPOT_CONTACT_MESSAGE_INVALID");
-
-  let contact=await findPrivateContact(contactEmail,{token,fetchImpl});
-  let contactCreated=false;
-  if(!contact){
-    try{
-      contact=await hubSpotPrivateRequest("/crm/v3/objects/contacts",{
-        token,fetchImpl,method:"POST",
-        body:{properties:{email:contactEmail,hubspot_owner_id:HUBSPOT_OWNER_ID}}
-      });
-      contactCreated=true;
-    }catch(error){
-      if(error?.status!==409)throw error;
-      contact=await findPrivateContact(contactEmail,{token,fetchImpl});
-      if(!contact)throw error;
-    }
-  }
-
-  const pagePath=clean(input.pagePath||input.page_path||"/",500)||"/";
-  const pageTitle=clean(input.pageTitle||input.page_title||"",180);
-  const pageContext=supportPageContext(pagePath);
+  const {contact,created:contactCreated}=await ensureSupportContact(contactEmail,{token,fetchImpl});
+  const pagePath=clean(input.pagePath||input.page_path||"/",500)||"/",pageTitle=clean(input.pageTitle||input.page_title||"",180),pageContext=supportPageContext(pagePath);
   const ticketSubject=clean("Contact site — "+pageContext,180);
-  const ticketContent=[
-    "Message reçu depuis la bulle de contact du site Audiotel Premium Pro.",
-    "",
-    "Page : "+(pageTitle||pageContext),
-    "Catégorie : "+pageContext,
-    "Chemin : "+pagePath,
-    "",
-    "Message :",
-    message
-  ].join("\n");
-
-  const associationTypeId=await ticketContactAssociationType({token,fetchImpl});
-  const ticket=await hubSpotPrivateRequest("/crm/v3/objects/tickets",{
-    token,fetchImpl,method:"POST",
-    body:{
-      properties:{
-        subject:ticketSubject,
-        content:ticketContent,
-        hs_pipeline:"0",
-        hs_pipeline_stage:"1",
-        hs_ticket_priority:"MEDIUM",
-        source_type:"FORM",
-        hs_ticket_category:"GENERAL_INQUIRY",
-        hubspot_owner_id:HUBSPOT_OWNER_ID
-      },
-      associations:[{to:{id:String(contact.id)},types:[{associationCategory:"HUBSPOT_DEFINED",associationTypeId}]}]
-    }
-  });
+  const ticketContent=["Message reçu depuis la bulle de contact du site Audiotel Premium Pro.","","Page : "+(pageTitle||pageContext),"Catégorie : "+pageContext,"Chemin : "+pagePath,"","Message :",message].join("\n");
+  const support=await ensureSupportTicket(contact,{subject:ticketSubject,content:ticketContent,sourceType:"FORM",category:"GENERAL_INQUIRY",priority:"MEDIUM"},{token,fetchImpl});
   const marketing=await applyHubSpotMarketingConsent(contact,input,{token,fetchImpl,source:clean(input.source,80)||"floating_email_widget"});
-  return {enabled:true,synced:true,contactId:String(contact.id),ticketId:ticket?.id?String(ticket.id):null,contactCreated,...marketing};
+  return {enabled:true,synced:true,contactId:String(contact.id),ticketId:support.ticketId,contactCreated,ticketCreated:support.created,noteId:support.noteId||null,...marketing};
 }
 
 
@@ -259,48 +214,71 @@ export async function syncHubSpotInboundEmail(store,tenantPublicId,inbound={},op
   const token=clean(options.token||process.env.PGI_HUBSPOT_PRIVATE_APP_TOKEN||process.env.HUBSPOT_PRIVATE_APP_TOKEN,800);
   if(!token)return {enabled:false,synced:false,skipped:true,reason:"hubspot_not_configured"};
   if(!store||typeof store.tenantControlDetail!=="function")return {enabled:true,synced:false,skipped:true,reason:"tenant_lookup_unavailable"};
-  const fetchImpl=options.fetchImpl||globalThis.fetch;
-  const detail=await store.tenantControlDetail(String(tenantPublicId||"").trim());
-  const users=Array.isArray(detail?.users)?detail.users:[];
-  const owner=users.find(x=>x.role==="owner"&&x.membership_status==="active")||users.find(x=>x.role==="owner")||users[0]||null;
-  const ownerEmail=clean(owner?.email,254);
-  if(!ownerEmail)return {enabled:true,synced:false,skipped:true,reason:"tenant_owner_email_unavailable"};
-
-  let contact=await findPrivateContact(ownerEmail,{token,fetchImpl});
-  if(!contact){
-    await syncHubSpotCommercialTenant(store,tenantPublicId,"Dossier en préparation",{token,fetchImpl});
-    contact=await findPrivateContact(ownerEmail,{token,fetchImpl});
-  }
-  if(!contact)return {enabled:true,synced:false,skipped:true,reason:"hubspot_contact_unavailable"};
-
-  const dossierRef=clean(detail?.tenant?.dossier_ref,40);
-  const sender=clean(inbound.sender_email,320)||"Expéditeur non normalisé";
-  const subject=clean(inbound.subject,300)||"Sans objet";
-  const body=clean(inbound.text,4000);
-  const routing=options.routing||{};
+  const fetchImpl=options.fetchImpl||globalThis.fetch,detail=await store.tenantControlDetail(String(tenantPublicId||"").trim());
+  const users=Array.isArray(detail?.users)?detail.users:[],owner=users.find(x=>x.role==="owner"&&x.membership_status==="active")||users.find(x=>x.role==="owner")||users[0]||null;
+  const ownerEmail=clean(owner?.email,254);let contactEmail=clean(inbound.sender_email,320);
+  try{contactEmail=email(contactEmail||ownerEmail);}catch(_error){contactEmail=ownerEmail?email(ownerEmail):"";}
+  if(!contactEmail)return {enabled:true,synced:false,skipped:true,reason:"hubspot_contact_email_unavailable"};
+  const {contact,created:contactCreated}=await ensureSupportContact(contactEmail,{token,fetchImpl});
+  const dossierRef=clean(detail?.tenant?.dossier_ref,40),sender=clean(inbound.sender_email,320)||contactEmail,rawSubject=clean(inbound.subject,300)||"Sans objet",subject=supportSubjectFromInbound(rawSubject),body=clean(inbound.text,4000),routing=options.routing||{};
   const attachmentNames=(Array.isArray(inbound.attachments)?inbound.attachments:[]).map(x=>clean(x,180)).filter(Boolean).slice(0,20);
-  const noteBody=[
-    "<strong>Email entrant rattaché automatiquement au dossier PGI</strong>",
-    dossierRef?"<br><br><strong>Référence dossier :</strong> "+escapeHubSpotHtml(dossierRef):"",
-    "<br><strong>Expéditeur :</strong> "+escapeHubSpotHtml(sender),
-    "<br><strong>Objet :</strong> "+escapeHubSpotHtml(subject),
-    "<br><strong>Méthode de rattachement :</strong> "+escapeHubSpotHtml(clean(routing.resolution_method,80)||"dossier vérifié"),
-    attachmentNames.length?"<br><strong>Pièces jointes signalées :</strong> "+escapeHubSpotHtml(attachmentNames.join(", ")):"",
-    body?"<br><br><strong>Contenu reçu :</strong><br>"+escapeHubSpotHtml(body).replace(/\n/g,"<br>"):""
-  ].join("");
-
-  const associations=[{to:{id:String(contact.id)},types:[{associationCategory:"HUBSPOT_DEFINED",associationTypeId:await noteContactAssociationType({token,fetchImpl})}]}];
-  const dealId=await preferredContactDealId(contact.id,{token,fetchImpl});
-  if(dealId){
-    const dealAssociationTypeId=await noteDealAssociationType({token,fetchImpl});
-    if(dealAssociationTypeId)associations.push({to:{id:String(dealId)},types:[{associationCategory:"HUBSPOT_DEFINED",associationTypeId:dealAssociationTypeId}]});
-  }
-  const note=await hubSpotPrivateRequest("/crm/v3/objects/notes",{
-    token,fetchImpl,method:"POST",
-    body:{properties:{hs_timestamp:new Date().toISOString(),hs_note_body:noteBody,hubspot_owner_id:HUBSPOT_OWNER_ID},associations}
-  });
-  return {enabled:true,synced:true,contactId:String(contact.id),dealId:dealId?String(dealId):null,noteId:note?.id?String(note.id):null,dossierRef};
+  const content=["Email entrant de support rattaché automatiquement.",dossierRef?"Référence dossier existante : "+dossierRef:"","Expéditeur : "+sender,"Objet reçu : "+rawSubject,"Méthode de rattachement : "+(clean(routing.resolution_method,80)||"identité vérifiée"),attachmentNames.length?"Pièces jointes : "+attachmentNames.join(", "):"","",body||"(contenu vide)"].filter(Boolean).join("\n");
+  const support=await ensureSupportTicket(contact,{subject,content,sourceType:"EMAIL",category:"GENERAL_INQUIRY",priority:"MEDIUM"},{token,fetchImpl});
+  return {enabled:true,synced:true,contactId:String(contact.id),contactCreated,ticketId:support.ticketId,ticketCreated:support.created,noteId:support.noteId||null,dossierRef};
 }
+
+export async function syncHubSpotCustomerIncident(store,incidentPublicId,event={},options={}){
+  const token=clean(options.token||process.env.PGI_HUBSPOT_PRIVATE_APP_TOKEN||process.env.HUBSPOT_PRIVATE_APP_TOKEN,800);
+  if(!token)return {enabled:false,synced:false,skipped:true,reason:"hubspot_not_configured"};
+  if(!store||typeof store.serviceIncidentSupportContext!=="function")return {enabled:true,synced:false,skipped:true,reason:"support_context_unavailable"};
+  const fetchImpl=options.fetchImpl||globalThis.fetch,context=await store.serviceIncidentSupportContext(incidentPublicId);
+  if(!context?.customer_email)return {enabled:true,synced:false,skipped:true,reason:"customer_email_unavailable"};
+  const {contact,created:contactCreated}=await ensureSupportContact(email(context.customer_email),{token,fetchImpl});
+  const subject=clean("[Ticket "+String(context.public_id)+"] "+String(context.title||"Support"),180);
+  const content=[event.authorType==="staff"?"Réponse Audiotel Premium Pro sur le ticket client.":"Message client depuis l’espace client.",context.dossier_ref?"Dossier commercial existant : "+context.dossier_ref:"","Ticket : "+context.public_id,"Catégorie : "+context.category,"Impact : "+context.severity,"",clean(event.message,5000)||clean(context.description,5000)].filter(Boolean).join("\n");
+  const support=await ensureSupportTicket(contact,{subject,content,sourceType:event.authorType==="staff"?"EMAIL":"FORM",category:"GENERAL_INQUIRY",priority:hubSpotTicketPriority(context.severity)},{token,fetchImpl});
+  return {enabled:true,synced:true,contactId:String(contact.id),contactCreated,ticketId:support.ticketId,ticketCreated:support.created,noteId:support.noteId||null};
+}
+
+
+async function ensureSupportContact(contactEmail,{token,fetchImpl}){
+  let contact=await findPrivateContact(contactEmail,{token,fetchImpl}),created=false;
+  if(contact)return {contact,created};
+  try{contact=await hubSpotPrivateRequest("/crm/v3/objects/contacts",{token,fetchImpl,method:"POST",body:{properties:{email:contactEmail,hubspot_owner_id:HUBSPOT_OWNER_ID}}});created=true;}
+  catch(error){if(error?.status!==409)throw error;contact=await findPrivateContact(contactEmail,{token,fetchImpl});if(!contact)throw error;}
+  return {contact,created};
+}
+async function ensureSupportTicket(contact,input,{token,fetchImpl}){
+  const subject=clean(input.subject,180)||"Support Audiotel Premium Pro";
+  const detail=await hubSpotPrivateRequest("/crm/v3/objects/contacts/"+encodeURIComponent(contact.id)+"?associations=tickets&properties=email",{token,fetchImpl,method:"GET"});
+  const ids=(detail?.associations?.tickets?.results||[]).map(x=>String(x.id)).slice(0,40);
+  let existing=null;
+  for(const id of ids){
+    try{
+      const ticket=await hubSpotPrivateRequest("/crm/v3/objects/tickets/"+encodeURIComponent(id)+"?properties=subject,hs_pipeline,hs_pipeline_stage,hubspot_owner_id",{token,fetchImpl,method:"GET"}),p=ticket?.properties||{};
+      if(p.hs_pipeline==="0"&&String(p.hs_pipeline_stage)!=="4"&&clean(p.subject,180)===subject){existing=ticket;break;}
+    }catch(_error){}
+  }
+  if(existing){const noteId=await createSupportNote(contact.id,existing.id,input.content,{token,fetchImpl});return {ticketId:String(existing.id),created:false,noteId};}
+  const associationTypeId=await ticketContactAssociationType({token,fetchImpl});
+  const ticket=await hubSpotPrivateRequest("/crm/v3/objects/tickets",{token,fetchImpl,method:"POST",body:{properties:{subject,content:clean(input.content,8000),hs_pipeline:"0",hs_pipeline_stage:"1",hs_ticket_priority:clean(input.priority,20)||"MEDIUM",source_type:clean(input.sourceType,30)||"FORM",hs_ticket_category:clean(input.category,50)||"GENERAL_INQUIRY",hubspot_owner_id:HUBSPOT_OWNER_ID},associations:[{to:{id:String(contact.id)},types:[{associationCategory:"HUBSPOT_DEFINED",associationTypeId}]}]}});
+  return {ticketId:String(ticket.id),created:true,noteId:null};
+}
+async function createSupportNote(contactId,ticketId,content,{token,fetchImpl}){
+  const contactType=await noteContactAssociationType({token,fetchImpl}),ticketType=await noteTicketAssociationType({token,fetchImpl});
+  const note=await hubSpotPrivateRequest("/crm/v3/objects/notes",{token,fetchImpl,method:"POST",body:{properties:{hs_timestamp:new Date().toISOString(),hs_note_body:escapeHubSpotHtml(clean(content,8000)).replace(/\n/g,"<br>"),hubspot_owner_id:HUBSPOT_OWNER_ID},associations:[{to:{id:String(contactId)},types:[{associationCategory:"HUBSPOT_DEFINED",associationTypeId:contactType}]},{to:{id:String(ticketId)},types:[{associationCategory:"HUBSPOT_DEFINED",associationTypeId:ticketType}]}]}});
+  return note?.id?String(note.id):null;
+}
+async function noteTicketAssociationType({token,fetchImpl}){
+  const labels=await hubSpotPrivateRequest("/crm/v4/associations/notes/tickets/labels",{token,fetchImpl,method:"GET"}),match=(labels?.results||[]).find(x=>x.category==="HUBSPOT_DEFINED"&&(x.label==null||x.label==="")),id=Number(match?.typeId);
+  if(!Number.isInteger(id)||id<=0)throw problem("HUBSPOT_NOTE_TICKET_ASSOCIATION_UNAVAILABLE");return id;
+}
+function supportSubjectFromInbound(value){
+  const cleanSubject=clean(String(value||"").replace(/^\s*((re|fw|fwd)\s*:\s*)+/i,""),170)||"Sans objet";
+  if(/^\[Ticket [0-9a-f-]{36}\]/i.test(cleanSubject))return cleanSubject;
+  return clean("Email — "+cleanSubject,180);
+}
+function hubSpotTicketPriority(severity){return ({critical:"URGENT",high:"HIGH",normal:"MEDIUM",low:"LOW"})[String(severity||"normal")]||"MEDIUM";}
 
 async function applyHubSpotMarketingConsent(contact,input={},options={}){
   if(input.marketing_consent!==true)return {marketingConsentRequested:false,marketingSubscriptionSynced:false,marketingConsentRecorded:false};
