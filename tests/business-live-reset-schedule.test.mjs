@@ -22,7 +22,7 @@ test("Business Live scheduled resets are persistent tenant-safe display baseline
   assert.match(migration,/pgi_business_live_next_run/);
   assert.match(migration,/last_run_at/);
   assert.match(migration,/lease_until/);
-  assert.doesNotMatch(migration,/\b(?:DROP|TRUNCATE|DELETE)\b/i);
+  assert.doesNotMatch(migration,/\b(?:DROP|TRUNCATE)\b|DELETE\s+FROM/i);
   assert.match(migration,/never delete or rewrite accounting/i);
 });
 
