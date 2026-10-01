@@ -181,9 +181,16 @@ async function loadPortal(){
   }
 }
 window.PGIReload=loadPortal;
+function scrollAppTop(){
+  try{if("scrollRestoration" in history)history.scrollRestoration="manual"}catch(_e){}
+  var top=function(){window.scrollTo(0,0);document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0};
+  top();
+  requestAnimationFrame(function(){top();requestAnimationFrame(top)});
+}
 function showApp(){
-  $("customer-auth").hidden=true;$("customer-app").hidden=false;
+  $("customer-auth").hidden=true;$("customer-app").hidden=false;scrollAppTop();
   loadPortal().then(function(){
+    scrollAppTop();
     var u=new URL(location.href);
     if(u.searchParams.get("action")==="cancel-subscription"){
       u.searchParams.delete("action");history.replaceState(null,"",u.pathname+(u.search?"?"+u.searchParams.toString():"")+u.hash);
