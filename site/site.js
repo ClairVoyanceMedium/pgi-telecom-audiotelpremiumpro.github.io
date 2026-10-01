@@ -114,7 +114,7 @@ suite.innerHTML='<div class="public-advantage-head"><span>PLATEFORME DE PILOTAGE
 '<article><b>03</b><strong>Routage intelligent</strong><span>Architecture préparée pour horaires, priorités, débordement et plusieurs intervenants.</span></article>'+
 '<article><b>04</b><strong>Rapprochement financier</strong><span>Net validé, payé, retenu et écart à rapprocher dans un même centre financier.</span></article>'+
 '<article><b>05</b><strong>Conformité & confiance</strong><span>KYC, documents, support et prérequis visibles sans simuler une validation externe.</span></article>'+
-'<article><b>06</b><strong>Paiement multicanal</strong><span>Architecture préparée pour réunir SVA, carte bancaire à la minute et forfait après branchement adapté.</span></article>'+
+'<article><b>06</b><strong>Paiement CB intégré</strong><span>Stripe Connect pour encaisser par carte. Commission PGI de lancement 4,9 %, hors frais Stripe. Le paiement à la minute sera relié au moteur téléphonique au branchement.</span></article>'+
 '</div>';
 box.insertAdjacentElement("afterend",suite);
 const money=new Intl.NumberFormat("fr-FR",{style:"currency",currency:"EUR",maximumFractionDigits:0});
