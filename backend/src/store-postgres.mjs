@@ -2507,7 +2507,7 @@ export class PostgresStore{
     const threadRows=refs.length?await this.sql.unsafe(
       "SELECT DISTINCT t.id,t.public_id,t.display_name,t.created_at FROM transactional_email_deliveries d"+
       " JOIN tenants t ON t.id=d.tenant_id WHERE d.tenant_id IS NOT NULL AND t.tenant_type<>'internal'"+
-      " AND lower(d.provider_message_id)=ANY($1::text[]) ORDER BY t.id DESC LIMIT 4",
+      " AND lower(d.metadata->>'provider_message_id')=ANY($1::text[]) ORDER BY t.id DESC LIMIT 4",
       [refs]
     ):[];
 
@@ -2559,17 +2559,11 @@ export class PostgresStore{
 
     const dossierRef=chosen?dossierReference(chosen.id,chosen.created_at):null;
     const hintedRef=!chosen&&dossierRow?dossierReference(dossierRow.id,dossierRow.created_at):null;
-    const senderHash=senderValid?createHash("sha256").update(sender).digest("hex"):null;
     const messageId=String(input.message_id||"").trim().toLowerCase().replace(/^<|>$/g,"").slice(0,998)||null;
-    await this.sql.unsafe(
-      "INSERT INTO inbound_email_correlations(provider_email_id,message_id,tenant_id,sender_hash,resolution_method,dossier_reference,resolution_verified)"+
-      " VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(provider_email_id) DO NOTHING",
-      [providerEmailId,messageId,chosen?Number(chosen.id):null,senderHash,resolutionMethod,dossierRef||hintedRef,Boolean(chosen)]
-    );
     if(chosen){
       await this.sql.unsafe(
         "INSERT INTO audit_log(tenant_id,action,entity_type,entity_id,details) VALUES($1,'customer.email.inbound_resolved','inbound_email',$2,$3::jsonb)",
-        [Number(chosen.id),providerEmailId,JSON.stringify({resolution_method:resolutionMethod,dossier_ref:dossierRef,body_logged:false,sender_logged:false})]
+        [Number(chosen.id),providerEmailId,JSON.stringify({resolution_method:resolutionMethod,dossier_ref:dossierRef,inbound_message_id:messageId,body_logged:false,sender_logged:false})]
       );
     }
     return {
