@@ -21,6 +21,7 @@ import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
 import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail,syncHubSpotCustomerIncident} from "./src/hubspot-crm.mjs";
 import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
+import {getBusinessLiveResetSchedule,saveBusinessLiveResetSchedule,runDueBusinessLiveResetSchedules} from "./src/business-live-reset-scheduler.mjs";
 
 export async function createDefaultBackend(){
   const config=loadConfig();
@@ -174,6 +175,11 @@ export function createBackend(options={}){
         const delivery=await drainTransactionalEmails({store,config,limit:100});
         const dunning=await drainDunningTransactionalEmails({store,config,limit:100});
         return done(res,metrics,started,"email.dispatch",200,{ok:true,delivery,dunning});
+      }
+      if(method==="GET"&&pathname==="/api/v1/internal/business-live/reset-dispatch"){
+        authorizeInternalCron(req,config);
+        const scheduleResult=await runDueBusinessLiveResetSchedules(store,{limit:100});
+        return done(res,metrics,started,"business_live.reset_dispatch",200,{ok:true,...scheduleResult});
       }
 
       if(method==="GET"&&pathname==="/api/v1/public/withdrawal/status"){
@@ -894,6 +900,25 @@ export function createBackend(options={}){
         return done(res,metrics,started,"customer.voice_service.rollback",200,{...result.value,replayed:result.replayed});
       }
 
+      if(method==="GET"&&pathname==="/api/v1/customer/jackpot/reset-schedule"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"finance.read");
+        return done(res,metrics,started,"customer.jackpot.reset_schedule",200,{
+          ...await getBusinessLiveResetSchedule(store,{scope:"tenant",tenantId:context.tenant_id}),
+          can_manage:["owner","admin"].includes(context.customer_role)
+        });
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/jackpot/reset-schedule"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"finance.read");
+        if(!["owner","admin"].includes(context.customer_role)){const e=new Error("Customer role cannot schedule jackpot reset");e.status=403;e.code="CUSTOMER_JACKPOT_SCHEDULE_FORBIDDEN";throw e;}
+        const body=await readJson(req,config.bodyLimitBytes);
+        const schedule=await saveBusinessLiveResetSchedule(store,{scope:"tenant",tenantId:context.tenant_id,payload:body,customerPrincipalId:customerActor.sub});
+        return done(res,metrics,started,"customer.jackpot.reset_schedule",200,schedule);
+      }
+
       if(method==="POST"&&pathname==="/api/v1/customer/jackpot/reset"){
         requireCustomerCsrf(req,customerActor,config);
         const context=await store.customerSessionContext(customerActor);
@@ -1039,6 +1064,21 @@ export function createBackend(options={}){
         requireRole(actor,["admin","finance","readonly"]);
         const [jackpot,ranking]=await Promise.all([store.platformJackpotSnapshot(),store.liveFinancialByTenant(50)]);
         return done(res,metrics,started,"dashboard.live_finance",200,{...jackpot,active_calls:ranking.active_calls,by_client:ranking.by_client,can_reset:actor.role==="admin"});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/dashboard/live-finance/reset-schedule"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.jackpot.reset_schedule",200,{
+          ...await getBusinessLiveResetSchedule(store,{scope:"platform"}),
+          can_manage:actor.role==="admin"
+        });
+      }
+      if(method==="POST"&&pathname==="/api/v1/dashboard/live-finance/reset-schedule"){
+        requireRole(actor,["admin"]);
+        requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const schedule=await saveBusinessLiveResetSchedule(store,{scope:"platform",payload:body,actor});
+        return done(res,metrics,started,"platform.jackpot.reset_schedule",200,schedule);
       }
 
       if(method==="POST"&&pathname==="/api/v1/dashboard/live-finance/reset"){
@@ -2154,10 +2194,14 @@ function routeClassRateLimit(req,config,buckets,metrics,pathname,method){
   }
   if(buckets.size>10000&&Math.random()<.01)for(const [k,v] of buckets)if(v.minute<minute-2)buckets.delete(k);
 }
-function authorizeEmailCron(req,config){
-  if(!config.transactionalEmailEnabled||!config.cronSecret){const e=new Error("Email dispatch disabled");e.status=404;e.code="EMAIL_DISPATCH_DISABLED";e.expose=true;throw e;}
+function authorizeInternalCron(req,config){
+  if(!config.cronSecret){const e=new Error("Internal cron disabled");e.status=404;e.code="INTERNAL_CRON_DISABLED";e.expose=true;throw e;}
   const authorization=String(req.headers?.authorization||"");
-  if(!constantTimeTokenEqual(authorization,"Bearer "+config.cronSecret)){const e=new Error("Unauthorized");e.status=401;e.code="EMAIL_DISPATCH_UNAUTHORIZED";e.expose=true;throw e;}
+  if(!constantTimeTokenEqual(authorization,"Bearer "+config.cronSecret)){const e=new Error("Unauthorized");e.status=401;e.code="INTERNAL_CRON_UNAUTHORIZED";e.expose=true;throw e;}
+}
+function authorizeEmailCron(req,config){
+  if(!config.transactionalEmailEnabled){const e=new Error("Email dispatch disabled");e.status=404;e.code="EMAIL_DISPATCH_DISABLED";e.expose=true;throw e;}
+  authorizeInternalCron(req,config);
 }
 function supportTicketIdFromSubject(value){
   const match=/\[Ticket\s+([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\]/i.exec(String(value||""));
