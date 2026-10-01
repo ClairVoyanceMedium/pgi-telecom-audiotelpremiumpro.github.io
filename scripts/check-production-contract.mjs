@@ -81,6 +81,7 @@ const outboundPortabilityAutomation=fs.readFileSync("backend/src/outbound-portab
 const customerRelationsUi=fs.readFileSync("assets/customer-relations.js","utf8");
 const clientRelationsUi=fs.readFileSync("assets/client-relations.js","utf8");
 const consumptionReceiptMigration=fs.readFileSync("database/migrations/052_consumption_receipts.sql","utf8");
+const inboundEmailRoutingMigration=fs.readFileSync("database/migrations/063_email_thread_customer_resolution.sql","utf8");
 const clientAccountProofUi=fs.readFileSync("assets/client-account-proof.js","utf8");
 const tenantConsumptionCheckUi=fs.readFileSync("assets/tenant-consumption-check.js","utf8");
 const clientPortalHtml=fs.readFileSync("client.html","utf8");
@@ -320,7 +321,6 @@ for(const name of ["PGI_GA4_MEASUREMENT_ENABLED","PGI_GA4_MEASUREMENT_ID","PGI_G
 if(!/PGI_GA4_MEASUREMENT_ENABLED/.test(preflight)||!/PGI_GA4_API_SECRET/.test(preflight))failures.push("preflight must fail closed when GA4 server measurement is enabled");
 const ga4Measurement=fs.readFileSync("backend/src/ga4-measurement.mjs","utf8");
 const analyticsDeliveryMigration=fs.readFileSync("database/migrations/062_analytics_event_delivery.sql","utf8");
-const inboundEmailRoutingMigration=fs.readFileSync("database/migrations/063_email_thread_customer_resolution.sql","utf8");
 if(!/region1\.google-analytics\.com\/mp\/collect/.test(ga4Measurement)||!/buildGa4PurchaseFromStripe/.test(ga4Measurement)||!/buildGa4RefundFromStripe/.test(ga4Measurement))failures.push("GA4 server measurement must use the EU Measurement Protocol endpoint for purchase/refund");
 if(!/analytics_event_deliveries/.test(analyticsDeliveryMigration)||!/payload_sha256/.test(analyticsDeliveryMigration))failures.push("GA4 server delivery must remain persistently idempotent");
 
