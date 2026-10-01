@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<meta name="theme-color" content="#f7f0e9">
+<title>Paiement CB | Audiotel Premium Pro</title>
+<link rel="icon" type="image/png" href="/assets/audiotel-brand-icon-v33.png">
+<style>
+:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:24px;background:linear-gradient(145deg,#fffdf9,#f2e8df);font-family:Inter,Arial,sans-serif;color:#35261f}.card{width:min(620px,100%);padding:30px;border:1px solid rgba(139,103,76,.18);border-radius:22px;background:#fff;box-shadow:0 24px 70px rgba(74,50,37,.12);text-align:center}.logo{display:block;width:min(280px,80%);height:auto;margin:0 auto 22px}.badge{display:inline-block;padding:6px 9px;border:1px solid rgba(91,151,114,.25);border-radius:999px;background:rgba(91,151,114,.07);color:#467657;font-size:11px;font-weight:900;letter-spacing:.05em}.badge.cancel{border-color:rgba(165,127,86,.24);background:rgba(165,127,86,.07);color:#896947}h1{margin:13px 0 9px;font-size:clamp(25px,5vw,38px);line-height:1.08}p{margin:0;color:#746256;font-size:14px;line-height:1.6}.actions{display:flex;justify-content:center;gap:9px;flex-wrap:wrap;margin-top:22px}a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 16px;border-radius:11px;text-decoration:none;font-size:13px;font-weight:800}.primary{background:#372920;color:white}.secondary{border:1px solid rgba(139,103,76,.2);color:#4b382d;background:#fff}.note{margin-top:18px;font-size:11px;color:#938073}
+</style>
+</head>
+<body>
+<main class="card">
+<img class="logo" src="/assets/audiotel-brand-logo-v33.png" alt="Audiotel Premium Pro">
+<div id="payment-badge" class="badge">PAIEMENT ENREGISTRÉ</div>
+<h1 id="payment-title">Votre paiement a bien été transmis.</h1>
+<p id="payment-text">Stripe traite le paiement de manière sécurisée. Le professionnel que vous avez réglé pourra consulter son statut dans son espace Audiotel Premium Pro.</p>
+<div class="actions"><a class="primary" href="/">Audiotel Premium Pro</a><a class="secondary" href="javascript:window.close()">Fermer cette page</a></div>
+<p class="note">Audiotel Premium Pro ne stocke pas les données complètes de votre carte bancaire.</p>
+</main>
+<script>
+(function(){
+var q=new URLSearchParams(location.search),cancel=q.get("status")==="cancelled";
+if(cancel){
+ var b=document.getElementById("payment-badge"),t=document.getElementById("payment-title"),p=document.getElementById("payment-text");
+ b.textContent="PAIEMENT NON FINALISÉ";b.classList.add("cancel");
+ t.textContent="Le paiement n’a pas été finalisé.";
+ p.textContent="Aucun message affiché sur cette page ne vaut confirmation de débit. Vous pouvez fermer cette page et contacter directement le professionnel si nécessaire.";
+}
+history.replaceState(null,"",location.pathname+"?status="+(cancel?"cancelled":"success"));
+})();
+</script>
+</body>
+</html>
