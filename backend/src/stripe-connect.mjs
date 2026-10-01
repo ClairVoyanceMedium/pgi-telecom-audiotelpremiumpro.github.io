@@ -169,8 +169,8 @@ export async function createStripeCardCheckout(config,input={}){
   const base=baseUrl(config);
   const fields={
     mode:"payment",
-    success_url:base+"/client.html?card_payment=success&session_id={CHECKOUT_SESSION_ID}",
-    cancel_url:base+"/client.html?card_payment=cancelled",
+    success_url:base+"/paiement-cb-result.html?status=success&session_id={CHECKOUT_SESSION_ID}",
+    cancel_url:base+"/paiement-cb-result.html?status=cancelled",
     client_reference_id:requestId,
     line_items:[{
       quantity:1,
@@ -267,4 +267,19 @@ export async function normalizeStripeConnectPaymentEvent(config,event={}){
   }
 
   return null;
+}
+
+
+export async function retrieveStripeCardCheckout(config,connectedAccount,sessionId){
+  if(!/^acct_[A-Za-z0-9]+$/.test(String(connectedAccount||"")))throw error(400,"INVALID_CONNECT_ACCOUNT");
+  if(!/^cs_[A-Za-z0-9_]+$/.test(String(sessionId||"")))throw error(400,"INVALID_CHECKOUT_SESSION");
+  const session=await jsonRequest(config,"/v1/checkout/sessions/"+encodeURIComponent(sessionId),{connectedAccount});
+  const paymentStatus=String(session?.payment_status||"").toLowerCase(),sessionStatus=String(session?.status||"").toLowerCase();
+  return {
+    provider_checkout_session_reference:String(session.id||sessionId),
+    provider_payment_intent_reference:stripeObjectId(session.payment_intent,"pi_"),
+    status:paymentStatus==="paid"?"paid":sessionStatus==="expired"?"expired":"open",
+    payment_status:paymentStatus,
+    session_status:sessionStatus
+  };
 }
