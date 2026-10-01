@@ -16,10 +16,10 @@ import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scop
 import {createStaticSiteHandler} from "./src/static-site.mjs";
 import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
 import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStripe,buildGa4RefundFromStripe,sendGa4Measurement} from "./src/ga4-measurement.mjs";
-import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
+import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
-import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail} from "./src/hubspot-crm.mjs";
+import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail,syncHubSpotCustomerIncident} from "./src/hubspot-crm.mjs";
 import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
 
 export async function createDefaultBackend(){
@@ -138,7 +138,7 @@ export function createBackend(options={}){
         if(!config.transactionalEmailEnabled||!config.resendWebhookSecret)return done(res,metrics,started,"email.resend_webhook",404,{error:{code:"RESEND_WEBHOOK_DISABLED"}});
         const verified=await verifyResendWebhook(req,config);
         const result=await applyResendWebhookEvent(store,verified);
-        let inbound=null,crmSync=null;
+        let inbound=null,crmSync=null,incidentJournal=null;
         if(String(verified.event?.type||"")==="email.received"&&!result.duplicate){
           try{
             inbound=await forwardInboundEmailToInternal(config,verified.event?.data||{}, {
@@ -146,13 +146,27 @@ export function createBackend(options={}){
             });
           }catch(error){logSecurityEmailFailure("inbound_forward",error);throw error;}
           if(inbound?.routing_error)logSecurityEmailFailure("inbound_routing",inbound.routing_error);
-          const routing=inbound?.customer_routing,context=inbound?.routing_context;
-          if(routing?.resolved&&routing.tenant_public_id&&context){
+          const routing=inbound?.customer_routing,context=inbound?.routing_context,supportTicketId=context?supportTicketIdFromSubject(context.subject):null;
+          if(supportTicketId&&context&&typeof store.recordServiceIncidentEmailNote==="function"){
+            const ownDomain=String(config.transactionalDomain||"").toLowerCase(),sender=String(context.sender_email||"").toLowerCase();
+            const journalOnly=String(context.recipient||"").toLowerCase()==="support-journal@"+ownDomain;
+            const internalSender=sender.endsWith("@"+ownDomain)||sender===String(config.internalNotificationEmail||"").toLowerCase()||sender===String(config.transactionalReplyTo||"").toLowerCase();
+            try{
+              if(journalOnly&&internalSender){
+                incidentJournal=await store.recordServiceIncidentEmailNote(supportTicketId,{authorType:"staff",body:context.text,providerEmailId:context.provider_email_id,messageId:context.message_id});
+                crmSync=await syncHubSpotCustomerIncident(store,supportTicketId,{authorType:"staff",message:context.text,source:"gmail_journal"});
+              }else if(routing?.resolved&&routing.tenant_public_id){
+                incidentJournal=await store.recordServiceIncidentEmailNote(supportTicketId,{authorType:"customer",tenantPublicId:routing.tenant_public_id,body:context.text,providerEmailId:context.provider_email_id,messageId:context.message_id});
+                crmSync=await syncHubSpotCustomerIncident(store,supportTicketId,{authorType:"customer",message:context.text,source:"email_reply"});
+              }
+            }catch(error){logSecurityEmailFailure("support_ticket_journal",error);}
+          }
+          if(!crmSync&&routing?.resolved&&routing.tenant_public_id&&context){
             try{crmSync=await syncHubSpotInboundEmail(store,routing.tenant_public_id,context,{routing});}
             catch(error){logHubSpotSyncFailure("inbound_email",error);}
           }
         }
-        return done(res,metrics,started,"email.resend_webhook",200,{received:true,duplicate:Boolean(result.duplicate),event_type:result.event_type||verified.event.type,inbound,crm_sync:Boolean(crmSync?.synced)});
+        return done(res,metrics,started,"email.resend_webhook",200,{received:true,duplicate:Boolean(result.duplicate),event_type:result.event_type||verified.event.type,inbound,crm_sync:Boolean(crmSync?.synced),support_ticket_journaled:Boolean(incidentJournal&&!incidentJournal.duplicate)});
       }
       if(method==="GET"&&pathname==="/api/v1/internal/email/dispatch"){
         authorizeEmailCron(req,config);
@@ -744,6 +758,14 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes);
         const payload={tenant_id:context.tenant_id,...body};
         const result=await store.idempotent(req.headers["idempotency-key"],"customer.service_incident.create",payload,()=>store.createCustomerServiceIncident(context.tenant_id,body,customerActor.sub));
+        if(!result.replayed){
+          const outcomes=await Promise.allSettled([
+            sendSupportTicketNotification(config,{ticketId:result.value.public_id,customerEmail:context.email,title:result.value.title,message:result.value.description,category:result.value.category,severity:result.value.severity,eventType:"new_ticket",eventId:"support-ticket-created/"+result.value.public_id}),
+            syncHubSpotCustomerIncident(store,result.value.public_id,{authorType:"customer",message:result.value.description,source:"client_portal"})
+          ]);
+          if(outcomes[0].status==="rejected")logSecurityEmailFailure("support_ticket_notify",outcomes[0].reason);
+          if(outcomes[1].status==="rejected")logHubSpotSyncFailure("support_ticket_create",outcomes[1].reason);
+        }
         return done(res,metrics,started,"customer.incidents.create",201,{...result.value,replayed:result.replayed});
       }
       match=routeMatch(pathname,"/api/v1/customer/incidents/:id/notes");
@@ -754,6 +776,17 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes);
         const payload={tenant_id:context.tenant_id,incident_id:match.id,body:body.body};
         const result=await store.idempotent(req.headers["idempotency-key"],"customer.service_incident.note",payload,()=>store.addCustomerServiceIncidentNote(context.tenant_id,match.id,body.body,customerActor.sub));
+        if(!result.replayed){
+          try{
+            const support=await store.serviceIncidentSupportContext(match.id);
+            const outcomes=await Promise.allSettled([
+              sendSupportTicketNotification(config,{ticketId:support.public_id,customerEmail:context.email,dossierRef:support.dossier_ref,title:support.title,message:String(body.body||""),category:support.category,severity:support.severity,eventType:"customer_message",eventId:"support-ticket-customer-note/"+support.public_id+"/"+result.value.id}),
+              syncHubSpotCustomerIncident(store,support.public_id,{authorType:"customer",message:String(body.body||""),source:"client_portal"})
+            ]);
+            if(outcomes[0].status==="rejected")logSecurityEmailFailure("support_ticket_notify",outcomes[0].reason);
+            if(outcomes[1].status==="rejected")logHubSpotSyncFailure("support_ticket_note",outcomes[1].reason);
+          }catch(error){logSecurityEmailFailure("support_ticket_context",error);}
+        }
         return done(res,metrics,started,"customer.incidents.note",201,{...result.value,replayed:result.replayed});
       }
       if(method==="GET"&&pathname==="/api/v1/customer/relations"){
@@ -1521,6 +1554,17 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes);
         const payload={incident:match.id,body:body.body,customer_visible:body.customer_visible!==false};
         const result=await store.idempotent(req.headers["idempotency-key"],"service_incident.note",payload,()=>store.addServiceIncidentNote(match.id,body,actor));
+        if(!result.replayed&&body.customer_visible!==false){
+          try{
+            const support=await store.serviceIncidentSupportContext(match.id);
+            const outcomes=await Promise.allSettled([
+              support.customer_email?sendSupportTicketReply(config,{ticketId:support.public_id,customerEmail:support.customer_email,title:support.title,message:String(body.body||""),eventId:"support-ticket-staff-note/"+support.public_id+"/"+result.value.id}):Promise.resolve({sent:false}),
+              syncHubSpotCustomerIncident(store,support.public_id,{authorType:"staff",message:String(body.body||""),source:"admin_portal"})
+            ]);
+            if(outcomes[0].status==="rejected")logSecurityEmailFailure("support_ticket_reply",outcomes[0].reason);
+            if(outcomes[1].status==="rejected")logHubSpotSyncFailure("support_ticket_staff_note",outcomes[1].reason);
+          }catch(error){logSecurityEmailFailure("support_ticket_context",error);}
+        }
         return done(res,metrics,started,"platform.service_incident.note",201,{...result.value,replayed:result.replayed});
       }
       match=routeMatch(pathname,"/api/v1/platform/tenants/:id/routing/simulate");
@@ -2114,6 +2158,10 @@ function authorizeEmailCron(req,config){
   if(!config.transactionalEmailEnabled||!config.cronSecret){const e=new Error("Email dispatch disabled");e.status=404;e.code="EMAIL_DISPATCH_DISABLED";e.expose=true;throw e;}
   const authorization=String(req.headers?.authorization||"");
   if(!constantTimeTokenEqual(authorization,"Bearer "+config.cronSecret)){const e=new Error("Unauthorized");e.status=401;e.code="EMAIL_DISPATCH_UNAUTHORIZED";e.expose=true;throw e;}
+}
+function supportTicketIdFromSubject(value){
+  const match=/\[Ticket\s+([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\]/i.exec(String(value||""));
+  return match?match[1].toLowerCase():null;
 }
 function done(res,metrics,started,route,status,payload,headers={}){
   res.pgiRoute=route;
