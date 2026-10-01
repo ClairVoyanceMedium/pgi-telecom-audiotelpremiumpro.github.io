@@ -184,41 +184,46 @@ async function loadPortal(){
 window.PGIReload=loadPortal;
 function scrollAppTop(){
   if(/^#client-/.test(String(location.hash||"")))history.replaceState(null,"",location.pathname+location.search);
-  var top=function(){window.scrollTo({top:0,left:0,behavior:"auto"});document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0};
+  var top=function(){try{window.scrollTo({top:0,left:0,behavior:"auto"})}catch(_e){window.scrollTo(0,0)}document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0};
   top();
   requestAnimationFrame(function(){top();requestAnimationFrame(top)});
-  setTimeout(top,80);setTimeout(top,240);
+  setTimeout(top,60);setTimeout(top,180);setTimeout(top,420);
+}
+function releaseInitialTopLock(){
+  scrollAppTop();
+  document.documentElement.classList.remove("cp-initial-top-lock");
+  scrollAppTop();
 }
 function showApp(){
   $("customer-auth").hidden=true;$("customer-app").hidden=false;scrollAppTop();
   loadPortal().then(function(){
-    scrollAppTop();
+    releaseInitialTopLock();
     var u=new URL(location.href);
     if(u.searchParams.get("action")==="cancel-subscription"){
       u.searchParams.delete("action");history.replaceState(null,"",u.pathname+(u.search?"?"+u.searchParams.toString():"")+u.hash);
       ensureBilling().then(function(x){return x.open("manage");}).catch(function(){toast("Gestion de la résiliation momentanément indisponible.");});
     }
-  }).catch(function(e){toast("Chargement impossible : "+(e.code||e.message));});
+  }).catch(function(e){releaseInitialTopLock();toast("Chargement impossible : "+(e.code||e.message));});
 }
 function hideAuthPanels(){
   ["login-panel","forgot-panel","reset-panel","register-panel","activation-panel"].forEach(function(id){var el=$(id);if(el)el.hidden=true;});
 }
 function showLogin(){
-  $("customer-app").hidden=true;$("customer-auth").hidden=false;hideAuthPanels();$("login-panel").hidden=false;
+  $("customer-app").hidden=true;$("customer-auth").hidden=false;hideAuthPanels();$("login-panel").hidden=false;releaseInitialTopLock();
 }
 function showForgot(){
-  $("customer-app").hidden=true;$("customer-auth").hidden=false;hideAuthPanels();$("forgot-panel").hidden=false;
+  $("customer-app").hidden=true;$("customer-auth").hidden=false;hideAuthPanels();$("forgot-panel").hidden=false;releaseInitialTopLock();
   var email=$("customer-email")&&$("customer-email").value.trim();if(email)$("forgot-email").value=email;
 }
 function showReset(){
-  $("customer-app").hidden=true;$("customer-auth").hidden=false;hideAuthPanels();$("reset-panel").hidden=false;
+  $("customer-app").hidden=true;$("customer-auth").hidden=false;hideAuthPanels();$("reset-panel").hidden=false;releaseInitialTopLock();
 }
 function showRegister(){
-  $("customer-app").hidden=true;$("customer-auth").hidden=false;hideAuthPanels();$("register-panel").hidden=false;
+  $("customer-app").hidden=true;$("customer-auth").hidden=false;hideAuthPanels();$("register-panel").hidden=false;releaseInitialTopLock();
   populateCountries();import("./client-audience.js").then(m=>m.init(),()=>{});
 }
 function showActivation(){
-  $("customer-app").hidden=true;$("customer-auth").hidden=false;hideAuthPanels();$("activation-panel").hidden=false;
+  $("customer-app").hidden=true;$("customer-auth").hidden=false;hideAuthPanels();$("activation-panel").hidden=false;releaseInitialTopLock();
 }
 async function handleGoogleCredential(response,tenantOverride){
   var credential=response&&response.credential?response.credential:state.googleCredential;
