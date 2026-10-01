@@ -20,6 +20,7 @@ const llmsFull=fs.readFileSync("llms-full.txt","utf8");
 const manifest=fs.readFileSync("site/manifest.webmanifest","utf8");
 const guide=fs.readFileSync("site/seo/guide-audiotel-sva.html","utf8");
 const terms=fs.readFileSync("site/seo/conditions-abonnement.html","utf8");
+const cardPaymentsLanding=fs.readFileSync("site/seo/paiement-cb-audiotel.html","utf8");
 
 test("public site targets both individuals and professionals without overloading the homepage",()=>{
   assert.match(html,/BESOIN D’UN NUMÉRO SURTAXÉ \? \(PARTICULIER \/ PROFESSIONNEL\)/);
@@ -436,3 +437,46 @@ test("homepage hero uses the premium diagonal professional visual without replac
   assert.match(buildStatic,/audiotel-hero-professionnels-diagonal\.webp/);
 });
 
+
+
+test("premium hero visual is branded, fully clickable and routes to the dedicated CB conversion page",()=>{
+  assert.match(html,/hero-visual-link[^>]+href="\/paiement-cb-audiotel\//);
+  assert.match(html,/hero-visual-brand/);
+  assert.match(html,/audiotel-brand-logo-v33\.png/);
+  assert.match(css,/premium-clickable-hero-v165/);
+});
+
+test("homepage removes the duplicated advanced comparator and uses warm clickable advantage cards",()=>{
+  assert.doesNotMatch(js,/public-advanced-comparator/);
+  assert.doesNotMatch(js,/Testez votre propre scénario/);
+  assert.match(js,/SIMULATION · NON CONTRACTUELLE/);
+  assert.match(js,/public-advantage-card/);
+  assert.match(js,/>✓<\/b>/);
+  assert.match(css,/homepage-conversion-cards-v163/);
+  assert.match(css,/#d9c4b1/);
+});
+
+test("homepage explains the 4.9 percent CB fee without mixing it with Stripe fees or subscription",()=>{
+  assert.match(html,/COMMISSION DE SERVICE PGI · PAIEMENTS CB/);
+  assert.match(html,/4,9 %/);
+  assert.match(html,/Ce 4,9 % correspond à la commission PGI/);
+  assert.match(html,/ni des frais Stripe/);
+  assert.match(html,/ni de l’abonnement Audiotel Premium Pro à 3€ TTC \/ mois/);
+});
+
+test("payment CB conversion landing is built, indexable and commercially explicit",()=>{
+  assert.match(cardPaymentsLanding,/Paiement CB Audiotel avec Stripe Connect/);
+  assert.match(cardPaymentsLanding,/Commission PGI : 4,9 % par paiement CB/);
+  assert.match(cardPaymentsLanding,/Frais Stripe distincts/);
+  assert.match(cardPaymentsLanding,/Aucune carte complète stockée par PGI/);
+  assert.match(cardPaymentsLanding,/Préparer mon activation CB/);
+  assert.match(buildStatic,/"paiement-cb-audiotel"/);
+  assert.match(sitemap,/paiement-cb-audiotel/);
+});
+
+test("homepage card-shaped product modules have real destinations",()=>{
+  assert.match(html,/class="tech-card-link" href="\/audiotel-professionnels\//);
+  assert.match(html,/class="tech-card-link" href="\/reversement-audiotel\//);
+  assert.match(html,/class="tech-card-link" href="\/portabilite-numero-sva\//);
+  assert.match(html,/public-cb-points[\s\S]*href="\/paiement-cb-audiotel\/#fonctionnement"/);
+});

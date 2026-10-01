@@ -152,6 +152,7 @@ const seoPages=[
   "numero-surtaxe-08",
   "tarif-numero-sva",
   "comparateur-audiotel",
+  "paiement-cb-audiotel",
   "guide-audiotel-sva",
   "demande-ouverture",
   "mentions-legales",
