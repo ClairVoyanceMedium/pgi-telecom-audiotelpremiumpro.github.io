@@ -4280,7 +4280,7 @@ export class PostgresStore{
         [id]
       ))[0]||{};
       const rows=await tx.unsafe(
-        "SELECT public_id::text AS public_id,customer_email,description,currency,amount_minor::bigint AS amount_minor,application_fee_bps,application_fee_minor::bigint AS application_fee_minor,status,paid_at,refunded_at,expires_at,created_at FROM tenant_card_payment_requests WHERE tenant_id=$1 ORDER BY created_at DESC,id DESC LIMIT 40",
+        "SELECT public_id::text AS public_id,provider_checkout_session_reference,provider_payment_intent_reference,provider_charge_reference,customer_email,description,currency,amount_minor::bigint AS amount_minor,application_fee_bps,application_fee_minor::bigint AS application_fee_minor,status,paid_at,refunded_at,expires_at,created_at FROM tenant_card_payment_requests WHERE tenant_id=$1 ORDER BY created_at DESC,id DESC LIMIT 40",
         [id]
       );
       return {account,summary:{payments_total:Number(summary.payments_total||0),payments_paid:Number(summary.payments_paid||0),volume_paid_minor:Number(summary.volume_paid_minor||0),pgi_fee_paid_minor:Number(summary.pgi_fee_paid_minor||0)},payments:rows.map(x=>({...x,amount_minor:Number(x.amount_minor),application_fee_minor:Number(x.application_fee_minor)}))};
