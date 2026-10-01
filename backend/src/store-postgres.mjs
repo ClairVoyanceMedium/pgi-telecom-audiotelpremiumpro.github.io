@@ -4287,6 +4287,31 @@ export class PostgresStore{
     });
   }
 
+  async platformCardPaymentSummary(){
+    const totals=(await this.readSql.unsafe(
+      "SELECT (SELECT count(*)::int FROM tenant_card_payment_accounts) AS accounts_total,"+
+      " (SELECT count(*)::int FROM tenant_card_payment_accounts WHERE status='active' AND charges_enabled=true) AS accounts_active,"+
+      " (SELECT count(*)::int FROM tenant_card_payment_accounts WHERE status IN ('pending','onboarding','restricted')) AS accounts_onboarding,"+
+      " (SELECT count(*)::int FROM tenant_card_payment_requests WHERE status='paid') AS payments_paid,"+
+      " (SELECT COALESCE(sum(amount_minor),0)::bigint FROM tenant_card_payment_requests WHERE status='paid') AS volume_paid_minor,"+
+      " (SELECT COALESCE(sum(application_fee_minor),0)::bigint FROM tenant_card_payment_requests WHERE status='paid') AS pgi_fee_paid_minor"
+    ))[0]||{};
+    const recent=await this.readSql.unsafe(
+      "SELECT r.public_id::text AS public_id,t.public_id AS tenant_public_id,t.display_name,r.description,r.currency,r.amount_minor::bigint AS amount_minor,r.application_fee_minor::bigint AS application_fee_minor,r.application_fee_bps,r.status,r.created_at,r.paid_at"+
+      " FROM tenant_card_payment_requests r JOIN tenants t ON t.id=r.tenant_id ORDER BY r.created_at DESC,r.id DESC LIMIT 30"
+    );
+    return {
+      accounts_total:Number(totals.accounts_total||0),
+      accounts_active:Number(totals.accounts_active||0),
+      accounts_onboarding:Number(totals.accounts_onboarding||0),
+      payments_paid:Number(totals.payments_paid||0),
+      volume_paid_minor:Number(totals.volume_paid_minor||0),
+      pgi_fee_paid_minor:Number(totals.pgi_fee_paid_minor||0),
+      application_fee_bps:490,
+      recent:recent.map(x=>({...x,amount_minor:Number(x.amount_minor),application_fee_minor:Number(x.application_fee_minor)}))
+    };
+  }
+
   async customerPortabilityRequests(tenantId){
     const id=Number(tenantId);
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
