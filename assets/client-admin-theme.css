@@ -310,3 +310,36 @@ body{
   .cp-logo-header{width:min(220px,56vw);max-height:64px}
   .cp-product-lockup strong{font-size:19px}
 }
+
+
+/* client-brand-visibility-v155 */
+@media(max-width:760px){
+  .cp-brand img.cp-logo-header{
+    width:68px!important;
+    height:68px!important;
+    max-width:68px!important;
+    max-height:68px!important;
+    object-fit:contain!important;
+    flex:0 0 68px!important;
+    filter:drop-shadow(0 6px 16px rgba(0,0,0,.34))!important;
+  }
+  .cp-product-lockup-header strong{
+    font-size:23px!important;
+    line-height:1.02!important;
+  }
+  .cp-product-lockup-header span{
+    font-size:12px!important;
+    letter-spacing:.075em!important;
+  }
+}
+@media(max-width:430px){
+  .cp-brand img.cp-logo-header{
+    width:64px!important;
+    height:64px!important;
+    max-width:64px!important;
+    max-height:64px!important;
+    flex-basis:64px!important;
+  }
+  .cp-product-lockup-header strong{font-size:22px!important}
+  .cp-product-lockup-header span{font-size:11.5px!important}
+}
