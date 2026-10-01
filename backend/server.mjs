@@ -288,7 +288,7 @@ export function createBackend(options={}){
           const crmInput={...body,processing_consent:body.privacy_notice_acknowledged===true};
           try{await submitHubSpotLead(crmInput,{pageUri,pageName:"Création de compte Audiotel Premium Pro",hutk,attempts:1,timeoutMs:2200});}
           catch(error){logHubSpotSyncFailure("customer_registration_form",error);}
-          try{await syncHubSpotCommercialTenant(store,registered.tenant_public_id,"Dossier en préparation",{pageUri,pageName:"Création de compte Audiotel Premium Pro",hutk});}
+          try{await syncHubSpotCommercialTenant(store,registered.tenant_public_id,"Dossier en préparation",{pageUri,pageName:"Création de compte Audiotel Premium Pro",hutk,commercialStatus:"Dossier en préparation"});}
           catch(error){logHubSpotSyncFailure("customer_registration_commercial",error);}
         }
         const publicUser={id:registered.id,name:registered.display_name,email:registered.email,role:registered.customer_role,tenant:{id:registered.tenant_public_id,name:registered.tenant_name,status:registered.tenant_status,dossier_ref:registered.dossier_ref}};
