@@ -8,6 +8,7 @@ import {simulateDigitalTwin} from "./digital-twin.mjs";
 import {assessShadowBilling} from "./shadow-billing.mjs";
 import {assessOperationalRisk} from "./risk-engine.mjs";
 import {assessOperationalSlo} from "./slo-assurance.mjs";
+import {normalizeBusinessLiveSchedule,nextBusinessLiveRun,businessLiveScheduleFromRow} from "./business-live-schedule.mjs";
 
 const require=createRequire(import.meta.url);
 const core=require("../../assets/core.js");
@@ -34,6 +35,8 @@ export class MemoryStore{
     this.baselines=[];
     this.jackpotBaselines=[];
     this.platformJackpotBaselines=[{id:0,effective_from:new Date(0).toISOString(),reason:"Origine du Business Live plateforme",created_by:null}];
+    this.businessLiveResetSchedules=new Map();
+    this.nextBusinessLiveScheduleId=1;
     this.rawEventKeys=new Set();
     this.outbox=[];
     this.workQueue=[];
@@ -647,7 +650,7 @@ export class MemoryStore{
 
   async createCustomerJackpotReset(tenantId,customerPrincipalId){
     const id=Number(tenantId),now=new Date().toISOString(),row={id:this.nextBaselineId++,tenant_id:id,scope:"global",scope_id:null,metric_key:"jackpot",reason:"Remise à zéro du jackpot personnel",created_at:now,effective_from:now,created_by:null,created_by_customer_principal_id:customerPrincipalId||null};
-    this.baselines.push(row);this.#audit("customer.jackpot.reset",String(row.id),{tenant_id:id,accounting_impact:"none"});this.eventBus.publish("customer.jackpot.reset",{tenant_id:id,reset_at:now});return {jackpot_reset_at:now,accounting_impact:"none"};
+    this.jackpotBaselines.push(row);this.#audit("customer.jackpot.reset",String(row.id),{tenant_id:id,accounting_impact:"none"});this.eventBus.publish("customer.jackpot.reset",{tenant_id:id,reset_at:now});return {jackpot_reset_at:now,accounting_impact:"none"};
   }
 
   async createCustomerMetricReset(tenantId,metricKeys,customerPrincipalId){
@@ -661,6 +664,63 @@ export class MemoryStore{
     this.#audit("customer.metrics.reset",String(rows[0].id),{tenant_id:id,metric_keys:keys});
     this.eventBus.publish("customer.metrics.reset",{tenant_id:id,metric_keys:keys});
     return {data:structuredClone(rows),metric_keys:keys,effective_from:now};
+  }
+
+
+  async businessLiveResetSchedule({scope,tenantId=null}={}){
+    const normalizedScope=String(scope||"");
+    if(!["platform","tenant"].includes(normalizedScope))throw problem(400,"BUSINESS_LIVE_SCOPE_INVALID");
+    const id=tenantId==null?null:Number(tenantId);
+    if(normalizedScope==="tenant"&&(!Number.isInteger(id)||id<=0))throw problem(400,"INVALID_TENANT_CONTEXT");
+    const key=normalizedScope==="platform"?"platform":"tenant:"+id;
+    return businessLiveScheduleFromRow(this.businessLiveResetSchedules.get(key)||null);
+  }
+
+  async upsertBusinessLiveResetSchedule({scope,tenantId=null,schedule={},staffActor=null,customerPrincipalId=null}={}){
+    const normalizedScope=String(scope||"");
+    if(!["platform","tenant"].includes(normalizedScope))throw problem(400,"BUSINESS_LIVE_SCOPE_INVALID");
+    const id=tenantId==null?null:Number(tenantId);
+    if(normalizedScope==="tenant"&&(!Number.isInteger(id)||id<=0))throw problem(400,"INVALID_TENANT_CONTEXT");
+    const normalized=normalizeBusinessLiveSchedule(schedule,{timezone:"Europe/Paris"});
+    const now=new Date(),key=normalizedScope==="platform"?"platform":"tenant:"+id,existing=this.businessLiveResetSchedules.get(key);
+    const row={
+      id:existing?.id||this.nextBusinessLiveScheduleId++,schedule_key:key,scope:normalizedScope,tenant_id:normalizedScope==="tenant"?id:null,
+      enabled:normalized.enabled,frequency:normalized.frequency,timezone:normalized.timezone,local_time:normalized.time+":00",
+      weekday:normalized.weekday,month_day:normalized.month_day,interval_days:normalized.interval_days,anchor_date:normalized.anchor_date,
+      next_run_at:normalized.enabled?nextBusinessLiveRun(normalized,now).toISOString():null,last_run_at:existing?.last_run_at||null,
+      run_count:Number(existing?.run_count||0),last_error:null,created_at:existing?.created_at||now.toISOString(),updated_at:now.toISOString(),
+      configured_by_staff_id:normalizedScope==="platform"?(staffActor?.sub||null):null,
+      configured_by_customer_principal_id:normalizedScope==="tenant"?(customerPrincipalId||null):null
+    };
+    this.businessLiveResetSchedules.set(key,row);
+    this.#audit(normalizedScope==="platform"?"platform.jackpot.schedule":"customer.jackpot.schedule",String(row.id),{tenant_id:row.tenant_id,enabled:row.enabled,frequency:row.frequency,next_run_at:row.next_run_at});
+    this.eventBus.publish(normalizedScope==="platform"?"platform.jackpot.schedule":"customer.jackpot.schedule",{tenant_id:row.tenant_id,schedule_id:row.id,next_run_at:row.next_run_at,enabled:row.enabled});
+    return businessLiveScheduleFromRow(row);
+  }
+
+  async runDueBusinessLiveResets(limit=250){
+    const now=new Date(),safe=Math.max(1,Math.min(1000,Number(limit)||250));
+    const due=[...this.businessLiveResetSchedules.values()].filter(x=>x.enabled&&x.next_run_at&&Date.parse(x.next_run_at)<=now.getTime()).sort((a,b)=>Date.parse(a.next_run_at)-Date.parse(b.next_run_at)||a.id-b.id).slice(0,safe);
+    const results=[];
+    for(const row of due){
+      try{
+        const scheduledFor=new Date(row.next_run_at).toISOString(),resetAt=new Date().toISOString(),nextRun=nextBusinessLiveRun(businessLiveScheduleFromRow(row),new Date());
+        let resetReference;
+        if(row.scope==="platform"){
+          const baseline={id:this.nextBaselineId++,effective_from:resetAt,reason:"Remise à zéro automatique du Business Live plateforme",created_by:null,created_at:resetAt};
+          this.platformJackpotBaselines.push(baseline);resetReference="audit:"+baseline.id;
+          this.#audit("platform.jackpot.reset",String(baseline.id),{automatic:true,schedule_id:row.id,scheduled_for:scheduledFor,accounting_impact:"none",reporting_impact:"none"});
+        }else{
+          const baseline={id:this.nextBaselineId++,tenant_id:Number(row.tenant_id),scope:"global",scope_id:null,metric_key:"jackpot",reason:"Remise à zéro automatique du Business Live",created_at:resetAt,effective_from:resetAt,created_by:null,created_by_customer_principal_id:null};
+          this.jackpotBaselines.push(baseline);resetReference="baseline:"+baseline.id;
+          this.#audit("customer.jackpot.reset",String(baseline.id),{tenant_id:Number(row.tenant_id),automatic:true,schedule_id:row.id,scheduled_for:scheduledFor,accounting_impact:"none"});
+        }
+        row.last_run_at=resetAt;row.next_run_at=nextRun.toISOString();row.run_count=Number(row.run_count||0)+1;row.last_error=null;row.updated_at=resetAt;
+        const result={schedule_id:row.id,scope:row.scope,tenant_id:row.tenant_id,scheduled_for:scheduledFor,reset_at:resetAt,next_run_at:row.next_run_at,reset_reference:resetReference};
+        results.push(result);this.eventBus.publish(row.scope==="platform"?"platform.jackpot.reset":"customer.jackpot.reset",{tenant_id:row.tenant_id,reset_at:resetAt,automatic:true,schedule_id:row.id});
+      }catch(error){row.last_error=String(error?.message||"Scheduled Business Live reset failed").slice(0,500);row.updated_at=new Date().toISOString();}
+    }
+    return {scanned:due.length,executed:results.length,failed:due.length-results.length,results};
   }
 
   async carrierRouting(){

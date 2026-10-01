@@ -314,11 +314,20 @@ Retourne le Business Live du cockpit PGI. Le montant principal est cumulatif dep
 ### POST /dashboard/live-finance/reset
 Crée une nouvelle baseline Business Live plateforme. Réservé au rôle administrateur, idempotent et audité. La remise à zéro ne modifie ni CDR, ni statistiques jour/semaine/mois/année, ni règlements, ni distributions de revenus.
 
+### POST /dashboard/live-finance/reset-schedule
+Crée ou remplace la programmation automatique de remise à zéro du Business Live plateforme. Réservé au rôle administrateur et idempotent. Les fréquences prises en charge sont quotidienne, hebdomadaire, mensuelle sur un jour choisi et intervalle libre en jours. Le fuseau horaire et l'heure locale sont persistés. Pour un jour 29, 30 ou 31 absent d'un mois, l'exécution est ramenée au dernier jour du mois.
+
 ### GET /customer/jackpot
 Retourne le jackpot motivant du tenant, indépendant des métriques officielles. Le montant est une estimation opérationnelle calculée à la seconde depuis la dernière baseline jackpot, y compris lorsqu'une remise à zéro intervient pendant un appel actif. Les CDR et rapprochements restent l'autorité comptable.
 
 ### POST /customer/jackpot/reset
 Crée une nouvelle baseline `jackpot` pour le tenant authentifié. L'opération est idempotente, auditée et non destructive : elle ne modifie ni CDR, ni règlement, ni distribution de revenus, ni statistique officielle.
+
+### POST /customer/jackpot/reset-schedule
+Crée, modifie ou désactive la programmation automatique propre au tenant authentifié. Réservé aux rôles client `owner` et `admin`. Une programmation peut être quotidienne, hebdomadaire, mensuelle ou répétée tous les N jours à partir d'une date choisie. L'exécution crée exclusivement une nouvelle baseline Business Live ; les données sources et les bilans officiels restent intacts.
+
+### GET /internal/business-live/reset-schedules/run
+Route machine protégée par `CRON_SECRET`. Le déclencheur central recherche uniquement les échéances dues dans la `work_queue` persistante existante, verrouille chaque planification avant exécution et journalise chaque passage dans `audit_log`. Aucun cron individuel n'est créé par client et aucune migration Neon supplémentaire n'est requise.
 
 ### GET /customer/portal?from=...&to=...
 Appel consolidé du portail client : trafic, séries journalières, numéros, reversements, abonnement, destinations de routage, qualité voix agrégée et derniers appels avec diagnostic technique. Les données sont lues dans le contexte SQL du tenant et peuvent utiliser la réplique de lecture.
