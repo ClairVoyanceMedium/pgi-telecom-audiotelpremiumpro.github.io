@@ -480,3 +480,41 @@ test("homepage card-shaped product modules have real destinations",()=>{
   assert.match(html,/class="tech-card-link" href="\/portabilite-numero-sva\//);
   assert.match(html,/public-cb-points[\s\S]*href="\/paiement-cb-audiotel\/#fonctionnement"/);
 });
+
+
+test("homepage hierarchy keeps number and portability as the primary product and CB as a lower complementary service",()=>{
+  const heroEnd=html.indexOf('</section>',html.indexOf('<section class="hero">'));
+  const primary=html.indexOf('id="numero-portabilite"');
+  const platform=html.indexOf('id="plateforme"');
+  const pricing=html.indexOf('id="tarif"');
+  const faq=html.indexOf('id="faq"');
+  const cb=html.indexOf('id="paiement-cb"');
+  assert.ok(heroEnd<primary);
+  assert.ok(primary<platform);
+  assert.ok(platform<pricing);
+  assert.ok(pricing<faq);
+  assert.ok(faq<cb);
+  assert.match(html,/OFFRE PRINCIPALE/);
+  assert.match(html,/Numéro surtaxé &amp; portabilité|Numéro surtaxé & portabilité/);
+  assert.match(html,/SERVICE COMPLÉMENTAIRE/);
+  assert.match(html,/Paiement par carte bancaire/);
+});
+
+test("hero and upper-page links no longer over-route visitors to the CB landing page",()=>{
+  assert.match(html,/hero-visual-link" href="\/numero-sva\//);
+  assert.match(html,/Demander mon numéro surtaxé/);
+  assert.match(html,/Étudier la portabilité de mon numéro/);
+  assert.match(js,/href="\/numero-sva\//);
+  assert.match(js,/href="\/portabilite-numero-sva\//);
+  assert.match(js,/href="\/reversement-audiotel\//);
+  assert.doesNotMatch(js,/public-advantage-card" href="\/paiement-cb-audiotel\//);
+});
+
+test("homepage provides differentiated destinations for number, portability, payouts and pricing",()=>{
+  assert.match(html,/home-chapter-links[\s\S]*href="\/numero-sva\//);
+  assert.match(html,/home-chapter-links[\s\S]*href="\/portabilite-numero-sva\//);
+  assert.match(html,/home-chapter-links[\s\S]*href="\/reversement-audiotel\//);
+  assert.match(js,/href="\/tarif-numero-sva\//);
+  assert.match(js,/href="\/demande-ouverture\//);
+  assert.match(css,/homepage-product-hierarchy-v167/);
+});
