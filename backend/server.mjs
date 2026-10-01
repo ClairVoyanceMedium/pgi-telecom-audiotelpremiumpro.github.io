@@ -798,6 +798,7 @@ export function createBackend(options={}){
       }
       if(method==="POST"&&pathname==="/api/v1/customer/card-payments/connect"){
         requireCustomerCsrf(req,customerActor,config);
+        if(!stripeConnectState(config).configured)return done(res,metrics,started,"customer.card_payments.connect",503,{error:{code:"STRIPE_CONNECT_NOT_READY"}});
         const idempotencyKey=String(req.headers["idempotency-key"]||"").trim();
         if(!idempotencyKey||idempotencyKey.length>200){const e=new Error("Idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
         const context=await store.customerSessionContext(customerActor);
@@ -826,6 +827,7 @@ export function createBackend(options={}){
       }
       if(method==="POST"&&pathname==="/api/v1/customer/card-payments/checkout-session"){
         requireCustomerCsrf(req,customerActor,config);
+        if(!stripeConnectState(config).configured)return done(res,metrics,started,"customer.card_payments.checkout",503,{error:{code:"STRIPE_CONNECT_NOT_READY"}});
         const idempotencyKey=String(req.headers["idempotency-key"]||"").trim();
         if(!idempotencyKey||idempotencyKey.length>200){const e=new Error("Idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
         const context=await store.customerSessionContext(customerActor);

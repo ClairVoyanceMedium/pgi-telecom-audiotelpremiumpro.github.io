@@ -69,10 +69,13 @@ function cleanText(v,max=180){return String(v||"").trim().replace(/[\u0000-\u001
 
 export function stripeConnectState(config){
   const key=String(config?.stripeSecretKey||"");
+  const apiConfigured=/^sk_(test|live)_/.test(key);
+  const webhookConfigured=/^whsec_[A-Za-z0-9]+$/.test(String(config?.stripeConnectWebhookSecret||""));
   return {
     provider:"stripe_connect",
-    configured:/^sk_(test|live)_/.test(key),
-    webhook_configured:/^whsec_[A-Za-z0-9]+$/.test(String(config?.stripeConnectWebhookSecret||"")),
+    configured:apiConfigured&&webhookConfigured,
+    api_configured:apiConfigured,
+    webhook_configured:webhookConfigured,
     live_mode:key.startsWith("sk_live_"),
     application_fee_bps:STRIPE_CONNECT_APPLICATION_FEE_BPS,
     application_fee_percent:STRIPE_CONNECT_APPLICATION_FEE_BPS/100,

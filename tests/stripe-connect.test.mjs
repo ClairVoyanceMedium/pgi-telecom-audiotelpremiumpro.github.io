@@ -15,6 +15,9 @@ const accountId="acct_ConnectTest123";
 test("Stripe Connect state exposes the fixed PGI fee and webhook readiness",()=>{
   const state=stripeConnectState({stripeSecretKey:"sk_live_"+"x".repeat(24),stripeConnectWebhookSecret:"whsec_connect_test"});
   assert.equal(STRIPE_CONNECT_APPLICATION_FEE_BPS,490);
+  assert.equal(state.configured,true);
+  assert.equal(state.api_configured,true);
+  assert.equal(state.webhook_configured,true);
   assert.equal(state.application_fee_percent,4.9);
   assert.equal(state.pricing_model,"direct_charges_stripe_owned_pricing");
   assert.equal(state.processing_fees_paid_by,"connected_account");
@@ -123,4 +126,12 @@ test("connected accounts are created with Accounts v2 merchant configuration",as
     assert.equal(body.defaults.responsibilities.losses_collector,"stripe");
     assert.equal(body.configuration.merchant.capabilities.card_payments.requested,true);
   }finally{globalThis.fetch=original;}
+});
+
+
+test("Stripe Connect fails closed until the dedicated webhook secret is configured",()=>{
+  const withoutWebhook=stripeConnectState({stripeSecretKey:"sk_live_"+"x".repeat(24)});
+  assert.equal(withoutWebhook.api_configured,true);
+  assert.equal(withoutWebhook.webhook_configured,false);
+  assert.equal(withoutWebhook.configured,false);
 });
