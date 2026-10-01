@@ -81,7 +81,6 @@ const outboundPortabilityAutomation=fs.readFileSync("backend/src/outbound-portab
 const customerRelationsUi=fs.readFileSync("assets/customer-relations.js","utf8");
 const clientRelationsUi=fs.readFileSync("assets/client-relations.js","utf8");
 const consumptionReceiptMigration=fs.readFileSync("database/migrations/052_consumption_receipts.sql","utf8");
-const inboundEmailRoutingMigration=fs.readFileSync("database/migrations/063_email_thread_customer_resolution.sql","utf8");
 const clientAccountProofUi=fs.readFileSync("assets/client-account-proof.js","utf8");
 const tenantConsumptionCheckUi=fs.readFileSync("assets/tenant-consumption-check.js","utf8");
 const clientPortalHtml=fs.readFileSync("client.html","utf8");
@@ -112,6 +111,7 @@ const hyperscaleDoc=fs.readFileSync("docs/HYPERSCALE.md","utf8");
 const scaleHpa=fs.readFileSync("infra/scale/api-hpa.example.yaml","utf8");
 const postgresStore=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
 const backendServer=fs.readFileSync("backend/server.mjs","utf8");
+const emailDispatcher=fs.readFileSync("backend/src/email-dispatcher.mjs","utf8");
 const stripeBillingSource=fs.readFileSync("backend/src/stripe-billing.mjs","utf8");
 const wholesaleDoc=fs.readFileSync("docs/WHOLESALE-SVA.md","utf8");
 
@@ -204,7 +204,7 @@ if(!/NOUVELLES INSCRIPTIONS/.test(customerAdmin)||!/created_since/.test(customer
 if(!/function dossierReference/.test(postgresStore)||!/function dossierLookup/.test(postgresStore)||!/dossier_ref:dossierReference/.test(postgresStore))failures.push("every customer must expose a stable automatic dossier reference without a parallel customer table");
 if(!/metadata->>'first_name'/.test(postgresStore)||!/metadata->>'last_name'/.test(postgresStore)||!/metadata->>'phone'/.test(postgresStore)||!/tenant_number_assignments qa JOIN sva_numbers qn/.test(postgresStore))failures.push("customer directory search must resolve identity, phone and SVA number");
 if(!/Dossier, nom, prénom, société, e-mail, téléphone ou n° SVA/.test(customerAdmin)||!/dossier_ref/.test(customerAdmin))failures.push("customer cockpit must expose universal dossier search and dossier references");
-if(!/provider_message_id/.test(inboundEmailRoutingMigration)||!/CREATE TABLE inbound_email_correlations/.test(inboundEmailRoutingMigration))failures.push("inbound email routing must persist RFC thread identifiers without storing message bodies");
+if(!/jsonb_build_object\('provider_message_id'/.test(emailDispatcher)||!/metadata->>'provider_message_id'/.test(postgresStore))failures.push("inbound email routing must reuse the existing email delivery metadata without requiring a production schema change");
 if(!/resolveInboundCustomerEmail/.test(postgresStore)||!/sender_plus_dossier/.test(postgresStore)||!/dossier_hint/.test(postgresStore))failures.push("inbound email routing must prefer trusted thread or sender identity and treat dossier-only claims as hints");
 if(!/syncHubSpotInboundEmail/.test(backendServer)||!/syncHubSpotCommercialTenant\(store,registered\.tenant_public_id/.test(backendServer))failures.push("verified inbound email and registration must sync HubSpot from the customer source of truth");
 if(!/CREATE TABLE tenant_internal_notes/.test(customerInternalNotesMigration)||!/archived_at timestamptz/.test(customerInternalNotesMigration)||!/Private PGI staff notes/.test(customerInternalNotesMigration))failures.push("Customer internal notes must stay private, persistent and soft-archivable");
