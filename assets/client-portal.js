@@ -182,28 +182,47 @@ async function loadPortal(){
   }
 }
 window.PGIReload=loadPortal;
-function scrollAppTop(){
+function clearClientHash(){
   if(/^#client-/.test(String(location.hash||"")))history.replaceState(null,"",location.pathname+location.search);
-  var top=function(){try{window.scrollTo({top:0,left:0,behavior:"auto"})}catch(_e){window.scrollTo(0,0)}document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0};
-  top();
-  requestAnimationFrame(function(){top();requestAnimationFrame(top)});
-  setTimeout(top,60);setTimeout(top,180);setTimeout(top,420);
+}
+function scrollAppTop(){
+  clearClientHash();
+  try{window.scrollTo({top:0,left:0,behavior:"auto"})}catch(_e){window.scrollTo(0,0)}
+  document.documentElement.scrollTop=0;if(document.body)document.body.scrollTop=0;
+}
+function scrollToBusinessLive(attempt){
+  clearClientHash();
+  var target=$("client-live-money"),header=document.querySelector(".cp-header");
+  if(!target){
+    if((attempt||0)<20)setTimeout(function(){scrollToBusinessLive((attempt||0)+1)},50);
+    return;
+  }
+  var headerHeight=header?Math.ceil(header.getBoundingClientRect().height):0;
+  var y=Math.max(0,Math.round(target.getBoundingClientRect().top+window.scrollY-headerHeight-12));
+  try{window.scrollTo({top:y,left:0,behavior:"auto"})}catch(_e){window.scrollTo(0,y)}
 }
 function releaseInitialTopLock(){
   scrollAppTop();
   document.documentElement.classList.remove("cp-initial-top-lock");
   scrollAppTop();
 }
+function releaseInitialLockAtBusinessLive(){
+  clearClientHash();
+  document.documentElement.classList.remove("cp-initial-top-lock");
+  scrollToBusinessLive(0);
+  requestAnimationFrame(function(){scrollToBusinessLive(0);requestAnimationFrame(function(){scrollToBusinessLive(0)})});
+  [60,160,320,650,1000].forEach(function(ms){setTimeout(function(){scrollToBusinessLive(0)},ms)});
+}
 function showApp(){
-  $("customer-auth").hidden=true;$("customer-app").hidden=false;scrollAppTop();
+  $("customer-auth").hidden=true;$("customer-app").hidden=false;clearClientHash();
   loadPortal().then(function(){
-    releaseInitialTopLock();
+    releaseInitialLockAtBusinessLive();
     var u=new URL(location.href);
     if(u.searchParams.get("action")==="cancel-subscription"){
       u.searchParams.delete("action");history.replaceState(null,"",u.pathname+(u.search?"?"+u.searchParams.toString():"")+u.hash);
       ensureBilling().then(function(x){return x.open("manage");}).catch(function(){toast("Gestion de la résiliation momentanément indisponible.");});
     }
-  }).catch(function(e){releaseInitialTopLock();toast("Chargement impossible : "+(e.code||e.message));});
+  }).catch(function(e){releaseInitialLockAtBusinessLive();toast("Chargement impossible : "+(e.code||e.message));});
 }
 function hideAuthPanels(){
   ["login-panel","forgot-panel","reset-panel","register-panel","activation-panel"].forEach(function(id){var el=$(id);if(el)el.hidden=true;});
@@ -551,5 +570,9 @@ async function init(){
   if(location.search.includes("invite=")){showActivation();return;}
   try{var me=await window.PGICustomerApi.me();state.user=me.user;showApp();}catch(_e){showLogin();}
 }
+window.addEventListener("pageshow",function(){
+  var app=$("customer-app");
+  if(app&&!app.hidden)setTimeout(function(){scrollToBusinessLive(0)},0);
+});
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init,{once:true});else init();
 })();
