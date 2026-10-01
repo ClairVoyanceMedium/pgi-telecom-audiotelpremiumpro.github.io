@@ -4287,6 +4287,45 @@ export class PostgresStore{
     });
   }
 
+  async applyCardPaymentProviderEvent(input={}){
+    const provider=String(input.provider||"stripe"),eventId=String(input.provider_event_id||"").trim(),type=String(input.event_type||"").trim();
+    if(!eventId||!type)throw problem(400,"INVALID_CARD_PAYMENT_EVENT");
+    return this.sql.begin(async tx=>{
+      const inserted=await tx.unsafe(
+        "INSERT INTO card_payment_provider_events(provider,provider_event_id,connected_account_reference,event_type,payload_sha256,normalized_details)"+
+        " VALUES($1,$2,$3,$4,$5,$6::jsonb) ON CONFLICT(provider,provider_event_id) DO NOTHING RETURNING id",
+        [provider,eventId,input.connected_account_reference||null,type,String(input.payload_sha256||"").padEnd(64,"0").slice(0,64),JSON.stringify(input)]
+      );
+      if(!inserted[0])return {duplicate:true,updated:false};
+      const requestId=/^[0-9a-f-]{36}$/i.test(String(input.request_public_id||""))?String(input.request_public_id):null;
+      const paymentIntent=/^pi_[A-Za-z0-9]+$/.test(String(input.provider_payment_intent_reference||""))?String(input.provider_payment_intent_reference):null;
+      const checkout=/^cs_[A-Za-z0-9_]+$/.test(String(input.provider_checkout_session_reference||""))?String(input.provider_checkout_session_reference):null;
+      const charge=/^ch_[A-Za-z0-9]+$/.test(String(input.provider_charge_reference||""))?String(input.provider_charge_reference):null;
+      const status=String(input.status||"");
+      if(!["open","paid","expired","failed","refunded","disputed"].includes(status))return {duplicate:false,updated:false};
+      const conditions=[],params=[];
+      if(requestId){params.push(requestId);conditions.push("public_id=$"+params.length+"::uuid")}
+      if(paymentIntent){params.push(paymentIntent);conditions.push("provider_payment_intent_reference=$"+params.length)}
+      if(!conditions.length)return {duplicate:false,updated:false};
+      params.push(status);const statusParam="$"+params.length;
+      params.push(checkout);const checkoutParam="$"+params.length;
+      params.push(paymentIntent);const piParam="$"+params.length;
+      params.push(charge);const chargeParam="$"+params.length;
+      params.push(input.event_time||new Date().toISOString());const timeParam="$"+params.length;
+      const rows=await tx.unsafe(
+        "UPDATE tenant_card_payment_requests SET status="+statusParam+
+        ",provider_checkout_session_reference=COALESCE("+checkoutParam+",provider_checkout_session_reference)"+
+        ",provider_payment_intent_reference=COALESCE("+piParam+",provider_payment_intent_reference)"+
+        ",provider_charge_reference=COALESCE("+chargeParam+",provider_charge_reference)"+
+        ",paid_at=CASE WHEN "+statusParam+"='paid' THEN COALESCE(paid_at,"+timeParam+"::timestamptz) ELSE paid_at END"+
+        ",refunded_at=CASE WHEN "+statusParam+"='refunded' THEN COALESCE(refunded_at,"+timeParam+"::timestamptz) ELSE refunded_at END"+
+        " WHERE ("+conditions.join(" OR ")+") RETURNING public_id::text AS public_id,tenant_id,status",
+        params
+      );
+      return {duplicate:false,updated:rows.length>0,request:rows[0]||null};
+    });
+  }
+
   async platformCardPaymentSummary(){
     const totals=(await this.readSql.unsafe(
       "SELECT (SELECT count(*)::int FROM tenant_card_payment_accounts) AS accounts_total,"+
