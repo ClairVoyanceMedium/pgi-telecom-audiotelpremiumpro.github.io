@@ -20,17 +20,6 @@
 <div class="actions"><a class="primary" href="/">Audiotel Premium Pro</a><a class="secondary" href="javascript:window.close()">Fermer cette page</a></div>
 <p class="note">Audiotel Premium Pro ne stocke pas les données complètes de votre carte bancaire.</p>
 </main>
-<script>
-(function(){
-var q=new URLSearchParams(location.search),cancel=q.get("status")==="cancelled";
-if(cancel){
- var b=document.getElementById("payment-badge"),t=document.getElementById("payment-title"),p=document.getElementById("payment-text");
- b.textContent="PAIEMENT NON FINALISÉ";b.classList.add("cancel");
- t.textContent="Le paiement n’a pas été finalisé.";
- p.textContent="Aucun message affiché sur cette page ne vaut confirmation de débit. Vous pouvez fermer cette page et contacter directement le professionnel si nécessaire.";
-}
-history.replaceState(null,"",location.pathname+"?status="+(cancel?"cancelled":"success"));
-})();
-</script>
+<script src="/site/payment-result.js" defer></script>
 </body>
 </html>
