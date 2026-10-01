@@ -7,3 +7,87 @@ html{background:#2b1b15}body{background:radial-gradient(circle at 18% -5%,rgba(2
 /* responsive-form-stability-v144 */@media(max-width:820px){input:not([type=checkbox]):not([type=radio]),select,textarea{font-size:16px}.dialog-card,.call-detail-card,.auth-card,.command-palette-dialog{max-width:100%}}
 /* cockpit-footer-responsive-v145 */
 .app-footer{align-items:center;flex-wrap:wrap}@media(max-width:820px){.app-footer{align-items:flex-start;flex-direction:column;gap:8px;padding-bottom:calc(92px + env(safe-area-inset-bottom))}.app-footer>*{max-width:100%;overflow-wrap:anywhere}}
+
+
+/* cockpit-client-parity-v159 */
+.brand{
+  flex-direction:column;
+  align-items:flex-start;
+  gap:10px;
+}
+.brand-wordmark{
+  display:block!important;
+  width:190px!important;
+  height:auto!important;
+  max-width:100%!important;
+  object-fit:contain!important;
+  background:#fff!important;
+  border-radius:3px!important;
+}
+.topbar-brand-wordmark{
+  display:block!important;
+  width:190px!important;
+  height:auto!important;
+  max-width:min(50vw,190px)!important;
+  flex:0 0 auto!important;
+  object-fit:contain!important;
+  background:#fff!important;
+  border-radius:3px!important;
+  filter:drop-shadow(0 6px 16px rgba(0,0,0,.28))!important;
+}
+.live-jackpot-reset-primary{
+  background:linear-gradient(180deg,#f4c97f,#e8ae58)!important;
+  border-color:rgba(255,220,160,.62)!important;
+  color:#2a1a12!important;
+  font-weight:900!important;
+}
+@media(max-width:820px){
+  .topbar{
+    position:sticky!important;
+    top:0!important;
+    z-index:30!important;
+    padding-top:10px!important;
+    background:rgba(55,37,29,.98)!important;
+    backdrop-filter:blur(18px)!important;
+  }
+  .product-lockup{
+    flex-direction:column!important;
+    align-items:flex-start!important;
+    gap:9px!important;
+  }
+  .topbar-brand-wordmark{
+    width:min(190px,52vw)!important;
+    max-width:none!important;
+    height:auto!important;
+    flex-basis:auto!important;
+  }
+  .product-name{
+    display:flex!important;
+    flex-direction:column!important;
+    align-items:flex-start!important;
+    gap:2px!important;
+  }
+  .product-name-pgi{font-size:22px!important}
+  .product-name-audiotel{font-size:12px!important;letter-spacing:.075em!important;text-transform:uppercase}
+}
+@media(max-width:620px){
+  .lj-actions{
+    display:grid!important;
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    gap:8px!important;
+  }
+  .lj-actions>button{
+    width:100%!important;
+    min-height:42px!important;
+    margin:0!important;
+  }
+  .lj-actions>small{
+    grid-column:1/-1!important;
+    margin:0!important;
+  }
+}
+@media(max-width:430px){
+  .topbar-brand-wordmark{width:min(180px,52vw)!important}
+  .product-name-pgi{font-size:21px!important}
+  .product-name-audiotel{font-size:11.5px!important}
+}
