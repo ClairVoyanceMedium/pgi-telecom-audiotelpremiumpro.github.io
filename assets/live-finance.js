@@ -10,7 +10,7 @@ function events(){if(es||!window.PGIApi?.events)return;try{es=PGIApi.events();["
 function landOnBusinessLive(attempt){
   let card=$("live-jackpot-card");
   if(!card){if((attempt||0)<24)setTimeout(()=>landOnBusinessLive((attempt||0)+1),50);return}
-  let y=Math.max(0,Math.round(card.getBoundingClientRect().top+window.scrollY-10));
+  let header=document.querySelector(".topbar"),offset=header?Math.ceil(header.getBoundingClientRect().height)+10:10,y=Math.max(0,Math.round(card.getBoundingClientRect().top+window.scrollY-offset));
   try{window.scrollTo({top:y,left:0,behavior:"auto"})}catch{window.scrollTo(0,y)}
 }
 function stabilizeLanding(){
