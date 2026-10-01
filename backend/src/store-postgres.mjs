@@ -4326,6 +4326,18 @@ export class PostgresStore{
     });
   }
 
+  async openCardPaymentReconciliationBatch(limit=25){
+    const n=Math.max(1,Math.min(100,Number(limit)||25));
+    const rows=await this.readSql.unsafe(
+      "SELECT r.public_id::text AS request_public_id,r.tenant_id,r.provider_checkout_session_reference,a.provider_account_reference"+
+      " FROM tenant_card_payment_requests r JOIN tenant_card_payment_accounts a ON a.id=r.card_payment_account_id"+
+      " WHERE r.status='open' AND r.provider_checkout_session_reference IS NOT NULL AND a.status='active' AND a.charges_enabled=true"+
+      " ORDER BY r.created_at ASC,r.id ASC LIMIT $1",
+      [n]
+    );
+    return rows;
+  }
+
   async platformCardPaymentSummary(){
     const totals=(await this.readSql.unsafe(
       "SELECT (SELECT count(*)::int FROM tenant_card_payment_accounts) AS accounts_total,"+
