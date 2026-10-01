@@ -194,6 +194,7 @@ test("support contact sync deduplicates by email and creates a HubSpot ticket wi
     requests.push({url,method:options.method||"GET",body});
     if(url.endsWith("/crm/v3/objects/contacts/search"))return response(200,{results:[]});
     if(url.endsWith("/crm/v3/objects/contacts")&&options.method==="POST")return response(201,{id:"501",properties:body.properties});
+    if(url.includes("/crm/v3/objects/contacts/501?associations=tickets"))return response(200,{id:"501",associations:{tickets:{results:[]}}});
     if(url.endsWith("/crm/v4/associations/tickets/contacts/labels"))return response(200,{results:[{category:"HUBSPOT_DEFINED",typeId:16,label:null}]});
     if(url.endsWith("/crm/v3/objects/tickets")&&options.method==="POST")return response(201,{id:"701",properties:body.properties});
     throw new Error("Unexpected HubSpot request "+url+" "+options.method);
@@ -227,6 +228,21 @@ test("support contact sync deduplicates by email and creates a HubSpot ticket wi
   assert.equal(requests.some(x=>x.url.includes("/objects/notes")),false);
 });
 
+test("support contact reuses an existing open ticket and appends a note",async()=>{
+  const requests=[];const response=(status,payload)=>({ok:status>=200&&status<300,status,text:async()=>JSON.stringify(payload||{})});
+  const fetchImpl=async(url,options={})=>{const body=options.body?JSON.parse(options.body):null;requests.push({url,method:options.method||"GET",body});
+    if(url.endsWith("/crm/v3/objects/contacts/search"))return response(200,{results:[{id:"501",properties:{email:"visiteur@example.test"}}]});
+    if(url.includes("/crm/v3/objects/contacts/501?associations=tickets"))return response(200,{id:"501",associations:{tickets:{results:[{id:"701"}]}}});
+    if(url.includes("/crm/v3/objects/tickets/701?properties="))return response(200,{id:"701",properties:{subject:"Contact site — Accueil",hs_pipeline:"0",hs_pipeline_stage:"1"}});
+    if(url.endsWith("/crm/v4/associations/notes/contacts/labels"))return response(200,{results:[{category:"HUBSPOT_DEFINED",typeId:202,label:null}]});
+    if(url.endsWith("/crm/v4/associations/notes/tickets/labels"))return response(200,{results:[{category:"HUBSPOT_DEFINED",typeId:220,label:null}]});
+    if(url.endsWith("/crm/v3/objects/notes")&&options.method==="POST")return response(201,{id:"801"});
+    throw new Error("Unexpected HubSpot request "+url+" "+options.method);};
+  const result=await syncHubSpotSupportMessage({email:"visiteur@example.test",message:"Deuxième message",pagePath:"/",pageTitle:"Accueil"},{token:"pat-test-"+"d".repeat(40),fetchImpl});
+  assert.equal(result.ticketId,"701");assert.equal(result.ticketCreated,false);assert.equal(result.noteId,"801");
+  assert.equal(requests.some(x=>x.url.endsWith("/crm/v3/objects/tickets")&&x.method==="POST"),false);
+});
+
 test("explicit marketing opt-in subscribes Marketing Information and records consent evidence",async()=>{
   const requests=[];
   const response=(status,payload)=>({ok:status>=200&&status<300,status,text:async()=>JSON.stringify(payload||{})});
@@ -234,6 +250,7 @@ test("explicit marketing opt-in subscribes Marketing Information and records con
     const body=options.body?JSON.parse(options.body):null;
     requests.push({url,method:options.method||"GET",body});
     if(url.endsWith("/crm/v3/objects/contacts/search"))return response(200,{results:[{id:"502",properties:{email:"visiteur@example.test"}}]});
+    if(url.includes("/crm/v3/objects/contacts/502?associations=tickets"))return response(200,{id:"502",associations:{tickets:{results:[]}}});
     if(url.endsWith("/crm/v4/associations/tickets/contacts/labels"))return response(200,{results:[{category:"HUBSPOT_DEFINED",typeId:16,label:null}]});
     if(url.endsWith("/crm/v3/objects/tickets")&&options.method==="POST")return response(201,{id:"702",properties:body.properties});
     if(url.includes("/communication-preferences/v4/statuses/")&&options.method==="POST")return response(200,{});
