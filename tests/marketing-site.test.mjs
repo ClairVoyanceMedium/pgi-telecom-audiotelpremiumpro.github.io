@@ -267,6 +267,18 @@ test("legal access blocks stay understandable on mobile",()=>{
   assert.match(contactCss,/grid-template-columns:1fr;gap:8px/);
 });
 
+test("homepage bottom quick navigation prioritizes the highest-value commercial journeys",()=>{
+  assert.match(html,/class="revenue-quick-nav"/);
+  assert.match(html,/Changer d’opérateur/);
+  assert.match(html,/Demander un numéro/);
+  assert.match(html,/Comparer mon offre/);
+  assert.match(html,/Paiement CB/);
+  assert.match(html,/Espace client/);
+  assert.match(html,/href="\/changer-operateur-audiotel\//);
+  assert.match(html,/href="\/comparateur-audiotel\//);
+  assert.match(css,/revenue-quick-nav-v172/);
+});
+
 test("homepage modules are compact and each carries a clear marketing promise",()=>{
   assert.match(html,/class="home-page"/);
   assert.match(html,/CALCULATEUR DE REVENU POTENTIEL/);
