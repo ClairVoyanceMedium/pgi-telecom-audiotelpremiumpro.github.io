@@ -109,7 +109,7 @@ test("Business Live reste cumulatif, programmable et isolé des bilans officiels
   assert.doesNotMatch(adminLiveFinance,/setHours\(0,0,0,0\)/);
   assert.doesNotMatch(sw,/business-live-reset-schedule\.js/);
   assert.match(site,/BUSINESS LIVE/);
-  assert.match(site,/solutions-audiotel\/\#suivi-reversements/);
+  assert.match(site,/business-live-audiotel/);
 });
 
 test("le cockpit garde les bilans officiels continus et réserve le reset visible à Business Live",()=>{
