@@ -285,3 +285,9 @@ main,header,footer,section,.site-header,.header-inner,.hero-grid,.calculator-gri
 .solution-hub-card p{margin:0;color:#b6a194;font-size:13px;line-height:1.6}
 .solution-hub-card>strong{margin-top:auto;padding-top:22px;color:#dfb97e;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
 @media(max-width:680px){.solution-hub-grid{grid-template-columns:1fr}.solution-hub-card{min-height:0;padding:21px}}
+
+/* simulator-readable-heading-v170 */
+.home-page .hero-savings .hero-savings-head>strong{
+  color:#fff4e9!important;
+  text-shadow:0 1px 0 rgba(0,0,0,.35),0 2px 14px rgba(0,0,0,.28);
+}
