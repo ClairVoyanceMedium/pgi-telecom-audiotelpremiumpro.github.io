@@ -380,7 +380,7 @@ test("public login makes clear that access is for existing clients",()=>{
 
 test("homepage prioritizes portability, fast intake and clearer revenue comparison",()=>{
   assert.match(html,/Étudier ma portabilité/i);
-  assert.match(html,/Demande rapide, possible sans SIRET au dépôt initial/);
+  assert.match(html,/Je n’ai pas encore de SIRET/);
   assert.match(html,/Conseil, expertise, coaching, voyance, assistance commerciale ou autre service/);
   assert.match(html,/Calculez votre revenu potentiel supplémentaire/);
   assert.match(html,/CALCULATEUR DE REVENU POTENTIEL/);
