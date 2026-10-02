@@ -485,7 +485,7 @@ test("homepage card-shaped product modules have real destinations",()=>{
   assert.match(html,/solution-choice" href="\/numero-sva\//);
   assert.match(html,/solution-choice" href="\/reversement-audiotel\//);
   assert.match(html,/solution-choice secondary" href="\/paiement-cb-audiotel\//);
-  assert.match(html,/tech-card-link" href="\/solutions-audiotel\/#suivi-reversements/);
+  assert.match(html,/tech-card-link" href="\/business-live-audiotel\//);
 });
 
 
