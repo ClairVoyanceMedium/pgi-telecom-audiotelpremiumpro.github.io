@@ -273,9 +273,10 @@ test("homepage bottom quick navigation prioritizes the highest-value commercial 
   assert.match(html,/Demander un numéro/);
   assert.match(html,/Comparer mon offre/);
   assert.match(html,/Paiement CB/);
-  assert.match(html,/Espace client/);
+  assert.match(html,/Voir le tarif/);
   assert.match(html,/href="\/changer-operateur-audiotel\//);
   assert.match(html,/href="\/comparateur-audiotel\//);
+  assert.match(html,/href="#tarif"/);
   assert.match(css,/revenue-quick-nav-v172/);
 });
 
