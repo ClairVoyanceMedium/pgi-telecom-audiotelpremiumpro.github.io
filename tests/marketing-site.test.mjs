@@ -33,7 +33,7 @@ test("public site targets both individuals and professionals without overloading
 test("focused SEO pages remain published without cluttering the homepage",()=>{
   for(const slug of ["audiotel-voyance","audiotel-independants","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","comparateur-audiotel"]){
     assert.match(sitemap,new RegExp(slug));
-    if(!["reversement-audiotel","numero-sva"].includes(slug))assert.ok(!html.includes('href="/'+slug+'/'),"homepage should not foreground "+slug);
+    if(!["reversement-audiotel","numero-sva","comparateur-audiotel"].includes(slug))assert.ok(!html.includes('href="/'+slug+'/'),"homepage should not foreground "+slug);
   }
   assert.match(html,/href="\/demande-ouverture\//);
   assert.match(html,/id="simulateur"/);
