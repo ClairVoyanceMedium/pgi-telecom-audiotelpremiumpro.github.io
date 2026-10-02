@@ -548,3 +548,31 @@ test("homepage reduces hero density while preserving immediate product choices",
   assert.match(html,/SERVICE COMPLÉMENTAIRE/);
   assert.ok(html.indexOf('id="simulateur"')>html.indexOf('CHOISISSEZ VOTRE BESOIN'));
 });
+
+
+test("homepage restores an explicit compact comparison table without inventing rates",()=>{
+  assert.match(html,/id="comparatif-offre"/);
+  assert.match(html,/TABLEAU COMPARATIF/);
+  assert.match(html,/Votre offre actuelle/);
+  assert.match(html,/Audiotel Premium Pro/);
+  assert.match(html,/À comparer uniquement avec la proposition PGI effectivement confirmée/);
+  assert.match(html,/Ouvrir le comparateur détaillé/);
+  assert.match(css,/compact-offer-comparison-v171/);
+});
+
+test("CB cards explain the service before asking for a click",()=>{
+  assert.match(html,/Envoyez à votre client un lien de paiement sécurisé/);
+  assert.match(html,/Stripe traite la carte/);
+  assert.match(html,/Commission PGI 4,9 %/);
+  assert.match(solutions,/Envoyez à votre client un lien de paiement sécurisé/);
+  assert.match(solutions,/PGI ne conserve pas le numéro complet de la carte/);
+  assert.match(solutions,/Commission PGI actuelle : 4,9 %/);
+});
+
+test("solutions hub is discoverable by search engines and machine-readable guides",()=>{
+  assert.match(sitemap,/solutions-audiotel/);
+  assert.match(llms,/Solutions Audiotel/);
+  assert.match(llms,/Paiement CB avec Stripe Connect/);
+  assert.match(llmsFull,/### Solutions Audiotel/);
+  assert.match(llmsFull,/### Paiement CB complémentaire/);
+});
