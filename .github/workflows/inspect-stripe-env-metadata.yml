@@ -24,4 +24,4 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$VERCEL_TOKEN"
-          curl --fail --silent --show-error             -H "Authorization: Bearer $VERCEL_TOKEN"             "https://api.vercel.com/v10/projects/$VERCEL_PROJECT_ID/env?teamId=$VERCEL_TEAM_ID"             | jq -r '.envs[] | select(.key|test("STRIPE")) | [.key,.type,((.target // [])|join(","))] | @tsv'
+          curl --fail --silent --show-error             -H "Authorization: Bearer $VERCEL_TOKEN"             "https://api.vercel.com/v10/projects/$VERCEL_PROJECT_ID/env?teamId=$VERCEL_TEAM_ID"             | jq -r '.envs[] | select(.key|test("STRIPE|BILLING")) | [.key,.type,((.target // [])|join(","))] | @tsv'
