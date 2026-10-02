@@ -284,7 +284,7 @@ test("homepage hero explains the 08 premium-rate number simply",()=>{
   assert.match(html,/Monétisez vos appels/);
   assert.match(html,/avec votre propre numéro surtaxé/);
   assert.match(html,/Avec un numéro surtaxé en 08/);
-  assert.match(html,/vos reversements sont suivis simplement en ligne/);
+  assert.match(html,/vos reversements sont suivis en ligne/);
 });
 
 test("homepage modules are compact and each carries a clear marketing promise",()=>{
