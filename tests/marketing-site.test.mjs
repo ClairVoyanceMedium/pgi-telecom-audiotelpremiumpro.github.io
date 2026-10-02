@@ -350,8 +350,8 @@ test("homepage leads with business benefits while preserving technical SEO facts
 test("homepage explains the product before selling benefits",()=>{
   assert.match(html,/NUMÉRO SURTAXÉ · AUDIOTEL · SUIVI EN LIGNE/);
   assert.match(html,/Monétisez vos appels/);
-  assert.match(html,/BESOIN D’UN NUMÉRO SURTAXÉ/i);
-  assert.match(html,/vos appels, vos minutes, vos estimations et vos reversements/i);
+  assert.match(html,/Audiotel Premium Pro réunit votre numéro surtaxé, le suivi de vos appels et vos reversements/i);
+  assert.match(html,/CHOISISSEZ VOTRE BESOIN/);
   assert.match(html,/CE QUI EST INCLUS/);
   assert.match(html,/Numéro surtaxé et un espace client pour tout suivre/i);
   assert.match(html,/REVERSEMENTS/);
@@ -379,7 +379,7 @@ test("public login makes clear that access is for existing clients",()=>{
 });
 
 test("homepage prioritizes portability, fast intake and clearer revenue comparison",()=>{
-  assert.match(html,/Demandez sa portabilité/i);
+  assert.match(html,/Étudier ma portabilité/i);
   assert.match(html,/Demande rapide, possible sans SIRET au dépôt initial/);
   assert.match(html,/Conseil, expertise, coaching, voyance, assistance commerciale ou autre service/);
   assert.match(html,/Calculez votre revenu potentiel supplémentaire/);
@@ -397,10 +397,10 @@ test("public branding and client access wording are explicit",()=>{
 });
 
 test("hero copy is condensed and the primary potential gain is highlighted in green",()=>{
-  assert.match(html,/DÉJÀ UN NUMÉRO SURTAXÉ \?/);
-  assert.match(html,/Demandez sa portabilité/);
-  assert.match(html,/BESOIN D’UN NUMÉRO SURTAXÉ \? \(PARTICULIER \/ PROFESSIONNEL\)/);
-  assert.match(html,/Conseil, expertise, coaching, voyance, assistance commerciale ou autre service/);
+  assert.doesNotMatch(html,/hero-quick-paths/);
+  assert.match(html,/Étudier ma portabilité/);
+  assert.match(html,/Demander un nouveau numéro/);
+  assert.match(html,/Voir toutes les solutions/);
   assert.match(css,/hero-copy-and-green-potential-v153/);
   assert.match(css,/hero-savings-results \.main span,.hero-savings-results \.main strong\{color:var\(--ok\)\}/);
   assert.match(html,/Business Live : suivez en direct, seconde après seconde, le montant estimé qui vous est attribué pendant chaque appel/);
@@ -451,14 +451,15 @@ test("premium hero visual is branded, fully clickable and routes to the core num
   assert.match(css,/premium-clickable-hero-v165/);
 });
 
-test("homepage removes the duplicated advanced comparator and uses warm clickable advantage cards",()=>{
+test("homepage removes duplicated dynamic cards and keeps one simulator badge plus intent journeys",()=>{
   assert.doesNotMatch(js,/public-advanced-comparator/);
   assert.doesNotMatch(js,/Testez votre propre scénario/);
   assert.match(js,/SIMULATION · NON CONTRACTUELLE/);
-  assert.match(js,/public-advantage-card/);
-  assert.match(js,/>✓<\/b>/);
-  assert.match(css,/homepage-conversion-cards-v163/);
-  assert.match(css,/#d9c4b1/);
+  assert.doesNotMatch(js,/public-advantage-suite/);
+  assert.doesNotMatch(js,/public-advantage-card/);
+  assert.match(html,/home-intent-section/);
+  assert.match(html,/intent-card-grid/);
+  assert.match(css,/intent-journeys-v172/);
 });
 
 test("homepage explains the 4.9 percent CB fee without mixing it with Stripe fees or subscription",()=>{
@@ -595,7 +596,7 @@ test("high-intent landing pages answer distinct conversion questions",()=>{
   assert.match(solutions,/href="\/changer-operateur-audiotel\//);
   assert.match(solutions,/href="\/audiotel-sans-siret\//);
   assert.match(solutions,/href="\/business-live-audiotel\//);
-  assert.match(switchOperator,/Changer d’offre/);
+  assert.match(switchOperator,/Changez d’offre/);
   assert.match(switchOperator,/FAQPage/);
   assert.match(withoutSiret,/Dépôt ≠ activation/);
   assert.match(withoutSiret,/FAQPage/);
