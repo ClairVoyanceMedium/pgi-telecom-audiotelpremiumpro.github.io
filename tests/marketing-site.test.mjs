@@ -434,7 +434,7 @@ test("hero brand signature uses the validated premium grey and portability keeps
   assert.match(css,/hero-brand-signature\{[\s\S]*font-size:18px/);
   assert.match(css,/color:#c9c9c7/);
   assert.match(css,/-webkit-text-fill-color:currentColor/);
-  assert.match(terms,/PGI Telecom ne facture pas de frais de portabilité entrante au titre de la plateforme/);
+  assert.match(terms,/Audiotel Premium Pro ne facture pas de frais de portabilité entrante au titre de la plateforme/);
 });
 
 
@@ -623,9 +623,9 @@ test("high-intent landing pages answer distinct conversion questions",()=>{
 test("competitor customers get an explicit portability acquisition journey",()=>{
   assert.match(html,/JE SUIS DÉJÀ CHEZ UN AUTRE OPÉRATEUR/);
   assert.match(html,/Gardez votre numéro\. Changez la solution autour\./);
-  assert.match(html,/PGI Telecom ne facture pas de frais de portabilité entrante au titre de la plateforme/);
+  assert.match(html,/Audiotel Premium Pro ne facture pas de frais de portabilité entrante au titre de la plateforme/);
   assert.match(switchOperator,/DÉJÀ CHEZ UN AUTRE OPÉRATEUR AUDIOTEL/);
-  assert.match(switchOperator,/Portabilité entrante PGI : 0€ au titre de la plateforme/);
+  assert.match(switchOperator,/Portabilité entrante Audiotel Premium Pro : 0€ au titre de la plateforme/);
   assert.match(portability,/VOUS AVEZ DÉJÀ UN NUMÉRO SURTAXÉ/);
   assert.match(portability,/Demander ma portabilité/);
   assert.match(js,/applyRequestedIntent/);
