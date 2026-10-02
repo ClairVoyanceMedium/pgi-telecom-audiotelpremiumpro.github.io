@@ -280,6 +280,17 @@ test("homepage bottom quick navigation prioritizes the highest-value commercial 
   assert.match(css,/revenue-quick-nav-v172/);
 });
 
+test("homepage restores the complete original hero message",()=>{
+  assert.match(html,/Monétisez vos appels/);
+  assert.match(html,/avec votre propre numéro surtaxé/);
+  assert.match(html,/Déjà un numéro surtaxé \?/);
+  assert.match(html,/Demandez sa portabilité/);
+  assert.match(html,/Besoin d’un nouveau numéro \?/);
+  assert.match(html,/Conseil, expertise, coaching, voyance, assistance commerciale ou autre service/);
+  assert.match(html,/Demande rapide, possible sans SIRET au dépôt initial/);
+  assert.match(html,/Mois en cours offert, puis 3 € TTC \/ mois, sans engagement/);
+});
+
 test("homepage modules are compact and each carries a clear marketing promise",()=>{
   assert.match(html,/class="home-page"/);
   assert.match(html,/CALCULATEUR DE REVENU POTENTIEL/);
