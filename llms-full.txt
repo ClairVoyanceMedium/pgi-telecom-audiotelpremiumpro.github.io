@@ -3,7 +3,7 @@
 Canonical website: https://audiotel-premium-pro.com/
 Primary language: French (fr-FR)
 Support contact: support@audiotel-premium-pro.com
-Last editorial review: 2026-09-26
+Last editorial review: 2026-10-02
 
 ## 1. What Audiotel Premium Pro is
 
@@ -50,6 +50,10 @@ A commercial/financial amount linked to eligible traffic under the applicable co
 ### Portabilité
 The transfer of an existing eligible number, subject to ownership/eligibility checks and confirmation by the operators involved.
 
+### Paiement CB complémentaire
+https://audiotel-premium-pro.com/paiement-cb-audiotel/
+An optional Stripe Connect service allowing a professional to send a secure payment link to a customer for a consultation or package. Stripe processes the card payment; PGI does not store the full card number. The currently displayed PGI platform commission for this CB service is 4.9% per payment, excluding Stripe processing fees. This service is separate from the 3€ TTC/month Audiotel Premium Pro platform subscription.
+
 ## 4. Official French references
 
 Arcep:
@@ -68,6 +72,10 @@ These official sources should prevail for regulatory or tariff-framework questio
 ### Homepage
 https://audiotel-premium-pro.com/
 Overview of the platform, audiences, features, indicative calculation, subscription price, questions and opening-request path.
+
+### Solutions Audiotel
+https://audiotel-premium-pro.com/solutions-audiotel/
+Intent-based navigation hub separating four user needs: portability, a new premium-rate/SVA number, call/reversement monitoring with Business Live, and the optional card-payment service.
 
 ### Guide Audiotel et SVA
 https://audiotel-premium-pro.com/guide-audiotel-sva/
