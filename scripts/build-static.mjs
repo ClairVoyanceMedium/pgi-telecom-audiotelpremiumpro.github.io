@@ -143,6 +143,9 @@ fs.writeFileSync(path.join(dist,"site","index.html"),marketingSite,"utf8");
 fs.writeFileSync(path.join(dist,"index.html"),marketingRoot,"utf8");
 const seoPages=[
   "solutions-audiotel",
+  "business-live-audiotel",
+  "audiotel-sans-siret",
+  "changer-operateur-audiotel",
   "audiotel-voyance",
   "audiotel-independants",
   "audiotel-coaching",
