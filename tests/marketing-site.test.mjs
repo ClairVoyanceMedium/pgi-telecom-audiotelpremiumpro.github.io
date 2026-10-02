@@ -513,7 +513,7 @@ test("hero brand signature uses the validated premium grey and portability keeps
   assert.match(css,/hero-brand-signature\{[\s\S]*font-size:18px/);
   assert.match(css,/color:#c9c9c7/);
   assert.match(css,/-webkit-text-fill-color:currentColor/);
-  assert.match(terms,/Audiotel Premium Pro ne facture pas de frais de portabilité entrante au titre de la plateforme/);
+  assert.match(terms,/PGI Telecom ne facture pas de frais de portabilité entrante au titre de la plateforme/);
 });
 
 
@@ -551,8 +551,8 @@ test("homepage removes duplicated dynamic cards and keeps one simulator badge pl
   assert.match(js,/SIMULATION · NON CONTRACTUELLE/);
   assert.doesNotMatch(js,/public-advantage-suite/);
   assert.doesNotMatch(js,/public-advantage-card/);
-  assert.match(html,/home-intent-section/);
-  assert.match(html,/intent-card-grid/);
+  assert.match(html,/home-choice-section/);
+  assert.match(html,/solution-choice-grid/);
   assert.match(css,/intent-journeys-v172/);
 });
 

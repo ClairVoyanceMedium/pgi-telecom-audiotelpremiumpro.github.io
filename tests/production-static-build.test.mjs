@@ -30,7 +30,7 @@ test("production static build publishes marketing root and private cockpit",()=>
     const seoPages=seoSlugs.map(slug=>fs.readFileSync("dist/"+slug+"/index.html","utf8"));
 
     assert.match(root,/Monétisez vos appels/);
-    assert.match(root,/CHOISISSEZ VOTRE BESOIN/);
+    assert.match(root,/COMMENCEZ PAR VOTRE SITUATION/);
     assert.match(root,/href="\/reversement-audiotel\//);
     assert.match(root,/href="\/numero-sva\//);
     assert.match(root,/max-snippet:-1/);
