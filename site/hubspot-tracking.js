@@ -244,8 +244,8 @@ function contentIdForLink(link){
   const p=url.pathname.replace(/\/+$/,"")||"/";
   const known={
     "/demande-ouverture":"opening_request","/client.html":"client_portal","/comparateur-audiotel":"comparator",
-    "/guide-audiotel-sva":"guide_sva","/portabilite-numero-sva":"portability","/reversement-audiotel":"payouts",
-    "/numero-sva":"numero_sva","/numero-surtaxe-08":"numero_surtaxe","/tarif-numero-sva":"pricing",
+    "/guide-audiotel-sva":"guide_sva","/portabilite-numero-sva":"portability","/changer-operateur-audiotel":"switch_operator","/reversement-audiotel":"payouts","/business-live-audiotel":"business_live",
+    "/numero-sva":"numero_sva","/numero-surtaxe-08":"numero_surtaxe","/audiotel-sans-siret":"without_siret","/solutions-audiotel":"solutions","/tarif-numero-sva":"pricing",
     "/audiotel-voyance":"industry_voyance","/audiotel-coaching":"industry_coaching",
     "/audiotel-professionnels":"industry_professionals","/audiotel-independants":"industry_independents","/":"home"
   };
