@@ -22,9 +22,12 @@ const guide=fs.readFileSync("site/seo/guide-audiotel-sva.html","utf8");
 const terms=fs.readFileSync("site/seo/conditions-abonnement.html","utf8");
 const cardPaymentsLanding=fs.readFileSync("site/seo/paiement-cb-audiotel.html","utf8");
 const solutions=fs.readFileSync("site/seo/solutions-audiotel.html","utf8");
+const switchOperator=fs.readFileSync("site/seo/changer-operateur-audiotel.html","utf8");
+const withoutSiret=fs.readFileSync("site/seo/audiotel-sans-siret.html","utf8");
+const businessLive=fs.readFileSync("site/seo/business-live-audiotel.html","utf8");
 
 test("public site targets both individuals and professionals without overloading the homepage",()=>{
-  assert.match(html,/BESOIN D’UN NUMÉRO SURTAXÉ \? \(PARTICULIER \/ PROFESSIONNEL\)/);
+  assert.match(html,/Particulier ou professionnel/);
   assert.match(html,/particuliers et professionnels/i);
   assert.match(application,/Particulier \/ porteur de projet/);
   assert.match(application,/Professionnel \/ entreprise/);
@@ -538,10 +541,12 @@ test("solutions hub separates the four customer intents",()=>{
   assert.match(buildStatic,/"solutions-audiotel"/);
 });
 
-test("homepage reduces hero density while preserving immediate product choices",()=>{
+test("homepage removes duplicated hero tabs and preserves one clear product-choice section",()=>{
   assert.match(html,/hero-lead-simple/);
-  assert.match(html,/hero-quick-paths/);
+  assert.doesNotMatch(html,/hero-quick-paths/);
   assert.doesNotMatch(html,/hero-lead-cards/);
+  assert.doesNotMatch(js,/public-advantage-suite/);
+  assert.match(html,/CHOISISSEZ VOTRE BESOIN/);
   assert.match(html,/J’AI DÉJÀ UN NUMÉRO/);
   assert.match(html,/JE DÉMARRE/);
   assert.match(html,/JE VEUX MIEUX SUIVRE/);
@@ -575,4 +580,35 @@ test("solutions hub is discoverable by search engines and machine-readable guide
   assert.match(llms,/Paiement CB avec Stripe Connect/);
   assert.match(llmsFull,/### Solutions Audiotel/);
   assert.match(llmsFull,/### Paiement CB complémentaire/);
+});
+
+
+test("high-intent landing pages answer distinct conversion questions",()=>{
+  for(const slug of ["changer-operateur-audiotel","audiotel-sans-siret","business-live-audiotel"]){
+    assert.match(sitemap,new RegExp(slug));
+    assert.match(buildStatic,new RegExp('"'+slug+'"'));
+    assert.match(llms,new RegExp(slug));
+  }
+  assert.match(html,/href="\/changer-operateur-audiotel\//);
+  assert.match(html,/href="\/audiotel-sans-siret\//);
+  assert.match(html,/href="\/business-live-audiotel\//);
+  assert.match(solutions,/href="\/changer-operateur-audiotel\//);
+  assert.match(solutions,/href="\/audiotel-sans-siret\//);
+  assert.match(solutions,/href="\/business-live-audiotel\//);
+  assert.match(switchOperator,/Changer d’offre/);
+  assert.match(switchOperator,/FAQPage/);
+  assert.match(withoutSiret,/Dépôt ≠ activation/);
+  assert.match(withoutSiret,/FAQPage/);
+  assert.match(businessLive,/Moins de flou/);
+  assert.match(businessLive,/estimés, confirmés et validés/i);
+  assert.match(businessLive,/FAQPage/);
+});
+
+test("analytics classifies the new conversion intents",()=>{
+  assert.match(tracking,/changer-operateur-audiotel/);
+  assert.match(tracking,/business-live-audiotel/);
+  assert.match(tracking,/audiotel-sans-siret/);
+  assert.match(contactWidget,/changer-operateur-audiotel/);
+  assert.match(contactWidget,/business-live-audiotel/);
+  assert.match(contactWidget,/audiotel-sans-siret/);
 });
