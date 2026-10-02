@@ -335,3 +335,22 @@ main,header,footer,section,.site-header,.header-inner,.hero-grid,.calculator-gri
   .solution-choice-grid-three{grid-template-columns:1fr!important}
   .value-story-grid{grid-template-columns:1fr;gap:28px}
 }
+
+
+/* revenue-quick-nav-v172 */
+.revenue-quick-nav{padding:26px 0 28px;background:#08090b;border-top:1px solid rgba(255,255,255,.07);border-bottom:1px solid rgba(255,255,255,.06)}
+.revenue-quick-nav-head{display:flex;align-items:end;justify-content:space-between;gap:28px;margin-bottom:16px}
+.revenue-quick-nav-head p{margin:0;color:#8d98a6;font-size:9px;font-weight:900;letter-spacing:.16em}
+.revenue-quick-nav-head h2{max-width:720px;margin:0;color:#f4f5f7;font-size:18px;line-height:1.2;font-weight:800;letter-spacing:-.015em;text-align:right}
+.revenue-quick-tabs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.revenue-quick-tab{display:grid;align-content:center;min-height:96px;padding:14px 15px;border:1px solid rgba(255,255,255,.075);border-radius:12px;background:#0e1013;text-decoration:none;transition:transform .18s ease,border-color .18s ease,background .18s ease}
+.revenue-quick-tab small{margin-bottom:6px;color:#7f8996;font-size:8px;font-weight:900;letter-spacing:.12em}
+.revenue-quick-tab strong{color:#f2f4f7;font-size:13px;line-height:1.18}
+.revenue-quick-tab span{margin-top:5px;color:#959da8;font-size:9.5px;line-height:1.35}
+.revenue-quick-tab:hover{transform:translateY(-2px);border-color:rgba(232,179,110,.3);background:#12151a}
+.revenue-quick-tab-primary{border-color:rgba(232,179,110,.25);background:linear-gradient(180deg,#14110e,#0d0e10)}
+.revenue-quick-tab-primary strong{color:#f4d6aa}
+.revenue-quick-tab-client{background:#0a0b0d}
+@media(max-width:980px){.revenue-quick-tabs{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:680px){.revenue-quick-nav{padding:22px 0 24px}.revenue-quick-nav-head{display:block;margin-bottom:13px}.revenue-quick-nav-head h2{margin-top:5px;font-size:16px;text-align:left}.revenue-quick-tabs{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.revenue-quick-tab{min-height:84px;padding:12px}.revenue-quick-tab-primary{grid-column:1/-1}.revenue-quick-tab strong{font-size:12.5px}.revenue-quick-tab span{font-size:9px}}
+@media(max-width:390px){.revenue-quick-tabs{grid-template-columns:1fr}.revenue-quick-tab-primary{grid-column:auto}}
