@@ -147,8 +147,8 @@ test("dedicated opening page preselects profiles and preserves an unfinished ses
 test("marketing conversion is simplified, product-led and non-manipulative",()=>{
   assert.match(html,/NUMÉRO SURTAXÉ · AUDIOTEL · SUIVI EN LIGNE/);
   assert.match(html,/Monétisez vos appels/);
-  assert.match(html,/Calculer votre revenu supplémentaire/);
-  assert.match(html,/Demander mon numéro/);
+  assert.match(html,/Calculez votre revenu potentiel supplémentaire/);
+  assert.match(html,/Demander un nouveau numéro|Demander mon numéro/);
   assert.match(html,/audiotel-brand-logo-v33\.png/);
   assert.doesNotMatch(html,/places restantes|plus que \d+|compte à rebours|dernière chance|clients en ligne/i);
 });
@@ -241,16 +241,16 @@ test("public footers stay readable and separated on mobile",()=>{
   assert.match(buildStatic,/class="site-footer"/);
 });
 
-test("public navigation is intentionally reduced to one clear conversion path",()=>{
+test("public navigation is intentionally reduced to clear product paths",()=>{
   assert.match(buildStatic,/function simplifyPublicShell/);
+  assert.match(buildStatic,/solutions-audiotel/);
+  assert.match(buildStatic,/portabilite-numero-sva/);
   assert.match(buildStatic,/\/#simulateur/);
   assert.match(buildStatic,/\/#tarif/);
-  assert.match(buildStatic,/\/#fonctionnement/);
-  assert.match(buildStatic,/\/#faq/);
   assert.match(buildStatic,/Une solution PGI Telecom/);
   assert.doesNotMatch(html,/id="avantages"|id="metiers"|id="commande"/);
   assert.match(html,/Monétisez vos appels/);
-  assert.match(html,/Une solution PGI Telecom/);
+  assert.match(html,/Voir toutes les solutions/);
 });
 
 test("legal access blocks stay understandable on mobile",()=>{
@@ -363,7 +363,7 @@ test("pricing and simulator use explicit TTC and current-offer comparison",()=>{
   assert.doesNotMatch(html,/>[^<]*3€ par mois[^<]*</);
   assert.match(html,/3€ TTC \/ mois/);
   assert.match(html,/3€ TTC par mois/);
-  assert.match(html,/Calculer votre revenu supplémentaire/);
+  assert.match(html,/Calculez votre revenu potentiel supplémentaire/);
   assert.match(html,/Comparez votre offre actuelle à Audiotel Premium Pro/);
   assert.match(html,/reversement par minute de votre offre actuelle et comparez-le à la proposition Audiotel Premium Pro/);
   assert.match(html,/Écart de reversement entre les deux offres \/ minute/);
@@ -379,7 +379,7 @@ test("homepage prioritizes portability, fast intake and clearer revenue comparis
   assert.match(html,/Demandez sa portabilité/i);
   assert.match(html,/Demande rapide, possible sans SIRET au dépôt initial/);
   assert.match(html,/Conseil, expertise, coaching, voyance, assistance commerciale ou autre service/);
-  assert.match(html,/Calculer votre revenu supplémentaire/);
+  assert.match(html,/Calculez votre revenu potentiel supplémentaire/);
   assert.match(html,/CALCULATEUR DE REVENU POTENTIEL/);
   assert.match(html,/revenu potentiel supplémentaire par mois et sur 12 mois/);
   assert.match(html,/Business Live : suivez en direct, seconde après seconde, le montant estimé qui vous est attribué pendant chaque appel/);
@@ -429,19 +429,20 @@ test("reversement page targets the best-reversement query through technical meta
   assert.match(sitemap,/reversement-audiotel\/<\/loc><lastmod>2026-09-29<\/lastmod>/);
 });
 
-test("homepage hero uses the premium diagonal professional visual without replacing the simulator",()=>{
+test("homepage hero uses the premium diagonal professional visual while the simulator gets its own section",()=>{
   assert.match(html,/audiotel-hero-professionnels-diagonal\.webp/);
-  assert.match(html,/UNE ACTIVITÉ QUI SE PILOTE/);
-  assert.match(html,/Appels, paiements et suivi réunis dans un même espace/);
+  assert.match(html,/NUMÉRO SURTAXÉ · PORTABILITÉ · SUIVI/);
+  assert.match(html,/Votre numéro, vos appels et vos reversements réunis dans un même espace/);
   assert.equal((html.match(/id="simulateur"/g)||[]).length,1);
+  assert.match(html,/home-simulator-section/);
   assert.match(css,/premium-diagonal-hero-v162/);
   assert.match(buildStatic,/audiotel-hero-professionnels-diagonal\.webp/);
 });
 
 
 
-test("premium hero visual is branded, fully clickable and routes to the dedicated CB conversion page",()=>{
-  assert.match(html,/hero-visual-link[^>]+href="\/paiement-cb-audiotel\//);
+test("premium hero visual is branded, fully clickable and routes to the core number offer",()=>{
+  assert.match(html,/hero-visual-link" href="\/numero-sva\//);
   assert.match(html,/hero-visual-brand/);
   assert.match(html,/audiotel-brand-logo-v33\.png/);
   assert.match(css,/premium-clickable-hero-v165/);
@@ -461,8 +462,8 @@ test("homepage explains the 4.9 percent CB fee without mixing it with Stripe fee
   assert.match(html,/COMMISSION DE SERVICE PGI · PAIEMENTS CB/);
   assert.match(html,/4,9 %/);
   assert.match(html,/Ce 4,9 % correspond à la commission PGI/);
-  assert.match(html,/ni des frais Stripe/);
-  assert.match(html,/ni de l’abonnement Audiotel Premium Pro à 3€ TTC \/ mois/);
+  assert.match(html,/ni aux frais Stripe/);
+  assert.match(html,/ni à l’abonnement Audiotel Premium Pro à 3€ TTC \/ mois/);
 });
 
 test("payment CB conversion landing is built, indexable and commercially explicit",()=>{
@@ -476,10 +477,11 @@ test("payment CB conversion landing is built, indexable and commercially explici
 });
 
 test("homepage card-shaped product modules have real destinations",()=>{
-  assert.match(html,/class="tech-card-link" href="\/audiotel-professionnels\//);
-  assert.match(html,/class="tech-card-link" href="\/reversement-audiotel\//);
-  assert.match(html,/class="tech-card-link" href="\/portabilite-numero-sva\//);
-  assert.match(html,/public-cb-points[\s\S]*href="\/paiement-cb-audiotel\/#fonctionnement"/);
+  assert.match(html,/solution-choice featured" href="\/portabilite-numero-sva\//);
+  assert.match(html,/solution-choice" href="\/numero-sva\//);
+  assert.match(html,/solution-choice" href="\/reversement-audiotel\//);
+  assert.match(html,/solution-choice secondary" href="\/paiement-cb-audiotel\//);
+  assert.match(html,/tech-card-link" href="\/solutions-audiotel\/#suivi-reversements/);
 });
 
 
@@ -489,35 +491,35 @@ test("homepage hierarchy keeps number and portability as the primary product and
   const platform=html.indexOf('id="plateforme"');
   const pricing=html.indexOf('id="tarif"');
   const faq=html.indexOf('id="faq"');
-  const cb=html.indexOf('id="paiement-cb"');
+  const cb=html.indexOf('home-cb-compact');
   assert.ok(heroEnd<primary);
   assert.ok(primary<platform);
   assert.ok(platform<pricing);
   assert.ok(pricing<faq);
   assert.ok(faq<cb);
-  assert.match(html,/OFFRE PRINCIPALE/);
-  assert.match(html,/Numéro surtaxé &amp; portabilité|Numéro surtaxé & portabilité/);
+  assert.match(html,/CHOISISSEZ VOTRE BESOIN/);
+  assert.match(html,/Portabilité/);
+  assert.match(html,/Nouveau numéro surtaxé/);
   assert.match(html,/SERVICE COMPLÉMENTAIRE/);
   assert.match(html,/Paiement par carte bancaire/);
 });
 
 test("hero and upper-page links no longer over-route visitors to the CB landing page",()=>{
-  assert.match(html,/hero-visual-link" href="\/numero-sva\//);
-  assert.match(html,/Demander mon numéro surtaxé/);
-  assert.match(html,/Étudier la portabilité de mon numéro/);
-  assert.match(js,/href="\/numero-sva\//);
-  assert.match(js,/href="\/portabilite-numero-sva\//);
-  assert.match(js,/href="\/reversement-audiotel\//);
-  assert.doesNotMatch(js,/public-advantage-card" href="\/paiement-cb-audiotel\//);
+  const hero=html.slice(html.indexOf('<section class="hero">'),html.indexOf('</section>',html.indexOf('<section class="hero">'))+10);
+  assert.match(hero,/hero-visual-link" href="\/numero-sva\//);
+  assert.match(hero,/Étudier ma portabilité/);
+  assert.match(hero,/Demander un nouveau numéro/);
+  assert.match(hero,/Voir toutes les solutions/);
+  assert.doesNotMatch(hero,/href="\/paiement-cb-audiotel\//);
 });
 
-test("homepage provides differentiated destinations for number, portability, payouts and pricing",()=>{
-  assert.match(html,/home-chapter-links[\s\S]*href="\/numero-sva\//);
-  assert.match(html,/home-chapter-links[\s\S]*href="\/portabilite-numero-sva\//);
-  assert.match(html,/home-chapter-links[\s\S]*href="\/reversement-audiotel\//);
-  assert.match(js,/href="\/tarif-numero-sva\//);
-  assert.match(js,/href="\/demande-ouverture\//);
-  assert.match(css,/homepage-product-hierarchy-v167/);
+test("homepage provides differentiated destinations for number, portability, payouts and complementary CB",()=>{
+  assert.match(html,/solution-choice-grid[\s\S]*href="\/numero-sva\//);
+  assert.match(html,/solution-choice-grid[\s\S]*href="\/portabilite-numero-sva\//);
+  assert.match(html,/solution-choice-grid[\s\S]*href="\/reversement-audiotel\//);
+  assert.match(html,/solution-choice-grid[\s\S]*href="\/paiement-cb-audiotel\//);
+  assert.match(html,/href="\/solutions-audiotel\//);
+  assert.match(css,/homepage-product-discovery-v168/);
 });
 
 
