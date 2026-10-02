@@ -60,7 +60,18 @@ function renderFinance(){
  if($("kgs-paid"))$("kgs-paid").textContent=money(paid);
  if($("kgs-gap"))$("kgs-gap").textContent=money(Math.max(0,exp-paid));
 }
-async function loadCardSummary(){\n try{\n  if(!window.PGIApi?.cardPaymentSummary)return;var x=await PGIApi.cardPaymentSummary();\n  if($("kgs-cb-active"))$("kgs-cb-active").textContent=String(n(x.accounts_active));\n  if($("kgs-cb-onboarding"))$("kgs-cb-onboarding").textContent=String(n(x.accounts_onboarding));\n  if($("kgs-cb-volume"))$("kgs-cb-volume").textContent=money(n(x.volume_paid_minor)/100);\n  if($("kgs-cb-fees"))$("kgs-cb-fees").textContent=money(n(x.pgi_fee_paid_minor)/100);\n  if($("kgs-cb-state"))$("kgs-cb-state").textContent=n(x.accounts_active)>0?"ACTIF":n(x.accounts_onboarding)>0?"ACTIVATION":"CONNECT";\n }catch(_e){}\n}\nfunction renderReadiness(){
+async function loadCardSummary(){
+ try{
+  if(!window.PGIApi?.cardPaymentSummary)return;
+  var x=await PGIApi.cardPaymentSummary();
+  if($("kgs-cb-active"))$("kgs-cb-active").textContent=String(n(x.accounts_active));
+  if($("kgs-cb-onboarding"))$("kgs-cb-onboarding").textContent=String(n(x.accounts_onboarding));
+  if($("kgs-cb-volume"))$("kgs-cb-volume").textContent=money(n(x.volume_paid_minor)/100);
+  if($("kgs-cb-fees"))$("kgs-cb-fees").textContent=money(n(x.pgi_fee_paid_minor)/100);
+  if($("kgs-cb-state"))$("kgs-cb-state").textContent=n(x.accounts_active)>0?"ACTIF":n(x.accounts_onboarding)>0?"ACTIVATION":"CONNECT";
+ }catch(_e){}
+}
+function renderReadiness(){
  if($("kgs-queue"))$("kgs-queue").textContent=$("live-queue")?.textContent||"0";
  if($("kgs-kyc"))$("kgs-kyc").textContent=$("wh-check-kyc")?.textContent||"En attente d’activité";
  if($("kgs-operator"))$("kgs-operator").textContent=$("host-active-carrier")?.textContent||"À contractualiser";
@@ -70,6 +81,7 @@ async function loadCardSummary(){\n try{\n  if(!window.PGIApi?.cardPaymentSummar
  if($("kgs-trust"))$("kgs-trust").textContent=ready>=3?"AVANCÉ":"PRÉPARATION";
 }
 function render(){if(!ensure())return;renderComparator();renderLive();renderFinance();renderReadiness()}
-window.addEventListener("pgi:dashboard-loaded",function(){loadCardSummary()});\nfunction boot(){if(ensure()){render();setTimeout(loadCardSummary,500);return}var tries=0,t=setInterval(function(){tries++;if(ensure()||tries>40){clearInterval(t);render();setTimeout(loadCardSummary,500)}},100)}
+window.addEventListener("pgi:dashboard-loaded",function(){loadCardSummary()});
+function boot(){if(ensure()){render();setTimeout(loadCardSummary,500);return}var tries=0,t=setInterval(function(){tries++;if(ensure()||tries>40){clearInterval(t);render();setTimeout(loadCardSummary,500)}},100)}
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot,{once:true});else boot();
 })();
