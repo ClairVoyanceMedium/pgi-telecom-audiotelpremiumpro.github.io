@@ -308,3 +308,15 @@ main,header,footer,section,.site-header,.header-inner,.hero-grid,.calculator-gri
  .offer-comparison-wrap{margin-top:20px;border-radius:16px}
  .offer-comparison-table th,.offer-comparison-table td{padding:14px 15px}
 }
+
+/* intent-journeys-v172 */
+.home-intent-section{padding:68px 0 72px;background:radial-gradient(circle at 8% 0,rgba(232,179,110,.065),transparent 32%),rgba(255,255,255,.012);border-top:1px solid rgba(255,255,255,.05)}
+.intent-card-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:32px}
+.intent-card{display:flex;flex-direction:column;min-height:250px;padding:24px;border-radius:21px;background:linear-gradient(155deg,rgba(55,37,29,.93),rgba(33,23,18,.98));border:1px solid rgba(255,255,255,.075);transition:transform .18s ease,border-color .18s ease,background .18s ease}
+.intent-card:hover{transform:translateY(-3px);border-color:rgba(232,179,110,.38);background:linear-gradient(155deg,rgba(62,42,32,.96),rgba(35,24,19,.99))}
+.intent-card small{color:#a99485;font-size:9px;font-weight:900;letter-spacing:.12em}
+.intent-card h3{margin:15px 0 9px;color:#fff1e6;font-size:21px;line-height:1.18;letter-spacing:-.018em}
+.intent-card p{margin:0;color:#b6a295;font-size:12.5px;line-height:1.62}
+.intent-card>strong{margin-top:auto;padding-top:22px;color:#e2bd88;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}
+@media(max-width:900px){.intent-card-grid{grid-template-columns:1fr}}
+@media(max-width:680px){.home-intent-section{padding:52px 0 58px}.intent-card{min-height:0;padding:21px}}
