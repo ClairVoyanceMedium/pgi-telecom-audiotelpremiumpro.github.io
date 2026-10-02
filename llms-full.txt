@@ -77,6 +77,18 @@ Overview of the platform, audiences, features, indicative calculation, subscript
 https://audiotel-premium-pro.com/solutions-audiotel/
 Intent-based navigation hub separating four user needs: portability, a new premium-rate/SVA number, call/reversement monitoring with Business Live, and the optional card-payment service.
 
+### Changer d’opérateur Audiotel
+https://audiotel-premium-pro.com/changer-operateur-audiotel/
+Explains the decision path for a user who already has a premium-rate/SVA number and wants to compare a new solution while preserving the existing number when portability is eligible.
+
+### Audiotel sans SIRET
+https://audiotel-premium-pro.com/audiotel-sans-siret/
+Explains that an initial request can be submitted without a SIRET, while clearly separating the initial request from final activation and the supporting documents that may later be required.
+
+### Business Live Audiotel
+https://audiotel-premium-pro.com/business-live-audiotel/
+Explains the live operational view of calls, minutes and estimated amounts, and the distinction between estimated, confirmed and validated reversements.
+
 ### Guide Audiotel et SVA
 https://audiotel-premium-pro.com/guide-audiotel-sva/
 Central educational resource containing short natural-language explanations and links to more specific pages.
