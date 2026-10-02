@@ -23,6 +23,7 @@ const terms=fs.readFileSync("site/seo/conditions-abonnement.html","utf8");
 const cardPaymentsLanding=fs.readFileSync("site/seo/paiement-cb-audiotel.html","utf8");
 const solutions=fs.readFileSync("site/seo/solutions-audiotel.html","utf8");
 const switchOperator=fs.readFileSync("site/seo/changer-operateur-audiotel.html","utf8");
+const portability=fs.readFileSync("site/seo/portabilite-numero-sva.html","utf8");
 const withoutSiret=fs.readFileSync("site/seo/audiotel-sans-siret.html","utf8");
 const businessLive=fs.readFileSync("site/seo/business-live-audiotel.html","utf8");
 
@@ -627,8 +628,8 @@ test("competitor customers get an explicit portability acquisition journey",()=>
   assert.match(switchOperator,/Portabilité entrante PGI : 0€ au titre de la plateforme/);
   assert.match(portability,/VOUS AVEZ DÉJÀ UN NUMÉRO SURTAXÉ/);
   assert.match(portability,/Demander ma portabilité/);
-  assert.match(siteJs,/applyRequestedIntent/);
-  assert.match(siteJs,/portabilite:"portability"/);
+  assert.match(js,/applyRequestedIntent/);
+  assert.match(js,/portabilite:"portability"/);
 });
 
 test("analytics classifies the new conversion intents",()=>{
