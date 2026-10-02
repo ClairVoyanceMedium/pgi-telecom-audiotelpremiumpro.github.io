@@ -26,11 +26,11 @@ test("production static build publishes marketing root and private cockpit",()=>
     const llmsFull=fs.readFileSync("dist/llms-full.txt","utf8");
     const hubspotTracking=fs.readFileSync("dist/site/hubspot-tracking.js","utf8");
     const indexNowKey=fs.readFileSync("dist/fa0a7deb5d60bdf1260c8174ad8c71db.txt","utf8").trim();
-    const seoSlugs=["audiotel-voyance","audiotel-independants","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","tarif-numero-sva","numero-surtaxe-08","portabilite-numero-sva","comparateur-audiotel","guide-audiotel-sva","demande-ouverture","mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","accord-traitement-donnees","cookies-traceurs","resilier-contrat","retractation"];
+    const seoSlugs=["changer-operateur-audiotel","business-live-audiotel","audiotel-voyance","audiotel-independants","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","tarif-numero-sva","numero-surtaxe-08","portabilite-numero-sva","comparateur-audiotel","guide-audiotel-sva","demande-ouverture","mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","accord-traitement-donnees","cookies-traceurs","resilier-contrat","retractation"];
     const seoPages=seoSlugs.map(slug=>fs.readFileSync("dist/"+slug+"/index.html","utf8"));
 
     assert.match(root,/Monétisez vos appels/);
-    assert.match(root,/BESOIN D’UN NUMÉRO SURTAXÉ/);
+    assert.match(root,/CHOISISSEZ VOTRE BESOIN/);
     assert.match(root,/href="\/reversement-audiotel\//);
     assert.match(root,/href="\/numero-sva\//);
     assert.match(root,/max-snippet:-1/);
