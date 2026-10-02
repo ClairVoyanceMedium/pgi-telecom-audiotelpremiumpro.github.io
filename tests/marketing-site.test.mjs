@@ -314,7 +314,7 @@ test("fixed monthly subscription is never presented as a starting price",()=>{
 
 test("mobile offer states the fixed subscription and frames competitive value as an objective",()=>{
   assert.match(html,/3€ TTC \/ mois/);
-  assert.match(html,/Des reversements plus généreux\./);
+  assert.match(html,/Comparez ce que vos appels peuvent réellement vous rapporter\./);
   assert.doesNotMatch(html,/À partir de <strong>3€/);
 });
 
@@ -404,6 +404,20 @@ test("hero copy is condensed and the primary potential gain is highlighted in gr
   assert.match(css,/hero-copy-and-green-potential-v153/);
   assert.match(css,/hero-savings-results \.main span,.hero-savings-results \.main strong\{color:var\(--ok\)\}/);
   assert.match(html,/Business Live : suivez en direct, seconde après seconde, le montant estimé qui vous est attribué pendant chaque appel/);
+});
+
+test("homepage adds restrained lifecycle trust and retention messaging",()=>{
+  assert.match(html,/Nous préférons une offre simple à une grille illisible/);
+  assert.match(html,/alertes personnelles dans le portail/);
+  assert.match(html,/projection de fin de mois non contractuelle/);
+  assert.match(html,/Pourquoi comparer le reversement et pas seulement le prix de l’abonnement/);
+  assert.match(html,/Que se passe-t-il après l’activation/);
+});
+
+test("opening flow uses progressive commitment without artificial urgency",()=>{
+  assert.match(application,/Un seul choix suffit pour avancer/);
+  assert.match(application,/Progression conservée/);
+  assert.match(application,/Comparez avant de décider/);
 });
 
 test("hero carries PGI Telecom signature and explains the higher-revenue-at-same-activity benefit",()=>{
