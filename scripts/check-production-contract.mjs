@@ -50,6 +50,8 @@ const objectLifecycleMigration=fs.readFileSync("database/migrations/015_object_s
 const dashboardDimensionMigration=fs.readFileSync("database/migrations/016_dashboard_dimension_rollups.sql","utf8");
 const businessLiveScheduleSource=fs.readFileSync("backend/src/business-live-schedule.mjs","utf8");
 const vercelConfig=fs.readFileSync("vercel.json","utf8");
+const vercelConfigData=JSON.parse(vercelConfig);
+const businessLiveCron=Array.isArray(vercelConfigData.crons)&&vercelConfigData.crons.some(item=>item&&item.path==="/api/v1/internal/business-live/reset-schedules/run"&&item.schedule==="* * * * *");
 const qualityRollupMigration=fs.readFileSync("database/migrations/017_quality_rollups.sql","utf8");
 const b2bDestinationMigration=fs.readFileSync("database/migrations/022_b2b_call_destinations.sql","utf8");
 const customerPortalMigration=fs.readFileSync("database/migrations/023_customer_portal.sql","utf8");
@@ -382,7 +384,7 @@ if(!/\/api\/v1\/dashboard\/live-finance\/reset/.test(backendServer)||!/resetLive
 if(!/\/dashboard\/live-finance\/reset-schedule/.test(apiClient)||!/\/customer\/jackpot\/reset-schedule/.test(clientPortalApi))failures.push("Business Live admin and customer schedule APIs are required");
 if(!/runDueBusinessLiveResets/.test(postgresStore)||!/FOR UPDATE SKIP LOCKED/.test(postgresStore)||!/queue_name=\'business_live_reset\'/.test(postgresStore)||!/work_queue/.test(postgresStore))failures.push("Business Live scheduled execution must reuse the durable work queue and remain concurrency safe");
 if(!/interval_days/.test(businessLiveScheduleSource)||!/monthly/.test(businessLiveScheduleSource)||!/weekly/.test(businessLiveScheduleSource))failures.push("Business Live schedule engine must support daily weekly monthly and arbitrary day intervals");
-if(!/\/api\/v1\/internal\/business-live\/reset-schedules\/run/.test(backendServer)||!/\/api\/v1\/internal\/business-live\/reset-schedules\/run/.test(vercelConfig)||!vercelConfig.includes('"schedule": "* * * * *"'))failures.push("Business Live scheduler must run every minute through the protected central cron");
+if(!/\/api\/v1\/internal\/business-live\/reset-schedules\/run/.test(backendServer)||!businessLiveCron)failures.push("Business Live scheduler must run every minute through the protected central cron");
 if(!/jackpot_upstream_payout_ht/.test(adminLiveFinanceUi)||!/Automatiser/.test(adminLiveFinanceUi))failures.push("Business Live cockpit must expose manual and scheduled reset controls");
 if(!/id="reset-metrics"[^>]*hidden/.test(indexSource)||!clientPortalHtml.includes('id="client-metrics-reset" class="cp-ghost" type="button" hidden'))failures.push("official metric reset controls must remain hidden from normal cockpit and client workflows");
 if(!/\/api\/v1\/dashboard\/analytics/.test(backendServer)||!/dashboardAnalytics/.test(postgresStore))failures.push("backend must expose scalable dashboard analytics");
