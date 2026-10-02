@@ -5,6 +5,7 @@ import fs from "node:fs";
 const html=fs.readFileSync("site/index.html","utf8");
 const css=fs.readFileSync("site/site.css","utf8");
 const js=fs.readFileSync("site/site.js","utf8");
+const siteSearch=fs.readFileSync("site/site-search.js","utf8");
 const tracking=fs.readFileSync("site/hubspot-tracking.js","utf8");
 const contactWidget=fs.readFileSync("site/contact-widget.js","utf8");
 const formUx=fs.readFileSync("site/form-ux.js","utf8");
@@ -73,6 +74,23 @@ test("marketing surface is indexable while private surfaces remain noindex",()=>
   assert.match(robots,/Allow: \/$/m);
   assert.match(robots,/Disallow: \/client\.html/);
   assert.match(sitemap,/audiotel-premium-pro\.com\//);
+});
+
+test("public search covers the complete published site with ranked and fuzzy matching",()=>{
+  assert.match(html,/data-site-search/);
+  assert.match(html,/Rechercher sur tout le site/);
+  assert.match(html,/\/site\/site-search\.js/);
+  assert.match(css,/public-site-search-v174/);
+  assert.match(siteSearch,/site-search-index\.json/);
+  assert.match(siteSearch,/scoreEntry/);
+  assert.match(siteSearch,/distance=/);
+  assert.match(siteSearch,/aliases=/);
+  assert.match(siteSearch,/ArrowDown/);
+  assert.match(siteSearch,/aria-activedescendant/);
+  assert.match(buildStatic,/injectPublicSearch/);
+  assert.match(buildStatic,/site-search-index\.json/);
+  assert.match(buildStatic,/seoPages\.map\(slug=>searchEntry/);
+  assert.match(buildStatic,/"site\/site-search\.js"/);
 });
 
 test("public site remains self-contained and mobile responsive",()=>{
