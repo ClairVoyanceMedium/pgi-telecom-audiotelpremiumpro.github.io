@@ -58,9 +58,9 @@ function contentGroup(pathname=location.pathname){
   const p=String(pathname||"/").toLowerCase();
   if(p==="/")return "Accueil";
   if(/tarif-numero-sva|comparateur-audiotel/.test(p))return "Tarifs et comparaison";
-  if(/portabilite-numero-sva/.test(p))return "Portabilité";
-  if(/reversement-audiotel/.test(p))return "Reversements";
-  if(/guide-audiotel-sva|numero-sva|numero-surtaxe-08/.test(p))return "Guide et information SVA";
+  if(/portabilite-numero-sva|changer-operateur-audiotel/.test(p))return "Portabilité";
+  if(/reversement-audiotel|business-live-audiotel/.test(p))return "Reversements";
+  if(/guide-audiotel-sva|numero-sva|numero-surtaxe-08|audiotel-sans-siret/.test(p))return "Guide et information SVA";
   if(/audiotel-(voyance|coaching|professionnels|independants)/.test(p))return "Pages métiers";
   if(/demande-ouverture/.test(p))return "Demande d’ouverture";
   if(CLIENT_RE.test(p))return "Espace client";
