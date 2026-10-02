@@ -481,15 +481,16 @@ test("homepage explains the 4.9 percent CB fee without mixing it with Stripe fee
   assert.match(html,/COMMISSION DE SERVICE PGI · PAIEMENTS CB/);
   assert.match(html,/4,9 %/);
   assert.match(html,/Ce 4,9 % correspond à la commission PGI/);
-  assert.match(html,/ni aux frais Stripe/);
+  assert.match(html,/ni aux frais de traitement du prestataire de paiement/);
   assert.match(html,/ni à l’abonnement Audiotel Premium Pro à 3€ TTC \/ mois/);
 });
 
 test("payment CB conversion landing is built, indexable and commercially explicit",()=>{
-  assert.match(cardPaymentsLanding,/Paiement CB Audiotel avec Stripe Connect/);
-  assert.match(cardPaymentsLanding,/Commission PGI : 4,9 % par paiement CB/);
-  assert.match(cardPaymentsLanding,/Frais Stripe distincts/);
-  assert.match(cardPaymentsLanding,/Aucune carte complète stockée par PGI/);
+  assert.doesNotMatch(cardPaymentsLanding,/Stripe Connect/i);
+  assert.match(cardPaymentsLanding,/Paiement CB sécurisé/);
+  assert.match(cardPaymentsLanding,/Commission de service : 4,9 % par paiement CB/);
+  assert.match(cardPaymentsLanding,/Frais de traitement distincts/);
+  assert.match(cardPaymentsLanding,/Aucune carte complète stockée par Audiotel Premium Pro/);
   assert.match(cardPaymentsLanding,/Préparer mon activation CB/);
   assert.match(buildStatic,/"paiement-cb-audiotel"/);
   assert.match(sitemap,/paiement-cb-audiotel/);
@@ -593,7 +594,7 @@ test("CB cards explain the service before asking for a click",()=>{
 test("solutions hub is discoverable by search engines and machine-readable guides",()=>{
   assert.match(sitemap,/solutions-audiotel/);
   assert.match(llms,/Solutions Audiotel/);
-  assert.match(llms,/Paiement CB avec Stripe Connect/);
+  assert.match(llms,/Paiement CB sécurisé/);
   assert.match(llmsFull,/### Solutions Audiotel/);
   assert.match(llmsFull,/### Paiement CB complémentaire/);
 });
