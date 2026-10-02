@@ -52,7 +52,7 @@ The transfer of an existing eligible number, subject to ownership/eligibility ch
 
 ### Paiement CB complémentaire
 https://audiotel-premium-pro.com/paiement-cb-audiotel/
-An optional Stripe Connect service allowing a professional to send a secure payment link to a customer for a consultation or package. Stripe processes the card payment; PGI does not store the full card number. The currently displayed PGI platform commission for this CB service is 4.9% per payment, excluding Stripe processing fees. This service is separate from the 3€ TTC/month Audiotel Premium Pro platform subscription.
+An optional secure card-payment service allowing a professional to send a payment link to a customer for a consultation or package. The payment provider processes the card data; Audiotel Premium Pro does not store the full card number. The currently displayed service commission for this CB service is 4.9% per payment, excluding payment-provider processing fees. This service is separate from the 3€ TTC/month Audiotel Premium Pro platform subscription.
 
 ## 4. Official French references
 
