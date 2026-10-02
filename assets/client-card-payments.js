@@ -46,7 +46,7 @@ async function load(){
 async function activate(){
  if(busy||!api?.activateCardPayments)return;busy=true;var b=$("ccp-activate");if(b)b.disabled=true;
  try{var r=await api.activateCardPayments(api.newIdempotencyKey());if(r?.onboarding?.url)location.href=r.onboarding.url;else await load()}
- catch(e){var root=$("ccp-body");if(root)root.insertAdjacentHTML("beforeend",'<p class="ccp-feedback">Activation Stripe indisponible : '+esc(e?.code||"vérifiez la configuration Connect")+'.</p>')}
+ catch(e){var root=$("ccp-body");if(root)root.insertAdjacentHTML("beforeend",'<p class="ccp-feedback">Activation du paiement indisponible : '+esc(e?.code||"vérifiez la configuration du service")+'.</p>')}
  finally{busy=false;if(b)b.disabled=false}
 }
 async function createPayment(){
