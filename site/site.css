@@ -273,3 +273,15 @@ main,header,footer,section,.site-header,.header-inner,.hero-grid,.calculator-gri
   .hero-action-link{width:100%}
 }
 
+
+/* solutions-hub-v169 */
+.solution-hub-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:38px}
+.solution-hub-card{display:flex;flex-direction:column;min-height:220px;padding:26px;border-radius:22px;background:linear-gradient(155deg,rgba(53,36,28,.9),rgba(34,23,18,.97));border:1px solid rgba(255,255,255,.075);transition:transform .18s ease,border-color .18s ease,background .18s ease}
+.solution-hub-card:hover{transform:translateY(-3px);border-color:rgba(232,179,110,.38);background:linear-gradient(155deg,rgba(60,40,31,.94),rgba(36,24,19,.99))}
+.solution-hub-card.featured{border-color:rgba(232,179,110,.38);background:radial-gradient(circle at 100% 0,rgba(232,179,110,.13),transparent 38%),linear-gradient(155deg,rgba(58,39,30,.95),rgba(35,24,19,.98))}
+.solution-hub-card.secondary{background:linear-gradient(155deg,rgba(205,178,154,.16),rgba(50,35,28,.88))}
+.solution-hub-card small{color:#a89182;font-size:9px;font-weight:900;letter-spacing:.12em}
+.solution-hub-card h3{margin:16px 0 8px;font-size:24px;line-height:1.12;color:#fff0e4}
+.solution-hub-card p{margin:0;color:#b6a194;font-size:13px;line-height:1.6}
+.solution-hub-card>strong{margin-top:auto;padding-top:22px;color:#dfb97e;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+@media(max-width:680px){.solution-hub-grid{grid-template-columns:1fr}.solution-hub-card{min-height:0;padding:21px}}
