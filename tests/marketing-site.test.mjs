@@ -652,7 +652,7 @@ test("competitor customers get an explicit portability acquisition journey",()=>
   assert.match(switchOperator,/DÉJÀ CHEZ UN AUTRE OPÉRATEUR AUDIOTEL/);
   assert.match(switchOperator,/Portabilité entrante Audiotel Premium Pro : 0€ au titre de la plateforme/);
   assert.match(portability,/VOUS AVEZ DÉJÀ UN NUMÉRO SURTAXÉ/);
-  assert.match(portability,/Demander ma portabilité/);
+  assert.match(portability,/Ma portabilité/);
   assert.match(js,/applyRequestedIntent/);
   assert.match(js,/portabilite:"portability"/);
 });
