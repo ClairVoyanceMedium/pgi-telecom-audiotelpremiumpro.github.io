@@ -85,8 +85,8 @@ function contactContext(){
   const p=String(location.pathname||"/").toLowerCase();
   if(p==="/")return "home";
   if(/tarif|comparateur/.test(p))return "pricing";
-  if(/portabilite/.test(p))return "portability";
-  if(/reversement/.test(p))return "payouts";
+  if(/portabilite|changer-operateur-audiotel/.test(p))return "portability";
+  if(/reversement|business-live-audiotel/.test(p))return "payouts";
   if(/guide|numero-sva|numero-surtaxe|audiotel-sans-siret/.test(p))return "education";
   if(/audiotel-(voyance|coaching|professionnels|independants)/.test(p))return "industry";
   if(/demande-ouverture/.test(p))return "opening";
