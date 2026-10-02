@@ -5,6 +5,7 @@ import {execFileSync} from "node:child_process";
 const root=process.cwd();
 const dist=path.join(root,"dist");
 const pkg=JSON.parse(fs.readFileSync(path.join(root,"package.json"),"utf8"));
+const publicAssetVersion=String(process.env.PGI_RELEASE_ID||pkg.version||"dev").trim().replace(/[^A-Za-z0-9._-]/g,"").slice(0,12)||"dev";
 
 fs.rmSync(dist,{recursive:true,force:true});
 fs.mkdirSync(path.join(dist,"assets"),{recursive:true});
@@ -15,6 +16,8 @@ const files=[
   "paiement-cb-result.html",
   "site/index.html",
   "site/site.css",
+  "site/application.css",
+  "site/payment-card.css",
   "site/site.js",
   "site/site-search.js",
   "site/payment-result.js",
@@ -131,15 +134,15 @@ for(const file of files){
 fs.copyFileSync(path.join(root,"index.html"),path.join(dist,"cockpit.html"));
 const publicBaseUrl=resolvePublicBaseUrl();
 const marketingSource=fs.readFileSync(path.join(root,"site","index.html"),"utf8");
-const marketingSite=injectPublicSearch(injectContactWidget(injectLegalNavigation(simplifyPublicShell(applyPublicMetadata(marketingSource,publicBaseUrl)))));
-const marketingRoot=injectPublicSearch(injectContactWidget(injectLegalNavigation(simplifyPublicShell(applyPublicMetadata(
+const marketingSite=versionPublicAssets(injectPublicSearch(injectContactWidget(injectLegalNavigation(simplifyPublicShell(applyPublicMetadata(marketingSource,publicBaseUrl))))));
+const marketingRoot=versionPublicAssets(injectPublicSearch(injectContactWidget(injectLegalNavigation(simplifyPublicShell(applyPublicMetadata(
   marketingSource
     .replaceAll("../assets/","assets/")
     .replaceAll("../client.html","client.html")
     .replace('href="site.css"','href="site/site.css"')
     .replace('src="site.js"','src="site/site.js"'),
   publicBaseUrl
-)))));
+))))));
 fs.writeFileSync(path.join(dist,"site","index.html"),marketingSite,"utf8");
 fs.writeFileSync(path.join(dist,"index.html"),marketingRoot,"utf8");
 const seoPages=[
@@ -147,6 +150,8 @@ const seoPages=[
   "business-live-audiotel",
   "audiotel-sans-siret",
   "changer-operateur-audiotel",
+  "monetiser-ses-appels",
+  "combien-rapporte-numero-surtaxe",
   "audiotel-voyance",
   "audiotel-independants",
   "audiotel-coaching",
@@ -173,13 +178,13 @@ for(const slug of seoPages){
   const source=fs.readFileSync(path.join(root,"site","seo",slug+".html"),"utf8");
   const targetDir=path.join(dist,slug);
   fs.mkdirSync(targetDir,{recursive:true});
-  fs.writeFileSync(path.join(targetDir,"index.html"),injectPublicSearch(injectContactWidget(injectLegalNavigation(simplifyPublicShell(applyLandingMetadata(source,publicBaseUrl,slug))))),"utf8");
+  fs.writeFileSync(path.join(targetDir,"index.html"),versionPublicAssets(injectPublicSearch(injectContactWidget(injectLegalNavigation(simplifyPublicShell(applyLandingMetadata(source,publicBaseUrl,slug)))))),"utf8");
 }
 
 
 const searchCategory={
   "solutions-audiotel":"Solutions","business-live-audiotel":"Suivi en direct","audiotel-sans-siret":"Ouverture",
-  "changer-operateur-audiotel":"Portabilité","audiotel-voyance":"Métiers","audiotel-independants":"Métiers",
+  "changer-operateur-audiotel":"Portabilité","monetiser-ses-appels":"Guide","combien-rapporte-numero-surtaxe":"Revenus","audiotel-voyance":"Métiers","audiotel-independants":"Métiers",
   "audiotel-coaching":"Métiers","audiotel-professionnels":"Métiers","reversement-audiotel":"Reversements",
   "numero-sva":"Numéro SVA","portabilite-numero-sva":"Portabilité","numero-surtaxe-08":"Numéro 08",
   "tarif-numero-sva":"Tarifs","comparateur-audiotel":"Comparateur","paiement-cb-audiotel":"Paiement CB",
@@ -191,6 +196,8 @@ const searchCategory={
 const searchHints={
   "portabilite-numero-sva":"portabilité portage transfert conserver garder numéro changer opérateur",
   "changer-operateur-audiotel":"changer opérateur concurrent transfert portabilité conserver numéro",
+  "monetiser-ses-appels":"monétiser appels clients revenus numéro surtaxé",
+  "combien-rapporte-numero-surtaxe":"combien rapporte numéro surtaxé revenus gains reversement",
   "numero-sva":"nouveau numéro numéro surtaxé 08 081 082 089 SVA ouvrir créer",
   "numero-surtaxe-08":"08 081 082 089 surtaxé tarification majorée",
   "tarif-numero-sva":"tarif prix coût appel 08 SVA",
@@ -222,14 +229,14 @@ function searchEntry(url,file,slug=""){
   const title=stripSearchMarkup(page.match(/<title>([\s\S]*?)<\/title>/i)?.[1]||"Audiotel Premium Pro");
   const description=decodeSearchText(page.match(/<meta\s+name="description"\s+content="([^"]*)"/i)?.[1]||"");
   const headings=[...page.matchAll(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/gi)].map(m=>stripSearchMarkup(m[1])).join(" · ");
-  const text=stripSearchMarkup(page).slice(0,16000);
+  const text=stripSearchMarkup(page).slice(0,5000);
   return {url,title,description,headings,category:slug?searchCategory[slug]||"Informations":"Accueil",keywords:(slug.replaceAll("-"," ")+" "+(searchHints[slug]||"")).trim(),text};
 }
 const siteSearchPages=[
   searchEntry("/",path.join(dist,"index.html")),
   ...seoPages.map(slug=>searchEntry("/"+slug+"/",path.join(dist,slug,"index.html"),slug))
 ];
-fs.writeFileSync(path.join(dist,"site-search-index.json"),JSON.stringify({version:1,pages:siteSearchPages}),"utf8");
+fs.writeFileSync(path.join(dist,"site-search-index.json"),JSON.stringify({version:2,pages:siteSearchPages}),"utf8");
 
 
 if(publicBaseUrl){
@@ -372,6 +379,39 @@ function applyPublicMetadata(html,baseUrl){
     .replace(/"url":"[^"]*"/,'"url":"'+canonical+'"');
 }
 
+const LANDING_SEO_META=Object.freeze({
+  "business-live-audiotel":{title:"Business Live Audiotel : suivi des appels | Audiotel Premium Pro",description:"Suivez en direct l’activité, les minutes et les montants estimés pendant vos appels, avec distinction entre estimé, confirmé et validé."},
+  "audiotel-sans-siret":{title:"Audiotel sans SIRET : première demande | Audiotel Premium Pro",description:"Déposez une première demande Audiotel sans SIRET, pour un nouveau numéro ou une portabilité, puis découvrez les justificatifs requis avant activation."},
+  "changer-operateur-audiotel":{title:"Changer d’opérateur Audiotel | Audiotel Premium Pro",description:"Changez de solution Audiotel sans repartir de zéro : portabilité d’un numéro SVA éligible, comparaison de l’offre actuelle et étapes du transfert."},
+  "audiotel-voyance":{title:"Audiotel voyance : numéro SVA | Audiotel Premium Pro",description:"Audiotel pour voyance et astrologie : numéro SVA, suivi des appels, reversements, portabilité et espace client."},
+  "audiotel-independants":{title:"Audiotel indépendant : numéro SVA | Audiotel Premium Pro",description:"Audiotel pour indépendants et porteurs de projet : numéro SVA, reversements, portabilité et demande initiale possible sans SIRET selon la situation."},
+  "audiotel-coaching":{title:"Audiotel coaching : numéro SVA | Audiotel Premium Pro",description:"Audiotel pour coaching et conseil téléphonique : numéro SVA, appels, minutes, reversements, portabilité et suivi en ligne."},
+  "audiotel-professionnels":{title:"Audiotel professionnel : numéro SVA | Audiotel Premium Pro",description:"Audiotel pour professionnels et entreprises : numéro SVA, suivi des appels, reversements, portabilité et gestion depuis un espace client."},
+  "reversement-audiotel":{title:"Reversement Audiotel : taux et gains | Audiotel Premium Pro",description:"Comparez taux de reversement, minutes facturables et montants attendus, confirmés et validés avec une simulation transparente."},
+  "numero-sva":{title:"Numéro SVA / Audiotel : ouverture | Audiotel Premium Pro",description:"Numéro SVA/Audiotel pour particuliers et professionnels : ouverture, suivi des appels, portabilité, tarification et reversements."},
+  "portabilite-numero-sva":{title:"Portabilité numéro surtaxé : garder son 08 | Audiotel Premium Pro",description:"Conservez un numéro surtaxé SVA éligible : préparation du transfert, vérification du titulaire et suivi de la confirmation opérateur."},
+  "numero-surtaxe-08":{title:"Numéro surtaxé 08 : 081, 082, 089 | Audiotel Premium Pro",description:"Comprenez les numéros 081, 082 et 089, les tarifs SVA, la composante service et les principales obligations d’information."},
+  "tarif-numero-sva":{title:"Tarif numéro surtaxé SVA | Audiotel Premium Pro",description:"Comprenez les tarifs des numéros SVA en France, les paliers 08, le prix du service et l’abonnement Audiotel Premium Pro."},
+  "comparateur-audiotel":{title:"Comparateur Audiotel : reversements | Audiotel Premium Pro",description:"Comparez un écart de reversement Audiotel et mesurez l’impact potentiel par minute, jour, mois et année selon votre volume d’appels."},
+  "paiement-cb-audiotel":{title:"Paiement CB sécurisé | Audiotel Premium Pro",description:"Paiement CB sécurisé : suivi des encaissements, commission de service de 4,9 % et frais de traitement distincts."},
+  "guide-audiotel-sva":{title:"Guide Audiotel / SVA | Audiotel Premium Pro",description:"Guide Audiotel et SVA : numéro surtaxé, reversement, portabilité, tarifs, éligibilité et suivi d’activité."},
+  "demande-ouverture":{title:"Demande d’ouverture | Audiotel Premium Pro",description:"Demandez un nouveau numéro ou une portabilité Audiotel Premium Pro, particulier ou professionnel, avec ou sans SIRET au dépôt initial."},
+  "accord-traitement-donnees":{title:"Accord de traitement des données | Audiotel Premium Pro",description:"Accord RGPD Audiotel Premium Pro : sécurité, assistance, sous-traitants, audit et fin de contrat."}
+});
+
+function applyLandingSeoMeta(html,slug){
+  const meta=LANDING_SEO_META[slug];
+  if(!meta)return html.replaceAll("| PGI Telecom","| Audiotel Premium Pro");
+  let out=html.replaceAll("| PGI Telecom","| Audiotel Premium Pro");
+  out=out.replace(/<title>[\s\S]*?<\/title>/i,"<title>"+meta.title+"</title>");
+  out=out.replace(/<meta name="description" content="[^"]*">/i,'<meta name="description" content="'+meta.description+'">');
+  out=out.replace(/<meta property="og:title" content="[^"]*">/i,'<meta property="og:title" content="'+meta.title+'">');
+  out=out.replace(/<meta property="og:description" content="[^"]*">/i,'<meta property="og:description" content="'+meta.description+'">');
+  out=out.replace(/<meta name="twitter:title" content="[^"]*">/i,'<meta name="twitter:title" content="'+meta.title+'">');
+  out=out.replace(/<meta name="twitter:description" content="[^"]*">/i,'<meta name="twitter:description" content="'+meta.description+'">');
+  return out;
+}
+
 function applyLandingMetadata(html,baseUrl,slug){
   const base=baseUrl||"https://audiotel-premium-pro.com";
   const canonical=base.replace(/\/+$/,"")+"/"+slug+"/";
@@ -380,7 +420,7 @@ function applyLandingMetadata(html,baseUrl,slug){
     .replaceAll("__BASE__",base.replace(/\/+$/,""))
     .replaceAll("__CANONICAL__",canonical)
     .replaceAll("__LOGO__",logo);
-  return injectBreadcrumb(rendered,base,canonical);
+  return injectBreadcrumb(applyLandingSeoMeta(rendered,slug),base,canonical);
 }
 
 function injectBreadcrumb(html,baseUrl,canonical){
@@ -438,6 +478,14 @@ function simplifyPublicShell(html){
     .replaceAll("3€ par mois","3€ TTC par mois");
 }
 
+
+
+function versionPublicAssets(html){
+  return String(html||"").replace(/((?:src|href)=")(?!https?:|data:|mailto:|#)([^"]+\.(?:css|js|png|webp|svg|ico))(")/gi,(full,prefix,url,suffix)=>{
+    if(/[?&]v=/.test(url))return full;
+    return prefix+url+(url.includes("?")?"&":"?")+"v="+publicAssetVersion+suffix;
+  });
+}
 
 function injectPublicSearch(html){
   const search='<div class="wrap public-search-wrap" data-site-search><form class="public-search" data-site-search-form role="search" aria-label="Rechercher sur Audiotel Premium Pro"><div class="public-search-box"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><label class="sr-only" for="site-search-input">Rechercher sur tout le site</label><input id="site-search-input" data-site-search-input type="search" inputmode="search" autocomplete="off" spellcheck="false" placeholder="Rechercher sur tout le site…" aria-autocomplete="list" aria-controls="site-search-results" aria-expanded="false"><span class="public-search-hint" aria-hidden="true">/</span></div><div class="public-search-results" id="site-search-results" data-site-search-results role="listbox" hidden></div></form></div>';

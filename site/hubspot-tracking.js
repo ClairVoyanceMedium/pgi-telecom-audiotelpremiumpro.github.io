@@ -31,7 +31,8 @@ const PARAMS=Object.freeze({
   page_performance:["metric_name","metric_rating","metric_value"],
   section_view:["section_id"],
   scroll_depth:["scroll_percent"],
-  site_error:["error_type"]
+  site_error:["error_type"],
+  search:["search_term"]
 });
 const VALUES=Object.freeze({
   account_type:new Set(["business","individual"]),
@@ -206,6 +207,7 @@ function clean(name,params){
     if(key==="currency")text=text.toUpperCase();
     if(ALIASES[key]&&ALIASES[key][text])text=ALIASES[key][text];
     if(key==="transaction_id"){if(/^[A-Za-z0-9_-]{1,128}$/.test(text))out[key]=text;continue}
+    if(key==="search_term"&&(text.includes("@")||/\d{7,}/.test(text)))continue
     if(VALUES[key]&&!VALUES[key].has(text))continue;
     if(text&&!/[\r\n]/.test(text))out[key]=text;
   }
@@ -247,7 +249,7 @@ function contentIdForLink(link){
     "/guide-audiotel-sva":"guide_sva","/portabilite-numero-sva":"portability","/changer-operateur-audiotel":"switch_operator","/reversement-audiotel":"payouts","/business-live-audiotel":"business_live",
     "/numero-sva":"numero_sva","/numero-surtaxe-08":"numero_surtaxe","/audiotel-sans-siret":"without_siret","/solutions-audiotel":"solutions","/tarif-numero-sva":"pricing",
     "/audiotel-voyance":"industry_voyance","/audiotel-coaching":"industry_coaching",
-    "/audiotel-professionnels":"industry_professionals","/audiotel-independants":"industry_independents","/":"home"
+    "/audiotel-professionnels":"industry_professionals","/audiotel-independants":"industry_independents","/paiement-cb-audiotel":"card_payment","/monetiser-ses-appels":"monetize_calls","/combien-rapporte-numero-surtaxe":"number_revenue","/":"home"
   };
   return known[p]||"";
 }

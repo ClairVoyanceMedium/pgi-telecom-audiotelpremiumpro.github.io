@@ -78,6 +78,14 @@ test("same-origin static handler serves marketing at root and keeps private UI n
     assert.equal(client.headers.get("cache-control"),"no-store");
     assert.match(client.headers.get("content-security-policy")||"",/accounts\.google\.com/);
     assert.match(client.headers.get("content-security-policy")||"",/www\.googleapis\.com/);
+    fs.mkdirSync(path.join(root,"site"),{recursive:true});
+    fs.writeFileSync(path.join(root,"site","app.css"),"body{}");
+    const immutableAsset=await fetch(base+"/site/app.css?v=release123");
+    assert.equal(immutableAsset.status,200);
+    assert.match(immutableAsset.headers.get("cache-control")||"",/max-age=31536000/);
+    assert.match(immutableAsset.headers.get("cache-control")||"",/immutable/);
+    const ordinaryAsset=await fetch(base+"/site/app.css");
+    assert.match(ordinaryAsset.headers.get("cache-control")||"",/max-age=300/);
     const api=await fetch(base+"/api/v1/health");
     assert.equal(api.status,404);
   }finally{

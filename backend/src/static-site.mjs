@@ -76,9 +76,11 @@ export function createStaticSiteHandler(rootDir){
     const clientUi=requestPath==="/client.html";
     const cockpitUi=["/cockpit","/cockpit/","/cockpit.html"].includes(requestPath);
     const privateUi=clientUi||cockpitUi;
+    const versionedAsset=!runtimeConfig&&!html&&/\.(?:css|js|png|webp|svg|ico)$/i.test(requestPath)&&/[?&]v=[A-Za-z0-9._-]{1,32}(?:&|$)/.test(String(req?.url||""));
     res.setHeader("Content-Type",MIME[ext]||"application/octet-stream");
     if(runtimeConfig||privateUi)res.setHeader("Cache-Control","no-store");
     else if(html)res.setHeader("Cache-Control","public, max-age=0, s-maxage=300, stale-while-revalidate=60");
+    else if(versionedAsset)res.setHeader("Cache-Control","public, max-age=31536000, immutable");
     else res.setHeader("Cache-Control","public, max-age=300, stale-while-revalidate=60");
     if(clientUi)res.setHeader("Content-Security-Policy",PRIVATE_CSP);
     else if(cockpitUi)res.setHeader("Content-Security-Policy",COCKPIT_CSP);

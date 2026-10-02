@@ -36,6 +36,8 @@ test("public site targets both individuals and professionals without overloading
 });
 
 test("focused SEO pages remain published without cluttering the homepage",()=>{
+  assert.match(buildStatic,/LANDING_SEO_META/);
+  assert.match(buildStatic,/Audiotel Premium Pro/);
   for(const slug of ["audiotel-voyance","audiotel-independants","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","comparateur-audiotel"]){
     assert.match(sitemap,new RegExp(slug));
     if(!["reversement-audiotel","numero-sva","comparateur-audiotel"].includes(slug))assert.ok(!html.includes('href="/'+slug+'/'),"homepage should not foreground "+slug);
@@ -76,21 +78,50 @@ test("marketing surface is indexable while private surfaces remain noindex",()=>
   assert.match(sitemap,/audiotel-premium-pro\.com\//);
 });
 
-test("public search covers the complete published site with ranked and fuzzy matching",()=>{
-  assert.match(html,/data-site-search/);
-  assert.match(html,/Rechercher sur tout le site/);
-  assert.match(html,/\/site\/site-search\.js/);
+test("public search covers the complete published site with ranked, intent and fuzzy matching",()=>{
+  assert.doesNotMatch(html,/data-site-search/);
+  assert.match(buildStatic,/data-site-search/);
+  assert.match(buildStatic,/Rechercher sur tout le site/);
+  assert.match(buildStatic,/\/site\/site-search\.js/);
   assert.match(css,/public-site-search-v174/);
   assert.match(siteSearch,/site-search-index\.json/);
   assert.match(siteSearch,/scoreEntry/);
   assert.match(siteSearch,/distance=/);
   assert.match(siteSearch,/aliases=/);
+  assert.match(siteSearch,/intentBoost/);
+  assert.match(siteSearch,/portabilite-numero-sva/);
+  assert.match(siteSearch,/trackSearchQuery/);
+  assert.match(siteSearch,/"search"/);
+  assert.doesNotMatch(siteSearch,/\nloadIndex\(\);\n\}\)\(\);\s*$/);
   assert.match(siteSearch,/ArrowDown/);
   assert.match(siteSearch,/aria-activedescendant/);
   assert.match(buildStatic,/injectPublicSearch/);
   assert.match(buildStatic,/site-search-index\.json/);
   assert.match(buildStatic,/seoPages\.map\(slug=>searchEntry/);
   assert.match(buildStatic,/"site\/site-search\.js"/);
+});
+
+test("SEO opportunity pages are built, searchable and included in sitemap generation",()=>{
+  assert.match(buildStatic,/"monetiser-ses-appels"/);
+  assert.match(buildStatic,/"combien-rapporte-numero-surtaxe"/);
+  assert.match(sitemap,/monetiser-ses-appels/);
+  assert.match(sitemap,/combien-rapporte-numero-surtaxe/);
+  assert.match(buildStatic,/slice\(0,5000\)/);
+  assert.match(buildStatic,/version:2/);
+});
+
+test("page-specific CSS is split from the shared marketing bundle",()=>{
+  assert.doesNotMatch(css,/payment-card-conversion-page-v166/);
+  assert.match(application,/\/site\/application\.css/);
+  assert.match(cardPaymentsLanding,/\/site\/payment-card\.css/);
+  assert.match(buildStatic,/"site\/application\.css"/);
+  assert.match(buildStatic,/"site\/payment-card\.css"/);
+});
+
+test("public assets receive release versioning for immutable browser caching",()=>{
+  assert.match(buildStatic,/versionPublicAssets/);
+  assert.match(buildStatic,/publicAssetVersion/);
+  assert.match(buildStatic,/PGI_RELEASE_ID/);
 });
 
 test("public site remains self-contained and mobile responsive",()=>{
@@ -145,6 +176,7 @@ test("floating contact stays low-friction and submits directly without opening a
 
 
 test("GA4 measurement model groups content, classifies AI referrals and tracks the commercial funnel without PII",()=>{
+  assert.match(tracking,/search:\["search_term"\]/);
   assert.match(tracking,/content_group/);
   assert.match(tracking,/traffic_origin/);
   for(const source of ["ai_chatgpt","ai_perplexity","ai_copilot","ai_gemini","ai_claude"])assert.ok(tracking.includes(source),source+" missing");
@@ -286,6 +318,7 @@ test("legal access blocks stay understandable on mobile",()=>{
 });
 
 test("homepage bottom quick navigation prioritizes the highest-value commercial journeys",()=>{
+  assert.match(css,/font-size:10\.2px!important/);
   assert.match(css,/fixed-revenue-bar-v173/);
   assert.match(css,/\.revenue-quick-nav\{position:fixed!important/);
   assert.match(css,/\.mobile-order-cta\{display:none!important/);
