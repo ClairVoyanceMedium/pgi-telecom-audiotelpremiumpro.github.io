@@ -320,3 +320,18 @@ main,header,footer,section,.site-header,.header-inner,.hero-grid,.calculator-gri
 .intent-card>strong{margin-top:auto;padding-top:22px;color:#e2bd88;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}
 @media(max-width:900px){.intent-card-grid{grid-template-columns:1fr}}
 @media(max-width:680px){.home-intent-section{padding:52px 0 58px}.intent-card{min-height:0;padding:21px}}
+
+/* value-first-marketing-v173 */
+.solution-choice-grid-three{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+.value-story-section{padding:70px 0 74px;background:linear-gradient(180deg,rgba(232,179,110,.045),rgba(255,255,255,.012));border-top:1px solid rgba(255,255,255,.05)}
+.value-story-grid{display:grid;grid-template-columns:minmax(0,.82fr) minmax(0,1.18fr);gap:46px;align-items:start}
+.value-story-points{display:grid;gap:12px}
+.value-story-points article{padding:20px 22px;border:1px solid rgba(255,255,255,.075);border-radius:18px;background:linear-gradient(155deg,rgba(52,35,28,.92),rgba(32,22,18,.98))}
+.value-story-points strong{display:block;color:#f1d6ad;font-size:15px;margin-bottom:6px}
+.value-story-points p{margin:0;color:#b7a296;font-size:12.5px;line-height:1.6}
+.home-page .hero h1 span{color:#f2c98f}
+.home-page .hero-lead-simple{max-width:720px}
+@media(max-width:980px){
+  .solution-choice-grid-three{grid-template-columns:1fr!important}
+  .value-story-grid{grid-template-columns:1fr;gap:28px}
+}
