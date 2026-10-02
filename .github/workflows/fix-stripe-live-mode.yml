@@ -19,7 +19,7 @@ jobs:
       VERCEL_PROJECT_ID: prj_Qjf77bDx4QwOcaV2yPKfUVv9TE0q
       VERCEL_TEAM_ID: team_GhbILdoZUN5puKJdrKp5nPQg
     steps:
-      - name: Set Stripe live mode in Vercel production
+      - name: Enable Stripe production billing in Vercel
         shell: bash
         run: |
           set -euo pipefail
