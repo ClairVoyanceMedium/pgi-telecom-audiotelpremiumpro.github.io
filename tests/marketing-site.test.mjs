@@ -21,6 +21,7 @@ const manifest=fs.readFileSync("site/manifest.webmanifest","utf8");
 const guide=fs.readFileSync("site/seo/guide-audiotel-sva.html","utf8");
 const terms=fs.readFileSync("site/seo/conditions-abonnement.html","utf8");
 const cardPaymentsLanding=fs.readFileSync("site/seo/paiement-cb-audiotel.html","utf8");
+const solutions=fs.readFileSync("site/seo/solutions-audiotel.html","utf8");
 
 test("public site targets both individuals and professionals without overloading the homepage",()=>{
   assert.match(html,/BESOIN D’UN NUMÉRO SURTAXÉ \? \(PARTICULIER \/ PROFESSIONNEL\)/);
@@ -517,4 +518,31 @@ test("homepage provides differentiated destinations for number, portability, pay
   assert.match(js,/href="\/tarif-numero-sva\//);
   assert.match(js,/href="\/demande-ouverture\//);
   assert.match(css,/homepage-product-hierarchy-v167/);
+});
+
+
+test("solutions hub separates the four customer intents",()=>{
+  assert.match(html,/CHOISISSEZ VOTRE BESOIN/);
+  assert.match(html,/Trouvez la bonne solution en quelques secondes/);
+  assert.match(html,/href="\/solutions-audiotel\//);
+  assert.match(solutions,/Conserver mon numéro surtaxé/);
+  assert.match(solutions,/Obtenir un nouveau numéro/);
+  assert.match(solutions,/Suivre mes appels et reversements/);
+  assert.match(solutions,/Ajouter le paiement par carte/);
+  assert.match(solutions,/href="\/portabilite-numero-sva\//);
+  assert.match(solutions,/href="\/numero-sva\//);
+  assert.match(solutions,/href="\/reversement-audiotel\//);
+  assert.match(solutions,/href="\/paiement-cb-audiotel\//);
+  assert.match(buildStatic,/"solutions-audiotel"/);
+});
+
+test("homepage reduces hero density while preserving immediate product choices",()=>{
+  assert.match(html,/hero-lead-simple/);
+  assert.match(html,/hero-quick-paths/);
+  assert.doesNotMatch(html,/hero-lead-cards/);
+  assert.match(html,/J’AI DÉJÀ UN NUMÉRO/);
+  assert.match(html,/JE DÉMARRE/);
+  assert.match(html,/JE VEUX MIEUX SUIVRE/);
+  assert.match(html,/SERVICE COMPLÉMENTAIRE/);
+  assert.ok(html.indexOf('id="simulateur"')>html.indexOf('CHOISISSEZ VOTRE BESOIN'));
 });
