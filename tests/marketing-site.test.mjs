@@ -495,7 +495,7 @@ test("payment CB conversion landing is built, indexable and commercially explici
 });
 
 test("homepage card-shaped product modules have real destinations",()=>{
-  assert.match(html,/solution-choice featured" href="\/portabilite-numero-sva\//);
+  assert.match(html,/solution-choice featured" href="\/changer-operateur-audiotel\//);
   assert.match(html,/solution-choice" href="\/numero-sva\//);
   assert.match(html,/solution-choice" href="\/reversement-audiotel\//);
   assert.match(html,/solution-choice secondary" href="\/paiement-cb-audiotel\//);
@@ -610,13 +610,25 @@ test("high-intent landing pages answer distinct conversion questions",()=>{
   assert.match(solutions,/href="\/changer-operateur-audiotel\//);
   assert.match(solutions,/href="\/audiotel-sans-siret\//);
   assert.match(solutions,/href="\/business-live-audiotel\//);
-  assert.match(switchOperator,/Changez d’offre/);
+  assert.match(switchOperator,/Changez de solution/);
   assert.match(switchOperator,/FAQPage/);
   assert.match(withoutSiret,/Dépôt ≠ activation/);
   assert.match(withoutSiret,/FAQPage/);
   assert.match(businessLive,/Moins de flou/);
   assert.match(businessLive,/estimés, confirmés et validés/i);
   assert.match(businessLive,/FAQPage/);
+});
+
+test("competitor customers get an explicit portability acquisition journey",()=>{
+  assert.match(html,/JE SUIS DÉJÀ CHEZ UN AUTRE OPÉRATEUR/);
+  assert.match(html,/Gardez votre numéro\. Changez la solution autour\./);
+  assert.match(html,/PGI Telecom ne facture pas de frais de portabilité entrante au titre de la plateforme/);
+  assert.match(switchOperator,/DÉJÀ CHEZ UN AUTRE OPÉRATEUR AUDIOTEL/);
+  assert.match(switchOperator,/Portabilité entrante PGI : 0€ au titre de la plateforme/);
+  assert.match(portability,/VOUS AVEZ DÉJÀ UN NUMÉRO SURTAXÉ/);
+  assert.match(portability,/Demander ma portabilité/);
+  assert.match(siteJs,/applyRequestedIntent/);
+  assert.match(siteJs,/portabilite:"portability"/);
 });
 
 test("analytics classifies the new conversion intents",()=>{
