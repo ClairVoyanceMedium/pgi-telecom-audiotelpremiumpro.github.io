@@ -379,7 +379,7 @@ function applyPublicMetadata(html,baseUrl){
     .replace(/"url":"[^"]*"/,'"url":"'+canonical+'"');
 }
 
-const LANDING_SEO_META=Object.freeze({
+function LANDING_SEO_META(slug){return ({
   "business-live-audiotel":{title:"Business Live Audiotel : suivi des appels | Audiotel Premium Pro",description:"Suivez en direct l’activité, les minutes et les montants estimés pendant vos appels, avec distinction entre estimé, confirmé et validé."},
   "audiotel-sans-siret":{title:"Audiotel sans SIRET : première demande | Audiotel Premium Pro",description:"Déposez une première demande Audiotel sans SIRET, pour un nouveau numéro ou une portabilité, puis découvrez les justificatifs requis avant activation."},
   "changer-operateur-audiotel":{title:"Changer d’opérateur Audiotel | Audiotel Premium Pro",description:"Changez de solution Audiotel sans repartir de zéro : portabilité d’un numéro SVA éligible, comparaison de l’offre actuelle et étapes du transfert."},
@@ -397,10 +397,10 @@ const LANDING_SEO_META=Object.freeze({
   "guide-audiotel-sva":{title:"Guide Audiotel / SVA | Audiotel Premium Pro",description:"Guide Audiotel et SVA : numéro surtaxé, reversement, portabilité, tarifs, éligibilité et suivi d’activité."},
   "demande-ouverture":{title:"Demande d’ouverture | Audiotel Premium Pro",description:"Demandez un nouveau numéro ou une portabilité Audiotel Premium Pro, particulier ou professionnel, avec ou sans SIRET au dépôt initial."},
   "accord-traitement-donnees":{title:"Accord de traitement des données | Audiotel Premium Pro",description:"Accord RGPD Audiotel Premium Pro : sécurité, assistance, sous-traitants, audit et fin de contrat."}
-});
+})[slug]||null;}
 
 function applyLandingSeoMeta(html,slug){
-  const meta=LANDING_SEO_META[slug];
+  const meta=LANDING_SEO_META(slug);
   if(!meta)return html.replaceAll("| PGI Telecom","| Audiotel Premium Pro");
   let out=html.replaceAll("| PGI Telecom","| Audiotel Premium Pro");
   out=out.replace(/<title>[\s\S]*?<\/title>/i,"<title>"+meta.title+"</title>");

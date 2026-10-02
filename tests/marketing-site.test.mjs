@@ -353,7 +353,7 @@ test("homepage modules are compact and each carries a clear marketing promise",(
   assert.match(html,/Le mois en cours est offert, puis 3€ TTC \/ mois/);
   assert.match(html,/De la demande au suivi de vos appels, en quatre étapes/);
   assert.match(html,/Ce que vous achetez, comment ça fonctionne et ce que vous payez/);
-  assert.match(html,/Demandez votre numéro surtaxé/);
+  assert.match(html,/Demander mon numéro/);
   assert.equal((html.match(/<article>/g)||[]).filter(Boolean).length<10,true);
   assert.match(contactCss,/\.home-page \.section\{padding:64px 0\}/);
   assert.match(contactCss,/\.home-page \.tech-grid article\{padding:18px/);
@@ -421,7 +421,7 @@ test("homepage leads with business benefits while preserving technical SEO facts
   assert.match(html,/BUSINESS LIVE/);
   assert.match(html,/TARIF DE LA PLATEFORME/);
   assert.match(html,/COMMENT ÇA MARCHE/);
-  assert.match(html,/Demandez votre numéro surtaxé/);
+  assert.match(html,/Demander mon numéro/);
   assert.match(html,/<title>[^<]*Audiotel/i);
   assert.match(html,/"@type":"Service"/);
   assert.match(html,/SVA/i);
@@ -430,8 +430,8 @@ test("homepage leads with business benefits while preserving technical SEO facts
 test("homepage explains the product before selling benefits",()=>{
   assert.match(html,/NUMÉRO SURTAXÉ · AUDIOTEL · SUIVI EN LIGNE/);
   assert.match(html,/Monétisez vos appels/);
-  assert.match(html,/Audiotel Premium Pro réunit votre numéro surtaxé, le suivi de vos appels et vos reversements/i);
-  assert.match(html,/CHOISISSEZ VOTRE BESOIN/);
+  assert.match(html,/Avec un numéro surtaxé en 08/);
+  assert.match(html,/COMMENCEZ PAR VOTRE SITUATION/);
   assert.match(html,/CE QUI EST INCLUS/);
   assert.match(html,/Numéro surtaxé et un espace client pour tout suivre/i);
   assert.match(html,/REVERSEMENTS/);
@@ -460,8 +460,8 @@ test("public login makes clear that access is for existing clients",()=>{
 
 test("homepage prioritizes portability, fast intake and clearer revenue comparison",()=>{
   assert.match(html,/Demander ma portabilité/i);
-  assert.match(html,/Je n’ai pas encore de SIRET/);
-  assert.match(html,/Conseil, expertise, coaching, voyance, assistance commerciale ou autre service/);
+  assert.match(html,/Particulier ou professionnel/);
+  assert.match(html,/Avec un numéro surtaxé en 08/);
   assert.match(html,/Calculez votre revenu potentiel supplémentaire/);
   assert.match(html,/CALCULATEUR DE REVENU POTENTIEL/);
   assert.match(html,/revenu potentiel supplémentaire par mois et sur 12 mois/);
@@ -557,9 +557,9 @@ test("homepage removes duplicated dynamic cards and keeps one simulator badge pl
 });
 
 test("homepage explains the 4.9 percent CB fee without mixing it with Stripe fees or subscription",()=>{
-  assert.match(html,/COMMISSION DE SERVICE PGI · PAIEMENTS CB/);
+  assert.match(html,/COMMISSION DE SERVICE AUDIOTEL PREMIUM PRO · PAIEMENTS CB/);
   assert.match(html,/4,9 %/);
-  assert.match(html,/Ce 4,9 % correspond à la commission PGI/);
+  assert.match(html,/Ce 4,9 % correspond à la commission de service/);
   assert.match(html,/ni aux frais de traitement du prestataire de paiement/);
   assert.match(html,/ni à l’abonnement Audiotel Premium Pro à 3€ TTC \/ mois/);
 });
@@ -578,9 +578,10 @@ test("payment CB conversion landing is built, indexable and commercially explici
 test("homepage card-shaped product modules have real destinations",()=>{
   assert.match(html,/solution-choice featured" href="\/changer-operateur-audiotel\//);
   assert.match(html,/solution-choice" href="\/numero-sva\//);
-  assert.match(html,/solution-choice" href="\/reversement-audiotel\//);
-  assert.match(html,/solution-choice secondary" href="\/paiement-cb-audiotel\//);
+  assert.match(html,/solution-choice" href="#simulateur"/);
+  assert.match(html,/tech-card-link" href="\/reversement-audiotel\//);
   assert.match(html,/tech-card-link" href="\/business-live-audiotel\//);
+  assert.match(html,/home-cb-compact[\s\S]*href="\/paiement-cb-audiotel\//);
 });
 
 
@@ -596,9 +597,9 @@ test("homepage hierarchy keeps number and portability as the primary product and
   assert.ok(platform<pricing);
   assert.ok(pricing<faq);
   assert.ok(faq<cb);
-  assert.match(html,/CHOISISSEZ VOTRE BESOIN/);
+  assert.match(html,/COMMENCEZ PAR VOTRE SITUATION/);
   assert.match(html,/Portabilité/);
-  assert.match(html,/Nouveau numéro surtaxé/);
+  assert.match(html,/Créer un numéro surtaxé/);
   assert.match(html,/SERVICE COMPLÉMENTAIRE/);
   assert.match(html,/Paiement par carte bancaire/);
 });
@@ -615,16 +616,16 @@ test("hero and upper-page links no longer over-route visitors to the CB landing 
 test("homepage provides differentiated destinations for number, portability, payouts and complementary CB",()=>{
   assert.match(html,/solution-choice-grid[\s\S]*href="\/numero-sva\//);
   assert.match(html,/solution-choice-grid[\s\S]*href="\/portabilite-numero-sva\//);
-  assert.match(html,/solution-choice-grid[\s\S]*href="\/reversement-audiotel\//);
-  assert.match(html,/solution-choice-grid[\s\S]*href="\/paiement-cb-audiotel\//);
+  assert.match(html,/tech-card-link" href="\/reversement-audiotel\//);
+  assert.match(html,/home-cb-compact[\s\S]*href="\/paiement-cb-audiotel\//);
   assert.match(html,/href="\/solutions-audiotel\//);
   assert.match(css,/homepage-product-discovery-v168/);
 });
 
 
 test("solutions hub separates the four customer intents",()=>{
-  assert.match(html,/CHOISISSEZ VOTRE BESOIN/);
-  assert.match(html,/Trouvez la bonne solution en quelques secondes/);
+  assert.match(html,/COMMENCEZ PAR VOTRE SITUATION/);
+  assert.match(html,/Trois chemins suffisent pour avancer/);
   assert.match(html,/href="\/solutions-audiotel\//);
   assert.match(solutions,/Conserver mon numéro surtaxé/);
   assert.match(solutions,/Obtenir un nouveau numéro/);
@@ -642,12 +643,12 @@ test("homepage removes duplicated hero tabs and preserves one clear product-choi
   assert.doesNotMatch(html,/hero-quick-paths/);
   assert.doesNotMatch(html,/hero-lead-cards/);
   assert.doesNotMatch(js,/public-advantage-suite/);
-  assert.match(html,/CHOISISSEZ VOTRE BESOIN/);
-  assert.match(html,/J’AI DÉJÀ UN NUMÉRO/);
-  assert.match(html,/JE DÉMARRE/);
-  assert.match(html,/JE VEUX MIEUX SUIVRE/);
+  assert.match(html,/COMMENCEZ PAR VOTRE SITUATION/);
+  assert.match(html,/JE SUIS DÉJÀ CHEZ UN AUTRE OPÉRATEUR/);
+  assert.match(html,/JE VEUX COMMENCER/);
+  assert.match(html,/JE VEUX D’ABORD ESTIMER/);
   assert.match(html,/SERVICE COMPLÉMENTAIRE/);
-  assert.ok(html.indexOf('id="simulateur"')>html.indexOf('CHOISISSEZ VOTRE BESOIN'));
+  assert.ok(html.indexOf('id="simulateur"')>html.indexOf('COMMENCEZ PAR VOTRE SITUATION'));
 });
 
 
@@ -656,18 +657,18 @@ test("homepage restores an explicit compact comparison table without inventing r
   assert.match(html,/TABLEAU COMPARATIF/);
   assert.match(html,/Votre offre actuelle/);
   assert.match(html,/Audiotel Premium Pro/);
-  assert.match(html,/À comparer uniquement avec la proposition PGI effectivement confirmée/);
+  assert.match(html,/proposition Audiotel Premium Pro effectivement confirmée/);
   assert.match(html,/Ouvrir le comparateur détaillé/);
   assert.match(css,/compact-offer-comparison-v171/);
 });
 
 test("CB cards explain the service before asking for a click",()=>{
-  assert.match(html,/Envoyez à votre client un lien de paiement sécurisé/);
-  assert.match(html,/Stripe traite la carte/);
-  assert.match(html,/Commission PGI 4,9 %/);
+  assert.match(html,/paiement CB sécurisé, suivi dans l’espace client/);
+  assert.match(html,/prestataire de paiement/);
+  assert.match(html,/4,9 %/);
   assert.match(solutions,/Envoyez à votre client un lien de paiement sécurisé/);
-  assert.match(solutions,/PGI ne conserve pas le numéro complet de la carte/);
-  assert.match(solutions,/Commission PGI actuelle : 4,9 %/);
+  assert.match(solutions,/Audiotel Premium Pro ne conserve pas le numéro complet de la carte/);
+  assert.match(solutions,/Commission de service actuelle : 4,9 %/);
 });
 
 test("solutions hub is discoverable by search engines and machine-readable guides",()=>{
@@ -686,7 +687,6 @@ test("high-intent landing pages answer distinct conversion questions",()=>{
     assert.match(llms,new RegExp(slug));
   }
   assert.match(html,/href="\/changer-operateur-audiotel\//);
-  assert.match(html,/href="\/audiotel-sans-siret\//);
   assert.match(html,/href="\/business-live-audiotel\//);
   assert.match(solutions,/href="\/changer-operateur-audiotel\//);
   assert.match(solutions,/href="\/audiotel-sans-siret\//);
