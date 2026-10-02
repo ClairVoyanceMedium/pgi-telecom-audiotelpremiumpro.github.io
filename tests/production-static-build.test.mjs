@@ -26,7 +26,7 @@ test("production static build publishes marketing root and private cockpit",()=>
     const llmsFull=fs.readFileSync("dist/llms-full.txt","utf8");
     const hubspotTracking=fs.readFileSync("dist/site/hubspot-tracking.js","utf8");
     const indexNowKey=fs.readFileSync("dist/fa0a7deb5d60bdf1260c8174ad8c71db.txt","utf8").trim();
-    const seoSlugs=["changer-operateur-audiotel","business-live-audiotel","audiotel-voyance","audiotel-independants","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","tarif-numero-sva","numero-surtaxe-08","portabilite-numero-sva","comparateur-audiotel","guide-audiotel-sva","demande-ouverture","mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","accord-traitement-donnees","cookies-traceurs","resilier-contrat","retractation"];
+    const seoSlugs=["changer-operateur-audiotel","business-live-audiotel","monetiser-ses-appels","combien-rapporte-numero-surtaxe","audiotel-voyance","audiotel-independants","audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","tarif-numero-sva","numero-surtaxe-08","portabilite-numero-sva","comparateur-audiotel","guide-audiotel-sva","demande-ouverture","mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","accord-traitement-donnees","cookies-traceurs","resilier-contrat","retractation"];
     const seoPages=seoSlugs.map(slug=>fs.readFileSync("dist/"+slug+"/index.html","utf8"));
 
     assert.match(root,/Monétisez vos appels/);
@@ -35,10 +35,10 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.match(root,/href="\/numero-sva\//);
     assert.match(root,/max-snippet:-1/);
     assert.doesNotMatch(root,/Cockpit \/ PGI Telecom/);
-    assert.match(root,/href="site\/site\.css"/);
-    assert.match(root,/src="site\/site\.js"/);
-    assert.match(root,/href="\/site\/contact-widget\.css"/);
-    assert.match(root,/src="\/site\/contact-widget\.js"/);
+    assert.match(root,/href="site\/site\.css\?v=[a-z0-9._-]+"/i);
+    assert.match(root,/src="site\/site\.js\?v=[a-z0-9._-]+"/i);
+    assert.match(root,/href="\/site\/contact-widget\.css\?v=[a-z0-9._-]+"/i);
+    assert.match(root,/src="\/site\/contact-widget\.js\?v=[a-z0-9._-]+"/i);
     assert.doesNotMatch(root,/\.\.\/assets\//);
     assert.match(root,/rel="canonical" href="https:\/\/audiotel-premium-pro\.com\/"/);
     assert.match(root,/property="og:url" content="https:\/\/audiotel-premium-pro\.com\/"/);
@@ -76,20 +76,20 @@ test("production static build publishes marketing root and private cockpit",()=>
       assert.match(page,new RegExp('rel="canonical" href="https:\\/\\/audiotel-premium-pro\\.com\\/'+slug+'\\/"'));
       if(!legal){assert.match(page,/"@type":"WebPage"/);assert.match(page,/"@type":"Service"/);}
       assert.doesNotMatch(page,/__CANONICAL__|__BASE__|__LOGO__/);
-      const scripts=[...page.matchAll(/<script[^>]+src="([^"]+)"/gi)].map(x=>x[1]);
+      const scripts=[...page.matchAll(/<script[^>]+src="([^"]+)"/gi)].map(x=>x[1].split("?")[0]);
       const allowedScripts={
         "demande-ouverture":["/site/form-ux.js","/site/site.js","/site/hubspot-tracking.js","/site/contact-widget.js"],
         "retractation":["/site/hubspot-tracking.js","/assets/config.js","/assets/withdrawal.js","/site/contact-widget.js"]
       }[slug]||["/site/hubspot-tracking.js","/site/contact-widget.js"];
       for(const src of scripts)assert.ok(allowedScripts.includes(src),"unexpected public script on "+slug+": "+src);
       assert.ok(scripts.includes("/site/contact-widget.js"),"contact widget missing on "+slug);
-      assert.match(page,/href="\/site\/contact-widget\.css"/);
+      assert.match(page,/href="\/site\/contact-widget\.css\?v=[a-z0-9._-]+"/i);
     });
     const independants=seoPages[seoSlugs.indexOf("audiotel-independants")];
     assert.match(independants,/avec ou sans SIRET/i);
     assert.match(independants,/"@type":"FAQPage"/);
     assert.match(independants,/"@type":"BreadcrumbList"/);
-    assert.match(independants,/src="\/site\/hubspot-tracking\.js"/);
+    assert.match(independants,/src="\/site\/hubspot-tracking\.js\?v=[a-z0-9._-]+"/i);
     const comparator=seoPages[seoSlugs.indexOf("comparateur-audiotel")];
     assert.match(comparator,/1 800 € \/ mois/);
     assert.match(comparator,/0,10 € \/ min/);
@@ -104,7 +104,7 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.ok(guide.includes("economie.gouv.fr"));
     const application=seoPages[seoSlugs.indexOf("demande-ouverture")];
     assert.match(application,/id="order-form"/);
-    assert.match(application,/src="\/site\/site\.js"/);
+    assert.match(application,/src="\/site\/site\.js\?v=[a-z0-9._-]+"/i);
     assert.match(application,/Continuer vers l’espace sécurisé/);
     const privacy=seoPages[seoSlugs.indexOf("confidentialite")];
     const terms=seoPages[seoSlugs.indexOf("conditions-abonnement")];
