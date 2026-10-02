@@ -74,7 +74,7 @@ test("production static build publishes marketing root and private cockpit",()=>
     seoPages.forEach((page,index)=>{
       const slug=seoSlugs[index],legal=["mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","accord-traitement-donnees","cookies-traceurs","resilier-contrat","retractation"].includes(slug);
       assert.match(page,new RegExp('rel="canonical" href="https:\\/\\/audiotel-premium-pro\\.com\\/'+slug+'\\/"'));
-      if(!legal){assert.match(page,/"@type":"WebPage"/);assert.match(page,/"@type":"Service"/);}
+      if(!legal){assert.match(page,/"@type":"WebPage"/);if(["monetiser-ses-appels","combien-rapporte-numero-surtaxe"].includes(slug))assert.match(page,/"@type":"Article"/);else assert.match(page,/"@type":"Service"/);}
       assert.doesNotMatch(page,/__CANONICAL__|__BASE__|__LOGO__/);
       const scripts=[...page.matchAll(/<script[^>]+src="([^"]+)"/gi)].map(x=>x[1].split("?")[0]);
       const allowedScripts={
