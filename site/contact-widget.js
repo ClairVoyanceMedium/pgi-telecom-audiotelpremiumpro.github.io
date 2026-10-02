@@ -87,7 +87,7 @@ function contactContext(){
   if(/tarif|comparateur/.test(p))return "pricing";
   if(/portabilite/.test(p))return "portability";
   if(/reversement/.test(p))return "payouts";
-  if(/guide|numero-sva|numero-surtaxe/.test(p))return "education";
+  if(/guide|numero-sva|numero-surtaxe|audiotel-sans-siret/.test(p))return "education";
   if(/audiotel-(voyance|coaching|professionnels|independants)/.test(p))return "industry";
   if(/demande-ouverture/.test(p))return "opening";
   if(/conditions|confidentialite|mentions-legales|retractation|resilier|cookies/.test(p))return "legal";
