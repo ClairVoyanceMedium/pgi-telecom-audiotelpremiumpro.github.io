@@ -42,11 +42,28 @@ jobs:
           env_file="$(mktemp)"
           curl --fail --silent --show-error             -H "Authorization: Bearer $VERCEL_TOKEN"             "https://api.vercel.com/v10/projects/$VERCEL_PROJECT_ID/env?teamId=$VERCEL_TEAM_ID&decrypt=true"             > "$env_file"
 
-          stripe_key="$(jq -r '.envs[] | select(.key=="PGI_STRIPE_SECRET_KEY") | select((.target // []) | index("production")) | .value // empty' "$env_file" | head -n1)"
-          billing_enabled="$(jq -r '.envs[] | select(.key=="PGI_EXTERNAL_BILLING_ENABLED") | select((.target // []) | index("production")) | .value // empty' "$env_file" | head -n1)"
+          stripe_key="$(jq -r '
+            .envs[]
+            | select((.key=="PGI_STRIPE_SECRET_KEY" or .key=="STRIPE_SECRET_KEY"))
+            | select((.target // []) | index("production"))
+            | .value // empty
+          ' "$env_file" | head -n1)"
+          billing_enabled="$(jq -r '
+            .envs[]
+            | select(.key=="PGI_EXTERNAL_BILLING_ENABLED")
+            | select((.target // []) | index("production"))
+            | (.value // empty)
+          ' "$env_file" | head -n1 | tr '[:upper:]' '[:lower:]')"
 
-          [[ "$stripe_key" =~ ^sk_live_[A-Za-z0-9]+$ ]]
-          [[ "$billing_enabled" == "true" ]]
+          if [[ ! "$stripe_key" =~ ^sk_live_[A-Za-z0-9]+$ ]]; then
+            key_names="$(jq -r '.envs[] | select((.key=="PGI_STRIPE_SECRET_KEY" or .key=="STRIPE_SECRET_KEY")) | .key' "$env_file" | sort -u | paste -sd, -)"
+            echo "Stripe production key could not be read from Vercel; matching configured key names: ${key_names:-none}" >&2
+            exit 1
+          fi
+          if [ -n "$billing_enabled" ] && [ "$billing_enabled" != "true" ]; then
+            echo "PGI_EXTERNAL_BILLING_ENABLED is configured but not true in production." >&2
+            exit 1
+          fi
           echo "::add-mask::$stripe_key"
 
           key_file="$(mktemp)"
