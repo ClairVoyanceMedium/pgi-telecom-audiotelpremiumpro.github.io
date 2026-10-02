@@ -28,7 +28,8 @@
     "resilience:drill": "node scripts/resilience-drill.mjs",
     "production:smoke": "node scripts/production-smoke.mjs",
     "check:perf-tools": "node --check scripts/performance-load.mjs && node --check scripts/synthetic-probe.mjs && node --check scripts/resilience-drill.mjs && node --check scripts/production-smoke.mjs",
-    "start:platform": "sh scripts/start-platform.sh"
+    "start:platform": "sh scripts/start-platform.sh",
+    "verify:vercel": "node --check scripts/build-static.mjs && node --check site/site.js && node --check site/site-search.js && node --check site/hubspot-tracking.js && node --check backend/server.mjs && node --check backend/src/static-site.mjs && node scripts/check-html.mjs && node scripts/check-size.mjs && node scripts/check-secrets.mjs && node --test tests/marketing-site.test.mjs tests/production-static-build.test.mjs tests/platform-hosting.test.mjs"
   },
   "engines": {
     "node": ">=20"
