@@ -95,19 +95,7 @@ syncType();
 
 ;(()=>{
 const box=document.getElementById("simulateur");
-if(!box||document.getElementById("public-advantage-suite"))return;
+if(!box)return;
 const head=box.querySelector(".hero-savings-head");
 if(head&&!head.querySelector(".public-demo-badge"))head.insertAdjacentHTML("beforeend",'<span class="public-demo-badge">SIMULATION · NON CONTRACTUELLE</span>');
-const suite=document.createElement("section");suite.id="public-advantage-suite";suite.className="public-advantage-suite";suite.setAttribute("aria-label","Fonctions numéro surtaxé Audiotel Premium Pro");
-suite.innerHTML='<div class="public-advantage-head"><span>NUMÉRO SURTAXÉ & PORTABILITÉ</span><h2>Tout ce qu’il faut pour ouvrir, transférer et piloter votre numéro</h2><p>Chaque carte mène vers l’information précise dont vous avez besoin. Aucun parcours n’est renvoyé systématiquement vers la même page.</p></div>'+
-'<div class="public-advantage-grid">'+
-'<a class="public-advantage-card" href="/audiotel-professionnels/"><b aria-hidden="true">✓</b><strong>Business Live</strong><span>Suivez votre activité, vos minutes et vos indicateurs depuis votre espace client.</span><em>Découvrir le pilotage</em></a>'+
-'<a class="public-advantage-card" href="/portabilite-numero-sva/"><b aria-hidden="true">✓</b><strong>Portabilité de votre numéro</strong><span>Vérifiez le parcours permettant de conserver un numéro existant lorsqu’il est éligible.</span><em>Voir la portabilité</em></a>'+
-'<a class="public-advantage-card" href="/numero-sva/"><b aria-hidden="true">✓</b><strong>Nouveau numéro surtaxé</strong><span>Comprenez l’ouverture d’un nouveau numéro SVA et les validations nécessaires.</span><em>Voir les numéros SVA</em></a>'+
-'<a class="public-advantage-card" href="/reversement-audiotel/"><b aria-hidden="true">✓</b><strong>Reversements suivis</strong><span>Différenciez estimations, montants confirmés et éléments réellement validés.</span><em>Comprendre les reversements</em></a>'+
-'<a class="public-advantage-card" href="/tarif-numero-sva/"><b aria-hidden="true">✓</b><strong>Tarification SVA expliquée</strong><span>Comprenez la différence entre abonnement plateforme, tarification du numéro et reversement.</span><em>Voir les tarifs SVA</em></a>'+
-'<a class="public-advantage-card" href="/demande-ouverture/"><b aria-hidden="true">✓</b><strong>Demande d’ouverture</strong><span>Déposez votre demande de numéro ou de portabilité sans paiement immédiat.</span><em>Préparer ma demande</em></a>'+
-'</div>';
-const platform=document.getElementById("plateforme");
-(platform||box.closest(".hero")||box).insertAdjacentElement("afterend",suite);
 })();;
