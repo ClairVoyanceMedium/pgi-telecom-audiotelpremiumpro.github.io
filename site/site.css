@@ -291,3 +291,20 @@ main,header,footer,section,.site-header,.header-inner,.hero-grid,.calculator-gri
   color:#fff4e9!important;
   text-shadow:0 1px 0 rgba(0,0,0,.35),0 2px 14px rgba(0,0,0,.28);
 }
+
+/* compact-offer-comparison-v171 */
+.home-comparison-section{padding:64px 0 70px;background:linear-gradient(180deg,rgba(255,255,255,.018),rgba(232,179,110,.035));border-top:1px solid rgba(255,255,255,.05)}
+.offer-comparison-wrap{margin-top:26px;overflow:auto;border:1px solid rgba(255,255,255,.075);border-radius:20px;background:linear-gradient(155deg,rgba(51,35,28,.94),rgba(31,22,18,.98));box-shadow:0 18px 48px rgba(0,0,0,.2)}
+.offer-comparison-table{width:100%;min-width:760px;border-collapse:collapse}
+.offer-comparison-table th,.offer-comparison-table td{padding:17px 18px;border-bottom:1px solid rgba(255,255,255,.065);text-align:left;vertical-align:top;font-size:12px;line-height:1.5}
+.offer-comparison-table thead th{background:rgba(232,179,110,.08);color:#fff3e8;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
+.offer-comparison-table tbody th{width:22%;color:#e7c79d;font-weight:850}
+.offer-comparison-table tbody td{color:#c1ada0}
+.offer-comparison-table tbody td:last-child{color:#eee0d5}
+.offer-comparison-table tbody tr:last-child th,.offer-comparison-table tbody tr:last-child td{border-bottom:0}
+.comparison-note{margin:14px 2px 0;color:#998274;font-size:10.5px;line-height:1.55}
+@media(max-width:680px){
+ .home-comparison-section{padding:50px 0 56px}
+ .offer-comparison-wrap{margin-top:20px;border-radius:16px}
+ .offer-comparison-table th,.offer-comparison-table td{padding:14px 15px}
+}
