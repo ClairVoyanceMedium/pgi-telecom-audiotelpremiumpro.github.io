@@ -16,6 +16,7 @@ const files=[
   "site/index.html",
   "site/site.css",
   "site/site.js",
+  "site/site-search.js",
   "site/payment-result.js",
   "site/form-ux.js",
   "site/contact-widget.js",
@@ -130,15 +131,15 @@ for(const file of files){
 fs.copyFileSync(path.join(root,"index.html"),path.join(dist,"cockpit.html"));
 const publicBaseUrl=resolvePublicBaseUrl();
 const marketingSource=fs.readFileSync(path.join(root,"site","index.html"),"utf8");
-const marketingSite=injectContactWidget(injectLegalNavigation(simplifyPublicShell(applyPublicMetadata(marketingSource,publicBaseUrl))));
-const marketingRoot=injectContactWidget(injectLegalNavigation(simplifyPublicShell(applyPublicMetadata(
+const marketingSite=injectPublicSearch(injectContactWidget(injectLegalNavigation(simplifyPublicShell(applyPublicMetadata(marketingSource,publicBaseUrl)))));
+const marketingRoot=injectPublicSearch(injectContactWidget(injectLegalNavigation(simplifyPublicShell(applyPublicMetadata(
   marketingSource
     .replaceAll("../assets/","assets/")
     .replaceAll("../client.html","client.html")
     .replace('href="site.css"','href="site/site.css"')
     .replace('src="site.js"','src="site/site.js"'),
   publicBaseUrl
-))));
+)))));
 fs.writeFileSync(path.join(dist,"site","index.html"),marketingSite,"utf8");
 fs.writeFileSync(path.join(dist,"index.html"),marketingRoot,"utf8");
 const seoPages=[
@@ -172,8 +173,63 @@ for(const slug of seoPages){
   const source=fs.readFileSync(path.join(root,"site","seo",slug+".html"),"utf8");
   const targetDir=path.join(dist,slug);
   fs.mkdirSync(targetDir,{recursive:true});
-  fs.writeFileSync(path.join(targetDir,"index.html"),injectContactWidget(injectLegalNavigation(simplifyPublicShell(applyLandingMetadata(source,publicBaseUrl,slug)))),"utf8");
+  fs.writeFileSync(path.join(targetDir,"index.html"),injectPublicSearch(injectContactWidget(injectLegalNavigation(simplifyPublicShell(applyLandingMetadata(source,publicBaseUrl,slug))))),"utf8");
 }
+
+
+const searchCategory={
+  "solutions-audiotel":"Solutions","business-live-audiotel":"Suivi en direct","audiotel-sans-siret":"Ouverture",
+  "changer-operateur-audiotel":"Portabilité","audiotel-voyance":"Métiers","audiotel-independants":"Métiers",
+  "audiotel-coaching":"Métiers","audiotel-professionnels":"Métiers","reversement-audiotel":"Reversements",
+  "numero-sva":"Numéro SVA","portabilite-numero-sva":"Portabilité","numero-surtaxe-08":"Numéro 08",
+  "tarif-numero-sva":"Tarifs","comparateur-audiotel":"Comparateur","paiement-cb-audiotel":"Paiement CB",
+  "guide-audiotel-sva":"Guide","demande-ouverture":"Ouverture","mentions-legales":"Juridique",
+  "conditions-utilisation":"Juridique","conditions-abonnement":"Juridique","confidentialite":"Confidentialité",
+  "accord-traitement-donnees":"Confidentialité","cookies-traceurs":"Confidentialité",
+  "resilier-contrat":"Abonnement","retractation":"Abonnement"
+};
+const searchHints={
+  "portabilite-numero-sva":"portabilité portage transfert conserver garder numéro changer opérateur",
+  "changer-operateur-audiotel":"changer opérateur concurrent transfert portabilité conserver numéro",
+  "numero-sva":"nouveau numéro numéro surtaxé 08 081 082 089 SVA ouvrir créer",
+  "numero-surtaxe-08":"08 081 082 089 surtaxé tarification majorée",
+  "tarif-numero-sva":"tarif prix coût appel 08 SVA",
+  "reversement-audiotel":"reversement revenu gains rémunération minute",
+  "comparateur-audiotel":"comparer offre gains revenu économie reversement",
+  "paiement-cb-audiotel":"paiement CB carte bancaire consultation forfait",
+  "business-live-audiotel":"Business Live direct temps réel suivi appels",
+  "audiotel-sans-siret":"sans SIRET particulier porteur projet",
+  "conditions-abonnement":"3€ abonnement prix résiliation paiement contrat",
+  "resilier-contrat":"résilier résiliation abonnement contrat",
+  "retractation":"rétractation consommateur droit",
+  "confidentialite":"RGPD données confidentialité vie privée"
+};
+function decodeSearchText(value){
+  return String(value||"")
+    .replace(/&nbsp;/gi," ").replace(/&amp;/gi,"&").replace(/&quot;/gi,'"')
+    .replace(/&#39;|&apos;/gi,"'").replace(/&lt;/gi,"<").replace(/&gt;/gi,">");
+}
+function stripSearchMarkup(value){
+  return decodeSearchText(String(value||"")
+    .replace(/<script[\s\S]*?<\/script>/gi," ")
+    .replace(/<style[\s\S]*?<\/style>/gi," ")
+    .replace(/<[^>]+>/g," ")
+    .replace(/\s+/g," ")
+    .trim());
+}
+function searchEntry(url,file,slug=""){
+  const page=fs.readFileSync(file,"utf8");
+  const title=stripSearchMarkup(page.match(/<title>([\s\S]*?)<\/title>/i)?.[1]||"Audiotel Premium Pro");
+  const description=decodeSearchText(page.match(/<meta\s+name="description"\s+content="([^"]*)"/i)?.[1]||"");
+  const headings=[...page.matchAll(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/gi)].map(m=>stripSearchMarkup(m[1])).join(" · ");
+  const text=stripSearchMarkup(page).slice(0,16000);
+  return {url,title,description,headings,category:slug?searchCategory[slug]||"Informations":"Accueil",keywords:(slug.replaceAll("-"," ")+" "+(searchHints[slug]||"")).trim(),text};
+}
+const siteSearchPages=[
+  searchEntry("/",path.join(dist,"index.html")),
+  ...seoPages.map(slug=>searchEntry("/"+slug+"/",path.join(dist,slug,"index.html"),slug))
+];
+fs.writeFileSync(path.join(dist,"site-search-index.json"),JSON.stringify({version:1,pages:siteSearchPages}),"utf8");
 
 
 if(publicBaseUrl){
@@ -380,6 +436,15 @@ function simplifyPublicShell(html){
     .replaceAll("<span>Activation après validation</span>","<span>Activation après validation</span><span>Sans engagement de durée</span>")
     .replaceAll("3€ / mois","3€ TTC / mois")
     .replaceAll("3€ par mois","3€ TTC par mois");
+}
+
+
+function injectPublicSearch(html){
+  const search='<div class="wrap public-search-wrap" data-site-search><form class="public-search" data-site-search-form role="search" aria-label="Rechercher sur Audiotel Premium Pro"><div class="public-search-box"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><label class="sr-only" for="site-search-input">Rechercher sur tout le site</label><input id="site-search-input" data-site-search-input type="search" inputmode="search" autocomplete="off" spellcheck="false" placeholder="Rechercher sur tout le site…" aria-autocomplete="list" aria-controls="site-search-results" aria-expanded="false"><span class="public-search-hint" aria-hidden="true">/</span></div><div class="public-search-results" id="site-search-results" data-site-search-results role="listbox" hidden></div></form></div>';
+  let out=html;
+  if(!out.includes('data-site-search'))out=out.replace("</header>",search+"</header>");
+  if(!out.includes('/site/site-search.js'))out=out.replace("</head>",'<script src="/site/site-search.js" defer></script>\n</head>');
+  return out;
 }
 
 function injectContactWidget(html){
