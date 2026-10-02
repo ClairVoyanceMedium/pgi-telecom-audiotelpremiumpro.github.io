@@ -13,7 +13,7 @@ const requestId="11111111-1111-4111-8111-111111111111";
 const accountId="acct_ConnectTest123";
 
 test("Stripe Connect state exposes the fixed PGI fee and webhook readiness",()=>{
-  const state=stripeConnectState({stripeSecretKey:"sk_live_"+"x".repeat(24),stripeConnectWebhookSecret:"whsecConnectTest1234567890"});
+  const state=stripeConnectState({stripeSecretKey:"sk_live_"+"x".repeat(24),stripeConnectWebhookSecret:"whsec_ConnectTest1234567890"});
   assert.equal(STRIPE_CONNECT_APPLICATION_FEE_BPS,490);
   assert.equal(state.configured,true);
   assert.equal(state.api_configured,true);
