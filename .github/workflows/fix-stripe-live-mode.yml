@@ -1,0 +1,29 @@
+name: Fix Stripe Live Mode
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/fix-stripe-live-mode.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_PROJECT_ID: prj_Qjf77bDx4QwOcaV2yPKfUVv9TE0q
+      VERCEL_TEAM_ID: team_GhbILdoZUN5puKJdrKp5nPQg
+    steps:
+      - name: Set Stripe live mode in Vercel production
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$VERCEL_TOKEN"
+          echo "::add-mask::$VERCEL_TOKEN"
+          payload='{"key":"PGI_STRIPE_LIVE_MODE","value":"true","type":"plain","target":["production"],"comment":"Stripe live mode enabled after production account activation"}'
+          curl --fail --silent --show-error             -X POST             -H "Authorization: Bearer $VERCEL_TOKEN"             -H "Content-Type: application/json"             --data "$payload"             "https://api.vercel.com/v10/projects/$VERCEL_PROJECT_ID/env?teamId=$VERCEL_TEAM_ID&upsert=true"             >/dev/null
