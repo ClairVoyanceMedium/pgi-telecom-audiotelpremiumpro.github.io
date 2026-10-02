@@ -287,6 +287,10 @@ test("homepage hero explains the 08 premium-rate number simply",()=>{
   assert.match(html,/vos reversements sont suivis en ligne/);
 });
 
+test("hero portability CTA uses the same primary style as the revenue CTA",()=>{
+  assert.match(html,/class="btn" href="\/portabilite-numero-sva\/">Ma portabilité<\/a>/);
+});
+
 test("homepage modules are compact and each carries a clear marketing promise",()=>{
   assert.match(html,/class="home-page"/);
   assert.match(html,/CALCULATEUR DE REVENU POTENTIEL/);
@@ -400,7 +404,7 @@ test("public login makes clear that access is for existing clients",()=>{
 });
 
 test("homepage prioritizes portability, fast intake and clearer revenue comparison",()=>{
-  assert.match(html,/Étudier ma portabilité/i);
+  assert.match(html,/Ma portabilité/i);
   assert.match(html,/Je n’ai pas encore de SIRET/);
   assert.match(html,/Conseil, expertise, coaching, voyance, assistance commerciale ou autre service/);
   assert.match(html,/Calculez votre revenu potentiel supplémentaire/);
@@ -419,7 +423,7 @@ test("public branding and client access wording are explicit",()=>{
 
 test("hero copy is condensed and the primary potential gain is highlighted in green",()=>{
   assert.doesNotMatch(html,/hero-quick-paths/);
-  assert.match(html,/Étudier ma portabilité/);
+  assert.match(html,/Ma portabilité/);
   assert.match(html,/Demander un nouveau numéro/);
   assert.match(html,/Voir toutes les solutions/);
   assert.match(css,/hero-copy-and-green-potential-v153/);
@@ -547,7 +551,7 @@ test("homepage hierarchy keeps number and portability as the primary product and
 test("hero and upper-page links no longer over-route visitors to the CB landing page",()=>{
   const hero=html.slice(html.indexOf('<section class="hero">'),html.indexOf('</section>',html.indexOf('<section class="hero">'))+10);
   assert.match(hero,/hero-visual-link" href="\/numero-sva\//);
-  assert.match(hero,/Étudier ma portabilité/);
+  assert.match(hero,/Ma portabilité/);
   assert.match(hero,/Demander un nouveau numéro/);
   assert.match(hero,/Voir toutes les solutions/);
   assert.doesNotMatch(hero,/href="\/paiement-cb-audiotel\//);
