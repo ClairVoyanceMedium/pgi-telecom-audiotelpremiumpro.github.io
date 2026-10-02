@@ -69,7 +69,13 @@ function applyRequestedProfile(){
   if(!type)return;
   const radio=form.querySelector('input[name="order_account_type"][value="'+type+'"]');if(radio)radio.checked=true;
 }
-hydrateDraft();applyRequestedProfile();
+function applyRequestedIntent(){
+  const params=new URLSearchParams(location.search),requested=String(params.get("type")||params.get("besoin")||"").toLowerCase();
+  const map={portabilite:"portability",portability:"portability",nouveau:"new_number",new_number:"new_number",conseil:"advice",advice:"advice"};
+  const intent=map[requested],select=document.getElementById("order-service-intent");
+  if(intent&&select&&!select.value)select.value=intent;
+}
+hydrateDraft();applyRequestedProfile();applyRequestedIntent();
 typeInputs.forEach(x=>x.addEventListener("change",syncType));
 document.querySelectorAll("[data-order-type]").forEach(link=>link.addEventListener("click",()=>{
   const radio=form.querySelector('input[name="order_account_type"][value="'+link.dataset.orderType+'"]');
