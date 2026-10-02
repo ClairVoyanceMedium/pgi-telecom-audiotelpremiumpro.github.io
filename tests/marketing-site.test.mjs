@@ -268,6 +268,9 @@ test("legal access blocks stay understandable on mobile",()=>{
 });
 
 test("homepage bottom quick navigation prioritizes the highest-value commercial journeys",()=>{
+  assert.match(css,/fixed-revenue-bar-v173/);
+  assert.match(css,/\.revenue-quick-nav\{position:fixed!important/);
+  assert.match(css,/\.mobile-order-cta\{display:none!important/);
   assert.match(html,/DÉJÀ UN NUMÉRO SURTAXÉ \?/);
   assert.match(html,/class="revenue-quick-nav"/);
   assert.match(html,/Demander ma portabilité/);
@@ -275,7 +278,7 @@ test("homepage bottom quick navigation prioritizes the highest-value commercial 
   assert.match(html,/Comparer mon offre/);
   assert.match(html,/Paiement CB/);
   assert.match(html,/Voir le tarif/);
-  assert.match(html,/href="\/changer-operateur-audiotel\//);
+  assert.match(html,/href="\/portabilite-numero-sva\//);
   assert.match(html,/href="\/comparateur-audiotel\//);
   assert.match(html,/href="#tarif"/);
   assert.match(css,/revenue-quick-nav-v172/);
@@ -289,7 +292,7 @@ test("homepage hero explains the 08 premium-rate number simply",()=>{
 });
 
 test("hero portability CTA uses the same primary style as the revenue CTA",()=>{
-  assert.match(html,/class="btn" href="\/portabilite-numero-sva\/">Ma portabilité<\/a>/);
+  assert.match(html,/class="btn hero-portability-cta" href="\/portabilite-numero-sva\/">Déjà un numéro surtaxé \? Demander ma portabilité<\/a>/);
 });
 
 test("homepage modules are compact and each carries a clear marketing promise",()=>{
@@ -405,7 +408,7 @@ test("public login makes clear that access is for existing clients",()=>{
 });
 
 test("homepage prioritizes portability, fast intake and clearer revenue comparison",()=>{
-  assert.match(html,/Ma portabilité/i);
+  assert.match(html,/Demander ma portabilité/i);
   assert.match(html,/Je n’ai pas encore de SIRET/);
   assert.match(html,/Conseil, expertise, coaching, voyance, assistance commerciale ou autre service/);
   assert.match(html,/Calculez votre revenu potentiel supplémentaire/);
@@ -424,7 +427,7 @@ test("public branding and client access wording are explicit",()=>{
 
 test("hero copy is condensed and the primary potential gain is highlighted in green",()=>{
   assert.doesNotMatch(html,/hero-quick-paths/);
-  assert.match(html,/Ma portabilité/);
+  assert.match(html,/Demander ma portabilité/);
   assert.match(html,/Demander un nouveau numéro/);
   assert.match(html,/Voir toutes les solutions/);
   assert.match(css,/hero-copy-and-green-potential-v153/);
@@ -552,7 +555,7 @@ test("homepage hierarchy keeps number and portability as the primary product and
 test("hero and upper-page links no longer over-route visitors to the CB landing page",()=>{
   const hero=html.slice(html.indexOf('<section class="hero">'),html.indexOf('</section>',html.indexOf('<section class="hero">'))+10);
   assert.match(hero,/hero-visual-link" href="\/numero-sva\//);
-  assert.match(hero,/Ma portabilité/);
+  assert.match(hero,/Demander ma portabilité/);
   assert.match(hero,/Demander un nouveau numéro/);
   assert.match(hero,/Voir toutes les solutions/);
   assert.doesNotMatch(hero,/href="\/paiement-cb-audiotel\//);
