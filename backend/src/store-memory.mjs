@@ -1195,7 +1195,7 @@ export class MemoryStore{
     if(!actor?.tenant_id)throw problem(401,"CUSTOMER_AUTH_REQUIRED");
     return {id:actor.sub,email:"demo@example.test",display_name:actor.name||"Client Démo",status:"active",email_verified:false,session_version:actor.session_version||1,tenant_id:Number(actor.tenant_id),customer_role:actor.customer_role||"readonly",permission_grants:[],permission_denials:[],tenant_public_id:actor.tenant_public_id||"00000000-0000-4000-8000-000000000001",tenant_name:"Société Démo",tenant_status:"pending",authorization_version:actor.authorization_version||1,default_currency:"EUR",country_code:"FR"};
   }
-  async createCustomerPortalInvitation(publicId,input={},tokenHash){return {id:"demo-invitation",tenant_public_id:publicId,tenant_name:"Société Démo",email:input.email,role:input.role||"readonly",status:"pending",expires_at:new Date(Date.now()+72*3600000).toISOString(),token_hash:tokenHash};}
+  async createCustomerPortalInvitation(publicId,input={},tokenHash){return {id:"demo-invitation",tenant_public_id:publicId,tenant_name:"Société Démo",dossier_ref:"APP-"+new Date().getUTCFullYear()+"-DEMO000001",email:input.email,role:input.role||"readonly",status:"pending",expires_at:new Date(Date.now()+72*3600000).toISOString(),token_hash:tokenHash};}
   async activateCustomerPortalInvitation(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
   async customerPortalUsers(){return [];}
   async customerTeam(){
