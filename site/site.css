@@ -316,7 +316,7 @@ body{padding-bottom:112px}
 .revenue-quick-nav>.wrap{width:min(1480px,calc(100% - 18px));max-width:1480px}
 .revenue-quick-nav-head{display:none!important}
 .revenue-quick-tabs{grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:6px!important}
-.revenue-quick-tab{min-height:72px!important;padding:9px 10px!important;border-radius:10px!important;background:#0e1013!important}
+.revenue-quick-tab{min-height:72px!important;padding:9px 10px!important;border-radius:10px!important;background:#34383d!important}
 .revenue-quick-tab-primary{grid-column:auto!important}
 .revenue-quick-tab small{margin-bottom:4px!important;font-size:7.5px!important}
 .revenue-quick-tab strong{font-size:11.5px!important}
