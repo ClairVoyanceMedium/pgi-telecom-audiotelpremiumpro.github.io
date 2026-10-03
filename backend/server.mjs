@@ -343,7 +343,8 @@ export function createBackend(options={}){
       }
 
       if(method==="POST"&&pathname==="/api/v1/customer/auth/register"){
-        if(config.authMode!=="session")return done(res,metrics,started,"customer.auth.register",404,{error:{code:"AUTH_DISABLED"}});\n        if(!config.customerSelfRegistrationEnabled)return done(res,metrics,started,"customer.auth.register",403,{error:{code:"CUSTOMER_INVITATION_REQUIRED",message:"L’accès client est réservé aux clients déjà enregistrés ou invités par PGI Telecom."}});
+        if(config.authMode!=="session")return done(res,metrics,started,"customer.auth.register",404,{error:{code:"AUTH_DISABLED"}});
+        if(!config.customerSelfRegistrationEnabled)return done(res,metrics,started,"customer.auth.register",403,{error:{code:"CUSTOMER_INVITATION_REQUIRED",message:"L’accès client est réservé aux clients déjà enregistrés ou invités par PGI Telecom."}});
         requireSameOriginBrowser(req);
         enforceRegistrationRate(req,config,registrationBuckets);
         const body=await readJson(req,config.bodyLimitBytes);
