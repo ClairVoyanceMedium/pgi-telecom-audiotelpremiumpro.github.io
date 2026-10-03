@@ -2506,7 +2506,7 @@ async function sendCustomerAccessInvitation(config,target,token,reason="manual")
       name:String(target?.display_name||target?.tenant_name||email),
       senderRole:"support",
       templateKey:"customer_access_invitation",
-      data:{name:String(target?.display_name||target?.tenant_name||email),locale:target?.preferred_locale,action_url:actionUrl},
+      data:{name:String(target?.display_name||target?.tenant_name||email),locale:target?.preferred_locale,action_url:actionUrl,dossier_ref:String(target?.dossier_ref||""),login_identifier:email},
       idempotencyKey:eventId,
       internalEventId:eventId
     });
