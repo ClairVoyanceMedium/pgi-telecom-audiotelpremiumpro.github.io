@@ -480,8 +480,25 @@ function simplifyPublicShell(html){
 
 
 
+function normalizePublicBranding(html){
+  return String(html||"")
+    .replace(/\bPGI\s*[•·-]\s*Telecom\b/g,"PGI Telecom")
+    .replace(/\bPGI\b(?!\s+Telecom)/g,"PGI Telecom");
+}
+
+function injectRevenueQuickNav(html){
+  let out=String(html||"")
+    .replace('aria-labelledby="revenue-quick-nav-title"','aria-label="Accès rapides Audiotel Premium Pro"')
+    .replace('class="revenue-quick-tab revenue-quick-tab-client" href="#tarif"','class="revenue-quick-tab revenue-quick-tab-client" href="/#tarif"');
+  if(out.includes('class="revenue-quick-nav"'))return out;
+  const nav='<section class="revenue-quick-nav" aria-label="Accès rapides Audiotel Premium Pro"><div class="wrap"><nav class="revenue-quick-tabs" aria-label="Accès rapides Audiotel Premium Pro"><a class="revenue-quick-tab revenue-quick-tab-primary" href="/portabilite-numero-sva/"><small>DÉJÀ UN NUMÉRO SURTAXÉ ?</small><strong>Demander ma portabilité</strong><span>Conserver mon numéro s’il est éligible</span></a><a class="revenue-quick-tab" href="/demande-ouverture/?type=nouveau"><small>NOUVEAU CLIENT</small><strong>Demander un numéro</strong><span>Préparer mon ouverture</span></a><a class="revenue-quick-tab" href="/comparateur-audiotel/"><small>COMPARAISON</small><strong>Comparer mon offre</strong><span>Voir l’écart à activité identique</span></a><a class="revenue-quick-tab" href="/paiement-cb-audiotel/"><small>SERVICE COMPLÉMENTAIRE</small><strong>Paiement CB</strong><span>Encaisser consultations et forfaits</span></a><a class="revenue-quick-tab revenue-quick-tab-client" href="/#tarif"><small>PRIX CLAIR</small><strong>Voir le tarif</strong><span>3€ TTC / mois après le mois en cours offert</span></a></nav></div></section>';
+  return out.replace("</body>",nav+"\n</body>");
+}
+
+
 function versionPublicAssets(html){
-  return String(html||"").replace(/((?:src|href)=")(?!https?:|data:|mailto:|#)([^"]+\.(?:css|js|png|webp|svg|ico))(")/gi,(full,prefix,url,suffix)=>{
+  const prepared=normalizePublicBranding(injectRevenueQuickNav(String(html||"")));
+  return prepared.replace(/((?:src|href)=")(?!https?:|data:|mailto:|#)([^"]+\.(?:css|js|png|webp|svg|ico))(")/gi,(full,prefix,url,suffix)=>{
     if(/[?&]v=/.test(url))return full;
     return prefix+url+(url.includes("?")?"&":"?")+"v="+publicAssetVersion+suffix;
   });
