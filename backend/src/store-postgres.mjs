@@ -3727,11 +3727,13 @@ export class PostgresStore{
     if(!principalId||String(passwordHash||"").length<20)throw problem(400,"INVALID_PASSWORD_HASH");
     return this.sql.begin(async tx=>{
       const rows=await tx.unsafe(
-        "UPDATE customer_password_credentials SET password_hash=$2,status='active',failed_attempts=0,locked_until=NULL,last_failed_at=NULL,password_changed_at=now(),updated_at=now()"+
-        " WHERE customer_principal_id=$1::uuid RETURNING customer_principal_id",
+        "INSERT INTO customer_password_credentials(customer_principal_id,password_hash,status,failed_attempts,locked_until,last_failed_at,password_changed_at)"+
+        " VALUES($1::uuid,$2,'active',0,NULL,NULL,now())"+
+        " ON CONFLICT(customer_principal_id) DO UPDATE SET password_hash=EXCLUDED.password_hash,status='active',failed_attempts=0,locked_until=NULL,last_failed_at=NULL,password_changed_at=now(),updated_at=now()"+
+        " RETURNING customer_principal_id",
         [String(principalId),String(passwordHash)]
       );
-      if(!rows[0])throw problem(404,"CUSTOMER_CREDENTIAL_NOT_FOUND");
+      if(!rows[0])throw problem(500,"CUSTOMER_CREDENTIAL_UPDATE_FAILED");
       const principal=(await tx.unsafe(
         "UPDATE customer_principals SET session_version=session_version+1,metadata=CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END-'password_reset',updated_at=now()"+
         " WHERE id=$1::uuid RETURNING id,email,display_name,preferred_locale,session_version",
