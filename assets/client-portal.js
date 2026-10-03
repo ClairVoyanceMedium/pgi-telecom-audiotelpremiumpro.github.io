@@ -524,7 +524,8 @@ async function changePassword(e){
   try{
     await window.PGICustomerApi.changePassword(current,newPassword);
     var d=$("client-security-dialog");if(d&&d.open)d.close();
-    state.user=null;showLogin();setAuthMessage("Mot de passe modifié. Reconnectez-vous avec votre nouveau mot de passe.",false);
+    var created=!(state.user&&state.user.password_login_enabled===true);
+    state.user=null;showLogin();setAuthMessage(created?"Mot de passe créé. Vous pouvez maintenant vous connecter avec votre identifiant dossier ou votre adresse e-mail.":"Mot de passe modifié. Reconnectez-vous avec votre nouveau mot de passe.",false);
     $("client-password-form").reset();
   }catch(err){
     msg.classList.add("bad");
@@ -546,7 +547,16 @@ function bind(){
   $("export-calls").addEventListener("click",function(){exportClient("calls");});
   $("client-relations").addEventListener("click",function(){import("./client-relations.js").then(function(m){return m.open(state.data||{});}).catch(function(){toast("Réclamations momentanément indisponibles.");});});
   $("client-export").addEventListener("click",function(){var d=$("client-export-dialog");if(d&&typeof d.showModal==="function")d.showModal();});
-  $("client-security").addEventListener("click",function(){var d=$("client-security-dialog");if(d&&typeof d.showModal==="function")d.showModal();});
+  $("client-security").addEventListener("click",function(){
+    var hasPassword=state.user&&state.user.password_login_enabled===true;
+    var wrap=$("current-password-wrap"),current=$("current-password"),title=$("client-password-title"),note=$("client-password-note"),submit=$("client-password-submit");
+    if(wrap)wrap.hidden=!hasPassword;
+    if(current){current.required=hasPassword;if(!hasPassword)current.value="";}
+    if(title)title.textContent=hasPassword?"Changer mon mot de passe":"Créer mon mot de passe";
+    if(note)note.textContent=hasPassword?"Le nouveau mot de passe doit contenir au moins 12 caractères. Après modification, une nouvelle connexion sera obligatoire.":"Vous êtes connecté avec Google. Créez ici un mot de passe Audiotel Premium Pro d’au moins 12 caractères pour pouvoir aussi vous connecter avec votre identifiant dossier ou votre adresse e-mail.";
+    if(submit)submit.textContent=hasPassword?"Modifier le mot de passe":"Créer mon mot de passe";
+    var d=$("client-security-dialog");if(d&&typeof d.showModal==="function")d.showModal();
+  });
   $("client-metrics-reset").addEventListener("click",function(){
     import("./metric-reset.js").then(function(m){
       m.openMetricReset({
