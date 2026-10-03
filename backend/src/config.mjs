@@ -67,7 +67,7 @@ export function loadConfig(env=process.env){
     env.VERCEL==="1",
     "PGI_PROTECT_MACHINE_ENDPOINTS"
   );
-  const googleClientId=String(env.PGI_GOOGLE_CLIENT_ID||"").trim();
+  const googleClientId=String(env.PGI_GOOGLE_CLIENT_ID||"841451931994-iq878g5pip1ufmu19oeqss7bqtcbilqu.apps.googleusercontent.com").trim();
   const webauthnRpId=String(env.PGI_WEBAUTHN_RP_ID||"").trim().toLowerCase();
   const webauthnOrigin=String(env.PGI_WEBAUTHN_ORIGIN||"").trim();
   if((webauthnRpId&&!webauthnOrigin)||(!webauthnRpId&&webauthnOrigin))throw new Error("PGI_WEBAUTHN_RP_ID and PGI_WEBAUTHN_ORIGIN must be configured together");
