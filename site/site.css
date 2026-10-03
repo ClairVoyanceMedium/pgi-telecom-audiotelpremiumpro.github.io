@@ -115,6 +115,30 @@ main,header,footer,section,.site-header,.header-inner,.hero-grid,.calculator-gri
   outline:2px solid rgba(232,179,110,.8);
   outline-offset:3px;
 }
+.hero-marketing-badge{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:max-content;
+  max-width:100%;
+  margin:0 auto 12px;
+  padding:8px 16px;
+  border:1px solid rgba(232,179,110,.34);
+  border-radius:999px;
+  background:linear-gradient(180deg,rgba(61,49,41,.94),rgba(39,36,35,.96));
+  box-shadow:0 10px 26px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.05);
+  color:#f1c98f;
+  font-size:12px;
+  line-height:1;
+  font-weight:900;
+  letter-spacing:.09em;
+  text-transform:uppercase;
+  text-align:center;
+}
+@media(max-width:680px){
+  .hero-marketing-badge{margin-bottom:10px;padding:7px 14px;font-size:11px;letter-spacing:.075em}
+}
+
 .hero-brand-signature{
   font-size:18px;
   font-weight:800;
