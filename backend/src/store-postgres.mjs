@@ -3665,23 +3665,40 @@ export class PostgresStore{
     });
   }
 
-  async customerAuthLookup(email){
-    email=String(email||"").trim().toLowerCase();
-    if(!email||email.length>320)return null;
-    const principals=await this.sql.unsafe(
-      "SELECT p.id,p.email,p.display_name,p.status,p.preferred_locale,p.timezone,p.email_verified,p.session_version,p.metadata,"+
-      " c.password_hash,c.status AS credential_status,c.failed_attempts,c.locked_until"+
-      " FROM customer_principals p LEFT JOIN customer_password_credentials c ON c.customer_principal_id=p.id"+
-      " WHERE p.email_normalized=$1 LIMIT 1",[email]
-    );
+  async customerAuthLookup(identifier){
+    const raw=String(identifier||"").trim();
+    if(!raw||raw.length>320)return null;
+    const dossier=dossierLookup(raw);
+    let principals;
+    if(dossier){
+      principals=await this.sql.unsafe(
+        "SELECT p.id,p.email,p.display_name,p.status,p.preferred_locale,p.timezone,p.email_verified,p.session_version,p.metadata,"+
+        " c.password_hash,c.status AS credential_status,c.failed_attempts,c.locked_until"+
+        " FROM tenants t JOIN customer_tenant_memberships m ON m.tenant_id=t.id"+
+        " JOIN customer_principals p ON p.id=m.customer_principal_id"+
+        " LEFT JOIN customer_password_credentials c ON c.customer_principal_id=p.id"+
+        " WHERE t.id=$1 AND EXTRACT(YEAR FROM t.created_at)::int=$2 AND m.status='active' AND m.role='owner'"+
+        " ORDER BY m.joined_at ASC,p.id ASC LIMIT 1",
+        [dossier.id,dossier.year]
+      );
+    }else{
+      const email=raw.toLowerCase();
+      if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email))return null;
+      principals=await this.sql.unsafe(
+        "SELECT p.id,p.email,p.display_name,p.status,p.preferred_locale,p.timezone,p.email_verified,p.session_version,p.metadata,"+
+        " c.password_hash,c.status AS credential_status,c.failed_attempts,c.locked_until"+
+        " FROM customer_principals p LEFT JOIN customer_password_credentials c ON c.customer_principal_id=p.id"+
+        " WHERE p.email_normalized=$1 LIMIT 1",[email]
+      );
+    }
     const principal=principals[0];if(!principal)return null;
     const memberships=await this.sql.unsafe(
-      "SELECT m.tenant_id,m.role,m.status,t.public_id,t.slug,t.display_name,t.status AS tenant_status,t.authorization_version"+
+      "SELECT m.tenant_id,m.role,m.status,t.public_id,t.slug,t.display_name,t.status AS tenant_status,t.authorization_version,t.created_at"+
       " FROM customer_tenant_memberships m JOIN tenants t ON t.id=m.tenant_id"+
       " WHERE m.customer_principal_id=$1::uuid AND m.status='active' AND t.status IN ('active','pending')"+
       " ORDER BY t.display_name,t.id",[principal.id]
     );
-    return {...principal,memberships};
+    return {...principal,memberships:memberships.map(x=>({...x,dossier_ref:dossierReference(x.tenant_id,x.created_at)}))};
   }
 
   async recordCustomerAuthFailure(principalId){
@@ -3840,7 +3857,7 @@ export class PostgresStore{
     if(!/^[a-f0-9]{64}$/.test(String(tokenHash||"")))throw problem(400,"INVALID_INVITATION_TOKEN_HASH");
     const ttlHours=Math.max(1,Math.min(168,Number(input.expires_in_hours)||72));
     return this.sql.begin(async tx=>{
-      const tenants=await tx.unsafe("SELECT id,public_id,display_name,tenant_type,status FROM tenants WHERE public_id=$1::uuid FOR UPDATE",[publicId]);
+      const tenants=await tx.unsafe("SELECT id,public_id,display_name,tenant_type,status,created_at FROM tenants WHERE public_id=$1::uuid FOR UPDATE",[publicId]);
       const tenant=tenants[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
       if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
       if(tenant.status==="closed")throw problem(409,"TENANT_CLOSED");
@@ -3854,7 +3871,7 @@ export class PostgresStore{
         " RETURNING id,tenant_id,email,role,status,expires_at,created_at",
         [tenant.id,email,role,String(tokenHash),ttlHours]
       );
-      return {...rows[0],tenant_public_id:tenant.public_id,tenant_name:tenant.display_name};
+      return {...rows[0],tenant_public_id:tenant.public_id,tenant_name:tenant.display_name,dossier_ref:dossierReference(tenant.id,tenant.created_at)};
     });
   }
 
