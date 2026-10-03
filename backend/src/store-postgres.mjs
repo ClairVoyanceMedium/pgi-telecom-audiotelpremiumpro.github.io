@@ -3635,12 +3635,7 @@ export class PostgresStore{
       let principal=(await tx.unsafe("SELECT p.id,p.email,p.display_name,p.status,p.session_version FROM customer_federated_identities f JOIN customer_principals p ON p.id=f.customer_principal_id WHERE f.provider='google' AND f.provider_subject=$1 FOR UPDATE",[identity.subject]))[0]||null;
       if(!principal){
         principal=(await tx.unsafe("SELECT id,email,display_name,status,session_version FROM customer_principals WHERE email_normalized=$1 FOR UPDATE",[identity.email]))[0]||null;
-        if(!principal&&!invitation){
-          principal=(await tx.unsafe(
-            "INSERT INTO customer_principals(email,display_name,status,email_verified) VALUES($1,$2,'pending',true) RETURNING id,email,display_name,status,session_version",
-            [identity.email,identity.display_name||identity.email]
-          ))[0];
-        }
+        if(!principal&&!invitation)throw problem(403,"GOOGLE_CUSTOMER_ACCESS_REQUIRED");
         if(principal&&!invitation&&!identity.authoritative_email)throw problem(409,"GOOGLE_LINK_REQUIRES_INVITATION");
         if(principal&&!["active","pending"].includes(principal.status))throw problem(409,"CUSTOMER_ACCOUNT_DISABLED");
         if(!principal){
@@ -3665,7 +3660,8 @@ export class PostgresStore{
       await tx.unsafe("UPDATE customer_federated_identities SET email_at_link=$2,email_verified=true,hosted_domain=$3,picture_url=$4,last_authenticated_at=now(),updated_at=now() WHERE provider='google' AND provider_subject=$1",[identity.subject,identity.email,identity.hosted_domain,identity.picture_url]);
       const refreshed=(await tx.unsafe("SELECT id,email,display_name,status,session_version FROM customer_principals WHERE id=$1::uuid",[principal.id]))[0];
       const memberships=await tx.unsafe("SELECT m.tenant_id,m.role,m.status,t.public_id,t.slug,t.display_name,t.status AS tenant_status,t.authorization_version FROM customer_tenant_memberships m JOIN tenants t ON t.id=m.tenant_id WHERE m.customer_principal_id=$1::uuid AND m.status='active' AND t.status IN ('active','pending') ORDER BY t.display_name,t.id",[principal.id]);
-      return {...refreshed,memberships,account_pending:memberships.length===0};
+      if(!invitation&&!memberships.length)throw problem(403,"GOOGLE_CUSTOMER_ACCESS_REQUIRED");
+      return {...refreshed,memberships,account_pending:false};
     });
   }
 
