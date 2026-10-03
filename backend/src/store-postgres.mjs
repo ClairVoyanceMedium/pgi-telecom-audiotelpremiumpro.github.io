@@ -4181,6 +4181,13 @@ export class PostgresStore{
     });
   }
 
+  async tenantPublicIdByInternalId(tenantId){
+    const id=Number(tenantId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    const rows=await this.readSql.unsafe("SELECT public_id FROM tenants WHERE id=$1 LIMIT 1",[id]);
+    return rows[0]?.public_id||null;
+  }
+
   async customerCardPaymentAccount(tenantId){
     const id=Number(tenantId);
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
