@@ -21,6 +21,7 @@ const HUBSPOT_STATUS_ORDER=Object.freeze(Object.keys(HUBSPOT_STAGE_BY_STATUS));
 const PROCESSING_NOTICE="J’accepte que PGI Telecom – Audiotel Premium Pro stocke et traite les informations transmises afin de répondre à ma demande et préparer, le cas échéant, l’ouverture de mon service.";
 
 const HUBSPOT_CARD_PAYMENT_PROPERTIES=Object.freeze([
+  {name:"pgi_dossier_ref",label:"Référence dossier PGI Telecom",type:"string",fieldType:"text",description:"Référence dossier client permanente PGI Telecom, utilisée comme identifiant transversal entre le CRM et Audiotel Premium Pro."},
   {name:"pgi_paiement_cb_active",label:"Paiement CB activé",type:"enumeration",fieldType:"select",description:"Indique si le service Paiement CB Stripe Connect est actif pour ce client.",options:[{label:"Oui",value:"true",displayOrder:0,hidden:false},{label:"Non",value:"false",displayOrder:1,hidden:false}]},
   {name:"pgi_stripe_connect_status",label:"Statut Stripe Connect",type:"enumeration",fieldType:"select",description:"État opérationnel du compte Stripe Connect lié au service Paiement CB.",options:["pending","onboarding","restricted","active","disabled"].map((value,displayOrder)=>({label:({pending:"En attente",onboarding:"Activation en cours",restricted:"Restreint",active:"Actif",disabled:"Désactivé"})[value],value,displayOrder,hidden:false}))},
   {name:"pgi_commission_cb_pourcent",label:"Commission PGI Telecom CB (%)",type:"number",fieldType:"number",description:"Taux de commission de plateforme PGI Telecom appliqué aux paiements CB."},
@@ -70,6 +71,7 @@ export function buildHubSpotLeadSubmission(input={},options={}){
   field(fields,"type_de_client",accountType==="business"?"Professionnel":"Particulier");
   field(fields,"type_de_demande",intent.hubspot);
   field(fields,"besoin__projet_audiotel",intent.label);
+  field(fields,"pgi_dossier_ref",clean(input.dossier_ref,40));
   field(fields,"lifecyclestage","lead");
   if(options.enrich!==false){
     field(fields,"statut_commercial_pgi","Nouveau prospect");
@@ -203,6 +205,7 @@ export async function syncHubSpotCardPaymentState(store,tenantId,input={},option
   const feePercent=(Number(account.application_fee_bps||490)/100).toFixed(2);
   const summary=overview.summary||{};
   const props={
+    pgi_dossier_ref:clean(detail?.tenant?.dossier_ref,40),
     pgi_paiement_cb_active:active?"true":"false",
     pgi_stripe_connect_status:clean(account.status||"pending",40),
     pgi_commission_cb_pourcent:feePercent,
@@ -272,7 +275,8 @@ export async function syncHubSpotCommercialLead(input={},options={}){
       company:baseProps.company,
       type_de_client:baseProps.type_de_client,
       type_de_demande:baseProps.type_de_demande,
-      besoin__projet_audiotel:baseProps.besoin__projet_audiotel
+      besoin__projet_audiotel:baseProps.besoin__projet_audiotel,
+      pgi_dossier_ref:baseProps.pgi_dossier_ref
     };
     if(!current.hubspot_owner_id)update.hubspot_owner_id=HUBSPOT_OWNER_ID;
     const lifecycle=commercialLifecycle(effectiveStatus,current.lifecyclestage);
@@ -453,7 +457,7 @@ async function findPrivateContact(contactEmail,{token,fetchImpl}){
   const result=await hubSpotPrivateRequest("/crm/v3/objects/contacts/search",{
     token,fetchImpl,method:"POST",body:{
       filterGroups:[{filters:[{propertyName:"email",operator:"EQ",value:contactEmail}]}],
-      properties:["email","firstname","lastname","phone","company","type_de_client","type_de_demande","besoin__projet_audiotel","statut_commercial_pgi","lifecyclestage","hubspot_owner_id"],
+      properties:["email","firstname","lastname","phone","company","type_de_client","type_de_demande","besoin__projet_audiotel","pgi_dossier_ref","statut_commercial_pgi","lifecyclestage","hubspot_owner_id"],
       limit:1
     }
   });
@@ -474,7 +478,7 @@ async function ensureCommercialDeal(contact,input,{token,fetchImpl,status}){
   const dealIds=(detail?.associations?.deals?.results||[]).map(x=>String(x.id)).slice(0,20);
   let openDeal=null;
   for(const id of dealIds){
-    const candidate=await hubSpotPrivateRequest("/crm/v3/objects/deals/"+encodeURIComponent(id)+"?properties=pipeline,dealstage,dealname,hubspot_owner_id,deal_currency_code",{
+    const candidate=await hubSpotPrivateRequest("/crm/v3/objects/deals/"+encodeURIComponent(id)+"?properties=pipeline,dealstage,dealname,pgi_dossier_ref,hubspot_owner_id,deal_currency_code",{
       token,fetchImpl,method:"GET"
     });
     const p=candidate?.properties||{};
@@ -486,6 +490,7 @@ async function ensureCommercialDeal(contact,input,{token,fetchImpl,status}){
     const changes={};
     if(current.dealstage!==targetStage)changes.dealstage=targetStage;
     if(dossierRef&&String(current.dealname||"").indexOf(dossierRef)<0)changes.dealname=dealName;
+    if(dossierRef&&String(current.pgi_dossier_ref||"")!==dossierRef)changes.pgi_dossier_ref=dossierRef;
     if(!current.hubspot_owner_id)changes.hubspot_owner_id=HUBSPOT_OWNER_ID;
     if(!current.deal_currency_code)changes.deal_currency_code="EUR";
     if(Object.keys(changes).length){
@@ -503,6 +508,7 @@ async function ensureCommercialDeal(contact,input,{token,fetchImpl,status}){
         dealname:dealName,
         pipeline:HUBSPOT_PIPELINE_ID,
         dealstage:targetStage,
+        ...(dossierRef?{pgi_dossier_ref:dossierRef}:{}),
         hubspot_owner_id:HUBSPOT_OWNER_ID,
         deal_currency_code:"EUR"
       },
