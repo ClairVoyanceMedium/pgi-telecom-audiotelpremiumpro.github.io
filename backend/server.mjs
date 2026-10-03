@@ -345,31 +345,7 @@ export function createBackend(options={}){
       if(method==="POST"&&pathname==="/api/v1/customer/auth/register"){
         if(config.authMode!=="session")return done(res,metrics,started,"customer.auth.register",404,{error:{code:"AUTH_DISABLED"}});
         requireSameOriginBrowser(req);
-        enforceRegistrationRate(req,config,registrationBuckets);
-        const body=await readJson(req,config.bodyLimitBytes);
-        const password=String(body.password||"");
-        if(password.length<12||password.length>256){const e=new Error("Invalid password");e.status=400;e.code="INVALID_NEW_PASSWORD";throw e;}
-        if(String(body.website||"").trim()){const e=new Error("Invalid registration");e.status=400;e.code="REGISTRATION_REJECTED";throw e;}
-        const registered=await store.selfServiceRegister(body,hashPassword(password));
-        {
-          const pageUri=config.publicBaseUrl?config.publicBaseUrl+"/client.html?register=1":"https://audiotel-premium-pro.com/client.html?register=1";
-          const hutk=String(parseCookies(req.headers.cookie||"").hubspotutk||"").trim();
-          const crmInput={...body,processing_consent:body.privacy_notice_acknowledged===true};
-          try{await submitHubSpotLead(crmInput,{pageUri,pageName:"Création de compte Audiotel Premium Pro",hutk,attempts:1,timeoutMs:2200});}
-          catch(error){logHubSpotSyncFailure("customer_registration_form",error);}
-          try{await syncHubSpotCommercialTenant(store,registered.tenant_public_id,"Dossier en préparation",{pageUri,pageName:"Création de compte Audiotel Premium Pro",hutk,commercialStatus:"Dossier en préparation"});}
-          catch(error){logHubSpotSyncFailure("customer_registration_commercial",error);}
-        }
-        const publicUser={id:registered.id,name:registered.display_name,email:registered.email,role:registered.customer_role,tenant:{id:registered.tenant_public_id,name:registered.tenant_name,status:registered.tenant_status,dossier_ref:registered.dossier_ref}};
-        if(config.emailVerificationEnabled){
-          const challenge=createEmailVerificationChallenge(config);
-          await store.beginCustomerEmailVerification(registered.id,challenge.record);
-          try{await sendResendVerificationCode(config,{email:registered.email,name:registered.display_name,code:challenge.code,locale:body.preferred_locale||undefined,idempotencyKey:"email-verification/"+challenge.record.code_hash});}
-          catch(_error){return done(res,metrics,started,"customer.auth.register_email",503,{error:{code:"EMAIL_DELIVERY_UNAVAILABLE",message:"Verification email unavailable"},account_created:true,email_verification_required:true,user:publicUser});}
-          return done(res,metrics,started,"customer.auth.register",201,{account_created:true,onboarding:true,email_verification_required:true,verification_token:challenge.token,user:publicUser});
-        }
-        const issued=issueSession({secret:config.sessionSecret,user:{id:registered.id,role:"customer",name:registered.display_name||registered.email,actor_type:"customer",tenant_id:Number(registered.tenant_id),tenant_public_id:registered.tenant_public_id,customer_role:registered.customer_role,authorization_version:Number(registered.authorization_version),session_version:Number(registered.session_version)},ttlSeconds:config.sessionTtlSeconds});
-        return done(res,metrics,started,"customer.auth.register",201,{account_created:true,onboarding:true,email_verification_required:registered.email_verified!==true,user:publicUser},{"Set-Cookie":[customerSessionCookie(issued.token,config.sessionTtlSeconds),customerCsrfCookie(issued.csrf,config.sessionTtlSeconds)]});
+        return done(res,metrics,started,"customer.auth.register",403,{error:{code:"CUSTOMER_INVITATION_REQUIRED",message:"L’accès client est réservé aux clients déjà enregistrés ou invités par PGI Telecom."}});
       }
 
       if(method==="POST"&&pathname==="/api/v1/customer/auth/email/verify"){
