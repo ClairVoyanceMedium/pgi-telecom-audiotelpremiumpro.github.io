@@ -145,7 +145,7 @@ export async function ensureHubSpotCardPaymentSchema(options={}){
           existing++;
           continue;
         }catch(error){
-          if(Number(error?.status)!==404){errors.push(objectType+":"+definition.name+":"+clean(error?.code||error?.status||"read_failed",100));continue;}
+          if(Number(error?.status)!==404){errors.push(objectType+":"+definition.name+":status="+String(error?.status||"na")+":"+clean(error?.detail||error?.code||"read_failed",180));continue;}
         }
         try{
           await hubSpotPrivateRequest("/crm/v3/properties/"+objectType,{
@@ -155,7 +155,7 @@ export async function ensureHubSpotCardPaymentSchema(options={}){
           created++;
         }catch(error){
           if(Number(error?.status)===409)existing++;
-          else errors.push(objectType+":"+definition.name+":"+clean(error?.code||error?.status||"create_failed",100));
+          else errors.push(objectType+":"+definition.name+":status="+String(error?.status||"na")+":"+clean(error?.detail||error?.code||"create_failed",180));
         }
       }
     }
