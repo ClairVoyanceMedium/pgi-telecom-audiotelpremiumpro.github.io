@@ -333,6 +333,10 @@ test("homepage bottom quick navigation prioritizes the highest-value commercial 
   assert.match(html,/href="\/comparateur-audiotel\//);
   assert.match(html,/href="#tarif"/);
   assert.match(css,/revenue-quick-nav-v172/);
+  assert.match(css,/global-public-fixed-nav-v175/);
+  assert.match(css,/background:rgba\(42,45,49,\.985\)!important/);
+  assert.match(buildStatic,/function injectRevenueQuickNav/);
+  assert.match(buildStatic,/function normalizePublicBranding/);
 });
 
 test("homepage hero explains the 08 premium-rate number simply",()=>{
