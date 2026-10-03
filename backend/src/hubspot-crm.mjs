@@ -137,15 +137,20 @@ export async function ensureHubSpotCardPaymentSchema(options={}){
     if(!token)return {enabled:false,ready:false,created:0,existing:0,errors:["hubspot_not_configured"]};
     const fetchImpl=options.fetchImpl||globalThis.fetch;
     const targets=[["contacts","contactinformation"],["deals","dealinformation"]];
-    let created=0,existing=0;const errors=[];
-    for(const [objectType,groupName] of targets){
+    let created=0,existing=0,scopeBlocked=false;const errors=[];
+    schemaLoop: for(const [objectType,groupName] of targets){
       for(const definition of HUBSPOT_CARD_PAYMENT_PROPERTIES){
         try{
           await hubSpotPrivateRequest("/crm/v3/properties/"+objectType+"/"+encodeURIComponent(definition.name),{token,fetchImpl,method:"GET",timeoutMs:4500});
           existing++;
           continue;
         }catch(error){
-          if(Number(error?.status)!==404){errors.push(objectType+":"+definition.name+":status="+String(error?.status||"na")+":"+clean(error?.detail||error?.code||"read_failed",180));continue;}
+          if(Number(error?.status)===403){
+            scopeBlocked=true;
+            errors.push(objectType+":"+definition.name+":status=403:"+clean(error?.detail||error?.code||"scope_missing",600));
+            break schemaLoop;
+          }
+          if(Number(error?.status)!==404){errors.push(objectType+":"+definition.name+":status="+String(error?.status||"na")+":"+clean(error?.detail||error?.code||"read_failed",240));continue;}
         }
         try{
           await hubSpotPrivateRequest("/crm/v3/properties/"+objectType,{
@@ -155,11 +160,15 @@ export async function ensureHubSpotCardPaymentSchema(options={}){
           created++;
         }catch(error){
           if(Number(error?.status)===409)existing++;
-          else errors.push(objectType+":"+definition.name+":status="+String(error?.status||"na")+":"+clean(error?.detail||error?.code||"create_failed",180));
+          else if(Number(error?.status)===403){
+            scopeBlocked=true;
+            errors.push(objectType+":"+definition.name+":status=403:"+clean(error?.detail||error?.code||"scope_missing",600));
+            break schemaLoop;
+          }else errors.push(objectType+":"+definition.name+":status="+String(error?.status||"na")+":"+clean(error?.detail||error?.code||"create_failed",240));
         }
       }
     }
-    const result={enabled:true,ready:errors.length===0,created,existing,errors};
+    const result={enabled:true,ready:errors.length===0,scopeBlocked,created,existing,errors};
     if(result.ready)console.info(JSON.stringify({event:"hubspot_card_payment_schema",ready:true,created,existing}));
     else console.warn(JSON.stringify({event:"hubspot_card_payment_schema",ready:false,created,existing,errors}));
     return result;
