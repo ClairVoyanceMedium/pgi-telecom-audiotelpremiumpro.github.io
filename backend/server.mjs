@@ -20,7 +20,7 @@ import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStrip
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
-import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail,syncHubSpotCustomerIncident} from "./src/hubspot-crm.mjs";
+import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail,syncHubSpotCustomerIncident,ensureHubSpotCardPaymentSchema,syncHubSpotCardPaymentState} from "./src/hubspot-crm.mjs";
 import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
 
 export async function createDefaultBackend(){
@@ -35,6 +35,8 @@ export async function createDefaultBackend(){
       await store.close();
       throw error;
     }
+    try{await ensureHubSpotCardPaymentSchema();}
+    catch(error){logHubSpotSyncFailure("card_payment_schema",error);}
     return createBackend({config,eventBus,store,closeStore:true});
   }
   return createBackend({config,eventBus});
@@ -121,21 +123,37 @@ export function createBackend(options={}){
         if(["account.updated","capability.updated"].includes(type)){
           const object=event?.data?.object||{};
           const accountId=[event.account,object.account,object.id].map(x=>String(x||"")).find(x=>/^acct_[A-Za-z0-9]+$/.test(x))||null;
-          let account_synced=false;
+          let account_synced=false,crm_sync=false;
           if(accountId&&typeof store.syncCardPaymentAccountByProviderReference==="function"){
             try{
               const remote=await retrieveStripeConnectedAccount(config,accountId);
               const synced=await store.syncCardPaymentAccountByProviderReference(normalizeStripeConnectedAccount(remote));
               account_synced=Boolean(synced);
+              if(synced?.tenant_id){
+                try{
+                  const crm=await syncHubSpotCardPaymentState(store,synced.tenant_id,{account:synced},{eventType:type,recordNote:true});
+                  crm_sync=Boolean(crm?.synced);
+                }catch(error){logHubSpotSyncFailure("stripe_connect_account",error);}
+              }
             }catch(_error){}
           }
-          return done(res,metrics,started,"billing.stripe_connect_webhook",200,{received:true,type,account_synced});
+          return done(res,metrics,started,"billing.stripe_connect_webhook",200,{received:true,type,account_synced,crm_sync});
         }
         const connectPayment=await normalizeStripeConnectPaymentEvent(config,event);
         if(connectPayment){
           connectPayment.payload_sha256=hashStripeEventPayload(event);
           const result=await store.applyCardPaymentProviderEvent(connectPayment);
-          return done(res,metrics,started,"billing.stripe_connect_webhook",200,{received:true,type,duplicate:Boolean(result.duplicate),updated:Boolean(result.updated)});
+          let crm_sync=false;
+          if(result?.request?.tenant_id){
+            try{
+              const crm=await syncHubSpotCardPaymentState(store,result.request.tenant_id,connectPayment,{
+                eventType:type,
+                recordNote:["paid","refunded","disputed"].includes(String(connectPayment.status||""))
+              });
+              crm_sync=Boolean(crm?.synced);
+            }catch(error){logHubSpotSyncFailure("stripe_connect_payment",error);}
+          }
+          return done(res,metrics,started,"billing.stripe_connect_webhook",200,{received:true,type,duplicate:Boolean(result.duplicate),updated:Boolean(result.updated),crm_sync});
         }
         return done(res,metrics,started,"billing.stripe_connect_webhook",200,{received:true,ignored:true,type});
       }
@@ -823,7 +841,12 @@ export function createBackend(options={}){
           }catch(_error){}
         }
         const link=await createStripeConnectOnboardingLink(config,local.provider_account_reference,{idempotency_key:idempotencyKey});
-        return done(res,metrics,started,"customer.card_payments.connect",201,{provider:stripeConnectState(config),account:{status:local.status,charges_enabled:local.charges_enabled,details_submitted:local.details_submitted,application_fee_bps:Number(local.application_fee_bps||STRIPE_CONNECT_APPLICATION_FEE_BPS)},onboarding:link});
+        let crm_sync=false;
+        try{
+          const crm=await syncHubSpotCardPaymentState(store,context.tenant_id,{account:local},{eventType:"customer_card_payment_activation",recordNote:true});
+          crm_sync=Boolean(crm?.synced);
+        }catch(error){logHubSpotSyncFailure("card_payment_activation",error);}
+        return done(res,metrics,started,"customer.card_payments.connect",201,{provider:stripeConnectState(config),account:{status:local.status,charges_enabled:local.charges_enabled,details_submitted:local.details_submitted,application_fee_bps:Number(local.application_fee_bps||STRIPE_CONNECT_APPLICATION_FEE_BPS)},onboarding:link,crm_sync});
       }
       if(method==="POST"&&pathname==="/api/v1/customer/card-payments/checkout-session"){
         requireCustomerCsrf(req,customerActor,config);
