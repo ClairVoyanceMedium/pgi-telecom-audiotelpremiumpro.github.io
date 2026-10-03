@@ -399,5 +399,5 @@ body{padding-bottom:112px}
 }
 
 /* home-hero-spacing-v176 */
-.home-page .site-header+main>.hero:first-child{padding-top:34px}
-@media(max-width:680px){.home-page .site-header+main>.hero:first-child{padding-top:26px}}
+.home-page .site-header+main>.hero:first-child{padding-top:18px}
+@media(max-width:680px){.home-page .site-header+main>.hero:first-child{padding-top:14px}}
