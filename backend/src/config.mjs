@@ -68,6 +68,7 @@ export function loadConfig(env=process.env){
     "PGI_PROTECT_MACHINE_ENDPOINTS"
   );
   const googleClientId=String(env.PGI_GOOGLE_CLIENT_ID||"841451931994-iq878g5pip1ufmu19oeqss7bqtcbilqu.apps.googleusercontent.com").trim();
+  const customerSelfRegistrationEnabled=mode!=="production"&&booleanValue(env.PGI_CUSTOMER_SELF_REGISTRATION_ENABLED,true,"PGI_CUSTOMER_SELF_REGISTRATION_ENABLED");
   const webauthnRpId=String(env.PGI_WEBAUTHN_RP_ID||"").trim().toLowerCase();
   const webauthnOrigin=String(env.PGI_WEBAUTHN_ORIGIN||"").trim();
   if((webauthnRpId&&!webauthnOrigin)||(!webauthnRpId&&webauthnOrigin))throw new Error("PGI_WEBAUTHN_RP_ID and PGI_WEBAUTHN_ORIGIN must be configured together");
@@ -120,7 +121,7 @@ export function loadConfig(env=process.env){
   }
 
   return Object.freeze({
-    mode,authMode,host,port,releaseId,staticDir,trustProxy,protectMachineEndpoints,googleClientId,webauthnRpId,webauthnOrigin,
+    mode,authMode,host,port,releaseId,staticDir,trustProxy,protectMachineEndpoints,googleClientId,customerSelfRegistrationEnabled,webauthnRpId,webauthnOrigin,
     sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,stripeSecretKey,stripeWebhookSecret,stripeConnectWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,ga4MeasurementEnabled,ga4MeasurementId,ga4ApiSecret,b2cCommercialRequested,b2cCommercialReady,legalOperatorConfigured,consumerMediatorConfigured,onlineWithdrawalReady,emailVerificationEnabled,transactionalEmailEnabled,resendApiKey,resendReceivingApiKey,resendWebhookSecret,transactionalDomain,transactionalReplyTo,internalNotificationEmail,cronSecret,emailVerificationPepper,transactionalFromEmail,transactionalFromName,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),
