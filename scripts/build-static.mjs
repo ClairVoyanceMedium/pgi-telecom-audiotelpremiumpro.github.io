@@ -319,7 +319,7 @@ if(publicBaseUrl){
 
 const mode=process.env.PGI_RUNTIME_MODE||"demo";
 const apiBaseUrl=process.env.PGI_API_BASE_URL||"";
-const googleClientId=String(process.env.PGI_GOOGLE_CLIENT_ID||"").trim();
+const googleClientId=String(process.env.PGI_GOOGLE_CLIENT_ID||"841451931994-iq878g5pip1ufmu19oeqss7bqtcbilqu.apps.googleusercontent.com").trim();
 const releaseId=process.env.PGI_RELEASE_ID||"";
 const production=mode==="production";
 if(production&&!/^[0-9a-f]{40}$/.test(releaseId))throw new Error("PGI_RELEASE_ID must be the 40-character Git SHA in production");
