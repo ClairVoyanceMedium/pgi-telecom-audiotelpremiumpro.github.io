@@ -12,7 +12,7 @@ async function fetchCheck(name,path,expected,tokens=[],jsonCheck=null){
     checks.push({name,path,pass,status:response.status,latency_ms:Math.round(performance.now()-started),missing:tokens.filter(t=>!text.includes(t))});
   }catch(e){error=e?.name||"FETCH_FAILED";checks.push({name,path,pass:false,status:null,latency_ms:Math.round(performance.now()-started),error});}
 }
-await fetchCheck("site.home","/",200,["Demander l’ouverture","/demande-ouverture/","client.html"]);
+await fetchCheck("site.home","/",200,["Commencer ma demande","/demande-ouverture/","client.html"]);
 await fetchCheck("site.application","/demande-ouverture/",200,["id=\"order-form\""]);
 await fetchCheck("site.application.logic","/site/site.js",200,["client.html?register=1","sessionStorage"]);
 await fetchCheck("site.client","/client.html",200,["id=\"customer-login-form\"","id=\"client-billing-start\"","id=\"portability-open\"","id=\"service-incident-open\""]);
