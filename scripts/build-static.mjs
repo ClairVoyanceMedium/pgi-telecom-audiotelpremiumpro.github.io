@@ -482,8 +482,8 @@ function simplifyPublicShell(html){
 
 function normalizePublicBranding(html){
   return String(html||"")
-    .replace(/\bPGI\s*[•·-]\s*Telecom\b/g,"PGI Telecom")
-    .replace(/\bPGI\b(?!\s+Telecom)/g,"PGI Telecom");
+    .replace(/\bPGI\s*(?:[•·-]\s*)?Telecom\b/gi,"PGI Telecom")
+    .replace(/\bPGI\b(?!\s+Telecom)/gi,"PGI Telecom");
 }
 
 function injectRevenueQuickNav(html){
