@@ -278,7 +278,7 @@ async function handleGoogleCredential(response,tenantOverride){
     var remember=Boolean($("customer-remember")&&$("customer-remember").checked);
     var result=await window.PGICustomerApi.google(credential,tenant,invite,remember);state.googleCredential=null;
     if(result&&result.pending_contract){
-      setAuthMessage(tr("Compte Google créé. Votre accès sera activé dès que votre contrat sera rattaché."),false);
+      setAuthMessage("Accès client non autorisé. Contactez PGI Telecom si votre dossier a déjà été validé.",true);
       return;
     }
     state.user=result.user;if(invite)history.replaceState(null,"",location.pathname);showApp();
@@ -287,7 +287,7 @@ async function handleGoogleCredential(response,tenantOverride){
     if(err.code==="CUSTOMER_TENANT_REQUIRED"&&err.payload&&Array.isArray(err.payload.tenants)&&err.payload.tenants.length){
       var sel=$("customer-tenant");sel.innerHTML=err.payload.tenants.map(function(x){return '<option value="'+esc(x.id)+'">'+esc(x.name+" · "+x.role)+'</option>';}).join("");$("tenant-choice-wrap").hidden=false;$("google-tenant-continue").hidden=false;setAuthMessage(tr("Compte")+" : "+tr("Confirmer"),false);return;
     }
-    var messages={GOOGLE_INVITATION_REQUIRED:"Invitation Google requise.",GOOGLE_INVITATION_EMAIL_MISMATCH:"E-mail Google différent.",GOOGLE_LINK_REQUIRES_INVITATION:"Invitation requise pour lier Google.",GOOGLE_AUTH_NOT_CONFIGURED:"Google non configuré."};
+    var messages={GOOGLE_INVITATION_REQUIRED:"Invitation client requise.",GOOGLE_CUSTOMER_ACCESS_REQUIRED:"Accès réservé aux clients Audiotel Premium Pro déjà enregistrés ou invités.",GOOGLE_INVITATION_EMAIL_MISMATCH:"L’adresse Google ne correspond pas à l’invitation client.",GOOGLE_LINK_REQUIRES_INVITATION:"Une invitation client est nécessaire pour relier ce compte Google.",GOOGLE_AUTH_NOT_CONFIGURED:"Google non configuré."};
     setAuthMessage(messages[err.code]||"Google sign-in failed.",true);
   }
 }
