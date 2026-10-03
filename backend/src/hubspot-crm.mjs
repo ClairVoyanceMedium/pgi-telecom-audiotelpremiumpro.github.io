@@ -159,7 +159,10 @@ export async function ensureHubSpotCardPaymentSchema(options={}){
         }
       }
     }
-    return {enabled:true,ready:errors.length===0,created,existing,errors};
+    const result={enabled:true,ready:errors.length===0,created,existing,errors};
+    if(result.ready)console.info(JSON.stringify({event:"hubspot_card_payment_schema",ready:true,created,existing}));
+    else console.warn(JSON.stringify({event:"hubspot_card_payment_schema",ready:false,created,existing,errors}));
+    return result;
   };
   const promise=run();
   if(options.force!==true)hubSpotCardPaymentSchemaPromise=promise;
