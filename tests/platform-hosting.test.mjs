@@ -63,6 +63,9 @@ test("same-origin static handler serves marketing at root and keeps private UI n
     const legacy=await fetch(base+"/site/",{redirect:"manual"});
     assert.equal(legacy.status,308);
     assert.equal(legacy.headers.get("location"),"/");
+    const favicon=await fetch(base+"/favicon.ico",{redirect:"manual"});
+    assert.equal(favicon.status,308);
+    assert.equal(favicon.headers.get("location"),"/assets/audiotel-brand-icon-v33.png");
     const cockpit=await fetch(base+"/cockpit");
     assert.equal(cockpit.status,200);
     assert.equal(await cockpit.text(),"cockpit");
