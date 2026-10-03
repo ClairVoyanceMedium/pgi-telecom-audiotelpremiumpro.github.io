@@ -20,6 +20,17 @@ const HUBSPOT_STAGE_BY_STATUS=Object.freeze({
 const HUBSPOT_STATUS_ORDER=Object.freeze(Object.keys(HUBSPOT_STAGE_BY_STATUS));
 const PROCESSING_NOTICE="J’accepte que PGI Telecom – Audiotel Premium Pro stocke et traite les informations transmises afin de répondre à ma demande et préparer, le cas échéant, l’ouverture de mon service.";
 
+const HUBSPOT_CARD_PAYMENT_PROPERTIES=Object.freeze([
+  {name:"pgi_paiement_cb_active",label:"Paiement CB activé",type:"enumeration",fieldType:"select",description:"Indique si le service Paiement CB Stripe Connect est actif pour ce client.",options:[{label:"Oui",value:"true",displayOrder:0,hidden:false},{label:"Non",value:"false",displayOrder:1,hidden:false}]},
+  {name:"pgi_stripe_connect_status",label:"Statut Stripe Connect",type:"enumeration",fieldType:"select",description:"État opérationnel du compte Stripe Connect lié au service Paiement CB.",options:["pending","onboarding","restricted","active","disabled"].map((value,displayOrder)=>({label:({pending:"En attente",onboarding:"Activation en cours",restricted:"Restreint",active:"Actif",disabled:"Désactivé"})[value],value,displayOrder,hidden:false}))},
+  {name:"pgi_commission_cb_pourcent",label:"Commission PGI Telecom CB (%)",type:"number",fieldType:"number",description:"Taux de commission de plateforme PGI Telecom appliqué aux paiements CB."},
+  {name:"pgi_stripe_connect_account_ref",label:"Référence Stripe Connect",type:"string",fieldType:"text",description:"Identifiant technique du compte Stripe Connect associé au client."},
+  {name:"pgi_paiements_cb_payes",label:"Paiements CB payés",type:"number",fieldType:"number",description:"Nombre de paiements CB confirmés comme payés."},
+  {name:"pgi_volume_cb_eur",label:"Volume CB encaissé (EUR)",type:"number",fieldType:"number",description:"Volume cumulé des paiements CB payés, exprimé en euros."},
+  {name:"pgi_commission_cb_cumulee_eur",label:"Commission PGI Telecom CB cumulée (EUR)",type:"number",fieldType:"number",description:"Commission PGI Telecom cumulée sur les paiements CB payés, exprimée en euros."}
+]);
+let hubSpotCardPaymentSchemaPromise=null;
+
 const INTENT_LABELS=Object.freeze({
   new_number:{hubspot:"Nouveau numéro",label:"Nouveau numéro Audiotel"},
   portability:{hubspot:"Portabilité d’un numéro existant",label:"Portabilité d’un numéro existant"},
@@ -116,6 +127,116 @@ export async function submitHubSpotLead(input={},options={}){
     await new Promise(resolve=>setTimeout(resolve,150*attempt));
   }
   throw normalizeError(lastError||problem("HUBSPOT_SUBMISSION_FAILED"));
+}
+
+
+export async function ensureHubSpotCardPaymentSchema(options={}){
+  if(options.force!==true&&hubSpotCardPaymentSchemaPromise)return hubSpotCardPaymentSchemaPromise;
+  const run=async()=>{
+    const token=clean(options.token||process.env.PGI_HUBSPOT_PRIVATE_APP_TOKEN||process.env.HUBSPOT_PRIVATE_APP_TOKEN,800);
+    if(!token)return {enabled:false,ready:false,created:0,existing:0,errors:["hubspot_not_configured"]};
+    const fetchImpl=options.fetchImpl||globalThis.fetch;
+    const targets=[["contacts","contactinformation"],["deals","dealinformation"]];
+    let created=0,existing=0;const errors=[];
+    for(const [objectType,groupName] of targets){
+      for(const definition of HUBSPOT_CARD_PAYMENT_PROPERTIES){
+        try{
+          await hubSpotPrivateRequest("/crm/v3/properties/"+objectType+"/"+encodeURIComponent(definition.name),{token,fetchImpl,method:"GET",timeoutMs:4500});
+          existing++;
+          continue;
+        }catch(error){
+          if(Number(error?.status)!==404){errors.push(objectType+":"+definition.name+":"+clean(error?.code||error?.status||"read_failed",100));continue;}
+        }
+        try{
+          await hubSpotPrivateRequest("/crm/v3/properties/"+objectType,{
+            token,fetchImpl,method:"POST",timeoutMs:4500,
+            body:{groupName,name:definition.name,label:definition.label,type:definition.type,fieldType:definition.fieldType,description:definition.description,options:definition.options||[]}
+          });
+          created++;
+        }catch(error){
+          if(Number(error?.status)===409)existing++;
+          else errors.push(objectType+":"+definition.name+":"+clean(error?.code||error?.status||"create_failed",100));
+        }
+      }
+    }
+    return {enabled:true,ready:errors.length===0,created,existing,errors};
+  };
+  const promise=run();
+  if(options.force!==true)hubSpotCardPaymentSchemaPromise=promise;
+  return promise;
+}
+
+export async function syncHubSpotCardPaymentState(store,tenantId,input={},options={}){
+  const token=clean(options.token||process.env.PGI_HUBSPOT_PRIVATE_APP_TOKEN||process.env.HUBSPOT_PRIVATE_APP_TOKEN,800);
+  if(!token)return {enabled:false,synced:false,skipped:true,reason:"hubspot_not_configured"};
+  const numericTenantId=Number(tenantId);
+  if(!Number.isInteger(numericTenantId)||numericTenantId<=0)return {enabled:true,synced:false,skipped:true,reason:"invalid_tenant_id"};
+  if(!store||typeof store.tenantPublicIdByInternalId!=="function"||typeof store.customerCardPaymentOverview!=="function"||typeof store.tenantControlDetail!=="function"){
+    return {enabled:true,synced:false,skipped:true,reason:"card_payment_crm_context_unavailable"};
+  }
+  const tenantPublicId=await store.tenantPublicIdByInternalId(numericTenantId);
+  if(!tenantPublicId)return {enabled:true,synced:false,skipped:true,reason:"tenant_not_found"};
+  const detail=await store.tenantControlDetail(tenantPublicId);
+  const users=Array.isArray(detail?.users)?detail.users:[];
+  const owner=users.find(x=>x.role==="owner"&&x.membership_status==="active")||users.find(x=>x.role==="owner")||users[0]||null;
+  const ownerEmail=clean(owner?.email,254);
+  if(!ownerEmail)return {enabled:true,synced:false,skipped:true,reason:"tenant_owner_email_unavailable"};
+  const fetchImpl=options.fetchImpl||globalThis.fetch;
+  const schema=await ensureHubSpotCardPaymentSchema({token,fetchImpl});
+  const {contact}=await ensureSupportContact(email(ownerEmail),{token,fetchImpl});
+  const overview=await store.customerCardPaymentOverview(numericTenantId);
+  const account=input.account||overview.account||null;
+  if(!account)return {enabled:true,synced:false,skipped:true,reason:"card_payment_account_unavailable",schema};
+  const active=account.status==="active"&&account.charges_enabled===true;
+  const feePercent=(Number(account.application_fee_bps||490)/100).toFixed(2);
+  const summary=overview.summary||{};
+  const props={
+    pgi_paiement_cb_active:active?"true":"false",
+    pgi_stripe_connect_status:clean(account.status||"pending",40),
+    pgi_commission_cb_pourcent:feePercent,
+    pgi_stripe_connect_account_ref:clean(account.provider_account_reference,120),
+    pgi_paiements_cb_payes:String(Number(summary.payments_paid||0)),
+    pgi_volume_cb_eur:(Number(summary.volume_paid_minor||0)/100).toFixed(2),
+    pgi_commission_cb_cumulee_eur:(Number(summary.pgi_fee_paid_minor||0)/100).toFixed(2)
+  };
+  let contactPropertiesSynced=false,dealPropertiesSynced=false,noteRecorded=false;
+  if(schema.ready){
+    await hubSpotPrivateRequest("/crm/v3/objects/contacts/"+encodeURIComponent(contact.id),{token,fetchImpl,method:"PATCH",body:{properties:props}});
+    contactPropertiesSynced=true;
+    const dealId=await preferredContactDealId(contact.id,{token,fetchImpl});
+    if(dealId){
+      await hubSpotPrivateRequest("/crm/v3/objects/deals/"+encodeURIComponent(dealId),{token,fetchImpl,method:"PATCH",body:{properties:props}});
+      dealPropertiesSynced=true;
+    }
+  }
+  if(options.recordNote===true||!schema.ready){
+    try{
+      noteRecorded=await createCardPaymentCrmNote(contact,tenantPublicId,props,{token,fetchImpl,eventType:options.eventType||input.event_type||input.status||"sync",schemaReady:schema.ready});
+    }catch(_error){}
+  }
+  return {enabled:true,synced:contactPropertiesSynced||noteRecorded,tenantPublicId,contactId:String(contact.id),contactPropertiesSynced,dealPropertiesSynced,noteRecorded,schema};
+}
+
+async function createCardPaymentCrmNote(contact,tenantPublicId,props,{token,fetchImpl,eventType,schemaReady}){
+  const contactType=await noteContactAssociationType({token,fetchImpl});
+  const dealId=await preferredContactDealId(contact.id,{token,fetchImpl});
+  const dealType=dealId?await noteDealAssociationType({token,fetchImpl}):null;
+  const body=[
+    "<strong>Paiement CB — synchronisation Stripe Connect</strong>",
+    "<br><strong>Événement :</strong> "+escapeHubSpotHtml(clean(eventType,120)),
+    "<br><strong>Tenant :</strong> "+escapeHubSpotHtml(clean(tenantPublicId,80)),
+    "<br><strong>Statut :</strong> "+escapeHubSpotHtml(props.pgi_stripe_connect_status),
+    "<br><strong>Service actif :</strong> "+(props.pgi_paiement_cb_active==="true"?"Oui":"Non"),
+    "<br><strong>Commission PGI Telecom :</strong> "+escapeHubSpotHtml(props.pgi_commission_cb_pourcent)+" %",
+    "<br><strong>Paiements payés :</strong> "+escapeHubSpotHtml(props.pgi_paiements_cb_payes),
+    "<br><strong>Volume CB :</strong> "+escapeHubSpotHtml(props.pgi_volume_cb_eur)+" €",
+    "<br><strong>Commission cumulée :</strong> "+escapeHubSpotHtml(props.pgi_commission_cb_cumulee_eur)+" €",
+    "<br><strong>Propriétés CRM dédiées :</strong> "+(schemaReady?"synchronisées":"indisponibles — note de secours enregistrée")
+  ].join("");
+  const associations=[{to:{id:String(contact.id)},types:[{associationCategory:"HUBSPOT_DEFINED",associationTypeId:contactType}]}];
+  if(dealId&&dealType)associations.push({to:{id:String(dealId)},types:[{associationCategory:"HUBSPOT_DEFINED",associationTypeId:dealType}]});
+  await hubSpotPrivateRequest("/crm/v3/objects/notes",{token,fetchImpl,method:"POST",body:{properties:{hs_timestamp:new Date().toISOString(),hs_note_body:body,hubspot_owner_id:HUBSPOT_OWNER_ID},associations}});
+  return true;
 }
 
 export async function syncHubSpotCommercialLead(input={},options={}){
