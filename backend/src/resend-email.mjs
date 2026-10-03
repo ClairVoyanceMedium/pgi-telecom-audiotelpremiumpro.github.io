@@ -332,12 +332,18 @@ export function buildTransactionalMessage(config,templateKey,data={}){
       cta:{label:"Accéder à mon espace",url:portalUrl}
     },
     customer_access_invitation:{
-      subject:"Votre accès Audiotel Premium Pro est prêt",
-      title:"Créez votre mot de passe",
+      subject:"Vos accès client Audiotel Premium Pro sont prêts",
+      title:"Activez votre espace client",
       lead:greeting,
-      paragraphs:["Votre dossier a été validé et votre espace client peut maintenant être activé.","Pour votre sécurité, aucun mot de passe n’est envoyé par email. Utilisez le bouton ci-dessous pour choisir votre mot de passe personnel."],
-      cta:actionUrl?{label:"Choisir mon mot de passe",url:actionUrl}:null,
-      foot:"Ce lien est temporaire et à usage unique. Une fois connecté, vous pourrez modifier votre mot de passe depuis les réglages de sécurité de votre espace client."
+      paragraphs:[
+        "Votre dossier a été validé et votre espace client peut maintenant être activé.",
+        safeDetail("Référence dossier / identifiant client",data.dossier_ref),
+        safeDetail("Identifiant de connexion",data.login_identifier),
+        "Après activation, vous pourrez vous connecter avec votre adresse email ou votre référence dossier.",
+        "Pour votre sécurité, aucun mot de passe temporaire n’est envoyé par email. Le bouton ci-dessous contient un accès d’activation unique et vous permet de choisir votre mot de passe personnel."
+      ].filter(Boolean),
+      cta:actionUrl?{label:"Activer mon espace et choisir mon mot de passe",url:actionUrl}:null,
+      foot:"Le lien d’activation est temporaire et à usage unique. Votre référence dossier reste stable. Vous pourrez modifier votre mot de passe à tout moment depuis les réglages de sécurité de votre espace client."
     },
     registration_internal:{
       subject:"Nouvelle demande d’ouverture Audiotel Premium Pro",
