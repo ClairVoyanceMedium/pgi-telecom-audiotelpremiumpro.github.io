@@ -587,7 +587,8 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/customer/auth/me"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
-        return done(res,metrics,started,"customer.auth.me",200,{user:publicCustomerActor(customerActor,context)});
+        const auth=await store.customerAuthLookup(context.email);
+        return done(res,metrics,started,"customer.auth.me",200,{user:{...publicCustomerActor(customerActor,context),password_login_enabled:Boolean(auth?.password_hash&&auth?.credential_status==="active")}});
       }
       if(method==="POST"&&pathname==="/api/v1/customer/auth/email/change/request"){
         requireCustomerCsrf(req,customerActor,config);
@@ -616,7 +617,9 @@ export function createBackend(options={}){
         if(newPassword.length<12||newPassword.length>256){const e=new Error("Invalid new password");e.status=400;e.code="INVALID_NEW_PASSWORD";throw e;}
         if(currentPassword===newPassword){const e=new Error("New password must differ");e.status=400;e.code="PASSWORD_UNCHANGED";throw e;}
         const auth=await store.customerAuthLookup(context.email);
-        if(!auth||!verifyPassword(currentPassword,auth.password_hash)){const e=new Error("Invalid current password");e.status=401;e.code="INVALID_CURRENT_PASSWORD";throw e;}
+        const hasPassword=Boolean(auth?.password_hash&&auth?.credential_status==="active");
+        if(hasPassword&&!verifyPassword(currentPassword,auth.password_hash)){const e=new Error("Invalid current password");e.status=401;e.code="INVALID_CURRENT_PASSWORD";throw e;}
+        if(!auth){const e=new Error("Customer account unavailable");e.status=401;e.code="CUSTOMER_AUTH_REQUIRED";throw e;}
         await store.updateCustomerPassword(context.id,hashPassword(newPassword));
         const securityEventId="password-changed/"+context.id+"/"+Date.now();
         try{
