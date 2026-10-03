@@ -256,7 +256,7 @@ function showLogin(){
 }
 function showForgot(){
   $("customer-app").hidden=true;$("customer-auth").hidden=false;hideAuthPanels();$("forgot-panel").hidden=false;releaseInitialTopLock();
-  var email=$("customer-email")&&$("customer-email").value.trim();if(email)$("forgot-email").value=email;
+  var email=$("customer-email")&&$("customer-email").value.trim();if(email&&email.includes("@"))$("forgot-email").value=email;
 }
 function showReset(){
   $("customer-app").hidden=true;$("customer-auth").hidden=false;hideAuthPanels();$("reset-panel").hidden=false;releaseInitialTopLock();
