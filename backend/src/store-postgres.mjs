@@ -4716,7 +4716,7 @@ export class PostgresStore{
     if(!Number.isInteger(tenant)||tenant<=0||!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_PORTABILITY_REQUEST");
     return this.sql.begin(async tx=>{
       const row=(await tx.unsafe(
-        "SELECT p.id,p.tenant_id,p.status,p.priority_service_status,p.priority_fee_minor,p.priority_currency,p.priority_paid_at,t.public_id::text AS tenant_public_id"+
+        "SELECT p.id,p.tenant_id,p.status,p.priority_service_status,p.priority_fee_minor,p.priority_currency,p.priority_checkout_reference,p.priority_paid_at,t.public_id::text AS tenant_public_id"+
         " FROM tenant_portability_requests p JOIN tenants t ON t.id=p.tenant_id WHERE p.id=$1 AND p.tenant_id=$2 FOR UPDATE OF p",
         [id,tenant]
       ))[0];
