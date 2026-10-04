@@ -48,7 +48,7 @@ Explains a cautious portability workflow: identification, eligibility, programmi
 A commercial/financial amount linked to eligible traffic under the applicable contract. On Audiotel Premium Pro, expected, confirmed and validated amounts are intentionally distinguished to avoid presenting an estimate as acquired revenue.
 
 ### Portabilité
-The transfer of an existing eligible number, subject to ownership/eligibility checks and confirmation by the operators involved.
+The transfer of an existing eligible number, subject to ownership/eligibility checks and confirmation by the operators involved. Audiotel Premium Pro displays the standard inbound portability path at 0€ as a platform fee when eligible. A separate optional Priority service is displayed at 9,90€ TTC as a one-time payment; it only prioritizes the case in PGI's internal processing queue and does not guarantee operator eligibility, operator timing or a porting date.
 
 ### Paiement CB complémentaire
 https://audiotel-premium-pro.com/paiement-cb-audiotel/
