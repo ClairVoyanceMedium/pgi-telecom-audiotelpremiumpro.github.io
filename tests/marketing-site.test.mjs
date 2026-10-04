@@ -57,6 +57,8 @@ test("public pricing and savings simulation stay explicit and non-guaranteed",()
   assert.match(html,/Résiliation possible à tout moment/);
   assert.match(html,/Écart de reversement entre les deux offres \/ minute/);
   assert.match(html,/Gain potentiel en plus \/ mois/);
+  assert.match(html,/id="saving-month">\+132 €/);
+  assert.match(js,/saving-month"\)\.textContent="\+"\+money\.format\(perMonth\)/);
   assert.match(html,/Simulation indicative et non contractuelle/);
   assert.match(html,/ne constituent pas une garantie d’économies/);
   assert.doesNotMatch(html,/revenu garanti|gains garantis|économies garanties/i);
