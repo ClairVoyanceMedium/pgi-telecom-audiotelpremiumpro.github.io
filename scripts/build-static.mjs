@@ -495,14 +495,11 @@ function normalizePublicBranding(html){
 }
 
 function injectRevenueQuickNav(html){
-  let out=String(html||"")
-    .replace('aria-labelledby="revenue-quick-nav-title"','aria-label="Accès rapides Audiotel Premium Pro"')
-    .replace('class="revenue-quick-tab revenue-quick-tab-client" href="#tarif"','class="revenue-quick-tab revenue-quick-tab-client" href="/#tarif"');
+  const nav='<section class="revenue-quick-nav" aria-label="Accès rapides Audiotel Premium Pro"><div class="wrap"><nav class="revenue-quick-tabs" aria-label="Accès rapides Audiotel Premium Pro"><a class="revenue-quick-tab revenue-quick-tab-primary" href="/portabilite-numero-sva/"><small>DÉJÀ UN NUMÉRO SURTAXÉ ?</small><strong>Demander ma portabilité</strong><span>Conserver mon numéro s’il est éligible</span></a><a class="revenue-quick-tab" href="/demande-ouverture/?type=nouveau"><small>NOUVEAU CLIENT</small><strong>Demander mon numéro surtaxé</strong><span>Préparer mon ouverture</span></a><a class="revenue-quick-tab" href="/comparateur-audiotel/"><small>POTENTIEL DE REVENUS</small><strong>Estimer mes reversements</strong><span>Comparer à activité identique</span></a><a class="revenue-quick-tab" href="/paiement-cb-audiotel/"><small>ENCAISSEMENT PAR LIEN</small><strong>Créer un lien de paiement CB</strong><span>Envoyer le lien et suivre le paiement</span></a><a class="revenue-quick-tab revenue-quick-tab-client" href="/parrainage-audiotel/"><small>PARRAINAGE</small><strong>Parrainer un nouveau client</strong><span>Partager mon lien client</span></a></nav></div></section>';
+  const out=String(html||"").replace(/<section class="revenue-quick-nav"[\s\S]*?<\/section>/,nav);
   if(out.includes('class="revenue-quick-nav"'))return out;
-  const nav='<section class="revenue-quick-nav" aria-label="Accès rapides Audiotel Premium Pro"><div class="wrap"><nav class="revenue-quick-tabs" aria-label="Accès rapides Audiotel Premium Pro"><a class="revenue-quick-tab revenue-quick-tab-primary" href="/portabilite-numero-sva/"><small>DÉJÀ UN NUMÉRO SURTAXÉ ?</small><strong>Demander ma portabilité</strong><span>Conserver mon numéro s’il est éligible</span></a><a class="revenue-quick-tab" href="/demande-ouverture/?type=nouveau"><small>NOUVEAU CLIENT</small><strong>Demander votre numéro surtaxé</strong><span>Préparer mon ouverture</span></a><a class="revenue-quick-tab" href="/comparateur-audiotel/"><small>COMPARAISON</small><strong>Comparer mon offre</strong><span>Voir l’écart à activité identique</span></a><a class="revenue-quick-tab" href="/paiement-cb-audiotel/"><small>SERVICE COMPLÉMENTAIRE</small><strong>Paiement CB</strong><span>Encaisser consultations et forfaits</span></a><a class="revenue-quick-tab revenue-quick-tab-client" href="/#tarif"><small>PRIX CLAIR</small><strong>Voir le tarif</strong><span>4,90€ TTC / mois après le mois en cours offert</span></a></nav></div></section>';
   return out.replace("</body>",nav+"\n</body>");
 }
-
 
 function versionPublicAssets(html){
   const prepared=normalizePublicBranding(injectRevenueQuickNav(String(html||"")));
