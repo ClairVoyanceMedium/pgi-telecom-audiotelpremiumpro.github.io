@@ -42,22 +42,9 @@ function render(billing,carrier,platform,referral){
   const platformRows=rcontrols.slice(0,8).map(x=>'<div class="pa-row"><div><strong>'+esc(String(x.control_key||"").replace(/_/g," "))+'</strong><small>'+esc(x.market||"Plateforme")+(x.valid_until?" • valable jusqu’au "+esc(date(x.valid_until)):"")+'</small></div><span class="pa-badge '+(x.status==="verified"?"":"warn")+'">'+esc(x.status||"—")+'</span></div>').join("");
 
   $("pa-body").innerHTML='<p id="pa-feedback" class="pa-feedback" role="status"></p><div class="pa-grid"><section class="pa-card"><h3>Tarif abonnement externe</h3><div class="pa-state"><div><span>Tarif courant</span><strong>'+money(price.amount_minor||0,price.currency||"EUR")+' TTC/mois</strong></div><div><span>Modèle</span><strong>Versionné</strong></div></div><label class="pa-field">Nouveau tarif mensuel en EUR<input id="pa-price" type="number" min="0.01" step="0.01" placeholder="3.00"></label><label class="pa-field">Date d’effet<input id="pa-effective" type="datetime-local"></label><div class="pa-actions"><button class="pa-btn" data-price-publish>Publier une nouvelle version</button></div><p class="pa-note">La publication ne réécrit jamais les anciens tarifs. Les contrats existants restent reliés à leur version tant qu’ils ne sont pas migrés explicitement.</p><div class="pa-list">'+(history||'<p class="pa-note">Aucun historique.</p>')+'</div></section><section class="pa-card"><h3>Bascule opérateur SVA</h3><div class="pa-state"><div><span>Actif</span><strong>'+esc(route.active_carrier||"Non configuré")+'</strong></div><div><span>Standby</span><strong>'+esc(route.standby_carrier||"Aucun")+'</strong></div><div><span>Génération</span><strong>'+esc(route.generation||1)+'</strong></div><div><span>Connexion</span><strong>'+esc(route.active_connection_state||"—")+'</strong></div></div><label class="pa-field">Cible prête<select id="pa-target"><option value="">Sélectionner…</option>'+targetOptions+'</select></label><label class="pa-field">Fenêtre rollback en minutes<input id="pa-rollback" type="number" min="5" max="10080" value="1440"></label><div class="pa-actions"><button class="pa-btn" data-switch-plan '+(!targets.length?"disabled":"")+'>1. Préparer la bascule</button></div><p class="pa-note">La préparation ne modifie pas la route active. L’activation exige la validation d’un second administrateur dans Control Tower. Le rollback d’urgence reste disponible dans la fenêtre configurée.</p><div class="pa-list">'+(swRows||'<p class="pa-note">Aucune bascule récente.</p>')+'</div></section><section class="pa-card"><h3>Regulatory Trust Center</h3><div class="pa-state"><div><span>Numéros prêts</span><strong>'+esc(rs.numbers_ready||0)+' / '+esc(rs.numbers_total||0)+'</strong></div><div><span>Preuves chaînées</span><strong>'+esc(rs.evidence_events||0)+'</strong></div><div><span>Bloquants</span><strong>'+esc(rs.review_blocking||0)+'</strong></div><div><span>Aujourd’hui</span><strong>'+esc(rs.review_today||0)+'</strong></div><div><span>Bientôt</span><strong>'+esc(rs.review_soon||0)+'</strong></div><div><span>Preuves ARCEP 2026</span><strong>'+esc(rs.arcep_2026_evidence_events||0)+'</strong></div><div><span>Écosystème SVA prêt</span><strong>'+esc(rs.sva_ecosystem_ready||0)+'</strong></div><div><span>Signalements ouverts</span><strong>'+esc(rs.abuse_open||0)+'</strong></div><div><span>Critiques</span><strong>'+esc(rs.abuse_critical||0)+'</strong></div></div><p class="pa-note">Activation externe fail-closed : Trust Center + ARCEP 2026 + readiness SVA requis. Les échéances n’entraînent aucune suspension automatique.</p><div class="pa-actions"><button class="pa-btn" type="button" data-regulatory-attention>Voir les échéances à traiter</button></div><div class="pa-list">'+(regulatoryRows||'<p class="pa-note">Aucun numéro externe à contrôler.</p>')+'</div></section><section class="pa-card"><h3>Contrôles plateforme</h3><div class="pa-state"><div><span>Vérifiés</span><strong>'+esc(rs.platform_controls_verified||0)+'</strong></div><div><span>À corriger</span><strong>'+esc(rs.platform_controls_attention||0)+'</strong></div></div><p class="pa-note">Préparation CE, APNF/RSVA, CGS AF2M, MAN, traçabilité anti-fraude, notifications d’incident et traitement 33700.</p><div class="pa-list">'+(platformRows||'<p class="pa-note">Contrôles à documenter lors de la contractualisation opérateur.</p>')+'</div></section><section id="pa-compliance-editor" class="pa-card pa-wide" hidden></section></div>';
-  const referralState=referral||{},referralSummary=referralState.summary||{};
-  const referralCard=document.createElement("section");
-  referralCard.className="pa-card";
-  referralCard.id="pa-referral-program";
-  const active=referralState.enabled===true,canManage=referralState.can_manage===true;
-  referralCard.innerHTML='<h3>Programme de parrainage</h3>'+
-    '<div class="pa-state"><div><span>État</span><strong>'+(active?"ACTIVÉ":"DÉSACTIVÉ")+'</strong></div>'+
-    '<div><span>Codes actifs</span><strong>'+esc(referralSummary.active_codes||0)+'</strong></div>'+
-    '<div><span>Demandes attribuées</span><strong>'+esc(referralSummary.attributed_leads||0)+'</strong></div>'+
-    '<div><span>Conversions</span><strong>'+esc(referralSummary.converted||0)+'</strong></div></div>'+
-    '<p class="pa-note">'+(active?"Les clients autorisés voient leur lien personnel. Les nouvelles attributions sont acceptées.":"Les liens clients sont masqués et aucun ancien code ne peut créer une nouvelle attribution. L’historique est conservé.")+'</p>'+
-    (referralState.reward_label?'<p class="pa-note"><strong>Avantage actuel :</strong> '+esc(referralState.reward_label)+'</p>':'')+
-    '<div class="pa-actions"><button class="pa-btn '+(active?"danger":"success")+'" type="button" data-referral-toggle="'+(active?"off":"on")+'" '+(canManage?"":"disabled")+'>'+(active?"Désactiver le parrainage":"Activer le parrainage")+'</button></div>'+
-    (!canManage?'<p class="pa-note">Seul un administrateur peut modifier ce réglage.</p>':'');
   const complianceMount=$("pa-compliance-editor");
-  if(complianceMount)complianceMount.insertAdjacentElement("beforebegin",referralCard);
+  if(complianceMount)import("./platform-referral-tools.js").then(m=>m.render(referral,complianceMount),()=>{});
+
 
 }
 
@@ -65,15 +52,12 @@ async function handle(e){
   if(busy)return;
   const referralToggle=e.target.closest("[data-referral-toggle]");
   if(referralToggle){
-    const enabled=referralToggle.dataset.referralToggle==="on";
-    const question=enabled?"Activer le programme de parrainage maintenant ?":"Désactiver le programme de parrainage ? Les liens clients seront masqués et les anciens codes ne pourront plus créer de nouvelle attribution.";
-    if(!confirm(question))return;
-    busy=true;feedback(enabled?"Activation du parrainage…":"Désactivation du parrainage…");
+    busy=true;
     try{
-      await window.PGIApi.setReferralProgram(enabled,window.PGIApi.newIdempotencyKey());
-      busy=false;feedback(enabled?"Parrainage activé.":"Parrainage désactivé. Historique conservé.","ok");
-      await load();
-    }catch(err){busy=false;feedback(err.code||"Modification du parrainage impossible","error");}
+      const module=await import("./platform-referral-tools.js");
+      await module.toggle(referralToggle,{api:window.PGIApi,feedback,reload:load});
+    }catch(err){feedback(err.code||"Modification du parrainage impossible","error");}
+    finally{busy=false;}
     return;
   }
   const attention=e.target.closest("[data-regulatory-attention]");
