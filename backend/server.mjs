@@ -14,7 +14,7 @@ import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData,scopeCustomerAnnualProgressData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
-import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
+import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,createPortabilityPriorityCheckout,verifyStripeWebhook,normalizePortabilityPriorityEvent,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
 import {STRIPE_CONNECT_APPLICATION_FEE_BPS,stripeConnectState,createStripeConnectedAccount,retrieveStripeConnectedAccount,normalizeStripeConnectedAccount,createStripeConnectOnboardingLink,createStripeCardCheckout,retrieveStripeCardCheckout,normalizeStripeConnectPaymentEvent,hashStripeEventPayload} from "./src/stripe-connect.mjs";
 import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStripe,buildGa4RefundFromStripe,sendGa4Measurement} from "./src/ga4-measurement.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
@@ -163,6 +163,18 @@ export function createBackend(options={}){
         if(String(event.type||"")==="account.updated"){
           invalidateStripeProviderReadiness();
           return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,account_readiness_invalidated:true});
+        }
+        const priorityEvent=normalizePortabilityPriorityEvent(event);
+        if(priorityEvent){
+          priorityEvent.payload_sha256=hashStripeEventPayload(event);
+          const priorityResult=await store.applyPortabilityPriorityProviderEvent(priorityEvent);
+          return done(res,metrics,started,"billing.portability_priority_webhook",200,{
+            received:true,
+            type:String(event.type||""),
+            duplicate:Boolean(priorityResult.duplicate),
+            updated:Boolean(priorityResult.updated),
+            status:priorityResult.payment?.status||priorityEvent.status
+          });
         }
         const refund=config.ga4MeasurementEnabled&&config.ga4ApiSecret?await normalizeStripeRefundEvent(event,config):null;
         if(refund){
@@ -969,6 +981,49 @@ export function createBackend(options={}){
         const result=await store.idempotent(req.headers["idempotency-key"],"customer.portability.create",payload,()=>store.createCustomerPortabilityRequest(context.tenant_id,body));
         return done(res,metrics,started,"customer.portability.create",201,{...result.value,replayed:result.replayed});
       }
+      match=routeMatch(pathname,"/api/v1/customer/portability/:id/priority-checkout");
+      if(method==="POST"&&match){
+        requireCustomerCsrf(req,customerActor,config);
+        const idempotencyKey=String(req.headers["idempotency-key"]||"").trim();
+        if(!idempotencyKey||idempotencyKey.length>200){const e=new Error("Checkout idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
+        const legal=await readJson(req,config.bodyLimitBytes);
+        if(legal.priority_terms_accepted!==true||legal.privacy_notice_acknowledged!==true){const e=new Error("Priority portability legal acceptance required");e.status=400;e.code="PORTABILITY_PRIORITY_LEGAL_TERMS_REQUIRED";throw e;}
+        if(legal.immediate_performance_requested!==true){const e=new Error("Immediate priority handling request required");e.status=400;e.code="IMMEDIATE_PERFORMANCE_REQUEST_REQUIRED";throw e;}
+        if(String(legal.legal_version||"")!=="2026-09-26-b2b-b2c-v4"){const e=new Error("Legal document version outdated");e.status=409;e.code="LEGAL_DOCUMENT_VERSION_OUTDATED";throw e;}
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"billing.manage");
+        const billing=await store.customerBillingPreparation(context.tenant_id);
+        const provider=await billingProviderStatus(config);
+        const individual=String(billing.tenant?.customer_type||"business")==="individual";
+        const withdrawalReady=!individual||(config.onlineWithdrawalReady===true&&typeof store.customerWithdrawalFeatureReady==="function"&&await store.customerWithdrawalFeatureReady());
+        if(individual&&(config.b2cCommercialReady!==true||!withdrawalReady)){
+          return done(res,metrics,started,"customer.portability.priority_checkout",409,{error:{code:"B2C_COMMERCIAL_NOT_READY",message:"Consumer checkout is temporarily unavailable until mandatory B2C legal prerequisites and the online withdrawal function are operational."},billing_provider:provider,b2c_readiness:{legal_operator:config.legalOperatorConfigured===true,consumer_mediator:config.consumerMediatorConfigured===true,online_withdrawal:withdrawalReady}});
+        }
+        if(!provider.checkout_available){const code=provider.connection_state==="account_activation_required"?"PAYMENT_ACCOUNT_NOT_READY":provider.connection_state==="account_status_unavailable"?"PAYMENT_PROVIDER_UNAVAILABLE":"PAYMENT_PROVIDER_NOT_CONNECTED";return done(res,metrics,started,"customer.portability.priority_checkout",503,{error:{code},billing_provider:provider});}
+        const requestId=Number(match.id);
+        if(!Number.isInteger(requestId)||requestId<=0){const e=new Error("Invalid portability request");e.status=400;e.code="INVALID_PORTABILITY_REQUEST";throw e;}
+        const payload={tenant_id:context.tenant_id,portability_request_id:requestId,amount_minor:990,currency:"EUR",legal_version:"2026-09-26-b2b-b2c-v4",immediate_performance_requested:true};
+        const result=await store.idempotent(idempotencyKey,"customer.portability.priority_checkout",payload,async()=>{
+          const prepared=await store.preparePortabilityPriorityPayment(context.tenant_id,requestId,context.id);
+          try{
+            const session=await createPortabilityPriorityCheckout(config,prepared,idempotencyKey);
+            const saved=await store.attachPortabilityPriorityCheckout(context.tenant_id,prepared.payment_public_id,session);
+            await store.recordCustomerLegalAcceptance(context.tenant_id,context.id,{
+              acceptance_type:"portability_priority_checkout",
+              document_version:"2026-09-26-b2b-b2c-v4",
+              documents:{conditions:"/conditions-abonnement/",privacy:"/confidentialite/",retractation:"/retractation/",cancellation:"/resilier-contrat/"},
+              immediate_performance_requested:true,
+              evidence:{source:"customer_portability_priority_checkout",stripe_checkout_created:true,portability_request_id:requestId,amount_minor:990,currency:"EUR",standard_portability_remains_free:true,external_operator_delay_guaranteed:false}
+            });
+            return {payment:saved,checkout:{url:session.url,session_id:session.session_id,expires_at:session.expires_at},provider:"stripe"};
+          }catch(error){
+            await store.failPortabilityPriorityPayment(context.tenant_id,prepared.payment_public_id,error?.code||"checkout_failed").catch(()=>{});
+            throw error;
+          }
+        });
+        return done(res,metrics,started,"customer.portability.priority_checkout",201,{...result.value,replayed:result.replayed,billing_provider:provider});
+      }
+
       match=routeMatch(pathname,"/api/v1/customer/portability/:id/cancel");
       if(method==="POST"&&match){
         requireCustomerCsrf(req,customerActor,config);
