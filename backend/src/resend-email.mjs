@@ -234,6 +234,79 @@ export async function sendSupportTicketReply(config,options={}){
   },eventId,"RESEND_SUPPORT_REPLY_FAILED");
 }
 
+export async function sendInternalDailyReport(config,options={}){
+  if(!config?.resendApiKey)throw providerError("RESEND_NOT_CONFIGURED");
+  const domain=String(config.transactionalDomain||"").trim().toLowerCase();
+  if(!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain))throw providerError("RESEND_SENDER_NOT_CONFIGURED");
+  const to=normalizeEmail(config.dailyReportEmail||config.internalNotificationEmail||config.transactionalReplyTo||"");
+  const date=String(options.reportDate||"").trim(),snapshot=options.snapshot&&typeof options.snapshot==="object"?options.snapshot:{};
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date))throw providerError("INVALID_DAILY_REPORT_DATE",400);
+  const displayDate=date.slice(8,10)+"/"+date.slice(5,7)+"/"+date.slice(0,4);
+  const n=key=>Number(snapshot[key]||0);
+  const eur=minor=>new Intl.NumberFormat("fr-FR",{style:"currency",currency:"EUR"}).format(n(minor)/100);
+  const lines=[
+    "Bilan quotidien Audiotel Premium Pro",
+    "Date : "+displayDate,
+    "Période : 00:00 à 20:00, heure de Paris",
+    "",
+    "CLIENTS",
+    "Clients actifs / dossiers externes au total : "+n("customers_total"),
+    "Nouveaux dossiers aujourd’hui : "+n("customers_new"),
+    "",
+    "PORTABILITÉ",
+    "Nouvelles demandes : "+n("portability_new"),
+    "Demandes en cours : "+n("portability_open"),
+    "Options prioritaires payées : "+n("portability_priority_paid"),
+    "Revenu options prioritaires : "+eur("portability_priority_revenue_minor_eur"),
+    "",
+    "PAIEMENTS CB",
+    "Paiements réussis : "+n("card_payments_paid"),
+    "Volume encaissé : "+eur("card_volume_minor_eur"),
+    "Commission PGI : "+eur("card_pgi_fee_minor_eur"),
+    "",
+    "PARRAINAGE",
+    "Nouveaux filleuls attribués : "+n("referrals_claimed"),
+    "Récompenses acquises : "+n("referral_rewards_earned"),
+    "",
+    "SERVICE CLIENTS",
+    "Nouveaux tickets : "+n("incidents_new"),
+    "Tickets ouverts : "+n("incidents_open"),
+    "Tickets critiques ouverts : "+n("incidents_critical_open"),
+    "",
+    "SYSTÈME",
+    "Emails nécessitant une attention aujourd’hui : "+n("emails_attention"),
+    "Emails en attente ou différés : "+n("emails_pending"),
+    "Alertes opérationnelles critiques ouvertes : "+n("operational_critical_open"),
+    "Événements internes en attente de publication : "+n("outbox_pending"),
+    "",
+    "Audiotel Premium Pro | Une solution PGI Telecom"
+  ];
+  const rows=[
+    ["Nouveaux dossiers",n("customers_new")],
+    ["Portabilités en cours",n("portability_open")],
+    ["Priorités payées",n("portability_priority_paid")],
+    ["Paiements CB réussis",n("card_payments_paid")],
+    ["Nouveaux filleuls",n("referrals_claimed")],
+    ["Tickets ouverts",n("incidents_open")],
+    ["Tickets critiques",n("incidents_critical_open")],
+    ["Emails à contrôler",n("emails_attention")],
+    ["Alertes critiques",n("operational_critical_open")]
+  ];
+  const htmlRows=rows.map(([label,value])=>'<tr><td style="padding:9px 10px;border-bottom:1px solid #ece6e1">'+escapeHtml(label)+'</td><td style="padding:9px 10px;border-bottom:1px solid #ece6e1;text-align:right;font-weight:700">'+escapeHtml(String(value))+'</td></tr>').join("");
+  const html='<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#f4f1ee;font-family:Arial,Helvetica,sans-serif;color:#221914"><div style="padding:24px 12px"><div style="max-width:680px;margin:0 auto;background:#fff;border:1px solid #ded6d0;border-radius:14px;padding:28px"><div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#78675d">Audiotel Premium Pro</div><h1 style="font-size:24px;margin:10px 0 6px">Bilan quotidien du '+escapeHtml(displayDate)+'</h1><p style="color:#78675d;margin:0 0 20px">Période : 00:00 à 20:00, heure de Paris</p><table style="width:100%;border-collapse:collapse">'+htmlRows+'</table><div style="margin-top:18px;padding:14px;background:#f7f3ef;border-radius:10px"><strong>Revenus du jour suivis</strong><p style="margin:8px 0 0">Options portabilité prioritaire : '+escapeHtml(eur("portability_priority_revenue_minor_eur"))+'<br>Volume paiements CB : '+escapeHtml(eur("card_volume_minor_eur"))+'<br>Commission PGI sur paiements CB : '+escapeHtml(eur("card_pgi_fee_minor_eur"))+'</p></div><p style="font-size:12px;color:#78675d;margin:20px 0 0">Audiotel Premium Pro | Une solution PGI Telecom</p></div></div></body></html>';
+  const eventId="daily-report/"+date;
+  return sendDirectResend(config,{
+    from:(config.transactionalFromName||"Audiotel Premium Pro")+" <notifications@"+domain+">",
+    to:[to],
+    reply_to:"support@"+domain,
+    subject:"Bilan quotidien Audiotel Premium Pro | "+displayDate,
+    text:lines.join("\n"),
+    html,
+    headers:{"X-PGI-Event-ID":eventId},
+    tags:[{name:"category",value:"daily_report"},{name:"sender",value:"notifications"}]
+  },eventId,"RESEND_DAILY_REPORT_FAILED");
+}
+
 async function sendDirectResend(config,body,eventId,errorCode){
   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),Number(config.resendTimeoutMs||8000));
   try{
