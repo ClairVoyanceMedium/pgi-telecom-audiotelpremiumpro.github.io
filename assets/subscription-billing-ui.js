@@ -18,7 +18,7 @@ export function render(summary={},tenantCount=0,provider={}){
   const providerUnavailable=provider.connection_state==="account_status_unavailable";
   set("wh-billing-provider",activationRequired?"ACTIVATION REQUISE":providerUnavailable?"VÉRIFICATION":connected?(provider.payouts_enabled===false?"ENCAISSEMENT ACTIF":"PRÊT"):"NON CONNECTÉ");
   set("wh-billing-provider-state",activationRequired?"Compte Stripe à finaliser avant tout encaissement":providerUnavailable?"État Stripe temporairement non vérifiable":connected?(provider.payouts_enabled===false?"Encaissements autorisés, versements Stripe à finaliser":"Encaissements et versements Stripe opérationnels"):"Architecture prête, connexion à effectuer");
-  set("wh-billing-checkout",provider.checkout_available?"ACTIF":activationRequired?"BLOQUÉ — ACTIVATION":"PRÊT À BRANCHER");
+  set("wh-billing-checkout",provider.checkout_available?"ACTIF":activationRequired?"BLOQUÉ : ACTIVATION":"PRÊT À BRANCHER");
   set("wh-billing-payout","OPÉRATEUR → PGI → CLIENT");
   const unpaid=Number(summary.subscription_unpaid_alerts||0),list=$("alerts-list"),count=$("alert-count"),old=$("subscription-unpaid-alert");
   if(old)old.remove();

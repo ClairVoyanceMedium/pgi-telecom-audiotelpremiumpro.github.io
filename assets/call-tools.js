@@ -3,7 +3,7 @@ const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 const n=(v,d=2)=>new Intl.NumberFormat("fr-FR",{minimumFractionDigits:d,maximumFractionDigits:d}).format(Number(v)||0);
 const money=v=>new Intl.NumberFormat("fr-FR",{style:"currency",currency:"EUR"}).format(Number(v)||0);
 const d=v=>new Intl.DateTimeFormat("fr-FR",{dateStyle:"short"}).format(new Date(v));
-const t=v=>v?new Intl.DateTimeFormat("fr-FR",{timeStyle:"medium"}).format(new Date(v)):"—";
+const t=v=>v?new Intl.DateTimeFormat("fr-FR",{timeStyle:"medium"}).format(new Date(v)):"Non disponible";
 const dur=s=>{s=Math.max(0,Number(s)||0);const m=Math.floor(s/60),r=Math.floor(s%60);return m+":"+String(r).padStart(2,"0");};
 const cell=v=>'"'+String(v??"").replace(/"/g,'""')+'"';
 
@@ -37,11 +37,11 @@ export function showDetail(c){
   if(title)title.textContent="Appel #"+c.id+" • "+d(c.ts)+" "+t(c.ts);
   if(grid)grid.innerHTML=
     label("Appelant",c.caller)+label("Réseau",c.carrier)+label("Numéro SVA",c.number)+label("Expert",c.expert)+
-    label("Début",t(c.ts))+label("Entrée SVI",t(c.ivrStarted))+label("Mise en file",t(c.queued))+label("Mise en relation",c.bridged?t(c.bridged):"—")+
+    label("Début",t(c.ts))+label("Entrée SVI",t(c.ivrStarted))+label("Mise en file",t(c.queued))+label("Mise en relation",c.bridged?t(c.bridged):"Non disponible")+
     label("Fin",t(c.ended))+label("Attente",dur(c.wait))+label("Conversation",dur(c.conversation))+label("Durée totale",dur(c.total))+
     label("Facturable",(c.billable||0)+" min")+label("Éligible reversement",(c.payoutEligible||0)+" min")+label("CA service TTC",money(c.serviceAmount))+label("Reversement attendu HT",money(c.expected))+
-    label("Reversement confirmé HT",money(c.confirmed))+label("Reversement payé HT",money(c.paid))+label("Écart",money(c.variance))+label("PDD",c.pddMs==null?"—":n(c.pddMs/1000,2)+" s")+
-    label("SIP final",String(c.sipFinalCode??"—"))+label("Cause de fin",c.hangupCause)+label("Qui a raccroché",c.hangupParty==="caller"?"Appelant":c.hangupParty==="callee"?"Destinataire":c.hangupParty==="network"?"Réseau":"Indéterminé")+
+    label("Reversement confirmé HT",money(c.confirmed))+label("Reversement payé HT",money(c.paid))+label("Écart",money(c.variance))+label("PDD",c.pddMs==null?"Non disponible":n(c.pddMs/1000,2)+" s")+
+    label("SIP final",String(c.sipFinalCode??"Non disponible"))+label("Cause de fin",c.hangupCause)+label("Qui a raccroché",c.hangupParty==="caller"?"Appelant":c.hangupParty==="callee"?"Destinataire":c.hangupParty==="network"?"Réseau":"Indéterminé")+
     label("Codec",c.codec)+label("Perte paquets",n(c.packetLoss,3)+" %")+label("Jitter",n(c.jitter)+" ms")+label("Latence",n(c.latency)+" ms")+label("RTT",n(c.rtt)+" ms")+label("MOS",n(c.mos))+
     label("Paquets reçus",n(c.packetsIn,0))+label("Paquets envoyés",n(c.packetsOut,0))+label("Paquets perdus",n(c.packetsLost,0))+label("Erreurs DTMF",n(c.dtmfErrors,0));
   const dialog=$("call-dialog");if(dialog&&typeof dialog.showModal==="function")dialog.showModal();

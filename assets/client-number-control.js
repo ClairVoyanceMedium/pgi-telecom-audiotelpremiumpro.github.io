@@ -17,8 +17,8 @@ function money(value,currency){
   catch(_e){return nf(value,2)+" "+String(currency||"EUR");}
 }
 function dateOnly(value){
-  if(!value)return"—";
-  const d=new Date(value);if(!Number.isFinite(d.getTime()))return"—";
+  if(!value)return"Non disponible";
+  const d=new Date(value);if(!Number.isFinite(d.getTime()))return"Non disponible";
   return new Intl.DateTimeFormat("fr-FR",{dateStyle:"short"}).format(d);
 }
 function chip(status){
@@ -53,9 +53,9 @@ function renderLineDetails(data){
   const termsApplied=n(perf?.payout_term_matches)>0;
   const routes=destinationsFor(data,line.id);
   const tariff=line.tariff_code||"Non renseigné";
-  const rate=Number.isFinite(Number(line.service_rate_ttc_per_min))?money(line.service_rate_ttc_per_min,line.currency)+"/min":"—";
+  const rate=Number.isFinite(Number(line.service_rate_ttc_per_min))?money(line.service_rate_ttc_per_min,line.currency)+"/min":"Non disponible";
   const options=numbers.map(x=>'<option value="'+esc(x.id)+'"'+(String(x.id)===String(line.id)?" selected":"")+'>'+esc(numberLabel(x))+"</option>").join("");
-  const routeHtml=routes.length?routes.map(x=>'<div class="cp-line-detail-row"><span>'+esc(x.sva_number_id==null?"Routage commun":"Destination")+'</span><strong>'+esc((x.label||"Destination")+" · "+(x.destination_uri||"—"))+" "+chip(x.status)+'</strong></div>').join(""):'<p class="cp-empty">Aucune destination configurée pour cette ligne.</p>';
+  const routeHtml=routes.length?routes.map(x=>'<div class="cp-line-detail-row"><span>'+esc(x.sva_number_id==null?"Routage commun":"Destination")+'</span><strong>'+esc((x.label||"Destination")+" · "+(x.destination_uri||"Non disponible"))+" "+chip(x.status)+'</strong></div>').join(""):'<p class="cp-empty">Aucune destination configurée pour cette ligne.</p>';
   mount.innerHTML='<article class="cp-panel cp-chart-card cp-chart-wide cp-line-control">'+
     '<div class="cp-panel-head"><div><p class="cp-kicker">PILOTAGE PAR NUMÉRO</p><h2>Centre de contrôle de mes lignes</h2></div>'+chip(line.assignment_status||line.status)+'</div>'+
     '<div class="cp-line-toolbar"><label>Ligne Audiotel<select id="client-line-select">'+options+'</select></label><button id="client-line-open-calls" class="cp-ghost" type="button">Voir les appels de cette ligne</button></div>'+
@@ -64,14 +64,14 @@ function renderLineDetails(data){
       '<div class="cp-line-kpi"><span>Décrochés</span><strong>'+nf(answer,1)+' %</strong><small>'+nf(connected)+' appel(s)</small></div>'+
       '<div class="cp-line-kpi"><span>Minutes facturables</span><strong>'+nf(minutes,1)+'</strong><small>Trafic consolidé</small></div>'+
       '<div class="cp-line-kpi"><span>Montant service TTC</span><strong>'+money(perf?.generated_revenue_ttc||0,perf?.currency||line.currency)+'</strong><small>Généré sur la période</small></div>'+
-      '<div class="cp-line-kpi"><span>Net client estimé HT</span><strong>'+(termsApplied?money(perf?.estimated_client_net_ht||0,perf?.currency||line.currency):"—")+'</strong><small>'+(termsApplied?"Selon conditions actives":"Conditions de reversement requises")+'</small></div>'+
+      '<div class="cp-line-kpi"><span>Net client estimé HT</span><strong>'+(termsApplied?money(perf?.estimated_client_net_ht||0,perf?.currency||line.currency):"Non disponible")+'</strong><small>'+(termsApplied?"Selon conditions actives":"Conditions de reversement requises")+'</small></div>'+
     '</div>'+
     '<div class="cp-line-detail-grid"><div class="cp-line-detail"><h3>Tarification & statut</h3><div class="cp-line-detail-list">'+
       '<div class="cp-line-detail-row"><span>Numéro</span><strong>'+esc(numberLabel(line))+'</strong></div>'+
       '<div class="cp-line-detail-row"><span>Palier appliqué</span><strong>'+esc(tariff)+'</strong></div>'+
       '<div class="cp-line-detail-row"><span>Prix du service</span><strong>'+esc(rate)+'</strong></div>'+
-      '<div class="cp-line-detail-row"><span>Type</span><strong>'+esc(line.number_type||"—")+'</strong></div>'+
-      '<div class="cp-line-detail-row"><span>KYC affectation</span><strong>'+esc(line.kyc_status||"—")+'</strong></div>'+
+      '<div class="cp-line-detail-row"><span>Type</span><strong>'+esc(line.number_type||"Non disponible")+'</strong></div>'+
+      '<div class="cp-line-detail-row"><span>KYC affectation</span><strong>'+esc(line.kyc_status||"Non disponible")+'</strong></div>'+
       '<div class="cp-line-detail-row"><span>Mise en service</span><strong>'+esc(dateOnly(line.activated_at||line.valid_from))+'</strong></div>'+
     '</div></div><div class="cp-line-detail"><h3>Routage effectif</h3><div class="cp-line-detail-list">'+routeHtml+'</div></div></div>'+
     '<p class="cp-line-note">Les valeurs affichées proviennent uniquement des données réelles disponibles. Les nouveaux paliers tarifaires et changements opérateur ne seront proposés qu’après raccordement à un catalogue SVA confirmé ; aucun tarif n’est simulé.</p>'+
@@ -106,8 +106,8 @@ function renderLedger(data){
     return '<span>'+esc(currency)+" · "+esc(money(net,currency))+" net sur "+same.length+" période(s)</span>";
   }).join("");
   const body=rows.length?rows.map(x=>{
-    const timing=x.paid_at?"Payé "+dateOnly(x.paid_at):x.payment_due_date?"Échéance "+dateOnly(x.payment_due_date):"—";
-    return "<tr><td>"+esc(dateOnly(x.period_start)+" → "+dateOnly(x.period_end))+"</td><td><strong>"+esc(money(x.net_payout_ht,x.currency))+"</strong></td><td>"+esc(money(x.held_amount_ht,x.currency))+"</td><td>"+chip(x.status)+"</td><td>"+esc(timing)+"</td><td>"+esc(x.statement_reference||"—")+"</td></tr>";
+    const timing=x.paid_at?"Payé "+dateOnly(x.paid_at):x.payment_due_date?"Échéance "+dateOnly(x.payment_due_date):"Non disponible";
+    return "<tr><td>"+esc(dateOnly(x.period_start)+" → "+dateOnly(x.period_end))+"</td><td><strong>"+esc(money(x.net_payout_ht,x.currency))+"</strong></td><td>"+esc(money(x.held_amount_ht,x.currency))+"</td><td>"+chip(x.status)+"</td><td>"+esc(timing)+"</td><td>"+esc(x.statement_reference||"Non disponible")+"</td></tr>";
   }).join(""):'<tr><td colspan="6" class="cp-empty">Aucune période de reversement disponible.</td></tr>';
   mount.innerHTML='<article class="cp-panel cp-finance-ledger"><div class="cp-panel-head"><div><p class="cp-kicker">MES REVERSEMENTS</p><h2>Historique de mes montants nets</h2></div><div class="cp-ledger-actions"><button id="client-ledger-export" class="cp-ghost" type="button"'+(rows.length?"":" disabled")+'>Exporter CSV</button></div></div>'+
     '<div class="cp-ledger-summary">'+(summary||'<span>Aucune période consolidée</span>')+'</div>'+

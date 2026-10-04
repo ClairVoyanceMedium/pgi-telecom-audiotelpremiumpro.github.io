@@ -38,7 +38,7 @@ function mount(kind){
   if(!anchor)return null;
   var section=document.createElement("section"),prefix=kind==="client"?"client":"admin",copy=kind==="client"?"Vos appels uniquement":"Tous les clients et numéros";
   section.id=id;section.className="pgi-call-time-summary";section.setAttribute("aria-label","Temps d’appels cumulés");
-  section.innerHTML='<div class="pgi-call-time-head"><div><p>TEMPS D’APPELS CUMULÉ</p><h2>Activité téléphonique</h2></div><span>'+copy+'</span></div><div class="pgi-call-time-grid">'+Object.keys(labels()).map(function(key){return '<article class="pgi-call-time-card"><span>'+labels()[key]+'</span><strong id="'+prefix+'-call-time-'+key+'">—</strong><small id="'+prefix+'-call-count-'+key+'">— appel</small></article>';}).join("")+'</div>';
+  section.innerHTML='<div class="pgi-call-time-head"><div><p>TEMPS D’APPELS CUMULÉ</p><h2>Activité téléphonique</h2></div><span>'+copy+'</span></div><div class="pgi-call-time-grid">'+Object.keys(labels()).map(function(key){return '<article class="pgi-call-time-card"><span>'+labels()[key]+'</span><strong id="'+prefix+'-call-time-'+key+'">Non disponible</strong><small id="'+prefix+'-call-count-'+key+'">: appel</small></article>';}).join("")+'</div>';
   anchor.insertAdjacentElement("afterend",section);
   return section;
 }

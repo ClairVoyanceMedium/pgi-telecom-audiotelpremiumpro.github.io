@@ -1,10 +1,10 @@
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
-const dateOnly=(v,locale)=>{if(!v)return"—";const d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat(locale||"fr-FR",{dateStyle:"medium"}).format(d):"—";};
-const dt=(v,locale)=>{if(!v)return"—";const d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat(locale||"fr-FR",{dateStyle:"short",timeStyle:"short"}).format(d):"—";};
-const money=(v,c,locale)=>{if(v==null||!Number.isFinite(Number(v)))return"—";try{return new Intl.NumberFormat(locale||"fr-FR",{style:"currency",currency:c||"EUR",maximumFractionDigits:2}).format(Number(v));}catch{return Number(v).toFixed(2)+" "+(c||"");}};
+const dateOnly=(v,locale)=>{if(!v)return"Non disponible";const d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat(locale||"fr-FR",{dateStyle:"medium"}).format(d):"Non disponible";};
+const dt=(v,locale)=>{if(!v)return"Non disponible";const d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat(locale||"fr-FR",{dateStyle:"short",timeStyle:"short"}).format(d):"Non disponible";};
+const money=(v,c,locale)=>{if(v==null||!Number.isFinite(Number(v)))return"Non disponible";try{return new Intl.NumberFormat(locale||"fr-FR",{style:"currency",currency:c||"EUR",maximumFractionDigits:2}).format(Number(v));}catch{return Number(v).toFixed(2)+" "+(c||"");}};
 const labels={submitted:"Demande reçue",awaiting_documents:"Justificatifs requis",eligibility_check:"Éligibilité en cours",operator_pending:"En attente opérateur",scheduled:"Portabilité planifiée",ported:"Numéro porté",rejected:"Demande refusée",cancelled:"Annulé"};
-const label=v=>labels[String(v||"").toLowerCase()]||String(v||"—");
+const label=v=>labels[String(v||"").toLowerCase()]||String(v||"Non disponible");
 const chip=v=>{const s=String(v||"").toLowerCase(),tone=s==="ported"?"ok":["submitted","awaiting_documents","eligibility_check","operator_pending","scheduled"].includes(s)?"warn":["rejected"].includes(s)?"bad":"neutral";return '<span class="cp-chip '+tone+'">'+esc(label(v))+"</span>";};
 
 export function createController({getData,getDemo,reload,toast,countryCodes,locale}){

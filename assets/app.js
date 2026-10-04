@@ -416,7 +416,7 @@ var trend=$("ca-trend");
 if(trend){
 var pct=revenueTrendPercent(rows);
 if(pct==null||!Number.isFinite(pct)){
-trend.textContent="—";
+trend.textContent="Non disponible";
 trend.className="trend";
 }else{
 trend.textContent=(pct>=0?"+":"")+nfmt(pct,1)+"%";
@@ -454,14 +454,14 @@ return (current-previous)/Math.abs(previous)*100;
 }
 function deltaText(current,previous,suffix){
 var d=percentDelta(current,previous);
-if(d==null||!Number.isFinite(d))return "—";
+if(d==null||!Number.isFinite(d))return "Non disponible";
 return (d>=0?"+":"")+nfmt(d,1)+"%"+(suffix||"");
 }
 function qualityStats(rows){
 var valid=rows.filter(function(c){
 return c.status==="connected"&&Number.isFinite(c.mos)&&Number.isFinite(c.packetLoss)&&Number.isFinite(c.jitter)&&Number.isFinite(c.latency);
 });
-if(!valid.length)return {count:0,mos:0,loss:0,jitter:0,latency:0,score:0,grade:"—"};
+if(!valid.length)return {count:0,mos:0,loss:0,jitter:0,latency:0,score:0,grade:"Non disponible"};
 var avg=function(key){return valid.reduce(function(s,x){return s+Number(x[key]||0);},0)/valid.length;};
 var mos=avg("mos"),loss=avg("packetLoss"),jitter=avg("jitter"),latency=avg("latency");
 var score=clamp(
@@ -502,7 +502,7 @@ setText("cmp-ca",deltaText(cur.ca,prev.ca));
 setText("cmp-calls",deltaText(cur.calls,prev.calls));
 setText("cmp-minutes",deltaText(cur.mins,prev.mins));
 var asrDiff=(prev.calls?cur.asr-prev.asr:null);
-setText("cmp-asr",asrDiff==null?"—":(asrDiff>=0?"+":"")+nfmt(asrDiff,1)+" pt");
+setText("cmp-asr",asrDiff==null?"Non disponible":(asrDiff>=0?"+":"")+nfmt(asrDiff,1)+" pt");
 }
 function renderHeatmap(rows){
 var labels=["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"],matrix=[],max=0,peak={count:0,day:0,hour:0};
@@ -534,7 +534,7 @@ html+='<i class="heat-cell" style="--heat:'+level.toFixed(3)+'" title="'+labels[
 html+="</div>";
 }
 var el=$("traffic-heatmap");if(el)el.innerHTML=html;
-setText("peak-slot",peak.count?labels[peak.day]+" "+pad(peak.hour)+"h • "+peak.count:"Pic —");
+setText("peak-slot",peak.count?labels[peak.day]+" "+pad(peak.hour)+"h • "+peak.count:"Pic :");
 }
 function renderFunnel(rows){
 var analytics=cockpitAnalytics(rows),m=currentAggregate(rows);
@@ -553,10 +553,10 @@ return '<div class="funnel-stage"><div class="funnel-meta"><span>'+esc(stage[0])
 function renderQuality(rows){
 var q=currentQuality(rows);
 setText("quality-grade",q.grade);
-setText("quality-mos",q.count?nfmt(q.mos,2):"—");
-setText("quality-loss",q.count?nfmt(q.loss,3)+"%":"—");
-setText("quality-jitter",q.count?nfmt(q.jitter,1)+" ms":"—");
-setText("quality-latency",q.count?nfmt(q.latency,1)+" ms":"—");
+setText("quality-mos",q.count?nfmt(q.mos,2):"Non disponible");
+setText("quality-loss",q.count?nfmt(q.loss,3)+"%":"Non disponible");
+setText("quality-jitter",q.count?nfmt(q.jitter,1)+" ms":"Non disponible");
+setText("quality-latency",q.count?nfmt(q.latency,1)+" ms":"Non disponible");
 var bars={
 "quality-mos-bar":q.count?clamp(q.mos/5*100,0,100):0,
 "quality-loss-bar":q.count?clamp(100-q.loss*20,0,100):0,
@@ -580,7 +580,7 @@ var max=data.length?Math.max.apply(null,data.map(function(x){return Number(x.exp
 if(el)el.innerHTML=data.map(function(x,i){
 var value=Number(x.expected_payout||x.calls_total||0),width=max?value/max*100:0;
 var asr=Number(x.calls_total)?Number(x.calls_connected||0)/Number(x.calls_total)*100:0;
-return '<div class="ranking-item"><span class="rank-no">'+(i+1)+'</span><div class="rank-main"><div><strong>'+esc(x.dimension_label||"—")+'</strong><small>'+nfmt(Number(x.billable_seconds||0)/60)+' min • ASR '+nfmt(asr,1)+'%</small></div><i><b style="width:'+width.toFixed(1)+'%"></b></i></div><strong class="rank-value">'+(x.expected_payout==null?nfmt(x.calls_total)+" appels":money(x.expected_payout))+'</strong></div>';
+return '<div class="ranking-item"><span class="rank-no">'+(i+1)+'</span><div class="rank-main"><div><strong>'+esc(x.dimension_label||"Non disponible")+'</strong><small>'+nfmt(Number(x.billable_seconds||0)/60)+' min • ASR '+nfmt(asr,1)+'%</small></div><i><b style="width:'+width.toFixed(1)+'%"></b></i></div><strong class="rank-value">'+(x.expected_payout==null?nfmt(x.calls_total)+" appels":money(x.expected_payout))+'</strong></div>';
 }).join("")||'<p class="muted">Aucune donnée.</p>';
 return;
 }
@@ -611,7 +611,7 @@ var m=currentAggregate(rows);
 if(m.mixedCurrency){
 var mixedEl=$("finance-waterfall");
 if(mixedEl)mixedEl.innerHTML='<p class="muted">Plusieurs devises sont présentes. Sélectionnez un marché/devise pour obtenir des totaux financiers comparables.</p>';
-["ratio-payout","ratio-confirmed","ratio-paid","ratio-margin"].forEach(function(id){setText(id,"—");});
+["ratio-payout","ratio-confirmed","ratio-paid","ratio-margin"].forEach(function(id){setText(id,"Non disponible");});
 return;
 }
 var max=Math.max(1,m.ca,m.expected,m.confirmed,m.paid,Math.max(0,m.margin));
@@ -626,10 +626,10 @@ var el=$("finance-waterfall");
 if(el)el.innerHTML=stages.map(function(s){
 return '<div class="waterfall-row"><span>'+esc(s[0])+'</span><div><i><b class="'+s[2]+'" style="width:'+(s[1]/max*100).toFixed(1)+'%"></b></i><strong>'+money(s[1])+'</strong></div></div>';
 }).join("");
-setText("ratio-payout",m.ca? nfmt(m.expected/m.ca*100,1)+"%":"—");
-setText("ratio-confirmed",m.expected? nfmt(m.confirmed/m.expected*100,1)+"%":"—");
-setText("ratio-paid",m.confirmed? nfmt(m.paid/m.confirmed*100,1)+"%":"—");
-setText("ratio-margin",m.confirmed? nfmt(m.margin/m.confirmed*100,1)+"%":"—");
+setText("ratio-payout",m.ca? nfmt(m.expected/m.ca*100,1)+"%":"Non disponible");
+setText("ratio-confirmed",m.expected? nfmt(m.confirmed/m.expected*100,1)+"%":"Non disponible");
+setText("ratio-paid",m.confirmed? nfmt(m.paid/m.confirmed*100,1)+"%":"Non disponible");
+setText("ratio-margin",m.confirmed? nfmt(m.margin/m.confirmed*100,1)+"%":"Non disponible");
 }
 function renderExpertSummary(rows){
 var analytics=cockpitAnalytics(rows);
@@ -637,7 +637,7 @@ if(RUNTIME.mode==="production"&&Array.isArray(analytics.experts)){
 var data=analytics.experts.filter(function(x){return Number(x.calls_total||0)>0;}).map(function(x){
 var calls=Number(x.calls_total||0),connected=Number(x.calls_connected||0);
 return {
-name:x.dimension_label||"—",
+name:x.dimension_label||"Non disponible",
 expected:Number(x.expected_payout||0),
 minutes:Number(x.billable_seconds||0)/60,
 acd:connected?Number(x.conversation_seconds||0)/connected:0,
@@ -645,7 +645,7 @@ asr:calls?connected/calls*100:0
 };
 });
 if(!data.length){
-["expert-best","expert-best-acd","expert-best-asr"].forEach(function(id){setText(id,"—");});
+["expert-best","expert-best-acd","expert-best-asr"].forEach(function(id){setText(id,"Non disponible");});
 setText("expert-team-minutes","0");return;
 }
 var byContribution=data.slice().sort(function(a,b){return b.expected-a.expected;})[0];
@@ -659,7 +659,7 @@ return;
 }
 var data=expertMetrics(rows).filter(function(x){return x.m.calls>0;});
 if(!data.length){
-["expert-best","expert-best-acd","expert-best-asr"].forEach(function(id){setText(id,"—");});
+["expert-best","expert-best-acd","expert-best-asr"].forEach(function(id){setText(id,"Non disponible");});
 setText("expert-team-minutes","0");return;
 }
 var byContribution=data.slice().sort(function(a,b){return b.m.expected-a.m.expected;})[0];
@@ -705,7 +705,7 @@ setText("realtime-subscribers",nfmt(realtime.subscribers||0));
 setText("realtime-published",nfmt(realtime.published||0));
 setText("realtime-received",nfmt(realtime.received||0));
 setText("realtime-errors",nfmt(realtime.errors||0));
-setText("runtime-process-role",String(workerRuntime.process_role||"—").toUpperCase());
+setText("runtime-process-role",String(workerRuntime.process_role||"Non disponible").toUpperCase());
 var relayState=$("realtime-relay-state");
 if(relayState){
 var relayErrors=Number(realtime.errors||0),attached=Boolean(realtime.attached),listening=Boolean(realtime.listening);
@@ -798,7 +798,7 @@ return {granularity:granularity,series:series,hours:hours,weekdays:weekdays,heat
 }
 function analyticsBucketLabel(value,granularity){
 var d=new Date(value);
-if(!Number.isFinite(d.getTime()))return "—";
+if(!Number.isFinite(d.getTime()))return "Non disponible";
 if(granularity==="hour")return new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit"}).format(d);
 return new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"2-digit"}).format(d);
 }
@@ -817,14 +817,14 @@ setText("cockpit-analytics-mode",RUNTIME.mode==="production"?"AGRÉGATS SERVEUR"
 var hours=data.hours||[],days=data.weekdays||[];
 var peakHour=hours.slice().sort(function(a,b){return Number(b.calls_total)-Number(a.calls_total);})[0];
 var peakDay=days.slice().sort(function(a,b){return Number(b.calls_total)-Number(a.calls_total);})[0];
-setText("cockpit-peak-hour",peakHour?pad(Number(peakHour.hour))+"h":"—");
+setText("cockpit-peak-hour",peakHour?pad(Number(peakHour.hour))+"h":"Non disponible");
 setText("cockpit-peak-hour-detail",peakHour?nfmt(peakHour.calls_total)+" appel(s)":"0 appel");
-setText("cockpit-peak-day",peakDay?(weekNames[Number(peakDay.weekday)]||"—"):"—");
+setText("cockpit-peak-day",peakDay?(weekNames[Number(peakDay.weekday)]||"Non disponible"):"Non disponible");
 setText("cockpit-peak-day-detail",peakDay?nfmt(peakDay.calls_total)+" appel(s)":"0 appel");
-setText("cockpit-value-call",m.mixedCurrency||!m.calls?"—":money(m.ca/m.calls));
-setText("cockpit-value-minute",m.mixedCurrency||!m.mins?"—":money(m.ca/m.mins));
-setText("cockpit-margin-call",m.mixedCurrency||!m.calls?"—":money(m.margin/m.calls));
-setText("cockpit-average-duration",m.connected?fmtDuration(m.acd):"—");
+setText("cockpit-value-call",m.mixedCurrency||!m.calls?"Non disponible":money(m.ca/m.calls));
+setText("cockpit-value-minute",m.mixedCurrency||!m.mins?"Non disponible":money(m.ca/m.mins));
+setText("cockpit-margin-call",m.mixedCurrency||!m.calls?"Non disponible":money(m.margin/m.calls));
+setText("cockpit-average-duration",m.connected?fmtDuration(m.acd):"Non disponible");
 setText("cockpit-volume-total",nfmt(m.calls)+" appels");
 setText("cockpit-asr-average","ASR "+nfmt(m.asr,1)+"%");
 var fullHours=Array.from({length:24},function(_,i){
@@ -1022,7 +1022,7 @@ active:"ACTIF",verified:"VÉRIFIÉ",paid:"PAYÉ",reconciled:"RAPPROCHÉ",payable
 pending:"EN ATTENTE",pending_kyc:"KYC EN ATTENTE",planned:"PLANIFIÉ",onboarding:"ONBOARDING",
 open:"OUVERT",testing:"TEST",not_started:"NON DÉMARRÉ",rejected:"REJETÉ",expired:"EXPIRÉ",
 suspended:"SUSPENDU",disputed:"LITIGE",closed:"FERMÉ"
-}[v]||String(value||"—").toUpperCase();
+}[v]||String(value||"Non disponible").toUpperCase();
 return '<span class="platform-status '+(ok?"ok":warn?"warn":bad?"bad":"neutral")+'">'+esc(label)+"</span>";
 }
 function renderWholesale(){
@@ -1135,17 +1135,17 @@ setText("wh-check-payments",real
 :"Non activé");
 var tenantBody=$("wh-tenants-table");
 if(tenantBody)tenantBody.innerHTML=tenants.length?tenants.map(function(x){
-return "<tr><td><strong>"+esc(x.display_name||x.slug||"—")+"</strong></td><td>"+esc(x.tenant_type||"—")+"</td><td>"+esc(x.country_code||"—")+"</td><td>"+nfmt(x.markets||0)+"</td><td>"+esc(x.preferred_locale||"—")+"</td><td>"+esc(x.default_currency||"—")+"</td><td>"+platformChip(x.status)+"</td><td>"+platformChip(x.kyc_status)+"</td><td>"+nfmt(x.number_assignments||0)+"</td><td>"+nfmt(x.experts||0)+"</td></tr>";
+return "<tr><td><strong>"+esc(x.display_name||x.slug||"Non disponible")+"</strong></td><td>"+esc(x.tenant_type||"Non disponible")+"</td><td>"+esc(x.country_code||"Non disponible")+"</td><td>"+nfmt(x.markets||0)+"</td><td>"+esc(x.preferred_locale||"Non disponible")+"</td><td>"+esc(x.default_currency||"Non disponible")+"</td><td>"+platformChip(x.status)+"</td><td>"+platformChip(x.kyc_status)+"</td><td>"+nfmt(x.number_assignments||0)+"</td><td>"+nfmt(x.experts||0)+"</td></tr>";
 }).join(""):'<tr><td colspan="10">Aucun éditeur réel configuré.</td></tr>';
 var numberBody=$("wh-numbers-table");
 if(numberBody)numberBody.innerHTML=numbers.length?numbers.map(function(x){
-return "<tr><td><strong>"+esc(x.tenant||"—")+"</strong></td><td>"+esc(x.market||"—")+"</td><td>"+esc(x.display_number||x.e164||"—")+"</td><td>"+esc(x.number_type||"—")+"</td><td>"+esc(x.currency||"—")+"</td><td>"+esc(x.tariff_code||"—")+"</td><td>"+esc(x.assignment_type||"—")+"</td><td>"+platformChip(x.status)+"</td><td>"+platformChip(x.kyc_status)+"</td><td>"+esc(x.regulatory_assignor||"Non défini")+"</td></tr>";
+return "<tr><td><strong>"+esc(x.tenant||"Non disponible")+"</strong></td><td>"+esc(x.market||"Non disponible")+"</td><td>"+esc(x.display_number||x.e164||"Non disponible")+"</td><td>"+esc(x.number_type||"Non disponible")+"</td><td>"+esc(x.currency||"Non disponible")+"</td><td>"+esc(x.tariff_code||"Non disponible")+"</td><td>"+esc(x.assignment_type||"Non disponible")+"</td><td>"+platformChip(x.status)+"</td><td>"+platformChip(x.kyc_status)+"</td><td>"+esc(x.regulatory_assignor||"Non défini")+"</td></tr>";
 }).join(""):'<tr><td colspan="10">Aucune affectation réelle.</td></tr>';
 var settlementBody=$("wh-settlements-table");
 if(settlementBody)settlementBody.innerHTML=settlements.length?settlements.map(function(x){
-var period=(x.period_start||"—")+" → "+(x.period_end||"—");
+var period=(x.period_start||"Non disponible")+" → "+(x.period_end||"Non disponible");
 var currency=x.currency||"EUR";
-return "<tr><td><strong>"+esc(x.tenant||"—")+"</strong></td><td>"+esc(x.market||"—")+"</td><td>"+esc(currency)+"</td><td>"+esc(period)+"</td><td>"+moneyIn(x.upstream_payout_ht||0,currency)+"</td><td>"+moneyIn(x.platform_fee_ht||0,currency)+"</td><td><strong>"+moneyIn(x.net_payout_ht||0,currency)+"</strong></td><td>"+platformChip(x.status)+"</td></tr>";
+return "<tr><td><strong>"+esc(x.tenant||"Non disponible")+"</strong></td><td>"+esc(x.market||"Non disponible")+"</td><td>"+esc(currency)+"</td><td>"+esc(period)+"</td><td>"+moneyIn(x.upstream_payout_ht||0,currency)+"</td><td>"+moneyIn(x.platform_fee_ht||0,currency)+"</td><td><strong>"+moneyIn(x.net_payout_ht||0,currency)+"</strong></td><td>"+platformChip(x.status)+"</td></tr>";
 }).join(""):'<tr><td colspan="8">Aucun reversement client réel.</td></tr>';
 import("./subscription-billing-ui.js").then(function(m){m.render(summary,tenantCount,data&&data.billing_provider||{});}).catch(function(){});
 }
@@ -1246,7 +1246,7 @@ setText("data-mode",RUNTIME.mode==="production"?"Production":"Démo");
 if(RUNTIME.mode==="production"){
 var lag=state.system&&Number.isFinite(Number(state.system.cdr_lag_seconds))?Number(state.system.cdr_lag_seconds):null;
 setText("data-freshness",state.diagnostics.apiStatus==="ok"?(lag==null?"Synchronisée API":"CDR il y a "+fmtDuration(lag)):"En attente API");
-setText("cdr-errors","—");
+setText("cdr-errors","Non disponible");
 }else{
 setText("data-freshness","Générée localement");
 setText("cdr-errors","0");

@@ -43,9 +43,9 @@ Support: support@audiotel-premium-pro.com
 
 ## Authoritative external references
 
-- [Arcep — numéros spéciaux et SVA](https://www.arcep.fr/mes-demarches-et-services/consommateurs/fiches-pratiques/les-numeros-08-et-les-numeros-courts.html)
-- [Arcep — numérotation](https://www.arcep.fr/la-regulation/grands-dossiers-thematiques-transverses/la-numerotation.html)
-- [Ministère de l’Économie — tarifs des numéros en 08](https://www.economie.gouv.fr/particuliers/eviter-les-arnaques/numeros-commencant-par-08-quels-sont-les-tarifs)
+- [Arcep : numéros spéciaux et SVA](https://www.arcep.fr/mes-demarches-et-services/consommateurs/fiches-pratiques/les-numeros-08-et-les-numeros-courts.html)
+- [Arcep : numérotation](https://www.arcep.fr/la-regulation/grands-dossiers-thematiques-transverses/la-numerotation.html)
+- [Ministère de l’Économie : tarifs des numéros en 08](https://www.economie.gouv.fr/particuliers/eviter-les-arnaques/numeros-commencant-par-08-quels-sont-les-tarifs)
 
 ## Crawling and citation guidance
 

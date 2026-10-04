@@ -9,7 +9,7 @@
 
   function buildCalls(options){
     options=options||{};
-    var config=options.config||{},experts=options.experts||[],carriers=options.carriers||[],number=options.number||"—",core=options.core||null;
+    var config=options.config||{},experts=options.experts||[],carriers=options.carriers||[],number=options.number||"Non disponible",core=options.core||null;
     var rows=[],now=new Date(),id=1;
     for(var day=0;day<92;day++){
       var base=new Date(now);base.setDate(now.getDate()-day);

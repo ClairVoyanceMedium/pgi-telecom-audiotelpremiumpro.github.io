@@ -20,7 +20,7 @@
     var payoutEligibleSeconds=Number(c.payout_eligible_seconds||0);
     return {
       id:c.id,ts:ts,ivrStarted:ivr,queued:queued,ringing:c.ringing_at?new Date(c.ringing_at):null,bridged:bridged,ended:ended,
-      caller:c.caller_masked||"—",carrier:c.origin_carrier||"Inconnu",hostCarrier:c.host_carrier||"Inconnu",number:c.sva_number||"—",
+      caller:c.caller_masked||"Non disponible",carrier:c.origin_carrier||"Inconnu",hostCarrier:c.host_carrier||"Inconnu",number:c.sva_number||"Non disponible",
       market:c.market||"FR",currency:c.currency||"EUR",
       expert:c.expert_name||"Non attribué",expertId:c.expert_id||null,
       wait:Number(c.wait_seconds||0),conversation:Number(c.conversation_seconds||0),total:Number(c.total_seconds||0),
@@ -34,7 +34,7 @@
       serviceAmount:Number(c.retail_service_amount_ttc||0),serviceAmountTtc:Number(c.retail_service_amount_ttc||0),
       serviceRate:Number(c.service_rate_ttc_per_min||0),carrierRate:Number(c.carrier_rate_ht_per_min||0),
       variance:Number(c.reconciliation_variance_ht||0),sipFinalCode:Number(c.sip_final_code||0),
-      pddMs:c.post_dial_delay_ms==null?null:Number(c.post_dial_delay_ms),hangupCause:c.hangup_cause||"—",hangupParty:c.hangup_party||"unknown",codec:c.codec||"—",
+      pddMs:c.post_dial_delay_ms==null?null:Number(c.post_dial_delay_ms),hangupCause:c.hangup_cause||"Non disponible",hangupParty:c.hangup_party||"unknown",codec:c.codec||"Non disponible",
       packetLoss:Number(q.packet_loss_percent||0),jitter:Number(q.jitter_ms||0),latency:Number(q.latency_ms||0),rtt:Number(q.rtt_ms||0),mos:Number(q.mos||0),
       packetsIn:Number(q.packets_in||0),packetsOut:Number(q.packets_out||0),packetsLost:Number(q.packets_lost||0),dtmfErrors:Number(q.dtmf_errors||0)
     };

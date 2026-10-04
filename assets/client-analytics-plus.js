@@ -70,8 +70,8 @@ function render(data){
   renderPie("client-number-pie","client-number-legend",numbers,6);renderPie("client-duration-pie","client-duration-legend",durations,5);
   renderBars("client-carrier-bars",carriers,10);
   const hp=hours.slice().sort((a,b)=>b.calls-a.calls)[0],wp=weekdays.slice().sort((a,b)=>b.calls-a.calls)[0];
-  if($("client-hour-peak"))$("client-hour-peak").textContent=hp?"Pic "+hp.label:"—";
-  if($("client-weekday-peak"))$("client-weekday-peak").textContent=wp?"Pic "+wp.label:"—";
+  if($("client-hour-peak"))$("client-hour-peak").textContent=hp?"Pic "+hp.label:"Non disponible";
+  if($("client-weekday-peak"))$("client-weekday-peak").textContent=wp?"Pic "+wp.label:"Non disponible";
   if($("client-carrier-count"))$("client-carrier-count").textContent=carriers.length+" opérateur"+(carriers.length>1?"s":"");
 }
 function csvCell(v){const s=String(v==null?"":v);return /[;"\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
@@ -101,8 +101,8 @@ function safeSnapshot(data){
 function closeExport(){const d=$("client-export-dialog");if(d?.open)d.close()}
 function ensurePanels(){
   const mount=$("client-analytics-plus-mount");if(!mount||mount.dataset.ready)return;mount.dataset.ready="1";
-  mount.innerHTML='<article class="cp-panel cp-chart-card"><div class="cp-panel-head"><div><p class="cp-kicker">HEURES</p><h2>Activité par heure</h2></div><span id="client-hour-peak">—</span></div><div id="client-hour-bars" class="cp-analytics-bars" aria-label="Répartition des appels par heure"></div></article>'+
-  '<article class="cp-panel cp-chart-card"><div class="cp-panel-head"><div><p class="cp-kicker">JOURS</p><h2>Activité par jour</h2></div><span id="client-weekday-peak">—</span></div><div id="client-weekday-bars" class="cp-analytics-bars" aria-label="Répartition des appels par jour"></div></article>'+
+  mount.innerHTML='<article class="cp-panel cp-chart-card"><div class="cp-panel-head"><div><p class="cp-kicker">HEURES</p><h2>Activité par heure</h2></div><span id="client-hour-peak">Non disponible</span></div><div id="client-hour-bars" class="cp-analytics-bars" aria-label="Répartition des appels par heure"></div></article>'+
+  '<article class="cp-panel cp-chart-card"><div class="cp-panel-head"><div><p class="cp-kicker">JOURS</p><h2>Activité par jour</h2></div><span id="client-weekday-peak">Non disponible</span></div><div id="client-weekday-bars" class="cp-analytics-bars" aria-label="Répartition des appels par jour"></div></article>'+
   '<article class="cp-panel cp-chart-card"><div class="cp-panel-head"><div><p class="cp-kicker">NUMÉROS</p><h2>Répartition du trafic</h2></div><span>Sur la période</span></div><div class="cp-pie-wrap"><div id="client-number-pie" class="cp-pie" role="img" aria-label="Camembert des appels par numéro"></div><div id="client-number-legend" class="cp-legend"></div></div></article>'+
   '<article class="cp-panel cp-chart-card"><div class="cp-panel-head"><div><p class="cp-kicker">DURÉES</p><h2>Profil des appels</h2></div><span>Sur la période</span></div><div class="cp-pie-wrap"><div id="client-duration-pie" class="cp-pie" role="img" aria-label="Camembert des appels par durée"></div><div id="client-duration-legend" class="cp-legend"></div></div></article>'+
   '<article class="cp-panel cp-chart-card cp-chart-wide"><div class="cp-panel-head"><div><p class="cp-kicker">ORIGINE DU TRAFIC</p><h2>Opérateurs d’origine</h2></div><span id="client-carrier-count">0 opérateur</span></div><div id="client-carrier-bars" class="cp-analytics-bars cp-analytics-bars-wide" aria-label="Répartition des appels par opérateur d’origine"></div></article>';
