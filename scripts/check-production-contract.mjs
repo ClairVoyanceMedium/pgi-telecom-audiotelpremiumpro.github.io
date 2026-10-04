@@ -69,6 +69,7 @@ const regulatoryEvidencePackExportMigration=fs.readFileSync("database/migrations
 const arcep2026Migration=fs.readFileSync("database/migrations/040_arcep_2026_number_guardrails.sql","utf8");
 const arcep2026EvidencePackMigration=fs.readFileSync("database/migrations/041_arcep_2026_evidence_pack.sql","utf8");
 const subscriptionTaxInclusiveMigration=fs.readFileSync("database/migrations/042_subscription_price_tax_inclusive.sql","utf8");
+const subscriptionPrice490Migration=fs.readFileSync("database/migrations/064_subscription_price_490.sql","utf8");
 const regulatoryReviewMonitoringMigration=fs.readFileSync("database/migrations/043_regulatory_review_monitoring.sql","utf8");
 const operationalAssuranceMigration=fs.readFileSync("database/migrations/044_operational_assurance.sql","utf8");
 const svaEcosystemMigration=fs.readFileSync("database/migrations/045_sva_ecosystem_compliance.sql","utf8");
