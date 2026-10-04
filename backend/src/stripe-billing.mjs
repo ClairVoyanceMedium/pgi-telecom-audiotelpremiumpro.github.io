@@ -178,6 +178,59 @@ export async function createStripeCheckout(config,billing,idempotencyKey,analyti
   if(!session?.url||!/^https:\/\/checkout\.stripe\.com\//i.test(session.url))throw failure(502,"STRIPE_CHECKOUT_URL_INVALID");
   return {url:session.url,session_id:session.id,price_id:price.id,provider:"stripe"};
 }
+export async function createStripePortabilityPriorityCheckout(config,order={}){
+  if(config?.stripeLiveMode){
+    const readiness=await stripeProviderReadiness(config);
+    if(!readiness.account_ready)throw failure(503,readiness.readiness_reason==="account_activation_required"?"PAYMENT_ACCOUNT_NOT_READY":"PAYMENT_PROVIDER_UNAVAILABLE");
+  }
+  const amount=Number(order.amount_minor),currency=String(order.currency||"EUR").toLowerCase();
+  const orderId=String(order.public_id||""),tenantId=String(order.tenant_public_id||""),requestId=String(order.portability_request_id||"");
+  if(!Number.isInteger(amount)||amount<=0||!/^[a-z]{3}$/.test(currency)||!/^[0-9a-f-]{36}$/i.test(orderId)||!/^[0-9a-f-]{36}$/i.test(tenantId)||!/^[0-9]+$/.test(requestId)){
+    throw failure(400,"INVALID_PORTABILITY_PRIORITY_ORDER");
+  }
+  const metadata={purchase_type:"portability_priority",priority_order_public_id:orderId,tenant_public_id:tenantId,portability_request_id:requestId};
+  const params={
+    mode:"payment",
+    success_url:baseUrl(config)+"/client.html?portability=priority-success",
+    cancel_url:baseUrl(config)+"/client.html?portability=priority-cancelled",
+    client_reference_id:orderId,
+    line_items:[{
+      price_data:{
+        currency,unit_amount:amount,tax_behavior:"inclusive",
+        product_data:{name:"Option Priorité portabilité",description:"Traitement prioritaire interne PGI. Les délais et décisions de l'opérateur restent indépendants."}
+      },
+      quantity:1
+    }],
+    metadata,
+    payment_intent_data:{metadata},
+    billing_address_collection:"required",
+    locale:"auto",
+    custom_text:{submit:{message:"Paiement unique. L'option Priorité accélère la prise en charge interne PGI sans garantir un délai imposé par l'opérateur."}}
+  };
+  const session=await stripeApi(config,"/v1/checkout/sessions",{method:"POST",params,idempotencyKey:"pgi-priority-"+orderId});
+  if(!session?.url||!/^https:\/\/checkout\.stripe\.com\//i.test(session.url))throw failure(502,"STRIPE_CHECKOUT_URL_INVALID");
+  return {url:session.url,session_id:session.id,expires_at:periodIso(session.expires_at),provider:"stripe"};
+}
+
+export function normalizeStripePortabilityPriorityEvent(event){
+  const type=String(event?.type||""),obj=event?.data?.object;
+  if(!obj||!["checkout.session.completed","checkout.session.async_payment_succeeded","checkout.session.async_payment_failed","checkout.session.expired"].includes(type))return null;
+  const meta=obj.metadata&&typeof obj.metadata==="object"?obj.metadata:{};
+  if(meta.purchase_type!=="portability_priority"||!/^[0-9a-f-]{36}$/i.test(String(meta.priority_order_public_id||"")))return null;
+  let status=null;
+  if(type==="checkout.session.async_payment_succeeded"||(type==="checkout.session.completed"&&String(obj.payment_status||"")==="paid"))status="paid";
+  else if(type==="checkout.session.async_payment_failed")status="failed";
+  else if(type==="checkout.session.expired")status="expired";
+  else return null;
+  const amount=Number(obj.amount_total),currency=String(obj.currency||"").toUpperCase();
+  if(!Number.isInteger(amount)||amount<=0||!/^[A-Z]{3}$/.test(currency))return null;
+  return {
+    provider:"stripe",provider_event_id:String(event.id||""),event_type:type,event_time:eventIso(event),
+    order_public_id:String(meta.priority_order_public_id),status,amount_minor:amount,currency,
+    checkout_session_reference:idValue(obj),payment_intent_reference:idValue(obj.payment_intent)
+  };
+}
+
 export async function createStripePortalSession(config,billing){
   const customer=String(billing?.subscription?.provider_customer_reference||"");
   if(!/^cus_[A-Za-z0-9]+$/.test(customer))throw failure(409,"BILLING_CUSTOMER_NOT_AVAILABLE");

@@ -1430,6 +1430,27 @@ export class MemoryStore{
     };
   }
 
+  async referralProgramStatus(){
+    const cfg=this._referralProgram||{enabled:false,reward_minor:0,currency:"EUR",qualification:"paid_active_subscription",stats:{total:0,claimed:0,qualified:0,rewarded:0,rejected:0}};
+    return structuredClone(cfg);
+  }
+  async updateReferralProgram(input={}){
+    const reward=Number(input.reward_minor||0),currency=String(input.currency||"EUR").toUpperCase();
+    if(!Number.isInteger(reward)||reward<0)throw problem(400,"INVALID_REFERRAL_REWARD");
+    if(input.enabled===true&&reward<=0)throw problem(400,"REFERRAL_REWARD_REQUIRED");
+    if(!/^[A-Z]{3}$/.test(currency))throw problem(400,"INVALID_REFERRAL_CURRENCY");
+    this._referralProgram={enabled:input.enabled===true,reward_minor:reward,currency,qualification:"paid_active_subscription",stats:{total:0,claimed:0,qualified:0,rewarded:0,rejected:0}};
+    return this.referralProgramStatus();
+  }
+  async customerReferralProgram(){
+    const x=await this.referralProgramStatus();
+    return x.enabled?{...x,code:"DEMO2026REF",share_url:"https://audiotel-premium-pro.com/client.html?register=1&ref=DEMO2026REF",stats:{...x.stats,earned_minor:0,paid_minor:0},recent:[]}:x;
+  }
+  async portabilityPriorityProgramStatus(){return {enabled:true,amount_minor:990,currency:"EUR",scope:"pgi_internal_queue"};}
+  async createCustomerPortabilityPriorityOrder(){throw problem(409,"PORTABILITY_PRIORITY_SIMULATOR_ONLY");}
+  async attachCustomerPortabilityPriorityCheckout(){throw problem(409,"PORTABILITY_PRIORITY_SIMULATOR_ONLY");}
+  async applyPortabilityPriorityPaymentEvent(){return {duplicate:false,status:"paid"};}
+
   #range(from,to){
     const f=from?Date.parse(from):-Infinity,t=to?Date.parse(to):Infinity;
     return this.calls.filter(x=>Date.parse(x.started_at)>=f&&Date.parse(x.started_at)<=t);

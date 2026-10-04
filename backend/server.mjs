@@ -14,7 +14,7 @@ import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData,scopeCustomerAnnualProgressData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
-import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
+import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,createStripePortabilityPriorityCheckout,verifyStripeWebhook,normalizeStripeBillingEvent,normalizeStripeRefundEvent,normalizeStripePortabilityPriorityEvent} from "./src/stripe-billing.mjs";
 import {STRIPE_CONNECT_APPLICATION_FEE_BPS,stripeConnectState,createStripeConnectedAccount,retrieveStripeConnectedAccount,normalizeStripeConnectedAccount,createStripeConnectOnboardingLink,createStripeCardCheckout,retrieveStripeCardCheckout,normalizeStripeConnectPaymentEvent,hashStripeEventPayload} from "./src/stripe-connect.mjs";
 import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStripe,buildGa4RefundFromStripe,sendGa4Measurement} from "./src/ga4-measurement.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
@@ -168,6 +168,11 @@ export function createBackend(options={}){
         if(refund){
           const analytics=await deliverGa4StripeEvent(store,config,"refund",refund.provider_event_id,refund.refund_id,buildGa4RefundFromStripe(refund));
           return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,type:String(event.type||""),analytics});
+        }
+        const priorityPayment=normalizeStripePortabilityPriorityEvent(event);
+        if(priorityPayment){
+          const priorityResult=await store.applyPortabilityPriorityPaymentEvent(priorityPayment);
+          return done(res,metrics,started,"billing.portability_priority_webhook",200,{received:true,type:String(event.type||""),duplicate:Boolean(priorityResult.duplicate),status:priorityResult.status||null});
         }
         const normalized=await normalizeStripeBillingEvent(event,config);
         if(!normalized)return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,ignored:true,type:String(event.type||"")});
@@ -790,6 +795,13 @@ export function createBackend(options={}){
         return done(res,metrics,started,"customer.consumption_receipt_create",201,{...result.value,replayed:result.replayed});
       }
 
+      if(method==="GET"&&pathname==="/api/v1/customer/referral-program"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"finance.read");
+        return done(res,metrics,started,"customer.referral_program",200,await store.customerReferralProgram(context.tenant_id));
+      }
+
       if(method==="GET"&&pathname==="/api/v1/customer/billing/status"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
@@ -963,6 +975,24 @@ export function createBackend(options={}){
         const result=await store.idempotent(req.headers["idempotency-key"],"customer.portability.create",payload,()=>store.createCustomerPortabilityRequest(context.tenant_id,body));
         return done(res,metrics,started,"customer.portability.create",201,{...result.value,replayed:result.replayed});
       }
+      match=routeMatch(pathname,"/api/v1/customer/portability/:id/priority-checkout");
+      if(method==="POST"&&match){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"finance.read");
+        const body=await readJson(req,config.bodyLimitBytes);
+        const idempotencyKey=String(req.headers["idempotency-key"]||"").trim();
+        if(!idempotencyKey||idempotencyKey.length>200){const e=new Error("Idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
+        const payload={tenant_id:context.tenant_id,request_id:match.id,terms_accepted:body.terms_accepted===true,immediate_performance_requested:body.immediate_performance_requested===true,legal_version:String(body.legal_version||"")};
+        const result=await store.idempotent(idempotencyKey,"customer.portability.priority_checkout",payload,async()=>{
+          const order=await store.createCustomerPortabilityPriorityOrder(context.tenant_id,match.id,context.id,body);
+          const checkout=await createStripePortabilityPriorityCheckout(config,order);
+          const saved=await store.attachCustomerPortabilityPriorityCheckout(context.tenant_id,order.public_id,checkout);
+          return {order:saved,checkout};
+        });
+        return done(res,metrics,started,"customer.portability.priority_checkout",201,{...result.value,replayed:result.replayed});
+      }
+
       match=routeMatch(pathname,"/api/v1/customer/portability/:id/cancel");
       if(method==="POST"&&match){
         requireCustomerCsrf(req,customerActor,config);
@@ -1880,6 +1910,16 @@ export function createBackend(options={}){
         const payload={id:match.id};
         const result=await store.idempotent(req.headers["idempotency-key"],"billing.alert.acknowledge",payload,()=>store.acknowledgeAdminAlert(match.id,actor));
         return done(res,metrics,started,"platform.billing_alert_ack",200,{...result.value,replayed:result.replayed});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/platform/referral-program"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.referral_program",200,await store.referralProgramStatus());
+      }
+      if(method==="PUT"&&pathname==="/api/v1/platform/referral-program"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        return done(res,metrics,started,"platform.referral_program_update",200,await store.updateReferralProgram(body,actor));
       }
 
       if(method==="GET"&&pathname==="/api/v1/platform/subscription-billing"){
