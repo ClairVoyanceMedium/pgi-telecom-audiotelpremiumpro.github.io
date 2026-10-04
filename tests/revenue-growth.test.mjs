@@ -44,11 +44,16 @@ test("referral program has a server-side global switch",()=>{
   const domain=read("backend/src/revenue-growth.mjs");
   const server=read("backend/server.mjs");
   const admin=read("assets/platform-referral-admin.js");
+  const growth=read("backend/src/revenue-growth.mjs");
+  const site=read("site/site.js");
   assert.match(migration,/referral_enabled boolean NOT NULL DEFAULT true/);
   assert.match(domain,/reason:"disabled"/);
   assert.match(domain,/status='qualified'/);
   assert.match(server,/\/api\/v1\/platform\/referral-program/);
   assert.match(admin,/data-referral-toggle/);
+  assert.match(growth,/\/demande-ouverture\/\?ref=/);
+  assert.doesNotMatch(growth,/client\.html\?register=1&ref=/);
+  assert.match(site,/referral_code:REFERRAL_CODE/);
 });
 
 test("priority portability affects PGI processing without operator SLA promise",()=>{
