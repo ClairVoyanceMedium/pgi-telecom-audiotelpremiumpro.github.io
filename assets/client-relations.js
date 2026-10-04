@@ -1,7 +1,7 @@
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
-const money=(v,c="EUR")=>v==null?"—":new Intl.NumberFormat("fr-FR",{style:"currency",currency:c,maximumFractionDigits:2}).format(Number(v)||0);
-const date=v=>v?new Intl.DateTimeFormat("fr-FR",{dateStyle:"short",timeStyle:"short"}).format(new Date(v)):"—";
-const lab=v=>String(v||"—").replace(/_/g," ");
+const money=(v,c="EUR")=>v==null?" - ":new Intl.NumberFormat("fr-FR",{style:"currency",currency:c,maximumFractionDigits:2}).format(Number(v)||0);
+const date=v=>v?new Intl.DateTimeFormat("fr-FR",{dateStyle:"short",timeStyle:"short"}).format(new Date(v)):" - ";
+const lab=v=>String(v||" - ").replace(/_/g," ");
 let portal={};
 function style(){
  if(document.getElementById("client-relations-style"))return;

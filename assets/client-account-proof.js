@@ -4,7 +4,7 @@ function n(v){const x=Number(v);return Number.isFinite(x)?x:0}
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
 function nf(v,d=0){return new Intl.NumberFormat("fr-FR",{maximumFractionDigits:d}).format(n(v))}
 function money(v,c="EUR"){try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:c,maximumFractionDigits:2}).format(n(v))}catch{return nf(v,2)+" "+c}}
-function dt(v){const d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat("fr-FR",{dateStyle:"short",timeStyle:"short"}).format(d):"—"}
+function dt(v){const d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat("fr-FR",{dateStyle:"short",timeStyle:"short"}).format(d):" - "}
 function cookie(name){const p=encodeURIComponent(name)+"=";for(const part of String(document.cookie||"").split(";")){const x=part.trim();if(x.startsWith(p))try{return decodeURIComponent(x.slice(p.length))}catch{return x.slice(p.length)}}return ""}
 function apiBase(){const c=window.PGI_CONFIG||{};return String(c.apiBaseUrl||"").replace(/\/$/,"")}
 function demo(){const c=window.PGI_CONFIG||{};return c.mode==="demo"||!c.apiBaseUrl}
@@ -25,7 +25,7 @@ function style(){
 }
 function ensure(){
  style();
- if(!$("client-number-memory")){const intro=document.querySelector(".cp-intro"),el=document.createElement("section");el.id="client-number-memory";el.className="cp-number-memory";el.hidden=true;el.innerHTML='<div><span>VOTRE NUMÉRO AUDIOTEL VALIDÉ</span><strong id="client-number-memory-value">—</strong><small id="client-number-memory-meta">Attribué et validé</small></div><button id="client-number-copy" class="cp-ghost cp-number-copy" type="button">Copier le numéro</button>';intro?.insertAdjacentElement("afterend",el);$("client-number-copy")?.addEventListener("click",copyNumber)}
+ if(!$("client-number-memory")){const intro=document.querySelector(".cp-intro"),el=document.createElement("section");el.id="client-number-memory";el.className="cp-number-memory";el.hidden=true;el.innerHTML='<div><span>VOTRE NUMÉRO AUDIOTEL VALIDÉ</span><strong id="client-number-memory-value"> - </strong><small id="client-number-memory-meta">Attribué et validé</small></div><button id="client-number-copy" class="cp-ghost cp-number-copy" type="button">Copier le numéro</button>';intro?.insertAdjacentElement("afterend",el);$("client-number-copy")?.addEventListener("click",copyNumber)}
  if(!$("client-consumption-proof")){const bar=document.querySelector(".cp-command-bar"),el=document.createElement("section");el.id="client-consumption-proof";el.className="cp-panel cp-proof-card";el.innerHTML='<div class="cp-panel-head"><div><p class="cp-kicker">RELEVÉ DE CONTRÔLE</p><h2>Vérifier les chiffres de mon tableau de bord</h2></div><span id="cp-proof-period">Période affichée</span></div><div id="cp-proof-grid" class="cp-proof-grid"></div><div class="cp-proof-actions"><button id="cp-proof-create" class="cp-ghost" type="button">Créer un relevé horodaté</button><span id="cp-proof-ref" class="cp-proof-ref">Aucun relevé créé</span></div><p class="cp-proof-note">Le relevé fige les agrégats visibles et leur période exacte avec une empreinte SHA‑256. Il ne contient aucun numéro d’appelant ni donnée de carte.</p>';bar?.insertAdjacentElement("afterend",el);$("cp-proof-create")?.addEventListener("click",createReceipt)}
 }
 function aggregate(data){

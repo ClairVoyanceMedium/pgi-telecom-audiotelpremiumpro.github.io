@@ -66,7 +66,7 @@ function dimensionStats(rows,total){
 function concentration(rows,total,count){return total?rows.slice(0,count).reduce((s,x)=>s+Number(x.calls_total||0),0)/total*100:0;}
 
 function matrix(title,rows,currency){
-  const body=rows.slice(0,8).map(x=>'<tr><td><strong>'+esc(x.dimension_label||"—")+'</strong></td><td>'+n(x.share,1)+'%</td><td>'+n(x.calls,0)+'</td><td>'+n(x.asr,1)+'%</td><td>'+fmtSec(x.acd)+'</td><td>'+(x.valueCall==null?"—":money(x.valueCall,currency))+'</td><td>'+(x.margin==null?"—":money(x.margin,currency))+'</td></tr>').join("");
+  const body=rows.slice(0,8).map(x=>'<tr><td><strong>'+esc(x.dimension_label||" - ")+'</strong></td><td>'+n(x.share,1)+'%</td><td>'+n(x.calls,0)+'</td><td>'+n(x.asr,1)+'%</td><td>'+fmtSec(x.acd)+'</td><td>'+(x.valueCall==null?" - ":money(x.valueCall,currency))+'</td><td>'+(x.margin==null?" - ":money(x.margin,currency))+'</td></tr>').join("");
   return '<article class="panel radar-matrix"><div class="panel-head"><div><p class="panel-kicker">BENCHMARK</p><h3>'+esc(title)+'</h3></div></div><div class="table-wrap"><table><thead><tr><th>Entité</th><th>Part</th><th>Appels</th><th>ASR</th><th>ACD</th><th>CA/appel</th><th>Marge</th></tr></thead><tbody>'+body+'</tbody></table></div></article>';
 }
 
@@ -76,7 +76,7 @@ function scatter(id,title,rows,platformAsr){
   const points=rows.slice(0,12).map((x,i)=>{
     const radius=5+11*Math.sqrt(x.calls/maxCalls),cx=sx(x.share),cy=sy(x.asr),cls=x.asr>=platformAsr?"above":"below";
     const label=i<5?'<text class="radar-point-label" x="'+(cx+radius+4)+'" y="'+(cy+3)+'">'+esc(String(x.dimension_label||"").slice(0,14))+'</text>':"";
-    return '<g class="radar-point '+cls+'"><circle cx="'+cx+'" cy="'+cy+'" r="'+radius.toFixed(1)+'"><title>'+esc(x.dimension_label||"—")+' • '+n(x.share,1)+'% volume • ASR '+n(x.asr,1)+'%</title></circle>'+label+'</g>';
+    return '<g class="radar-point '+cls+'"><circle cx="'+cx+'" cy="'+cy+'" r="'+radius.toFixed(1)+'"><title>'+esc(x.dimension_label||" - ")+' • '+n(x.share,1)+'% volume • ASR '+n(x.asr,1)+'%</title></circle>'+label+'</g>';
   }).join("");
   const grid=[0,25,50,75,100].map(v=>'<line class="chart-grid" x1="'+p.l+'" x2="'+(W-p.r)+'" y1="'+sy(v)+'" y2="'+sy(v)+'"/><text class="chart-axis" x="4" y="'+(sy(v)+3)+'">'+v+'%</text>').join("");
   return '<article class="panel radar-scatter"><div class="panel-head"><div><p class="panel-kicker">MATRICE VOLUME × ASR</p><h3>'+esc(title)+'</h3></div><span class="metric-badge">ASR plateforme '+n(platformAsr,1)+'%</span></div><div class="chart-wrap"><svg id="'+id+'" viewBox="0 0 760 240" role="img">'+grid+'<line class="radar-benchmark" x1="'+p.l+'" x2="'+(W-p.r)+'" y1="'+avgY+'" y2="'+avgY+'"/>'+points+'<text class="chart-axis" x="'+p.l+'" y="'+(H-8)+'">0% part trafic</text><text class="chart-axis" text-anchor="end" x="'+(W-p.r)+'" y="'+(H-8)+'">100%</text></svg></div></article>';

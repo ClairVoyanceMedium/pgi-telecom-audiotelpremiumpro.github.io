@@ -14,7 +14,7 @@ import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData,scopeCustomerAnnualProgressData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
-import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
+import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,createStripeCommercialCheckout,verifyStripeWebhook,normalizeStripeBillingEvent,normalizeStripeRefundEvent,normalizeStripeCommercialCheckoutEvent} from "./src/stripe-billing.mjs";
 import {STRIPE_CONNECT_APPLICATION_FEE_BPS,stripeConnectState,createStripeConnectedAccount,retrieveStripeConnectedAccount,normalizeStripeConnectedAccount,createStripeConnectOnboardingLink,createStripeCardCheckout,retrieveStripeCardCheckout,normalizeStripeConnectPaymentEvent,hashStripeEventPayload} from "./src/stripe-connect.mjs";
 import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStripe,buildGa4RefundFromStripe,sendGa4Measurement} from "./src/ga4-measurement.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
@@ -163,6 +163,11 @@ export function createBackend(options={}){
         if(String(event.type||"")==="account.updated"){
           invalidateStripeProviderReadiness();
           return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,account_readiness_invalidated:true});
+        }
+        const commercial=normalizeStripeCommercialCheckoutEvent(event);
+        if(commercial){
+          const applied=await store.applyPortabilityPriorityPaymentEvent(commercial);
+          return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,type:String(event.type||""),commercial_action:"portability_priority",duplicate:Boolean(applied.duplicate),status:applied.status});
         }
         const refund=config.ga4MeasurementEnabled&&config.ga4ApiSecret?await normalizeStripeRefundEvent(event,config):null;
         if(refund){
@@ -950,6 +955,12 @@ export function createBackend(options={}){
         }
       }
 
+      if(method==="GET"&&pathname==="/api/v1/customer/referral"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        return done(res,metrics,started,"customer.referral",200,await store.customerReferralOverview(context.tenant_id));
+      }
+
       if(method==="GET"&&pathname==="/api/v1/customer/portability"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
@@ -963,6 +974,19 @@ export function createBackend(options={}){
         const result=await store.idempotent(req.headers["idempotency-key"],"customer.portability.create",payload,()=>store.createCustomerPortabilityRequest(context.tenant_id,body));
         return done(res,metrics,started,"customer.portability.create",201,{...result.value,replayed:result.replayed});
       }
+      match=routeMatch(pathname,"/api/v1/customer/portability/:id/priority-checkout");
+      if(method==="POST"&&match){
+        requireCustomerCsrf(req,customerActor,config);
+        const idempotencyKey=String(req.headers["idempotency-key"]||"").trim();
+        if(!idempotencyKey||idempotencyKey.length>200){const e=new Error("Idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"billing.manage");
+        const offer=await store.preparePortabilityPriorityCheckout(context.tenant_id,match.id);
+        const checkout=await createStripeCommercialCheckout(config,{action:"portability_priority",portability_request_id:Number(offer.id),tenant_public_id:String(offer.tenant_public_id||context.tenant_public_id||""),customer_email:offer.billing_email||context.email||"",amount_minor:990,currency:"EUR"},idempotencyKey);
+        await store.attachPortabilityPriorityCheckout(context.tenant_id,match.id,checkout);
+        return done(res,metrics,started,"customer.portability.priority_checkout",201,{...checkout,service:{amount_minor:990,currency:"EUR",scope:"pgi_administrative_priority",operator_deadline_guaranteed:false}});
+      }
+
       match=routeMatch(pathname,"/api/v1/customer/portability/:id/cancel");
       if(method==="POST"&&match){
         requireCustomerCsrf(req,customerActor,config);
@@ -1893,6 +1917,27 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes);
         const result=await store.idempotent(req.headers["idempotency-key"],"subscription.price.publish",body,()=>store.createSubscriptionPrice(body,actor));
         return done(res,metrics,started,"platform.subscription_price",201,{...result.value,replayed:result.replayed});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/platform/commercial-features"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.commercial_features",200,await store.platformCommercialFeatures());
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/platform/commercial-features/customer-referral"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.customer_referral.update",body,()=>store.updateCustomerReferralFeature(body,actor));
+        return done(res,metrics,started,"platform.customer_referral.update",200,{...result.value,replayed:result.replayed});
+      }
+
+      match=routeMatch(pathname,"/api/v1/platform/referral-rewards/:id/paid");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin","finance"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={id:match.id,reference:String(body.reference||"")};
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.referral_reward.paid",payload,()=>store.markReferralRewardPaid(match.id,body,actor));
+        return done(res,metrics,started,"platform.referral_reward.paid",200,{...result.value,replayed:result.replayed});
       }
 
       if(method==="POST"&&pathname==="/api/v1/carrier-switches"){

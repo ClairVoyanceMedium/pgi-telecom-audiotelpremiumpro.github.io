@@ -187,6 +187,51 @@ export async function createStripePortalSession(config,billing){
   if(!session?.url||!/^https:\/\/billing\.stripe\.com\//i.test(session.url))throw failure(502,"STRIPE_PORTAL_URL_INVALID");
   return {url:session.url,provider:"stripe"};
 }
+
+export async function createStripeCommercialCheckout(config,input={},idempotencyKey){
+  if(config?.stripeLiveMode){
+    const readiness=await stripeProviderReadiness(config);
+    if(!readiness.account_ready)throw failure(503,readiness.readiness_reason==="account_activation_required"?"PAYMENT_ACCOUNT_NOT_READY":"PAYMENT_PROVIDER_UNAVAILABLE");
+  }
+  const action=String(input.action||"");
+  if(action!=="portability_priority")throw failure(400,"INVALID_COMMERCIAL_ACTION");
+  const amount=Math.trunc(Number(input.amount_minor));
+  const currency=String(input.currency||"EUR").trim().toLowerCase();
+  const requestId=Number(input.portability_request_id);
+  const tenantPublicId=String(input.tenant_public_id||"").trim();
+  if(amount!==990||currency!=="eur"||!Number.isInteger(requestId)||requestId<=0||!tenantPublicId)throw failure(400,"INVALID_COMMERCIAL_CHECKOUT");
+  const metadata={commercial_action:"portability_priority",portability_request_id:String(requestId),tenant_public_id:tenantPublicId,amount_minor:String(amount),currency:"EUR"};
+  const params={
+    mode:"payment",
+    integration_identifier:"pgi_portability_priority_mhvnclzx",
+    success_url:baseUrl(config)+"/client.html?portability=priority-paid&session_id={CHECKOUT_SESSION_ID}",
+    cancel_url:baseUrl(config)+"/client.html?portability=priority-cancelled",
+    client_reference_id:tenantPublicId,
+    line_items:[{price_data:{currency,unit_amount:amount,tax_behavior:"inclusive",product_data:{name:"Portabilité prioritaire Audiotel Premium Pro",description:"Traitement administratif prioritaire par PGI Telecom. Le délai technique de l’opérateur tiers n’est pas garanti."}},quantity:1}],
+    metadata,
+    payment_intent_data:{metadata,description:"Option de portabilité prioritaire Audiotel Premium Pro, paiement unique de 9,90 EUR TTC."},
+    locale:"auto"
+  };
+  const email=String(input.customer_email||"").trim();
+  if(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))params.customer_email=email;
+  const session=await stripeApi(config,"/v1/checkout/sessions",{method:"POST",params,idempotencyKey});
+  if(!session?.url||!/^https:\/\/checkout\.stripe\.com\//i.test(session.url))throw failure(502,"STRIPE_CHECKOUT_URL_INVALID");
+  return {url:session.url,session_id:String(session.id||""),provider:"stripe",amount_minor:amount,currency:"EUR"};
+}
+
+export function normalizeStripeCommercialCheckoutEvent(event){
+  const type=String(event?.type||"");
+  if(!["checkout.session.completed","checkout.session.async_payment_succeeded","checkout.session.async_payment_failed","checkout.session.expired"].includes(type))return null;
+  const obj=event?.data?.object||{},meta=obj?.metadata&&typeof obj.metadata==="object"?obj.metadata:{};
+  if(String(meta.commercial_action||"")!=="portability_priority")return null;
+  const requestId=Number(meta.portability_request_id),amount=Number(obj.amount_total??meta.amount_minor),currency=String(obj.currency||meta.currency||"EUR").toUpperCase();
+  if(!Number.isInteger(requestId)||requestId<=0||!Number.isInteger(amount)||amount<0||!/^[A-Z]{3}$/.test(currency))return null;
+  let status="pending";
+  if(type==="checkout.session.expired")status="expired";
+  else if(type==="checkout.session.async_payment_failed")status="failed";
+  else if(type==="checkout.session.async_payment_succeeded"||String(obj.payment_status||"").toLowerCase()==="paid")status="paid";
+  return {provider:"stripe",provider_event_id:String(event.id||""),event_type:type,event_time:eventIso(event),commercial_action:"portability_priority",tenant_public_id:String(meta.tenant_public_id||obj.client_reference_id||""),portability_request_id:requestId,status,amount_minor:amount,currency,provider_checkout_session_reference:String(obj.id||""),provider_payment_intent_reference:idValue(obj.payment_intent)};
+}
 async function readRaw(req,limit){
   const chunks=[];let size=0;
   for await(const chunk of req){size+=chunk.length;if(size>limit)throw failure(413,"BODY_TOO_LARGE");chunks.push(chunk);}

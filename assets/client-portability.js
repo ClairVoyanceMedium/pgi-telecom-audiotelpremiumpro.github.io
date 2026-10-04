@@ -34,11 +34,16 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
       if(x.tariff_verification_status==="verified")meta.push("Tarif vérifié");
       if(x.rio_validation_status==="verified")meta.push("RIO vérifié");
       if(x.source_contract_transfer_mode==="none")meta.push("Ancien contrat non repris");
+      if(x.priority_payment_status==="paid"&&x.processing_priority==="priority")meta.push("Priorité payée : 9,90 € TTC");
+      else if(x.priority_payment_status==="pending")meta.push("Priorité : paiement en attente");
+      else meta.push("Traitement standard gratuit");
       if(x.operator_portability_reference)meta.push("Réf. opérateur : "+x.operator_portability_reference);
       if(x.rejection_reason)meta.push("Motif : "+x.rejection_reason);
       const cancellable=["submitted","awaiting_documents","eligibility_check","operator_pending"].includes(status);
+      const priorityAvailable=cancellable&&x.priority_payment_status!=="paid";
+      const priorityAction=priorityAvailable?'<button class="cp-portability-cancel" type="button" data-portability-priority="'+esc(x.id)+'">Priorité 9,90 €</button>':"";
       const action=cancellable?'<button class="cp-portability-cancel" type="button" data-portability-cancel="'+esc(x.id)+'">Annuler</button>':"";
-      return '<div class="cp-row cp-portability-row"><div><strong>'+esc(x.display_number||x.requested_e164||"Numéro")+'</strong><span>'+esc(meta.filter(Boolean).join(" · "))+'</span></div><div class="cp-portability-actions">'+chip(status)+action+'</div></div>';
+      return '<div class="cp-row cp-portability-row"><div><strong>'+esc(x.display_number||x.requested_e164||"Numéro")+'</strong><span>'+esc(meta.filter(Boolean).join(" · "))+'</span></div><div class="cp-portability-actions">'+chip(status)+priorityAction+action+'</div></div>';
     }).join(""):'<p class="cp-empty">Aucune demande de portabilité en cours.</p>';
   }
   function open(){
@@ -52,12 +57,18 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
     msg.textContent="";msg.classList.remove("bad");
     if(!$("portability-owner-confirmed").checked||!$("portability-authority-confirmed").checked||!$("portability-source-contract").checked){msg.classList.add("bad");msg.textContent="Les trois confirmations sont nécessaires pour ouvrir le dossier.";return;}
     const rateRaw=String($("portability-rate").value||"").trim();
-    const payload={country_code:$("portability-country").value,number:$("portability-number").value.trim(),rio:$("portability-rio").value.trim(),current_operator_name:$("portability-operator").value.trim(),current_operator_reference:$("portability-reference").value.trim(),account_holder_name:$("portability-holder").value.trim(),desired_port_date:$("portability-date").value||null,service_rate_ttc_per_min:rateRaw===""?null:Number(rateRaw.replace(",",".")),tariff_code:$("portability-tariff-code").value.trim(),service_family:$("portability-service-family").value,number_owner_confirmed:true,authorization_confirmed:true,source_contract_liability_acknowledged:true};
+    const priorityRequested=$("portability-processing")?.value==="priority";
+    const payload={country_code:$("portability-country").value,number:$("portability-number").value.trim(),rio:$("portability-rio").value.trim(),current_operator_name:$("portability-operator").value.trim(),current_operator_reference:$("portability-reference").value.trim(),account_holder_name:$("portability-holder").value.trim(),desired_port_date:$("portability-date").value||null,service_rate_ttc_per_min:rateRaw===""?null:Number(rateRaw.replace(",",".")),tariff_code:$("portability-tariff-code").value.trim(),service_family:$("portability-service-family").value,priority_service:priorityRequested,number_owner_confirmed:true,authorization_confirmed:true,source_contract_liability_acknowledged:true};
     if(getDemo()){msg.textContent="Le parcours est prêt. La demande réelle sera envoyée lorsque le backend privé sera connecté.";return;}
     busy=true;submit.disabled=true;const previous=submit.textContent;submit.textContent="Envoi en cours…";
-    try{await window.PGICustomerApi.createPortability(payload,window.PGICustomerApi.newIdempotencyKey());$("client-portability-form").reset();countriesReady=false;close();await reload();toast("Demande de portabilité enregistrée.");}
+    try{const created=await window.PGICustomerApi.createPortability(payload,window.PGICustomerApi.newIdempotencyKey());if(priorityRequested){try{const checkout=await window.PGICustomerApi.createPortabilityPriorityCheckout(created.id,window.PGICustomerApi.newIdempotencyKey());if(checkout?.url){location.href=checkout.url;return}}catch(_e){$("client-portability-form").reset();countriesReady=false;close();await reload();toast("Demande enregistrée. Priorité disponible dans votre espace.");return}}$("client-portability-form").reset();countriesReady=false;close();await reload();toast("Demande de portabilité enregistrée.");}
     catch(err){const m={INVALID_PORTABILITY_NUMBER:"Le numéro saisi n’est pas valide.",INVALID_PORTABILITY_RIO:"Le RIO saisi ne correspond pas à ce numéro.",PORTABILITY_RIO_REQUIRED:"Le RIO est obligatoire pour porter ce numéro en France.",PORTABILITY_SOURCE_CONTRACT_ACK_REQUIRED:"Confirmez que les obligations de votre ancien contrat restent à votre charge.",INVALID_PORTABILITY_TARIFF:"Le tarif saisi n’est pas valide.",PORTABILITY_ALREADY_REQUESTED:"Une demande est déjà ouverte pour ce numéro.",NUMBER_ALREADY_MANAGED:"Ce numéro est déjà géré dans votre espace.",PORTABILITY_NUMBER_UNAVAILABLE:"Ce numéro est déjà rattaché à un autre dossier.",PORTABILITY_AUTHORIZATION_REQUIRED:"Les autorisations doivent être confirmées.",TENANT_CLOSED:"Ce compte ne peut plus ouvrir de portabilité."};msg.classList.add("bad");msg.textContent=m[err&&err.code]||"La demande de portabilité n’a pas pu être enregistrée.";}
     finally{busy=false;submit.disabled=false;submit.textContent=previous;}
+  }
+  async function priority(id){
+    if(busy)return;if(getDemo()){toast("Paiement prioritaire indisponible en démonstration.");return;}busy=true;
+    try{const checkout=await window.PGICustomerApi.createPortabilityPriorityCheckout(id,window.PGICustomerApi.newIdempotencyKey());if(checkout?.url)location.href=checkout.url;else toast("Paiement prioritaire momentanément indisponible.");}
+    catch(err){toast(err?.code==="PORTABILITY_PRIORITY_ALREADY_ACTIVE"?"Le traitement prioritaire est déjà actif.":"Paiement prioritaire momentanément indisponible.");}finally{busy=false;}
   }
   async function cancel(id){
     if(busy)return;if(getDemo()){toast("Aucune portabilité réelle n’est active en démonstration.");return;}busy=true;
@@ -69,7 +80,7 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
     $("portability-close")?.addEventListener("click",close);
     $("portability-country")?.addEventListener("change",syncRioRequirement);
     $("client-portability-form")?.addEventListener("submit",submit);
-    $("portability-list")?.addEventListener("click",e=>{const b=e.target.closest("[data-portability-cancel]");if(b)cancel(b.dataset.portabilityCancel);});
+    $("portability-list")?.addEventListener("click",e=>{const p=e.target.closest("[data-portability-priority]");if(p){priority(p.dataset.portabilityPriority);return;}const b=e.target.closest("[data-portability-cancel]");if(b)cancel(b.dataset.portabilityCancel);});
   }
   bind();
   return {render,open};

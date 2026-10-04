@@ -2,7 +2,7 @@ const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 const n=v=>{const x=Number(v);return Number.isFinite(x)?x:0;};
 const nf=(v,d=0)=>new Intl.NumberFormat("fr-FR",{minimumFractionDigits:d,maximumFractionDigits:d}).format(n(v));
 const money=(v,c="EUR")=>{try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:c||"EUR",minimumFractionDigits:2,maximumFractionDigits:2}).format(n(v));}catch(_e){return nf(v,2)+" "+(c||"EUR");}};
-const dt=v=>{if(!v)return"—";const d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat("fr-FR",{dateStyle:"short",timeStyle:"short"}).format(d):"—";};
+const dt=v=>{if(!v)return" - ";const d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat("fr-FR",{dateStyle:"short",timeStyle:"short"}).format(d):" - ";};
 let styled=false;
 
 function css(){
@@ -36,15 +36,15 @@ function rowHtml(x){
   const alerts=st.issues.length?'<div class="tlc-alerts">'+st.issues.map(v=>'<span class="tlc-alert">'+esc(v)+'</span>').join("")+'</div>':"";
   const live=n(x.active_calls)>0?'<strong class="tlc-live">'+nf(x.active_calls)+' actif(s)</strong><small>+'+esc(money(x.upstream_rate_ht_per_second,c))+'/s amont · +'+esc(money(x.client_rate_ht_per_second,c))+'/s client</small>':'<strong>0</strong><small>Aucun appel actif</small>';
   return '<tr>'+
-    '<td><strong>'+esc(x.display_number||x.e164||"—")+'</strong><small>'+esc(x.e164||"")+'</small></td>'+
+    '<td><strong>'+esc(x.display_number||x.e164||" - ")+'</strong><small>'+esc(x.e164||"")+'</small></td>'+
     '<td><span class="tlc-state '+st.tone+'">'+esc(st.label)+'</span>'+alerts+'</td>'+
-    '<td><strong>'+esc(x.tariff_code||"—")+'</strong><small>'+esc(money(x.service_rate_ttc_per_min,c))+'/min</small></td>'+
+    '<td><strong>'+esc(x.tariff_code||" - ")+'</strong><small>'+esc(money(x.service_rate_ttc_per_min,c))+'/min</small></td>'+
     '<td><strong>'+nf(calls)+'</strong><small>'+nf(asr,1)+' % décrochés</small></td>'+
     '<td><strong>'+nf(n(x.billable_seconds_30d)/60,1)+' min</strong><small>Dernier '+esc(dt(x.last_call_at))+'</small></td>'+
     '<td><strong>'+esc(money(x.revenue_ttc_30d,c))+'</strong><small>service TTC</small></td>'+
     '<td><strong>'+esc(money(x.upstream_expected_ht_30d,c))+'</strong><small>confirmé '+esc(money(x.upstream_confirmed_ht_30d,c))+'</small></td>'+
-    '<td><strong>'+esc(n(x.payout_term_matches)>0?money(x.platform_fee_estimated_ht_30d,c):"—")+'</strong><small>part PGI estimée</small></td>'+
-    '<td><strong>'+esc(n(x.payout_term_matches)>0?money(x.client_net_estimated_ht_30d,c):"—")+'</strong><small>net client estimé</small></td>'+
+    '<td><strong>'+esc(n(x.payout_term_matches)>0?money(x.platform_fee_estimated_ht_30d,c):" - ")+'</strong><small>part PGI estimée</small></td>'+
+    '<td><strong>'+esc(n(x.payout_term_matches)>0?money(x.client_net_estimated_ht_30d,c):" - ")+'</strong><small>net client estimé</small></td>'+
     '<td>'+live+'</td>'+
     '<td><strong>'+nf(x.active_routes)+'</strong><small>route(s) active(s)</small></td>'+
     '<td><strong>'+nf(x.open_incidents)+'</strong><small>incident(s) ouvert(s)</small></td>'+
@@ -63,8 +63,8 @@ export function mountTenantLineCommand(data,root){
     '<div class="tlc-summary">'+
       '<div class="tlc-kpi"><span>Appels 30 jours</span><strong>'+nf(calls)+'</strong><small>'+nf(connected)+' décrochés</small></div>'+
       '<div class="tlc-kpi"><span>Reversement opérateur attendu</span><strong>'+esc(financial(sum("upstream_expected_ht_30d")))+'</strong><small>CDR des 30 jours</small></div>'+
-      '<div class="tlc-kpi"><span>Part PGI estimée</span><strong>'+esc(feeReady?financial(sum("platform_fee_estimated_ht_30d")):"—")+'</strong><small>'+(feeReady?"conditions actives":"conditions incomplètes")+'</small></div>'+
-      '<div class="tlc-kpi"><span>Net client estimé</span><strong>'+esc(feeReady?financial(sum("client_net_estimated_ht_30d")):"—")+'</strong><small>avant consolidation finale</small></div>'+
+      '<div class="tlc-kpi"><span>Part PGI estimée</span><strong>'+esc(feeReady?financial(sum("platform_fee_estimated_ht_30d")):" - ")+'</strong><small>'+(feeReady?"conditions actives":"conditions incomplètes")+'</small></div>'+
+      '<div class="tlc-kpi"><span>Net client estimé</span><strong>'+esc(feeReady?financial(sum("client_net_estimated_ht_30d")):" - ")+'</strong><small>avant consolidation finale</small></div>'+
       '<div class="tlc-kpi"><span>Business Live</span><strong class="tlc-live">'+nf(active)+' appel(s)</strong><small>'+(single?"+"+money(sum("upstream_rate_ht_per_second"),c)+"/s amont":"multi-devises")+'</small></div>'+
       '<div class="tlc-kpi"><span>Exploitation</span><strong>'+nf(routes)+' routes</strong><small>'+nf(incidents)+' incident(s) ouvert(s)</small></div>'+
     '</div>'+
