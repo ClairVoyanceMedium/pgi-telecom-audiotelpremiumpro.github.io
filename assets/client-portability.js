@@ -79,6 +79,7 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
     try{
       const result=await window.PGICustomerApi.createPortabilityPriorityCheckout(id,window.PGICustomerApi.newIdempotencyKey());
       if(result&&result.already_paid){await reload();toast("La priorité PGI est déjà activée sur ce dossier.");return;}
+      if(result&&result.payment_confirmation_pending){toast("Paiement reçu. La confirmation sécurisée est en cours, aucun nouveau paiement n’est nécessaire.");setTimeout(()=>reload().catch(()=>{}),1800);return;}
       if(result&&result.url&&/^https:\/\/checkout\.stripe\.com\//i.test(result.url)){location.assign(result.url);return;}
       throw new Error("CHECKOUT_URL_MISSING");
     }catch(err){
