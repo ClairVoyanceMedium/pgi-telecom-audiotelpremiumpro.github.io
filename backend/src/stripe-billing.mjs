@@ -204,6 +204,21 @@ export async function createPriorityPortabilityCheckout(config,input={},idempote
   return {url:session.url,session_id:String(session.id||""),expires_at:session.expires_at?new Date(Number(session.expires_at)*1000).toISOString():null,amount_minor:amountMinor,currency:"EUR",provider:"stripe"};
 }
 
+export async function retrievePriorityPortabilityCheckout(config,sessionId){
+  const id=String(sessionId||"").trim();
+  if(!/^cs_[A-Za-z0-9_]+$/.test(id))throw failure(400,"PORTABILITY_PRIORITY_CHECKOUT_INVALID");
+  const session=await stripeApi(config,"/v1/checkout/sessions/"+encodeURIComponent(id),{method:"GET"});
+  const meta=session?.metadata&&typeof session.metadata==="object"?session.metadata:{};
+  if(meta.checkout_kind!=="portability_priority")throw failure(409,"PORTABILITY_PRIORITY_CHECKOUT_MISMATCH");
+  return {
+    session_id:String(session.id||id),
+    url:typeof session.url==="string"&&/^https:\/\/checkout\.stripe\.com\//i.test(session.url)?session.url:null,
+    status:String(session.status||""),
+    payment_status:String(session.payment_status||""),
+    expires_at:session.expires_at?new Date(Number(session.expires_at)*1000).toISOString():null
+  };
+}
+
 export function normalizePriorityPortabilityCheckoutEvent(event){
   const type=String(event?.type||""),obj=event?.data?.object||{},meta=obj?.metadata&&typeof obj.metadata==="object"?obj.metadata:{};
   if(meta.checkout_kind!=="portability_priority")return null;
