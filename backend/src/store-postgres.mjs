@@ -2494,7 +2494,8 @@ export class PostgresStore{
       }
       return {duplicate:false,subscription_id:subscriptionId,tenant_id:Number(tenant.id),status,paid_current:paidCurrent};
     });
-    if(!result.duplicate&&result.paid_current)await this.qualifyCustomerReferral(result.tenant_id,result.subscription_id);\n    if(!result.duplicate)this.eventBus.publish("subscription.changed",{id:result.subscription_id,tenant_id:result.tenant_id,status:result.status});
+    if(!result.duplicate&&result.paid_current)await this.qualifyCustomerReferral(result.tenant_id,result.subscription_id);
+    if(!result.duplicate)this.eventBus.publish("subscription.changed",{id:result.subscription_id,tenant_id:result.tenant_id,status:result.status});
     return result;
   }
 
