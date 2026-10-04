@@ -43,6 +43,7 @@ export function loadConfig(env=process.env){
   const transactionalDomain=String(env.PGI_TRANSACTIONAL_DOMAIN||"audiotel-premium-pro.com").trim().toLowerCase();
   const transactionalReplyTo=String(env.PGI_TRANSACTIONAL_REPLY_TO||"contact.audiotel.premium.pro@gmail.com").trim().toLowerCase();
   const internalNotificationEmail=String(env.PGI_INTERNAL_NOTIFICATION_EMAIL||transactionalReplyTo).trim().toLowerCase();
+  const dailyReportEmail=String(env.PGI_DAILY_REPORT_EMAIL||internalNotificationEmail).trim().toLowerCase();
   const cronSecret=String(env.CRON_SECRET||"").trim();
   const emailVerificationPepper=String(env.PGI_EMAIL_VERIFICATION_PEPPER||"").trim();
   const transactionalFromEmail=String(env.PGI_TRANSACTIONAL_FROM_EMAIL||("notifications@"+transactionalDomain)).trim().toLowerCase();
@@ -122,7 +123,7 @@ export function loadConfig(env=process.env){
 
   return Object.freeze({
     mode,authMode,host,port,releaseId,staticDir,trustProxy,protectMachineEndpoints,googleClientId,customerSelfRegistrationEnabled,webauthnRpId,webauthnOrigin,
-    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,stripeSecretKey,stripeWebhookSecret,stripeConnectWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,ga4MeasurementEnabled,ga4MeasurementId,ga4ApiSecret,b2cCommercialRequested,b2cCommercialReady,legalOperatorConfigured,consumerMediatorConfigured,onlineWithdrawalReady,emailVerificationEnabled,transactionalEmailEnabled,resendApiKey,resendReceivingApiKey,resendWebhookSecret,transactionalDomain,transactionalReplyTo,internalNotificationEmail,cronSecret,emailVerificationPepper,transactionalFromEmail,transactionalFromName,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
+    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,stripeSecretKey,stripeWebhookSecret,stripeConnectWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,ga4MeasurementEnabled,ga4MeasurementId,ga4ApiSecret,b2cCommercialRequested,b2cCommercialReady,legalOperatorConfigured,consumerMediatorConfigured,onlineWithdrawalReady,emailVerificationEnabled,transactionalEmailEnabled,resendApiKey,resendReceivingApiKey,resendWebhookSecret,transactionalDomain,transactionalReplyTo,internalNotificationEmail,dailyReportEmail,cronSecret,emailVerificationPepper,transactionalFromEmail,transactionalFromName,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),
     customerRememberTtlSeconds:integer(env.PGI_CUSTOMER_REMEMBER_TTL_SECONDS,2592000,86400,7776000,"PGI_CUSTOMER_REMEMBER_TTL_SECONDS"),
