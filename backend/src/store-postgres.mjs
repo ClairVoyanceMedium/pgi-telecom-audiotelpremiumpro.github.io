@@ -4865,7 +4865,10 @@ export class PostgresStore{
       if(!row)throw problem(404,"PORTABILITY_REQUEST_NOT_FOUND");
       if(row.service_level!=="priority")throw problem(409,"PORTABILITY_PRIORITY_NOT_SELECTED");
       if(tenantPublicId&&String(row.tenant_public_id)!==tenantPublicId)throw problem(409,"PORTABILITY_PRIORITY_TENANT_MISMATCH");
-      if(row.priority_checkout_session_reference&&String(row.priority_checkout_session_reference)!==sessionId)throw problem(409,"PORTABILITY_PRIORITY_SESSION_MISMATCH");
+      if(row.priority_checkout_session_reference&&String(row.priority_checkout_session_reference)!==sessionId){
+        if(status==="failed")return {duplicate:true,updated:false,stale:true,tenant_id:Number(row.tenant_id),request_id:id,status:String(row.priority_payment_status||"pending")};
+        throw problem(409,"PORTABILITY_PRIORITY_SESSION_MISMATCH");
+      }
       if(row.priority_payment_status==="paid")return {duplicate:true,updated:false,tenant_id:Number(row.tenant_id),request_id:id,status:"paid"};
       if(status==="pending")return {duplicate:false,updated:false,tenant_id:Number(row.tenant_id),request_id:id,status:"pending"};
       if(status==="failed"){
