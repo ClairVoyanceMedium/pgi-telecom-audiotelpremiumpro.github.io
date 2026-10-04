@@ -1239,6 +1239,18 @@ export class MemoryStore{
   }
 
   async customerBillingPreparation(tenantId){void tenantId;return {tenant:{id:"00000000-0000-4000-8000-000000000001",name:"Société Démo",billing_email:"demo@example.test",country_code:"FR",locale:"fr-FR",currency:"EUR",timezone:"Europe/Paris",status:"pending"},offer:{price_version_id:1,plan_key:"external-sva-access",plan_name:"External SVA Access",market:null,currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1},reference_offer:{price_version_id:1,plan_key:"external-sva-access",plan_name:"External SVA Access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1},pricing_state:"local_price_ready",subscription:null,premium_call_access:false,billing_currency:{currency:"EUR",source:"country_default",catalog_version:"2026-09-20",accepted_currencies:["EUR"],local_price_configured:true},checkout_prefill:{email:"demo@example.test",locale:"fr-FR",country_code:"FR",currency:"EUR"},return_paths:{success:"client.html?billing=success",cancel:"client.html?billing=cancelled"}};}
+  async prepareCustomerPortabilityPriority(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
+  async attachCustomerPortabilityPriorityCheckout(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
+  async applyPortabilityPriorityPaymentEvent(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
+  async captureLeadReferral(){return {captured:false,reason:"demo"};}
+  async customerReferralOverview(){
+    return {code:"PGI-DEMO2026",share_path:"/demande-ouverture/?ref=PGI-DEMO2026",reward:{label:"1 mois offert",amount_minor:300,currency:"EUR",qualification:"activation réelle du service du filleul"},summary:{pending:0,qualified:0,rewarded:0,total:0,rewarded_minor:0},referrals:[]};
+  }
+  async scanReferralQualifications(){return {scanned:0,qualified:0};}
+  async queuePendingReferralRewardsByTenantPublicId(){return {queued:0};}
+  async referralRewardPreparation(){throw problem(404,"REFERRAL_NOT_FOUND");}
+  async completeReferralReward(){throw problem(404,"REFERRAL_NOT_FOUND");}
+
   async customerExperiencePreferences(tenantId,principalId){
     const key=String(tenantId)+":"+String(principalId||"");
     return this.customerExperiencePreferencesMap.get(key)||{alerts:{calls_below:{enabled:false,threshold:10},abandon_rate_above:{enabled:false,threshold:25},revenue_target:{enabled:false,threshold:100},drop_vs_average:{enabled:false,threshold:30}},updated_at:null};
