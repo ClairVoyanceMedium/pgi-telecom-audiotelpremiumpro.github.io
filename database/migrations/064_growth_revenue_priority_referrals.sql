@@ -50,8 +50,7 @@ CREATE INDEX IF NOT EXISTS tenant_referrals_referrer_idx
 CREATE INDEX IF NOT EXISTS tenant_referrals_status_idx
   ON tenant_referrals(status,created_at DESC);
 
-DROP TRIGGER IF EXISTS tenant_referrals_touch_updated ON tenant_referrals;
-CREATE TRIGGER tenant_referrals_touch_updated
+CREATE OR REPLACE TRIGGER tenant_referrals_touch_updated
 BEFORE UPDATE ON tenant_referrals
 FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 
