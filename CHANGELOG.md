@@ -1,3 +1,11 @@
+## 1.31.0 — Tarif plateforme 4,90 € TTC — 2026-10-04
+
+- abonnement plateforme courant porté à 4,90 € TTC par mois après le mois en cours offert ;
+- nouvelle version tarifaire SQL 064 à 490 centimes, sans réécriture des versions historiques à 2,00 € et 3,00 € ;
+- Stripe Checkout, pages publiques, SEO, espace client, cockpit, simulateur, documentation et tests alignés sur le même tarif ;
+- garde-fous de production renforcés pour empêcher le retour silencieux d’un tarif à 3,00 € comme valeur courante ;
+- version applicative portée à 1.31.0.
+
 ## Monthly Contract & Site Protection v3 — 2026-09-26
 
 - abonnement plateforme à durée indéterminée, facturé mensuellement d’avance ;
