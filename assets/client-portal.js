@@ -276,7 +276,7 @@ async function handleGoogleCredential(response,tenantOverride){
   var tenant=tenantOverride||$("customer-tenant").value||"";
   try{
     var remember=Boolean($("customer-remember")&&$("customer-remember").checked),legal={};
-    if(invite){var accepted=Boolean($("activation-legal")&&$("activation-legal").checked);if(!accepted){setAuthMessage("Acceptez les conditions contractuelles avant d’activer votre espace.",true);return;}legal={legal_terms_accepted:true,privacy_notice_acknowledged:true,legal_version:"2026-09-26-b2b-b2c-v4"};}
+    if(invite){var accepted=Boolean($("activation-legal")&&$("activation-legal").checked);if(!accepted){setAuthMessage("Acceptez les conditions contractuelles avant d’activer votre espace.",true);return;}legal={legal_terms_accepted:true,privacy_notice_acknowledged:true,legal_version:"2026-10-04-b2b-b2c-v5"};}
     var result=await window.PGICustomerApi.google(credential,tenant,invite,remember,legal);state.googleCredential=null;
     if(result&&result.pending_contract){
       setAuthMessage("Accès client non autorisé. Contactez PGI Telecom si votre dossier a déjà été validé.",true);
@@ -367,7 +367,7 @@ async function submitRegistration(e){
     authority_confirmed:$("register-authority").checked,
     legal_terms_accepted:Boolean($("register-legal")&&$("register-legal").checked),
     privacy_notice_acknowledged:Boolean($("register-legal")&&$("register-legal").checked),
-    legal_version:"2026-09-26-b2b-b2c-v4",
+    legal_version:"2026-10-04-b2b-b2c-v5",
     website:$("register-website").value,
     preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",
     timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC")
@@ -461,7 +461,7 @@ async function submitActivation(e){
   var token=new URLSearchParams(location.search).get("invite")||"",accepted=Boolean($("activation-legal")&&$("activation-legal").checked);
   if(!accepted){setAuthMessage("Acceptez les conditions contractuelles avant d’activer votre espace.",true);return;}
   try{
-    var result=await window.PGICustomerApi.activate(token,$("activation-name").value.trim(),p,{legal_terms_accepted:true,privacy_notice_acknowledged:true,legal_version:"2026-09-26-b2b-b2c-v4"});state.user=result.user;history.replaceState(null,"",location.pathname);showApp();
+    var result=await window.PGICustomerApi.activate(token,$("activation-name").value.trim(),p,{legal_terms_accepted:true,privacy_notice_acknowledged:true,legal_version:"2026-10-04-b2b-b2c-v5"});state.user=result.user;history.replaceState(null,"",location.pathname);showApp();
   }catch(err){var messages={CUSTOMER_ACCOUNT_EXISTS:"Un compte existe déjà pour cette adresse. Connectez-vous avec votre compte existant.",REGISTRATION_LEGAL_TERMS_REQUIRED:"Acceptez les conditions contractuelles avant d’activer votre espace.",LEGAL_DOCUMENT_VERSION_OUTDATED:"Les conditions ont été mises à jour. Rechargez la page avant de continuer."};setAuthMessage(messages[err.code]||"Activation impossible ou invitation expirée.",true);}
 }
 function csvCell(v){return '"'+String(v==null?"":v).replace(/"/g,'""')+'"';}
