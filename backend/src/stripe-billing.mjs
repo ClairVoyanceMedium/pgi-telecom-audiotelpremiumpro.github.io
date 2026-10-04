@@ -160,7 +160,7 @@ export async function createStripeCheckout(config,billing,idempotencyKey,analyti
     client_reference_id:String(tenant.id||""),
     line_items:[{price:price.id,quantity:1}],
     metadata,
-    subscription_data:{metadata,description:"Abonnement plateforme Audiotel Premium Pro : mois en cours offert, puis 3€ TTC/mois à partir du mois suivant, sans engagement de durée. Reversements SVA distincts.",trial_end:currentMonthOfferTrialEnd()},
+    subscription_data:{metadata,description:"Abonnement plateforme Audiotel Premium Pro : mois en cours offert, puis 4,90 € TTC/mois à partir du mois suivant, sans engagement de durée. Reversements SVA distincts.",trial_end:currentMonthOfferTrialEnd()},
     payment_method_collection:"always",
     billing_address_collection:"required",
     tax_id_collection:{enabled:true},
