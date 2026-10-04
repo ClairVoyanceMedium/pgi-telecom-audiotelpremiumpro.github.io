@@ -21,6 +21,7 @@ const files=[
   "site/site.js",
   "site/site-search.js",
   "site/payment-result.js",
+  "site/referral-landing.js",
   "site/form-ux.js",
   "site/contact-widget.js",
   "site/contact-widget.css",
