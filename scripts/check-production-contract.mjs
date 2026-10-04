@@ -50,6 +50,9 @@ const objectLifecycleMigration=fs.readFileSync("database/migrations/015_object_s
 const dashboardDimensionMigration=fs.readFileSync("database/migrations/016_dashboard_dimension_rollups.sql","utf8");
 const businessLiveScheduleSource=fs.readFileSync("backend/src/business-live-schedule.mjs","utf8");
 const vercelConfig=fs.readFileSync("vercel.json","utf8");
+const referralMigration=fs.readFileSync("database/migrations/065_customer_referral_program.sql","utf8");
+const clientReferral=fs.readFileSync("assets/client-referral.js","utf8");
+const referralAdmin=fs.readFileSync("assets/referral-admin.js","utf8");
 const vercelConfigData=JSON.parse(vercelConfig);
 const businessLiveCron=Array.isArray(vercelConfigData.crons)&&vercelConfigData.crons.some(item=>item&&item.path==="/api/v1/internal/business-live/reset-schedules/run"&&item.schedule==="* * * * *");
 const qualityRollupMigration=fs.readFileSync("database/migrations/017_quality_rollups.sql","utf8");
@@ -125,6 +128,12 @@ const publicSiteScript=fs.readFileSync("site/site.js","utf8");
 const emailDispatcher=fs.readFileSync("backend/src/email-dispatcher.mjs","utf8");
 const stripeBillingSource=fs.readFileSync("backend/src/stripe-billing.mjs","utf8");
 const wholesaleDoc=fs.readFileSync("docs/WHOLESALE-SVA.md","utf8");
+
+if(!/platform_feature_flags/.test(referralMigration)||!/customer_referral_rewards/.test(referralMigration))failures.push("referral schema must retain server feature flags and reward ledger");
+if(!/\/api\/v1\/public\/referral-program/.test(backendServer)||!/\/api\/v1\/customer\/referral/.test(backendServer)||!/\/api\/v1\/platform\/referral-program/.test(backendServer))failures.push("referral public customer and admin APIs are required");
+if(!/paid_active_subscription/.test(postgresStore)||!/REFERRAL_SELF_CLAIM/.test(postgresStore)||!/REFERRAL_ALREADY_CLAIMED/.test(postgresStore))failures.push("referral rewards must remain payment-qualified and anti-abuse");
+if(!/pgi:portal-loaded/.test(clientReferral)||!/abonnement actif et payé/i.test(clientReferral))failures.push("customer referral UI must retain paid activation qualification");
+if(!/referral-admin\.js/.test(platformAdminTools)||!/updateReferralProgram/.test(referralAdmin)||!/settleReferralReward/.test(referralAdmin))failures.push("referral administration must remain lazy and auditable");
 
 const requiredCompose=[
   "POSTGRES_PASSWORD",
@@ -446,15 +455,15 @@ try{
   failures.push("production config contract rejected: "+error.message);
 }
 
-if(failures.length){
-  failures.forEach(x=>console.error("FAIL:",x));
-  process.exit(1);
-}
-console.log("Production contract: OK");
-
 if(!/ticketContactAssociationType/.test(hubspotCrm)||!/crm\/v3\/objects\/tickets/.test(hubspotCrm)||!/hs_pipeline_stage:"1"/.test(hubspotCrm)||!/source_type:"FORM"/.test(hubspotCrm))failures.push("public contact bubble must create a support ticket, not a commercial dossier");
 if(!/sendSupportTicketNotification/.test(backendServer)||!/sendSupportTicketReply/.test(backendServer)||!/recordServiceIncidentEmailNote/.test(backendServer)||!/syncHubSpotCustomerIncident/.test(backendServer))failures.push("authenticated support must bridge portal messages, email replies and HubSpot tickets");
 if(!/reply_to:senderEmail/.test(resendEmailSource)||!/support-journal@/.test(resendEmailSource)||!/receivedAttachmentPaths/.test(resendEmailSource)||!/In-Reply-To/.test(resendEmailSource))failures.push("inbound support forwarding must retain Reply-To, threading metadata and attachments");
 if(!/isServiceBusinessMinute/.test(postgresStore)||!/Europe\/Paris/.test(postgresStore))failures.push("support SLA deadlines must use Europe/Paris business hours");
 if(!/HUBSPOT_MARKETING_SUBSCRIPTION_ID=3728444113/.test(hubspotCrm)||!/communication-preferences\/v4\/statuses/.test(hubspotCrm)||!/CONSENT_WITH_NOTICE/.test(hubspotCrm)||!/Consentement marketing e-mail explicite/.test(hubspotCrm))failures.push("explicit marketing consent must be synced to HubSpot preferences and retain auditable CRM evidence");
 if(!/name="marketing_consent" type="checkbox"/.test(publicContactWidget)||!/marketing_consent_version:"2026-10-01-v1"/.test(publicContactWidget)||!/id="order-marketing-consent"/.test(publicOrderPage)||!/marketing_consent/.test(publicSiteScript))failures.push("public marketing consent must remain optional, explicit and versioned");
+
+if(failures.length){
+  failures.forEach(x=>console.error("FAIL:",x));
+  process.exit(1);
+}
+console.log("Production contract: OK");

@@ -73,6 +73,8 @@ createCardPaymentCheckout:function(payload,idempotencyKey){return post("/custome
 newIdempotencyKey:function(){return typeof crypto!=="undefined"&&crypto.randomUUID?crypto.randomUUID():"customer-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2);},
 createBillingCheckout:function(idempotencyKey,legal){return post("/customer/billing/checkout-session",legal||{},idempotencyKey);},
 createBillingPortal:function(){return post("/customer/billing/portal-session",{});},
+referral:function(){return get("/customer/referral",8000);},
+createReferralCode:function(idempotencyKey){return post("/customer/referral/code",{},idempotencyKey);},
 portability:function(){return get("/customer/portability",8000);},
 createPortability:function(payload,idempotencyKey){return post("/customer/portability",payload,idempotencyKey);},
 createPortabilityPriorityCheckout:function(id,idempotencyKey){return post("/customer/portability/"+encodeURIComponent(id)+"/priority-checkout",{},idempotencyKey);},
