@@ -185,7 +185,24 @@ export function createBackend(options={}){
       if(method==="POST"&&pathname==="/api/v1/email/resend/webhook"){
         if(!config.transactionalEmailEnabled||!config.resendWebhookSecret)return done(res,metrics,started,"email.resend_webhook",404,{error:{code:"RESEND_WEBHOOK_DISABLED"}});
         const verified=await verifyResendWebhook(req,config);
-        const result=await applyResendWebhookEvent(store,verified);
+        let result;
+        try{
+          result=await applyResendWebhookEvent(store,verified);
+        }catch(error){
+          process.stderr.write(JSON.stringify({
+            level:"error",
+            event:"resend_webhook_apply_failed",
+            event_type:String(verified?.event?.type||"unknown"),
+            code:String(error?.code||"UNKNOWN"),
+            name:String(error?.name||"Error"),
+            table:error?.table?String(error.table):null,
+            constraint:error?.constraint?String(error.constraint):null,
+            column:error?.column?String(error.column):null,
+            schema:error?.schema?String(error.schema):null,
+            routine:error?.routine?String(error.routine):null
+          })+"\n");
+          throw error;
+        }
         let inbound=null,crmSync=null,incidentJournal=null;
         if(String(verified.event?.type||"")==="email.received"&&!result.duplicate){
           try{
