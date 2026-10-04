@@ -89,6 +89,8 @@ form.addEventListener("submit",async e=>{
   const type=selectedType();
   if(!["individual","business"].includes(type))return;
   const intent={...snapshot(),source:"public_marketing_site"};
+  const referralCode=String(new URL(location.href).searchParams.get("ref")||"").trim().toUpperCase();
+  if(/^PGI-[A-Z0-9]{12,24}$/.test(referralCode))intent.referral_code=referralCode;
   if(intent.processing_consent!==true)return;
   try{sessionStorage.setItem(KEY,JSON.stringify(intent));sessionStorage.removeItem(DRAFT_KEY)}
   catch(_e){const s=document.getElementById("order-status");if(s)s.hidden=false;return}
