@@ -591,7 +591,7 @@ test("validated customer number and consumption proof stay visible, tenant-scope
   assert.match(clientAccountProof,/snapshot_sha256/);
   assert.match(tenantControlDetail,/tenant-consumption-check\.js/);
   assert.match(tenantConsumptionCheck,/CONFORME : le relevé client correspond aux données sources/);
-  assert.match(tenantConsumptionCheck,/ÉCART DÉTECTÉ/);
+  assert.match(tenantConsumptionCheck,/ÉCART DÉTECTÉ : les données sources ont changé ou diffèrent/);
   assert.match(tenantConsumptionCheck,/\/platform\/tenants\//);
   assert.match(tenantConsumptionCheck,/\/consumption-receipts/);
   assert.match(tenantConsumptionCheck,/\/consumption-today/);
