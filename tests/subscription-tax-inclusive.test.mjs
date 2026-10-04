@@ -27,5 +27,5 @@ test("billing API and demo expose inclusive tax behavior",()=>{
 test("customer and admin interfaces display TTC explicitly",()=>{
   assert.ok(adminUi.includes("TTC/mois"));
   assert.ok(clientUi.includes("TTC / "));
-  assert.ok(readme.includes("3,00 EUR TTC par mois"));
+  assert.ok(readme.includes("4,90 EUR TTC par mois"));
 });
