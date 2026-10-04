@@ -54,6 +54,9 @@ export class MemoryStore{
     this.nextBaselineId=1;
     this.nextSwitchId=1;
     this.subscriptionPrices=[{id:1,plan_key:"external-sva-access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,effective_from:"2026-09-20T19:33:00Z",effective_to:null}];
+    this.platformFeatureControls=new Map([["referral_program",{feature_key:"referral_program",enabled:true,config:{reward_mode:"manual",reward_label:"Avantage de parrainage après activation du filleul"},updated_at:new Date().toISOString()}]]);
+    this.referralCodes=new Map();
+    this.referralAttributions=[];
     this.subscriptionEvents=new Set();
     this.adminAlerts=[];
     this.customerExperiencePreferencesMap=new Map();
@@ -1007,6 +1010,65 @@ export class MemoryStore{
       price_history:this.subscriptionPrices.slice().sort((a,b)=>Date.parse(b.effective_from)-Date.parse(a.effective_from)),
       tenant_access:[]
     };
+  }
+
+  async referralProgramAdmin(){
+    const feature=this.platformFeatureControls.get("referral_program")||{feature_key:"referral_program",enabled:false,config:{},updated_at:null};
+    const activeCodes=[...this.referralCodes.values()].filter(x=>x.status==="active").length;
+    const attributed=this.referralAttributions.length;
+    return {
+      feature_key:"referral_program",
+      enabled:feature.enabled===true,
+      config:structuredClone(feature.config||{}),
+      reward_label:String(feature.config?.reward_label||""),
+      updated_at:feature.updated_at||null,
+      summary:{
+        active_codes:activeCodes,
+        attributed_leads:attributed,
+        converted:this.referralAttributions.filter(x=>x.status==="converted"||x.status==="rewarded").length,
+        rewarded:this.referralAttributions.filter(x=>x.status==="rewarded").length
+      },
+      recent:this.referralAttributions.slice(-20).reverse().map(x=>structuredClone(x))
+    };
+  }
+
+  async setReferralProgram(enabled,actor={}){
+    if(typeof enabled!=="boolean")throw problem(400,"REFERRAL_ENABLED_REQUIRED");
+    const current=this.platformFeatureControls.get("referral_program")||{feature_key:"referral_program",config:{}};
+    const next={...current,enabled,updated_at:new Date().toISOString()};
+    this.platformFeatureControls.set("referral_program",next);
+    this.#audit("platform.feature.update","referral_program",{feature_key:"referral_program",enabled,actor_id:actor?.id||actor?.sub||null});
+    return this.referralProgramAdmin();
+  }
+
+  async customerReferralProgram(tenantId){
+    const feature=this.platformFeatureControls.get("referral_program");
+    if(!feature?.enabled)return {enabled:false,code:null,share_path:null,reward_label:"",summary:{attributed_leads:0}};
+    const key=String(Number(tenantId)||tenantId||"");
+    let row=this.referralCodes.get(key);
+    if(!row){
+      const code="PGI-"+createHash("sha256").update("referral:"+key).digest("hex").slice(0,16).toUpperCase();
+      row={tenant_id:Number(tenantId)||tenantId,code,status:"active",created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
+      this.referralCodes.set(key,row);
+    }
+    const attributed=this.referralAttributions.filter(x=>String(x.referrer_tenant_id)===key);
+    return {
+      enabled:true,
+      code:row.code,
+      share_path:"/demande-ouverture/?ref="+encodeURIComponent(row.code),
+      reward_label:String(feature.config?.reward_label||""),
+      summary:{attributed_leads:attributed.length,converted:attributed.filter(x=>x.status==="converted"||x.status==="rewarded").length}
+    };
+  }
+
+  async recordReferralLead(code,referredTenantPublicId){
+    void referredTenantPublicId;
+    const normalized=String(code||"").trim().toUpperCase();
+    if(!/^PGI-[A-Z0-9]{12,24}$/.test(normalized))return null;
+    if(!this.platformFeatureControls.get("referral_program")?.enabled)return null;
+    const referrer=[...this.referralCodes.values()].find(x=>x.code===normalized&&x.status==="active");
+    if(!referrer)return null;
+    return null;
   }
 
   async createSubscriptionPrice(payload={}){

@@ -204,8 +204,8 @@ test("invalid encoded route parameters fail as a client error",()=>{
   );
 });
 
-test("customer can self-register by email without Google",async()=>{
-  const app=createBackend({config:config({authMode:"session",sessionSecret:"x".repeat(40),adminPasswordHash:hashPassword("admin-password-for-tests")})});
+test("customer can self-register by email without Google when simulator self-registration is enabled",async()=>{
+  const app=createBackend({config:config({authMode:"session",sessionSecret:"x".repeat(40),adminPasswordHash:hashPassword("admin-password-for-tests"),customerSelfRegistrationEnabled:true})});
   const address=await app.listen();
   const base=`http://127.0.0.1:${address.port}`;
   try{

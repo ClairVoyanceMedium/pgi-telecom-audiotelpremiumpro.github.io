@@ -306,6 +306,10 @@ export function createBackend(options={}){
           });
         }catch(error){logHubSpotSyncFailure("public_lead_commercial",error);}
         const accepted=Boolean(dossier||formResult?.ok||commercialResult?.synced);
+        if(dossier&&body.referral_code&&typeof store.recordReferralLead==="function"){
+          try{await store.recordReferralLead(body.referral_code,dossier.public_id);}
+          catch(error){process.stderr.write(JSON.stringify({level:"warn",event:"referral_attribution_failed",code:String(error?.code||"REFERRAL_ATTRIBUTION_FAILED")})+"\n");}
+        }
         if(dossier){
           try{customerAccess=await ensureCustomerPortalAccess(store,config,dossier.public_id,"opening-auto");}
           catch(error){logSecurityEmailFailure("opening_access",error);}
@@ -709,6 +713,12 @@ export function createBackend(options={}){
         ]);
         const canManage=["owner","admin"].includes(context.customer_role);
         return done(res,metrics,started,"customer.jackpot",200,{...jackpot,can_reset:canManage,can_schedule:canManage,reset_schedule:resetSchedule});
+      }
+      if(method==="GET"&&pathname==="/api/v1/customer/referral"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"overview.read");
+        return done(res,metrics,started,"customer.referral",200,await store.customerReferralProgram(context.tenant_id));
       }
       if(method==="GET"&&pathname==="/api/v1/customer/portal"){
         requireActor(customerActor);
@@ -1886,6 +1896,20 @@ export function createBackend(options={}){
         requireRole(actor,["admin","finance","readonly"]);
         const overview=await store.subscriptionBillingOverview();
         return done(res,metrics,started,"platform.subscription_billing",200,{...overview,billing_provider:billingProviderStatus(config)});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/platform/referral-program"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.referral_program",200,{...(await store.referralProgramAdmin()),can_manage:actor.role==="admin"});
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/platform/referral-program"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        if(typeof body.enabled!=="boolean"){const e=new Error("Referral state required");e.status=400;e.code="REFERRAL_ENABLED_REQUIRED";throw e;}
+        const payload={enabled:body.enabled};
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.referral_program.update",payload,()=>store.setReferralProgram(body.enabled,actor));
+        return done(res,metrics,started,"platform.referral_program_update",200,{...result.value,can_manage:true,replayed:result.replayed});
       }
 
       if(method==="POST"&&pathname==="/api/v1/platform/subscription-prices"){
