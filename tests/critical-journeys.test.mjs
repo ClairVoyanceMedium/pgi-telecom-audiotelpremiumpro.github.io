@@ -32,7 +32,7 @@ function cookiesFrom(headers){
 function cookieHeader(map){return [...map].map(([k,v])=>k+"="+v).join("; ");}
 
 test("critical staff and B2B customer journey remains fail-closed at external dependencies",async()=>{
-  const app=createBackend({config:config()});
+  const app=createBackend({config:config({customerSelfRegistrationEnabled:true})});
   const address=await app.listen(),base="http://127.0.0.1:"+address.port;
   try{
     let response=await fetch(base+"/api/v1/auth/login",{
