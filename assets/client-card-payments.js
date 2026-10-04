@@ -34,9 +34,9 @@ function render(){
   return;
  }
  root.innerHTML='<div class="ccp-kpis"><div><span>Paiements réussis</span><strong>'+Number(s.payments_paid||0)+'</strong></div><div><span>Volume CB</span><strong>'+moneyMinor(s.volume_paid_minor||0,"EUR")+'</strong></div><div><span>Commissions PGI</span><strong>'+moneyMinor(s.pgi_fee_paid_minor||0,"EUR")+'</strong></div><div><span>Commission</span><strong>'+Number((a.application_fee_bps||490)/100).toFixed(1).replace(".",",")+' %</strong></div></div>'+
- '<div class="ccp-grid"><article><h3>Créer un lien de paiement</h3><label>Montant TTC<input id="ccp-amount" type="number" min="5" max="1000000" step="0.01" value="30"></label><label>Description<input id="ccp-description" maxlength="120" value="Consultation"></label><label>Email du client <small>(optionnel)</small><input id="ccp-email" type="email" maxlength="320" placeholder="client@exemple.fr"></label><button id="ccp-create" class="cp-primary" type="button">Créer le lien CB</button><p id="ccp-feedback" class="ccp-feedback"></p><div id="ccp-linkbox" class="ccp-linkbox" hidden><input id="ccp-link" readonly><button id="ccp-copy" class="cp-ghost" type="button">Copier</button></div></article>'+
+ '<div class="ccp-grid"><article><h3>Créer un lien de paiement</h3><label>Montant TTC<input id="ccp-amount" type="number" min="5" max="1000000" step="0.01" value="30"></label><label>Description<input id="ccp-description" maxlength="120" value="Consultation"></label><label>Email du client <small>(optionnel)</small><input id="ccp-email" type="email" maxlength="320" placeholder="client@exemple.fr"></label><button id="ccp-create" class="cp-primary" type="button">Créer le lien CB</button><p id="ccp-feedback" class="ccp-feedback"></p><div id="ccp-linkbox" class="ccp-linkbox" hidden><input id="ccp-link" readonly><button id="ccp-copy" class="cp-ghost" type="button">Copier</button><button id="ccp-share" class="cp-ghost" type="button">Partager</button><button id="ccp-email-share" class="cp-ghost" type="button">E-mail</button></div></article>'+
  '<article><h3>Derniers paiements</h3><div class="ccp-list">'+(rows.length?rows.slice(0,10).map(function(x){return'<div><span><strong>'+esc(x.description)+'</strong><small>'+esc(x.status)+'</small></span><b>'+moneyMinor(x.amount_minor,x.currency)+'</b></div>'}).join(""):'<p class="cp-empty">Aucun paiement CB pour le moment.</p>')+'</div></article></div>';
- $("ccp-create").onclick=createPayment;$("ccp-copy")?.addEventListener("click",copyLink);
+ $("ccp-create").onclick=createPayment;$("ccp-copy")?.addEventListener("click",copyLink);$("ccp-share")?.addEventListener("click",shareLink);$("ccp-email-share")?.addEventListener("click",emailLink);
 }
 async function load(){
  ensure();if(demo()){render();return}
@@ -57,6 +57,8 @@ async function createPayment(){
  }finally{busy=false;if(b)b.disabled=false}
 }
 async function copyLink(){var v=$("ccp-link")?.value;if(!v)return;try{await navigator.clipboard.writeText(v);var f=$("ccp-feedback");if(f)f.textContent="Lien copié."}catch(_e){}}
+async function shareLink(){var v=$("ccp-link")?.value;if(!v)return;if(navigator.share){try{await navigator.share({title:"Paiement sécurisé Audiotel Premium Pro",text:"Voici votre lien de paiement sécurisé.",url:v});return}catch(_e){}}await copyLink()}
+function emailLink(){var v=$("ccp-link")?.value;if(!v)return;location.href="mailto:?subject="+encodeURIComponent("Lien de paiement sécurisé")+"&body="+encodeURIComponent("Bonjour,\n\nVoici votre lien de paiement sécurisé :\n"+v+"\n\nCordialement.")}
 document.addEventListener("pgi:portal-loaded",load);
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",function(){ensure();load()},{once:true});else{ensure();load()}
 })();
