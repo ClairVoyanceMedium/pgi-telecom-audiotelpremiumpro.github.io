@@ -206,7 +206,7 @@ const searchHints={
   "paiement-cb-audiotel":"paiement CB carte bancaire consultation forfait",
   "business-live-audiotel":"Business Live direct temps réel suivi appels",
   "audiotel-sans-siret":"sans SIRET particulier porteur projet",
-  "conditions-abonnement":"3€ abonnement prix résiliation paiement contrat",
+  "conditions-abonnement":"4,90€ abonnement prix résiliation paiement contrat",
   "resilier-contrat":"résilier résiliation abonnement contrat",
   "retractation":"rétractation consommateur droit",
   "confidentialite":"RGPD données confidentialité vie privée"
@@ -469,19 +469,27 @@ function simplifyPublicShell(html){
     .replaceAll("Comparer les économies potentielles","Calculer votre revenu supplémentaire")
     .replaceAll("Préparer ma demande","Demander mon numéro")
     .replaceAll("<span>Plateforme Audiotel &amp; SVA</span>","<span>Numéro surtaxé &amp; espace client</span>")
-    .replaceAll("<span>3€ TTC / mois pour la plateforme</span>","<span>Mois en cours offert · puis 3€ / mois</span>")
-    .replaceAll("<span>3€ TTC / mois</span>","<span>Mois en cours offert · puis 3€ / mois</span>")
+    .replaceAll("<span>3€ TTC / mois pour la plateforme</span>","<span>Mois en cours offert · puis 4,90€ / mois</span>")
+    .replaceAll("<span>3€ TTC / mois</span>","<span>Mois en cours offert · puis 4,90€ / mois</span>")
     .replaceAll("<span>Particulier ou professionnel</span>","<span>Particuliers, indépendants &amp; entreprises</span>")
     .replaceAll("<span>Activation soumise à validation</span>","<span>Activation après validation</span>")
     .replaceAll("<span>Activation après validation</span>","<span>Activation après validation</span><span>Sans engagement de durée</span>")
-    .replaceAll("3€ / mois","3€ TTC / mois")
-    .replaceAll("3€ par mois","3€ TTC par mois");
+    .replaceAll("4,90€ / mois","4,90€ TTC / mois")
+    .replaceAll("4,90€ par mois","4,90€ TTC par mois");
 }
 
 
 
 function normalizePublicBranding(html){
   return String(html||"")
+    .replaceAll("3,00 € TTC","4,90 € TTC")
+    .replaceAll("3,00€ TTC","4,90€ TTC")
+    .replaceAll("3 € TTC","4,90 € TTC")
+    .replaceAll("3€ TTC","4,90€ TTC")
+    .replaceAll("3,00 EUR TTC","4,90 EUR TTC")
+    .replaceAll("3.00 EUR TTC","4.90 EUR TTC")
+    .replaceAll("3,00 EUR/mois","4,90 EUR/mois")
+    .replaceAll("3.00 EUR/month","4.90 EUR/month")
     .replace(/\bPGI\s*(?:[•·-]\s*)?Telecom\b/gi,"PGI Telecom")
     .replace(/\bPGI\b(?!\s+Telecom)/gi,"PGI Telecom");
 }
@@ -491,7 +499,7 @@ function injectRevenueQuickNav(html){
     .replace('aria-labelledby="revenue-quick-nav-title"','aria-label="Accès rapides Audiotel Premium Pro"')
     .replace('class="revenue-quick-tab revenue-quick-tab-client" href="#tarif"','class="revenue-quick-tab revenue-quick-tab-client" href="/#tarif"');
   if(out.includes('class="revenue-quick-nav"'))return out;
-  const nav='<section class="revenue-quick-nav" aria-label="Accès rapides Audiotel Premium Pro"><div class="wrap"><nav class="revenue-quick-tabs" aria-label="Accès rapides Audiotel Premium Pro"><a class="revenue-quick-tab revenue-quick-tab-primary" href="/portabilite-numero-sva/"><small>DÉJÀ UN NUMÉRO SURTAXÉ ?</small><strong>Demander ma portabilité</strong><span>Conserver mon numéro s’il est éligible</span></a><a class="revenue-quick-tab" href="/demande-ouverture/?type=nouveau"><small>NOUVEAU CLIENT</small><strong>Demander votre numéro surtaxé</strong><span>Préparer mon ouverture</span></a><a class="revenue-quick-tab" href="/comparateur-audiotel/"><small>COMPARAISON</small><strong>Comparer mon offre</strong><span>Voir l’écart à activité identique</span></a><a class="revenue-quick-tab" href="/paiement-cb-audiotel/"><small>SERVICE COMPLÉMENTAIRE</small><strong>Paiement CB</strong><span>Encaisser consultations et forfaits</span></a><a class="revenue-quick-tab revenue-quick-tab-client" href="/#tarif"><small>PRIX CLAIR</small><strong>Voir le tarif</strong><span>3€ TTC / mois après le mois en cours offert</span></a></nav></div></section>';
+  const nav='<section class="revenue-quick-nav" aria-label="Accès rapides Audiotel Premium Pro"><div class="wrap"><nav class="revenue-quick-tabs" aria-label="Accès rapides Audiotel Premium Pro"><a class="revenue-quick-tab revenue-quick-tab-primary" href="/portabilite-numero-sva/"><small>DÉJÀ UN NUMÉRO SURTAXÉ ?</small><strong>Demander ma portabilité</strong><span>Conserver mon numéro s’il est éligible</span></a><a class="revenue-quick-tab" href="/demande-ouverture/?type=nouveau"><small>NOUVEAU CLIENT</small><strong>Demander votre numéro surtaxé</strong><span>Préparer mon ouverture</span></a><a class="revenue-quick-tab" href="/comparateur-audiotel/"><small>COMPARAISON</small><strong>Comparer mon offre</strong><span>Voir l’écart à activité identique</span></a><a class="revenue-quick-tab" href="/paiement-cb-audiotel/"><small>SERVICE COMPLÉMENTAIRE</small><strong>Paiement CB</strong><span>Encaisser consultations et forfaits</span></a><a class="revenue-quick-tab revenue-quick-tab-client" href="/#tarif"><small>PRIX CLAIR</small><strong>Voir le tarif</strong><span>4,90€ TTC / mois après le mois en cours offert</span></a></nav></div></section>';
   return out.replace("</body>",nav+"\n</body>");
 }
 
