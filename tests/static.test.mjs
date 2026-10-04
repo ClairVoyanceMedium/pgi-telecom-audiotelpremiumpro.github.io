@@ -139,7 +139,9 @@ test("les baselines statistiques avancées restent hors du parcours utilisateur 
 });
 
 test("le nom officiel et les vues principales sont présents",()=>{
-  assert.match(index,/PGI Telecom/);\n  assert.match(index,/Audiotel Premium Pro/);\n  assert.doesNotMatch(index,/PGI • Telecom - Audiotel Premium Pro/);
+  assert.match(index,/PGI Telecom/);
+  assert.match(index,/Audiotel Premium Pro/);
+  assert.doesNotMatch(index,/PGI • Telecom - Audiotel Premium Pro/);
   assert.match(index,/data-view="overview"><span>⌂<\/span>Cockpit/);
   assert.match(index,/data-view="system"><span>⌁<\/span>Supervision/);
   for(const view of ["calls","finance","experts","carriers","wholesale","settings"]){
@@ -494,7 +496,8 @@ test("la release Git exacte reste visible et obligatoire",()=>{
 });
 
 test("le produit garde son identité interne et le nom de cockpit installé",()=>{
-  assert.match(index,/PGI Telecom/);\n  assert.match(index,/Audiotel Premium Pro/);
+  assert.match(index,/PGI Telecom/);
+  assert.match(index,/Audiotel Premium Pro/);
   assert.match(index,/Cockpit \/ PGI Telecom • Audiotel Premium Pro/);
   assert.match(index,/PLATEFORME/);
   assert.match(index,/CENTRE DE PILOTAGE AUDIOTEL PREMIUM PRO/);
