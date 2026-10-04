@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import test from "node:test";
 
 const migration=fs.readFileSync("database/migrations/064_referral_program_controls.sql","utf8");
 const server=fs.readFileSync("backend/server.mjs","utf8");
@@ -8,7 +9,8 @@ const memory=fs.readFileSync("backend/src/store-memory.mjs","utf8");
 const api=fs.readFileSync("assets/api-client.js","utf8");
 const customerApi=fs.readFileSync("assets/client-portal-api.js","utf8");
 const customerUi=fs.readFileSync("assets/client-referral.js","utf8");
-const adminUi=fs.readFileSync("assets/platform-admin-tools.js","utf8");\nconst adminReferral=fs.readFileSync("assets/platform-referral-tools.js","utf8");
+const adminUi=fs.readFileSync("assets/platform-admin-tools.js","utf8");
+const adminReferral=fs.readFileSync("assets/platform-referral-tools.js","utf8");
 const site=fs.readFileSync("site/site.js","utf8");
 const client=fs.readFileSync("client.html","utf8");
 
@@ -51,8 +53,9 @@ test("public opening captures referral code without exposing it to analytics",()
 });
 
 test("admin cockpit exposes a clear activation and deactivation control",()=>{
-  assert.match(adminUi,/Programme de parrainage/);
-  assert.match(adminUi,/data-referral-toggle/);
-  assert.match(adminUi,/Désactiver le parrainage/);
-  assert.match(adminUi,/Activer le parrainage/);
+  assert.match(adminUi,/platform-referral-tools\.js/);
+  assert.match(adminReferral,/Programme de parrainage/);
+  assert.match(adminReferral,/data-referral-toggle/);
+  assert.match(adminReferral,/Désactiver le parrainage/);
+  assert.match(adminReferral,/Activer le parrainage/);
 });
