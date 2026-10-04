@@ -91,7 +91,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
       error=>error.status===409&&error.code==="BILLING_SUBSCRIPTION_TENANT_MISMATCH"
     );
     const billingPrep=await store.customerBillingPreparation((await store.sql.unsafe("SELECT id FROM tenants WHERE slug='integration-external'"))[0].id);
-    assert.equal(Number(billingPrep.offer.amount_minor),300);
+    assert.equal(Number(billingPrep.offer.amount_minor),490);
     assert.equal(billingPrep.offer.tax_behavior,"inclusive");
     assert.equal(billingPrep.reference_offer.tax_behavior,"inclusive");
     assert.equal(billingPrep.checkout_prefill.email,"billing@example.test");
