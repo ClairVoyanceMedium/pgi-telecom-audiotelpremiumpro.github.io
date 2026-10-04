@@ -37,8 +37,15 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
       if(x.operator_portability_reference)meta.push("Réf. opérateur : "+x.operator_portability_reference);
       if(x.rejection_reason)meta.push("Motif : "+x.rejection_reason);
       const cancellable=["submitted","awaiting_documents","eligibility_check","operator_pending"].includes(status);
-      const action=cancellable?'<button class="cp-portability-cancel" type="button" data-portability-cancel="'+esc(x.id)+'">Annuler</button>':"";
-      return '<div class="cp-row cp-portability-row"><div><strong>'+esc(x.display_number||x.requested_e164||"Numéro")+'</strong><span>'+esc(meta.filter(Boolean).join(" · "))+'</span></div><div class="cp-portability-actions">'+chip(status)+action+'</div></div>';
+      const priorityEligible=["submitted","awaiting_documents","eligibility_check","operator_pending"].includes(status);
+      const priorityStatus=String(x.priority_service_status||"standard").toLowerCase();
+      if(priorityStatus==="paid")meta.push("Priorité PGI activée");
+      const priorityPrice=money(Number(x.priority_fee_minor||990)/100,x.priority_currency||"EUR",locale);
+      const priorityAction=priorityEligible&&priorityStatus!=="paid"
+        ?'<button class="cp-ghost cp-portability-priority" type="button" data-portability-priority="'+esc(x.id)+'">Priorité PGI · '+esc(priorityPrice)+'</button>'
+        :priorityStatus==="paid"?'<span class="cp-chip ok">PRIORITÉ ACTIVE</span>':"";
+      const cancelAction=cancellable?'<button class="cp-portability-cancel" type="button" data-portability-cancel="'+esc(x.id)+'">Annuler</button>':"";
+      return '<div class="cp-row cp-portability-row"><div><strong>'+esc(x.display_number||x.requested_e164||"Numéro")+'</strong><span>'+esc(meta.filter(Boolean).join(" · "))+'</span><small>Standard : gratuit, file normale. Priorité PGI : 9,90 € TTC une seule fois, traitement interne avant les dossiers standard. Le délai final dépend des opérateurs et n’est pas garanti.</small></div><div class="cp-portability-actions">'+chip(status)+priorityAction+cancelAction+'</div></div>';
     }).join(""):'<p class="cp-empty">Aucune demande de portabilité en cours.</p>';
   }
   function open(){
@@ -64,12 +71,45 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
     try{await window.PGICustomerApi.cancelPortability(id,window.PGICustomerApi.newIdempotencyKey());await reload();toast("Demande de portabilité annulée.");}
     catch{toast("Cette demande ne peut plus être annulée.");}finally{busy=false;}
   }
+  async function priority(id){
+    if(busy)return;
+    if(getDemo()){toast("La priorité PGI sera disponible sur un dossier réel.");return;}
+    busy=true;
+    try{
+      const result=await window.PGICustomerApi.createPortabilityPriorityCheckout(id,window.PGICustomerApi.newIdempotencyKey());
+      if(result&&result.already_paid){await reload();toast("La priorité PGI est déjà activée sur ce dossier.");return;}
+      if(result&&result.url&&/^https:\/\/checkout\.stripe\.com\//i.test(result.url)){location.assign(result.url);return;}
+      throw new Error("CHECKOUT_URL_MISSING");
+    }catch(err){
+      const messages={
+        PORTABILITY_PRIORITY_NOT_AVAILABLE:"La priorité n’est plus disponible pour ce dossier.",
+        B2C_COMMERCIAL_NOT_READY:"Cette option n’est pas encore disponible pour ce dossier particulier.",
+        PAYMENT_ACCOUNT_NOT_READY:"Le paiement sécurisé est momentanément indisponible.",
+        PAYMENT_PROVIDER_UNAVAILABLE:"Le paiement sécurisé est momentanément indisponible."
+      };
+      toast(messages[err&&err.code]||"Impossible d’ouvrir le paiement de la priorité pour le moment.");
+    }finally{busy=false;}
+  }
+  function handlePriorityReturn(){
+    const params=new URLSearchParams(location.search),state=params.get("portability-priority");
+    if(!state)return;
+    if(state==="success")toast("Paiement reçu. La priorité sera affichée dès confirmation sécurisée du paiement.");
+    if(state==="cancelled")toast("Paiement annulé. Votre portabilité reste gratuite et conserve la file standard.");
+    const url=new URL(location.href);url.searchParams.delete("portability-priority");url.searchParams.delete("session_id");
+    history.replaceState(null,"",url.pathname+(url.search?"?"+url.searchParams.toString():"")+url.hash);
+  }
   function bind(){
     if(bound)return;bound=true;
     $("portability-close")?.addEventListener("click",close);
     $("portability-country")?.addEventListener("change",syncRioRequirement);
     $("client-portability-form")?.addEventListener("submit",submit);
-    $("portability-list")?.addEventListener("click",e=>{const b=e.target.closest("[data-portability-cancel]");if(b)cancel(b.dataset.portabilityCancel);});
+    $("portability-list")?.addEventListener("click",e=>{
+      const priorityButton=e.target.closest("[data-portability-priority]");
+      if(priorityButton){priority(priorityButton.dataset.portabilityPriority);return;}
+      const cancelButton=e.target.closest("[data-portability-cancel]");
+      if(cancelButton)cancel(cancelButton.dataset.portabilityCancel);
+    });
+    handlePriorityReturn();
   }
   bind();
   return {render,open};
