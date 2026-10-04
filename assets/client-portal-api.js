@@ -52,8 +52,8 @@ function post(path,body,idempotencyKey){return request(path,{method:"POST",body:
 root.PGICustomerApi=Object.freeze({
 login:function(email,password,tenant,remember){return post("/customer/auth/login",{email:email,password:password,tenant:tenant||null,remember_me:remember===true});},
 register:function(payload){return post("/customer/auth/register",Object.assign(payload,root.PGIOrderMeta||{}));},
-google:function(credential,tenant,invite,remember){return post("/customer/auth/google",{credential:credential,tenant:tenant||null,invite:invite||null,remember_me:remember===true});},
-activate:function(token,displayName,password){return post("/customer/auth/activate",{token:token,display_name:displayName,password:password});},
+google:function(credential,tenant,invite,remember,legal){return post("/customer/auth/google",Object.assign({credential:credential,tenant:tenant||null,invite:invite||null,remember_me:remember===true},legal||{}));},
+activate:function(token,displayName,password,legal){return post("/customer/auth/activate",Object.assign({token:token,display_name:displayName,password:password},legal||{}));},
 me:function(){return get("/customer/auth/me",5000);},
 logout:function(){return post("/customer/auth/logout",{});},
 changePassword:function(currentPassword,newPassword){return post("/customer/auth/change-password",{current_password:currentPassword,new_password:newPassword});},
