@@ -2695,6 +2695,24 @@ export class PostgresStore{
     });
   }
 
+  async scanReferralQualifications(limit=100){
+    const max=Math.max(1,Math.min(500,Number(limit)||100));
+    const candidates=await this.sql.unsafe(
+      "SELECT r.referred_tenant_id FROM tenant_referrals r"+
+      " WHERE r.status='pending' AND EXISTS("+
+      " SELECT 1 FROM tenant_number_assignments a JOIN sva_numbers n ON n.id=a.sva_number_id"+
+      " WHERE a.tenant_id=r.referred_tenant_id AND a.status='active' AND n.status='active')"+
+      " ORDER BY r.created_at ASC LIMIT $1",
+      [max]
+    );
+    let qualified=0;
+    for(const row of candidates){
+      const result=await this.qualifyReferralForTenant(Number(row.referred_tenant_id),"periodic_activation_scan");
+      if(result)qualified++;
+    }
+    return {scanned:candidates.length,qualified};
+  }
+
   async queuePendingReferralRewardsByTenantPublicId(tenantPublicId){
     const publicId=String(tenantPublicId||"").trim();
     if(!publicId)return {queued:0};
