@@ -5345,13 +5345,22 @@ export class PostgresStore{
         "SELECT id,sva_number_id,label,destination_type,destination_uri,priority,status,failover_enabled,max_concurrent_calls,active_calls,last_assigned_at"+
         " FROM tenant_scoped_call_destinations ORDER BY priority,id LIMIT 100"
       );
-      const portabilityRequests=await tx.unsafe(
+      const portabilityRows=await tx.unsafe(
         "SELECT id,country_code,requested_e164,display_number,service_family,current_operator_name,desired_port_date,status,ownership_status,"+
         " operator_portability_reference,scheduled_at,completed_at,rejection_reason,tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,tariff_verified_at,"+
         " rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,"+
         " automation_state,automation_last_error,automation_last_sync_at,operator_status,created_at,updated_at"+
         " FROM tenant_scoped_portability_requests_v4 ORDER BY created_at DESC,id DESC LIMIT 20"
       );
+      let portabilityRequests=portabilityRows;
+      if(portabilityRows.length){
+        const priorityRows=await tx.unsafe(
+          "SELECT id,priority_service_status,priority_fee_minor,priority_currency,priority_paid_at FROM tenant_portability_requests WHERE tenant_id=$1 AND id=ANY($2::bigint[])",
+          [id,portabilityRows.map(row=>Number(row.id))]
+        );
+        const priorityById=new Map(priorityRows.map(row=>[Number(row.id),row]));
+        portabilityRequests=portabilityRows.map(row=>({...row,...(priorityById.get(Number(row.id))||{priority_service_status:"standard",priority_fee_minor:990,priority_currency:"EUR",priority_paid_at:null})}));
+      }
       const serviceIncidents=await tx.unsafe(
         "SELECT id,public_id,category,severity,status,source,title,description,assigned_team,first_response_due_at,target_resolution_at,first_responded_at,last_customer_update_at,last_pgi_update_at,resolved_at,created_at,updated_at"+
         " FROM tenant_scoped_service_incidents WHERE customer_visible=true ORDER BY (status IN ('resolved','closed')) ASC,updated_at DESC,id DESC LIMIT 10"
