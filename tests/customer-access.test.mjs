@@ -27,7 +27,7 @@ test("consolidated portal data is minimized by role permissions",()=>{
     metric_net_payout_by_currency:[{currency:"EUR",net_payout_ht:8}],
     series:[{bucket_date:"2026-09-22",calls_total:4,generated_revenue_ttc:12}],
     settlements:[{id:1,net_payout_ht:8}],
-    subscriptions:[{id:1,status:"active",amount_minor:300,price_currency:"EUR",billing_currency:"EUR"}],
+    subscriptions:[{id:1,status:"active",amount_minor:490,price_currency:"EUR",billing_currency:"EUR"}],
     numbers:[{id:1,display_number:"0890"}],
     destinations:[{id:1,label:"Accueil"}],
     portability_requests:[{id:1,status:"submitted"}],

@@ -1,3 +1,12 @@
+## Tarif plateforme 4,90 EUR TTC & corpus contractuel v5 — 2026-10-04
+
+- abonnement Audiotel Premium Pro porté à **4,90 EUR TTC par mois** par nouvelle version tarifaire, sans réécrire les versions historiques à 2,00 EUR et 3,00 EUR ;
+- mois civil de souscription conservé offert, facturation à 4,90 EUR TTC à compter du mois suivant ;
+- pages publiques, SEO/IA, espace client, cockpit, Stripe Checkout et contrôles de production alignés sur le même prix ;
+- commission du service de paiement CB maintenue séparément à **4,9 %**, hors frais du prestataire de paiement ;
+- corpus contractuel courant porté à **2026-10-04-b2b-b2c-v5** ; compatibilité de rétractation conservée pour les contrats antérieurs v4 ;
+- migration de base dédiée `064_subscription_price_490.sql`, historique tarifaire immuable conservé.
+
 ## Monthly Contract & Site Protection v3 — 2026-09-26
 
 - abonnement plateforme à durée indéterminée, facturé mensuellement d’avance ;

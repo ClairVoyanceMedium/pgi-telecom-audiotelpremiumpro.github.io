@@ -11,7 +11,7 @@ Audiotel Premium Pro is the public name of a PGI Telecom platform focused on Aud
 
 The public offer is designed for individuals, project holders, independent professionals, associations, companies and teams. An initial request can be submitted without an existing SIRET, while activation may still require registration or supporting documents depending on the activity, status and operator requirements. Professional accounts may have additional team and role-management functions.
 
-The platform subscription currently displayed on the public site is 3€ TTC per month. Conditions linked to the actual SVA number, caller tariff, reversement rate, operator connectivity and eligibility are separate from that platform subscription and must be validated before activation.
+The platform subscription currently displayed on the public site is 4.90 EUR including VAT per month. Conditions linked to the actual SVA number, caller tariff, reversement rate, operator connectivity and eligibility are separate from that platform subscription and must be validated before activation.
 
 ## 2. Important accuracy rules
 

@@ -39,7 +39,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(internalAccess[0].allowed,true);
 
     const billingBefore=await store.subscriptionBillingOverview();
-    assert.equal(Number(billingBefore.current_price.amount_minor),300);
+    assert.equal(Number(billingBefore.current_price.amount_minor),490);
     assert.equal(billingBefore.current_price.currency,"EUR");
     assert.equal(billingBefore.internal_usage_exempt,true);
     assert.equal(billingBefore.summary.access_blocked,1);
@@ -91,7 +91,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
       error=>error.status===409&&error.code==="BILLING_SUBSCRIPTION_TENANT_MISMATCH"
     );
     const billingPrep=await store.customerBillingPreparation((await store.sql.unsafe("SELECT id FROM tenants WHERE slug='integration-external'"))[0].id);
-    assert.equal(Number(billingPrep.offer.amount_minor),300);
+    assert.equal(Number(billingPrep.offer.amount_minor),490);
     assert.equal(billingPrep.offer.tax_behavior,"inclusive");
     assert.equal(billingPrep.reference_offer.tax_behavior,"inclusive");
     assert.equal(billingPrep.checkout_prefill.email,"billing@example.test");
@@ -798,10 +798,10 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     const rawCalls=await store.sql.unsafe("SELECT count(*)::int AS count FROM calls");
     assert.equal(rawCalls[0].count,1);
     const migrations=await store.sql.unsafe("SELECT version,checksum FROM schema_migrations ORDER BY version");
-    assert.equal(migrations.length,63);
+    assert.equal(migrations.length,64);
     assert.equal(new Set(migrations.map(x=>x.version)).size,migrations.length);
     assert.equal(migrations[0].version,"001_baseline");
-    assert.equal(migrations.at(-1).version,"063_stripe_connect_card_payments");
+    assert.equal(migrations.at(-1).version,"064_subscription_price_490");
     assert.equal(await store.customerWithdrawalFeatureReady(),true);
     for(const migration of migrations)assert.match(migration.checksum,/^[a-f0-9]{64}$/);
   }finally{

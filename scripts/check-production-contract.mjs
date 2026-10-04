@@ -65,6 +65,7 @@ const serviceOperationsMigration=fs.readFileSync("database/migrations/033_servic
 const serviceIntegrityMigration=fs.readFileSync("database/migrations/034_service_incident_tenant_integrity.sql","utf8");
 const regulatoryTrustMigration=fs.readFileSync("database/migrations/037_regulatory_trust_center.sql","utf8");
 const subscriptionPrice300Migration=fs.readFileSync("database/migrations/038_subscription_price_300.sql","utf8");
+const subscriptionPrice490Migration=fs.readFileSync("database/migrations/064_subscription_price_490.sql","utf8");
 const regulatoryEvidencePackExportMigration=fs.readFileSync("database/migrations/039_regulatory_evidence_pack_exports.sql","utf8");
 const arcep2026Migration=fs.readFileSync("database/migrations/040_arcep_2026_number_guardrails.sql","utf8");
 const arcep2026EvidencePackMigration=fs.readFileSync("database/migrations/041_arcep_2026_evidence_pack.sql","utf8");
@@ -316,7 +317,8 @@ if(!/target_percent:99\.9/.test(sloAssuranceSource)||!/prometheus_burn_rate/.tes
 if(!/Risk Engine/.test(controlTowerAssuranceUi)||!/Shadow billing/.test(controlTowerAssuranceUi)||!/Validations 4 yeux/.test(controlTowerAssuranceUi))failures.push("Control Tower assurance center must expose risk SLO finance and four-eyes workflow");
 for(const scenario of ["database_failure","worker_backlog","settlement_mismatch","hyperscale_growth"]){if(!digitalTwinSource.includes(scenario))failures.push("Digital Twin missing advanced scenario "+scenario);}
 if(!/audiotel-digital-twin\/2/.test(digitalTwinSource)||!/mutates_state:false/.test(digitalTwinSource))failures.push("advanced Digital Twin must remain bounded and non-mutating");
-if(!/pgi_publish_service_plan_price/.test(subscriptionPrice300Migration)||!/300/.test(subscriptionPrice300Migration)||!/3\.00 EUR\/month/.test(subscriptionPrice300Migration))failures.push("current external subscription reference price must remain versioned at 3 EUR/month");
+if(!/pgi_publish_service_plan_price/.test(subscriptionPrice300Migration)||!/300/.test(subscriptionPrice300Migration)||!/3\.00 EUR\/month/.test(subscriptionPrice300Migration))failures.push("historical 3 EUR subscription price version must remain auditable");
+if(!/pgi_publish_service_plan_price/.test(subscriptionPrice490Migration)||!/490/.test(subscriptionPrice490Migration)||!/4\.90 EUR TTC\/month/.test(subscriptionPrice490Migration))failures.push("current external subscription reference price must remain versioned at 4.90 EUR TTC/month");
 if(!/tax_behavior text NOT NULL DEFAULT 'inclusive'/.test(subscriptionTaxInclusiveMigration)||!/3\.00 EUR TTC\/month/.test(subscriptionTaxInclusiveMigration)||!/customer_price_basis','TTC'/.test(subscriptionTaxInclusiveMigration))failures.push("external subscription price must remain explicitly tax-inclusive at the customer-facing layer");
 if(!/tax_behavior IS DISTINCT FROM OLD\.tax_behavior/.test(subscriptionTaxInclusiveMigration)||!/subscription price tax behavior is immutable/.test(subscriptionTaxInclusiveMigration))failures.push("subscription tax behavior must remain immutable once published");
 if(!/v\.tax_behavior/.test(postgresStore)||!/tax_behavior:"inclusive"/.test(postgresStore))failures.push("billing API must expose inclusive tax behavior");

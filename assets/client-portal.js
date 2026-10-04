@@ -49,7 +49,7 @@ function demoData(range){
       {id:2,display_number:"0892 98 76 54",e164:"+33892987654",currency:"EUR",number_type:"premium",service_rate_ttc_per_min:.8,status:"active",assignment_status:"active",kyc_status:"verified",tariff_code:"D080"}
     ],
     settlements:[{id:1,currency:"EUR",period_start:"2026-08-01",period_end:"2026-08-31",net_payout_ht:428.75,status:"paid",paid_at:"2026-09-12T10:00:00Z"},{id:2,currency:"EUR",period_start:"2026-09-01",period_end:"2026-09-15",net_payout_ht:231.2,status:"payable",payment_due_date:"2026-09-30"}],
-    subscriptions:[{id:1,status:"active",billing_currency:"EUR",current_period_start:"2026-09-01T00:00:00Z",current_period_end:"2026-10-01T00:00:00Z",plan_name:"Accès Audiotel",amount_minor:300,price_currency:"EUR",tax_behavior:"inclusive",billing_interval:"month",last_payment_status:"paid"}],
+    subscriptions:[{id:1,status:"active",billing_currency:"EUR",current_period_start:"2026-09-01T00:00:00Z",current_period_end:"2026-10-01T00:00:00Z",plan_name:"Accès Audiotel",amount_minor:490,price_currency:"EUR",tax_behavior:"inclusive",billing_interval:"month",last_payment_status:"paid"}],
     portability_requests:[],
     destinations:[{id:1,sva_number_id:1,label:"Standard principal",destination_type:"pstn",destination_uri:"tel:+33123456789",priority:10,status:"active",active_calls:1,max_concurrent_calls:25}],
     recent_calls:recent,
@@ -276,7 +276,7 @@ async function handleGoogleCredential(response,tenantOverride){
   var tenant=tenantOverride||$("customer-tenant").value||"";
   try{
     var remember=Boolean($("customer-remember")&&$("customer-remember").checked),legal={};
-    if(invite){var accepted=Boolean($("activation-legal")&&$("activation-legal").checked);if(!accepted){setAuthMessage("Acceptez les conditions contractuelles avant d’activer votre espace.",true);return;}legal={legal_terms_accepted:true,privacy_notice_acknowledged:true,legal_version:"2026-09-26-b2b-b2c-v4"};}
+    if(invite){var accepted=Boolean($("activation-legal")&&$("activation-legal").checked);if(!accepted){setAuthMessage("Acceptez les conditions contractuelles avant d’activer votre espace.",true);return;}legal={legal_terms_accepted:true,privacy_notice_acknowledged:true,legal_version:"2026-10-04-b2b-b2c-v5"};}
     var result=await window.PGICustomerApi.google(credential,tenant,invite,remember,legal);state.googleCredential=null;
     if(result&&result.pending_contract){
       setAuthMessage("Accès client non autorisé. Contactez PGI Telecom si votre dossier a déjà été validé.",true);
@@ -367,7 +367,7 @@ async function submitRegistration(e){
     authority_confirmed:$("register-authority").checked,
     legal_terms_accepted:Boolean($("register-legal")&&$("register-legal").checked),
     privacy_notice_acknowledged:Boolean($("register-legal")&&$("register-legal").checked),
-    legal_version:"2026-09-26-b2b-b2c-v4",
+    legal_version:"2026-10-04-b2b-b2c-v5",
     website:$("register-website").value,
     preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",
     timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC")
@@ -461,7 +461,7 @@ async function submitActivation(e){
   var token=new URLSearchParams(location.search).get("invite")||"",accepted=Boolean($("activation-legal")&&$("activation-legal").checked);
   if(!accepted){setAuthMessage("Acceptez les conditions contractuelles avant d’activer votre espace.",true);return;}
   try{
-    var result=await window.PGICustomerApi.activate(token,$("activation-name").value.trim(),p,{legal_terms_accepted:true,privacy_notice_acknowledged:true,legal_version:"2026-09-26-b2b-b2c-v4"});state.user=result.user;history.replaceState(null,"",location.pathname);showApp();
+    var result=await window.PGICustomerApi.activate(token,$("activation-name").value.trim(),p,{legal_terms_accepted:true,privacy_notice_acknowledged:true,legal_version:"2026-10-04-b2b-b2c-v5"});state.user=result.user;history.replaceState(null,"",location.pathname);showApp();
   }catch(err){var messages={CUSTOMER_ACCOUNT_EXISTS:"Un compte existe déjà pour cette adresse. Connectez-vous avec votre compte existant.",REGISTRATION_LEGAL_TERMS_REQUIRED:"Acceptez les conditions contractuelles avant d’activer votre espace.",LEGAL_DOCUMENT_VERSION_OUTDATED:"Les conditions ont été mises à jour. Rechargez la page avant de continuer."};setAuthMessage(messages[err.code]||"Activation impossible ou invitation expirée.",true);}
 }
 function csvCell(v){return '"'+String(v==null?"":v).replace(/"/g,'""')+'"';}
