@@ -133,13 +133,16 @@ test("public site remains self-contained and mobile responsive",()=>{
 });
 
 
-test("registration handoff stays on the dedicated opening page without leaking PII in the URL",()=>{
+test("opening handoff creates a protected dossier flow without leaking PII in the URL",()=>{
   assert.doesNotMatch(html,/id="order-form"/);
   assert.match(application,/id="order-form"/);
   assert.match(application,/order_account_type/);
   assert.match(application,/id="order-service-intent"/);
   assert.match(js,/sessionStorage\.setItem\(KEY,JSON\.stringify\(intent\)\)/);
-  assert.match(js,/location\.href="\.\.\/client\.html\?register=1"/);
+  assert.match(js,/client\.html\?opening=/);
+  assert.match(js,/access-sent/);
+  assert.match(js,/received/);
+  assert.doesNotMatch(js,/client\.html\?register=1/);
   assert.doesNotMatch(js,/location\.href=.*email|URLSearchParams.*email/);
 });
 
@@ -184,7 +187,7 @@ test("GA4 measurement model groups content, classifies AI referrals and tracks t
   assert.match(tracking,/ignore_referrer:true/);
   for(const event of ["select_content","order_form_start","order_form_submit","order_form_error","order_form_abandon","registration_view","email_verification_required","page_performance"])assert.ok(tracking.includes(event),event+" missing");
   for(const metric of ["lcp_ms","cls_milli","ttfb_ms","interaction_latency_p98_ms"])assert.ok(tracking.includes(metric),metric+" missing");
-  assert.match(js,/if\(r\.ok\)window\.PGIAnalytics\?\.track\("generate_lead"\)/);
+  assert.match(js,/if\(r\.ok&&data\.accepted\)window\.PGIAnalytics\?\.track\("generate_lead"\)/);
   assert.doesNotMatch(tracking,/traffic_origin\s*:\s*document\.referrer/);
   assert.doesNotMatch(tracking,/track\([^\n]*(first_name|last_name|company_name|phone)/i);
 });
