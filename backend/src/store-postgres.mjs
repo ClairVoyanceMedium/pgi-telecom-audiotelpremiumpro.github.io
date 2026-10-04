@@ -2344,6 +2344,9 @@ export class PostgresStore{
     const providerInvoicePdfUrl=payload.provider_invoice_pdf_url==null?null:String(payload.provider_invoice_pdf_url).trim();
     const paymentAttemptCount=payload.payment_attempt_count==null?null:Number(payload.payment_attempt_count);
     const nextPaymentAttempt=payload.next_payment_attempt||null;
+    const providerInvoiceAmountPaid=payload.provider_invoice_amount_paid_minor==null?null:Number(payload.provider_invoice_amount_paid_minor);
+    const providerInvoiceCurrency=payload.provider_invoice_currency==null?null:String(payload.provider_invoice_currency).trim().toUpperCase();
+    const providerInvoiceBillingReason=payload.provider_invoice_billing_reason==null?null:String(payload.provider_invoice_billing_reason).trim().slice(0,80);
     if(!/^[a-z0-9_.-]{2,40}$/.test(provider))throw problem(400,"INVALID_BILLING_PROVIDER");
     if(!eventId||eventId.length>200)throw problem(400,"INVALID_BILLING_EVENT_ID");
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantPublicId))throw problem(400,"INVALID_BILLING_TENANT");
@@ -2369,6 +2372,8 @@ export class PostgresStore{
     if(providerInvoicePdfUrl&&(!/^https:\/\//i.test(providerInvoicePdfUrl)||providerInvoicePdfUrl.length>2000))throw problem(400,"INVALID_PROVIDER_INVOICE_PDF_URL");
     if(paymentAttemptCount!=null&&(!Number.isInteger(paymentAttemptCount)||paymentAttemptCount<0))throw problem(400,"INVALID_PAYMENT_ATTEMPT_COUNT");
     if(nextPaymentAttempt&&!Number.isFinite(Date.parse(nextPaymentAttempt)))throw problem(400,"INVALID_NEXT_PAYMENT_ATTEMPT");
+    if(providerInvoiceAmountPaid!=null&&(!Number.isInteger(providerInvoiceAmountPaid)||providerInvoiceAmountPaid<0))throw problem(400,"INVALID_PROVIDER_INVOICE_AMOUNT");
+    if(providerInvoiceCurrency&&!/^[A-Z]{3}$/.test(providerInvoiceCurrency))throw problem(400,"INVALID_PROVIDER_INVOICE_CURRENCY");
     const normalized={
       provider,provider_event_id:eventId,tenant_public_id:tenantPublicId,provider_customer_reference:providerCustomer,
       provider_subscription_reference:providerSubscription,event_type:eventType,status,event_time:eventTime,
@@ -2376,15 +2381,16 @@ export class PostgresStore{
       cancel_at_period_end:!!payload.cancel_at_period_end,last_payment_status:lastPaymentStatus,ends_at:endsAtInput,
       provider_price_reference:providerPriceReference,provider_price_amount_minor:providerPriceAmount,provider_price_currency:providerPriceCurrency,
       provider_billing_interval:providerBillingInterval,provider_interval_count:providerIntervalCount,
-      provider_invoice_reference:providerInvoiceReference,provider_invoice_url:providerInvoiceUrl,provider_invoice_pdf_url:providerInvoicePdfUrl,payment_attempt_count:paymentAttemptCount,next_payment_attempt:nextPaymentAttempt
+      provider_invoice_reference:providerInvoiceReference,provider_invoice_url:providerInvoiceUrl,provider_invoice_pdf_url:providerInvoicePdfUrl,payment_attempt_count:paymentAttemptCount,next_payment_attempt:nextPaymentAttempt,
+      provider_invoice_amount_paid_minor:providerInvoiceAmountPaid,provider_invoice_currency:providerInvoiceCurrency,provider_invoice_billing_reason:providerInvoiceBillingReason
     };
     const hash=createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
     const result=await this.sql.begin(async tx=>{
       await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",[provider+":"+eventId]);
-      const seen=await tx.unsafe("SELECT id,subscription_id,payload_sha256 FROM subscription_billing_events WHERE provider=$1 AND provider_event_id=$2",[provider,eventId]);
+      const seen=await tx.unsafe("SELECT id,subscription_id,tenant_id,payload_sha256 FROM subscription_billing_events WHERE provider=$1 AND provider_event_id=$2",[provider,eventId]);
       if(seen.length){
         if(String(seen[0].payload_sha256)!==hash)throw problem(409,"BILLING_EVENT_ID_COLLISION");
-        return {duplicate:true,subscription_id:seen[0].subscription_id};
+        return {duplicate:true,subscription_id:Number(seen[0].subscription_id),tenant_id:Number(seen[0].tenant_id),status};
       }
       const tenantRows=await tx.unsafe("SELECT id,tenant_type,status FROM tenants WHERE public_id=$1::uuid LIMIT 1",[tenantPublicId]);
       const tenant=tenantRows[0];
@@ -2486,8 +2492,127 @@ export class PostgresStore{
       }
       return {duplicate:false,subscription_id:subscriptionId,tenant_id:Number(tenant.id),status};
     });
+    if(result.tenant_id&&eventType==="invoice.paid"&&providerInvoiceAmountPaid>0&&String(lastPaymentStatus||"")==="paid"&&status==="active"){
+      await this.qualifyCustomerReferralFromBilling(result.tenant_id,result.subscription_id,{provider,event_id:eventId,amount_paid_minor:providerInvoiceAmountPaid,currency:providerInvoiceCurrency||null,billing_reason:providerInvoiceBillingReason||null});
+    }
     if(!result.duplicate)this.eventBus.publish("subscription.changed",{id:result.subscription_id,tenant_id:result.tenant_id,status:result.status});
     return result;
+  }
+
+  async referralProgramSettings(){
+    const row=(await this.readSql.unsafe("SELECT feature_key,enabled,configuration,updated_at FROM platform_feature_flags WHERE feature_key='customer_referral' LIMIT 1"))[0]||null;
+    const cfg=row?.configuration&&typeof row.configuration==="object"?row.configuration:{};
+    return {enabled:row?.enabled===true,reward_minor:Number(cfg.reward_minor||0),currency:String(cfg.currency||"EUR").toUpperCase(),qualification:"paid_active_subscription",updated_at:row?.updated_at||null};
+  }
+
+  async updateReferralProgramSettings(input={},actor={}){
+    const enabled=input.enabled===true,rewardMinor=Number(input.reward_minor),currency=String(input.currency||"EUR").trim().toUpperCase();
+    if(!Number.isInteger(rewardMinor)||rewardMinor<0||rewardMinor>10000000)throw problem(400,"INVALID_REFERRAL_REWARD");
+    if(enabled&&rewardMinor<=0)throw problem(409,"REFERRAL_REWARD_REQUIRED");
+    if(!/^[A-Z]{3}$/.test(currency))throw problem(400,"INVALID_REFERRAL_CURRENCY");
+    const actorId=numericActor(actor);
+    const row=await this.sql.begin(async tx=>{
+      const rows=await tx.unsafe(
+        "INSERT INTO platform_feature_flags(feature_key,enabled,configuration,updated_by) VALUES('customer_referral',$1,$2::jsonb,$3)"+
+        " ON CONFLICT(feature_key) DO UPDATE SET enabled=EXCLUDED.enabled,configuration=EXCLUDED.configuration,updated_by=EXCLUDED.updated_by,updated_at=now()"+
+        " RETURNING enabled,configuration,updated_at",
+        [enabled,JSON.stringify({reward_minor:rewardMinor,currency,qualification:"paid_active_subscription"}),actorId]
+      );
+      await tx.unsafe("UPDATE customer_referral_codes SET status=$1,disabled_at=CASE WHEN $1='disabled' THEN COALESCE(disabled_at,now()) ELSE NULL END",[enabled?"active":"disabled"]);
+      await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES(NULL,$1,'referral.settings.update','platform_feature_flag','customer_referral',$2::jsonb)",[actorId,JSON.stringify({enabled,reward_minor:rewardMinor,currency})]);
+      return rows[0];
+    });
+    this.eventBus.publish("referral.settings.changed",{enabled,reward_minor:rewardMinor,currency});
+    return {enabled:row.enabled===true,reward_minor:Number(row.configuration?.reward_minor||0),currency:String(row.configuration?.currency||currency),qualification:"paid_active_subscription",updated_at:row.updated_at};
+  }
+
+  async platformReferralOverview(){
+    const settings=await this.referralProgramSettings();
+    const stats=(await this.readSql.unsafe("SELECT count(*) FILTER (WHERE status='claimed')::int AS claimed,count(*) FILTER (WHERE status IN ('qualified','rewarded'))::int AS qualified,count(*) FILTER (WHERE status='rewarded')::int AS rewarded FROM customer_referrals"))[0]||{};
+    const earned=(await this.readSql.unsafe("SELECT COALESCE(sum(amount_minor) FILTER (WHERE status='earned'),0)::bigint AS earned_minor,COALESCE(sum(amount_minor) FILTER (WHERE status='paid'),0)::bigint AS paid_minor FROM customer_referral_rewards"))[0]||{};
+    const recent=await this.readSql.unsafe("SELECT r.public_id,r.amount_minor,r.currency,r.status,r.earned_at,r.paid_at,r.paid_reference,cr.public_id AS referral_public_id FROM customer_referral_rewards r JOIN customer_referrals cr ON cr.id=r.referral_id ORDER BY r.earned_at DESC,r.id DESC LIMIT 30");
+    return {...settings,stats:{claimed:Number(stats.claimed||0),qualified:Number(stats.qualified||0),rewarded:Number(stats.rewarded||0),earned_minor:Number(earned.earned_minor||0),paid_minor:Number(earned.paid_minor||0)},recent_rewards:recent.map(x=>({...x,amount_minor:Number(x.amount_minor),reward_reference:x.paid_reference||x.referral_public_id}))};
+  }
+
+  async customerReferralOverview(tenantId){
+    const id=Number(tenantId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    const settings=await this.referralProgramSettings();
+    if(!settings.enabled)return {...settings,code:null,referrals:[]};
+    return this.withTenantReadContext(id,async tx=>{
+      const code=(await tx.unsafe("SELECT code FROM customer_referral_codes WHERE tenant_id=$1 AND status='active' LIMIT 1",[id]))[0]?.code||null;
+      const refs=await tx.unsafe("SELECT status,reward_minor,reward_currency,claimed_at,qualified_at,rewarded_at FROM customer_referrals WHERE referrer_tenant_id=$1 ORDER BY claimed_at DESC,id DESC LIMIT 50",[id]);
+      return {...settings,code,referrals:refs.map(x=>({...x,reward_minor:Number(x.reward_minor),status_label:x.status==="rewarded"?"Parrainage qualifié":x.status==="qualified"?"Qualification en cours":x.status==="claimed"?"Inscription enregistrée":"Parrainage non retenu",claimed_at_label:new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeZone:"Europe/Paris"}).format(new Date(x.claimed_at))}))};
+    });
+  }
+
+  async ensureCustomerReferralCode(tenantId){
+    const id=Number(tenantId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    const settings=await this.referralProgramSettings();
+    if(!settings.enabled)throw problem(409,"REFERRAL_DISABLED");
+    if(settings.reward_minor<=0)throw problem(409,"REFERRAL_REWARD_REQUIRED");
+    const tenant=(await this.readSql.unsafe("SELECT id,public_id,tenant_type,status FROM tenants WHERE id=$1 LIMIT 1",[id]))[0];
+    if(!tenant||tenant.tenant_type==="internal"||tenant.status==="closed")throw problem(409,"REFERRAL_TENANT_INELIGIBLE");
+    const hash=createHash("sha256").update("pgi-referral:"+String(tenant.public_id)).digest("hex").toUpperCase();
+    const code=("PGI"+id.toString(36).toUpperCase()+hash).slice(0,16);
+    await this.sql.unsafe("INSERT INTO customer_referral_codes(tenant_id,code,status) VALUES($1,$2,'active') ON CONFLICT(tenant_id) DO UPDATE SET status='active',disabled_at=NULL",[id,code]);
+    return this.customerReferralOverview(id);
+  }
+
+  async claimCustomerReferral(referredTenantId,code,metadata={}){
+    const tenantId=Number(referredTenantId),normalized=String(code||"").trim().toUpperCase();
+    if(!Number.isInteger(tenantId)||tenantId<=0||!/^[A-Z0-9]{8,24}$/.test(normalized))throw problem(400,"INVALID_REFERRAL_CODE");
+    const result=await this.sql.begin(async tx=>{
+      const flag=(await tx.unsafe("SELECT enabled,configuration FROM platform_feature_flags WHERE feature_key='customer_referral' LIMIT 1 FOR SHARE"))[0]||null;
+      const cfg=flag?.configuration&&typeof flag.configuration==="object"?flag.configuration:{};
+      const rewardMinor=Number(cfg.reward_minor||0),currency=String(cfg.currency||"EUR").toUpperCase();
+      if(flag?.enabled!==true)throw problem(409,"REFERRAL_DISABLED");
+      if(!Number.isInteger(rewardMinor)||rewardMinor<=0)throw problem(409,"REFERRAL_REWARD_REQUIRED");
+      const referralCode=(await tx.unsafe("SELECT id,tenant_id,code FROM customer_referral_codes WHERE code=$1 AND status='active' LIMIT 1 FOR SHARE",[normalized]))[0];
+      if(!referralCode)throw problem(404,"REFERRAL_CODE_NOT_FOUND");
+      if(Number(referralCode.tenant_id)===tenantId)throw problem(409,"REFERRAL_SELF_CLAIM");
+      const existing=(await tx.unsafe("SELECT public_id,status FROM customer_referrals WHERE referred_tenant_id=$1 LIMIT 1",[tenantId]))[0];
+      if(existing)return {claimed:false,existing:true,status:existing.status,public_id:existing.public_id};
+      const row=(await tx.unsafe("INSERT INTO customer_referrals(referral_code_id,referrer_tenant_id,referred_tenant_id,status,reward_minor,reward_currency,metadata) VALUES($1,$2,$3,'claimed',$4,$5,$6::jsonb) RETURNING public_id,status,claimed_at",[referralCode.id,referralCode.tenant_id,tenantId,rewardMinor,currency,JSON.stringify(metadata&&typeof metadata==="object"?metadata:{})]))[0];
+      await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'referral.claim','customer_referral',$2,$3::jsonb)",[tenantId,String(row.public_id),JSON.stringify({referrer_tenant_id:Number(referralCode.tenant_id),reward_minor:rewardMinor,currency})]);
+      return {claimed:true,existing:false,...row};
+    });
+    if(result.claimed)this.eventBus.publish("referral.claimed",{referred_tenant_id:tenantId,referral_public_id:result.public_id});
+    return result;
+  }
+
+  async qualifyCustomerReferralFromBilling(tenantId,subscriptionId,payment={}){
+    const tenant=Number(tenantId),subscription=Number(subscriptionId),amount=Number(payment.amount_paid_minor||0);
+    if(!Number.isInteger(tenant)||tenant<=0||!Number.isInteger(subscription)||subscription<=0||amount<=0)return {qualified:false};
+    const result=await this.sql.begin(async tx=>{
+      const referral=(await tx.unsafe("SELECT * FROM customer_referrals WHERE referred_tenant_id=$1 AND status='claimed' LIMIT 1 FOR UPDATE",[tenant]))[0];
+      if(!referral)return {qualified:false};
+      await tx.unsafe("UPDATE customer_referrals SET status='qualified',qualified_at=now(),qualification_subscription_id=$2 WHERE id=$1",[referral.id,subscription]);
+      let reward=null;
+      if(Number(referral.reward_minor)>0){
+        reward=(await tx.unsafe("INSERT INTO customer_referral_rewards(referral_id,tenant_id,amount_minor,currency,status,metadata) VALUES($1,$2,$3,$4,'earned',$5::jsonb) ON CONFLICT(referral_id) DO UPDATE SET referral_id=EXCLUDED.referral_id RETURNING id,public_id,amount_minor,currency,status",[referral.id,referral.referrer_tenant_id,Number(referral.reward_minor),referral.reward_currency,JSON.stringify({qualification:"paid_active_subscription",provider:String(payment.provider||""),provider_event_id:String(payment.event_id||""),invoice_amount_paid_minor:amount})]))[0];
+        await tx.unsafe("UPDATE customer_referrals SET status='rewarded',rewarded_at=COALESCE(rewarded_at,now()) WHERE id=$1",[referral.id]);
+      }
+      await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'referral.qualify','customer_referral',$2,$3::jsonb)",[tenant,String(referral.public_id),JSON.stringify({subscription_id:subscription,invoice_amount_paid_minor:amount,reward_public_id:reward?.public_id||null})]);
+      return {qualified:true,reward_public_id:reward?.public_id||null,referrer_tenant_id:Number(referral.referrer_tenant_id)};
+    });
+    if(result.qualified)this.eventBus.publish("referral.qualified",{referred_tenant_id:tenant,referrer_tenant_id:result.referrer_tenant_id,reward_public_id:result.reward_public_id});
+    return result;
+  }
+
+  async settleReferralReward(rewardId,input={},actor={}){
+    const id=String(rewardId||"").trim(),reference=String(input.paid_reference||"").trim().slice(0,200);
+    if(!id||reference.length<2)throw problem(400,"REFERRAL_PAYMENT_REFERENCE_REQUIRED");
+    const actorId=numericActor(actor);
+    const row=await this.sql.begin(async tx=>{
+      const current=(await tx.unsafe("SELECT * FROM customer_referral_rewards WHERE public_id=$1::uuid FOR UPDATE",[id]))[0];
+      if(!current)throw problem(404,"REFERRAL_REWARD_NOT_FOUND");
+      if(current.status==="paid"){if(String(current.paid_reference||"")!==reference)throw problem(409,"REFERRAL_REWARD_ALREADY_PAID");return current;}
+      if(current.status!=="earned")throw problem(409,"REFERRAL_REWARD_NOT_PAYABLE");
+      const updated=(await tx.unsafe("UPDATE customer_referral_rewards SET status='paid',paid_at=now(),paid_reference=$2 WHERE id=$1 RETURNING *",[current.id,reference]))[0];
+      await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'referral.reward.paid','customer_referral_reward',$3,$4::jsonb)",[current.tenant_id,actorId,String(current.public_id),JSON.stringify({paid_reference:reference,amount_minor:Number(current.amount_minor),currency:current.currency})]);
+      return updated;
+    });
+    return {...row,amount_minor:Number(row.amount_minor)};
   }
 
   async tenantDuplicateCandidates(input={}){
@@ -2527,6 +2652,7 @@ export class PostgresStore{
     const phone=String(input.phone||"").trim().slice(0,40);
     const serviceIntentRaw=String(input.service_intent||"").trim().toLowerCase();
     const serviceIntent=["new_number","portability","advice"].includes(serviceIntentRaw)?serviceIntentRaw:"advice";
+    const referralCode=String(input.referral_code||"").trim().toUpperCase().slice(0,24);
     const localeInput=String(input.preferred_locale||"").trim().slice(0,35);
     const timezoneInput=String(input.timezone||"").trim().slice(0,80);
     if(firstName.length<1||lastName.length<1)throw problem(400,"CUSTOMER_NAME_REQUIRED");
@@ -2591,8 +2717,13 @@ export class PostgresStore{
       return {...tenant,created:true};
     });
     const dossier_ref=dossierReference(result.id,result.created_at);
+    let referral=null;
+    if(referralCode){
+      try{referral=await this.claimCustomerReferral(result.id,referralCode,{source:"public_opening_form",dossier_ref});}
+      catch(error){if(!["INVALID_REFERRAL_CODE","REFERRAL_DISABLED","REFERRAL_REWARD_REQUIRED","REFERRAL_CODE_NOT_FOUND","REFERRAL_SELF_CLAIM"].includes(String(error?.code||"")))throw error;}
+    }
     if(result.created)this.eventBus.publish("tenant.created",{public_id:result.public_id,dossier_ref,display_name:result.display_name,country_code:result.country_code,status:result.status,source:"public_opening_form"});
-    return {...result,dossier_ref};
+    return {...result,dossier_ref,referral_applied:Boolean(referral?.claimed||referral?.existing)};
   }
 
   async createTenant(payload={},actor={}){
