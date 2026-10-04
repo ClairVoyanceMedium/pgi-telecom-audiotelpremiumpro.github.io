@@ -3679,6 +3679,7 @@ export class PostgresStore{
     const id=Number(tenantId);
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     const result=await this.sql.begin(async tx=>{
+      await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",["customer_referral_code:"+id]);
       const feature=(await tx.unsafe(
         "SELECT enabled FROM platform_feature_flags WHERE feature_key='customer_referral' LIMIT 1 FOR SHARE"
       ))[0];
