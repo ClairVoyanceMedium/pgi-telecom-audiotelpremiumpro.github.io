@@ -49,7 +49,7 @@ test("Stripe Checkout live fails closed before price lookup when account activat
   try{
     await assert.rejects(
       ()=>createStripeCheckout(
-        {externalBillingEnabled:true,stripeSecretKey:"sk_live_checkout_block_"+ "c".repeat(24),stripeWebhookSecret:"whsec_live",stripeLiveMode:true,stripeApiVersion:"2026-08-26.dahlia",publicBaseUrl:"https://pgi.example",stripePriceLookupKey:"pgi_audiotel_premium_pro_monthly_eur"},
+        {externalBillingEnabled:true,stripeSecretKey:"sk_live_checkout_block_"+ "c".repeat(24),stripeWebhookSecret:"whsec_live",stripeLiveMode:true,stripeApiVersion:"2026-08-26.dahlia",publicBaseUrl:"https://pgi.example",stripePriceLookupKey:"pgi_audiotel_premium_pro_monthly_eur_490"},
         {tenant:{id:"22222222-2222-4222-8222-222222222222",billing_email:"client@example.com"},offer:{price_version_id:42,plan_key:"external-sva-access",currency:"EUR",amount_minor:490,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,market_id:null},subscription:null},
         "idem-live-blocked"
       ),
@@ -187,7 +187,7 @@ test("Stripe Checkout verifies the remote price before creating a hosted subscri
   };
   try{
     const result=await createStripeCheckout(
-      {stripeSecretKey:"sk_test_example",stripeApiVersion:"2026-08-26.dahlia",publicBaseUrl:"https://pgi.example",stripePriceLookupKey:"pgi_audiotel_premium_pro_monthly_eur"},
+      {stripeSecretKey:"sk_test_example",stripeApiVersion:"2026-08-26.dahlia",publicBaseUrl:"https://pgi.example",stripePriceLookupKey:"pgi_audiotel_premium_pro_monthly_eur_490"},
       {
         tenant:{id:"22222222-2222-4222-8222-222222222222",billing_email:"client@example.com"},
         offer:{price_version_id:42,plan_key:"external-sva-access",currency:"EUR",amount_minor:490,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,market_id:null},
