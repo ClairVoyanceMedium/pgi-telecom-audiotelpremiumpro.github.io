@@ -26,5 +26,5 @@ export async function mount({feedback,reload}={}){
     }catch(err){
       button.disabled=false;feedback?.(err?.code||"Modification impossible","error");
     }
-  },{once:true});
+  });
 }
