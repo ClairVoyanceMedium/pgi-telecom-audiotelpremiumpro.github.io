@@ -59,6 +59,9 @@ export class MemoryStore{
     this.customerExperiencePreferencesMap=new Map();
     this.customerLegalAcceptances=[];
     this.customerWithdrawalRequests=[];
+    this.referralProgram={enabled:false,reward_kind:"subscription_benefit",reward_policy_status:"unconfigured",updated_at:new Date().toISOString()};
+    this.referralCodes=new Map([[1,"00000000000040008000"]]);
+    this.referrals=[];
     this.staffUsers=[{id:1,public_id:randomUUID(),login_name:"local-admin",email:"local-admin@staff.pgi.invalid",display_name:"Local Simulator",role:"admin",enabled:true,password_hash:null,session_version:1,last_login_at:null,created_at:new Date().toISOString()}];
     this.nextStaffUserId=2;
   }
@@ -1167,6 +1170,29 @@ export class MemoryStore{
     if(!row)throw problem(409,"ALERT_NOT_OPEN");
     row.state="acknowledged";row.acknowledged_at=new Date().toISOString();
     return structuredClone(row);
+  }
+
+  async referralProgramAdminOverview(){
+    const totals={
+      total:this.referrals.length,
+      attributed:this.referrals.filter(x=>x.status==="attributed").length,
+      qualified:this.referrals.filter(x=>x.status==="qualified").length,
+      pending_policy:this.referrals.filter(x=>x.reward_status==="pending_policy").length,
+      granted:this.referrals.filter(x=>x.reward_status==="granted").length
+    };
+    return {...structuredClone(this.referralProgram),program_enabled:Boolean(this.referralProgram.enabled),totals,recent:structuredClone(this.referrals.slice(-30).reverse())};
+  }
+  async setReferralProgramEnabled(enabled,actor){
+    if(typeof enabled!=="boolean")throw problem(400,"INVALID_REFERRAL_PROGRAM_STATE");
+    this.referralProgram.enabled=enabled;this.referralProgram.updated_at=new Date().toISOString();
+    this.#audit(enabled?"referral.program.enabled":"referral.program.disabled","global",{enabled,history_preserved:true,actor:actor?.sub||null});
+    return {program_enabled:enabled,reward_kind:this.referralProgram.reward_kind,reward_policy_status:this.referralProgram.reward_policy_status,updated_at:this.referralProgram.updated_at};
+  }
+  async customerReferralOverview(tenantId){
+    const id=Number(tenantId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    const eligible=Boolean(this.referralProgram.enabled);
+    const rows=this.referrals.filter(x=>Number(x.referrer_tenant_id)===id);
+    return {program_enabled:Boolean(this.referralProgram.enabled),eligible,code:eligible?(this.referralCodes.get(id)||null):null,reward_kind:this.referralProgram.reward_kind,reward_policy_status:this.referralProgram.reward_policy_status,totals:{total:rows.length,attributed:rows.filter(x=>x.status==="attributed").length,qualified:rows.filter(x=>x.status==="qualified").length,pending_policy:rows.filter(x=>x.reward_status==="pending_policy").length,granted:rows.filter(x=>x.reward_status==="granted").length}};
   }
 
   async selfServiceRegister(input={},passwordHash){
