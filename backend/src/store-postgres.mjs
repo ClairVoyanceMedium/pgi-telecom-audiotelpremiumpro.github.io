@@ -2563,10 +2563,14 @@ export class PostgresStore{
           if(referralEnabled){
             const referrer=(await tx.unsafe("SELECT c.id AS code_id,c.tenant_id FROM tenant_referral_codes c JOIN tenants t ON t.id=c.tenant_id WHERE c.code=$1 AND t.status='active' AND t.tenant_type<>'internal' LIMIT 1",[referralCode]))[0]||null;
             if(referrer&&Number(referrer.tenant_id)!==Number(existing.id)){
-              await tx.unsafe(
-                "INSERT INTO tenant_referrals(referrer_tenant_id,referred_tenant_id,referral_code_id,status,reward_status,metadata) VALUES($1,$2,$3,'attributed','pending_qualification',$4::jsonb) ON CONFLICT(referred_tenant_id) DO NOTHING",
+              const referral=(await tx.unsafe(
+                "INSERT INTO tenant_referrals(referrer_tenant_id,referred_tenant_id,referral_code_id,status,reward_status,metadata) VALUES($1,$2,$3,'attributed','pending_qualification',$4::jsonb) ON CONFLICT(referred_tenant_id) DO NOTHING RETURNING id",
                 [Number(referrer.tenant_id),Number(existing.id),Number(referrer.code_id),JSON.stringify({source:"public_opening_form",commercial_benefit:"pending_policy"})]
-              );
+              ))[0]||null;
+              if(referral){
+                await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'referral.attributed','tenant_referral',$2,$3::jsonb)",[existing.id,String(referral.id),JSON.stringify({referrer_tenant_id:Number(referrer.tenant_id),referred_tenant_id:Number(existing.id),reward_status:"pending_qualification",source:"public_opening_form"})]);
+                await tx.unsafe("INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'referral.attributed','tenant_referral',$2,$3::jsonb)",[existing.id,String(referral.id),JSON.stringify({referral_id:Number(referral.id),referrer_tenant_id:Number(referrer.tenant_id),referred_tenant_id:Number(existing.id)})]);
+              }
             }
           }
         }
