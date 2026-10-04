@@ -53,7 +53,7 @@ export class MemoryStore{
     this.nextCallId=1;
     this.nextBaselineId=1;
     this.nextSwitchId=1;
-    this.subscriptionPrices=[{id:1,plan_key:"external-sva-access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,effective_from:"2026-09-20T19:33:00Z",effective_to:null}];
+    this.subscriptionPrices=[{id:1,plan_key:"external-sva-access",currency:"EUR",amount_minor:490,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,effective_from:"2026-10-04T11:51:00Z",effective_to:null}];
     this.subscriptionEvents=new Set();
     this.adminAlerts=[];
     this.customerExperiencePreferencesMap=new Map();
