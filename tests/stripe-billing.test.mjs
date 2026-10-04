@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createHmac} from "node:crypto";
-import {verifyStripeWebhook,normalizeStripeSubscriptionEvent,normalizeStripeBillingEvent,normalizeStripeRefundEvent,createStripeCheckout,createStripePortabilityPriorityCheckout,createStripeCustomerBalanceCredit,currentMonthOfferTrialEnd,stripeProviderState,stripeProviderReadiness,invalidateStripeProviderReadiness} from "../backend/src/stripe-billing.mjs";
+import {verifyStripeWebhook,normalizeStripeSubscriptionEvent,normalizeStripeBillingEvent,normalizeStripeRefundEvent,createStripeCheckout,createStripePortabilityPriorityCheckout,retrieveStripePortabilityPriorityCheckout,createStripeCustomerBalanceCredit,currentMonthOfferTrialEnd,stripeProviderState,stripeProviderReadiness,invalidateStripeProviderReadiness} from "../backend/src/stripe-billing.mjs";
 
 test("Stripe provider state fails closed until API and webhook are both configured",()=>{
   assert.deepEqual(stripeProviderState({externalBillingEnabled:false}),{api:false,webhook:false,connected:false});
@@ -326,5 +326,30 @@ test("Stripe referral reward creates a negative customer balance transaction cre
     assert.equal(result.amount_minor,300);
     assert.equal(result.currency,"EUR");
     assert.equal(result.ending_balance,-300);
+  }finally{globalThis.fetch=original;}
+});
+
+
+test("Stripe priority checkout retrieval reuses an open unpaid session",async()=>{
+  const original=globalThis.fetch;
+  globalThis.fetch=async(url,init={})=>{
+    assert.equal(init.method,"GET");
+    assert.match(String(url),/\/v1\/checkout\/sessions\/cs_test_reuse1$/);
+    return {ok:true,status:200,json:async()=>({
+      id:"cs_test_reuse1",
+      url:"https://checkout.stripe.com/c/pay/cs_test_reuse1",
+      status:"open",
+      payment_status:"unpaid",
+      metadata:{pgi_payment_kind:"portability_priority"}
+    })};
+  };
+  try{
+    const result=await retrieveStripePortabilityPriorityCheckout(
+      {stripeSecretKey:"sk_test_example",stripeApiVersion:"2026-08-26.dahlia"},
+      "cs_test_reuse1"
+    );
+    assert.equal(result.open,true);
+    assert.equal(result.paid,false);
+    assert.equal(result.session_id,"cs_test_reuse1");
   }finally{globalThis.fetch=original;}
 });
