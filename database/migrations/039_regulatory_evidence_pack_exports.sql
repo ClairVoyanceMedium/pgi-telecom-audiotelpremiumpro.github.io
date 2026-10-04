@@ -1,4 +1,4 @@
--- Audiotel Premium Pro — immutable Regulatory Evidence Pack export register.
+-- Audiotel Premium Pro : immutable Regulatory Evidence Pack export register.
 -- Each generated pack receives a durable export identity and hash record.
 
 CREATE TABLE sva_regulatory_evidence_pack_exports (

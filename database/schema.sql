@@ -1,5 +1,5 @@
 -- PGI Telecom • Audiotel Premium Pro
--- PostgreSQL production schema — v1
+-- PostgreSQL production schema : v1
 -- Aucun secret ni donnée réelle dans ce fichier.
 
 BEGIN;
@@ -851,7 +851,7 @@ CREATE INDEX payment_compliance_status_idx
 
 
 -- International / multi-market foundation.
--- PGI Telecom — international market foundation.
+-- PGI Telecom : international market foundation.
 -- Additive only. France remains the default market; no foreign market is activated automatically.
 
 CREATE TABLE operating_markets (
@@ -1083,7 +1083,7 @@ CREATE TABLE payment_compliance_market_profiles (
 );
 
 -- Hyperscale / multi-cluster foundation.
--- PGI Telecom — hyperscale foundation.
+-- PGI Telecom : hyperscale foundation.
 -- Additive only. Prepares the control plane and data plane for millions of tenants.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;

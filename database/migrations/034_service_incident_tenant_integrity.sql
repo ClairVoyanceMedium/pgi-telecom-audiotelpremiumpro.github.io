@@ -1,4 +1,4 @@
--- PGI Telecom — hard tenant-integrity boundary for service incidents.
+-- PGI Telecom : hard tenant-integrity boundary for service incidents.
 -- Additive constraints: an incident child row can never point to another tenant.
 
 ALTER TABLE tenant_service_incidents

@@ -1,4 +1,4 @@
--- PGI Telecom — Premium+ strong authentication foundation.
+-- PGI Telecom : Premium+ strong authentication foundation.
 -- Expand-only. WebAuthn remains disabled until PGI_WEBAUTHN_RP_ID and PGI_WEBAUTHN_ORIGIN are configured.
 
 BEGIN;

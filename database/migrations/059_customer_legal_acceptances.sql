@@ -1,4 +1,4 @@
--- Audiotel Premium Pro — immutable customer legal acceptance evidence.
+-- Audiotel Premium Pro : immutable customer legal acceptance evidence.
 -- Append-only records for account terms and paid-subscription acceptance.
 
 CREATE TABLE customer_legal_acceptances (

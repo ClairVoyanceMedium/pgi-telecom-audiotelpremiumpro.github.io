@@ -1,4 +1,4 @@
--- Audiotel Premium Pro — subscription price update to 4.90 EUR TTC/month.
+-- Audiotel Premium Pro : subscription price update to 4.90 EUR TTC/month.
 -- Historical 2.00 EUR and 3.00 EUR price versions remain immutable and auditable.
 
 DO $$

@@ -1,4 +1,4 @@
--- PGI Telecom — tenant SQL access boundary.
+-- PGI Telecom : tenant SQL access boundary.
 -- Customer-facing data access must go through tenant-scoped security-barrier views.
 
 CREATE FUNCTION pgi_current_tenant_id()

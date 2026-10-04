@@ -1,4 +1,4 @@
--- Audiotel Premium Pro — tax-inclusive subscription pricing.
+-- Audiotel Premium Pro : tax-inclusive subscription pricing.
 -- Expand-only. The customer-facing subscription amount is gross/TTC.
 -- No Stripe or PSP connection is activated by this migration.
 

@@ -1,4 +1,4 @@
--- PGI Telecom — immutable metered-usage ledger for subscriptions, billing and quota audit.
+-- PGI Telecom : immutable metered-usage ledger for subscriptions, billing and quota audit.
 
 CREATE TABLE tenant_usage_events (
   tenant_bucket smallint NOT NULL CHECK (tenant_bucket BETWEEN 0 AND 4095),

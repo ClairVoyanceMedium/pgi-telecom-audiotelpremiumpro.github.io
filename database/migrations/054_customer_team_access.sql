@@ -1,4 +1,4 @@
--- PGI Telecom — customer team access audit trail.
+-- PGI Telecom : customer team access audit trail.
 -- Additive only. Existing identities, memberships and invitations remain authoritative.
 
 BEGIN;
