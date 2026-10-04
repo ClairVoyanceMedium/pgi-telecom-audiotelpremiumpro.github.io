@@ -27,7 +27,6 @@ const switchOperator=fs.readFileSync("site/seo/changer-operateur-audiotel.html",
 const portability=fs.readFileSync("site/seo/portabilite-numero-sva.html","utf8");
 const priorityPortability=fs.readFileSync("site/seo/portabilite-prioritaire.html","utf8");
 const referralLanding=fs.readFileSync("site/seo/parrainage-audiotel.html","utf8");
-const referralLandingScript=fs.readFileSync("site/referral-landing.js","utf8");
 const clientReferral=fs.readFileSync("assets/client-referral.js","utf8");
 const withoutSiret=fs.readFileSync("site/seo/audiotel-sans-siret.html","utf8");
 const businessLive=fs.readFileSync("site/seo/business-live-audiotel.html","utf8");
@@ -591,12 +590,11 @@ test("new complementary products are public, indexable and commercially explicit
   assert.match(referralLanding,/récompenses qui peuvent s’additionner/i);
   assert.match(referralLanding,/Voir ma récompense et mon lien/i);
   assert.match(referralLanding,/Aucune démarche compliquée/i);
-  assert.match(referralLanding,/site\/referral-landing\.js/);
-  assert.match(referralLandingScript,/\/api\/v1\/public\/referral-program/);
-  assert.match(referralLandingScript,/data-referral-example/);
-  assert.match(referralLandingScript,/Intl\.NumberFormat\("fr-FR"/);
+  assert.doesNotMatch(referralLanding,/site\/referral-landing\.js/);
+  assert.match(tracking,/\/api\/v1\/public\/referral-program/);
+  assert.match(tracking,/data-referral-example/);
+  assert.match(tracking,/Intl\.NumberFormat\("fr-FR"/);
   assert.match(clientReferral,/Recommander et cumuler mes récompenses/);
-  assert.match(buildStatic,/"site\/referral-landing\.js"/);
   assert.match(buildStatic,/"portabilite-prioritaire"/);
   assert.match(buildStatic,/"parrainage-audiotel"/);
   assert.match(sitemap,/portabilite-prioritaire/);
