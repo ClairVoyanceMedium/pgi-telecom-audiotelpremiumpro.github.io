@@ -178,6 +178,63 @@ export async function createStripeCheckout(config,billing,idempotencyKey,analyti
   if(!session?.url||!/^https:\/\/checkout\.stripe\.com\//i.test(session.url))throw failure(502,"STRIPE_CHECKOUT_URL_INVALID");
   return {url:session.url,session_id:session.id,price_id:price.id,provider:"stripe"};
 }
+
+export async function createStripePortabilityPriorityCheckout(config,input={},idempotencyKey){
+  if(config?.stripeLiveMode){
+    const readiness=await stripeProviderReadiness(config);
+    if(!readiness.account_ready)throw failure(503,readiness.readiness_reason==="account_activation_required"?"PAYMENT_ACCOUNT_NOT_READY":"PAYMENT_PROVIDER_UNAVAILABLE");
+  }
+  const tenantPublicId=String(input.tenant_public_id||"").trim(),requestId=Number(input.request_id);
+  const amountMinor=Number(input.amount_minor??config?.portabilityPriorityPriceMinor??990),currency=String(input.currency||"EUR").trim().toUpperCase();
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantPublicId))throw failure(400,"INVALID_PRIORITY_TENANT");
+  if(!Number.isInteger(requestId)||requestId<=0)throw failure(400,"INVALID_PRIORITY_REQUEST");
+  if(!Number.isInteger(amountMinor)||amountMinor<=0||amountMinor>100000)throw failure(400,"INVALID_PRIORITY_AMOUNT");
+  if(currency!=="EUR")throw failure(400,"INVALID_PRIORITY_CURRENCY");
+  const metadata={pgi_payment_kind:"portability_priority",tenant_public_id:tenantPublicId,portability_request_id:String(requestId),amount_minor:String(amountMinor),currency};
+  const params={
+    mode:"payment",
+    integration_identifier:"pgi_portability_priority_2026",
+    success_url:baseUrl(config)+"/client.html?portability_priority=success&session_id={CHECKOUT_SESSION_ID}",
+    cancel_url:baseUrl(config)+"/client.html?portability_priority=cancelled",
+    client_reference_id:tenantPublicId,
+    line_items:[{price_data:{currency:"eur",unit_amount:amountMinor,tax_behavior:"inclusive",product_data:{name:"Portabilité prioritaire Audiotel Premium Pro",description:"Traitement prioritaire du dossier par PGI Telecom. Les délais, décisions et dates de portage de l’opérateur restent indépendants."}},quantity:1}],
+    metadata,
+    payment_intent_data:{metadata},
+    billing_address_collection:"auto",
+    locale:"auto",
+    custom_text:{submit:{message:"Option facultative : priorité de traitement chez PGI Telecom uniquement. Elle ne garantit ni l’acceptation ni un délai opérateur plus court."}}
+  };
+  const customer=String(input.provider_customer_reference||"").trim();
+  if(/^cus_[A-Za-z0-9]+$/.test(customer))params.customer=customer;
+  else if(input.customer_email)params.customer_email=String(input.customer_email).trim().slice(0,320);
+  const session=await stripeApi(config,"/v1/checkout/sessions",{method:"POST",params,idempotencyKey});
+  if(!session?.url||!/^https:\/\/checkout\.stripe\.com\//i.test(session.url))throw failure(502,"STRIPE_CHECKOUT_URL_INVALID");
+  return {url:session.url,session_id:String(session.id||""),expires_at:Number(session.expires_at)||null,amount_minor:amountMinor,currency,provider:"stripe"};
+}
+export function normalizeStripePortabilityPriorityEvent(event){
+  const type=String(event?.type||""),session=event?.data?.object;
+  if(!["checkout.session.completed","checkout.session.async_payment_succeeded","checkout.session.async_payment_failed","checkout.session.expired"].includes(type)||!session)return null;
+  const meta=session.metadata&&typeof session.metadata==="object"?session.metadata:{};
+  if(String(meta.pgi_payment_kind||"")!=="portability_priority")return null;
+  const requestId=Number(meta.portability_request_id),tenantPublicId=String(meta.tenant_public_id||""),amountMinor=Number(meta.amount_minor||session.amount_total),currency=String(meta.currency||session.currency||"EUR").toUpperCase();
+  if(!Number.isInteger(requestId)||requestId<=0||!/^[0-9a-f-]{36}$/i.test(tenantPublicId)||!Number.isInteger(amountMinor)||amountMinor<=0||currency!=="EUR")return null;
+  let status="pending";
+  if(type==="checkout.session.async_payment_succeeded"||(type==="checkout.session.completed"&&String(session.payment_status||"")==="paid"))status="paid";
+  else if(type==="checkout.session.async_payment_failed")status="failed";
+  else if(type==="checkout.session.expired")status="expired";
+  return {provider:"stripe",provider_event_id:String(event.id||""),event_type:type,event_time:eventIso(event),tenant_public_id:tenantPublicId,request_id:requestId,status,amount_minor:amountMinor,currency,checkout_session_reference:String(session.id||""),payment_intent_reference:idValue(session.payment_intent)};
+}
+export async function createStripeCustomerCredit(config,input={},idempotencyKey){
+  const customer=String(input.provider_customer_reference||"").trim(),amountMinor=Number(input.amount_minor),currency=String(input.currency||"EUR").trim().toUpperCase();
+  if(!/^cus_[A-Za-z0-9]+$/.test(customer))throw failure(409,"BILLING_CUSTOMER_NOT_AVAILABLE");
+  if(!Number.isInteger(amountMinor)||amountMinor<=0||amountMinor>100000)throw failure(400,"INVALID_CUSTOMER_CREDIT_AMOUNT");
+  if(currency!=="EUR")throw failure(400,"INVALID_CUSTOMER_CREDIT_CURRENCY");
+  const metadata={pgi_credit_kind:"referral_reward",referred_tenant_public_id:String(input.referred_tenant_public_id||"").slice(0,80),referrer_tenant_public_id:String(input.referrer_tenant_public_id||"").slice(0,80)};
+  const tx=await stripeApi(config,"/v1/customers/"+encodeURIComponent(customer)+"/balance_transactions",{method:"POST",idempotencyKey,params:{amount:-amountMinor,currency:"eur",description:"Parrainage Audiotel Premium Pro — crédit sur un prochain abonnement",metadata}});
+  if(!/^cbtxn_[A-Za-z0-9]+$/.test(String(tx?.id||"")))throw failure(502,"STRIPE_CUSTOMER_CREDIT_INVALID");
+  return {id:String(tx.id),amount_minor:amountMinor,currency,provider:"stripe"};
+}
+
 export async function createStripePortalSession(config,billing){
   const customer=String(billing?.subscription?.provider_customer_reference||"");
   if(!/^cus_[A-Za-z0-9]+$/.test(customer))throw failure(409,"BILLING_CUSTOMER_NOT_AVAILABLE");

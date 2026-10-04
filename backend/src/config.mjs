@@ -19,6 +19,8 @@ export function loadConfig(env=process.env){
   const stripePortalConfigurationId=String(env.PGI_STRIPE_PORTAL_CONFIGURATION_ID||"").trim();
   const stripePriceLookupKey=String(env.PGI_STRIPE_PRICE_LOOKUP_KEY||"pgi_audiotel_premium_pro_monthly_eur").trim();
   const stripeLiveMode=booleanValue(env.PGI_STRIPE_LIVE_MODE,false,"PGI_STRIPE_LIVE_MODE");
+  const portabilityPriorityPriceMinor=integer(env.PGI_PORTABILITY_PRIORITY_PRICE_MINOR,990,100,100000,"PGI_PORTABILITY_PRIORITY_PRICE_MINOR");
+  const referralRewardMinor=integer(env.PGI_REFERRAL_REWARD_MINOR,300,100,100000,"PGI_REFERRAL_REWARD_MINOR");
   const ga4MeasurementEnabled=booleanValue(env.PGI_GA4_MEASUREMENT_ENABLED,false,"PGI_GA4_MEASUREMENT_ENABLED");
   const ga4MeasurementId=String(env.PGI_GA4_MEASUREMENT_ID||"G-SZY50J75N7").trim();
   const ga4ApiSecret=String(env.PGI_GA4_API_SECRET||"").trim();
@@ -122,7 +124,7 @@ export function loadConfig(env=process.env){
 
   return Object.freeze({
     mode,authMode,host,port,releaseId,staticDir,trustProxy,protectMachineEndpoints,googleClientId,customerSelfRegistrationEnabled,webauthnRpId,webauthnOrigin,
-    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,stripeSecretKey,stripeWebhookSecret,stripeConnectWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,ga4MeasurementEnabled,ga4MeasurementId,ga4ApiSecret,b2cCommercialRequested,b2cCommercialReady,legalOperatorConfigured,consumerMediatorConfigured,onlineWithdrawalReady,emailVerificationEnabled,transactionalEmailEnabled,resendApiKey,resendReceivingApiKey,resendWebhookSecret,transactionalDomain,transactionalReplyTo,internalNotificationEmail,cronSecret,emailVerificationPepper,transactionalFromEmail,transactionalFromName,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
+    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,stripeSecretKey,stripeWebhookSecret,stripeConnectWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,portabilityPriorityPriceMinor,referralRewardMinor,ga4MeasurementEnabled,ga4MeasurementId,ga4ApiSecret,b2cCommercialRequested,b2cCommercialReady,legalOperatorConfigured,consumerMediatorConfigured,onlineWithdrawalReady,emailVerificationEnabled,transactionalEmailEnabled,resendApiKey,resendReceivingApiKey,resendWebhookSecret,transactionalDomain,transactionalReplyTo,internalNotificationEmail,cronSecret,emailVerificationPepper,transactionalFromEmail,transactionalFromName,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),
     customerRememberTtlSeconds:integer(env.PGI_CUSTOMER_REMEMBER_TTL_SECONDS,2592000,86400,7776000,"PGI_CUSTOMER_REMEMBER_TTL_SECONDS"),

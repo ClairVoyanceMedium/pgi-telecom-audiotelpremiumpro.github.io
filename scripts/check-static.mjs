@@ -112,7 +112,7 @@ for(const file of publishedFiles){
     if(!publishedFiles.has(target))failures.push("Lazy/static asset omitted from production build: "+file+" -> "+target);
   }
 }
-if (!index.includes("PGI • Telecom - Audiotel Premium Pro")) failures.push("Nom officiel absent de index.html");
+if (!index.includes("PGI Telecom") || !index.includes("Audiotel Premium Pro")) failures.push("Marques officielles PGI Telecom / Audiotel Premium Pro absentes de index.html");
 if (!index.includes('name="viewport"')) failures.push("Viewport mobile absent");
 if (!clientPortal.includes('name="robots" content="noindex,nofollow,noarchive"')) failures.push("Customer portal must be noindex");
 if (!clientPortal.includes("Audiotel Premium Pro")) failures.push("Customer portal branding missing");

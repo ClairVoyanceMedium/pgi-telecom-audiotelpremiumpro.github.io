@@ -40,6 +40,8 @@ render();
 const KEY="pgi_public_order_intent_v1",DRAFT_KEY="pgi_public_order_draft_v1",MAX_AGE=3600000;
 const form=document.getElementById("order-form");
 if(!form)return;
+const referralCode=(()=>{const raw=String(new URLSearchParams(location.search).get("ref")||"").trim().toUpperCase().replace(/[^A-Z0-9]/g,"");return /^APP[0-9A-F]{12}$/.test(raw)?raw:"";})();
+if(referralCode){const note=document.createElement("div");note.className="order-referral-note";note.innerHTML="<strong>Invitation client Audiotel Premium Pro</strong><span>Votre demande est rattachée au client qui vous a invité. Votre tarif et vos droits restent strictement identiques.</span>";form.insertAdjacentElement("afterbegin",note);}
 const typeInputs=[...form.querySelectorAll('input[name="order_account_type"]')];
 const companyWrap=document.getElementById("order-company-wrap");
 const company=document.getElementById("order-company");
@@ -83,7 +85,7 @@ document.querySelectorAll("[data-order-type]").forEach(link=>link.addEventListen
 }));
 form.addEventListener("input",saveDraft);
 form.addEventListener("change",saveDraft);
-async function captureLead(i){try{const r=await fetch("/api/v1/public/hubspot/lead",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",keepalive:true,body:JSON.stringify({...i,page_uri:location.href.split("#")[0],page_name:document.title})}),data=await r.json().catch(()=>({}));if(r.ok&&data.accepted)window.PGIAnalytics?.track("generate_lead");return {ok:r.ok,data}}catch(_e){return null}}
+async function captureLead(i){try{const r=await fetch("/api/v1/public/hubspot/lead",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",keepalive:true,body:JSON.stringify({...i,referral_code:referralCode||null,page_uri:location.href.split("#")[0],page_name:document.title})}),data=await r.json().catch(()=>({}));if(r.ok&&data.accepted)window.PGIAnalytics?.track("generate_lead");return {ok:r.ok,data}}catch(_e){return null}}
 form.addEventListener("submit",async e=>{
   e.preventDefault();
   const type=selectedType();
