@@ -146,17 +146,6 @@ const scoreEntry=(entry,query)=>{
 
 const escapeHtml=value=>String(value||"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
 
-const resultExcerpt=(item,query)=>{
-  const terms=normalize(query).split(" ").filter(Boolean);
-  if(!terms.length)return item.description||"";
-  const sources=[];
-  String(item.headings||"").split(" · ").forEach(x=>x.trim()&&sources.push(x.trim()));
-  if(item.description)sources.push(String(item.description));
-  String(item.text||"").split(/(?:[.!?]\s+|\s+·\s+)/).forEach(x=>x.trim()&&sources.push(x.trim()));
-  const hit=sources.find(x=>terms.some(term=>normalize(x).includes(term)))||item.description||"";
-  return hit.length>190?hit.slice(0,187).trimEnd()+"…":hit;
-};
-
 const render=(items,query="",suggestions=false)=>{
   active=-1;
   if(!items.length){
@@ -165,11 +154,11 @@ const render=(items,query="",suggestions=false)=>{
   }
   const heading=suggestions?"Accès rapides":items.length+" résultat"+(items.length>1?"s":"")+" proposé"+(items.length>1?"s":"");
   panel.innerHTML='<div class="public-search-result-heading">'+heading+'</div>'+
-    items.map((item,i)=>{const detail=resultExcerpt(item,query);return '<a class="public-search-result" role="option" id="site-search-option-'+i+'" aria-selected="false" data-search-index="'+i+'" href="'+escapeHtml(item.url)+'">'+
+    items.map((item,i)=>'<a class="public-search-result" role="option" id="site-search-option-'+i+'" aria-selected="false" data-search-index="'+i+'" href="'+escapeHtml(item.url)+'">'+
       '<strong>'+escapeHtml(item.title)+'</strong>'+
-      '<span>'+escapeHtml(detail)+'</span>'+
+      '<span>'+escapeHtml(item.description||"")+'</span>'+
       (item.category?'<small>'+escapeHtml(item.category)+'</small>':'')+
-    '</a>'}).join("");
+    '</a>').join("");
   panel.hidden=false;input.setAttribute("aria-expanded","true");
   panel.querySelectorAll(".public-search-result").forEach(link=>{
     link.addEventListener("mouseenter",()=>setActive(Number(link.dataset.searchIndex)));
