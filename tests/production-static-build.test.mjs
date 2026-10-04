@@ -110,7 +110,7 @@ test("production static build publishes marketing root and private cockpit",()=>
     const terms=seoPages[seoSlugs.indexOf("conditions-abonnement")];
     assert.match(privacy,/Données financières/);
     assert.match(privacy,/CNIL/);
-    assert.match(terms,/3,00 € TTC par mois/);
+    assert.match(terms,/4,90 € TTC par mois/);
     assert.match(terms,/Reversements/);
   }finally{
     fs.rmSync("dist",{recursive:true,force:true});

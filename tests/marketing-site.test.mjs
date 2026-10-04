@@ -48,7 +48,7 @@ test("focused SEO pages remain published without cluttering the homepage",()=>{
 });
 
 test("public pricing and savings simulation stay explicit and non-guaranteed",()=>{
-  assert.match(html,/3€ TTC \/ mois/);
+  assert.match(html,/4,90€ TTC \/ mois/);
   assert.match(html,/Le mois en cours est offert/);
   assert.match(html,/Sans engagement de durée/);
   assert.match(html,/Résiliation possible à tout moment/);
@@ -219,7 +219,7 @@ test("marketing page exposes structured service data without fabricated social p
   assert.match(html,/"@type":"WebPage"/);
   assert.match(html,/"@type":"Service"/);
   assert.ok(html.includes("support@audiotel-premium-pro.com"));
-  assert.match(html,/"price":"3\.00"/);
+  assert.match(html,/"price":"4\.90"/);
   assert.match(html,/"priceCurrency":"EUR"/);
   assert.match(html,/"serviceType":\["Numéro surtaxé Audiotel"/);
   assert.doesNotMatch(html,/aggregateRating|"review"|bestRating|ratingValue/);
@@ -358,7 +358,7 @@ test("homepage modules are compact and each carries a clear marketing promise",(
   assert.match(html,/class="home-page"/);
   assert.match(html,/CALCULATEUR DE REVENU POTENTIEL/);
   assert.match(html,/Un numéro surtaxé et un espace client pour tout suivre/);
-  assert.match(html,/Le mois en cours est offert, puis 3€ TTC \/ mois/);
+  assert.match(html,/Le mois en cours est offert, puis 4,90€ TTC \/ mois/);
   assert.match(html,/De la demande au suivi de vos appels, en quatre étapes/);
   assert.match(html,/Ce que vous achetez, comment ça fonctionne et ce que vous payez/);
   assert.match(html,/Demander mon numéro/);
@@ -388,22 +388,22 @@ test("existing customers get an explicit login entry in every public shell",()=>
 test("public commercial copy is concise while legal and machine-readable price stays precise",()=>{
   assert.match(html,/NUMÉRO SURTAXÉ · AUDIOTEL · SUIVI EN LIGNE/);
   assert.match(html,/Le mois en cours est offert/);
-  assert.match(html,/3€ TTC \/ mois/i);
+  assert.match(html,/4,90€ TTC \/ mois/i);
   assert.match(buildStatic,/Demander mon numéro/);
   assert.match(buildStatic,/Numéro surtaxé &amp; espace client/);
   assert.match(buildStatic,/Activation après validation/);
-  assert.match(html,/3€ TTC par mois/);
+  assert.match(html,/4,90€ TTC par mois/);
 });
 
 test("fixed monthly subscription is never presented as a starting price",()=>{
   assert.match(html,/Mois en cours offert/);
-  assert.doesNotMatch(html,/À partir de <strong>3€/);
+  assert.doesNotMatch(html,/À partir de <strong>4,90€/);
 });
 
 test("mobile offer states the fixed subscription and frames competitive value as an objective",()=>{
-  assert.match(html,/3€ TTC \/ mois/);
+  assert.match(html,/4,90€ TTC \/ mois/);
   assert.match(html,/Comparez ce que vos appels peuvent réellement vous rapporter\./);
-  assert.doesNotMatch(html,/À partir de <strong>3€/);
+  assert.doesNotMatch(html,/À partir de <strong>4,90€/);
 });
 
 test("subscription is clearly marketed as no-commitment while keeping the period-end effect explicit",()=>{
@@ -417,10 +417,10 @@ test("subscription is clearly marketed as no-commitment while keeping the period
 
 test("current month is offered before the fixed monthly subscription starts",()=>{
   assert.match(html,/Mois en cours offert/);
-  assert.match(html,/Puis 3€ TTC \/ mois/);
+  assert.match(html,/Puis 4,90€ TTC \/ mois/);
   assert.match(html,/à partir du mois suivant/i);
   assert.match(application,/Mois en cours offert/);
-  assert.match(application,/Puis 3€ TTC \/ mois/);
+  assert.match(application,/Puis 4,90€ TTC \/ mois/);
 });
 
 test("homepage leads with business benefits while preserving technical SEO facts",()=>{
@@ -450,10 +450,10 @@ test("homepage explains the product before selling benefits",()=>{
 });
 
 test("pricing and simulator use explicit TTC and current-offer comparison",()=>{
-  assert.doesNotMatch(html,/>[^<]*3€ \/ mois[^<]*</);
-  assert.doesNotMatch(html,/>[^<]*3€ par mois[^<]*</);
-  assert.match(html,/3€ TTC \/ mois/);
-  assert.match(html,/3€ TTC par mois/);
+  assert.doesNotMatch(html,/>[^<]*4,90€ \/ mois[^<]*</);
+  assert.doesNotMatch(html,/>[^<]*4,90€ par mois[^<]*</);
+  assert.match(html,/4,90€ TTC \/ mois/);
+  assert.match(html,/4,90€ TTC par mois/);
   assert.match(html,/Calculez votre revenu potentiel supplémentaire/);
   assert.match(html,/Comparez votre offre actuelle à Audiotel Premium Pro/);
   assert.match(html,/reversement par minute de votre offre actuelle et comparez-le à la proposition Audiotel Premium Pro/);
@@ -569,7 +569,7 @@ test("homepage explains the 4.9 percent CB fee without mixing it with Stripe fee
   assert.match(html,/4,9 %/);
   assert.match(html,/Ce 4,9 % correspond à la commission de service/);
   assert.match(html,/ni aux frais de traitement du prestataire de paiement/);
-  assert.match(html,/ni à l’abonnement Audiotel Premium Pro à 3€ TTC \/ mois/);
+  assert.match(html,/ni à l’abonnement Audiotel Premium Pro à 4,90€ TTC \/ mois/);
 });
 
 test("payment CB conversion landing is built, indexable and commercially explicit",()=>{

@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-const [migration,store,memory,adminUi,clientUi,readme]=await Promise.all([
+const [migration,currentPrice,store,memory,adminUi,clientUi,readme]=await Promise.all([
   readFile(new URL("../database/migrations/042_subscription_price_tax_inclusive.sql",import.meta.url),"utf8"),
+  readFile(new URL("../database/migrations/064_subscription_price_490.sql",import.meta.url),"utf8"),
   readFile(new URL("../backend/src/store-postgres.mjs",import.meta.url),"utf8"),
   readFile(new URL("../backend/src/store-memory.mjs",import.meta.url),"utf8"),
   readFile(new URL("../assets/subscription-billing-ui.js",import.meta.url),"utf8"),
@@ -27,5 +28,7 @@ test("billing API and demo expose inclusive tax behavior",()=>{
 test("customer and admin interfaces display TTC explicitly",()=>{
   assert.ok(adminUi.includes("TTC/mois"));
   assert.ok(clientUi.includes("TTC / "));
-  assert.ok(readme.includes("3,00 EUR TTC par mois"));
+  assert.ok(currentPrice.includes("4.90 EUR TTC/month"));
+  assert.ok(currentPrice.includes("490"));
+  assert.ok(readme.includes("4,90 EUR TTC par mois"));
 });

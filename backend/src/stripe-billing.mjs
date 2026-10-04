@@ -45,7 +45,7 @@ function lookupKey(config,offer){
   const currency=String(offer?.currency||"EUR").toLowerCase();
   const interval=String(offer?.billing_interval||"month").toLowerCase();
   const label=interval==="month"?"monthly":interval==="year"?"yearly":interval;
-  return "pgi_audiotel_premium_pro_"+label+"_"+currency;
+  return "pgi_audiotel_premium_pro_"+label+"_"+currency+"_"+String(Number(offer?.amount_minor||0));
 }
 function validatePrice(price,offer){
   if(!price||price.active!==true||price.type!=="recurring")throw failure(409,"STRIPE_PRICE_NOT_ACTIVE");
@@ -160,11 +160,11 @@ export async function createStripeCheckout(config,billing,idempotencyKey,analyti
     client_reference_id:String(tenant.id||""),
     line_items:[{price:price.id,quantity:1}],
     metadata,
-    subscription_data:{metadata,description:"Abonnement plateforme Audiotel Premium Pro : mois en cours offert, puis 3€ TTC/mois à partir du mois suivant, sans engagement de durée. Reversements SVA distincts.",trial_end:currentMonthOfferTrialEnd()},
+    subscription_data:{metadata,description:"Abonnement plateforme Audiotel Premium Pro : mois en cours offert, puis 4,90€ TTC/mois à partir du mois suivant, sans engagement de durée. Reversements SVA distincts.",trial_end:currentMonthOfferTrialEnd()},
     payment_method_collection:"always",
     billing_address_collection:"required",
     tax_id_collection:{enabled:true},
-    custom_text:{submit:{message:"Le mois en cours est offert. Puis 3€ TTC/mois à partir du mois suivant. Sans engagement de durée, résiliable à tout moment. Les reversements SVA restent distincts."}},
+    custom_text:{submit:{message:"Le mois en cours est offert. Puis 4,90€ TTC/mois à partir du mois suivant. Sans engagement de durée, résiliable à tout moment. Les reversements SVA restent distincts."}},
     locale:"auto"
   };
   const customer=String(subscription.provider_customer_reference||"");

@@ -14,7 +14,7 @@ const backendServer=fs.readFileSync(new URL("../backend/server.mjs",import.meta.
 
 function config(overrides={}){
   return {
-    mode:"simulator",authMode:"disabled",host:"127.0.0.1",port:0,
+    mode:"simulator",authMode:"disabled",host:"127.0.0.1",port:0,customerSelfRegistrationEnabled:true,
     sessionSecret:"",adminPasswordHash:"",ingestToken:"",
     adminUsername:"admin",sessionTtlSeconds:3600,bodyLimitBytes:262144,rateLimitPerMinute:10000,heavyReadRateLimitPerMinute:10000,writeRateLimitPerMinute:10000,
     authMaxFailures:8,authFailureWindowSeconds:900,
