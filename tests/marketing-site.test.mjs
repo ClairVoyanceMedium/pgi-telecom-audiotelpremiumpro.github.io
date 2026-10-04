@@ -673,7 +673,7 @@ test("solutions hub separates the four customer intents",()=>{
   assert.match(solutions,/Suivre mes appels et reversements/);
   assert.match(solutions,/Ajouter le paiement par carte/);
   assert.match(solutions,/Prioriser ma portabilité/);
-  assert.match(solutions,/Parrainer un nouveau client/);
+  assert.match(solutions,/Gagner avec mes recommandations/);
   assert.match(solutions,/href="\/portabilite-numero-sva\//);
   assert.match(solutions,/href="\/numero-sva\//);
   assert.match(solutions,/href="\/reversement-audiotel\//);
