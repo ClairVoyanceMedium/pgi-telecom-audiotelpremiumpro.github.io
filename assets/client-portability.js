@@ -37,8 +37,16 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
       if(x.operator_portability_reference)meta.push("Réf. opérateur : "+x.operator_portability_reference);
       if(x.rejection_reason)meta.push("Motif : "+x.rejection_reason);
       const cancellable=["submitted","awaiting_documents","eligibility_check","operator_pending"].includes(status);
-      const action=cancellable?'<button class="cp-portability-cancel" type="button" data-portability-cancel="'+esc(x.id)+'">Annuler</button>':"";
-      return '<div class="cp-row cp-portability-row"><div><strong>'+esc(x.display_number||x.requested_e164||"Numéro")+'</strong><span>'+esc(meta.filter(Boolean).join(" · "))+'</span></div><div class="cp-portability-actions">'+chip(status)+action+'</div></div>';
+      const priorityEligible=x.priority_available===true&&["submitted","awaiting_documents","eligibility_check","operator_pending","scheduled"].includes(status);
+      const priorityStatus=String(x.priority_status||"standard").toLowerCase();
+      if(priorityStatus==="paid")meta.push("Priorité PGI active");
+      else if(["created","open"].includes(priorityStatus))meta.push("Paiement Priorité à finaliser");
+      const cancelAction=cancellable?'<button class="cp-portability-cancel" type="button" data-portability-cancel="'+esc(x.id)+'">Annuler</button>':"";
+      const priorityPrice=money(Number(x.priority_offer_minor||990)/100,x.priority_currency||"EUR",locale);
+      const priorityAction=priorityEligible&&priorityStatus!=="paid"
+        ?'<button class="cp-primary" type="button" data-portability-priority="'+esc(x.id)+'" data-portability-priority-price="'+esc(priorityPrice)+'">'+(priorityStatus==="open"?"Finaliser Priorité":"Activer Priorité "+esc(priorityPrice))+'</button>'
+        :priorityStatus==="paid"?'<span class="cp-chip ok">Priorité active</span>':"";
+      return '<div class="cp-row cp-portability-row"><div><strong>'+esc(x.display_number||x.requested_e164||"Numéro")+'</strong><span>'+esc(meta.filter(Boolean).join(" · "))+'</span></div><div class="cp-portability-actions">'+chip(status)+priorityAction+cancelAction+'</div></div>';
     }).join(""):'<p class="cp-empty">Aucune demande de portabilité en cours.</p>';
   }
   function open(){
@@ -59,6 +67,34 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
     catch(err){const m={INVALID_PORTABILITY_NUMBER:"Le numéro saisi n’est pas valide.",INVALID_PORTABILITY_RIO:"Le RIO saisi ne correspond pas à ce numéro.",PORTABILITY_RIO_REQUIRED:"Le RIO est obligatoire pour porter ce numéro en France.",PORTABILITY_SOURCE_CONTRACT_ACK_REQUIRED:"Confirmez que les obligations de votre ancien contrat restent à votre charge.",INVALID_PORTABILITY_TARIFF:"Le tarif saisi n’est pas valide.",PORTABILITY_ALREADY_REQUESTED:"Une demande est déjà ouverte pour ce numéro.",NUMBER_ALREADY_MANAGED:"Ce numéro est déjà géré dans votre espace.",PORTABILITY_NUMBER_UNAVAILABLE:"Ce numéro est déjà rattaché à un autre dossier.",PORTABILITY_AUTHORIZATION_REQUIRED:"Les autorisations doivent être confirmées.",TENANT_CLOSED:"Ce compte ne peut plus ouvrir de portabilité."};msg.classList.add("bad");msg.textContent=m[err&&err.code]||"La demande de portabilité n’a pas pu être enregistrée.";}
     finally{busy=false;submit.disabled=false;submit.textContent=previous;}
   }
+  async function priority(id,price){
+    if(busy)return;
+    if(getDemo()){toast("L’option Priorité sera disponible après raccordement du paiement réel.");return;}
+    const accepted=window.confirm(
+      "Option Priorité "+String(price||"9,90 €")+" TTC, paiement unique.\n\n"+
+      "Je demande expressément que la prise en charge prioritaire interne PGI commence dès la confirmation du paiement. "+
+      "Cette option ne garantit ni l’éligibilité du numéro, ni un délai de l’opérateur, ni une date de portage."
+    );
+    if(!accepted)return;
+    busy=true;
+    try{
+      const r=await window.PGICustomerApi.createPortabilityPriorityCheckout(id,{terms_accepted:true,immediate_performance_requested:true,legal_version:"2026-10-04-priority-v1"},window.PGICustomerApi.newIdempotencyKey());
+      const url=r&&r.checkout&&r.checkout.url;
+      if(!url||!/^https:\/\/checkout\.stripe\.com\//i.test(url))throw new Error("CHECKOUT_URL_INVALID");
+      location.assign(url);
+    }catch(err){
+      const messages={PORTABILITY_PRIORITY_UNAVAILABLE:"L’option Priorité est momentanément indisponible.",PORTABILITY_PRIORITY_NOT_ELIGIBLE:"Ce dossier ne peut plus recevoir l’option Priorité.",PAYMENT_ACCOUNT_NOT_READY:"Le paiement de l’option Priorité n’est pas encore disponible.",PAYMENT_PROVIDER_UNAVAILABLE:"Le paiement est momentanément indisponible."};
+      toast(messages[err&&err.code]||"L’option Priorité n’a pas pu être ouverte.");
+    }finally{busy=false;}
+  }
+  function consumePriorityReturn(){
+    const u=new URL(location.href),state=u.searchParams.get("portability");
+    if(!state)return;
+    if(state==="priority-success")toast("Paiement reçu par Stripe. La Priorité s’active après confirmation sécurisée du paiement.");
+    if(state==="priority-cancelled")toast("Paiement de l’option Priorité annulé. Votre portabilité standard reste inchangée.");
+    u.searchParams.delete("portability");
+    history.replaceState(null,"",u.pathname+(u.searchParams.toString()?"?"+u.searchParams.toString():"")+u.hash);
+  }
   async function cancel(id){
     if(busy)return;if(getDemo()){toast("Aucune portabilité réelle n’est active en démonstration.");return;}busy=true;
     try{await window.PGICustomerApi.cancelPortability(id,window.PGICustomerApi.newIdempotencyKey());await reload();toast("Demande de portabilité annulée.");}
@@ -69,7 +105,8 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
     $("portability-close")?.addEventListener("click",close);
     $("portability-country")?.addEventListener("change",syncRioRequirement);
     $("client-portability-form")?.addEventListener("submit",submit);
-    $("portability-list")?.addEventListener("click",e=>{const b=e.target.closest("[data-portability-cancel]");if(b)cancel(b.dataset.portabilityCancel);});
+    $("portability-list")?.addEventListener("click",e=>{const p=e.target.closest("[data-portability-priority]");if(p){priority(p.dataset.portabilityPriority,p.dataset.portabilityPriorityPrice);return;}const b=e.target.closest("[data-portability-cancel]");if(b)cancel(b.dataset.portabilityCancel);});
+    consumePriorityReturn();
   }
   bind();
   return {render,open};

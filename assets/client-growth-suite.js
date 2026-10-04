@@ -40,7 +40,7 @@ function ensure(){
     '<article class="cgs-card"><div class="cgs-card-head"><div><span>ROUTAGE INTELLIGENT</span><h3>Règles avancées</h3></div><b>PRÉ-BRANCHEMENT</b></div><div class="cgs-list"><div><span>Horaires & disponibilité</span><strong>Préparé</strong></div><div><span>Débordement automatique</span><strong>Préparé</strong></div><div><span>Priorité intervenants</span><strong>Préparé</strong></div><div><span>File d\'attente intelligente</span><strong>Préparé</strong></div><div><span>Destinations actuellement connues</span><strong id="cgs-route-count">0</strong></div></div><p class="cgs-note">Aucune règle télécom fictive n\'est activée avant raccordement opérateur.</p></article>'+
     '<article class="cgs-card"><div class="cgs-card-head"><div><span>FINANCE</span><h3>Rapprochement client</h3></div><b>CONTRÔLE</b></div><div class="cgs-list"><div><span>Net validé</span><strong id="cgs-fin-valid">0,00 €</strong></div><div><span>Déjà payé</span><strong id="cgs-fin-paid">0,00 €</strong></div><div><span>Montant retenu</span><strong id="cgs-fin-held">0,00 €</strong></div><div><span>Reste à rapprocher</span><strong id="cgs-fin-gap">0,00 €</strong></div></div><p class="cgs-note">Les règlements et relevés validés restent la seule référence officielle.</p></article>'+
     '<article class="cgs-card"><div class="cgs-card-head"><div><span>PAIEMENT CB INTÉGRÉ</span><h3>Audiotel + carte bancaire</h3></div><b>STRIPE CONNECT</b></div><div class="cgs-list"><div><span>Liens de paiement sécurisés</span><strong>Activation Stripe</strong></div><div><span>Commission PGI de lancement</span><strong>4,9 %</strong></div><div><span>Frais de traitement Stripe</span><strong>Facturés par Stripe</strong></div><div><span>CB à la minute</span><strong>À relier à la téléphonie</strong></div></div><p class="cgs-note">Le centre Paiements CB gère l’activation et la création des liens. Le débit à la minute sera raccordé au moteur d’appel lors du branchement téléphonique.</p></article>'+
-    '<article class="cgs-card"><div class="cgs-card-head"><div><span>CONFIANCE</span><h3>Centre conformité</h3></div><b id="cgs-trust-score">—</b></div><div id="cgs-trust" class="cgs-checks"></div><p class="cgs-note">Ce centre n\'affiche que les éléments internes vérifiables. Aucune certification externe n\'est simulée.</p></article>'+
+    '<article id="cgs-referral-card" class="cgs-card" hidden><div class="cgs-card-head"><div><span>PARRAINAGE</span><h3>Recommander Audiotel Premium Pro</h3></div><b id="cgs-referral-badge">ACTIF</b></div><div class="cgs-list"><div><span>Votre récompense</span><strong id="cgs-referral-reward">—</strong></div><div><span>Filleuls enregistrés</span><strong id="cgs-referral-total">0</strong></div><div><span>Filleuls qualifiés</span><strong id="cgs-referral-qualified">0</strong></div><div><span>Récompenses acquises</span><strong id="cgs-referral-earned">0,00 €</strong></div></div><div class="cgs-fields"><label>Lien personnel<input id="cgs-referral-link" type="text" readonly></label></div><button id="cgs-referral-copy" class="cp-primary" type="button">Copier mon lien</button><p class="cgs-note">La récompense est acquise uniquement lorsqu’un filleul devient client avec un abonnement réellement payé et actif.</p></article>'+\n    '<article class="cgs-card"><div class="cgs-card-head"><div><span>CONFIANCE</span><h3>Centre conformité</h3></div><b id="cgs-trust-score">—</b></div><div id="cgs-trust" class="cgs-checks"></div><p class="cgs-note">Ce centre n\'affiche que les éléments internes vérifiables. Aucune certification externe n\'est simulée.</p></article>'+
   '</div>'+
   '<article class="cgs-onboarding"><div><span>ASSISTANT D\'OUVERTURE</span><h3>Préparer mon dossier en quelques réponses</h3><p>Profil, nouveau numéro ou portabilité, volume estimé et routage souhaité.</p></div><button id="cgs-onboard-open" class="cp-primary" type="button">Préparer mon parcours</button></article>'+
   '<dialog id="cgs-onboard-dialog" class="cp-dialog"><form method="dialog" class="cp-dialog-card cgs-dialog"><div class="cp-dialog-head"><div><p class="cp-kicker">ASSISTANT D\'OUVERTURE</p><h2>Préparer mon parcours</h2></div><button class="cp-dialog-close" value="cancel" aria-label="Fermer">×</button></div><div class="cgs-form"><label>Profil<select id="cgs-ob-profile"><option value="individual">Particulier</option><option value="business">Professionnel / entreprise</option></select></label><label>Projet<select id="cgs-ob-project"><option value="new">Nouveau numéro</option><option value="portability">Portabilité</option></select></label><label>Volume estimé / mois<input id="cgs-ob-volume" type="number" min="0" step="100" value="3000"></label><label>Routage<select id="cgs-ob-routing"><option value="single">Une destination</option><option value="schedule">Selon horaires</option><option value="multi">Plusieurs intervenants</option></select></label></div><div id="cgs-ob-summary" class="cgs-summary"></div><div class="cgs-dialog-actions"><button value="cancel" class="cp-ghost">Fermer</button><button id="cgs-ob-save" value="cancel" class="cp-primary">Enregistrer sur cet appareil</button></div></form></dialog>';
@@ -54,6 +54,7 @@ function bind(){
     if(v!=null&&num(String(v).replace(",","."))>0){setGoal(String(v).replace(",","."));renderLivePlus()}
   });
   $("cgs-onboard-open")?.addEventListener("click",function(){renderOnboarding();$("cgs-onboard-dialog")?.showModal()});
+  $("cgs-referral-copy")?.addEventListener("click",async function(){var value=$("cgs-referral-link")?.value||"";if(!value)return;try{await navigator.clipboard.writeText(value);this.textContent="Lien copié";setTimeout(()=>{this.textContent="Copier mon lien"},1600)}catch(_e){$("cgs-referral-link")?.select();}});
   ["cgs-ob-profile","cgs-ob-project","cgs-ob-volume","cgs-ob-routing"].forEach(function(id){$(id)?.addEventListener("change",renderOnboarding)});
   $("cgs-ob-save")?.addEventListener("click",function(){
     try{localStorage.setItem("pgi_client_opening_plan",JSON.stringify({profile:$("cgs-ob-profile")?.value,project:$("cgs-ob-project")?.value,volume:num($("cgs-ob-volume")?.value),routing:$("cgs-ob-routing")?.value,saved_at:new Date().toISOString()}))}catch(_e){}
@@ -95,6 +96,21 @@ function renderFinance(){
   if($("cgs-fin-held"))$("cgs-fin-held").textContent=money(held,cur);
   if($("cgs-fin-gap"))$("cgs-fin-gap").textContent=money(Math.max(0,valid-paid),cur);
 }
+async function loadReferral(){
+  try{
+    if(!window.PGICustomerApi?.referralProgram)return;
+    var x=await window.PGICustomerApi.referralProgram(),card=$("cgs-referral-card");
+    if(!card)return;
+    if(!x||x.enabled!==true){card.hidden=true;return;}
+    card.hidden=false;
+    var stats=x.stats||{},cur=x.currency||"EUR";
+    if($("cgs-referral-reward"))$("cgs-referral-reward").textContent=money(num(x.reward_minor)/100,cur)+" par filleul qualifié";
+    if($("cgs-referral-total"))$("cgs-referral-total").textContent=String(num(stats.total));
+    if($("cgs-referral-qualified"))$("cgs-referral-qualified").textContent=String(num(stats.qualified));
+    if($("cgs-referral-earned"))$("cgs-referral-earned").textContent=money(num(stats.earned_minor)/100,cur);
+    if($("cgs-referral-link"))$("cgs-referral-link").value=String(x.share_url||"");
+  }catch(_e){var card=$("cgs-referral-card");if(card)card.hidden=true;}
+}
 function renderTrust(){
   var tenant=data?.tenant||{},numbers=data?.numbers||[],routes=data?.destinations||[];
   var checks=[
@@ -115,7 +131,7 @@ function renderOnboarding(){
   var routeLabel={single:"une destination",schedule:"routage selon horaires",multi:"plusieurs intervenants"}[routing]||routing;
   if($("cgs-ob-summary"))$("cgs-ob-summary").innerHTML='<strong>Parcours préparé</strong><p>Profil : '+esc(profileLabel)+' · Projet : '+esc(projectLabel)+' · Volume indicatif : '+Math.round(vol).toLocaleString("fr-FR")+' min/mois · Routage : '+esc(routeLabel)+'.</p><small>Ce pré-paramétrage n’active aucun service et ne constitue pas une offre tarifaire.</small>';
 }
-function renderAll(){ensure();renderComparator();renderLivePlus();renderPortability();renderFinance();renderTrust()}
+function renderAll(){ensure();renderComparator();renderLivePlus();renderPortability();renderFinance();renderTrust();loadReferral()}
 document.addEventListener("pgi:portal-loaded",function(e){data=e?.detail?.data||{};renderAll()});
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",function(){data=window.PGI_PREMIUM_PORTAL_DATA||{};ensure();renderAll()},{once:true});else{data=window.PGI_PREMIUM_PORTAL_DATA||{};ensure();renderAll()}
 })();

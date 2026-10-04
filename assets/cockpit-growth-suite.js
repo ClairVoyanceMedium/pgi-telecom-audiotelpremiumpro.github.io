@@ -26,7 +26,7 @@ function ensure(){
   '<article class="kgs-card"><div class="kgs-title"><div><span>ROUTAGE INTELLIGENT</span><h3>Orchestrateur préparé</h3></div><b>PRÊT À BRANCHER</b></div><div class="kgs-list"><div><span>Plages horaires</span><strong>Préparé</strong></div><div><span>Débordement</span><strong>Préparé</strong></div><div><span>Priorités intervenants</span><strong>Préparé</strong></div><div><span>File d’attente</span><strong id="kgs-queue">0</strong></div><div><span>Bascule destination</span><strong>Préparé</strong></div></div><button type="button" data-kgs-go="carriers">Ouvrir le routage</button></article>'+
   '<article class="kgs-card"><div class="kgs-title"><div><span>FINANCE</span><h3>Rapprochement automatique</h3></div><b>CONTRÔLE</b></div><div class="kgs-list"><div><span>CA affiché</span><strong id="kgs-ca">0,00 €</strong></div><div><span>Reversement attendu</span><strong id="kgs-expected">0,00 €</strong></div><div><span>Encaissé</span><strong id="kgs-paid">0,00 €</strong></div><div><span>Écart</span><strong id="kgs-gap">0,00 €</strong></div></div><button type="button" data-kgs-go="finance">Ouvrir Finance</button></article>'+
   '<article class="kgs-card"><div class="kgs-title"><div><span>PAIEMENT CB</span><h3>Stripe Connect + commission PGI</h3></div><b id="kgs-cb-state">CONNECT</b></div><div class="kgs-list"><div><span>Comptes actifs</span><strong id="kgs-cb-active">0</strong></div><div><span>En activation</span><strong id="kgs-cb-onboarding">0</strong></div><div><span>Volume CB encaissé</span><strong id="kgs-cb-volume">0,00 €</strong></div><div><span>Commissions PGI</span><strong id="kgs-cb-fees">0,00 €</strong></div></div><p>Commission de lancement : 4,9 % par transaction, hors frais Stripe. Le paiement à la minute sera raccordé au moteur téléphonique.</p></article>'+
-  '<article class="kgs-card"><div class="kgs-title"><div><span>CONFORMITÉ</span><h3>Centre de confiance</h3></div><b id="kgs-trust">PRÉPARATION</b></div><div class="kgs-list"><div><span>Documents publics</span><strong>Publiés</strong></div><div><span>Support non surtaxé</span><strong>Prévu</strong></div><div><span>KYC clients</span><strong id="kgs-kyc">En attente d’activité</strong></div><div><span>Opérateur attributaire</span><strong id="kgs-operator">À contractualiser</strong></div></div><button type="button" data-kgs-go="wholesale">Ouvrir conformité</button></article>'+
+  '<article class="kgs-card"><div class="kgs-title"><div><span>ACQUISITION</span><h3>Parrainage client</h3></div><b id="kgs-referral-state">DÉSACTIVÉ</b></div><div class="kgs-form"><label>Activer le parrainage<input id="kgs-referral-enabled" type="checkbox"></label><label>Récompense par filleul qualifié (€)<input id="kgs-referral-reward" type="number" min="0" max="1000" step="0.10" value="0"></label></div><div class="kgs-list"><div><span>Parrainages</span><strong id="kgs-referral-total">0</strong></div><div><span>Qualifiés</span><strong id="kgs-referral-qualified">0</strong></div><div><span>Récompensés</span><strong id="kgs-referral-rewarded">0</strong></div></div><button id="kgs-referral-save" type="button">Enregistrer le parrainage</button><p>Lorsqu’il est désactivé, aucun nouveau code n’est proposé au client. Les parrainages déjà acquis restent traçables.</p></article>'+\n  '<article class="kgs-card"><div class="kgs-title"><div><span>CONFORMITÉ</span><h3>Centre de confiance</h3></div><b id="kgs-trust">PRÉPARATION</b></div><div class="kgs-list"><div><span>Documents publics</span><strong>Publiés</strong></div><div><span>Support non surtaxé</span><strong>Prévu</strong></div><div><span>KYC clients</span><strong id="kgs-kyc">En attente d’activité</strong></div><div><span>Opérateur attributaire</span><strong id="kgs-operator">À contractualiser</strong></div></div><button type="button" data-kgs-go="wholesale">Ouvrir conformité</button></article>'+
  '</div>'+
  '<article class="kgs-launch"><div><span>ASSISTANT D\'OUVERTURE AUTOMATISÉ</span><h3>Dossier → KYC → numéro → routage → activation → suivi</h3><p id="kgs-launch-state">Le cockpit suit déjà les prérequis de lancement. Cette vue les rassemble en parcours unique.</p></div><div class="kgs-launch-actions"><label>Tarif service démo<input id="kgs-service-demo" type="number" min="0" max="3" step="0.01" value="'+DEMO.service+'"></label><label>Coût intervenant démo<input id="kgs-expert-demo" type="number" min="0" max="3" step="0.01" value="'+DEMO.expert+'"></label></div></article>';
  live.insertAdjacentElement("afterend",s);
@@ -36,6 +36,7 @@ function bind(){
  ["kgs-current","kgs-payout","kgs-minutes"].forEach(function(id){$(id)?.addEventListener("input",renderComparator)});
  $("kgs-goal")?.addEventListener("click",function(){var v=prompt("Objectif Business Live plateforme en euros",String(goal()));if(v!=null&&n(String(v).replace(",","."))>0){setGoal(String(v).replace(",","."));renderLive()}});
  document.querySelectorAll("[data-kgs-go]").forEach(function(b){b.addEventListener("click",function(){go(b.dataset.kgsGo)})});
+ $("kgs-referral-save")?.addEventListener("click",saveReferralProgram);
  var targets=["live-jackpot","live-jackpot-rate","kpi-ca","kpi-expected","kpi-paid","live-queue","wh-check-kyc","host-active-carrier"].map($).filter(Boolean);
  if(typeof MutationObserver!=="undefined"){mo=new MutationObserver(render);targets.forEach(function(x){mo.observe(x,{childList:true,characterData:true,subtree:true})})}
 }
@@ -60,6 +61,27 @@ function renderFinance(){
  if($("kgs-paid"))$("kgs-paid").textContent=money(paid);
  if($("kgs-gap"))$("kgs-gap").textContent=money(Math.max(0,exp-paid));
 }
+async function loadReferralProgram(){
+ try{
+  if(!window.PGIApi?.referralProgram)return;
+  var x=await PGIApi.referralProgram(),stats=x.stats||{};
+  if($("kgs-referral-enabled"))$("kgs-referral-enabled").checked=x.enabled===true;
+  if($("kgs-referral-reward"))$("kgs-referral-reward").value=(n(x.reward_minor)/100).toFixed(2);
+  if($("kgs-referral-state"))$("kgs-referral-state").textContent=x.enabled===true?"ACTIF":"DÉSACTIVÉ";
+  if($("kgs-referral-total"))$("kgs-referral-total").textContent=String(n(stats.total));
+  if($("kgs-referral-qualified"))$("kgs-referral-qualified").textContent=String(n(stats.qualified));
+  if($("kgs-referral-rewarded"))$("kgs-referral-rewarded").textContent=String(n(stats.rewarded));
+ }catch(_e){}
+}
+async function saveReferralProgram(){
+ var btn=$("kgs-referral-save"),enabled=$("kgs-referral-enabled")?.checked===true,reward=Math.round(n($("kgs-referral-reward")?.value)*100);
+ if(enabled&&reward<=0){alert("Indiquez une récompense supérieure à 0 € avant d’activer le parrainage.");return;}
+ if(!window.PGIApi?.updateReferralProgram)return;
+ var old=btn?.textContent;if(btn){btn.disabled=true;btn.textContent="Enregistrement…";}
+ try{await PGIApi.updateReferralProgram({enabled:enabled,reward_minor:reward,currency:"EUR"});await loadReferralProgram();if(btn)btn.textContent="Enregistré";}
+ catch(_e){if(btn)btn.textContent="Enregistrement impossible";}
+ finally{setTimeout(function(){if(btn){btn.disabled=false;btn.textContent=old||"Enregistrer le parrainage"}},1400);}
+}
 async function loadCardSummary(){
  try{
   if(!window.PGIApi?.cardPaymentSummary)return;
@@ -81,7 +103,7 @@ function renderReadiness(){
  if($("kgs-trust"))$("kgs-trust").textContent=ready>=3?"AVANCÉ":"PRÉPARATION";
 }
 function render(){if(!ensure())return;renderComparator();renderLive();renderFinance();renderReadiness()}
-window.addEventListener("pgi:dashboard-loaded",function(){loadCardSummary()});
-function boot(){if(ensure()){render();setTimeout(loadCardSummary,500);return}var tries=0,t=setInterval(function(){tries++;if(ensure()||tries>40){clearInterval(t);render();setTimeout(loadCardSummary,500)}},100)}
+window.addEventListener("pgi:dashboard-loaded",function(){loadCardSummary();loadReferralProgram()});
+function boot(){if(ensure()){render();setTimeout(function(){loadCardSummary();loadReferralProgram()},500);return}var tries=0,t=setInterval(function(){tries++;if(ensure()||tries>40){clearInterval(t);render();setTimeout(function(){loadCardSummary();loadReferralProgram()},500)}},100)}
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot,{once:true});else boot();
 })();

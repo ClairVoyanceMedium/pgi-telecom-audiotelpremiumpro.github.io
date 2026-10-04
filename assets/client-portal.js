@@ -370,7 +370,8 @@ async function submitRegistration(e){
     legal_version:"2026-09-26-b2b-b2c-v4",
     website:$("register-website").value,
     preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",
-    timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC")
+    timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC"),
+    referral_code:String(new URLSearchParams(location.search).get("ref")||"").trim().toUpperCase()
   };
   b&&(b.disabled=true);
   try{
