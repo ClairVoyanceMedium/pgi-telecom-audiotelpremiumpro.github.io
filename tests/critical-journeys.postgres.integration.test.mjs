@@ -165,7 +165,7 @@ test("full customer journey works without a real operator and remains fail-close
         registration_number:"",phone:"+33600000000",email,password:"long-password-12345",
         service_intent:"new_number",acquisition_source:"public_marketing_site",
         authority_confirmed:true,legal_terms_accepted:true,privacy_notice_acknowledged:true,
-        legal_version:"2026-09-26-b2b-b2c-v4",website:"",preferred_locale:"fr-FR",timezone:"Europe/Paris"
+        legal_version:"2026-10-04-b2b-b2c-v5",website:"",preferred_locale:"fr-FR",timezone:"Europe/Paris"
       })
     });
     assert.equal(response.status,201);
@@ -203,7 +203,7 @@ test("full customer journey works without a real operator and remains fail-close
     assert.equal(response.status,200);
     const portal=await response.json();
     assert.equal(portal.user.tenant.id,tenantPublicId);
-    assert.equal(portal.billing_offer.amount_minor,300);
+    assert.equal(portal.billing_offer.amount_minor,490);
     assert.equal(portal.billing_provider.checkout_available,true);
 
     response=await fetch(base+"/api/v1/customer/billing/checkout-session",{
@@ -215,7 +215,7 @@ test("full customer journey works without a real operator and remains fail-close
       },
       body:JSON.stringify({
         subscription_terms_accepted:true,privacy_notice_acknowledged:true,immediate_performance_requested:true,
-        legal_version:"2026-09-26-b2b-b2c-v4"
+        legal_version:"2026-10-04-b2b-b2c-v5"
       })
     });
     assert.equal(response.status,201);
@@ -238,7 +238,7 @@ test("full customer journey works without a real operator and remains fail-close
         id:"sub_test_customer_journey",customer:"cus_test_customer_journey",status:"active",
         metadata:{
           tenant_public_id:tenantPublicId,price_version_id:String(priceVersionId),
-          plan_key:"external-sva-access",legal_version:"2026-09-26-b2b-b2c-v4"
+          plan_key:"external-sva-access",legal_version:"2026-10-04-b2b-b2c-v5"
         },
         items:{data:[{
           current_period_start:now,current_period_end:now+31*86400,
