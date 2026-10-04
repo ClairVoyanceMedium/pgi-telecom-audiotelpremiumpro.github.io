@@ -50,7 +50,7 @@ Optional one-time 9.90 EUR incl. tax service that prioritizes PGI Telecom admini
 
 ### Parrainage Audiotel
 https://audiotel-premium-pro.com/parrainage-audiotel/
-Referral program that PGI Telecom can enable or disable. When active, eligible customers can share a personal code or link. A reward is earned only after the referred customer is actually activated with an active paid subscription. The applicable reward amount is controlled by the program and displayed to the customer.
+Referral program for eligible Audiotel Premium Pro customers. When active, customers can create and share a personal referral link, see the current reward amount, and track earned rewards in their customer area. Each qualified referred customer can generate the reward defined by the program after real activation and a paid active subscription.
 
 ### Reversement Audiotel
 A commercial/financial amount linked to eligible traffic under the applicable contract. On Audiotel Premium Pro, expected, confirmed and validated amounts are intentionally distinguished to avoid presenting an estimate as acquired revenue.
