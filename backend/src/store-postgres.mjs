@@ -4709,13 +4709,13 @@ export class PostgresStore{
       if(!row)throw problem(404,"PORTABILITY_REQUEST_NOT_FOUND");
       if(["scheduled","ported","rejected","cancelled"].includes(String(row.status)))throw problem(409,"PORTABILITY_PRIORITY_TOO_LATE");
       const existing=(await tx.unsafe("SELECT * FROM portability_priority_payments WHERE portability_request_id=$1 FOR UPDATE",[request]))[0]||null;
-      if(existing&&["paid","refunded","disputed"].includes(String(existing.status)))throw problem(409,existing.status==="paid"?"PORTABILITY_PRIORITY_ALREADY_PAID":"PORTABILITY_PRIORITY_PAYMENT_FINAL");
+      if(existing&&["paid","partially_refunded","refunded","disputed"].includes(String(existing.status)))throw problem(409,existing.status==="paid"?"PORTABILITY_PRIORITY_ALREADY_PAID":"PORTABILITY_PRIORITY_PAYMENT_FINAL");
       const principal=customerPrincipalId?String(customerPrincipalId):null;
       const payment=(await tx.unsafe(
         "INSERT INTO portability_priority_payments(tenant_id,portability_request_id,amount_minor,currency,status,created_by_customer_principal_id,metadata)"+
         " VALUES($1,$2,990,'EUR','pending',$3,$4::jsonb)"+
         " ON CONFLICT(portability_request_id) DO UPDATE SET status='pending',provider_checkout_session_reference=NULL,provider_payment_intent_reference=NULL,metadata=portability_priority_payments.metadata||EXCLUDED.metadata,updated_at=now()"+
-        " WHERE portability_priority_payments.status NOT IN ('paid','refunded','disputed')"+
+        " WHERE portability_priority_payments.status NOT IN ('paid','partially_refunded','refunded','disputed')"+
         " RETURNING id,public_id,tenant_id,portability_request_id,amount_minor,currency,status,created_at,updated_at",
         [tenant,request,principal,JSON.stringify({service:"portability_priority",price_ttc_minor:990,standard_portability_remains_free:true,external_operator_delay_guaranteed:false})]
       ))[0]||null;
@@ -4755,7 +4755,7 @@ export class PostgresStore{
     const tenant=Number(tenantId),publicId=String(paymentPublicId||"");
     if(!Number.isInteger(tenant)||tenant<=0||!/^[0-9a-f-]{36}$/i.test(publicId))return null;
     const rows=await this.sql.unsafe(
-      "UPDATE portability_priority_payments SET status='failed',metadata=metadata||$3::jsonb,updated_at=now() WHERE tenant_id=$1 AND public_id=$2::uuid AND status NOT IN ('paid','refunded','disputed') RETURNING public_id,status",
+      "UPDATE portability_priority_payments SET status='failed',metadata=metadata||$3::jsonb,updated_at=now() WHERE tenant_id=$1 AND public_id=$2::uuid AND status NOT IN ('paid','partially_refunded','refunded','disputed') RETURNING public_id,status",
       [tenant,publicId,JSON.stringify({last_failure:String(reason||"checkout_failed").slice(0,120)})]
     );
     return rows[0]||null;
@@ -4765,7 +4765,7 @@ export class PostgresStore{
     const provider=String(event.provider||"stripe"),eventId=String(event.provider_event_id||""),publicId=String(event.payment_public_id||"");
     if(provider!=="stripe"||!eventId||!/^[0-9a-f-]{36}$/i.test(publicId))throw problem(400,"INVALID_PORTABILITY_PRIORITY_EVENT");
     const status=String(event.status||"");
-    if(!["open","paid","expired","failed","refunded","disputed"].includes(status))throw problem(400,"INVALID_PORTABILITY_PRIORITY_STATUS");
+    if(!["open","paid","expired","failed","partially_refunded","refunded","disputed"].includes(status))throw problem(400,"INVALID_PORTABILITY_PRIORITY_STATUS");
     return this.sql.begin(async tx=>{
       const inserted=await tx.unsafe(
         "INSERT INTO portability_priority_provider_events(provider,provider_event_id,event_type,payment_public_id,payload_sha256) VALUES($1,$2,$3,$4::uuid,$5) ON CONFLICT(provider,provider_event_id) DO NOTHING RETURNING id",
@@ -4796,17 +4796,18 @@ export class PostgresStore{
           [payment.tenant_id,payment.portability_request_id]
         );
         updated=true;
-      }else if(status==="refunded"){
+      }else if(["partially_refunded","refunded"].includes(status)){
+        const refundedAmount=Math.max(0,Math.min(Number(payment.amount_minor),Number(event.refunded_amount_minor)||0));
         await tx.unsafe(
-          "UPDATE portability_priority_payments SET status='refunded',refunded_at=COALESCE(refunded_at,$2::timestamptz),provider_payment_intent_reference=COALESCE($3,provider_payment_intent_reference),last_provider_event_at=$2::timestamptz,updated_at=now() WHERE id=$1",
-          [payment.id,event.event_time||new Date().toISOString(),event.provider_payment_intent_reference||null]
+          "UPDATE portability_priority_payments SET status=$2,refunded_amount_minor=GREATEST(refunded_amount_minor,$3),refunded_at=CASE WHEN $2='refunded' THEN COALESCE(refunded_at,$4::timestamptz) ELSE refunded_at END,provider_payment_intent_reference=COALESCE($5,provider_payment_intent_reference),last_provider_event_at=$4::timestamptz,updated_at=now() WHERE id=$1",
+          [payment.id,status,refundedAmount,event.event_time||new Date().toISOString(),event.provider_payment_intent_reference||null]
         );updated=true;
       }else if(status==="disputed"){
         await tx.unsafe(
           "UPDATE portability_priority_payments SET status='disputed',provider_payment_intent_reference=COALESCE($3,provider_payment_intent_reference),last_provider_event_at=$2::timestamptz,updated_at=now() WHERE id=$1",
           [payment.id,event.event_time||new Date().toISOString(),event.provider_payment_intent_reference||null]
         );updated=true;
-      }else if(!["paid","refunded","disputed"].includes(String(payment.status))){
+      }else if(!["paid","partially_refunded","refunded","disputed"].includes(String(payment.status))){
         await tx.unsafe(
           "UPDATE portability_priority_payments SET status=$2,provider_checkout_session_reference=COALESCE($3,provider_checkout_session_reference),provider_payment_intent_reference=COALESCE($4,provider_payment_intent_reference),last_provider_event_at=$5::timestamptz,updated_at=now() WHERE id=$1",
           [payment.id,status,event.provider_checkout_session_reference||null,event.provider_payment_intent_reference||null,event.event_time||new Date().toISOString()]
@@ -4822,7 +4823,7 @@ export class PostgresStore{
           [payment.tenant_id,"portability.priority."+status,String(payment.id),JSON.stringify({portability_request_id:Number(payment.portability_request_id),payment_public_id:publicId,status})]
         );
       }
-      const after=(await tx.unsafe("SELECT public_id,portability_request_id,status,amount_minor,currency,paid_at,refunded_at FROM portability_priority_payments WHERE id=$1",[payment.id]))[0];
+      const after=(await tx.unsafe("SELECT public_id,portability_request_id,status,amount_minor,currency,paid_at,refunded_amount_minor,refunded_at FROM portability_priority_payments WHERE id=$1",[payment.id]))[0];
       return {duplicate:false,updated,payment:{...after,portability_request_id:Number(after.portability_request_id),amount_minor:Number(after.amount_minor)}};
     });
   }
