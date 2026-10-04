@@ -66,6 +66,8 @@ const files=[
   "assets/client-growth-suite.css",
   "assets/client-card-payments.js",
   "assets/client-card-payments.css",
+  "assets/client-referrals.js",
+  "assets/client-referrals.css",
   "assets/client-audience.js",
   "assets/client-access-visibility.js",
   "assets/client-mobile.js",

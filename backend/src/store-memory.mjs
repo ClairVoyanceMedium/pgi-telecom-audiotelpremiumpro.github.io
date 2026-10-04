@@ -59,6 +59,11 @@ export class MemoryStore{
     this.customerExperiencePreferencesMap=new Map();
     this.customerLegalAcceptances=[];
     this.customerWithdrawalRequests=[];
+    this.referralProgram={enabled:false,configuration:{reward_minor:0,currency:"EUR",qualification:"paid_active_subscription"},updated_at:null};
+    this.referralCodes=new Map();
+    this.referralClaims=[];
+    this.referralRewards=[];
+    this.dailyReports=new Map();
     this.staffUsers=[{id:1,public_id:randomUUID(),login_name:"local-admin",email:"local-admin@staff.pgi.invalid",display_name:"Local Simulator",role:"admin",enabled:true,password_hash:null,session_version:1,last_login_at:null,created_at:new Date().toISOString()}];
     this.nextStaffUserId=2;
   }
@@ -1169,6 +1174,32 @@ export class MemoryStore{
     return structuredClone(row);
   }
 
+  async referralProgramSettings(){
+    const p=this.referralProgram||{enabled:false,configuration:{reward_minor:0,currency:"EUR",qualification:"paid_active_subscription"},updated_at:null};
+    const claims=this.referralClaims||[],rewards=this.referralRewards||[];
+    return {enabled:p.enabled===true,configuration:structuredClone(p.configuration),stats:{active_codes:[...this.referralCodes.values()].filter(x=>x.status==="active").length,referrals_total:claims.length,claimed:claims.filter(x=>x.status==="claimed").length,qualified:claims.filter(x=>x.status==="qualified").length,rewarded:claims.filter(x=>x.status==="rewarded").length,rewards_earned:rewards.filter(x=>x.status==="earned").length,rewards_paid:rewards.filter(x=>x.status==="paid").length},updated_at:p.updated_at};
+  }
+  async updateReferralProgramSettings(input={}){
+    if(typeof input.enabled!=="boolean")throw problem(400,"REFERRAL_ENABLED_REQUIRED");
+    const rewardMinor=Number(input.reward_minor??0),currency=String(input.currency||"EUR").trim().toUpperCase();
+    if(!Number.isInteger(rewardMinor)||rewardMinor<0||rewardMinor>100000000)throw problem(400,"INVALID_REFERRAL_REWARD");
+    if(!/^[A-Z]{3}$/.test(currency))throw problem(400,"INVALID_REFERRAL_CURRENCY");
+    this.referralProgram={enabled:input.enabled===true,configuration:{reward_minor:rewardMinor,currency,qualification:"paid_active_subscription"},updated_at:new Date().toISOString()};
+    return this.referralProgramSettings();
+  }
+  async customerReferralOverview(tenantId){
+    const id=Number(tenantId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    const settings=await this.referralProgramSettings(),code=this.referralCodes.get(id)||null;
+    return {enabled:settings.enabled,configuration:settings.configuration,code:settings.enabled&&code?.status==="active"?code.code:null,code_status:code?.status||null,code_created_at:code?.created_at||null,referrals:structuredClone((this.referralClaims||[]).filter(x=>Number(x.referrer_tenant_id)===id)),rewards:structuredClone((this.referralRewards||[]).filter(x=>Number(x.tenant_id)===id))};
+  }
+  async ensureCustomerReferralCode(tenantId){
+    const id=Number(tenantId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    if(this.referralProgram?.enabled!==true)throw problem(409,"REFERRAL_PROGRAM_DISABLED");
+    const existing=this.referralCodes.get(id);if(existing){if(existing.status!=="active")throw problem(409,"REFERRAL_CODE_DISABLED");return structuredClone(existing);}
+    const row={code:"PGI"+randomUUID().replace(/-/g,"").slice(0,12).toUpperCase(),status:"active",created_at:new Date().toISOString()};
+    this.referralCodes.set(id,row);return structuredClone(row);
+  }
+
   async selfServiceRegister(input={},passwordHash){
     const first=String(input.first_name||"").trim(),last=String(input.last_name||"").trim(),email=String(input.email||"").trim().toLowerCase();
     const company=String(input.company_name||"").trim(),registration=String(input.registration_number||"").trim(),accountTypeInput=String(input.account_type||"").trim().toLowerCase(),accountType=accountTypeInput||((company||registration)?"business":"individual");
@@ -1179,7 +1210,9 @@ export class MemoryStore{
     if(input.authority_confirmed!==true)throw problem(400,"REGISTRATION_AUTHORITY_REQUIRED");
     if(input.legal_terms_accepted!==true||input.privacy_notice_acknowledged!==true)throw problem(400,"REGISTRATION_LEGAL_TERMS_REQUIRED");
     if(String(input.legal_version||"")!=="2026-09-26-b2b-b2c-v4")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
+    const referralCode=String(input.referral_code||"").trim().toUpperCase();if(referralCode&&!/^[A-Z0-9]{8,24}$/.test(referralCode))throw problem(400,"INVALID_REFERRAL_CODE");
     this.customerLegalAcceptances.push({acceptance_type:"account_terms",document_version:"2026-09-26-b2b-b2c-v4",documents:{cgu:"/conditions-utilisation/",conditions:"/conditions-abonnement/",privacy:"/confidentialite/",cookies:"/cookies-traceurs/"},account_type:accountType,evidence:{source:"self_service_registration",authority_confirmed:true,privacy_notice_acknowledged:true},accepted_at:new Date().toISOString()});
+    if(referralCode&&this.referralProgram?.enabled===true){const found=[...this.referralCodes.entries()].find(([,x])=>x.status==="active"&&x.code===referralCode);if(found&&Number(found[0])!==1){const cfg=this.referralProgram.configuration||{};this.referralClaims.push({public_id:randomUUID(),referrer_tenant_id:Number(found[0]),referred_tenant_id:1,status:"claimed",reward_minor:Number(cfg.reward_minor||0),reward_currency:String(cfg.currency||"EUR"),claimed_at:new Date().toISOString(),qualified_at:null,rewarded_at:null,rejected_at:null,rejection_reason:null});}}
     return {id:randomUUID(),email,display_name:(first+" "+last).trim(),status:"active",email_verified:false,session_version:1,tenant_id:1,tenant_public_id:"00000000-0000-4000-8000-000000000001",dossier_ref:"APP-"+new Date().getUTCFullYear()+"-DEMO000001",tenant_name:accountType==="business"?(company||(first+" "+last).trim()):(first+" "+last).trim(),tenant_status:"pending",customer_role:"owner",authorization_version:1,customer_type:accountType};
   }
   async customerGoogleSignIn(){throw problem(403,"GOOGLE_INVITATION_REQUIRED");}
@@ -1398,6 +1431,25 @@ export class MemoryStore{
   async registerWebauthnCredential(ownerType,ownerId,input={}){this._passkeys=this._passkeys||[];if(this._passkeys.some(x=>x.credential_id===input.credential_id))throw problem(409,"WEBAUTHN_CREDENTIAL_EXISTS");const row={id:this._passkeys.length+1,public_id:randomUUID(),owner_type:ownerType,owner_id:String(ownerId),credential_id:input.credential_id,public_key_spki:input.public_key_spki,sign_count:Number(input.sign_count||0),transports:input.transports||[],label:input.label||"Passkey",enabled:true,created_at:new Date().toISOString(),last_verified_at:null};this._passkeys.push(row);const{public_key_spki,...safe}=row;return structuredClone(safe);}
   async webauthnCredential(ownerType,ownerId,credentialId){this._passkeys=this._passkeys||[];return structuredClone(this._passkeys.find(x=>x.owner_type===ownerType&&String(x.owner_id)===String(ownerId)&&x.credential_id===credentialId&&x.enabled)||null);}
   async markWebauthnVerified(id,signCount){this._passkeys=this._passkeys||[];const x=this._passkeys.find(v=>v.id===Number(id));if(!x)throw problem(404,"WEBAUTHN_CREDENTIAL_NOT_FOUND");if(Number(signCount)>0)x.sign_count=Number(signCount);x.last_verified_at=new Date().toISOString();return{id:x.id,public_id:x.public_id,last_verified_at:x.last_verified_at,sign_count:x.sign_count};}
+
+  async claimDailyInternalReport(reportDate){
+    const date=String(reportDate||"");if(!/^\d{4}-\d{2}-\d{2}$/.test(date))throw problem(400,"INVALID_DAILY_REPORT_DATE");
+    const current=this.dailyReports.get(date);
+    if(current?.state==="sent")return {claimed:false,reason:"already_sent",report:structuredClone(current)};
+    if(current?.state==="sending"&&Date.now()-Date.parse(current.last_attempt_at)<15*60000)return {claimed:false,reason:"already_sending",report:structuredClone(current)};
+    const row={report_date:date,state:"sending",attempt_count:Number(current?.attempt_count||0)+1,last_attempt_at:new Date().toISOString(),sent_at:current?.sent_at||null,provider_email_id:current?.provider_email_id||null,last_error_code:null,snapshot:current?.snapshot||{}};
+    this.dailyReports.set(date,row);return {claimed:true,reason:"claimed",report:structuredClone(row)};
+  }
+  async dailyInternalReportState(reportDate){const row=this.dailyReports.get(String(reportDate||""));return row?structuredClone(row):null;}
+  async dailyInternalReportSnapshot(){return {customers_total:0,customers_new:0,incidents_new:0,incidents_open:0,incidents_critical_open:0,portability_new:0,portability_open:0,portability_priority_paid:0,portability_priority_revenue_minor_eur:0,card_payments_paid:0,card_volume_minor_eur:0,card_pgi_fee_minor_eur:0,referrals_claimed:0,referral_rewards_earned:0,emails_attention:0,emails_pending:0,outbox_pending:this.outbox.filter(x=>!x.published_at).length,operational_critical_open:0};}
+  async completeDailyInternalReport(reportDate,{messageId=null,snapshot={}}={}){
+    const date=String(reportDate||""),row=this.dailyReports.get(date);if(!row||row.state!=="sending")throw problem(409,"DAILY_REPORT_NOT_CLAIMED");
+    Object.assign(row,{state:"sent",sent_at:new Date().toISOString(),provider_email_id:messageId||null,snapshot,last_error_code:null});return structuredClone(row);
+  }
+  async failDailyInternalReport(reportDate,errorCode,snapshot={}){
+    const row=this.dailyReports.get(String(reportDate||""));if(!row||row.state!=="sending")return null;
+    Object.assign(row,{state:"failed",snapshot,last_error_code:String(errorCode||"DAILY_REPORT_SEND_FAILED")});return structuredClone(row);
+  }
 
   async serviceOperationsHealth(){return {service_incidents_open:0,service_incidents_critical:0,service_first_response_overdue:0,service_resolution_overdue:0,routing_unavailable:0,portability_attention:0};}
 

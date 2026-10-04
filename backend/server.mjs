@@ -14,10 +14,10 @@ import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData,scopeCustomerAnnualProgressData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
-import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
+import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,createPriorityPortabilityCheckout,retrievePriorityPortabilityCheckout,verifyStripeWebhook,normalizeStripeBillingEvent,normalizeStripeRefundEvent,normalizePriorityPortabilityCheckoutEvent} from "./src/stripe-billing.mjs";
 import {STRIPE_CONNECT_APPLICATION_FEE_BPS,stripeConnectState,createStripeConnectedAccount,retrieveStripeConnectedAccount,normalizeStripeConnectedAccount,createStripeConnectOnboardingLink,createStripeCardCheckout,retrieveStripeCardCheckout,normalizeStripeConnectPaymentEvent,hashStripeEventPayload} from "./src/stripe-connect.mjs";
 import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStripe,buildGa4RefundFromStripe,sendGa4Measurement} from "./src/ga4-measurement.mjs";
-import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
+import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,sendInternalDailyReport,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
 import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail,syncHubSpotCustomerIncident,ensureHubSpotCardPaymentSchema,syncHubSpotCardPaymentState} from "./src/hubspot-crm.mjs";
@@ -164,7 +164,12 @@ export function createBackend(options={}){
           invalidateStripeProviderReadiness();
           return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,account_readiness_invalidated:true});
         }
-        const refund=config.ga4MeasurementEnabled&&config.ga4ApiSecret?await normalizeStripeRefundEvent(event,config):null;
+        const priorityPortability=normalizePriorityPortabilityCheckoutEvent(event);
+        if(priorityPortability){
+          const result=await store.applyPriorityPortabilityPayment(priorityPortability);
+          return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,type:String(event.type||""),priority_portability:true,duplicate:Boolean(result.duplicate),updated:Boolean(result.updated),status:result.status});
+        }
+                const refund=config.ga4MeasurementEnabled&&config.ga4ApiSecret?await normalizeStripeRefundEvent(event,config):null;
         if(refund){
           const analytics=await deliverGa4StripeEvent(store,config,"refund",refund.provider_event_id,refund.refund_id,buildGa4RefundFromStripe(refund));
           return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,type:String(event.type||""),analytics});
@@ -239,6 +244,28 @@ export function createBackend(options={}){
         const delivery=await drainTransactionalEmails({store,config,limit:100});
         const dunning=await drainDunningTransactionalEmails({store,config,limit:100});
         return done(res,metrics,started,"email.dispatch",200,{ok:true,delivery,dunning});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/internal/reports/daily"){
+        authorizeEmailCron(req,config);
+        const window=parisDailyReportWindow(new Date());
+        if(![20,21].includes(window.localHour)){
+          return done(res,metrics,started,"reports.daily",200,{ok:true,skipped:true,reason:"outside_delivery_window",report_date:window.reportDate,local_hour:window.localHour});
+        }
+        const claim=await store.claimDailyInternalReport(window.reportDate);
+        if(!claim.claimed){
+          return done(res,metrics,started,"reports.daily",200,{ok:true,skipped:true,reason:claim.reason,report_date:window.reportDate});
+        }
+        let snapshot={};
+        try{
+          snapshot=await store.dailyInternalReportSnapshot(window.fromIso,window.toIso);
+          const sent=await sendInternalDailyReport(config,{reportDate:window.reportDate,snapshot});
+          await store.completeDailyInternalReport(window.reportDate,{messageId:sent.message_id,snapshot});
+          return done(res,metrics,started,"reports.daily",200,{ok:true,sent:true,report_date:window.reportDate,attempt:Number(claim.report?.attempt_count||1)});
+        }catch(error){
+          await store.failDailyInternalReport(window.reportDate,error?.code||"DAILY_REPORT_SEND_FAILED",snapshot).catch(()=>{});
+          throw error;
+        }
       }
 
       if(method==="GET"&&pathname==="/api/v1/internal/business-live/reset-schedules/run"){
@@ -699,6 +726,25 @@ export function createBackend(options={}){
           return Number(event?.payload?.tenant_id||0)===tenantId;
         });
       }
+      if(method==="GET"&&pathname==="/api/v1/customer/referrals"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"overview.read");
+        const referral=await store.customerReferralOverview(context.tenant_id);
+        const base=String(config.publicBaseUrl||"https://audiotel-premium-pro.com").replace(/\/$/,"");
+        const canCreate=["owner","admin"].includes(String(context.customer_role||""));
+        return done(res,metrics,started,"customer.referrals",200,{...referral,can_create:canCreate,share_url:referral.enabled&&referral.code?base+"/demande-ouverture/?parrain="+encodeURIComponent(referral.code):null});
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/referrals/code"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"overview.read");
+        if(!["owner","admin"].includes(String(context.customer_role||""))){const e=new Error("Referral owner required");e.status=403;e.code="CUSTOMER_OWNER_REQUIRED";throw e;}
+        const code=await store.ensureCustomerReferralCode(context.tenant_id);
+        const base=String(config.publicBaseUrl||"https://audiotel-premium-pro.com").replace(/\/$/,"");
+        return done(res,metrics,started,"customer.referral_code",200,{...code,share_url:base+"/demande-ouverture/?parrain="+encodeURIComponent(code.code)});
+      }
+
       if(method==="GET"&&pathname==="/api/v1/customer/jackpot"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
@@ -962,6 +1008,40 @@ export function createBackend(options={}){
         const payload={tenant_id:context.tenant_id,...body};
         const result=await store.idempotent(req.headers["idempotency-key"],"customer.portability.create",payload,()=>store.createCustomerPortabilityRequest(context.tenant_id,body));
         return done(res,metrics,started,"customer.portability.create",201,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/customer/portability/:id/priority-checkout");
+      if(method==="POST"&&match){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        const idempotencyKey=String(req.headers["idempotency-key"]||"").trim();
+        if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)){const e=new Error("Idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
+        const checkoutContext=await store.priorityPortabilityCheckoutContext(context.tenant_id,match.id);
+        if(checkoutContext.priority_checkout_session_reference&&checkoutContext.priority_payment_status==="pending"){
+          const existing=await retrievePriorityPortabilityCheckout(config,checkoutContext.priority_checkout_session_reference);
+          if(existing.url&&existing.status==="open"){
+            return done(res,metrics,started,"customer.portability.priority_checkout",200,{request:checkoutContext,checkout:{url:existing.url,expires_at:existing.expires_at,reused:true},amount_minor:990,currency:"EUR"});
+          }
+          if(existing.payment_status==="paid"){
+            const applied=await store.applyPriorityPortabilityPayment({
+              request_id:Number(match.id),tenant_public_id:checkoutContext.tenant_public_id,
+              checkout_session_reference:checkoutContext.priority_checkout_session_reference,
+              payment_intent_reference:existing.payment_intent_reference,payment_status:"paid",
+              amount_minor:existing.amount_minor,currency:existing.currency,provider_event_id:null
+            });
+            return done(res,metrics,started,"customer.portability.priority_checkout",200,{request:checkoutContext,checkout:null,paid:true,priority_status:applied.status,amount_minor:990,currency:"EUR"});
+          }
+          if(existing.status==="complete"){
+            const e=new Error("Priority payment is still processing");e.status=409;e.code="PORTABILITY_PRIORITY_PAYMENT_PROCESSING";throw e;
+          }
+          await store.applyPriorityPortabilityPayment({
+            request_id:Number(match.id),tenant_public_id:checkoutContext.tenant_public_id,
+            checkout_session_reference:checkoutContext.priority_checkout_session_reference,
+            payment_status:"failed",amount_minor:990,currency:"EUR",provider_event_id:null
+          });
+        }
+        const session=await createPriorityPortabilityCheckout(config,{tenant_public_id:checkoutContext.tenant_public_id,request_id:Number(match.id),customer_email:context.email},idempotencyKey);
+        const saved=await store.attachPriorityPortabilityCheckout(context.tenant_id,match.id,session);
+        return done(res,metrics,started,"customer.portability.priority_checkout",201,{request:saved,checkout:{url:session.url,expires_at:session.expires_at,reused:false},amount_minor:990,currency:"EUR"});
       }
       match=routeMatch(pathname,"/api/v1/customer/portability/:id/cancel");
       if(method==="POST"&&match){
@@ -1418,6 +1498,17 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/carrier-switches/options"){
         requireRole(actor,["admin","readonly"]);
         return done(res,metrics,started,"carrier.switch_options",200,await store.carrierAdminOverview());
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/platform/referrals/settings"){
+        requireRole(actor,["admin"]);
+        return done(res,metrics,started,"platform.referral_settings",200,await store.referralProgramSettings());
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/platform/referrals/settings"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        return done(res,metrics,started,"platform.referral_settings_update",200,await store.updateReferralProgramSettings(body,actor));
       }
 
       if(method==="GET"&&pathname==="/api/v1/platform/overview"){
@@ -2418,6 +2509,32 @@ function authorizeCron(req,config,{disabledCode="CRON_DISABLED",unauthorizedCode
 function authorizeEmailCron(req,config){
   if(!config.transactionalEmailEnabled){const e=new Error("Email dispatch disabled");e.status=404;e.code="EMAIL_DISPATCH_DISABLED";e.expose=true;throw e;}
   authorizeCron(req,config,{disabledCode:"EMAIL_DISPATCH_DISABLED",unauthorizedCode:"EMAIL_DISPATCH_UNAUTHORIZED"});
+}
+function zonedParts(date,timeZone){
+  const parts=new Intl.DateTimeFormat("en-CA",{timeZone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).formatToParts(date);
+  const out={};for(const part of parts)if(part.type!=="literal")out[part.type]=Number(part.value);
+  return out;
+}
+function zoneOffsetMs(date,timeZone){
+  const p=zonedParts(date,timeZone);
+  const represented=Date.UTC(p.year,p.month-1,p.day,p.hour,p.minute,p.second);
+  return represented-Math.floor(date.getTime()/1000)*1000;
+}
+function zonedLocalToUtc(year,month,day,hour,minute,timeZone){
+  const desired=Date.UTC(year,month-1,day,hour,minute,0);
+  let guess=desired;
+  for(let i=0;i<4;i++)guess=desired-zoneOffsetMs(new Date(guess),timeZone);
+  return new Date(guess);
+}
+function parisDailyReportWindow(now=new Date()){
+  const p=zonedParts(now,"Europe/Paris"),pad=v=>String(v).padStart(2,"0");
+  const date=p.year+"-"+pad(p.month)+"-"+pad(p.day);
+  return {
+    reportDate:date,
+    localHour:Number(p.hour),
+    fromIso:zonedLocalToUtc(p.year,p.month,p.day,0,0,"Europe/Paris").toISOString(),
+    toIso:zonedLocalToUtc(p.year,p.month,p.day,20,0,"Europe/Paris").toISOString()
+  };
 }
 function supportTicketIdFromSubject(value){
   const match=/\[Ticket\s+([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\]/i.exec(String(value||""));
