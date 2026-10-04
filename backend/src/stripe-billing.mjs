@@ -178,6 +178,61 @@ export async function createStripeCheckout(config,billing,idempotencyKey,analyti
   if(!session?.url||!/^https:\/\/checkout\.stripe\.com\//i.test(session.url))throw failure(502,"STRIPE_CHECKOUT_URL_INVALID");
   return {url:session.url,session_id:session.id,price_id:price.id,provider:"stripe"};
 }
+export async function createStripePortabilityPriorityCheckout(config,order,idempotencyKey){
+  if(config?.stripeLiveMode){
+    const readiness=await stripeProviderReadiness(config);
+    if(!readiness.account_ready)throw failure(503,readiness.readiness_reason==="account_activation_required"?"PAYMENT_ACCOUNT_NOT_READY":"PAYMENT_PROVIDER_UNAVAILABLE");
+  }
+  const tenant=order?.tenant||{},metadata={
+    order_kind:"portability_priority",
+    order_public_id:String(order?.public_id||""),
+    tenant_public_id:String(tenant.public_id||""),
+    portability_request_id:String(order?.portability_request_id||""),
+    operator_sla_guaranteed:"false"
+  };
+  if(!/^[0-9a-f-]{36}$/i.test(metadata.order_public_id)||!metadata.portability_request_id)throw failure(400,"PORTABILITY_PRIORITY_ORDER_INVALID");
+  const params={
+    mode:"payment",
+    success_url:baseUrl(config)+"/client.html?portability_priority=success&session_id={CHECKOUT_SESSION_ID}",
+    cancel_url:baseUrl(config)+"/client.html?portability_priority=cancelled",
+    client_reference_id:metadata.tenant_public_id,
+    line_items:[{price_data:{currency:"eur",unit_amount:990,tax_behavior:"inclusive",product_data:{name:"Portabilité prioritaire Audiotel Premium Pro",description:"Traitement prioritaire par PGI Telecom. Les délais et confirmations de l’opérateur restent indépendants."}},quantity:1}],
+    metadata,
+    payment_intent_data:{metadata},
+    billing_address_collection:"auto",
+    locale:"auto",
+    custom_text:{submit:{message:"Option unique à 9,90 € TTC. Priorité de traitement PGI Telecom uniquement. Aucun délai de portabilité opérateur n’est garanti."}}
+  };
+  const customer=String(order?.provider_customer_reference||"");
+  if(/^cus_[A-Za-z0-9]+$/.test(customer))params.customer=customer;
+  else if(tenant.billing_email)params.customer_email=String(tenant.billing_email);
+  const session=await stripeApi(config,"/v1/checkout/sessions",{method:"POST",params,idempotencyKey});
+  if(!session?.url||!/^https:\/\/checkout\.stripe\.com\//i.test(session.url))throw failure(502,"STRIPE_CHECKOUT_URL_INVALID");
+  return {url:session.url,session_id:session.id,payment_intent_reference:idValue(session.payment_intent),provider:"stripe"};
+}
+
+export function normalizeStripePortabilityPriorityEvent(event){
+  const type=String(event?.type||"");
+  if(!["checkout.session.completed","checkout.session.async_payment_succeeded"].includes(type))return null;
+  const session=event?.data?.object,meta=session?.metadata||{};
+  if(String(session?.mode||"")!=="payment"||String(meta.order_kind||"")!=="portability_priority")return null;
+  if(String(session?.payment_status||"")!=="paid")return null;
+  const amount=Number(session?.amount_total),currency=String(session?.currency||"").toUpperCase();
+  if(!Number.isInteger(amount)||!currency)return null;
+  return {
+    provider_event_id:String(event.id||""),
+    event_type:type,
+    order_public_id:String(meta.order_public_id||""),
+    tenant_public_id:String(meta.tenant_public_id||""),
+    portability_request_id:Number(meta.portability_request_id||0),
+    amount_minor:amount,
+    currency,
+    checkout_session_reference:String(session.id||""),
+    payment_intent_reference:idValue(session.payment_intent),
+    paid_at:eventIso(event)
+  };
+}
+
 export async function createStripePortalSession(config,billing){
   const customer=String(billing?.subscription?.provider_customer_reference||"");
   if(!/^cus_[A-Za-z0-9]+$/.test(customer))throw failure(409,"BILLING_CUSTOMER_NOT_AVAILABLE");

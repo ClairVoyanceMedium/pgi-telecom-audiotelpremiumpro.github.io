@@ -39,7 +39,7 @@ function ensure(){
     '<article class="cgs-card"><div class="cgs-card-head"><div><span>PORTABILITÉ</span><h3>Suivi façon colis</h3></div><b id="cgs-port-badge">PRÊT</b></div><div id="cgs-port-steps" class="cgs-steps"></div><p class="cgs-note">Chaque étape est affichée seulement lorsqu\'elle est réellement connue dans votre dossier.</p></article>'+
     '<article class="cgs-card"><div class="cgs-card-head"><div><span>ROUTAGE INTELLIGENT</span><h3>Règles avancées</h3></div><b>PRÉ-BRANCHEMENT</b></div><div class="cgs-list"><div><span>Horaires & disponibilité</span><strong>Préparé</strong></div><div><span>Débordement automatique</span><strong>Préparé</strong></div><div><span>Priorité intervenants</span><strong>Préparé</strong></div><div><span>File d\'attente intelligente</span><strong>Préparé</strong></div><div><span>Destinations actuellement connues</span><strong id="cgs-route-count">0</strong></div></div><p class="cgs-note">Aucune règle télécom fictive n\'est activée avant raccordement opérateur.</p></article>'+
     '<article class="cgs-card"><div class="cgs-card-head"><div><span>FINANCE</span><h3>Rapprochement client</h3></div><b>CONTRÔLE</b></div><div class="cgs-list"><div><span>Net validé</span><strong id="cgs-fin-valid">0,00 €</strong></div><div><span>Déjà payé</span><strong id="cgs-fin-paid">0,00 €</strong></div><div><span>Montant retenu</span><strong id="cgs-fin-held">0,00 €</strong></div><div><span>Reste à rapprocher</span><strong id="cgs-fin-gap">0,00 €</strong></div></div><p class="cgs-note">Les règlements et relevés validés restent la seule référence officielle.</p></article>'+
-    '<article class="cgs-card"><div class="cgs-card-head"><div><span>PAIEMENT CB INTÉGRÉ</span><h3>Audiotel + carte bancaire</h3></div><b>STRIPE CONNECT</b></div><div class="cgs-list"><div><span>Liens de paiement sécurisés</span><strong>Activation Stripe</strong></div><div><span>Commission PGI de lancement</span><strong>4,9 %</strong></div><div><span>Frais de traitement Stripe</span><strong>Facturés par Stripe</strong></div><div><span>CB à la minute</span><strong>À relier à la téléphonie</strong></div></div><p class="cgs-note">Le centre Paiements CB gère l’activation et la création des liens. Le débit à la minute sera raccordé au moteur d’appel lors du branchement téléphonique.</p></article>'+
+    '<article class="cgs-card"><div class="cgs-card-head"><div><span>PAIEMENT CB INTÉGRÉ</span><h3>Audiotel + carte bancaire</h3></div><b>PAIEMENT SÉCURISÉ</b></div><div class="cgs-list"><div><span>Liens de paiement sécurisés</span><strong>Activation du paiement</strong></div><div><span>Commission PGI de lancement</span><strong>4,9 %</strong></div><div><span>Frais de traitement</span><strong>Facturés par le prestataire</strong></div><div><span>CB à la minute</span><strong>À relier à la téléphonie</strong></div></div><p class="cgs-note">Le centre Paiements CB gère l’activation et la création des liens. Le débit à la minute sera raccordé au moteur d’appel lors du branchement téléphonique.</p></article><article id="cgs-referral-card" class="cgs-card" hidden><div class="cgs-card-head"><div><span>PARRAINAGE</span><h3>Inviter un nouveau client</h3></div><b>ACTIF</b></div><div class="cgs-list"><div><span>Mon code</span><strong id="cgs-ref-code">—</strong></div><div><span>Invitations attribuées</span><strong id="cgs-ref-total">0</strong></div><div><span>Filleuls activés</span><strong id="cgs-ref-qualified">0</strong></div></div><div class="cgs-dialog-actions"><button id="cgs-ref-copy" class="cp-primary" type="button">Copier mon lien</button></div><p id="cgs-ref-benefit" class="cgs-note">L’avantage est acquis uniquement après activation effective du filleul.</p></article>'+
     '<article class="cgs-card"><div class="cgs-card-head"><div><span>CONFIANCE</span><h3>Centre conformité</h3></div><b id="cgs-trust-score">—</b></div><div id="cgs-trust" class="cgs-checks"></div><p class="cgs-note">Ce centre n\'affiche que les éléments internes vérifiables. Aucune certification externe n\'est simulée.</p></article>'+
   '</div>'+
   '<article class="cgs-onboarding"><div><span>ASSISTANT D\'OUVERTURE</span><h3>Préparer mon dossier en quelques réponses</h3><p>Profil, nouveau numéro ou portabilité, volume estimé et routage souhaité.</p></div><button id="cgs-onboard-open" class="cp-primary" type="button">Préparer mon parcours</button></article>'+
@@ -49,6 +49,10 @@ function ensure(){
 }
 function bind(){
   ["cgs-current-rate","cgs-demo-rate","cgs-hours","cgs-days"].forEach(function(id){$(id)?.addEventListener("input",renderComparator)});
+  $("cgs-ref-copy")?.addEventListener("click",async function(){
+    var url=$("cgs-referral-card")?.dataset.shareUrl||"";if(!url)return;
+    try{await navigator.clipboard.writeText(url);this.textContent="Lien copié";setTimeout(()=>{this.textContent="Copier mon lien"},1400)}catch(_e){prompt("Copiez votre lien de parrainage",url)}
+  });
   $("cgs-goal")?.addEventListener("click",function(){
     var v=prompt("Objectif Business Live en euros",String(goal()));
     if(v!=null&&num(String(v).replace(",","."))>0){setGoal(String(v).replace(",","."));renderLivePlus()}
@@ -95,6 +99,19 @@ function renderFinance(){
   if($("cgs-fin-held"))$("cgs-fin-held").textContent=money(held,cur);
   if($("cgs-fin-gap"))$("cgs-fin-gap").textContent=money(Math.max(0,valid-paid),cur);
 }
+async function loadReferral(){
+  var card=$("cgs-referral-card");if(!card||!window.PGICustomerApi?.referrals)return;
+  try{
+    var r=await window.PGICustomerApi.referrals();
+    card.hidden=r.enabled!==true;
+    if(card.hidden)return;
+    card.dataset.shareUrl=r.share_url||"";
+    if($("cgs-ref-code"))$("cgs-ref-code").textContent=r.code||"—";
+    if($("cgs-ref-total"))$("cgs-ref-total").textContent=String(r.total||0);
+    if($("cgs-ref-qualified"))$("cgs-ref-qualified").textContent=String(r.qualified||0);
+    if($("cgs-ref-benefit"))$("cgs-ref-benefit").textContent=(r.benefit_label||"Avantage sur l’abonnement")+" · acquis uniquement après activation effective du filleul.";
+  }catch(_e){card.hidden=true}
+}
 function renderTrust(){
   var tenant=data?.tenant||{},numbers=data?.numbers||[],routes=data?.destinations||[];
   var checks=[
@@ -115,7 +132,7 @@ function renderOnboarding(){
   var routeLabel={single:"une destination",schedule:"routage selon horaires",multi:"plusieurs intervenants"}[routing]||routing;
   if($("cgs-ob-summary"))$("cgs-ob-summary").innerHTML='<strong>Parcours préparé</strong><p>Profil : '+esc(profileLabel)+' · Projet : '+esc(projectLabel)+' · Volume indicatif : '+Math.round(vol).toLocaleString("fr-FR")+' min/mois · Routage : '+esc(routeLabel)+'.</p><small>Ce pré-paramétrage n’active aucun service et ne constitue pas une offre tarifaire.</small>';
 }
-function renderAll(){ensure();renderComparator();renderLivePlus();renderPortability();renderFinance();renderTrust()}
+function renderAll(){ensure();renderComparator();renderLivePlus();renderPortability();renderFinance();renderTrust();loadReferral()}
 document.addEventListener("pgi:portal-loaded",function(e){data=e?.detail?.data||{};renderAll()});
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",function(){data=window.PGI_PREMIUM_PORTAL_DATA||{};ensure();renderAll()},{once:true});else{data=window.PGI_PREMIUM_PORTAL_DATA||{};ensure();renderAll()}
 })();

@@ -29,7 +29,7 @@ function render(){
  var p=state?.provider||{},a=state?.account||null,s=state?.summary||{},rows=state?.payments||[];
  badge.textContent=statusLabel(a);
  if(!a||!a.charges_enabled){
-  root.innerHTML='<div class="ccp-activate"><div><strong>Activez les paiements CB</strong><p>Stripe collecte les informations nécessaires et vérifie votre compte. Aucun encaissement n’est possible avant validation.</p><small>Commission PGI : '+Number(p.application_fee_percent||4.9).toFixed(1).replace(".",",")+' % · frais Stripe facturés séparément par Stripe.</small></div><button id="ccp-activate" class="cp-primary" type="button">'+(a?"Continuer l’activation":"Activer les paiements CB")+'</button></div>';
+  root.innerHTML='<div class="ccp-activate"><div><strong>Activez les paiements CB</strong><p>Le prestataire de paiement collecte les informations nécessaires et vérifie votre compte. Aucun encaissement n’est possible avant validation.</p><small>Commission PGI : '+Number(p.application_fee_percent||4.9).toFixed(1).replace(".",",")+' % · frais de traitement facturés séparément par le prestataire de paiement.</small></div><button id="ccp-activate" class="cp-primary" type="button">'+(a?"Continuer l’activation":"Activer les paiements CB")+'</button></div>';
   $("ccp-activate").onclick=activate;
   return;
  }

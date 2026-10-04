@@ -14,7 +14,7 @@ import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData,scopeCustomerAnnualProgressData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
-import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
+import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,createStripePortabilityPriorityCheckout,verifyStripeWebhook,normalizeStripeBillingEvent,normalizeStripeRefundEvent,normalizeStripePortabilityPriorityEvent} from "./src/stripe-billing.mjs";
 import {STRIPE_CONNECT_APPLICATION_FEE_BPS,stripeConnectState,createStripeConnectedAccount,retrieveStripeConnectedAccount,normalizeStripeConnectedAccount,createStripeConnectOnboardingLink,createStripeCardCheckout,retrieveStripeCardCheckout,normalizeStripeConnectPaymentEvent,hashStripeEventPayload} from "./src/stripe-connect.mjs";
 import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStripe,buildGa4RefundFromStripe,sendGa4Measurement} from "./src/ga4-measurement.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
@@ -22,6 +22,7 @@ import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
 import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail,syncHubSpotCustomerIncident,ensureHubSpotCardPaymentSchema,syncHubSpotCardPaymentState} from "./src/hubspot-crm.mjs";
 import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
+import {referralProgramState,setReferralProgramState,customerReferralSummary,captureReferral,qualifyReferralForTenant,createPortabilityPriorityOrder,attachPortabilityPriorityCheckout,applyPortabilityPriorityPayment} from "./src/revenue-growth.mjs";
 
 export async function createDefaultBackend(){
   const config=loadConfig();
@@ -164,6 +165,11 @@ export function createBackend(options={}){
           invalidateStripeProviderReadiness();
           return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,account_readiness_invalidated:true});
         }
+        const portabilityPriority=normalizeStripePortabilityPriorityEvent(event);
+        if(portabilityPriority){
+          const priorityResult=await applyPortabilityPriorityPayment(store,portabilityPriority);
+          return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,type:String(event.type||""),portability_priority:true,...priorityResult});
+        }
         const refund=config.ga4MeasurementEnabled&&config.ga4ApiSecret?await normalizeStripeRefundEvent(event,config):null;
         if(refund){
           const analytics=await deliverGa4StripeEvent(store,config,"refund",refund.provider_event_id,refund.refund_id,buildGa4RefundFromStripe(refund));
@@ -172,15 +178,16 @@ export function createBackend(options={}){
         const normalized=await normalizeStripeBillingEvent(event,config);
         if(!normalized)return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,ignored:true,type:String(event.type||"")});
         const result=await store.applySubscriptionBillingEvent(normalized);
-        let onboarding=null;
+        let onboarding=null,referral=null;
         if(normalized.status==="active"){
           onboarding=await autoAdvanceTenantAfterBilling(store,config,normalized.tenant_public_id);
+          referral=await qualifyReferralForTenant(store,normalized.tenant_public_id);
           await syncHubSpotTenantLifecycle(store,normalized.tenant_public_id,"En attente d’ouverture","billing_active");
         }
         const analytics=normalized.event_type==="invoice.paid"
           ?await deliverGa4StripeEvent(store,config,"purchase",normalized.provider_event_id,normalized.provider_invoice_reference,buildGa4PurchaseFromStripe(normalized))
           :{enabled:false,sent:false};
-        return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,duplicate:Boolean(result.duplicate),analytics,onboarding});
+        return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,duplicate:Boolean(result.duplicate),analytics,onboarding,referral});
       }
       if(method==="POST"&&pathname==="/api/v1/email/resend/webhook"){
         if(!config.transactionalEmailEnabled||!config.resendWebhookSecret)return done(res,metrics,started,"email.resend_webhook",404,{error:{code:"RESEND_WEBHOOK_DISABLED"}});
@@ -298,6 +305,10 @@ export function createBackend(options={}){
             throw error;
           }
         }
+        if(dossier?.public_id&&body.referral_code){
+          try{await captureReferral(store,{referredTenantPublicId:dossier.public_id,referralCode:body.referral_code});}
+          catch(error){process.stderr.write(JSON.stringify({level:"error",event:"opening_referral_capture_failed",code:String(error?.code||"UNKNOWN")})+"\n");}
+        }
         try{formResult=await submitHubSpotLead(body,{pageUri,pageName:"Demande d’ouverture Audiotel Premium Pro",hutk});}
         catch(error){logHubSpotSyncFailure("public_lead_form",error);}
         try{
@@ -402,6 +413,10 @@ export function createBackend(options={}){
         if(password.length<12||password.length>256){const e=new Error("Invalid password");e.status=400;e.code="INVALID_NEW_PASSWORD";throw e;}
         if(String(body.website||"").trim()){const e=new Error("Invalid registration");e.status=400;e.code="REGISTRATION_REJECTED";throw e;}
         const registered=await store.selfServiceRegister(body,hashPassword(password));
+        if(body.referral_code){
+          try{await captureReferral(store,{referredTenantPublicId:registered.tenant_public_id,referralCode:body.referral_code});}
+          catch(error){process.stderr.write(JSON.stringify({level:"error",event:"referral_capture_failed",code:String(error?.code||"UNKNOWN")})+"\\n");}
+        }
         {
           const pageUri=config.publicBaseUrl?config.publicBaseUrl+"/client.html?register=1":"https://audiotel-premium-pro.com/client.html?register=1";
           const hutk=String(parseCookies(req.headers.cookie||"").hubspotutk||"").trim();
@@ -950,6 +965,13 @@ export function createBackend(options={}){
         }
       }
 
+      if(method==="GET"&&pathname==="/api/v1/customer/referrals"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        const state=await customerReferralSummary(store,{tenantId:context.tenant_id,publicBaseUrl:config.publicBaseUrl});
+        return done(res,metrics,started,"customer.referrals",200,state);
+      }
+
       if(method==="GET"&&pathname==="/api/v1/customer/portability"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
@@ -963,6 +985,29 @@ export function createBackend(options={}){
         const result=await store.idempotent(req.headers["idempotency-key"],"customer.portability.create",payload,()=>store.createCustomerPortabilityRequest(context.tenant_id,body));
         return done(res,metrics,started,"customer.portability.create",201,{...result.value,replayed:result.replayed});
       }
+      match=routeMatch(pathname,"/api/v1/customer/portability/:id/priority-checkout");
+      if(method==="POST"&&match){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        const idempotencyKey=String(req.headers["idempotency-key"]||"").trim();
+        if(!idempotencyKey||idempotencyKey.length>200){const e=new Error("Checkout idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
+        const order=await createPortabilityPriorityOrder(store,{tenantId:context.tenant_id,requestId:match.id,customerPrincipalId:context.id});
+        if(order.already_active)return done(res,metrics,started,"customer.portability.priority_checkout",200,{priority_active:true,amount_minor:990,currency:"EUR"});
+        const billing=await store.customerBillingPreparation(context.tenant_id);
+        const payload={tenant_id:context.tenant_id,portability_request_id:Number(match.id),order_public_id:order.public_id,amount_minor:990,currency:"EUR"};
+        const result=await store.idempotent(idempotencyKey,"customer.portability.priority_checkout",payload,async()=>{
+          const checkout=await createStripePortabilityPriorityCheckout(config,{
+            ...order,
+            portability_request_id:Number(match.id),
+            tenant:{public_id:context.tenant_public_id,billing_email:context.email},
+            provider_customer_reference:billing?.subscription?.provider_customer_reference||null
+          },idempotencyKey);
+          await attachPortabilityPriorityCheckout(store,{orderPublicId:order.public_id,checkoutSessionReference:checkout.session_id,paymentIntentReference:checkout.payment_intent_reference});
+          return checkout;
+        });
+        return done(res,metrics,started,"customer.portability.priority_checkout",201,{...result.value,replayed:result.replayed,amount_minor:990,currency:"EUR",operator_sla_guaranteed:false});
+      }
+
       match=routeMatch(pathname,"/api/v1/customer/portability/:id/cancel");
       if(method==="POST"&&match){
         requireCustomerCsrf(req,customerActor,config);
@@ -1886,6 +1931,18 @@ export function createBackend(options={}){
         requireRole(actor,["admin","finance","readonly"]);
         const overview=await store.subscriptionBillingOverview();
         return done(res,metrics,started,"platform.subscription_billing",200,{...overview,billing_provider:billingProviderStatus(config)});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/platform/referral-program"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.referral_program",200,await referralProgramState(store));
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/platform/referral-program"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const result=await setReferralProgramState(store,{enabled:body.enabled},actor);
+        return done(res,metrics,started,"platform.referral_program_update",200,result);
       }
 
       if(method==="POST"&&pathname==="/api/v1/platform/subscription-prices"){
