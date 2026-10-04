@@ -55,6 +55,7 @@ export class MemoryStore{
     this.nextSwitchId=1;
     this.subscriptionPrices=[{id:1,plan_key:"external-sva-access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,effective_from:"2026-09-20T19:33:00Z",effective_to:"2026-10-04T00:00:00Z"},{id:2,plan_key:"external-sva-access",currency:"EUR",amount_minor:490,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,effective_from:"2026-10-04T00:00:00Z",effective_to:null}];
     this.subscriptionEvents=new Set();
+    this.referralProgram={enabled:false,configuration:{reward_minor:0,currency:"EUR",qualification:"paid_active_subscription",rules_version:"2026-10-04-v1"},updated_at:new Date().toISOString()};
     this.adminAlerts=[];
     this.customerExperiencePreferencesMap=new Map();
     this.customerLegalAcceptances=[];
@@ -997,6 +998,29 @@ export class MemoryStore{
       oldest_pending_seconds:oldest
     };
   }
+
+
+  async referralProgramOverview(){
+    return {...structuredClone(this.referralProgram),metrics:{total:0,claimed:0,rewarded:0,rejected:0,rewards_total:0,earned_count:0,paid_count:0,earned_minor:0,paid_minor:0},recent_rewards:[]};
+  }
+  async updateReferralProgram(input={}){
+    if(typeof input.enabled!=="boolean")throw problem(400,"REFERRAL_ENABLED_REQUIRED");
+    const rewardMinor=input.reward_minor==null?Number(this.referralProgram.configuration.reward_minor||0):Number(input.reward_minor);
+    if(!Number.isInteger(rewardMinor)||rewardMinor<0||rewardMinor>100000)throw problem(400,"REFERRAL_REWARD_INVALID");
+    if(input.enabled&&rewardMinor<1)throw problem(409,"REFERRAL_REWARD_REQUIRED");
+    const currency=String(input.currency||this.referralProgram.configuration.currency||"EUR").toUpperCase();
+    this.referralProgram={enabled:input.enabled,configuration:{reward_minor:rewardMinor,currency,qualification:"paid_active_subscription",rules_version:"2026-10-04-v1"},updated_at:new Date().toISOString()};
+    return structuredClone(this.referralProgram);
+  }
+  async publicReferralProgram(rawCode=""){
+    if(!this.referralProgram.enabled)return {enabled:false,code_valid:null};
+    return {enabled:true,code_valid:rawCode?false:null,...structuredClone(this.referralProgram.configuration)};
+  }
+  async customerReferralSummary(){
+    return {program_active:Boolean(this.referralProgram.enabled),has_existing_activity:false,eligible_referrer:false,can_create_code:false,code:null,referral_path:null,current_reward_minor:this.referralProgram.enabled?Number(this.referralProgram.configuration.reward_minor||0):null,currency:this.referralProgram.configuration.currency||"EUR",qualification:"paid_active_subscription",rules_version:"2026-10-04-v1",counts:{total:0,claimed:0,rewarded:0,rejected:0},rewards:{earned_minor:0,paid_minor:0,earned_count:0,paid_count:0},recent:[]};
+  }
+  async ensureCustomerReferralCode(){throw problem(409,this.referralProgram.enabled?"REFERRAL_REFERRER_NOT_ELIGIBLE":"REFERRAL_PROGRAM_DISABLED");}
+  async markReferralRewardPaid(){throw problem(404,"REFERRAL_REWARD_NOT_FOUND");}
 
   async subscriptionBillingOverview(){
     const current=this.subscriptionPrices.filter(x=>!x.effective_to||Date.parse(x.effective_to)>Date.now()).sort((a,b)=>Date.parse(b.effective_from)-Date.parse(a.effective_from))[0]||null;

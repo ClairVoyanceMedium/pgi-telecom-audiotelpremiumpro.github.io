@@ -1,6 +1,6 @@
 (function(root){
 "use strict";
-var selectedIndex=0,adminModule=null,towerModule=null,svaModule=null,ADMIN_URL=new URL("./platform-admin-tools.js",import.meta.url).href,TOWER_URL=new URL("./control-tower.js",import.meta.url).href,SVA_URL=new URL("./sva-compliance-center.js",import.meta.url).href;
+var selectedIndex=0,adminModule=null,referralModule=null,towerModule=null,svaModule=null,ADMIN_URL=new URL("./platform-admin-tools.js",import.meta.url).href,REFERRAL_URL=new URL("./platform-referral-admin.js",import.meta.url).href,TOWER_URL=new URL("./control-tower.js",import.meta.url).href,SVA_URL=new URL("./sva-compliance-center.js",import.meta.url).href;
 var commands=[
 ["view-overview","Navigation","Ouvrir le Cockpit","Accueil et pilotage","dashboard accueil cockpit"],
 ["view-calls","Navigation","Ouvrir les Appels","CDR et détail","cdr telephone appels"],
@@ -11,6 +11,7 @@ var commands=[
 ["view-system","Navigation","Ouvrir Supervision","NOC, API, CDR, résilience","systeme noc api supervision erreurs"],
 ["view-settings","Navigation","Ouvrir Paramètres","Configuration et audit","reglages parametres config"],
 ["platform-admin","Administration","Administrer la plateforme","Tarif abonnement, opérateur, bascule et rollback","client sva tarif abonnement operateur carrier switch rollback"],
+["referral-admin","Administration","Piloter le parrainage","Activation, prime future et règlements","parrainage filleul prime recommandation client"],
 ["control-tower","Pilotage","Ouvrir Control Tower","Policy Engine, Digital Twin et priorités","control tower policy simulation digital twin risque capacité"],
 ["sva-compliance","Conformité","Ouvrir SVA Compliance Center","AF2M 2026, RSVA, DGCCRF, CNIL, 33700","sva af2m rsva apnf dgccrf cnil 33700 conformite"],
 ["period-today","Période","Afficher aujourd’hui","Période : aujourd’hui","jour today"],
@@ -67,6 +68,11 @@ close();
 if(id==="platform-admin"){
 if(!adminModule)adminModule=import(ADMIN_URL);
 adminModule.then(function(m){m.open();}).catch(function(){feedback("L’administration est momentanément indisponible.");});
+return;
+}
+if(id==="referral-admin"){
+if(!referralModule)referralModule=import(REFERRAL_URL);
+referralModule.then(function(m){m.open();}).catch(function(){feedback("Le pilotage du parrainage est momentanément indisponible.");});
 return;
 }
 if(id==="control-tower"){
