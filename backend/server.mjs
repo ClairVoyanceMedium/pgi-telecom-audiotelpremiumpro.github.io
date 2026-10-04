@@ -315,7 +315,7 @@ export function createBackend(options={}){
           try{customerAccess=await ensureCustomerPortalAccess(store,config,dossier.public_id,"opening-auto");}
           catch(error){logSecurityEmailFailure("opening_access",error);}
         }
-        if(accepted&&config.transactionalEmailEnabled&&customerAccess?.email_sent!==true){
+        if(accepted&&config.transactionalEmailEnabled){
           try{
             const locale=String(body.preferred_locale||req.headers["accept-language"]||"fr-FR").split(",")[0].trim().slice(0,35);
             const recipient=normalizeEmail(body.email);
