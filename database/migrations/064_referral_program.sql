@@ -18,7 +18,7 @@ VALUES(true,false,'subscription_benefit','unconfigured');
 CREATE TABLE tenant_referral_codes (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   tenant_id bigint NOT NULL UNIQUE REFERENCES tenants(id) ON DELETE CASCADE,
-  code text NOT NULL UNIQUE CHECK (code ~ '^[A-Z0-9]{12}$'),
+  code text NOT NULL UNIQUE CHECK (code ~ '^[A-Z0-9]{16}$'),
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
