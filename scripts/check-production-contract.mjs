@@ -6,6 +6,7 @@ if(!/platform_feature_flags/.test(referralMigration)||!/customer_referral_reward
 if(!/\/api\/v1\/public\/referral-program/.test(backendServer)||!/\/api\/v1\/customer\/referral/.test(backendServer)||!/\/api\/v1\/platform\/referral-program/.test(backendServer))failures.push("referral public customer and admin APIs are required");
 if(!/paid_active_subscription/.test(postgresStore)||!/REFERRAL_SELF_CLAIM/.test(postgresStore)||!/REFERRAL_ALREADY_CLAIMED/.test(postgresStore))failures.push("referral rewards must remain payment-qualified and anti-abuse");
 if(!/pgi:portal-loaded/.test(clientReferral)||!/abonnement actif et payé/i.test(clientReferral))failures.push("customer referral UI must retain paid activation qualification");
+if(!/referral-admin\.js/.test(platformAdminTools)||!/updateReferralProgram/.test(referralAdmin)||!/settleReferralReward/.test(referralAdmin))failures.push("referral administration must remain lazy and auditable");
 const compose=fs.readFileSync("infra/docker-compose.production.yml","utf8");
 const runtime=fs.readFileSync("assets/config.production.example.js","utf8");
 const envExample=fs.readFileSync("infra/production.env.example.txt","utf8");
@@ -56,6 +57,7 @@ const businessLiveScheduleSource=fs.readFileSync("backend/src/business-live-sche
 const vercelConfig=fs.readFileSync("vercel.json","utf8");
 const referralMigration=fs.readFileSync("database/migrations/065_customer_referral_program.sql","utf8");
 const clientReferral=fs.readFileSync("assets/client-referral.js","utf8");
+const referralAdmin=fs.readFileSync("assets/referral-admin.js","utf8");
 const vercelConfigData=JSON.parse(vercelConfig);
 const businessLiveCron=Array.isArray(vercelConfigData.crons)&&vercelConfigData.crons.some(item=>item&&item.path==="/api/v1/internal/business-live/reset-schedules/run"&&item.schedule==="* * * * *");
 const qualityRollupMigration=fs.readFileSync("database/migrations/017_quality_rollups.sql","utf8");
