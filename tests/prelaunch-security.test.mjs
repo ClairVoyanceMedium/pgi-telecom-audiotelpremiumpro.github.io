@@ -11,7 +11,7 @@ function cfg(){
     ingestToken:"",bodyLimitBytes:262144,rateLimitPerMinute:10000,heavyReadRateLimitPerMinute:10000,writeRateLimitPerMinute:10000,
     authMaxFailures:8,authFailureWindowSeconds:900,sessionTtlSeconds:3600,
     serviceRateTtcPerMin:.8,payoutRateHtPerMin:.46,expertCostHtPerMin:.18,reconciliationToleranceHt:.01,
-    version:"security-test",protectMachineEndpoints:true,emailVerificationEnabled:false,
+    version:"security-test",protectMachineEndpoints:true,emailVerificationEnabled:false,customerSelfRegistrationEnabled:true,
     externalBillingEnabled:false,stripeLiveMode:false,transactionalEmailEnabled:false,
     legalOperatorConfigured:false,consumerMediatorConfigured:false,b2cCommercialReady:false,onlineWithdrawalReady:false
   };
