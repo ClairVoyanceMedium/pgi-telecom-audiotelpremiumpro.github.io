@@ -92,7 +92,7 @@ form.addEventListener("submit",async e=>{
   if(intent.processing_consent!==true)return;
   try{sessionStorage.setItem(KEY,JSON.stringify(intent));sessionStorage.removeItem(DRAFT_KEY)}
   catch(_e){const s=document.getElementById("order-status");if(s)s.hidden=false;return}
-  const b=form.querySelector('button[type="submit"]');if(b){b.disabled=true;b.setAttribute("aria-busy","true");b.innerHTML="Ouverture de l’inscription…"}
+  const b=form.querySelector('button[type="submit"]');if(b){b.disabled=true;b.setAttribute("aria-busy","true");b.innerHTML="Création de votre dossier…"}
   const result=await Promise.race([captureLead(intent),new Promise(resolve=>setTimeout(()=>resolve(null),5000))]);
   const sent=result&&result.ok&&result.data&&result.data.access_email_sent===true;
   location.href="../client.html?opening="+(sent?"access-sent":"received");
