@@ -215,6 +215,9 @@ export async function retrievePriorityPortabilityCheckout(config,sessionId){
     url:typeof session.url==="string"&&/^https:\/\/checkout\.stripe\.com\//i.test(session.url)?session.url:null,
     status:String(session.status||""),
     payment_status:String(session.payment_status||""),
+    amount_minor:Number.isFinite(Number(session.amount_total))?Math.trunc(Number(session.amount_total)):0,
+    currency:String(session.currency||"").toUpperCase(),
+    payment_intent_reference:idValue(session.payment_intent),
     expires_at:session.expires_at?new Date(Number(session.expires_at)*1000).toISOString():null
   };
 }
