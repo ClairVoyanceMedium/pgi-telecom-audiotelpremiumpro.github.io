@@ -178,6 +178,26 @@ export async function createStripeCheckout(config,billing,idempotencyKey,analyti
   if(!session?.url||!/^https:\/\/checkout\.stripe\.com\//i.test(session.url))throw failure(502,"STRIPE_CHECKOUT_URL_INVALID");
   return {url:session.url,session_id:session.id,price_id:price.id,provider:"stripe"};
 }
+export async function retrieveStripePortabilityPriorityCheckout(config,sessionReference){
+  const reference=String(sessionReference||"").trim();
+  if(!/^cs_[A-Za-z0-9_]+$/.test(reference))throw failure(400,"INVALID_PORTABILITY_PRIORITY_CHECKOUT");
+  const session=await stripeApi(config,"/v1/checkout/sessions/"+encodeURIComponent(reference));
+  const meta=session?.metadata||{};
+  if(String(meta.pgi_payment_kind||"")!=="portability_priority")throw failure(409,"PORTABILITY_PRIORITY_CHECKOUT_MISMATCH");
+  const status=String(session.status||"").toLowerCase();
+  const paymentStatus=String(session.payment_status||"").toLowerCase();
+  const url=session?.url&&/^https:\/\/checkout\.stripe\.com\//i.test(session.url)?String(session.url):null;
+  return {
+    session_id:String(session.id||reference),
+    url,
+    status,
+    payment_status:paymentStatus,
+    open:status==="open"&&paymentStatus!=="paid"&&Boolean(url),
+    paid:paymentStatus==="paid",
+    expired:status==="expired"
+  };
+}
+
 export async function createStripePortabilityPriorityCheckout(config,billing,request,idempotencyKey){
   if(config?.stripeLiveMode){
     const readiness=await stripeProviderReadiness(config);
