@@ -24,7 +24,7 @@ export function createController(ctx){
       const cadence=offer.billing_interval==="year"?"an":"mois",offerPrice=money(n(offer.amount_minor)/100,offer.currency)+" TTC / "+cadence;
       if(offerDetail)offerDetail.textContent=offerPrice+" · "+tr("facturé mensuellement d’avance · résiliation à tout moment, effet fin de période");
       if(offerChip){offerChip.textContent=money(n(offer.amount_minor)/100,offer.currency);offerChip.className="cp-chip ok";}
-      if(start)start.textContent=tr("Souscrire avec obligation de paiement")+" — "+offerPrice;
+      if(start)start.textContent=tr("Souscrire avec obligation de paiement")+"  -  "+offerPrice;
     }else{
       const resolvedCurrency=currencyInfo.currency||((data.tenant||{}).default_currency)||"EUR";
       if(offerDetail)offerDetail.textContent=tr("Devise automatique")+" : "+resolvedCurrency+" · "+tr("tarif local à configurer");
