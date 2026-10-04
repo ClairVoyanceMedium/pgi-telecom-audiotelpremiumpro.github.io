@@ -728,3 +728,17 @@ test("analytics classifies the new conversion intents",()=>{
   assert.match(contactWidget,/business-live-audiotel/);
   assert.match(contactWidget,/audiotel-sans-siret/);
 });
+
+
+test("portability growth offer keeps the free path and states paid priority limits clearly",()=>{
+  assert.match(portability,/Portabilité standard/);
+  assert.match(portability,/9,90 € TTC/);
+  assert.match(portability,/délai final.*opérateurs/i);
+  assert.match(portability,/Sans option prioritaire/);
+  assert.match(application,/Standard · 0 €/);
+  assert.match(application,/Priorité PGI · 9,90 € TTC une seule fois/);
+  assert.match(js,/portability_priority_requested/);
+  assert.match(js,/referral_code/);
+  assert.match(client,/1 mois offert par client activé/);
+  assert.match(client,/3 € sont crédités sur votre prochaine facture/);
+});

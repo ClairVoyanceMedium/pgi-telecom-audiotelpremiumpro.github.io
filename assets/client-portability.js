@@ -8,7 +8,8 @@ const label=v=>labels[String(v||"").toLowerCase()]||String(v||"—");
 const chip=v=>{const s=String(v||"").toLowerCase(),tone=s==="ported"?"ok":["submitted","awaiting_documents","eligibility_check","operator_pending","scheduled"].includes(s)?"warn":["rejected"].includes(s)?"bad":"neutral";return '<span class="cp-chip '+tone+'">'+esc(label(v))+"</span>";};
 
 export function createController({getData,getDemo,reload,toast,countryCodes,locale}){
-  let busy=false,countriesReady=false,bound=false;
+  let busy=false,countriesReady=false,bound=false,priorityPromise=null;
+  const priority=()=>priorityPromise||(priorityPromise=import("./client-portability-priority.js").then(m=>m.createController({getDemo,reload,toast})));
   function populateCountries(){
     const select=$("portability-country");if(!select||countriesReady)return;
     const data=getData()||{},tenantCountry=data.tenant&&data.tenant.country_code,current=String(tenantCountry||"FR").toUpperCase();
@@ -37,8 +38,16 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
       if(x.operator_portability_reference)meta.push("Réf. opérateur : "+x.operator_portability_reference);
       if(x.rejection_reason)meta.push("Motif : "+x.rejection_reason);
       const cancellable=["submitted","awaiting_documents","eligibility_check","operator_pending"].includes(status);
-      const action=cancellable?'<button class="cp-portability-cancel" type="button" data-portability-cancel="'+esc(x.id)+'">Annuler</button>':"";
-      return '<div class="cp-row cp-portability-row"><div><strong>'+esc(x.display_number||x.requested_e164||"Numéro")+'</strong><span>'+esc(meta.filter(Boolean).join(" · "))+'</span></div><div class="cp-portability-actions">'+chip(status)+action+'</div></div>';
+      const priorityEligible=["submitted","awaiting_documents","eligibility_check","operator_pending"].includes(status);
+      const priorityStatus=String(x.priority_service_status||"standard").toLowerCase();
+      if(priorityStatus==="paid")meta.push("Priorité PGI activée");
+      const priorityPrice=money(Number(x.priority_fee_minor||990)/100,x.priority_currency||"EUR",locale);
+      const priorityLabel=priorityStatus==="payment_pending"?"Finaliser la priorité":"Activer la priorité";
+      const priorityAction=priorityEligible&&priorityStatus!=="paid"
+        ?'<button class="cp-ghost cp-portability-priority" type="button" data-portability-priority="'+esc(x.id)+'">'+esc(priorityLabel)+' · '+esc(priorityPrice)+'</button>'
+        :priorityStatus==="paid"?'<span class="cp-chip ok">PRIORITÉ ACTIVE</span>':"";
+      const cancelAction=cancellable?'<button class="cp-portability-cancel" type="button" data-portability-cancel="'+esc(x.id)+'">Annuler</button>':"";
+      return '<div class="cp-row cp-portability-row"><div><strong>'+esc(x.display_number||x.requested_e164||"Numéro")+'</strong><span>'+esc(meta.filter(Boolean).join(" · "))+'</span><small>Standard : gratuit, file normale. Priorité PGI : 9,90 € TTC une seule fois, traitement interne avant les dossiers standard. Le délai final dépend des opérateurs et n’est pas garanti.</small></div><div class="cp-portability-actions">'+chip(status)+priorityAction+cancelAction+'</div></div>';
     }).join(""):'<p class="cp-empty">Aucune demande de portabilité en cours.</p>';
   }
   function open(){
@@ -69,7 +78,13 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
     $("portability-close")?.addEventListener("click",close);
     $("portability-country")?.addEventListener("change",syncRioRequirement);
     $("client-portability-form")?.addEventListener("submit",submit);
-    $("portability-list")?.addEventListener("click",e=>{const b=e.target.closest("[data-portability-cancel]");if(b)cancel(b.dataset.portabilityCancel);});
+    $("portability-list")?.addEventListener("click",e=>{
+      const priorityButton=e.target.closest("[data-portability-priority]");
+      if(priorityButton){priority().then(x=>x.activate(priorityButton.dataset.portabilityPriority));return;}
+      const cancelButton=e.target.closest("[data-portability-cancel]");
+      if(cancelButton)cancel(cancelButton.dataset.portabilityCancel);
+    });
+    if(new URLSearchParams(location.search).has("portability-priority"))priority().then(x=>x.handleReturn());
   }
   bind();
   return {render,open};

@@ -43,15 +43,23 @@ if(!form)return;
 const typeInputs=[...form.querySelectorAll('input[name="order_account_type"]')];
 const companyWrap=document.getElementById("order-company-wrap");
 const company=document.getElementById("order-company");
+const queryParams=new URLSearchParams(location.search);
 const value=id=>String(document.getElementById(id)?.value||"").trim();
+const referralCode=()=>{const code=String(queryParams.get("ref")||"").trim().toUpperCase();return /^PGI-[A-F0-9]{8}$/.test(code)?code:"";};
+const priorityChoice=()=>form.querySelector('input[name="order_portability_priority"]:checked')?.value||"standard";
+function syncPortabilityOptions(){
+  const box=document.getElementById("order-portability-options"),select=document.getElementById("order-service-intent");
+  if(!box||!select)return;
+  box.hidden=select.value!=="portability";
+}
 function selectedType(){return form.querySelector('input[name="order_account_type"]:checked')?.value||""}
 function syncType(){
   const type=selectedType(),business=type==="business";
   if(companyWrap)companyWrap.hidden=!business;
   if(company){company.disabled=!business;if(!business)company.value=""}
 }
-function snapshot(){const type=selectedType();
-  return {version:1,created_at:Date.now(),account_type:type,first_name:value("order-first-name").slice(0,80),last_name:value("order-last-name").slice(0,80),company_name:type==="business"?value("order-company").slice(0,200):"",email:value("order-email").slice(0,320),phone:value("order-phone").slice(0,40),service_intent:value("order-service-intent"),country_code:"FR",preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"Europe/Paris"),processing_consent:!!document.getElementById("order-processing-consent")?.checked,marketing_consent:!!document.getElementById("order-marketing-consent")?.checked,marketing_consent_version:"2026-10-01-v1",website:value("order-website")};
+function snapshot(){const type=selectedType(),serviceIntent=value("order-service-intent");
+  return {version:1,created_at:Date.now(),account_type:type,first_name:value("order-first-name").slice(0,80),last_name:value("order-last-name").slice(0,80),company_name:type==="business"?value("order-company").slice(0,200):"",email:value("order-email").slice(0,320),phone:value("order-phone").slice(0,40),service_intent:serviceIntent,portability_priority_requested:serviceIntent==="portability"&&priorityChoice()==="priority",referral_code:referralCode(),country_code:"FR",preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"Europe/Paris"),processing_consent:!!document.getElementById("order-processing-consent")?.checked,marketing_consent:!!document.getElementById("order-marketing-consent")?.checked,marketing_consent_version:"2026-10-01-v1",website:value("order-website")};
 }
 function saveDraft(){try{sessionStorage.setItem(DRAFT_KEY,JSON.stringify(snapshot()))}catch(_e){}}
 function hydrateDraft(){
@@ -62,6 +70,7 @@ function hydrateDraft(){
     const set=(id,v)=>{const el=document.getElementById(id);if(el&&v!=null&&!el.value)el.value=String(v)};
     if(["individual","business"].includes(x.account_type)){const radio=form.querySelector('input[name="order_account_type"][value="'+x.account_type+'"]');if(radio)radio.checked=true}
     set("order-first-name",x.first_name);set("order-last-name",x.last_name);set("order-company",x.company_name);set("order-email",x.email);set("order-phone",x.phone);set("order-service-intent",x.service_intent);
+    if(x.portability_priority_requested===true){const radio=form.querySelector('input[name="order_portability_priority"][value="priority"]');if(radio)radio.checked=true;}
   }catch(_e){try{sessionStorage.removeItem(DRAFT_KEY)}catch(_x){}}
 }
 function applyRequestedProfile(){
@@ -70,19 +79,23 @@ function applyRequestedProfile(){
   const radio=form.querySelector('input[name="order_account_type"][value="'+type+'"]');if(radio)radio.checked=true;
 }
 function applyRequestedIntent(){
-  const params=new URLSearchParams(location.search),requested=String(params.get("type")||params.get("besoin")||"").toLowerCase();
+  const requested=String(queryParams.get("type")||queryParams.get("besoin")||"").toLowerCase();
   const map={portabilite:"portability",portability:"portability",nouveau:"new_number",new_number:"new_number",conseil:"advice",advice:"advice"};
   const intent=map[requested],select=document.getElementById("order-service-intent");
   if(intent&&select&&!select.value)select.value=intent;
+  if(intent==="portability"&&["1","true","oui"].includes(String(queryParams.get("priorite")||"").toLowerCase())){
+    const radio=form.querySelector('input[name="order_portability_priority"][value="priority"]');if(radio)radio.checked=true;
+  }
+  syncPortabilityOptions();
 }
-hydrateDraft();applyRequestedProfile();applyRequestedIntent();
+hydrateDraft();applyRequestedProfile();applyRequestedIntent();syncPortabilityOptions();
 typeInputs.forEach(x=>x.addEventListener("change",syncType));
 document.querySelectorAll("[data-order-type]").forEach(link=>link.addEventListener("click",()=>{
   const radio=form.querySelector('input[name="order_account_type"][value="'+link.dataset.orderType+'"]');
   if(radio){radio.checked=true;syncType();saveDraft()}
 }));
 form.addEventListener("input",saveDraft);
-form.addEventListener("change",saveDraft);
+form.addEventListener("change",e=>{if(e.target&&e.target.id==="order-service-intent")syncPortabilityOptions();saveDraft();});
 async function captureLead(i){try{const r=await fetch("/api/v1/public/hubspot/lead",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",keepalive:true,body:JSON.stringify({...i,page_uri:location.href.split("#")[0],page_name:document.title})}),data=await r.json().catch(()=>({}));if(r.ok&&data.accepted)window.PGIAnalytics?.track("generate_lead");return {ok:r.ok,data}}catch(_e){return null}}
 form.addEventListener("submit",async e=>{
   e.preventDefault();

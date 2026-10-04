@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createHmac} from "node:crypto";
-import {verifyStripeWebhook,normalizeStripeSubscriptionEvent,normalizeStripeBillingEvent,normalizeStripeRefundEvent,createStripeCheckout,currentMonthOfferTrialEnd,stripeProviderState,stripeProviderReadiness,invalidateStripeProviderReadiness} from "../backend/src/stripe-billing.mjs";
+import {verifyStripeWebhook,normalizeStripeSubscriptionEvent,normalizeStripeBillingEvent,normalizeStripeRefundEvent,createStripeCheckout,createStripePortabilityPriorityCheckout,retrieveStripePortabilityPriorityCheckout,createStripeCustomerBalanceCredit,currentMonthOfferTrialEnd,stripeProviderState,stripeProviderReadiness,invalidateStripeProviderReadiness} from "../backend/src/stripe-billing.mjs";
 
 test("Stripe provider state fails closed until API and webhook are both configured",()=>{
   assert.deepEqual(stripeProviderState({externalBillingEnabled:false}),{api:false,webhook:false,connected:false});
@@ -278,4 +278,78 @@ test("current month offer follows the Europe Paris calendar around midnight",()=
   const endDate=new Date(end*1000);
   assert.equal(endDate.getUTCMonth(),9);
   assert.ok(endDate.getUTCDate()>=31||endDate.getUTCDate()===1);
+});
+
+
+test("Stripe priority checkout is a one-time 9.90 EUR PGI payment with portability metadata",async()=>{
+  const original=globalThis.fetch,calls=[];
+  globalThis.fetch=async(url,init={})=>{
+    calls.push({url:String(url),body:String(init.body||"")});
+    assert.match(String(url),/\/v1\/checkout\/sessions$/);
+    const body=decodeURIComponent(String(init.body||""));
+    assert.match(body,/mode=payment/);
+    assert.match(body,/line_items\[0\]\[price_data\]\[unit_amount\]=990/);
+    assert.match(body,/metadata\[pgi_payment_kind\]=portability_priority/);
+    assert.match(body,/metadata\[portability_request_id\]=77/);
+    return {ok:true,status:200,json:async()=>({id:"cs_test_priority77",url:"https://checkout.stripe.com/c/pay/cs_test_priority77"})};
+  };
+  try{
+    const result=await createStripePortabilityPriorityCheckout(
+      {stripeSecretKey:"sk_test_example",stripeApiVersion:"2026-08-26.dahlia",publicBaseUrl:"https://pgi.example",stripeLiveMode:false},
+      {tenant:{id:"22222222-2222-4222-8222-222222222222",billing_email:"client@example.test"},subscription:{provider_customer_reference:"cus_priority77"}},
+      {id:77,priority_fee_minor:990,priority_currency:"EUR"},
+      "priority-test-77"
+    );
+    assert.equal(result.session_id,"cs_test_priority77");
+    assert.equal(result.amount_minor,990);
+    assert.equal(result.currency,"EUR");
+    assert.equal(calls.length,1);
+  }finally{globalThis.fetch=original;}
+});
+
+test("Stripe referral reward creates a negative customer balance transaction credit",async()=>{
+  const original=globalThis.fetch;
+  globalThis.fetch=async(url,init={})=>{
+    assert.match(String(url),/\/v1\/customers\/cus_referrer1\/balance_transactions$/);
+    const body=decodeURIComponent(String(init.body||""));
+    assert.match(body,/amount=-300/);
+    assert.match(body,/currency=eur/);
+    assert.match(body,/metadata\[reward_kind\]=one_month_free/);
+    return {ok:true,status:200,json:async()=>({id:"cbtxn_referral1",ending_balance:-300})};
+  };
+  try{
+    const result=await createStripeCustomerBalanceCredit(
+      {stripeSecretKey:"sk_test_example",stripeApiVersion:"2026-08-26.dahlia"},
+      "cus_referrer1",300,"EUR",{reward_kind:"one_month_free",referral_id:"12"},"referral-reward/12"
+    );
+    assert.equal(result.reference,"cbtxn_referral1");
+    assert.equal(result.amount_minor,300);
+    assert.equal(result.currency,"EUR");
+    assert.equal(result.ending_balance,-300);
+  }finally{globalThis.fetch=original;}
+});
+
+
+test("Stripe priority checkout retrieval reuses an open unpaid session",async()=>{
+  const original=globalThis.fetch;
+  globalThis.fetch=async(url,init={})=>{
+    assert.equal(init.method,"GET");
+    assert.match(String(url),/\/v1\/checkout\/sessions\/cs_test_reuse1$/);
+    return {ok:true,status:200,json:async()=>({
+      id:"cs_test_reuse1",
+      url:"https://checkout.stripe.com/c/pay/cs_test_reuse1",
+      status:"open",
+      payment_status:"unpaid",
+      metadata:{pgi_payment_kind:"portability_priority"}
+    })};
+  };
+  try{
+    const result=await retrieveStripePortabilityPriorityCheckout(
+      {stripeSecretKey:"sk_test_example",stripeApiVersion:"2026-08-26.dahlia"},
+      "cs_test_reuse1"
+    );
+    assert.equal(result.open,true);
+    assert.equal(result.paid,false);
+    assert.equal(result.session_id,"cs_test_reuse1");
+  }finally{globalThis.fetch=original;}
 });
