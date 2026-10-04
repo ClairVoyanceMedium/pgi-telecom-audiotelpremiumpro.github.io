@@ -796,3 +796,24 @@ test("Business Live stays centered and highlights active money flow",()=>{
   assert.match(clientLiveFinanceCss,/prefers-reduced-motion:reduce/);
   assert.match(adminLiveFinanceCss,/prefers-reduced-motion:reduce/);
 });
+
+
+test("les nouveaux parcours commerciaux restent publiés et cohérents",()=>{
+  const home=read("site/index.html");
+  const siteJs=read("site/site.js");
+  const priority=read("site/seo/portabilite-prioritaire.html");
+  const referral=read("site/seo/parrainage-audiotel.html");
+  const payment=read("site/seo/paiement-cb-audiotel.html");
+  assert.match(home,/data-current-year/);
+  assert.match(siteJs,/timeZone:"Europe\/Paris"/);
+  assert.match(home,/Demander mon numéro surtaxé/);
+  assert.match(home,/Estimer mes reversements/);
+  assert.match(home,/Créer un lien de paiement CB/);
+  assert.match(home,/Parrainer un nouveau client/);
+  assert.match(payment,/Vous transmettez le lien à votre client/);
+  assert.match(priority,/9,90€ TTC/);
+  assert.match(priority,/sans garantie sur le délai opérateur/i);
+  assert.match(referral,/abonnement actif et payé/i);
+  assert.match(buildStatic,/"portabilite-prioritaire"/);
+  assert.match(buildStatic,/"parrainage-audiotel"/);
+});
