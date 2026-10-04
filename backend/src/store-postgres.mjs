@@ -2516,6 +2516,85 @@ export class PostgresStore{
     return {data:rows.map(row=>({...row,reasons:["email_match","registration_match","phone_match","name_match"].filter(k=>row[k]).map(k=>k.replace("_match",""))}))};
   }
 
+  async ensureLeadTenant(input={}){
+    const firstName=String(input.first_name||"").trim().slice(0,80);
+    const lastName=String(input.last_name||"").trim().slice(0,80);
+    const email=String(input.email||input.billing_email||"").trim().toLowerCase().slice(0,320);
+    const companyName=String(input.company_name||"").trim().slice(0,200);
+    const accountType=String(input.account_type||"").trim().toLowerCase();
+    const country=String(input.country_code||"FR").trim().toUpperCase();
+    const registrationRaw=String(input.registration_number||"").trim().slice(0,64);
+    const phone=String(input.phone||"").trim().slice(0,40);
+    const serviceIntentRaw=String(input.service_intent||"").trim().toLowerCase();
+    const serviceIntent=["new_number","portability","advice"].includes(serviceIntentRaw)?serviceIntentRaw:"advice";
+    const localeInput=String(input.preferred_locale||"").trim().slice(0,35);
+    const timezoneInput=String(input.timezone||"").trim().slice(0,80);
+    if(firstName.length<1||lastName.length<1)throw problem(400,"CUSTOMER_NAME_REQUIRED");
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw problem(400,"INVALID_CUSTOMER_EMAIL");
+    if(!["individual","business"].includes(accountType))throw problem(400,"INVALID_CUSTOMER_ACCOUNT_TYPE");
+    if(!/^[A-Z]{2}$/.test(country))throw problem(400,"INVALID_COUNTRY_CODE");
+    if(phone&&!/^[+0-9 ().\-]{6,40}$/.test(phone))throw problem(400,"INVALID_PHONE");
+    if(localeInput&&!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(localeInput))throw problem(400,"INVALID_TENANT_LOCALE");
+    if(timezoneInput&&!/^[A-Za-z0-9_+\-/]+(?:\/[A-Za-z0-9_+\-]+)*$/.test(timezoneInput))throw problem(400,"INVALID_TENANT_TIMEZONE");
+    let registrationNumber=accountType==="business"?registrationRaw.replace(/\s+/g,""):"";
+    if(country==="FR"&&registrationNumber){
+      registrationNumber=registrationNumber.replace(/\D/g,"");
+      if(!/^\d{14}$/.test(registrationNumber))throw problem(400,"INVALID_SIRET");
+    }else if(registrationNumber&&!/^[A-Za-z0-9._\-/]{2,64}$/.test(registrationNumber))throw problem(400,"INVALID_REGISTRATION_NUMBER");
+    const displayName=(firstName+" "+lastName).trim();
+    const tenantName=accountType==="business"?(companyName||displayName):displayName;
+    const slugBase=tenantName.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,48)||"client";
+    const result=await this.sql.begin(async tx=>{
+      await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",[email]);
+      const existing=(await tx.unsafe(
+        "SELECT t.id,t.public_id,t.slug,t.display_name,t.legal_name,t.tenant_type,t.status,t.country_code,t.billing_email,t.preferred_locale,t.default_currency,t.timezone,t.created_at"+
+        " FROM tenants t WHERE t.tenant_type='customer' AND t.status<>'closed' AND lower(btrim(COALESCE(t.billing_email,'')))=$1"+
+        " ORDER BY t.created_at DESC,t.id DESC LIMIT 1 FOR UPDATE",[email]
+      ))[0];
+      if(existing){
+        await tx.unsafe(
+          "UPDATE tenant_kyc_profiles SET metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||$2::jsonb,updated_at=now() WHERE tenant_id=$1",
+          [existing.id,JSON.stringify({source:"public_opening_form",account_type:accountType,first_name:firstName,last_name:lastName,phone:phone||null,service_intent:serviceIntent})]
+        );
+        return {...existing,created:false};
+      }
+      const market=(await tx.unsafe("SELECT id,default_locale,default_currency,timezone,data_region FROM operating_markets WHERE country_code=$1 LIMIT 1",[country]))[0]||null;
+      const billingDefault=resolveBillingCurrency(country);
+      if(!billingDefault)throw problem(400,"BILLING_CURRENCY_NOT_CONFIGURED");
+      const locale=localeInput||market?.default_locale||"fr-FR";
+      const currency=billingDefault.currency;
+      const timezone=timezoneInput||market?.timezone||"Europe/Paris";
+      const tenant=(await tx.unsafe(
+        "INSERT INTO tenants(slug,display_name,legal_name,tenant_type,status,country_code,billing_email,preferred_locale,default_currency,timezone)"+
+        " VALUES($1||'-'||substr(replace(gen_random_uuid()::text,'-',''),1,8),$2,$3,'customer','pending',$4,$5,$6,$7,$8)"+
+        " RETURNING id,public_id,slug,display_name,legal_name,tenant_type,status,country_code,billing_email,preferred_locale,default_currency,timezone,created_at",
+        [slugBase,tenantName,accountType==="business"?(companyName||tenantName):tenantName,country,email,locale,currency,timezone]
+      ))[0];
+      await tx.unsafe(
+        "INSERT INTO tenant_kyc_profiles(tenant_id,entity_type,registration_country,registration_number,status,metadata) VALUES($1,$2,$3,$4,'pending',$5::jsonb) ON CONFLICT(tenant_id) DO NOTHING",
+        [tenant.id,accountType==="individual"?"individual":"company",country,registrationNumber||null,JSON.stringify({source:"public_opening_form",account_type:accountType,first_name:firstName,last_name:lastName,phone:phone||null,service_intent:serviceIntent,registration_optional:true})]
+      );
+      await tx.unsafe(
+        "INSERT INTO tenant_market_profiles(tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region)"+
+        " SELECT $1,m.id,'onboarding',$2,$3,$4,'not_started',m.data_region FROM operating_markets m WHERE m.country_code=$5"+
+        " ON CONFLICT(tenant_id,market_id) DO NOTHING",
+        [tenant.id,locale,currency,timezone,country]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'tenant.create.auto_lead','tenant',$2,$3::jsonb)",
+        [tenant.id,String(tenant.id),JSON.stringify({public_id:tenant.public_id,source:"public_opening_form",country_code:country,account_type:accountType,service_intent:serviceIntent,status:"pending"})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'tenant.created','tenant',$2,$3::jsonb)",
+        [tenant.id,String(tenant.id),JSON.stringify({public_id:tenant.public_id,display_name:tenant.display_name,country_code:country,status:"pending",source:"public_opening_form"})]
+      );
+      return {...tenant,created:true};
+    });
+    const dossier_ref=dossierReference(result.id,result.created_at);
+    if(result.created)this.eventBus.publish("tenant.created",{public_id:result.public_id,dossier_ref,display_name:result.display_name,country_code:result.country_code,status:result.status,source:"public_opening_form"});
+    return {...result,dossier_ref};
+  }
+
   async createTenant(payload={},actor={}){
     const displayName=String(payload.display_name||"").trim().slice(0,160);
     const legalName=String(payload.legal_name||displayName).trim().slice(0,200);
