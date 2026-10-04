@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import {createHash} from "node:crypto";
 
 const dir="database/migrations";
 const failures=[];
@@ -45,6 +46,19 @@ for(const file of files){
   for(const [pattern,label] of forbidden){
     if(pattern.test(sql))failures.push(file+" contains destructive operation: "+label);
   }
+}
+
+
+const bootstrapSchema=fs.readFileSync("database/schema.sql","utf8");
+const bootstrapRows=[...bootstrapSchema.matchAll(/\('([^']+)','([0-9a-f]{64})'\)/g)]
+  .map(match=>({version:match[1],checksum:match[2]}))
+  .filter(row=>/^\d{3}_[A-Za-z0-9_.-]+$/.test(row.version));
+if(!bootstrapRows.length)failures.push("bootstrap migration manifest is empty");
+for(const row of bootstrapRows){
+  const migrationFile=path.join(dir,row.version+".sql");
+  if(!fs.existsSync(migrationFile)){failures.push("bootstrap migration missing: "+row.version);continue;}
+  const actual=createHash("sha256").update(fs.readFileSync(migrationFile,"utf8")).digest("hex");
+  if(actual!==row.checksum)failures.push("bootstrap checksum mismatch: "+row.version);
 }
 
 if(failures.length){

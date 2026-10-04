@@ -26,7 +26,7 @@ function cookiesFrom(headers){
 const cookieHeader=map=>[...map].map(([k,v])=>k+"="+v).join("; ");
 
 test("prelaunch admin diagnostics preserve staff/customer isolation and readonly permissions",async()=>{
-  const app=createBackend({config:cfg()});
+  const app=createBackend({config:{...cfg(),customerSelfRegistrationEnabled:true}});
   await app.store.createStaffUser(
     {login_name:"auditor",email:"auditor@example.test",display_name:"Auditor",role:"readonly"},
     hashPassword("readonly-password-123456"),{sub:"admin"}

@@ -154,7 +154,8 @@ test("les baselines statistiques avancées restent hors du parcours utilisateur 
 });
 
 test("le nom officiel et les vues principales sont présents",()=>{
-  assert.match(index,/PGI • Telecom - Audiotel Premium Pro/);
+  assert.match(index,/PGI Telecom/);
+  assert.match(index,/Audiotel Premium Pro/);
   assert.match(index,/data-view="overview"><span>⌂<\/span>Cockpit/);
   assert.match(index,/data-view="system"><span>⌁<\/span>Supervision/);
   for(const view of ["calls","finance","experts","carriers","wholesale","settings"]){
@@ -509,7 +510,8 @@ test("la release Git exacte reste visible et obligatoire",()=>{
 });
 
 test("le produit garde son identité interne et le nom de cockpit installé",()=>{
-  assert.match(index,/PGI • Telecom - Audiotel Premium Pro/);
+  assert.match(index,/PGI Telecom/);
+  assert.match(index,/Audiotel Premium Pro/);
   assert.match(index,/Cockpit \/ PGI Telecom • Audiotel Premium Pro/);
   assert.match(index,/PLATEFORME/);
   assert.match(index,/CENTRE DE PILOTAGE AUDIOTEL PREMIUM PRO/);
@@ -589,7 +591,7 @@ test("validated customer number and consumption proof stay visible, tenant-scope
   assert.match(clientAccountProof,/snapshot_sha256/);
   assert.match(tenantControlDetail,/tenant-consumption-check\.js/);
   assert.match(tenantConsumptionCheck,/CONFORME : le relevé client correspond aux données sources/);
-  assert.match(tenantConsumptionCheck,/ÉCART DÉTECTÉ/);
+  assert.match(tenantConsumptionCheck,/ÉCART DÉTECTÉ : les données sources ont changé ou diffèrent/);
   assert.match(tenantConsumptionCheck,/\/platform\/tenants\//);
   assert.match(tenantConsumptionCheck,/\/consumption-receipts/);
   assert.match(tenantConsumptionCheck,/\/consumption-today/);
@@ -795,4 +797,25 @@ test("Business Live stays centered and highlights active money flow",()=>{
   assert.match(adminLiveFinanceCss,/data-active=true.*animation:blGlow/);
   assert.match(clientLiveFinanceCss,/prefers-reduced-motion:reduce/);
   assert.match(adminLiveFinanceCss,/prefers-reduced-motion:reduce/);
+});
+
+
+test("les nouveaux parcours commerciaux restent publiés et cohérents",()=>{
+  const home=read("site/index.html");
+  const siteJs=read("site/site.js");
+  const priority=read("site/seo/portabilite-prioritaire.html");
+  const referral=read("site/seo/parrainage-audiotel.html");
+  const payment=read("site/seo/paiement-cb-audiotel.html");
+  assert.match(home,/data-current-year/);
+  assert.match(siteJs,/timeZone:"Europe\/Paris"/);
+  assert.match(home,/Demander mon numéro surtaxé/);
+  assert.match(home,/Estimer mes reversements/);
+  assert.match(home,/Créer un lien de paiement CB/);
+  assert.match(home,/Parrainer un nouveau client/);
+  assert.match(payment,/Vous transmettez le lien à votre client/);
+  assert.match(priority,/9,90€ TTC/);
+  assert.match(priority,/sans garantie sur le délai opérateur/i);
+  assert.match(referral,/abonnement actif et payé/i);
+  assert.match(buildStatic,/"portabilite-prioritaire"/);
+  assert.match(buildStatic,/"parrainage-audiotel"/);
 });

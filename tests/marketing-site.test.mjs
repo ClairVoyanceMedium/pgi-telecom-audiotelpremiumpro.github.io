@@ -329,18 +329,25 @@ test("homepage bottom quick navigation prioritizes the highest-value commercial 
   assert.match(html,/DÉJÀ UN NUMÉRO SURTAXÉ \?/);
   assert.match(html,/class="revenue-quick-nav"/);
   assert.match(html,/Demander ma portabilité/);
-  assert.match(html,/Demander votre numéro surtaxé/);
-  assert.match(html,/Comparer mon offre/);
-  assert.match(html,/Paiement CB/);
-  assert.match(html,/Voir le tarif/);
+  assert.match(html,/Demander mon numéro surtaxé/);
+  assert.match(html,/Estimer mes reversements/);
+  assert.match(html,/Créer un lien de paiement CB/);
+  assert.match(html,/Parrainer un nouveau client/);
   assert.match(html,/href="\/portabilite-numero-sva\//);
   assert.match(html,/href="\/comparateur-audiotel\//);
-  assert.match(html,/href="#tarif"/);
+  assert.match(html,/href="\/parrainage-audiotel\//);
   assert.match(css,/revenue-quick-nav-v172/);
   assert.match(css,/global-public-fixed-nav-v175/);
   assert.match(css,/background:rgba\(42,45,49,\.985\)!important/);
   assert.match(buildStatic,/function injectRevenueQuickNav/);
   assert.match(buildStatic,/function normalizePublicBranding/);
+  assert.match(buildStatic,/Demander mon numéro surtaxé/);
+  assert.match(buildStatic,/Estimer mes reversements/);
+  assert.match(buildStatic,/Créer un lien de paiement CB/);
+  assert.match(buildStatic,/Parrainer un nouveau client/);
+  assert.doesNotMatch(buildStatic,/Demander votre numéro surtaxé/);
+  assert.doesNotMatch(buildStatic,/Comparer mon offre/);
+  assert.doesNotMatch(buildStatic,/<strong>Voir le tarif<\/strong>/);
 });
 
 test("homepage hero explains the 08 premium-rate number simply",()=>{
@@ -567,9 +574,8 @@ test("homepage removes duplicated dynamic cards and keeps one simulator badge pl
 test("homepage explains the 4.9 percent CB fee without mixing it with Stripe fees or subscription",()=>{
   assert.match(html,/COMMISSION DE SERVICE AUDIOTEL PREMIUM PRO · PAIEMENTS CB/);
   assert.match(html,/4,9 %/);
-  assert.match(html,/Ce 4,9 % correspond à la commission de service/);
-  assert.match(html,/ni aux frais de traitement du prestataire de paiement/);
-  assert.match(html,/ni à l’abonnement Audiotel Premium Pro à 4,90€ TTC \/ mois/);
+  assert.match(html,/Hors frais du prestataire/);
+  assert.match(html,/abonnement Audiotel Premium Pro à 4,90€ TTC \/ mois/);
 });
 
 test("payment CB conversion landing is built, indexable and commercially explicit",()=>{
@@ -608,8 +614,8 @@ test("homepage hierarchy keeps number and portability as the primary product and
   assert.match(html,/COMMENCEZ PAR VOTRE SITUATION/);
   assert.match(html,/Portabilité/);
   assert.match(html,/Créer un numéro surtaxé/);
-  assert.match(html,/SERVICE COMPLÉMENTAIRE/);
-  assert.match(html,/Paiement par carte bancaire/);
+  assert.match(html,/ENCAISSEMENT PAR LIEN/);
+  assert.match(html,/Créez un lien de paiement CB à envoyer à votre client/);
 });
 
 test("hero and upper-page links no longer over-route visitors to the CB landing page",()=>{
@@ -631,18 +637,22 @@ test("homepage provides differentiated destinations for number, portability, pay
 });
 
 
-test("solutions hub separates the four customer intents",()=>{
+test("solutions hub separates the six customer intents",()=>{
   assert.match(html,/COMMENCEZ PAR VOTRE SITUATION/);
   assert.match(html,/Trois chemins suffisent pour avancer/);
   assert.match(html,/href="\/solutions-audiotel\//);
   assert.match(solutions,/Conserver mon numéro surtaxé/);
   assert.match(solutions,/Obtenir un nouveau numéro/);
   assert.match(solutions,/Suivre mes appels et reversements/);
-  assert.match(solutions,/Ajouter le paiement par carte/);
+  assert.match(solutions,/Créer un lien de paiement CB/);
+  assert.match(solutions,/Prioriser ma portabilité/);
+  assert.match(solutions,/Parrainer un nouveau client/);
   assert.match(solutions,/href="\/portabilite-numero-sva\//);
   assert.match(solutions,/href="\/numero-sva\//);
   assert.match(solutions,/href="\/reversement-audiotel\//);
   assert.match(solutions,/href="\/paiement-cb-audiotel\//);
+  assert.match(solutions,/href="\/portabilite-prioritaire\//);
+  assert.match(solutions,/href="\/parrainage-audiotel\//);
   assert.match(buildStatic,/"solutions-audiotel"/);
 });
 
@@ -655,7 +665,7 @@ test("homepage removes duplicated hero tabs and preserves one clear product-choi
   assert.match(html,/JE SUIS DÉJÀ CHEZ UN AUTRE OPÉRATEUR/);
   assert.match(html,/JE VEUX COMMENCER/);
   assert.match(html,/JE VEUX D’ABORD ESTIMER/);
-  assert.match(html,/SERVICE COMPLÉMENTAIRE/);
+  assert.match(html,/ENCAISSEMENT PAR LIEN/);
   assert.ok(html.indexOf('id="simulateur"')>html.indexOf('COMMENCEZ PAR VOTRE SITUATION'));
 });
 
@@ -670,12 +680,13 @@ test("homepage restores an explicit compact comparison table without inventing r
   assert.match(css,/compact-offer-comparison-v171/);
 });
 
-test("CB cards explain the service before asking for a click",()=>{
-  assert.match(html,/paiement CB sécurisé, suivi dans l’espace client/);
-  assert.match(html,/prestataire de paiement/);
+test("CB cards explain the payment-link service before asking for a click",()=>{
+  assert.match(html,/Créez un lien de paiement CB/);
+  assert.match(html,/envoyez-le à votre client/i);
+  assert.match(html,/Hors frais du prestataire/);
   assert.match(html,/4,9 %/);
-  assert.match(solutions,/Envoyez à votre client un lien de paiement sécurisé/);
-  assert.match(solutions,/Audiotel Premium Pro ne conserve pas le numéro complet de la carte/);
+  assert.match(solutions,/créez un lien sécurisé/i);
+  assert.match(solutions,/transmettez-le à votre client/i);
   assert.match(solutions,/Commission de service actuelle : 4,9 %/);
 });
 

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import {createHash} from "node:crypto";
 
 const migration=fs.readFileSync("database/migrations/005_hyperscale_foundation.sql","utf8");
 const identityEntitlements=fs.readFileSync("database/migrations/006_hyperscale_identity_entitlements.sql","utf8");
@@ -75,7 +76,7 @@ test("une réplique de lecture peut être ajoutée sans changer le métier",()=>
 
 test("le schéma neuf et le cockpit exposent la fondation 1.15",()=>{
   assert.ok(schema.includes("005_hyperscale_foundation"));
-  assert.ok(schema.includes("8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69"));
+  assert.ok(schema.includes(createHash("sha256").update(migration).digest("hex")));
   assert.ok(index.includes('id="wh-scale-buckets"'));
   assert.ok(app.includes("call_fact_partitions"));
   assert.ok(docs.includes("4096 buckets"));

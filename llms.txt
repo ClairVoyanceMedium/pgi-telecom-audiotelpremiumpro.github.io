@@ -13,7 +13,9 @@ Support: support@audiotel-premium-pro.com
 - Offre plateforme affichée : 4,90€ TTC par mois.
 - Publics : particuliers, porteurs de projet, indépendants, associations, cabinets et entreprises.
 - Fonctions principales : nouveau numéro surtaxé/SVA, portabilité d’un numéro éligible, suivi des appels et minutes, reversements, Business Live et accès client.
-- Service complémentaire : paiement par carte sécurisé pour permettre à un professionnel d’encaisser ses propres consultations ou forfaits ; commission PGI affichée à 4,9 % par paiement CB, hors frais de traitement du prestataire de paiement.
+- Option de portabilité prioritaire : 9,90€ TTC en paiement unique pour prioriser le traitement administratif PGI Telecom. Aucun délai opérateur n’est garanti.
+- Parrainage : les clients éligibles peuvent créer un lien personnel lorsque le programme est activé. La récompense n’est acquise qu’après activation réelle et abonnement payé du filleul.
+- Service complémentaire : paiement par carte sécurisé avec création d’un lien de paiement à transmettre au client pour une consultation ou un forfait ; commission PGI affichée à 4,9 % par paiement CB, hors frais de traitement du prestataire de paiement.
 - Le SIRET n’est pas requis pour déposer la demande initiale ; une immatriculation ou des justificatifs peuvent toutefois être exigés avant activation selon la situation.
 - L’activation d’un numéro SVA, sa tarification, son éligibilité, sa portabilité et ses reversements restent soumis aux validations techniques, contractuelles et réglementaires applicables.
 - Les simulations de reversement sont indicatives et ne constituent pas une garantie de revenu.
@@ -30,6 +32,8 @@ Support: support@audiotel-premium-pro.com
 - [Tarifs des numéros SVA](https://audiotel-premium-pro.com/tarif-numero-sva/)
 - [Numéros surtaxés 08](https://audiotel-premium-pro.com/numero-surtaxe-08/)
 - [Portabilité d’un numéro SVA](https://audiotel-premium-pro.com/portabilite-numero-sva/)
+- [Portabilité prioritaire](https://audiotel-premium-pro.com/portabilite-prioritaire/)
+- [Parrainage Audiotel Premium Pro](https://audiotel-premium-pro.com/parrainage-audiotel/)
 - [Reversement Audiotel](https://audiotel-premium-pro.com/reversement-audiotel/)
 - [Comparateur Audiotel](https://audiotel-premium-pro.com/comparateur-audiotel/)
 - [Paiement CB sécurisé](https://audiotel-premium-pro.com/paiement-cb-audiotel/)
