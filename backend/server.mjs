@@ -326,6 +326,7 @@ export function createBackend(options={}){
           commercial_sync:Boolean(commercialResult?.synced),
           dossier_ref:dossier?.dossier_ref||null,
           dossier_created:Boolean(dossier?.created),
+          referral_recorded:Boolean(dossier?.referral?.accepted),
           client_portal_invited:Boolean(customerAccess?.invitation_created||customerAccess?.reason==="pending_invitation"),
           access_email_sent:Boolean(customerAccess?.email_sent)
         });
@@ -788,6 +789,23 @@ export function createBackend(options={}){
         const payload={tenant_id:context.tenant_id,from:body.from,to:body.to};
         const result=await store.idempotent(req.headers["idempotency-key"],"customer.consumption_receipt.create",payload,()=>store.createCustomerConsumptionReceipt(context.tenant_id,context.id,body.from,body.to));
         return done(res,metrics,started,"customer.consumption_receipt_create",201,{...result.value,replayed:result.replayed});
+      }
+
+
+      if(method==="GET"&&pathname==="/api/v1/customer/referrals"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        const overview=await store.customerReferralOverview(context.tenant_id);
+        const base=String(config.publicBaseUrl||"https://audiotel-premium-pro.com").replace(/\/+$/,"");
+        return done(res,metrics,started,"customer.referrals",200,{...overview,share_url:overview.code?base+"/demande-ouverture/?parrain="+encodeURIComponent(overview.code):null});
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/referrals/claim"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={tenant_id:context.tenant_id,code:String(body.code||"").trim().toUpperCase()};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer.referral.claim",payload,()=>store.claimCustomerReferral(context.tenant_id,body.code,{source:"customer_portal"}));
+        return done(res,metrics,started,"customer.referral_claim",201,{...result.value,replayed:result.replayed});
       }
 
       if(method==="GET"&&pathname==="/api/v1/customer/billing/status"){
@@ -1521,6 +1539,27 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.customer_profitability",200,await store.customerProfitability(params));
       }
 
+
+      if(method==="GET"&&pathname==="/api/v1/platform/referrals"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.referrals",200,await store.referralProgramOverview());
+      }
+      if(method==="POST"&&pathname==="/api/v1/platform/referrals/settings"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={enabled:body.enabled===true,reward_minor:body.reward_minor,currency:body.currency||"EUR"};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer_referral.program.update",payload,()=>store.updateReferralProgram(payload,actor));
+        return done(res,metrics,started,"platform.referral_settings",200,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/platform/referrals/rewards/:id/paid");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={id:match.id,paid_reference:String(body.paid_reference||"")};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer_referral.reward.paid",payload,()=>store.markReferralRewardPaid(match.id,body,actor));
+        return done(res,metrics,started,"platform.referral_reward_paid",200,{...result.value,replayed:result.replayed});
+      }
+
       if(method==="GET"&&pathname==="/api/v1/platform/card-payments/summary"){
         requireRole(actor,["admin","finance","readonly"]);
         return done(res,metrics,started,"platform.card_payments.summary",200,{provider:stripeConnectState(config),...(await store.platformCardPaymentSummary())});
@@ -1644,6 +1683,7 @@ export function createBackend(options={}){
         const result=await store.idempotent(req.headers["idempotency-key"],"tenant.status",payload,()=>store.setTenantStatus(match.id,body.status,actor,body.reason||""));
         let customerAccess=null;
         if(String(result.value?.status||"")==="active"){
+          try{await store.qualifyCustomerReferral(match.id);}catch(error){process.stderr.write(JSON.stringify({level:"warn",event:"referral_qualification_after_tenant_activation_failed",code:String(error?.code||"REFERRAL_QUALIFICATION_FAILED")})+"\n");}
           await syncHubSpotTenantLifecycle(store,match.id,"En attente d’ouverture","tenant_active");
           if(!result.replayed&&result.value?.changed!==false){
             try{
