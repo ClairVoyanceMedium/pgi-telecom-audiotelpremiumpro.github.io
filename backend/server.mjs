@@ -14,7 +14,7 @@ import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData,scopeCustomerAnnualProgressData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
-import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
+import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,createPriorityPortabilityCheckout,verifyStripeWebhook,normalizeStripeBillingEvent,normalizeStripeRefundEvent,normalizePriorityPortabilityCheckoutEvent} from "./src/stripe-billing.mjs";
 import {STRIPE_CONNECT_APPLICATION_FEE_BPS,stripeConnectState,createStripeConnectedAccount,retrieveStripeConnectedAccount,normalizeStripeConnectedAccount,createStripeConnectOnboardingLink,createStripeCardCheckout,retrieveStripeCardCheckout,normalizeStripeConnectPaymentEvent,hashStripeEventPayload} from "./src/stripe-connect.mjs";
 import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStripe,buildGa4RefundFromStripe,sendGa4Measurement} from "./src/ga4-measurement.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
@@ -164,7 +164,12 @@ export function createBackend(options={}){
           invalidateStripeProviderReadiness();
           return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,account_readiness_invalidated:true});
         }
-        const refund=config.ga4MeasurementEnabled&&config.ga4ApiSecret?await normalizeStripeRefundEvent(event,config):null;
+        const priorityPortability=normalizePriorityPortabilityCheckoutEvent(event);
+        if(priorityPortability){
+          const result=await store.applyPriorityPortabilityPayment(priorityPortability);
+          return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,type:String(event.type||""),priority_portability:true,duplicate:Boolean(result.duplicate),updated:Boolean(result.updated),status:result.status});
+        }
+                const refund=config.ga4MeasurementEnabled&&config.ga4ApiSecret?await normalizeStripeRefundEvent(event,config):null;
         if(refund){
           const analytics=await deliverGa4StripeEvent(store,config,"refund",refund.provider_event_id,refund.refund_id,buildGa4RefundFromStripe(refund));
           return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,type:String(event.type||""),analytics});
@@ -981,6 +986,17 @@ export function createBackend(options={}){
         const payload={tenant_id:context.tenant_id,...body};
         const result=await store.idempotent(req.headers["idempotency-key"],"customer.portability.create",payload,()=>store.createCustomerPortabilityRequest(context.tenant_id,body));
         return done(res,metrics,started,"customer.portability.create",201,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/customer/portability/:id/priority-checkout");
+      if(method==="POST"&&match){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        const idempotencyKey=String(req.headers["idempotency-key"]||"").trim();
+        if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)){const e=new Error("Idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
+        const checkoutContext=await store.priorityPortabilityCheckoutContext(context.tenant_id,match.id);
+        const session=await createPriorityPortabilityCheckout(config,{tenant_public_id:checkoutContext.tenant_public_id,request_id:Number(match.id),customer_email:context.email},idempotencyKey);
+        const saved=await store.attachPriorityPortabilityCheckout(context.tenant_id,match.id,session);
+        return done(res,metrics,started,"customer.portability.priority_checkout",201,{request:saved,checkout:{url:session.url,expires_at:session.expires_at},amount_minor:990,currency:"EUR"});
       }
       match=routeMatch(pathname,"/api/v1/customer/portability/:id/cancel");
       if(method==="POST"&&match){
