@@ -2527,6 +2527,8 @@ export class PostgresStore{
     const phone=String(input.phone||"").trim().slice(0,40);
     const serviceIntentRaw=String(input.service_intent||"").trim().toLowerCase();
     const serviceIntent=["new_number","portability","advice"].includes(serviceIntentRaw)?serviceIntentRaw:"advice";
+    const referralRaw=String(input.referral_code||"").trim().toUpperCase();
+    const referralCode=/^[A-Z0-9]{20}$/.test(referralRaw)?referralRaw:null;
     const localeInput=String(input.preferred_locale||"").trim().slice(0,35);
     const timezoneInput=String(input.timezone||"").trim().slice(0,80);
     if(firstName.length<1||lastName.length<1)throw problem(400,"CUSTOMER_NAME_REQUIRED");
@@ -2556,6 +2558,18 @@ export class PostgresStore{
           "UPDATE tenant_kyc_profiles SET metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||$2::jsonb,updated_at=now() WHERE tenant_id=$1",
           [existing.id,JSON.stringify({source:"public_opening_form",account_type:accountType,first_name:firstName,last_name:lastName,phone:phone||null,service_intent:serviceIntent})]
         );
+        if(referralCode&&existing.status!=="active"){
+          const referralEnabled=Boolean((await tx.unsafe("SELECT enabled FROM referral_program_settings WHERE singleton=true LIMIT 1"))[0]?.enabled);
+          if(referralEnabled){
+            const referrer=(await tx.unsafe("SELECT c.id AS code_id,c.tenant_id FROM tenant_referral_codes c JOIN tenants t ON t.id=c.tenant_id WHERE c.code=$1 AND t.status='active' AND t.tenant_type<>'internal' LIMIT 1",[referralCode]))[0]||null;
+            if(referrer&&Number(referrer.tenant_id)!==Number(existing.id)){
+              await tx.unsafe(
+                "INSERT INTO tenant_referrals(referrer_tenant_id,referred_tenant_id,referral_code_id,status,reward_status,metadata) VALUES($1,$2,$3,'attributed','pending_qualification',$4::jsonb) ON CONFLICT(referred_tenant_id) DO NOTHING",
+                [Number(referrer.tenant_id),Number(existing.id),Number(referrer.code_id),JSON.stringify({source:"public_opening_form",commercial_benefit:"pending_policy"})]
+              );
+            }
+          }
+        }
         return {...existing,created:false};
       }
       const market=(await tx.unsafe("SELECT id,default_locale,default_currency,timezone,data_region FROM operating_markets WHERE country_code=$1 LIMIT 1",[country]))[0]||null;
@@ -2570,6 +2584,26 @@ export class PostgresStore{
         " RETURNING id,public_id,slug,display_name,legal_name,tenant_type,status,country_code,billing_email,preferred_locale,default_currency,timezone,created_at",
         [slugBase,tenantName,accountType==="business"?(companyName||tenantName):tenantName,country,email,locale,currency,timezone]
       ))[0];
+      await tx.unsafe(
+        "INSERT INTO tenant_referral_codes(tenant_id,code) VALUES($1,upper(substr(replace($2::text,'-',''),1,20))) ON CONFLICT(tenant_id) DO NOTHING",
+        [tenant.id,tenant.public_id]
+      );
+      if(referralCode){
+        const referralEnabled=Boolean((await tx.unsafe("SELECT enabled FROM referral_program_settings WHERE singleton=true LIMIT 1"))[0]?.enabled);
+        if(referralEnabled){
+          const referrer=(await tx.unsafe("SELECT c.id AS code_id,c.tenant_id FROM tenant_referral_codes c JOIN tenants t ON t.id=c.tenant_id WHERE c.code=$1 AND t.status='active' AND t.tenant_type<>'internal' LIMIT 1",[referralCode]))[0]||null;
+          if(referrer&&Number(referrer.tenant_id)!==Number(tenant.id)){
+            const referral=(await tx.unsafe(
+              "INSERT INTO tenant_referrals(referrer_tenant_id,referred_tenant_id,referral_code_id,status,reward_status,metadata) VALUES($1,$2,$3,'attributed','pending_qualification',$4::jsonb) ON CONFLICT(referred_tenant_id) DO NOTHING RETURNING id",
+              [Number(referrer.tenant_id),Number(tenant.id),Number(referrer.code_id),JSON.stringify({source:"public_opening_form",commercial_benefit:"pending_policy"})]
+            ))[0]||null;
+            if(referral){
+              await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'referral.attributed','tenant_referral',$2,$3::jsonb)",[tenant.id,String(referral.id),JSON.stringify({referrer_tenant_id:Number(referrer.tenant_id),referred_tenant_id:Number(tenant.id),reward_status:"pending_qualification",source:"public_opening_form"})]);
+              await tx.unsafe("INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'referral.attributed','tenant_referral',$2,$3::jsonb)",[tenant.id,String(referral.id),JSON.stringify({referral_id:Number(referral.id),referrer_tenant_id:Number(referrer.tenant_id),referred_tenant_id:Number(tenant.id)})]);
+            }
+          }
+        }
+      }
       await tx.unsafe(
         "INSERT INTO tenant_kyc_profiles(tenant_id,entity_type,registration_country,registration_number,status,metadata) VALUES($1,$2,$3,$4,'pending',$5::jsonb) ON CONFLICT(tenant_id) DO NOTHING",
         [tenant.id,accountType==="individual"?"individual":"company",country,registrationNumber||null,JSON.stringify({source:"public_opening_form",account_type:accountType,first_name:firstName,last_name:lastName,phone:phone||null,service_intent:serviceIntent,registration_optional:true})]
