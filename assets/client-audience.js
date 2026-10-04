@@ -26,7 +26,8 @@ function hydratePublicOrderIntent(){
     if(["individual","business"].includes(x.account_type))set("register-account-type",x.account_type);
     set("register-first-name",x.first_name);set("register-last-name",x.last_name);set("register-email",x.email);set("register-phone",x.phone);
     if(x.account_type==="business")set("register-company",x.company_name);
-    window.PGIOrderMeta={acquisition_source:"public_marketing_site",service_intent:String(x.service_intent||"").slice(0,40)};
+    const queryReferral=String(new URLSearchParams(location.search).get("parrain")||"").trim().toUpperCase(),storedReferral=String(x.referral_code||"").trim().toUpperCase(),referral=/^[A-Z0-9]{8,24}$/.test(storedReferral)?storedReferral:/^[A-Z0-9]{8,24}$/.test(queryReferral)?queryReferral:"";
+    window.PGIOrderMeta={acquisition_source:"public_marketing_site",service_intent:String(x.service_intent||"").slice(0,40),referral_code:referral||null};
     sessionStorage.removeItem("pgi_public_order_intent_v1");
   }catch(_e){try{sessionStorage.removeItem("pgi_public_order_intent_v1")}catch(_x){}}
 }
