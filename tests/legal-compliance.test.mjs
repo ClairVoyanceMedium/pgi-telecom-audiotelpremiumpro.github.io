@@ -30,15 +30,15 @@ test("registration requires current legal documents and keeps privacy acknowledg
   assert.match(audience,/conditions-utilisation/);
   assert.match(portal,/legal_terms_accepted/);
   assert.match(portal,/privacy_notice_acknowledged/);
-  assert.match(portal,/legal_version:"2026-09-26-b2b-b2c-v4"/);
-  assert.match(postgres,/2026-09-26-b2b-b2c-v4/);
+  assert.match(portal,/legal_version:"2026-10-04-b2b-b2c-v5"/);
+  assert.match(postgres,/2026-10-04-b2b-b2c-v5/);
   assert.doesNotMatch(postgres,/2026-09-26-b2b-b2c-v3/);
   const terms=read("site/seo/conditions-abonnement.html"),cgu=read("site/seo/conditions-utilisation.html");
   assert.match(terms,/Partie B2C : informations avant engagement/);
   assert.match(terms,/Partie B2B : socle commercial/);
   assert.match(terms,/garantie légale de conformité/i);
   assert.match(terms,/commande et obligation de paiement/i);
-  assert.match(terms,/2026-09-26-b2b-b2c-v4/);
+  assert.match(terms,/2026-10-04-b2b-b2c-v5/);
   assert.match(terms,/durée indéterminée/i);
   assert.match(terms,/facturé par périodes mensuelles successives/i);
   assert.match(terms,/résiliation à tout moment/i);
@@ -148,5 +148,5 @@ test("subscription terms state that the current month is free and billing starts
   const terms=read("site/seo/conditions-abonnement.html");
   assert.match(terms,/mois civil .* souscription .* offert/i);
   assert.match(terms,/À compter du mois suivant/i);
-  assert.match(terms,/3€ TTC par mois/i);
+  assert.match(terms,/4,90 € TTC par mois/i);
 });
