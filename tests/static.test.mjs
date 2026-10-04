@@ -66,7 +66,7 @@ test("public contact and opening forms keep marketing consent optional explicit 
 test("la marque client reste Audiotel Premium Pro et la plateforme reste multisectorielle",()=>{
   assert.match(clientPortal,/PGI Telecom/);
   assert.match(clientPortal,/Audiotel Premium Pro/);
-  assert.doesNotMatch(clientPortal,/PGI • Telecom - Audiotel Premium Pro/);
+  assert.doesNotMatch(clientPortal,/PGI Telecom • Audiotel Premium Pro/);
   assert.doesNotMatch(clientPortal,/voyance|voyant/i);
   assert.match(clientServiceCenter,/Audiotel Premium Pro/);
   assert.match(index,/Intervenants/);
@@ -139,7 +139,7 @@ test("les baselines statistiques avancées restent hors du parcours utilisateur 
 });
 
 test("le nom officiel et les vues principales sont présents",()=>{
-  assert.match(index,/PGI • Telecom - Audiotel Premium Pro/);
+  assert.match(index,/PGI Telecom • Audiotel Premium Pro/);
   assert.match(index,/data-view="overview"><span>⌂<\/span>Cockpit/);
   assert.match(index,/data-view="system"><span>⌁<\/span>Supervision/);
   for(const view of ["calls","finance","experts","carriers","wholesale","settings"]){
@@ -494,7 +494,7 @@ test("la release Git exacte reste visible et obligatoire",()=>{
 });
 
 test("le produit garde son identité interne et le nom de cockpit installé",()=>{
-  assert.match(index,/PGI • Telecom - Audiotel Premium Pro/);
+  assert.match(index,/PGI Telecom • Audiotel Premium Pro/);
   assert.match(index,/Cockpit \/ PGI Telecom • Audiotel Premium Pro/);
   assert.match(index,/PLATEFORME/);
   assert.match(index,/CENTRE DE PILOTAGE AUDIOTEL PREMIUM PRO/);
