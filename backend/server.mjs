@@ -21,7 +21,8 @@ import {createEmailVerificationChallenge,verificationTokenHash,emailVerification
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
 import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail,syncHubSpotCustomerIncident,ensureHubSpotCardPaymentSchema,syncHubSpotCardPaymentState} from "./src/hubspot-crm.mjs";
-import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";\nimport {referralProgramState,setReferralProgramState,customerReferralSummary,captureReferral,qualifyReferralForTenant,createPortabilityPriorityOrder,attachPortabilityPriorityCheckout,applyPortabilityPriorityPayment} from "./src/revenue-growth.mjs";
+import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
+import {referralProgramState,setReferralProgramState,customerReferralSummary,captureReferral,qualifyReferralForTenant,createPortabilityPriorityOrder,attachPortabilityPriorityCheckout,applyPortabilityPriorityPayment} from "./src/revenue-growth.mjs";
 
 export async function createDefaultBackend(){
   const config=loadConfig();
