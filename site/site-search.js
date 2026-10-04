@@ -38,7 +38,10 @@ const aliases={
   "confidentialite":["donnees","rgpd","vie privee"],
   "voyance":["audiotel voyance","consultation"],
   "coaching":["audiotel coaching","consultation"],
-  "independant":["sans siret","professionnel","porteur projet"]
+  "independant":["sans siret","professionnel","porteur projet"],
+  "compte":["espace client","connexion","se connecter","client","dossier","abonnement","profil","mot de passe"],
+  "connexion":["compte","espace client","se connecter","identifiant","mot de passe"],
+  "dossier":["compte","client","ouverture","demande","suivi"]
 };
 
 const popular=[
@@ -143,19 +146,30 @@ const scoreEntry=(entry,query)=>{
 
 const escapeHtml=value=>String(value||"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
 
+const resultExcerpt=(item,query)=>{
+  const terms=normalize(query).split(" ").filter(Boolean);
+  if(!terms.length)return item.description||"";
+  const sources=[];
+  String(item.headings||"").split(" · ").forEach(x=>x.trim()&&sources.push(x.trim()));
+  if(item.description)sources.push(String(item.description));
+  String(item.text||"").split(/(?:[.!?]\s+|\s+·\s+)/).forEach(x=>x.trim()&&sources.push(x.trim()));
+  const hit=sources.find(x=>terms.some(term=>normalize(x).includes(term)))||item.description||"";
+  return hit.length>190?hit.slice(0,187).trimEnd()+"…":hit;
+};
+
 const render=(items,query="",suggestions=false)=>{
   active=-1;
   if(!items.length){
     panel.innerHTML='<div class="public-search-empty"><strong>Aucun résultat</strong><span>Essayez un terme comme “portabilité”, “reversement”, “tarif”, “08” ou “paiement CB”.</span></div>';
     panel.hidden=false;input.setAttribute("aria-expanded","true");return;
   }
-  const heading=suggestions?"Accès rapides":"Résultats";
+  const heading=suggestions?"Accès rapides":items.length+" résultat"+(items.length>1?"s":"")+" proposé"+(items.length>1?"s":"");
   panel.innerHTML='<div class="public-search-result-heading">'+heading+'</div>'+
-    items.map((item,i)=>'<a class="public-search-result" role="option" id="site-search-option-'+i+'" aria-selected="false" data-search-index="'+i+'" href="'+escapeHtml(item.url)+'">'+
+    items.map((item,i)=>{const detail=resultExcerpt(item,query);return '<a class="public-search-result" role="option" id="site-search-option-'+i+'" aria-selected="false" data-search-index="'+i+'" href="'+escapeHtml(item.url)+'">'+
       '<strong>'+escapeHtml(item.title)+'</strong>'+
-      '<span>'+escapeHtml(item.description||"")+'</span>'+
+      '<span>'+escapeHtml(detail)+'</span>'+
       (item.category?'<small>'+escapeHtml(item.category)+'</small>':'')+
-    '</a>').join("");
+    '</a>'}).join("");
   panel.hidden=false;input.setAttribute("aria-expanded","true");
   panel.querySelectorAll(".public-search-result").forEach(link=>{
     link.addEventListener("mouseenter",()=>setActive(Number(link.dataset.searchIndex)));
@@ -189,7 +203,7 @@ const search=async()=>{
   const ranked=data.map(item=>({item,score:scoreEntry(item,query)}))
     .filter(x=>x.score>0)
     .sort((a,b)=>b.score-a.score||a.item.title.localeCompare(b.item.title,"fr"))
-    .slice(0,8)
+    .slice(0,10)
     .map(x=>x.item);
   render(ranked,query,false);
   trackSearchQuery(query);
@@ -204,11 +218,12 @@ input.addEventListener("keydown",e=>{
   else if(e.key==="Escape"){hide();input.blur()}
   else if(e.key==="Enter"&&!panel.hidden){
     const links=[...panel.querySelectorAll(".public-search-result")];
-    const target=links[active>=0?active:0];
-    if(target){e.preventDefault();target.click();location.href=target.href}
+    const target=active>=0?links[active]:null;
+    e.preventDefault();
+    if(target){target.click();location.href=target.href}else search();
   }
 });
-form.addEventListener("submit",e=>{e.preventDefault();const first=panel.querySelector(".public-search-result");if(first){first.click();location.href=first.href}});
+form.addEventListener("submit",e=>{e.preventDefault();search();input.focus()});
 document.addEventListener("pointerdown",e=>{if(!root.contains(e.target))hide()});
 document.addEventListener("keydown",e=>{
   if(e.key!=="/"||e.ctrlKey||e.metaKey||e.altKey)return;
