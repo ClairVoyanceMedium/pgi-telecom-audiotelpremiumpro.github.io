@@ -728,3 +728,12 @@ test("analytics classifies the new conversion intents",()=>{
   assert.match(contactWidget,/business-live-audiotel/);
   assert.match(contactWidget,/audiotel-sans-siret/);
 });
+
+
+test("referral acquisition stays fail-closed and never bypasses the protected opening flow",()=>{
+  assert.match(application,/id="order-referral-wrap" hidden/);
+  assert.match(application,/id="order-referral-code"/);
+  assert.match(js,/\/api\/v1\/public\/referral-program/);
+  assert.match(js,/referral_code/);
+  assert.match(client,/assets\/client-referrals\.js/);
+});

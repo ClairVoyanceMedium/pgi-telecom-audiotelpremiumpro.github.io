@@ -1,3 +1,15 @@
+## Parrainage sécurisé et résilience e-mail : 2026-10-04
+
+- parrainage client entièrement pilotable depuis le cockpit, désactivé par défaut et verrouillé côté serveur ;
+- attribution possible uniquement lors de la création initiale du dossier, jamais après coup sur un dossier existant ;
+- lien de parrainage réservé aux clients dont l’abonnement est déjà actif et réellement payé ;
+- codes de parrainage à forte entropie, attribution unique, auto-parrainage refusé et montant de prime figé à la demande ;
+- prime acquise uniquement après confirmation Stripe d’une facture payée avec abonnement actif ;
+- désactivation immédiate des nouveaux parrainages sans suppression des attributions ni des primes déjà acquises ;
+- règlement des primes séparé, manuel et traçable, avec référence obligatoire et sans prétendre déclencher un virement ;
+- module administrateur dédié chargé à la demande afin de préserver le budget de performance du cockpit ;
+- traitement des webhooks Resend renforcé avec typage PostgreSQL explicite pour éliminer l’erreur 42P18 observée en production.
+
 ## 1.31.0 : Tarif plateforme 4,90 € TTC : 2026-10-04
 
 - abonnement plateforme courant porté à 4,90 € TTC par mois après le mois en cours offert ;

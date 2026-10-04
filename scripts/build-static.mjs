@@ -66,6 +66,7 @@ const files=[
   "assets/client-growth-suite.css",
   "assets/client-card-payments.js",
   "assets/client-card-payments.css",
+  "assets/client-referrals.js",
   "assets/client-audience.js",
   "assets/client-access-visibility.js",
   "assets/client-mobile.js",
@@ -106,6 +107,7 @@ const files=[
   "assets/tenant-service-admin.js",
   "assets/tenant-payout-admin.js",
   "assets/platform-admin-tools.js",
+  "assets/platform-referral-admin.js",
   "assets/platform-regulatory-tools.js",
   "assets/control-tower.js",
   "assets/control-tower-assurance.js",
@@ -324,7 +326,7 @@ const releaseId=process.env.PGI_RELEASE_ID||"";
 const production=mode==="production";
 if(production&&!/^[0-9a-f]{40}$/.test(releaseId))throw new Error("PGI_RELEASE_ID must be the 40-character Git SHA in production");
 const config={
-  appName:"PGI • Telecom - Audiotel Premium Pro",
+  appName:"PGI Telecom • Audiotel Premium Pro",
   version:pkg.version,
   releaseId,
   schemaVersion:1,

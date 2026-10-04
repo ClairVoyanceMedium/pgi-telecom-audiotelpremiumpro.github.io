@@ -3,7 +3,7 @@
 ## Règle de marque
 
 - **Nom public et client : Audiotel Premium Pro**
-- **Cockpit interne : PGI • Telecom - Audiotel Premium Pro**
+- **Cockpit interne : PGI Telecom • Audiotel Premium Pro**
 - Les interfaces client, messages client, exports client, e-mails futurs et documents commerciaux doivent utiliser **Audiotel Premium Pro**.
 - Les préfixes techniques historiques `PGI_*`, noms de variables, métriques, routes API et identifiants internes peuvent rester inchangés afin de préserver la compatibilité.
 
