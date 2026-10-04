@@ -161,6 +161,8 @@ const seoPages=[
   "reversement-audiotel",
   "numero-sva",
   "portabilite-numero-sva",
+  "portabilite-prioritaire",
+  "parrainage-audiotel",
   "numero-surtaxe-08",
   "tarif-numero-sva",
   "comparateur-audiotel",
@@ -188,7 +190,7 @@ const searchCategory={
   "solutions-audiotel":"Solutions","business-live-audiotel":"Suivi en direct","audiotel-sans-siret":"Ouverture",
   "changer-operateur-audiotel":"Portabilité","monetiser-ses-appels":"Guide","combien-rapporte-numero-surtaxe":"Revenus","audiotel-voyance":"Métiers","audiotel-independants":"Métiers",
   "audiotel-coaching":"Métiers","audiotel-professionnels":"Métiers","reversement-audiotel":"Reversements",
-  "numero-sva":"Numéro SVA","portabilite-numero-sva":"Portabilité","numero-surtaxe-08":"Numéro 08",
+  "numero-sva":"Numéro SVA","portabilite-numero-sva":"Portabilité","portabilite-prioritaire":"Portabilité","parrainage-audiotel":"Parrainage","numero-surtaxe-08":"Numéro 08",
   "tarif-numero-sva":"Tarifs","comparateur-audiotel":"Comparateur","paiement-cb-audiotel":"Paiement CB",
   "guide-audiotel-sva":"Guide","demande-ouverture":"Ouverture","mentions-legales":"Juridique",
   "conditions-utilisation":"Juridique","conditions-abonnement":"Juridique","confidentialite":"Confidentialité",
@@ -197,6 +199,8 @@ const searchCategory={
 };
 const searchHints={
   "portabilite-numero-sva":"portabilité portage transfert conserver garder numéro changer opérateur",
+  "portabilite-prioritaire":"portabilité prioritaire 9,90 priorité traitement dossier transfert",
+  "parrainage-audiotel":"parrainage parrain filleul lien code récompense client",
   "changer-operateur-audiotel":"changer opérateur concurrent transfert portabilité conserver numéro",
   "monetiser-ses-appels":"monétiser appels clients revenus numéro surtaxé",
   "combien-rapporte-numero-surtaxe":"combien rapporte numéro surtaxé revenus gains reversement",
