@@ -57,6 +57,7 @@ const files=[
   "assets/client-account-proof.js",
   "assets/client-experience-command-center.js",
   "assets/client-portability.js",
+  "assets/client-portability-priority.js",
   "assets/client-referrals.js",
   "assets/client-service-center.js",
   "assets/client-relations.js",
