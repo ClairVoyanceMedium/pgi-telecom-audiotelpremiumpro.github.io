@@ -138,6 +138,91 @@ export class PostgresStore{
     return new PostgresStore(sql,config,eventBus,readSql);
   }
 
+  async claimDailyInternalReport(reportDate){
+    const date=String(reportDate||"").trim();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date))throw problem(400,"INVALID_DAILY_REPORT_DATE");
+    return this.sql.begin(async tx=>{
+      await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",["daily-internal-report:"+date]);
+      await tx.unsafe(
+        "INSERT INTO platform_daily_reports(report_date,state) VALUES($1::date,'pending') ON CONFLICT(report_date) DO NOTHING",
+        [date]
+      );
+      const row=(await tx.unsafe(
+        "SELECT report_date::text,state,attempt_count,last_attempt_at,sent_at,provider_email_id FROM platform_daily_reports WHERE report_date=$1::date FOR UPDATE",
+        [date]
+      ))[0];
+      if(!row)throw problem(500,"DAILY_REPORT_LEDGER_MISSING");
+      if(row.state==="sent")return {claimed:false,reason:"already_sent",report:row};
+      if(row.state==="sending"&&row.last_attempt_at&&Date.now()-Date.parse(row.last_attempt_at)<15*60000)return {claimed:false,reason:"already_sending",report:row};
+      const updated=(await tx.unsafe(
+        "UPDATE platform_daily_reports SET state='sending',attempt_count=attempt_count+1,last_attempt_at=now(),last_error_code=NULL,updated_at=now()"+
+        " WHERE report_date=$1::date RETURNING report_date::text,state,attempt_count,last_attempt_at,sent_at,provider_email_id",
+        [date]
+      ))[0];
+      return {claimed:true,reason:"claimed",report:updated};
+    });
+  }
+
+  async dailyInternalReportState(reportDate){
+    const date=String(reportDate||"").trim();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return null;
+    return (await this.readSql.unsafe(
+      "SELECT report_date::text,state,attempt_count,last_attempt_at,sent_at,provider_email_id,last_error_code FROM platform_daily_reports WHERE report_date=$1::date LIMIT 1",
+      [date]
+    ))[0]||null;
+  }
+
+  async dailyInternalReportSnapshot(fromIso,toIso){
+    const from=new Date(fromIso),to=new Date(toIso);
+    if(!Number.isFinite(from.getTime())||!Number.isFinite(to.getTime())||to<=from)throw problem(400,"INVALID_DAILY_REPORT_WINDOW");
+    const row=(await this.readSql.unsafe(
+      "SELECT"+
+      " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal') AS customers_total,"+
+      " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal' AND created_at>=$1::timestamptz AND created_at<$2::timestamptz) AS customers_new,"+
+      " (SELECT count(*)::int FROM tenant_service_incidents WHERE created_at>=$1::timestamptz AND created_at<$2::timestamptz) AS incidents_new,"+
+      " (SELECT count(*)::int FROM tenant_service_incidents WHERE status NOT IN ('resolved','closed')) AS incidents_open,"+
+      " (SELECT count(*)::int FROM tenant_service_incidents WHERE severity='critical' AND status NOT IN ('resolved','closed')) AS incidents_critical_open,"+
+      " (SELECT count(*)::int FROM tenant_portability_requests WHERE created_at>=$1::timestamptz AND created_at<$2::timestamptz) AS portability_new,"+
+      " (SELECT count(*)::int FROM tenant_portability_requests WHERE status NOT IN ('ported','rejected','cancelled')) AS portability_open,"+
+      " (SELECT count(*)::int FROM tenant_portability_requests WHERE service_level='priority' AND priority_paid_at>=$1::timestamptz AND priority_paid_at<$2::timestamptz) AS portability_priority_paid,"+
+      " (SELECT COALESCE(sum(priority_fee_minor),0)::bigint FROM tenant_portability_requests WHERE service_level='priority' AND priority_payment_status='paid' AND priority_currency='EUR' AND priority_paid_at>=$1::timestamptz AND priority_paid_at<$2::timestamptz) AS portability_priority_revenue_minor_eur,"+
+      " (SELECT count(*)::int FROM tenant_card_payment_requests WHERE status='paid' AND paid_at>=$1::timestamptz AND paid_at<$2::timestamptz) AS card_payments_paid,"+
+      " (SELECT COALESCE(sum(amount_minor),0)::bigint FROM tenant_card_payment_requests WHERE status='paid' AND currency='EUR' AND paid_at>=$1::timestamptz AND paid_at<$2::timestamptz) AS card_volume_minor_eur,"+
+      " (SELECT COALESCE(sum(application_fee_minor),0)::bigint FROM tenant_card_payment_requests WHERE status='paid' AND currency='EUR' AND paid_at>=$1::timestamptz AND paid_at<$2::timestamptz) AS card_pgi_fee_minor_eur,"+
+      " (SELECT count(*)::int FROM customer_referrals WHERE claimed_at>=$1::timestamptz AND claimed_at<$2::timestamptz) AS referrals_claimed,"+
+      " (SELECT count(*)::int FROM customer_referral_rewards WHERE earned_at>=$1::timestamptz AND earned_at<$2::timestamptz) AS referral_rewards_earned,"+
+      " (SELECT count(*)::int FROM transactional_email_deliveries WHERE state IN ('failed','bounced','complained','suppressed') AND updated_at>=$1::timestamptz AND updated_at<$2::timestamptz) AS emails_attention,"+
+      " (SELECT count(*)::int FROM transactional_email_deliveries WHERE state IN ('pending','delayed')) AS emails_pending,"+
+      " (SELECT count(*)::int FROM outbox_events WHERE published_at IS NULL) AS outbox_pending,"+
+      " (SELECT count(*)::int FROM tenant_operational_alerts WHERE state<>'resolved' AND severity='critical') AS operational_critical_open",
+      [from.toISOString(),to.toISOString()]
+    ))[0]||{};
+    const out={};
+    for(const [key,value] of Object.entries(row))out[key]=Number(value||0);
+    return out;
+  }
+
+  async completeDailyInternalReport(reportDate,{messageId=null,snapshot={}}={}){
+    const date=String(reportDate||"").trim();
+    const rows=await this.sql.unsafe(
+      "UPDATE platform_daily_reports SET state='sent',sent_at=now(),provider_email_id=$2,snapshot=$3::jsonb,last_error_code=NULL,updated_at=now()"+
+      " WHERE report_date=$1::date AND state='sending' RETURNING report_date::text,state,attempt_count,sent_at,provider_email_id",
+      [date,messageId?String(messageId).slice(0,200):null,JSON.stringify(snapshot||{})]
+    );
+    if(!rows[0])throw problem(409,"DAILY_REPORT_NOT_CLAIMED");
+    return rows[0];
+  }
+
+  async failDailyInternalReport(reportDate,errorCode,snapshot={}){
+    const date=String(reportDate||"").trim(),code=String(errorCode||"DAILY_REPORT_SEND_FAILED").slice(0,120);
+    const rows=await this.sql.unsafe(
+      "UPDATE platform_daily_reports SET state='failed',snapshot=$2::jsonb,last_error_code=$3,updated_at=now()"+
+      " WHERE report_date=$1::date AND state='sending' RETURNING report_date::text,state,attempt_count,last_error_code",
+      [date,JSON.stringify(snapshot||{}),code]
+    );
+    return rows[0]||null;
+  }
+
   async close(){
     if(this.readSql!==this.sql)await this.readSql.end({timeout:5});
     await this.sql.end({timeout:5});
