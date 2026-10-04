@@ -319,15 +319,17 @@ export function normalizePortabilityPriorityEvent(event){
     if(String(meta.payment_kind||"")!=="portability_priority")return null;
     const publicId=String(meta.priority_payment_public_id||"");
     if(!/^[0-9a-f-]{36}$/i.test(publicId))return null;
-    const amount=type==="charge.refunded"?Number(obj.amount_refunded):Number(obj.amount),currency=String(obj.currency||meta.currency||"").toUpperCase();
+    const amount=Number(obj.amount),refunded=type==="charge.refunded"?Number(obj.amount_refunded):0,currency=String(obj.currency||meta.currency||"").toUpperCase();
+    const fullyRefunded=type==="charge.refunded"&&Number.isInteger(amount)&&amount>0&&Number.isInteger(refunded)&&refunded>=amount;
     return {
       provider:"stripe",
       provider_event_id:String(event.id||""),
       event_type:type,
       event_time:eventIso(event),
       payment_public_id:publicId,
-      status:type==="charge.refunded"?"refunded":"disputed",
+      status:type==="charge.refunded"?(fullyRefunded?"refunded":"partially_refunded"):"disputed",
       amount_minor:Number.isInteger(amount)?amount:null,
+      refunded_amount_minor:Number.isInteger(refunded)&&refunded>=0?refunded:null,
       currency:/^[A-Z]{3}$/.test(currency)?currency:null,
       provider_checkout_session_reference:null,
       provider_payment_intent_reference:idValue(obj.payment_intent)
