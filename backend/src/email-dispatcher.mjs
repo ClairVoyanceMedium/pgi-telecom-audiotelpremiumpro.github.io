@@ -89,6 +89,10 @@ export async function applyResendWebhookEvent(store,verified){
   if(!store?.sql)throw failure(503,"EMAIL_DELIVERY_STORE_UNAVAILABLE");
   const event=verified?.event||{},type=String(event.type||""),data=event.data||{};
   const svixId=String(verified?.svixId||""),emailId=String(data.email_id||data.id||"");
+  const payloadSha256=String(verified?.payloadSha256||"").toLowerCase();
+  if(!svixId)throw failure(400,"RESEND_WEBHOOK_ID_REQUIRED");
+  if(!emailId)throw failure(400,"RESEND_WEBHOOK_EMAIL_ID_REQUIRED");
+  if(!/^[a-f0-9]{64}$/.test(payloadSha256))throw failure(400,"RESEND_WEBHOOK_PAYLOAD_HASH_INVALID");
   const providerMessageId=normalizeProviderMessageId(data.message_id);
   const occurredAt=event.created_at&&Number.isFinite(Date.parse(event.created_at))?new Date(event.created_at).toISOString():new Date().toISOString();
   const rawTo=Array.isArray(data.to)?data.to[0]:data.to;
@@ -96,9 +100,9 @@ export async function applyResendWebhookEvent(store,verified){
   const bounceType=String(data?.bounce?.type||data?.bounce_type||"").trim().toLowerCase();
   return store.sql.begin(async tx=>{
     const inserted=await tx.unsafe(
-      "INSERT INTO transactional_email_webhook_events(svix_id,event_type,provider_email_id,payload_sha256,occurred_at) VALUES($1,$2,$3,$4,$5::timestamptz)"+
+      "INSERT INTO transactional_email_webhook_events(svix_id,event_type,provider_email_id,payload_sha256,occurred_at) VALUES($1::text,$2::text,$3::text,$4::char(64),$5::timestamptz)"+
       " ON CONFLICT(svix_id) DO NOTHING RETURNING svix_id",
-      [svixId,type,emailId,String(verified.payloadSha256||""),occurredAt]
+      [svixId,type,emailId,payloadSha256,occurredAt]
     );
     if(!inserted.length)return {duplicate:true};
     const state=webhookState(type);
@@ -107,13 +111,13 @@ export async function applyResendWebhookEvent(store,verified){
       const allowed=new Set(["sent_at","delivered_at","delayed_at","clicked_at","bounced_at","complained_at","failed_at","suppressed_at"]);
       if(!allowed.has(timestampColumn))throw failure(500,"EMAIL_WEBHOOK_STATE_INVALID");
       await tx.unsafe(
-        "UPDATE transactional_email_deliveries SET state=$2,"+timestampColumn+"=COALESCE("+timestampColumn+",$3::timestamptz),updated_at=now() WHERE provider_email_id=$1",
+        "UPDATE transactional_email_deliveries SET state=$2::text,"+timestampColumn+"=COALESCE("+timestampColumn+",$3::timestamptz),updated_at=now() WHERE provider_email_id=$1::text",
         [emailId,state,occurredAt]
       );
     }
     if(providerMessageId){
       await tx.unsafe(
-        "UPDATE transactional_email_deliveries SET metadata=COALESCE(metadata,'{}'::jsonb)||jsonb_build_object('provider_message_id',$2::text),updated_at=now() WHERE provider_email_id=$1",
+        "UPDATE transactional_email_deliveries SET metadata=COALESCE(metadata,'{}'::jsonb)||jsonb_build_object('provider_message_id',$2::text),updated_at=now() WHERE provider_email_id=$1::text",
         [emailId,providerMessageId]
       );
     }
@@ -121,12 +125,12 @@ export async function applyResendWebhookEvent(store,verified){
     if(recipient&&(permanentBounce||type==="email.complained"||type==="email.suppressed")){
       const reason=permanentBounce?"hard_bounce":type==="email.complained"?"complaint":"provider_suppressed";
       await tx.unsafe(
-        "INSERT INTO transactional_email_suppressions(recipient_hash,reason,source_provider_email_id,first_seen_at,last_seen_at) VALUES($1,$2,$3,$4::timestamptz,$4::timestamptz)"+
+        "INSERT INTO transactional_email_suppressions(recipient_hash,reason,source_provider_email_id,first_seen_at,last_seen_at) VALUES($1::char(64),$2::text,$3::text,$4::timestamptz,$4::timestamptz)"+
         " ON CONFLICT(recipient_hash) DO UPDATE SET reason=EXCLUDED.reason,source_provider_email_id=EXCLUDED.source_provider_email_id,last_seen_at=EXCLUDED.last_seen_at",
         [emailHash(recipient),reason,emailId,occurredAt]
       );
     }
-    await tx.unsafe("UPDATE transactional_email_webhook_events SET processed_at=now() WHERE svix_id=$1",[svixId]);
+    await tx.unsafe("UPDATE transactional_email_webhook_events SET processed_at=now() WHERE svix_id=$1::text",[svixId]);
     return {duplicate:false,email_id:emailId,event_type:type,state,suppressed:Boolean(recipient&&(permanentBounce||type==="email.complained"||type==="email.suppressed"))};
   });
 }
@@ -271,8 +275,8 @@ async function markEventReceipt(store,outboxId,disposition,errorCode){
 function webhookState(type){
   return ({
     "email.sent":"sent","email.delivered":"delivered","email.delivery_delayed":"delayed","email.bounced":"bounced",
-    "email.complained":"complained","email.failed":"failed","email.suppressed":"suppressed","email.clicked":"clicked","email.received":"received"
-  })[type]||"accepted";
+    "email.complained":"complained","email.failed":"failed","email.suppressed":"suppressed","email.clicked":"clicked"
+  })[type]||null;
 }
 function webhookTimestampColumn(type){
   return ({
