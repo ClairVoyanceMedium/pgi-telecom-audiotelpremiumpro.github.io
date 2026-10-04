@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import {createHmac} from "node:crypto";
 import {verifyResendWebhook} from "../backend/src/resend-webhook.mjs";
 
@@ -25,4 +26,10 @@ test("Resend webhook rejects bad and expired signatures",async()=>{
   bad.headers["svix-signature"]="v1,"+Buffer.from("bad").toString("base64");
   await assert.rejects(()=>verifyResendWebhook(bad,{resendWebhookSecret:secret,resendWebhookToleranceSeconds:300}),e=>e.code==="RESEND_SIGNATURE_INVALID");
   await assert.rejects(()=>verifyResendWebhook(reqFor(event,secret,Math.floor(Date.now()/1000)-1000),{resendWebhookSecret:secret,resendWebhookToleranceSeconds:300}),e=>e.code==="RESEND_SIGNATURE_EXPIRED");
+});
+
+
+test("webhook delivery ledger types provider message id explicitly for Postgres",()=>{
+  const dispatcher=fs.readFileSync("backend/src/email-dispatcher.mjs","utf8");
+  assert.match(dispatcher,/jsonb_build_object\('provider_message_id',\$2::text\)/);
 });
