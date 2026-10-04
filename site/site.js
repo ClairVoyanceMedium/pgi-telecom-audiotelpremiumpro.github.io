@@ -120,3 +120,11 @@ if(!box)return;
 const head=box.querySelector(".hero-savings-head");
 if(head&&!head.querySelector(".public-demo-badge"))head.insertAdjacentHTML("beforeend",'<span class="public-demo-badge">SIMULATION · NON CONTRACTUELLE</span>');
 })();;
+
+
+;(()=>{
+  let year;
+  try{year=new Intl.DateTimeFormat("fr-FR",{year:"numeric",timeZone:"Europe/Paris"}).format(new Date());}
+  catch(_e){year=String(new Date().getFullYear());}
+  document.querySelectorAll("[data-current-year]").forEach(el=>{el.textContent=year;});
+})();
