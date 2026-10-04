@@ -50,7 +50,7 @@ test("Stripe Checkout live fails closed before price lookup when account activat
     await assert.rejects(
       ()=>createStripeCheckout(
         {externalBillingEnabled:true,stripeSecretKey:"sk_live_checkout_block_"+ "c".repeat(24),stripeWebhookSecret:"whsec_live",stripeLiveMode:true,stripeApiVersion:"2026-08-26.dahlia",publicBaseUrl:"https://pgi.example",stripePriceLookupKey:"pgi_audiotel_premium_pro_monthly_eur"},
-        {tenant:{id:"22222222-2222-4222-8222-222222222222",billing_email:"client@example.com"},offer:{price_version_id:42,plan_key:"external-sva-access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,market_id:null},subscription:null},
+        {tenant:{id:"22222222-2222-4222-8222-222222222222",billing_email:"client@example.com"},offer:{price_version_id:42,plan_key:"external-sva-access",currency:"EUR",amount_minor:490,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,market_id:null},subscription:null},
         "idem-live-blocked"
       ),
       e=>e.code==="PAYMENT_ACCOUNT_NOT_READY"&&e.status===503
@@ -96,7 +96,7 @@ test("Stripe subscription events preserve tenant and price binding",()=>{
     data:{object:{
       id:"sub_123",customer:"cus_123",status:"active",cancel_at_period_end:false,
       metadata:{tenant_public_id:"22222222-2222-4222-8222-222222222222",price_version_id:"42",market_id:"7"},
-      items:{data:[{current_period_start:now,current_period_end:periodEnd,price:{id:"price_123",unit_amount:300,currency:"eur",recurring:{interval:"month",interval_count:1}}}]}
+      items:{data:[{current_period_start:now,current_period_end:periodEnd,price:{id:"price_123",unit_amount:490,currency:"eur",recurring:{interval:"month",interval_count:1}}}]}
     }}
   };
   const n=normalizeStripeSubscriptionEvent(event);
@@ -105,7 +105,7 @@ test("Stripe subscription events preserve tenant and price binding",()=>{
   assert.equal(n.tenant_public_id,"22222222-2222-4222-8222-222222222222");
   assert.equal(n.price_version_id,42);
   assert.equal(n.provider_price_reference,"price_123");
-  assert.equal(n.provider_price_amount_minor,300);
+  assert.equal(n.provider_price_amount_minor,490);
   assert.equal(n.provider_price_currency,"EUR");
   assert.equal(n.provider_billing_interval,"month");
   assert.equal(n.status,"active");
@@ -119,7 +119,7 @@ test("Stripe renewal invoices refresh the subscription before changing billing a
     return {ok:true,status:200,json:async()=>({
       id:"sub_Invoice123",customer:"cus_invoice_1",status:"active",cancel_at_period_end:false,
       metadata:{tenant_public_id:"22222222-2222-4222-8222-222222222222",price_version_id:"42"},
-      items:{data:[{current_period_start:now,current_period_end:periodEnd,price:{id:"price_123",unit_amount:300,currency:"eur",recurring:{interval:"month",interval_count:1}}}]}
+      items:{data:[{current_period_start:now,current_period_end:periodEnd,price:{id:"price_123",unit_amount:490,currency:"eur",recurring:{interval:"month",interval_count:1}}}]}
     })};
   };
   try{
@@ -178,7 +178,7 @@ test("Stripe Checkout verifies the remote price before creating a hosted subscri
   globalThis.fetch=async(url,init={})=>{
     calls.push({url:String(url),init});
     if(String(url).includes("/v1/prices?")){
-      return {ok:true,status:200,json:async()=>({data:[{id:"price_live_match",active:true,type:"recurring",currency:"eur",unit_amount:300,tax_behavior:"inclusive",recurring:{interval:"month",interval_count:1}}]})};
+      return {ok:true,status:200,json:async()=>({data:[{id:"price_live_match",active:true,type:"recurring",currency:"eur",unit_amount:490,tax_behavior:"inclusive",recurring:{interval:"month",interval_count:1}}]})};
     }
     if(String(url).endsWith("/v1/checkout/sessions")){
       return {ok:true,status:200,json:async()=>({id:"cs_test_123",url:"https://checkout.stripe.com/c/pay/cs_test_123"})};
@@ -190,7 +190,7 @@ test("Stripe Checkout verifies the remote price before creating a hosted subscri
       {stripeSecretKey:"sk_test_example",stripeApiVersion:"2026-08-26.dahlia",publicBaseUrl:"https://pgi.example",stripePriceLookupKey:"pgi_audiotel_premium_pro_monthly_eur"},
       {
         tenant:{id:"22222222-2222-4222-8222-222222222222",billing_email:"client@example.com"},
-        offer:{price_version_id:42,plan_key:"external-sva-access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,market_id:null},
+        offer:{price_version_id:42,plan_key:"external-sva-access",currency:"EUR",amount_minor:490,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,market_id:null},
         subscription:null
       },
       "idem-test-1",
@@ -226,16 +226,16 @@ test("Stripe paid invoice exposes only GA identifiers and verified payment facts
   globalThis.fetch=async()=>({ok:true,status:200,json:async()=>({
     id:"sub_ga4",customer:"cus_ga4",status:"active",cancel_at_period_end:false,
     metadata:{tenant_public_id:"22222222-2222-4222-8222-222222222222",price_version_id:"42",ga_client_id:"123456789.987654321",ga_session_id:"1790630000"},
-    items:{data:[{current_period_start:now,current_period_end:now+2592000,price:{id:"price_ga4",unit_amount:300,currency:"eur",recurring:{interval:"month",interval_count:1}}}]}
+    items:{data:[{current_period_start:now,current_period_end:now+2592000,price:{id:"price_ga4",unit_amount:490,currency:"eur",recurring:{interval:"month",interval_count:1}}}]}
   })});
   try{
     const paid=await normalizeStripeBillingEvent({
       id:"evt_ga4_paid",type:"invoice.paid",created:now,
-      data:{object:{id:"in_ga4_paid",amount_paid:300,currency:"eur",billing_reason:"subscription_create",parent:{subscription_details:{subscription:"sub_ga4"}}}}
+      data:{object:{id:"in_ga4_paid",amount_paid:490,currency:"eur",billing_reason:"subscription_create",parent:{subscription_details:{subscription:"sub_ga4"}}}}
     },{stripeSecretKey:"sk_test_example",stripeApiVersion:"2026-08-26.dahlia"});
     assert.equal(paid.ga_client_id,"123456789.987654321");
     assert.equal(paid.ga_session_id,"1790630000");
-    assert.equal(paid.provider_invoice_amount_paid_minor,300);
+    assert.equal(paid.provider_invoice_amount_paid_minor,490);
     assert.equal(paid.provider_invoice_currency,"EUR");
     assert.equal(paid.provider_invoice_billing_reason,"subscription_create");
   }finally{globalThis.fetch=original;}
