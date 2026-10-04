@@ -172,11 +172,15 @@ export function createBackend(options={}){
         const normalized=await normalizeStripeBillingEvent(event,config);
         if(!normalized)return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,ignored:true,type:String(event.type||"")});
         const result=await store.applySubscriptionBillingEvent(normalized);
-        if(normalized.status==="active")await syncHubSpotTenantLifecycle(store,normalized.tenant_public_id,"En attente d’ouverture","billing_active");
+        let onboarding=null;
+        if(normalized.status==="active"){
+          onboarding=await autoAdvanceTenantAfterBilling(store,config,normalized.tenant_public_id);
+          await syncHubSpotTenantLifecycle(store,normalized.tenant_public_id,"En attente d’ouverture","billing_active");
+        }
         const analytics=normalized.event_type==="invoice.paid"
           ?await deliverGa4StripeEvent(store,config,"purchase",normalized.provider_event_id,normalized.provider_invoice_reference,buildGa4PurchaseFromStripe(normalized))
           :{enabled:false,sent:false};
-        return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,duplicate:Boolean(result.duplicate),analytics});
+        return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,duplicate:Boolean(result.duplicate),analytics,onboarding});
       }
       if(method==="POST"&&pathname==="/api/v1/email/resend/webhook"){
         if(!config.transactionalEmailEnabled||!config.resendWebhookSecret)return done(res,metrics,started,"email.resend_webhook",404,{error:{code:"RESEND_WEBHOOK_DISABLED"}});
@@ -262,13 +266,31 @@ export function createBackend(options={}){
         if(String(body.website||"").trim())return done(res,metrics,started,"public.hubspot_lead",202,{accepted:false});
         const pageUri=String(body.page_uri||"").trim()||(config.publicBaseUrl?config.publicBaseUrl+"/demande-ouverture/":"https://audiotel-premium-pro.com/demande-ouverture/");
         const hutk=String(parseCookies(req.headers.cookie||"").hubspotutk||"").trim();
-        let formResult=null,commercialResult=null;
+        let formResult=null,commercialResult=null,dossier=null,customerAccess=null;
         try{formResult=await submitHubSpotLead(body,{pageUri,pageName:"Demande d’ouverture Audiotel Premium Pro",hutk});}
         catch(error){logHubSpotSyncFailure("public_lead_form",error);}
         try{commercialResult=await syncHubSpotCommercialLead(body,{pageUri,pageName:"Demande d’ouverture Audiotel Premium Pro",hutk,commercialStatus:"Nouveau prospect"});}
         catch(error){logHubSpotSyncFailure("public_lead_commercial",error);}
         const accepted=Boolean(formResult?.ok||commercialResult?.synced);
-        if(accepted&&config.transactionalEmailEnabled){
+        if(accepted&&typeof store.ensureLeadTenant==="function"){
+          try{
+            dossier=await store.ensureLeadTenant({
+              ...body,
+              country_code:String(body.country_code||"FR").trim().toUpperCase()||"FR",
+              preferred_locale:String(body.preferred_locale||req.headers["accept-language"]||"fr-FR").split(",")[0].trim().slice(0,35),
+              timezone:String(body.timezone||"Europe/Paris").trim().slice(0,80)
+            });
+            try{
+              commercialResult=await syncHubSpotCommercialLead({...body,dossier_ref:dossier.dossier_ref},{
+                pageUri,pageName:"Demande d’ouverture Audiotel Premium Pro",hutk,commercialStatus:"Dossier en préparation"
+              });
+            }catch(error){logHubSpotSyncFailure("public_lead_dossier",error);}
+            customerAccess=await ensureCustomerPortalAccess(store,config,dossier.public_id,"opening-auto");
+          }catch(error){
+            process.stderr.write(JSON.stringify({level:"warn",event:"opening_dossier_automation_failed",code:String(error?.code||"OPENING_DOSSIER_FAILED"),status:Number(error?.status)||null})+"\n");
+          }
+        }
+        if(accepted&&config.transactionalEmailEnabled&&customerAccess?.email_sent!==true){
           try{
             const locale=String(body.preferred_locale||req.headers["accept-language"]||"fr-FR").split(",")[0].trim().slice(0,35);
             const recipient=normalizeEmail(body.email);
@@ -278,7 +300,15 @@ export function createBackend(options={}){
             await sendTransactionalEmail(config,{to:recipient,name,senderRole:"notifications",templateKey:"lead_received",data:{name,locale},idempotencyKey:idem,internalEventId:idem});
           }catch(error){logSecurityEmailFailure("lead_received",error);}
         }
-        return done(res,metrics,started,"public.hubspot_lead",202,{accepted,provider_status:formResult?.status||null,commercial_sync:Boolean(commercialResult?.synced)});
+        return done(res,metrics,started,"public.hubspot_lead",202,{
+          accepted,
+          provider_status:formResult?.status||null,
+          commercial_sync:Boolean(commercialResult?.synced),
+          dossier_ref:dossier?.dossier_ref||null,
+          dossier_created:Boolean(dossier?.created),
+          client_portal_invited:Boolean(customerAccess?.invitation_created||customerAccess?.reason==="pending_invitation"),
+          access_email_sent:Boolean(customerAccess?.email_sent)
+        });
       }
 
       if(method==="POST"&&pathname==="/api/v1/public/withdrawal"){
@@ -408,7 +438,14 @@ export function createBackend(options={}){
         const identity=await verifyGoogleIdToken(String(body.credential||""),config.googleClientId);
         const rawInvite=String(body.invite||"").trim();
         const inviteHash=rawInvite?createHash("sha256").update(rawInvite).digest("hex"):null;
-        const auth=await store.customerGoogleSignIn(identity,inviteHash);
+        const legal=rawInvite?{
+          accepted:body.legal_terms_accepted===true,
+          privacy_acknowledged:body.privacy_notice_acknowledged===true,
+          document_version:String(body.legal_version||"")
+        }:{};
+        if(rawInvite&&(legal.accepted!==true||legal.privacy_acknowledged!==true)){const e=new Error("Legal acceptance required");e.status=400;e.code="REGISTRATION_LEGAL_TERMS_REQUIRED";throw e;}
+        if(rawInvite&&legal.document_version!=="2026-09-26-b2b-b2c-v4"){const e=new Error("Legal version outdated");e.status=409;e.code="LEGAL_DOCUMENT_VERSION_OUTDATED";throw e;}
+        const auth=await store.customerGoogleSignIn(identity,inviteHash,legal);
         const memberships=(auth.memberships||[]).filter(x=>x.status==="active"&&["active","pending"].includes(x.tenant_status));
         if(!memberships.length&&auth.account_pending){
           authBuckets.delete(authKey);
@@ -531,8 +568,12 @@ export function createBackend(options={}){
         const rawToken=String(body.token||"").trim();
         const password=String(body.password||"");
         if(rawToken.length<32||password.length<12){const e=new Error("Invalid activation");e.status=400;e.code="INVALID_ACTIVATION";throw e;}
+        if(body.legal_terms_accepted!==true||body.privacy_notice_acknowledged!==true){const e=new Error("Legal acceptance required");e.status=400;e.code="REGISTRATION_LEGAL_TERMS_REQUIRED";throw e;}
+        if(String(body.legal_version||"")!=="2026-09-26-b2b-b2c-v4"){const e=new Error("Legal version outdated");e.status=409;e.code="LEGAL_DOCUMENT_VERSION_OUTDATED";throw e;}
         const tokenHash=createHash("sha256").update(rawToken).digest("hex");
-        const activated=await store.activateCustomerPortalInvitation(tokenHash,String(body.display_name||""),hashPassword(password));
+        const activated=await store.activateCustomerPortalInvitation(tokenHash,String(body.display_name||""),hashPassword(password),{
+          accepted:true,privacy_acknowledged:true,document_version:"2026-09-26-b2b-b2c-v4"
+        });
         authBuckets.delete(authKey);
         const issued=issueSession({
           secret:config.sessionSecret,
@@ -2484,6 +2525,31 @@ function openEventStream(req,res,eventBus,requestId,config,clients,filter=null){
   const heartbeat=setInterval(()=>{if(!res.destroyed)res.write(": ping\n\n");},15000);
   heartbeat.unref?.();
   req.on("close",()=>{clearInterval(heartbeat);unsubscribe();clients?.delete(res);});
+}
+async function ensureCustomerPortalAccess(store,config,tenantPublicId,reason="automatic"){
+  if(!tenantPublicId||typeof store?.tenantControlDetail!=="function"||typeof store?.createCustomerPortalInvitation!=="function")return {invitation_created:false,email_sent:false,reason:"access_automation_unavailable"};
+  const detail=await store.tenantControlDetail(String(tenantPublicId));
+  const users=Array.isArray(detail?.users)?detail.users:[];
+  if(users.some(x=>String(x.membership_status||"")==="active"&&String(x.status||"")==="active"))return {invitation_created:false,email_sent:false,reason:"existing_user"};
+  const now=Date.now(),invitations=Array.isArray(detail?.invitations)?detail.invitations:[];
+  if(invitations.some(x=>String(x.status||"")==="pending"&&Date.parse(String(x.expires_at||""))>now))return {invitation_created:false,email_sent:false,reason:"pending_invitation"};
+  const email=String(detail?.tenant?.billing_email||"").trim().toLowerCase();
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return {invitation_created:false,email_sent:false,reason:"missing_billing_email"};
+  const token=randomBytes(32).toString("base64url");
+  const tokenHash=createHash("sha256").update(token).digest("hex");
+  const invitation=await store.createCustomerPortalInvitation(String(tenantPublicId),{email,role:"owner",expires_in_hours:72},tokenHash);
+  const emailSent=await sendCustomerAccessInvitation(config,{...invitation,display_name:detail?.tenant?.display_name,preferred_locale:detail?.tenant?.preferred_locale},token,reason);
+  return {invitation_created:true,email_sent:emailSent,dossier_ref:invitation?.dossier_ref||detail?.tenant?.dossier_ref||null};
+}
+async function autoAdvanceTenantAfterBilling(store,config,tenantPublicId){
+  if(!tenantPublicId||typeof store?.setTenantStatus!=="function")return {activated:false,reason:"tenant_unavailable"};
+  try{
+    const tenant=await store.setTenantStatus(String(tenantPublicId),"active",{sub:"system"},"Activation automatique après confirmation de l’abonnement payé");
+    const access=await ensureCustomerPortalAccess(store,config,String(tenantPublicId),"billing-auto");
+    return {activated:String(tenant?.status||"")==="active",changed:tenant?.changed!==false,customer_access:access};
+  }catch(error){
+    return {activated:false,reason:String(error?.code||"TENANT_AUTO_ACTIVATION_BLOCKED")};
+  }
 }
 async function syncHubSpotTenantLifecycle(store,tenantPublicId,commercialStatus,stage){
   if(!tenantPublicId)return null;
