@@ -45,7 +45,8 @@ CREATE TABLE tenant_referrals (
   rewarded_at timestamptz,
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   CHECK (referrer_tenant_id <> referred_tenant_id),
-  CHECK ((status='qualified') = (qualified_at IS NOT NULL))
+  CHECK (status<>'qualified' OR qualified_at IS NOT NULL),
+  CHECK (reward_status<>'granted' OR rewarded_at IS NOT NULL)
 );
 
 CREATE INDEX tenant_referrals_referrer_idx
@@ -56,7 +57,9 @@ CREATE INDEX tenant_referrals_status_idx
 CREATE FUNCTION pgi_qualify_referral_when_tenant_activates()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $$
+AS $
+DECLARE
+  v_referral_id bigint;
 BEGIN
   IF NEW.status='active' AND OLD.status IS DISTINCT FROM 'active' THEN
     UPDATE tenant_referrals
@@ -68,11 +71,25 @@ BEGIN
       END,
       qualified_at=COALESCE(qualified_at,now())
     WHERE referred_tenant_id=NEW.id
-      AND status='attributed';
+      AND status='attributed'
+    RETURNING id INTO v_referral_id;
+
+    IF v_referral_id IS NOT NULL THEN
+      INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details)
+      VALUES(
+        NEW.id,NULL,'referral.qualified','tenant_referral',v_referral_id::text,
+        jsonb_build_object('referred_tenant_id',NEW.id,'reward_status','pending_policy')
+      );
+      INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload)
+      VALUES(
+        NEW.id,'referral.qualified','tenant_referral',v_referral_id::text,
+        jsonb_build_object('referral_id',v_referral_id,'referred_tenant_id',NEW.id)
+      );
+    END IF;
   END IF;
   RETURN NEW;
 END;
-$$;
+$;
 
 CREATE TRIGGER tenants_referral_qualification
 AFTER UPDATE OF status ON tenants
