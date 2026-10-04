@@ -526,3 +526,23 @@ Les transferts Resend vers la boîte interne utilisent l’expéditeur d’origi
 Les demandes de support ne créent jamais automatiquement un deal commercial. Un dossier APP existant peut être affiché comme contexte, mais le support reste porté par un ticket.
 
 Les objectifs de première réponse et de résolution des tickets internes sont calculés en minutes ouvrées Europe/Paris, du lundi au vendredi de 08:30 à 19:00. Les niveaux exposés au client sont formulés en termes d’impact plutôt qu’en priorité technique brute.
+
+## Programme de parrainage
+
+Le parrainage est un module indépendant et désactivable globalement. La désactivation est fail-closed : aucun nouveau code ni aucune nouvelle attribution n'est accepté, y compris lorsqu'un ancien lien circule encore. Les attributions déjà enregistrées et leurs conditions financières figées restent conservées pour audit.
+
+### GET /api/v1/platform/referral-program
+Lecture administrateur/finance/lecture seule de l'état global, des conditions courantes et des compteurs agrégés.
+
+### POST /api/v1/platform/referral-program
+Réservé à l'administrateur, protégé CSRF et idempotent. Active ou désactive le programme et fixe la récompense. L'activation est refusée si aucune récompense positive n'est définie.
+
+### GET /api/v1/customer/referrals
+Vue du parrain : état du programme, code/lien seulement lorsque le partage est autorisé, compteurs et historique non nominatif.
+
+### POST /api/v1/customer/referrals/code
+Réservé au propriétaire ou administrateur du compte client, protégé CSRF et idempotent. Génère un code stable uniquement lorsque le programme global est actif.
+
+### Qualification
+Une demande d'ouverture ou une création de compte ne déclenche jamais de récompense. Le parrainage devient qualifié uniquement lorsque le tenant filleul est actif et qu'au moins une affectation SVA de ce tenant est réellement au statut `active`. La récompense créée utilise le montant, la devise, le libellé et la version des conditions figés au moment de l'attribution initiale.
+
