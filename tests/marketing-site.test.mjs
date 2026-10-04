@@ -328,7 +328,7 @@ test("homepage bottom quick navigation prioritizes the highest-value commercial 
   assert.match(html,/DÉJÀ UN NUMÉRO SURTAXÉ \?/);
   assert.match(html,/class="revenue-quick-nav"/);
   assert.match(html,/Demander ma portabilité/);
-  assert.match(html,/Demander un numéro/);
+  assert.match(html,/Demander votre numéro surtaxé/);
   assert.match(html,/Comparer mon offre/);
   assert.match(html,/Paiement CB/);
   assert.match(html,/Voir le tarif/);
