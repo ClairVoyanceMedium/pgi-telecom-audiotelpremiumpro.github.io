@@ -264,15 +264,11 @@ export function createBackend(options={}){
         requireSameOriginBrowser(req);
         const body=await readJson(req,config.bodyLimitBytes);
         if(String(body.website||"").trim())return done(res,metrics,started,"public.hubspot_lead",202,{accepted:false});
+        if(body.processing_consent!==true){const e=new Error("Processing consent required");e.status=400;e.code="HUBSPOT_PROCESSING_CONSENT_REQUIRED";throw e;}
         const pageUri=String(body.page_uri||"").trim()||(config.publicBaseUrl?config.publicBaseUrl+"/demande-ouverture/":"https://audiotel-premium-pro.com/demande-ouverture/");
         const hutk=String(parseCookies(req.headers.cookie||"").hubspotutk||"").trim();
         let formResult=null,commercialResult=null,dossier=null,customerAccess=null;
-        try{formResult=await submitHubSpotLead(body,{pageUri,pageName:"Demande d’ouverture Audiotel Premium Pro",hutk});}
-        catch(error){logHubSpotSyncFailure("public_lead_form",error);}
-        try{commercialResult=await syncHubSpotCommercialLead(body,{pageUri,pageName:"Demande d’ouverture Audiotel Premium Pro",hutk,commercialStatus:"Nouveau prospect"});}
-        catch(error){logHubSpotSyncFailure("public_lead_commercial",error);}
-        const accepted=Boolean(formResult?.ok||commercialResult?.synced);
-        if(accepted&&typeof store.ensureLeadTenant==="function"){
+        if(typeof store.ensureLeadTenant==="function"){
           try{
             dossier=await store.ensureLeadTenant({
               ...body,
@@ -280,15 +276,22 @@ export function createBackend(options={}){
               preferred_locale:String(body.preferred_locale||req.headers["accept-language"]||"fr-FR").split(",")[0].trim().slice(0,35),
               timezone:String(body.timezone||"Europe/Paris").trim().slice(0,80)
             });
-            try{
-              commercialResult=await syncHubSpotCommercialLead({...body,dossier_ref:dossier.dossier_ref},{
-                pageUri,pageName:"Demande d’ouverture Audiotel Premium Pro",hutk,commercialStatus:"Dossier en préparation"
-              });
-            }catch(error){logHubSpotSyncFailure("public_lead_dossier",error);}
-            customerAccess=await ensureCustomerPortalAccess(store,config,dossier.public_id,"opening-auto");
           }catch(error){
             process.stderr.write(JSON.stringify({level:"warn",event:"opening_dossier_automation_failed",code:String(error?.code||"OPENING_DOSSIER_FAILED"),status:Number(error?.status)||null})+"\n");
+            throw error;
           }
+        }
+        try{formResult=await submitHubSpotLead(body,{pageUri,pageName:"Demande d’ouverture Audiotel Premium Pro",hutk});}
+        catch(error){logHubSpotSyncFailure("public_lead_form",error);}
+        try{
+          commercialResult=await syncHubSpotCommercialLead({...body,...(dossier?.dossier_ref?{dossier_ref:dossier.dossier_ref}:{})},{
+            pageUri,pageName:"Demande d’ouverture Audiotel Premium Pro",hutk,commercialStatus:dossier?"Dossier en préparation":"Nouveau prospect"
+          });
+        }catch(error){logHubSpotSyncFailure("public_lead_commercial",error);}
+        const accepted=Boolean(dossier||formResult?.ok||commercialResult?.synced);
+        if(dossier){
+          try{customerAccess=await ensureCustomerPortalAccess(store,config,dossier.public_id,"opening-auto");}
+          catch(error){logSecurityEmailFailure("opening_access",error);}
         }
         if(accepted&&config.transactionalEmailEnabled&&customerAccess?.email_sent!==true){
           try{
