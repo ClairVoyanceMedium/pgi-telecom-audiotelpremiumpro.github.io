@@ -54,7 +54,12 @@ export class MemoryStore{
     this.nextBaselineId=1;
     this.nextSwitchId=1;
     this.subscriptionPrices=[{id:1,plan_key:"external-sva-access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,effective_from:"2026-09-20T19:33:00Z",effective_to:"2026-10-04T00:00:00Z"},{id:2,plan_key:"external-sva-access",currency:"EUR",amount_minor:490,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,effective_from:"2026-10-04T00:00:00Z",effective_to:null}];
-    this.subscriptionEvents=new Set();\n    this.referralFeature={enabled:false,configuration:{reward_minor:0,currency:"EUR",qualification:"paid_active_subscription"},updated_at:null};\n    this.referralCodes=new Map();\n    this.customerReferrals=[];\n    this.customerReferralRewards=[];\n    this.referralPaidTenants=new Set();
+    this.subscriptionEvents=new Set();
+    this.referralFeature={enabled:false,configuration:{reward_minor:0,currency:"EUR",qualification:"paid_active_subscription"},updated_at:null};
+    this.referralCodes=new Map();
+    this.customerReferrals=[];
+    this.customerReferralRewards=[];
+    this.referralPaidTenants=new Set();
     this.adminAlerts=[];
     this.customerExperiencePreferencesMap=new Map();
     this.customerLegalAcceptances=[];
