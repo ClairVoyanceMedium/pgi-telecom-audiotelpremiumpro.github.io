@@ -4833,7 +4833,6 @@ export class PostgresStore{
     if(row.service_level!=="priority")throw problem(409,"PORTABILITY_PRIORITY_NOT_SELECTED");
     if(["ported","rejected","cancelled"].includes(String(row.status||"")))throw problem(409,"PORTABILITY_PRIORITY_NOT_AVAILABLE");
     if(row.priority_payment_status==="paid")throw problem(409,"PORTABILITY_PRIORITY_ALREADY_PAID");
-    if(row.priority_checkout_session_reference&&row.priority_payment_status==="pending")throw problem(409,"PORTABILITY_PRIORITY_CHECKOUT_ALREADY_CREATED");
     if(Number(row.priority_fee_minor)!==990||String(row.priority_currency)!=="EUR")throw problem(409,"PORTABILITY_PRIORITY_PRICE_INVALID");
     return {...row,priority_fee_minor:Number(row.priority_fee_minor)};
   }
