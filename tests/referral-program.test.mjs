@@ -8,7 +8,7 @@ const memory=fs.readFileSync("backend/src/store-memory.mjs","utf8");
 const api=fs.readFileSync("assets/api-client.js","utf8");
 const customerApi=fs.readFileSync("assets/client-portal-api.js","utf8");
 const customerUi=fs.readFileSync("assets/client-referral.js","utf8");
-const adminUi=fs.readFileSync("assets/platform-admin-tools.js","utf8");
+const adminUi=fs.readFileSync("assets/platform-admin-tools.js","utf8");\nconst adminReferral=fs.readFileSync("assets/platform-referral-tools.js","utf8");
 const site=fs.readFileSync("site/site.js","utf8");
 const client=fs.readFileSync("client.html","utf8");
 
