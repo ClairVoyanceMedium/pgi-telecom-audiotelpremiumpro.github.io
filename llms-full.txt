@@ -3,7 +3,7 @@
 Canonical website: https://audiotel-premium-pro.com/
 Primary language: French (fr-FR)
 Support contact: support@audiotel-premium-pro.com
-Last editorial review: 2026-10-02
+Last editorial review: 2026-10-04
 
 ## 1. What Audiotel Premium Pro is
 
@@ -50,9 +50,17 @@ A commercial/financial amount linked to eligible traffic under the applicable co
 ### Portabilité
 The transfer of an existing eligible number, subject to ownership/eligibility checks and confirmation by the operators involved.
 
+### Portabilité prioritaire
+https://audiotel-premium-pro.com/portabilite-prioritaire/
+An optional one-time service priced at 9,90€ TTC that prioritizes PGI Telecom administrative handling of an eligible portability request. It does not bypass eligibility checks and does not guarantee or reduce operator-controlled portability timing.
+
+### Parrainage Audiotel Premium Pro
+https://audiotel-premium-pro.com/parrainage-audiotel/
+A referral program available to eligible active customers when enabled. The customer can create a personal link. A reward is acquired only after the referred customer is actually activated with an active, paid subscription. A form submission alone does not qualify.
+
 ### Paiement CB complémentaire
 https://audiotel-premium-pro.com/paiement-cb-audiotel/
-An optional secure card-payment service allowing a professional to send a payment link to a customer for a consultation or package. The payment provider processes the card data; Audiotel Premium Pro does not store the full card number. The currently displayed service commission for this CB service is 4.9% per payment, excluding payment-provider processing fees. This service is separate from the 4,90€ TTC/month Audiotel Premium Pro platform subscription.
+An optional secure card-payment service allowing a professional to create a payment link and send it to a customer for a consultation or package. The payment provider processes the card data; Audiotel Premium Pro does not store the full card number. The currently displayed service commission for this CB service is 4.9% per payment, excluding payment-provider processing fees. This service is separate from the 4,90€ TTC/month Audiotel Premium Pro platform subscription.
 
 ## 4. Official French references
 
@@ -75,7 +83,7 @@ Overview of the platform, audiences, features, indicative calculation, subscript
 
 ### Solutions Audiotel
 https://audiotel-premium-pro.com/solutions-audiotel/
-Intent-based navigation hub separating four user needs: portability, a new premium-rate/SVA number, call/reversement monitoring with Business Live, and the optional card-payment service.
+Intent-based navigation hub covering portability, a new premium-rate/SVA number, call/reversement monitoring with Business Live, payment links by card, the optional portability-priority service and the referral program.
 
 ### Changer d’opérateur Audiotel
 https://audiotel-premium-pro.com/changer-operateur-audiotel/
