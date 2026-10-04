@@ -990,6 +990,7 @@ export function createBackend(options={}){
         if(legal.priority_terms_accepted!==true||legal.privacy_notice_acknowledged!==true){const e=new Error("Priority portability legal acceptance required");e.status=400;e.code="PORTABILITY_PRIORITY_LEGAL_TERMS_REQUIRED";throw e;}
         if(legal.immediate_performance_requested!==true){const e=new Error("Immediate priority handling request required");e.status=400;e.code="IMMEDIATE_PERFORMANCE_REQUEST_REQUIRED";throw e;}
         if(String(legal.legal_version||"")!=="2026-09-26-b2b-b2c-v4"){const e=new Error("Legal document version outdated");e.status=409;e.code="LEGAL_DOCUMENT_VERSION_OUTDATED";throw e;}
+        if(String(legal.priority_terms_version||"")!=="2026-10-04-portability-priority-v1"){const e=new Error("Priority terms version outdated");e.status=409;e.code="PORTABILITY_PRIORITY_TERMS_OUTDATED";throw e;}
         const context=await store.customerSessionContext(customerActor);
         requireCustomerPermission(context,"billing.manage");
         const billing=await store.customerBillingPreparation(context.tenant_id);
@@ -1002,7 +1003,7 @@ export function createBackend(options={}){
         if(!provider.checkout_available){const code=provider.connection_state==="account_activation_required"?"PAYMENT_ACCOUNT_NOT_READY":provider.connection_state==="account_status_unavailable"?"PAYMENT_PROVIDER_UNAVAILABLE":"PAYMENT_PROVIDER_NOT_CONNECTED";return done(res,metrics,started,"customer.portability.priority_checkout",503,{error:{code},billing_provider:provider});}
         const requestId=Number(match.id);
         if(!Number.isInteger(requestId)||requestId<=0){const e=new Error("Invalid portability request");e.status=400;e.code="INVALID_PORTABILITY_REQUEST";throw e;}
-        const payload={tenant_id:context.tenant_id,portability_request_id:requestId,amount_minor:990,currency:"EUR",legal_version:"2026-09-26-b2b-b2c-v4",immediate_performance_requested:true};
+        const payload={tenant_id:context.tenant_id,portability_request_id:requestId,amount_minor:990,currency:"EUR",legal_version:"2026-09-26-b2b-b2c-v4",priority_terms_version:"2026-10-04-portability-priority-v1",immediate_performance_requested:true};
         const result=await store.idempotent(idempotencyKey,"customer.portability.priority_checkout",payload,async()=>{
           const prepared=await store.preparePortabilityPriorityPayment(context.tenant_id,requestId,context.id);
           try{
@@ -1013,7 +1014,7 @@ export function createBackend(options={}){
               document_version:"2026-09-26-b2b-b2c-v4",
               documents:{conditions:"/conditions-abonnement/",privacy:"/confidentialite/",retractation:"/retractation/",cancellation:"/resilier-contrat/"},
               immediate_performance_requested:true,
-              evidence:{source:"customer_portability_priority_checkout",stripe_checkout_created:true,portability_request_id:requestId,amount_minor:990,currency:"EUR",standard_portability_remains_free:true,external_operator_delay_guaranteed:false}
+              evidence:{source:"customer_portability_priority_checkout",stripe_checkout_created:true,priority_terms_version:"2026-10-04-portability-priority-v1",portability_request_id:requestId,amount_minor:990,currency:"EUR",standard_portability_remains_free:true,external_operator_delay_guaranteed:false}
             });
             return {payment:saved,checkout:{url:session.url,session_id:session.session_id,expires_at:session.expires_at},provider:"stripe"};
           }catch(error){
