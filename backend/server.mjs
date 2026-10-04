@@ -22,6 +22,7 @@ import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
 import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail,syncHubSpotCustomerIncident,ensureHubSpotCardPaymentSchema,syncHubSpotCardPaymentState} from "./src/hubspot-crm.mjs";
 import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
+import {referralProgramOverview,updateReferralProgram,ensureReferralCode,captureReferralAttribution,qualifyReferralForTenant,customerReferralOverview} from "./src/referral-program.mjs";
 
 export async function createDefaultBackend(){
   const config=loadConfig();
@@ -284,7 +285,7 @@ export function createBackend(options={}){
         if(body.processing_consent!==true){const e=new Error("Processing consent required");e.status=400;e.code="HUBSPOT_PROCESSING_CONSENT_REQUIRED";throw e;}
         const pageUri=String(body.page_uri||"").trim()||(config.publicBaseUrl?config.publicBaseUrl+"/demande-ouverture/":"https://audiotel-premium-pro.com/demande-ouverture/");
         const hutk=String(parseCookies(req.headers.cookie||"").hubspotutk||"").trim();
-        let formResult=null,commercialResult=null,dossier=null,customerAccess=null;
+        let formResult=null,commercialResult=null,dossier=null,customerAccess=null,referral=null;
         if(typeof store.ensureLeadTenant==="function"){
           try{
             dossier=await store.ensureLeadTenant({
@@ -298,6 +299,10 @@ export function createBackend(options={}){
             throw error;
           }
         }
+        if(dossier?.public_id&&body.referral_code){
+          try{referral=await captureReferralAttribution(store,body.referral_code,dossier.public_id,{source:"public_opening"});}
+          catch(error){process.stderr.write(JSON.stringify({level:"warn",event:"referral_capture_failed",code:String(error?.code||"REFERRAL_CAPTURE_FAILED")})+"\n");}
+        }
         try{formResult=await submitHubSpotLead(body,{pageUri,pageName:"Demande d’ouverture Audiotel Premium Pro",hutk});}
         catch(error){logHubSpotSyncFailure("public_lead_form",error);}
         try{
@@ -310,7 +315,7 @@ export function createBackend(options={}){
           try{customerAccess=await ensureCustomerPortalAccess(store,config,dossier.public_id,"opening-auto");}
           catch(error){logSecurityEmailFailure("opening_access",error);}
         }
-        if(accepted&&config.transactionalEmailEnabled&&customerAccess?.email_sent!==true){
+        if(accepted&&config.transactionalEmailEnabled){
           try{
             const locale=String(body.preferred_locale||req.headers["accept-language"]||"fr-FR").split(",")[0].trim().slice(0,35);
             const recipient=normalizeEmail(body.email);
@@ -327,7 +332,8 @@ export function createBackend(options={}){
           dossier_ref:dossier?.dossier_ref||null,
           dossier_created:Boolean(dossier?.created),
           client_portal_invited:Boolean(customerAccess?.invitation_created||customerAccess?.reason==="pending_invitation"),
-          access_email_sent:Boolean(customerAccess?.email_sent)
+          access_email_sent:Boolean(customerAccess?.email_sent),
+          referral_accepted:Boolean(referral?.accepted)
         });
       }
 
@@ -402,6 +408,10 @@ export function createBackend(options={}){
         if(password.length<12||password.length>256){const e=new Error("Invalid password");e.status=400;e.code="INVALID_NEW_PASSWORD";throw e;}
         if(String(body.website||"").trim()){const e=new Error("Invalid registration");e.status=400;e.code="REGISTRATION_REJECTED";throw e;}
         const registered=await store.selfServiceRegister(body,hashPassword(password));
+        if(body.referral_code&&registered?.tenant_public_id){
+          try{await captureReferralAttribution(store,body.referral_code,registered.tenant_public_id,{source:"customer_registration"});}
+          catch(error){process.stderr.write(JSON.stringify({level:"warn",event:"referral_registration_capture_failed",code:String(error?.code||"REFERRAL_CAPTURE_FAILED")})+"\n");}
+        }
         {
           const pageUri=config.publicBaseUrl?config.publicBaseUrl+"/client.html?register=1":"https://audiotel-premium-pro.com/client.html?register=1";
           const hutk=String(parseCookies(req.headers.cookie||"").hubspotutk||"").trim();
@@ -724,6 +734,22 @@ export function createBackend(options={}){
         const data=scopeCustomerPortalData(context,rawData);
         return done(res,metrics,started,"customer.portal",200,{user:publicCustomerActor(customerActor,context),...data,metric_resets:Object.fromEntries(Object.entries(metricRanges).map(([k,v])=>[k,v.baseline])),billing_offer:billing?.offer||null,billing_summary:billing?{subscription:billing.subscription,premium_call_access:billing.premium_call_access,premium_routing_access:billing.premium_routing_access,billing_currency:billing.billing_currency,pricing_state:billing.pricing_state,reference_offer:billing.reference_offer,checkout_prefill:billing.checkout_prefill,return_paths:billing.return_paths}:{restricted:true},billing_provider:billing?await billingProviderStatus(config):{connection_state:"restricted",checkout_available:false,customer_portal_available:false},server_time:new Date().toISOString()});
       }
+      if(method==="GET"&&pathname==="/api/v1/customer/referrals"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"overview.read");
+        return done(res,metrics,started,"customer.referrals",200,await customerReferralOverview(store,context.tenant_id));
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/referrals/code"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"overview.read");
+        if(!["owner","admin"].includes(String(context.customer_role||""))){const e=new Error("Customer admin required");e.status=403;e.code="CUSTOMER_ADMIN_REQUIRED";throw e;}
+        const payload={tenant_id:Number(context.tenant_id)};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer.referral.code.create",payload,()=>ensureReferralCode(store,context.tenant_id,context));
+        return done(res,metrics,started,"customer.referral_code",201,{...result.value,replayed:result.replayed});
+      }
+
       if(method==="GET"&&pathname==="/api/v1/customer/team"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
@@ -1664,6 +1690,10 @@ export function createBackend(options={}){
             }
           }
         }
+        if(String(result.value?.status||"")==="active"){
+          try{await qualifyReferralForTenant(store,match.id,{actor,trigger:"tenant_active"});}
+          catch(error){process.stderr.write(JSON.stringify({level:"warn",event:"referral_qualification_failed",code:String(error?.code||"REFERRAL_QUALIFICATION_FAILED")})+"\n");}
+        }
         return done(res,metrics,started,"platform.tenant_status",200,{...result.value,customer_access:customerAccess,replayed:result.replayed});
       }
 
@@ -1673,7 +1703,11 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes);
         const payload={id:match.id,status:body.status,reason:body.reason||""};
         const result=await store.idempotent(req.headers["idempotency-key"],"assignment.status",payload,()=>store.setTenantAssignmentStatus(match.id,body.status,actor,body.reason||""));
-        if(String(result.value?.status||"")==="active")await syncHubSpotTenantLifecycle(store,result.value?.tenant_public_id,"Client actif","assignment_active");
+        if(String(result.value?.status||"")==="active"){
+          await syncHubSpotTenantLifecycle(store,result.value?.tenant_public_id,"Client actif","assignment_active");
+          try{await qualifyReferralForTenant(store,result.value?.tenant_public_id,{actor,trigger:"assignment_active"});}
+          catch(error){process.stderr.write(JSON.stringify({level:"warn",event:"referral_qualification_failed",code:String(error?.code||"REFERRAL_QUALIFICATION_FAILED")})+"\n");}
+        }
         return done(res,metrics,started,"platform.assignment_status",200,{...result.value,replayed:result.replayed});
       }
 
@@ -1880,6 +1914,18 @@ export function createBackend(options={}){
         const payload={id:match.id};
         const result=await store.idempotent(req.headers["idempotency-key"],"billing.alert.acknowledge",payload,()=>store.acknowledgeAdminAlert(match.id,actor));
         return done(res,metrics,started,"platform.billing_alert_ack",200,{...result.value,replayed:result.replayed});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/platform/referral-program"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.referral_program",200,await referralProgramOverview(store));
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/platform/referral-program"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const result=await store.idempotent(req.headers["idempotency-key"],"referral.program.update",body,()=>updateReferralProgram(store,body,actor));
+        return done(res,metrics,started,"platform.referral_program_update",200,{...result.value,replayed:result.replayed});
       }
 
       if(method==="GET"&&pathname==="/api/v1/platform/subscription-billing"){

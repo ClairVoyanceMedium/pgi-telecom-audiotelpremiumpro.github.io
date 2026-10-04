@@ -26,7 +26,7 @@ function hydratePublicOrderIntent(){
     if(["individual","business"].includes(x.account_type))set("register-account-type",x.account_type);
     set("register-first-name",x.first_name);set("register-last-name",x.last_name);set("register-email",x.email);set("register-phone",x.phone);
     if(x.account_type==="business")set("register-company",x.company_name);
-    window.PGIOrderMeta={acquisition_source:"public_marketing_site",service_intent:String(x.service_intent||"").slice(0,40)};
+    window.PGIOrderMeta={acquisition_source:"public_marketing_site",service_intent:String(x.service_intent||"").slice(0,40),referral_code:String(x.referral_code||"").trim().toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,20)};
     sessionStorage.removeItem("pgi_public_order_intent_v1");
   }catch(_e){try{sessionStorage.removeItem("pgi_public_order_intent_v1")}catch(_x){}}
 }
