@@ -64,6 +64,7 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
       const created=await window.PGICustomerApi.createPortability(payload,window.PGICustomerApi.newIdempotencyKey());
       if(payload.service_level==="priority"){
         const checkout=await window.PGICustomerApi.priorityPortabilityCheckout(created.id,window.PGICustomerApi.newIdempotencyKey());
+        if(checkout?.paid){$("client-portability-form").reset();countriesReady=false;close();await reload();toast("Portabilité prioritaire activée.");return;}
         if(checkout?.checkout?.url){location.href=checkout.checkout.url;return;}
         throw Object.assign(new Error("PORTABILITY_PRIORITY_CHECKOUT_URL_MISSING"),{code:"PORTABILITY_PRIORITY_CHECKOUT_URL_MISSING"});
       }
@@ -76,10 +77,12 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
     if(busy)return;if(getDemo()){toast("Le paiement prioritaire n’est pas actif en démonstration.");return;}busy=true;
     try{
       const checkout=await window.PGICustomerApi.priorityPortabilityCheckout(id,window.PGICustomerApi.newIdempotencyKey());
+      if(checkout?.paid){await reload();toast("La priorité est activée.");return;}
       if(checkout?.checkout?.url){location.href=checkout.checkout.url;return;}
       toast("Le paiement prioritaire n’est pas disponible pour le moment.");
     }catch(err){
       if(err?.code==="PORTABILITY_PRIORITY_ALREADY_PAID")toast("La priorité est déjà activée.");
+      else if(err?.code==="PORTABILITY_PRIORITY_PAYMENT_PROCESSING")toast("Le paiement est en cours de confirmation. La priorité sera activée automatiquement dès validation.");
       else if(err?.code==="PORTABILITY_PRIORITY_CHECKOUT_EXPIRED")toast("La session de paiement a expiré. Le dossier reste traité en standard jusqu’à régularisation.");
       else toast("Impossible d’ouvrir le paiement prioritaire pour le moment.");
     }finally{busy=false;}
