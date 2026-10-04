@@ -27,6 +27,7 @@ const indexSource=fs.readFileSync("index.html","utf8");
 const appSource=fs.readFileSync("assets/app.js","utf8");
 const customerAdmin=fs.readFileSync("assets/customer-admin.js","utf8");
 const platformAdminTools=fs.readFileSync("assets/platform-admin-tools.js","utf8");
+const platformReferralAdminUi=fs.readFileSync("assets/platform-referral-admin.js","utf8");
 const platformRegulatoryTools=fs.readFileSync("assets/platform-regulatory-tools.js","utf8");
 const controlTowerUi=fs.readFileSync("assets/control-tower.js","utf8");
 const operationalPolicySource=fs.readFileSync("backend/src/operational-policy.mjs","utf8");
@@ -327,6 +328,7 @@ if(!/tax_behavior IS DISTINCT FROM OLD\.tax_behavior/.test(subscriptionTaxInclus
 if(!/customer_referral/.test(customerReferralMigration)||!/enabled boolean NOT NULL DEFAULT false/.test(customerReferralMigration)||!/paid_active_subscription/.test(customerReferralMigration)||!/customer_referral_rewards/.test(customerReferralMigration))failures.push("referral program must remain fail-closed with persistent reward history");
 if(!/referralProgramOverview/.test(postgresStore)||!/qualifyCustomerReferral/.test(postgresStore)||!/REFERRAL_MUST_PRECEDE_PAID_ACTIVATION/.test(postgresStore))failures.push("referral application layer must require paid subscription qualification and reject retroactive claims");
 if(!backendServer.includes("/api/v1/customer/referrals")||!backendServer.includes("/api/v1/platform/referral-program"))failures.push("referral customer and admin APIs must remain available");
+if(!/platform-referral-admin\.js/.test(platformAdminTools)||!/data-referral-admin/.test(platformAdminTools)||!/data-referral-save|referral-admin-save/.test(platformReferralAdminUi))failures.push("referral administration must remain lazy-loaded and controllable");
 if(!/pgi:portal-loaded/.test(clientReferralUi)||!/pgi_referral_code/.test(clientReferralUi)||!/client-referral\.js/.test(buildStatic))failures.push("customer referral UI and referral-code continuity must ship in production");
 if(/"tarif":\[[^\]]*(?:3 euro|3€)/.test(publicSiteSearch)||/"prix":\[[^\]]*3€/.test(publicSiteSearch))failures.push("public search must not advertise the historical 3 EUR price as current");
 if(!/v\.tax_behavior/.test(postgresStore)||!/tax_behavior:"inclusive"/.test(postgresStore))failures.push("billing API must expose inclusive tax behavior");
