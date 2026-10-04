@@ -252,6 +252,11 @@ export function createBackend(options={}){
         return done(res,metrics,started,"business_live.reset_schedules",200,{ok:true,...result});
       }
 
+      if(method==="GET"&&pathname==="/api/v1/public/referral-program"){
+        const program=typeof store.referralProgramPublicState==="function"?await store.referralProgramPublicState():{enabled:false,reward_minor:0,currency:"EUR"};
+        return done(res,metrics,started,"public.referral_program",200,program);
+      }
+
       if(method==="GET"&&pathname==="/api/v1/public/withdrawal/status"){
         const schemaReady=typeof store.customerWithdrawalFeatureReady==="function"&&await store.customerWithdrawalFeatureReady();
         return done(res,metrics,started,"public.withdrawal_status",200,{available:config.onlineWithdrawalReady===true&&schemaReady});
@@ -332,7 +337,8 @@ export function createBackend(options={}){
           dossier_ref:dossier?.dossier_ref||null,
           dossier_created:Boolean(dossier?.created),
           client_portal_invited:Boolean(customerAccess?.invitation_created||customerAccess?.reason==="pending_invitation"),
-          access_email_sent:Boolean(customerAccess?.email_sent)
+          access_email_sent:Boolean(customerAccess?.email_sent),
+          referral:dossier?.referral||null
         });
       }
 
@@ -955,6 +961,22 @@ export function createBackend(options={}){
         }
       }
 
+      if(method==="GET"&&pathname==="/api/v1/customer/referral"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"overview.read");
+        const overview=await store.customerReferralOverview(context.tenant_id);
+        return done(res,metrics,started,"customer.referral",200,{...overview,can_manage:["owner","admin"].includes(context.customer_role)});
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/referral/code"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        if(!["owner","admin"].includes(context.customer_role)){const e=new Error("Owner or admin required");e.status=403;e.code="CUSTOMER_ADMIN_REQUIRED";throw e;}
+        const payload={tenant_id:context.tenant_id,action:"ensure_referral_code"};
+        const result=await store.idempotent(req.headers["idempotency-key"],"customer.referral.code",payload,()=>store.ensureCustomerReferralCode(context.tenant_id));
+        return done(res,metrics,started,"customer.referral_code",201,{...result.value,replayed:result.replayed});
+      }
+
       if(method==="GET"&&pathname==="/api/v1/customer/portability"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
@@ -1554,6 +1576,26 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/platform/tenants/summary"){
         requireRole(actor,["admin","finance","readonly"]);
         return done(res,metrics,started,"platform.tenant_summary",200,await store.customerAdminSummary());
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/platform/referral-program"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.referral_program",200,await store.referralProgramAdminState());
+      }
+      if(method==="POST"&&pathname==="/api/v1/platform/referral-program"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={enabled:body.enabled===true,reward_minor:Math.trunc(Number(body.reward_minor)),currency:String(body.currency||"EUR").toUpperCase()};
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.referral_program.update",payload,()=>store.updateReferralProgram(payload,actor));
+        return done(res,metrics,started,"platform.referral_program_update",200,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/platform/referral-rewards/:id/paid");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={id:match.id,paid_reference:String(body.paid_reference||"").trim()};
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.referral_reward.paid",payload,()=>store.settleCustomerReferralReward(match.id,payload.paid_reference,actor));
+        return done(res,metrics,started,"platform.referral_reward_paid",200,{...result.value,replayed:result.replayed});
       }
 
       if(method==="GET"&&pathname==="/api/v1/platform/tenants"){
