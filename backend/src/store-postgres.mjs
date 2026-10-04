@@ -2087,7 +2087,8 @@ export class PostgresStore{
     const take=clampInt(limit,100,1,500);
     return this.sql.unsafe(
       "INSERT INTO work_queue(queue_name,tenant_id,dedupe_key,priority,payload,available_at,max_attempts)"+
-      " SELECT 'portability',p.tenant_id,'portability:'||p.id||CASE WHEN p.status='cancelled' THEN ':cancel' ELSE ':auto' END,20,"+
+      " SELECT 'portability',p.tenant_id,'portability:'||p.id||CASE WHEN p.status='cancelled' THEN ':cancel' ELSE ':auto' END,"+
+      " CASE WHEN p.service_level='priority' AND p.priority_payment_status='paid' THEN 5 ELSE 20 END,"+
       " jsonb_build_object('request_id',p.id,'action',CASE WHEN p.status='cancelled' THEN 'cancel' ELSE 'auto' END),now(),20"+
       " FROM tenant_portability_requests p"+
       " WHERE ("+
@@ -4739,8 +4740,9 @@ export class PostgresStore{
       " account_holder_name,desired_port_date,status,ownership_status,operator_portability_reference,scheduled_at,completed_at,rejection_reason,"+
       " tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,tariff_verified_at,"+
       " rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,"+
-      " automation_state,automation_last_error,automation_last_sync_at,operator_status,created_at,updated_at"+
-      " FROM tenant_scoped_portability_requests_v4 ORDER BY created_at DESC,id DESC LIMIT 50"
+      " automation_state,automation_last_error,automation_last_sync_at,operator_status,"+
+      " service_level,priority_fee_minor,priority_currency,priority_payment_status,priority_paid_at,created_at,updated_at"+
+      " FROM tenant_scoped_portability_requests_v5 ORDER BY created_at DESC,id DESC LIMIT 50"
     ));
   }
 
@@ -4769,9 +4771,12 @@ export class PostgresStore{
     const rate=input.service_rate_ttc_per_min==null||input.service_rate_ttc_per_min===""?null:Number(input.service_rate_ttc_per_min);
     if(rate!=null&&(!Number.isFinite(rate)||rate<0||rate>10000))throw problem(400,"INVALID_PORTABILITY_TARIFF");
     const serviceFamily=String(input.service_family||"premium_rate").trim().toLowerCase();
+    const serviceLevel=String(input.service_level||"standard").trim().toLowerCase();
     const desiredDate=input.desired_port_date?dateOnlyValue(input.desired_port_date,"desired_port_date"):null;
     if(!["premium_rate","shared_cost","freephone","other"].includes(serviceFamily))throw problem(400,"INVALID_SERVICE_FAMILY");
+    if(!["standard","priority"].includes(serviceLevel))throw problem(400,"INVALID_PORTABILITY_SERVICE_LEVEL");
     if(input.authorization_confirmed!==true||input.number_owner_confirmed!==true)throw problem(400,"PORTABILITY_AUTHORIZATION_REQUIRED");
+    const priorityFeeMinor=serviceLevel==="priority"?990:0,priorityPaymentStatus=serviceLevel==="priority"?"pending":"not_requested";
     const result=await this.sql.begin(async tx=>{
       await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",["portability:"+e164]);
       const tenant=(await tx.unsafe("SELECT id,status,country_code,default_currency FROM tenants WHERE id=$1 AND tenant_type<>'internal' LIMIT 1",[id]))[0];
@@ -4787,20 +4792,21 @@ export class PostgresStore{
       ))[0];
       if(existing)throw problem(409,"PORTABILITY_ALREADY_REQUESTED");
       const rows=await tx.unsafe(
-        "INSERT INTO tenant_portability_requests(tenant_id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,account_holder_name,desired_port_date,authorization_confirmed,number_owner_confirmed,rio_ciphertext,rio_fingerprint,rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,tariff_code,service_rate_ttc_per_min,currency,metadata)"+
-        " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::date,true,true,$10,$11,$12,$13,CASE WHEN $13=\'verified\' THEN now() ELSE NULL END,\'none\',true,$14,$15,$16,$17::jsonb)"+
-        " RETURNING id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,account_holder_name,desired_port_date,status,ownership_status,tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,created_at",
+        "INSERT INTO tenant_portability_requests(tenant_id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,account_holder_name,desired_port_date,authorization_confirmed,number_owner_confirmed,rio_ciphertext,rio_fingerprint,rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,tariff_code,service_rate_ttc_per_min,currency,metadata,service_level,priority_fee_minor,priority_currency,priority_payment_status)"+
+        " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::date,true,true,$10,$11,$12,$13,CASE WHEN $13='verified' THEN now() ELSE NULL END,'none',true,$14,$15,$16,$17::jsonb,$18,$19,'EUR',$20)"+
+        " RETURNING id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,account_holder_name,desired_port_date,status,ownership_status,tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,service_level,priority_fee_minor,priority_currency,priority_payment_status,priority_paid_at,created_at",
         [id,country,e164,String(input.number||"").trim().slice(0,40)||e164,serviceFamily,operatorName,operatorReference,holderName,desiredDate,rioCiphertext,rioHash,rioLast4,rioStatus,tariffCode,rate,currency,
-         JSON.stringify({source:"customer_portal",original_number:String(input.number||"").trim().slice(0,40),source_contract_transfer_mode:"none"})]
+         JSON.stringify({source:"customer_portal",original_number:String(input.number||"").trim().slice(0,40),source_contract_transfer_mode:"none",service_level:serviceLevel}),
+         serviceLevel,priorityFeeMinor,priorityPaymentStatus]
       );
       const request=rows[0];
       await tx.unsafe(
         "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'portability.request','tenant_portability_request',$2,$3::jsonb)",
-        [id,String(request.id),JSON.stringify({requested_e164:e164,country_code:country,service_family:serviceFamily,declared_rate_ttc_per_min:rate,currency,rio_verified:rioStatus==="verified",source_contract_transfer_mode:"none"})]
+        [id,String(request.id),JSON.stringify({requested_e164:e164,country_code:country,service_family:serviceFamily,declared_rate_ttc_per_min:rate,currency,rio_verified:rioStatus==="verified",source_contract_transfer_mode:"none",service_level:serviceLevel,priority_fee_minor:priorityFeeMinor,priority_payment_status:priorityPaymentStatus})]
       );
       await tx.unsafe(
         "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'portability.requested','tenant_portability_request',$2,$3::jsonb)",
-        [id,String(request.id),JSON.stringify({requested_e164:e164,country_code:country,rio_verified:rioStatus==="verified",source_contract_transfer_mode:"none"})]
+        [id,String(request.id),JSON.stringify({requested_e164:e164,country_code:country,rio_verified:rioStatus==="verified",source_contract_transfer_mode:"none",service_level:serviceLevel,priority_payment_status:priorityPaymentStatus})]
       );
       await tx.unsafe(
         "INSERT INTO work_queue(queue_name,tenant_id,dedupe_key,priority,payload,available_at,max_attempts)"+
@@ -4811,7 +4817,85 @@ export class PostgresStore{
       );
       return request;
     });
-    this.eventBus.publish("portability.requested",{tenant_id:id,request_id:Number(result.id),requested_e164:e164,country_code:country});
+    this.eventBus.publish("portability.requested",{tenant_id:id,request_id:Number(result.id),requested_e164:e164,country_code:country,service_level:serviceLevel});
+    return {...result,priority_fee_minor:Number(result.priority_fee_minor||0)};
+  }
+
+  async priorityPortabilityCheckoutContext(tenantId,requestId){
+    const tenant=Number(tenantId),id=Number(requestId);
+    if(!Number.isInteger(tenant)||tenant<=0||!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_PORTABILITY_REQUEST");
+    const row=(await this.readSql.unsafe(
+      "SELECT p.id,p.tenant_id,t.public_id::text AS tenant_public_id,p.status,p.service_level,p.priority_fee_minor,p.priority_currency,p.priority_payment_status,p.priority_checkout_session_reference"+
+      " FROM tenant_portability_requests p JOIN tenants t ON t.id=p.tenant_id WHERE p.id=$1 AND p.tenant_id=$2 LIMIT 1",
+      [id,tenant]
+    ))[0]||null;
+    if(!row)throw problem(404,"PORTABILITY_REQUEST_NOT_FOUND");
+    if(row.service_level!=="priority")throw problem(409,"PORTABILITY_PRIORITY_NOT_SELECTED");
+    if(["ported","rejected","cancelled"].includes(String(row.status||"")))throw problem(409,"PORTABILITY_PRIORITY_NOT_AVAILABLE");
+    if(row.priority_payment_status==="paid")throw problem(409,"PORTABILITY_PRIORITY_ALREADY_PAID");
+    if(row.priority_checkout_session_reference&&row.priority_payment_status==="pending")throw problem(409,"PORTABILITY_PRIORITY_CHECKOUT_ALREADY_CREATED");
+    if(Number(row.priority_fee_minor)!==990||String(row.priority_currency)!=="EUR")throw problem(409,"PORTABILITY_PRIORITY_PRICE_INVALID");
+    return {...row,priority_fee_minor:Number(row.priority_fee_minor)};
+  }
+
+  async attachPriorityPortabilityCheckout(tenantId,requestId,session={}){
+    const tenant=Number(tenantId),id=Number(requestId),sessionId=String(session.session_id||"").trim();
+    if(!Number.isInteger(tenant)||tenant<=0||!Number.isInteger(id)||id<=0||!/^cs_/.test(sessionId))throw problem(400,"PORTABILITY_PRIORITY_CHECKOUT_INVALID");
+    const rows=await this.sql.unsafe(
+      "UPDATE tenant_portability_requests SET priority_checkout_session_reference=$3,priority_payment_status='pending',updated_at=now()"+
+      " WHERE id=$1 AND tenant_id=$2 AND service_level='priority' AND priority_payment_status IN ('pending','failed')"+
+      " AND (priority_checkout_session_reference IS NULL OR priority_payment_status='failed')"+
+      " RETURNING id,service_level,priority_fee_minor,priority_currency,priority_payment_status,priority_checkout_session_reference",
+      [id,tenant,sessionId]
+    );
+    if(!rows[0])throw problem(409,"PORTABILITY_PRIORITY_CHECKOUT_NOT_ATTACHABLE");
+    return {...rows[0],priority_fee_minor:Number(rows[0].priority_fee_minor)};
+  }
+
+  async applyPriorityPortabilityPayment(input={}){
+    const id=Number(input.request_id),sessionId=String(input.checkout_session_reference||"").trim(),tenantPublicId=String(input.tenant_public_id||"").trim();
+    const status=String(input.payment_status||"").trim().toLowerCase(),amount=Math.trunc(Number(input.amount_minor)),currency=String(input.currency||"").trim().toUpperCase();
+    if(!Number.isInteger(id)||id<=0||!sessionId||!["paid","failed","pending"].includes(status))throw problem(400,"PORTABILITY_PRIORITY_EVENT_INVALID");
+    if(status==="paid"&&(amount!==990||currency!=="EUR"))throw problem(409,"PORTABILITY_PRIORITY_PAYMENT_MISMATCH");
+    const result=await this.sql.begin(async tx=>{
+      const row=(await tx.unsafe(
+        "SELECT p.id,p.tenant_id,p.service_level,p.priority_fee_minor,p.priority_currency,p.priority_payment_status,p.priority_checkout_session_reference,t.public_id::text AS tenant_public_id"+
+        " FROM tenant_portability_requests p JOIN tenants t ON t.id=p.tenant_id WHERE p.id=$1 LIMIT 1 FOR UPDATE OF p",
+        [id]
+      ))[0]||null;
+      if(!row)throw problem(404,"PORTABILITY_REQUEST_NOT_FOUND");
+      if(row.service_level!=="priority")throw problem(409,"PORTABILITY_PRIORITY_NOT_SELECTED");
+      if(tenantPublicId&&String(row.tenant_public_id)!==tenantPublicId)throw problem(409,"PORTABILITY_PRIORITY_TENANT_MISMATCH");
+      if(row.priority_checkout_session_reference&&String(row.priority_checkout_session_reference)!==sessionId)throw problem(409,"PORTABILITY_PRIORITY_SESSION_MISMATCH");
+      if(row.priority_payment_status==="paid")return {duplicate:true,updated:false,tenant_id:Number(row.tenant_id),request_id:id,status:"paid"};
+      if(status==="pending")return {duplicate:false,updated:false,tenant_id:Number(row.tenant_id),request_id:id,status:"pending"};
+      if(status==="failed"){
+        await tx.unsafe(
+          "UPDATE tenant_portability_requests SET priority_checkout_session_reference=COALESCE(priority_checkout_session_reference,$2),priority_payment_status='failed',updated_at=now() WHERE id=$1",
+          [id,sessionId]
+        );
+        return {duplicate:false,updated:true,tenant_id:Number(row.tenant_id),request_id:id,status:"failed"};
+      }
+      await tx.unsafe(
+        "UPDATE tenant_portability_requests SET priority_checkout_session_reference=COALESCE(priority_checkout_session_reference,$2),priority_payment_intent_reference=$3,priority_payment_status='paid',priority_paid_at=COALESCE(priority_paid_at,now()),automation_next_at=LEAST(COALESCE(automation_next_at,now()),now()),updated_at=now() WHERE id=$1",
+        [id,sessionId,String(input.payment_intent_reference||"")||null]
+      );
+      await tx.unsafe(
+        "UPDATE work_queue SET priority=LEAST(priority,5),available_at=LEAST(available_at,now())"+
+        " WHERE queue_name='portability' AND tenant_id=$1 AND dedupe_key=$2 AND completed_at IS NULL AND failed_at IS NULL",
+        [row.tenant_id,"portability:"+id+":auto"]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,action,entity_type,entity_id,details) VALUES($1,'portability.priority.paid','tenant_portability_request',$2,$3::jsonb)",
+        [row.tenant_id,String(id),JSON.stringify({amount_minor:990,currency:"EUR",checkout_session_reference:sessionId,provider_event_id:input.provider_event_id||null})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'portability.priority.paid','tenant_portability_request',$2,$3::jsonb)",
+        [row.tenant_id,String(id),JSON.stringify({amount_minor:990,currency:"EUR",service_level:"priority"})]
+      );
+      return {duplicate:false,updated:true,tenant_id:Number(row.tenant_id),request_id:id,status:"paid"};
+    });
+    if(result.updated&&result.status==="paid")this.eventBus.publish("portability.priority.paid",{tenant_id:result.tenant_id,request_id:id,priority:5});
     return result;
   }
 
