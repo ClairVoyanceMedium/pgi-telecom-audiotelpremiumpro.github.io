@@ -59,6 +59,12 @@ export class MemoryStore{
     this.customerExperiencePreferencesMap=new Map();
     this.customerLegalAcceptances=[];
     this.customerWithdrawalRequests=[];
+    this.referralSettings={enabled:false,reward_minor:0,currency:"EUR",qualification:"paid_active_subscription",updated_at:null};
+    this.referralCode=null;
+    this.referralRows=[];
+    this.referralRewards=[];
+    this.portabilityRequests=[];
+    this.nextPortabilityRequestId=1;
     this.staffUsers=[{id:1,public_id:randomUUID(),login_name:"local-admin",email:"local-admin@staff.pgi.invalid",display_name:"Local Simulator",role:"admin",enabled:true,password_hash:null,session_version:1,last_login_at:null,created_at:new Date().toISOString()}];
     this.nextStaffUserId=2;
   }
@@ -1238,7 +1244,65 @@ export class MemoryStore{
     this.customerLegalAcceptances.push(row);this.#audit("customer.legal_acceptance",String(principalId),{acceptance_type:row.acceptance_type,document_version:row.document_version});return structuredClone(row);
   }
 
-  async customerBillingPreparation(tenantId){void tenantId;return {tenant:{id:"00000000-0000-4000-8000-000000000001",name:"Société Démo",billing_email:"demo@example.test",country_code:"FR",locale:"fr-FR",currency:"EUR",timezone:"Europe/Paris",status:"pending"},offer:{price_version_id:2,plan_key:"external-sva-access",plan_name:"External SVA Access",market:null,currency:"EUR",amount_minor:490,tax_behavior:"inclusive",billing_interval:"month",interval_count:1},reference_offer:{price_version_id:2,plan_key:"external-sva-access",plan_name:"External SVA Access",currency:"EUR",amount_minor:490,tax_behavior:"inclusive",billing_interval:"month",interval_count:1},pricing_state:"local_price_ready",subscription:null,premium_call_access:false,billing_currency:{currency:"EUR",source:"country_default",catalog_version:"2026-09-20",accepted_currencies:["EUR"],local_price_configured:true},checkout_prefill:{email:"demo@example.test",locale:"fr-FR",country_code:"FR",currency:"EUR"},return_paths:{success:"client.html?billing=success",cancel:"client.html?billing=cancelled"}};}
+  async customerBillingPreparation(tenantId){void tenantId;return {tenant:{id:"00000000-0000-4000-8000-000000000001",name:"Société Démo",billing_email:"demo@example.test",country_code:"FR",locale:"fr-FR",currency:"EUR",timezone:"Europe/Paris",status:"pending",customer_type:"business"},offer:{price_version_id:2,plan_key:"external-sva-access",plan_name:"External SVA Access",market:null,currency:"EUR",amount_minor:490,tax_behavior:"inclusive",billing_interval:"month",interval_count:1},reference_offer:{price_version_id:2,plan_key:"external-sva-access",plan_name:"External SVA Access",currency:"EUR",amount_minor:490,tax_behavior:"inclusive",billing_interval:"month",interval_count:1},pricing_state:"local_price_ready",subscription:null,premium_call_access:false,billing_currency:{currency:"EUR",source:"country_default",catalog_version:"2026-09-20",accepted_currencies:["EUR"],local_price_configured:true},checkout_prefill:{email:"demo@example.test",locale:"fr-FR",country_code:"FR",currency:"EUR"},return_paths:{success:"client.html?billing=success",cancel:"client.html?billing=cancelled"}};}
+  async referralProgramSettings(){return structuredClone(this.referralSettings);}
+  async updateReferralProgramSettings(input={}){
+    const enabled=input.enabled===true,reward=Number(input.reward_minor),currency=String(input.currency||"EUR").toUpperCase();
+    if(!Number.isInteger(reward)||reward<0)throw problem(400,"INVALID_REFERRAL_REWARD");
+    if(enabled&&reward<=0)throw problem(409,"REFERRAL_REWARD_REQUIRED");
+    this.referralSettings={enabled,reward_minor:reward,currency,qualification:"paid_active_subscription",updated_at:new Date().toISOString()};
+    return structuredClone(this.referralSettings);
+  }
+  async platformReferralOverview(){
+    return {...structuredClone(this.referralSettings),stats:{claimed:this.referralRows.filter(x=>x.status==="claimed").length,qualified:this.referralRows.filter(x=>["qualified","rewarded"].includes(x.status)).length,rewarded:this.referralRows.filter(x=>x.status==="rewarded").length,earned_minor:this.referralRewards.filter(x=>x.status==="earned").reduce((a,x)=>a+x.amount_minor,0),paid_minor:this.referralRewards.filter(x=>x.status==="paid").reduce((a,x)=>a+x.amount_minor,0)},recent_rewards:structuredClone(this.referralRewards.slice().reverse())};
+  }
+  async customerReferralOverview(){
+    if(!this.referralSettings.enabled)return {...structuredClone(this.referralSettings),code:null,referrals:[]};
+    return {...structuredClone(this.referralSettings),code:this.referralCode,referrals:structuredClone(this.referralRows.map(x=>({...x,status_label:x.status==="rewarded"?"Parrainage qualifié":"Inscription enregistrée",claimed_at_label:new Date(x.claimed_at).toLocaleDateString("fr-FR")})))};
+  }
+  async ensureCustomerReferralCode(tenantId){
+    void tenantId;if(!this.referralSettings.enabled)throw problem(409,"REFERRAL_DISABLED");if(this.referralSettings.reward_minor<=0)throw problem(409,"REFERRAL_REWARD_REQUIRED");
+    this.referralCode??="PGIDEMO"+randomUUID().replace(/-/g,"").slice(0,8).toUpperCase();return this.customerReferralOverview();
+  }
+  async claimCustomerReferral(referredTenantId,code){
+    if(!this.referralSettings.enabled)throw problem(409,"REFERRAL_DISABLED");
+    if(String(code||"").toUpperCase()!==String(this.referralCode||""))throw problem(404,"REFERRAL_CODE_NOT_FOUND");
+    const existing=this.referralRows.find(x=>x.referred_tenant_id===Number(referredTenantId));if(existing)return {claimed:false,existing:true,status:existing.status,public_id:existing.public_id};
+    const row={public_id:randomUUID(),referred_tenant_id:Number(referredTenantId),status:"claimed",reward_minor:this.referralSettings.reward_minor,reward_currency:this.referralSettings.currency,claimed_at:new Date().toISOString()};this.referralRows.push(row);return {claimed:true,existing:false,...structuredClone(row)};
+  }
+  async qualifyCustomerReferralFromBilling(tenantId,subscriptionId,payment={}){
+    if(Number(payment.amount_paid_minor||0)<=0)return {qualified:false};
+    const row=this.referralRows.find(x=>x.referred_tenant_id===Number(tenantId)&&x.status==="claimed");if(!row)return {qualified:false};
+    row.status="rewarded";row.qualified_at=new Date().toISOString();row.rewarded_at=row.qualified_at;row.qualification_subscription_id=Number(subscriptionId);
+    const reward={public_id:randomUUID(),referral_public_id:row.public_id,amount_minor:row.reward_minor,currency:row.reward_currency,status:"earned",earned_at:new Date().toISOString(),paid_at:null,paid_reference:null,reward_reference:row.public_id};this.referralRewards.push(reward);return {qualified:true,reward_public_id:reward.public_id};
+  }
+  async settleReferralReward(rewardId,input={}){
+    const row=this.referralRewards.find(x=>x.public_id===String(rewardId));if(!row)throw problem(404,"REFERRAL_REWARD_NOT_FOUND");if(row.status!=="earned")throw problem(409,"REFERRAL_REWARD_NOT_PAYABLE");
+    row.status="paid";row.paid_at=new Date().toISOString();row.paid_reference=String(input.paid_reference||"");return structuredClone(row);
+  }
+  async customerPortabilityRequests(){return structuredClone(this.portabilityRequests);}
+  async createCustomerPortabilityRequest(tenantId,input={}){
+    const id=this.nextPortabilityRequestId++,priorityRequested=input.priority_requested===true,now=new Date().toISOString();
+    const row={id,tenant_id:Number(tenantId),country_code:String(input.country_code||"FR"),requested_e164:String(input.number||""),display_number:String(input.number||""),service_family:String(input.service_family||"premium_rate"),status:"submitted",ownership_status:"pending",processing_tier:"standard",priority_fee_minor:0,priority_fee_currency:"EUR",priority_payment_status:priorityRequested?"pending":"not_required",priority_paid_at:null,automation_state:"queued",created_at:now,updated_at:now};
+    this.portabilityRequests.unshift(row);return structuredClone(row);
+  }
+  async customerPortabilityPriorityPreparation(tenantId,requestId){
+    const row=this.portabilityRequests.find(x=>x.id===Number(requestId)&&x.tenant_id===Number(tenantId));if(!row)throw problem(404,"PORTABILITY_REQUEST_NOT_FOUND");if(row.priority_payment_status==="paid")throw problem(409,"PORTABILITY_PRIORITY_ALREADY_PAID");
+    return {tenant:{id:"00000000-0000-4000-8000-000000000001",billing_email:"demo@example.test",status:"pending"},request:{id:row.id,requested_e164:row.requested_e164},amount_minor:990,currency:"EUR"};
+  }
+  async attachCustomerPortabilityPriorityCheckout(tenantId,requestId,session={}){
+    const row=this.portabilityRequests.find(x=>x.id===Number(requestId)&&x.tenant_id===Number(tenantId));if(!row)throw problem(404,"PORTABILITY_REQUEST_NOT_FOUND");
+    row.priority_payment_status="pending";row.priority_fee_minor=990;row.priority_checkout_reference=String(session.session_id||"");return structuredClone(row);
+  }
+  async applyPortabilityPriorityPayment(payload={}){
+    const row=this.portabilityRequests.find(x=>x.id===Number(payload.portability_request_id));if(!row)return {duplicate:false,request_id:Number(payload.portability_request_id),payment_status:String(payload.payment_status||"")};
+    if(payload.payment_status==="paid"){row.processing_tier="priority";row.priority_payment_status="paid";row.priority_fee_minor=990;row.priority_paid_at=payload.event_time||new Date().toISOString();}else if(row.priority_payment_status!=="paid")row.priority_payment_status="expired";
+    return {duplicate:false,request_id:row.id,tenant_id:row.tenant_id,payment_status:row.priority_payment_status};
+  }
+  async cancelCustomerPortabilityRequest(tenantId,requestId){
+    const row=this.portabilityRequests.find(x=>x.id===Number(requestId)&&x.tenant_id===Number(tenantId));if(!row)throw problem(404,"PORTABILITY_REQUEST_NOT_FOUND");row.status="cancelled";row.updated_at=new Date().toISOString();return structuredClone(row);
+  }
+
   async customerExperiencePreferences(tenantId,principalId){
     const key=String(tenantId)+":"+String(principalId||"");
     return this.customerExperiencePreferencesMap.get(key)||{alerts:{calls_below:{enabled:false,threshold:10},abandon_rate_above:{enabled:false,threshold:25},revenue_target:{enabled:false,threshold:100},drop_vs_average:{enabled:false,threshold:30}},updated_at:null};
