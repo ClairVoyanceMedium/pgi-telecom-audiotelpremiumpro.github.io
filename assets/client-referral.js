@@ -19,7 +19,7 @@ function render(data){
   }else{
     codeBlock='<p class="cp-muted">'+esc(eligibility)+'</p>';
   }
-  box.innerHTML='<div class="cp-panel-head"><div><p class="cp-kicker">PARRAINAGE</p><h2>Inviter un nouveau client</h2></div><span>'+esc(String(summary.rewarded||0))+' qualifié(s)</span></div><p class="cp-muted">La récompense de '+esc(reward)+' est acquise uniquement lorsque le filleul devient réellement client avec un abonnement actif et payé. Un simple formulaire ou une inscription ne déclenche aucune prime.</p>'+codeBlock+'<div class="cp-row"><div><strong>'+esc(String(summary.claimed||0))+' parrainage(s) enregistré(s)</strong><span>'+esc(money(summary.reward_minor||0,state.currency))+' de récompenses acquises au total.</span></div></div><p id="client-referral-status" class="cp-form-message" aria-live="polite"></p>';
+  box.innerHTML='<div class="cp-panel-head"><div><p class="cp-kicker">PARRAINAGE</p><h2>Recommander et cumuler mes récompenses</h2></div><span>'+esc(String(summary.rewarded||0))+' qualifié(s)</span></div><p class="cp-muted">Votre récompense actuelle est de '+esc(reward)+' par filleul qualifié. Copiez votre lien, partagez-le et suivez ici les récompenses acquises lorsque vos filleuls deviennent réellement clients avec un abonnement actif et payé.</p>'+codeBlock+'<div class="cp-row"><div><strong>'+esc(String(summary.claimed||0))+' parrainage(s) enregistré(s)</strong><span>'+esc(money(summary.reward_minor||0,state.currency))+' de récompenses acquises au total.</span></div></div><p id="client-referral-status" class="cp-form-message" aria-live="polite"></p>';
   bind();
 }
 function status(message,bad){var e=$("client-referral-status");if(e){e.textContent=message||"";e.classList.toggle("bad",bad===true);}}
