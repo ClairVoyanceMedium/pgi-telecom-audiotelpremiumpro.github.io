@@ -53,7 +53,7 @@ export class MemoryStore{
     this.nextCallId=1;
     this.nextBaselineId=1;
     this.nextSwitchId=1;
-    this.subscriptionPrices=[{id:1,plan_key:"external-sva-access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,effective_from:"2026-09-20T19:33:00Z",effective_to:null}];
+    this.subscriptionPrices=[{id:1,plan_key:"external-sva-access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,effective_from:"2026-09-20T19:33:00Z",effective_to:"2026-10-04T00:00:00Z"},{id:2,plan_key:"external-sva-access",currency:"EUR",amount_minor:490,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,effective_from:"2026-10-04T00:00:00Z",effective_to:null}];
     this.subscriptionEvents=new Set();
     this.adminAlerts=[];
     this.customerExperiencePreferencesMap=new Map();
@@ -1238,7 +1238,7 @@ export class MemoryStore{
     this.customerLegalAcceptances.push(row);this.#audit("customer.legal_acceptance",String(principalId),{acceptance_type:row.acceptance_type,document_version:row.document_version});return structuredClone(row);
   }
 
-  async customerBillingPreparation(tenantId){void tenantId;return {tenant:{id:"00000000-0000-4000-8000-000000000001",name:"Société Démo",billing_email:"demo@example.test",country_code:"FR",locale:"fr-FR",currency:"EUR",timezone:"Europe/Paris",status:"pending"},offer:{price_version_id:1,plan_key:"external-sva-access",plan_name:"External SVA Access",market:null,currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1},reference_offer:{price_version_id:1,plan_key:"external-sva-access",plan_name:"External SVA Access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1},pricing_state:"local_price_ready",subscription:null,premium_call_access:false,billing_currency:{currency:"EUR",source:"country_default",catalog_version:"2026-09-20",accepted_currencies:["EUR"],local_price_configured:true},checkout_prefill:{email:"demo@example.test",locale:"fr-FR",country_code:"FR",currency:"EUR"},return_paths:{success:"client.html?billing=success",cancel:"client.html?billing=cancelled"}};}
+  async customerBillingPreparation(tenantId){void tenantId;return {tenant:{id:"00000000-0000-4000-8000-000000000001",name:"Société Démo",billing_email:"demo@example.test",country_code:"FR",locale:"fr-FR",currency:"EUR",timezone:"Europe/Paris",status:"pending"},offer:{price_version_id:2,plan_key:"external-sva-access",plan_name:"External SVA Access",market:null,currency:"EUR",amount_minor:490,tax_behavior:"inclusive",billing_interval:"month",interval_count:1},reference_offer:{price_version_id:2,plan_key:"external-sva-access",plan_name:"External SVA Access",currency:"EUR",amount_minor:490,tax_behavior:"inclusive",billing_interval:"month",interval_count:1},pricing_state:"local_price_ready",subscription:null,premium_call_access:false,billing_currency:{currency:"EUR",source:"country_default",catalog_version:"2026-09-20",accepted_currencies:["EUR"],local_price_configured:true},checkout_prefill:{email:"demo@example.test",locale:"fr-FR",country_code:"FR",currency:"EUR"},return_paths:{success:"client.html?billing=success",cancel:"client.html?billing=cancelled"}};}
   async customerExperiencePreferences(tenantId,principalId){
     const key=String(tenantId)+":"+String(principalId||"");
     return this.customerExperiencePreferencesMap.get(key)||{alerts:{calls_below:{enabled:false,threshold:10},abandon_rate_above:{enabled:false,threshold:25},revenue_target:{enabled:false,threshold:100},drop_vs_average:{enabled:false,threshold:30}},updated_at:null};
@@ -1372,7 +1372,7 @@ export class MemoryStore{
         upstream_payout_ht:0,platform_fee_ht:0,net_payout_ht:0,
         payment_compliance_active:false,
         external_subscriptions_active:0,subscription_access_enabled:0,subscription_access_blocked:0,
-        subscription_unpaid_alerts:0,subscription_price_minor:300,subscription_price_currency:"EUR",internal_billing_exempt:true
+        subscription_unpaid_alerts:0,subscription_price_minor:490,subscription_price_currency:"EUR",internal_billing_exempt:true
       },
       tenants:[],
       numbers:[],
