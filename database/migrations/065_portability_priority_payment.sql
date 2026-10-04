@@ -15,10 +15,11 @@ CREATE TABLE portability_priority_payments (
   amount_minor integer NOT NULL DEFAULT 990 CHECK (amount_minor=990),
   currency char(3) NOT NULL DEFAULT 'EUR' CHECK (currency='EUR'),
   status text NOT NULL DEFAULT 'pending'
-    CHECK (status IN ('pending','open','paid','expired','failed','refunded','disputed')),
+    CHECK (status IN ('pending','open','paid','expired','failed','partially_refunded','refunded','disputed')),
   provider_checkout_session_reference text UNIQUE,
   provider_payment_intent_reference text,
   paid_at timestamptz,
+  refunded_amount_minor integer NOT NULL DEFAULT 0 CHECK (refunded_amount_minor BETWEEN 0 AND amount_minor),
   refunded_at timestamptz,
   last_provider_event_at timestamptz,
   created_by_customer_principal_id uuid,
