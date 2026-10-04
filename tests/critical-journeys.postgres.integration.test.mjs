@@ -33,7 +33,7 @@ function backendConfig(){
     externalBillingEnabled:true,stripeSecretKey:"sk_test_customer_journey_"+ "x".repeat(24),
     stripeWebhookSecret:"whsec_customer_journey_"+ "y".repeat(24),stripeLiveMode:false,
     stripeApiVersion:"2026-08-26.dahlia",stripeWebhookToleranceSeconds:300,
-    stripePriceLookupKey:"pgi_audiotel_premium_pro_monthly_eur",
+    stripePriceLookupKey:"pgi_audiotel_premium_pro_monthly_eur_490",
     publicBaseUrl:"https://audiotel-premium-pro.com",
     legalOperatorConfigured:false,consumerMediatorConfigured:false,b2cCommercialReady:false,onlineWithdrawalReady:true
   };
