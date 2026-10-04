@@ -29,7 +29,7 @@ function render(){
   const d=clamp(parseFloat(days.value),0,31);
   const minutes=h*60*d;
   const perMonth=minutes*g;
-  $("saving-month").textContent=money.format(perMonth);
+  $("saving-month").textContent="+"+money.format(perMonth);
   $("saving-year").textContent=money.format(perMonth*12);
   $("saving-minutes").textContent=nf.format(minutes);
 }
