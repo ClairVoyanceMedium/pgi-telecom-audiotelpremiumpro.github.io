@@ -76,6 +76,7 @@ createBillingPortal:function(){return post("/customer/billing/portal-session",{}
 referral:function(){return get("/customer/referral",8000);},
 portability:function(){return get("/customer/portability",8000);},
 createPortability:function(payload,idempotencyKey){return post("/customer/portability",payload,idempotencyKey);},
+createPortabilityPriorityCheckout:function(id,payload,idempotencyKey){return post("/customer/portability/"+encodeURIComponent(id)+"/priority-checkout",payload||{},idempotencyKey);},
 cancelPortability:function(id,idempotencyKey){return post("/customer/portability/"+encodeURIComponent(id)+"/cancel",{},idempotencyKey);},
 portal:function(from,to){var q=new URLSearchParams({from:from,to:to});return get("/customer/portal?"+q.toString(),12000);},
 resetMetrics:function(metricKeys,idempotencyKey){return post("/customer/metrics/reset",{metric_keys:metricKeys},idempotencyKey);},
