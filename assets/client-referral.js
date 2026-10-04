@@ -1,5 +1,7 @@
 const $=id=>document.getElementById(id);
 const money=(n,c)=>{try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:c||"EUR"}).format((Number(n)||0)/100)}catch{return ((Number(n)||0)/100).toFixed(2)+" "+(c||"EUR")}};
+function priorityControl(){if($("portability-processing"))return;const x=$("portability-service-family")?.closest("label");if(!x)return;const l=document.createElement("label");l.innerHTML='Traitement de la demande<select id="portability-processing"><option value="standard">Standard gratuit</option><option value="priority">Prioritaire PGI, 9,90 € TTC, sans délai opérateur garanti</option></select>';x.insertAdjacentElement("afterend",l)}
+priorityControl();
 function card(){
   let s=$("client-referral");if(s)return s;
   const anchor=document.querySelector(".cp-portability-card");if(!anchor)return null;
