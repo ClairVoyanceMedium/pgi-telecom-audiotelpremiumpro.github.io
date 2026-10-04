@@ -340,7 +340,7 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes);
         if(String(body.website||"").trim()){const e=new Error("Invalid withdrawal request");e.status=400;e.code="WITHDRAWAL_REQUEST_REJECTED";throw e;}
         if(body.confirmed!==true){const e=new Error("Withdrawal confirmation required");e.status=400;e.code="WITHDRAWAL_CONFIRMATION_REQUIRED";throw e;}
-        if(String(body.legal_version||"")!=="2026-09-26-b2b-b2c-v4"){const e=new Error("Legal document version outdated");e.status=409;e.code="LEGAL_DOCUMENT_VERSION_OUTDATED";throw e;}
+        const withdrawalLegalVersion=String(body.legal_version||"");if(!["2026-09-26-b2b-b2c-v4","2026-10-04-b2b-b2c-v5"].includes(withdrawalLegalVersion)){const e=new Error("Legal document version outdated");e.status=409;e.code="LEGAL_DOCUMENT_VERSION_OUTDATED";throw e;}
         const firstName=String(body.first_name||"").trim(),lastName=String(body.last_name||"").trim();
         if(firstName.length<1||firstName.length>80||lastName.length<1||lastName.length>80){const e=new Error("Name required");e.status=400;e.code="WITHDRAWAL_NAME_REQUIRED";throw e;}
         let contractEmail,acknowledgementEmail;
@@ -354,7 +354,7 @@ export function createBackend(options={}){
         if(contractReference.length>180){const e=new Error("Contract reference too long");e.status=400;e.code="WITHDRAWAL_REFERENCE_INVALID";throw e;}
         if(contractDetails.length<3||contractDetails.length>1200){const e=new Error("Contract details required");e.status=400;e.code="WITHDRAWAL_CONTRACT_DETAILS_REQUIRED";throw e;}
         if(contractDate&&(!/^\d{4}-\d{2}-\d{2}$/.test(contractDate)||!Number.isFinite(Date.parse(contractDate+"T00:00:00Z")))){const e=new Error("Invalid contract date");e.status=400;e.code="WITHDRAWAL_CONTRACT_DATE_INVALID";throw e;}
-        const declaration={first_name:firstName,last_name:lastName,contract_email:contractEmail,acknowledgement_email:acknowledgementEmail,contract_reference:contractReference||null,contract_date:contractDate||null,contract_details:contractDetails,legal_version:"2026-09-26-b2b-b2c-v4",source:"online"};
+        const declaration={first_name:firstName,last_name:lastName,contract_email:contractEmail,acknowledgement_email:acknowledgementEmail,contract_reference:contractReference||null,contract_date:contractDate||null,contract_details:contractDetails,legal_version:withdrawalLegalVersion,source:"online"};
         const requestSha256=createHash("sha256").update(JSON.stringify(declaration)).digest("hex");
         const evidenceKey=config.sessionSecret||config.callerHashKey||"pgi-withdrawal-simulator";
         const ip=clientIp(req,config.trustProxy),userAgent=String(req.headers["user-agent"]||"");
@@ -464,7 +464,7 @@ export function createBackend(options={}){
           document_version:String(body.legal_version||"")
         }:{};
         if(rawInvite&&(legal.accepted!==true||legal.privacy_acknowledged!==true)){const e=new Error("Legal acceptance required");e.status=400;e.code="REGISTRATION_LEGAL_TERMS_REQUIRED";throw e;}
-        if(rawInvite&&legal.document_version!=="2026-09-26-b2b-b2c-v4"){const e=new Error("Legal version outdated");e.status=409;e.code="LEGAL_DOCUMENT_VERSION_OUTDATED";throw e;}
+        if(rawInvite&&legal.document_version!=="2026-10-04-b2b-b2c-v5"){const e=new Error("Legal version outdated");e.status=409;e.code="LEGAL_DOCUMENT_VERSION_OUTDATED";throw e;}
         const auth=await store.customerGoogleSignIn(identity,inviteHash,legal);
         const memberships=(auth.memberships||[]).filter(x=>x.status==="active"&&["active","pending"].includes(x.tenant_status));
         if(!memberships.length&&auth.account_pending){
@@ -589,10 +589,10 @@ export function createBackend(options={}){
         const password=String(body.password||"");
         if(rawToken.length<32||password.length<12){const e=new Error("Invalid activation");e.status=400;e.code="INVALID_ACTIVATION";throw e;}
         if(body.legal_terms_accepted!==true||body.privacy_notice_acknowledged!==true){const e=new Error("Legal acceptance required");e.status=400;e.code="REGISTRATION_LEGAL_TERMS_REQUIRED";throw e;}
-        if(String(body.legal_version||"")!=="2026-09-26-b2b-b2c-v4"){const e=new Error("Legal version outdated");e.status=409;e.code="LEGAL_DOCUMENT_VERSION_OUTDATED";throw e;}
+        if(String(body.legal_version||"")!=="2026-10-04-b2b-b2c-v5"){const e=new Error("Legal version outdated");e.status=409;e.code="LEGAL_DOCUMENT_VERSION_OUTDATED";throw e;}
         const tokenHash=createHash("sha256").update(rawToken).digest("hex");
         const activated=await store.activateCustomerPortalInvitation(tokenHash,String(body.display_name||""),hashPassword(password),{
-          accepted:true,privacy_acknowledged:true,document_version:"2026-09-26-b2b-b2c-v4"
+          accepted:true,privacy_acknowledged:true,document_version:"2026-10-04-b2b-b2c-v5"
         });
         authBuckets.delete(authKey);
         const issued=issueSession({
@@ -805,7 +805,7 @@ export function createBackend(options={}){
         const legal=await readJson(req,config.bodyLimitBytes);
         if(legal.subscription_terms_accepted!==true||legal.privacy_notice_acknowledged!==true){const e=new Error("Legal terms acceptance required");e.status=400;e.code="SUBSCRIPTION_LEGAL_TERMS_REQUIRED";throw e;}
         if(legal.immediate_performance_requested!==true){const e=new Error("Immediate performance request required");e.status=400;e.code="IMMEDIATE_PERFORMANCE_REQUEST_REQUIRED";throw e;}
-        if(String(legal.legal_version||"")!=="2026-09-26-b2b-b2c-v4"){const e=new Error("Legal document version outdated");e.status=409;e.code="LEGAL_DOCUMENT_VERSION_OUTDATED";throw e;}
+        if(String(legal.legal_version||"")!=="2026-10-04-b2b-b2c-v5"){const e=new Error("Legal document version outdated");e.status=409;e.code="LEGAL_DOCUMENT_VERSION_OUTDATED";throw e;}
         const context=await store.customerSessionContext(customerActor);
         requireCustomerPermission(context,"billing.manage");
         const billing=await store.customerBillingPreparation(context.tenant_id);
@@ -819,11 +819,11 @@ export function createBackend(options={}){
         if(["active","past_due"].includes(String(billing.subscription?.status||"")))return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:"SUBSCRIPTION_ALREADY_EXISTS"},billing_provider:provider});
         if(!provider.checkout_available){const code=provider.connection_state==="account_activation_required"?"PAYMENT_ACCOUNT_NOT_READY":provider.connection_state==="account_status_unavailable"?"PAYMENT_PROVIDER_UNAVAILABLE":"PAYMENT_PROVIDER_NOT_CONNECTED";return done(res,metrics,started,"customer.billing.checkout",503,{error:{code},billing_provider:provider,checkout:{offer:billing.offer,prefill:billing.checkout_prefill,return_paths:billing.return_paths}});}
         const analyticsContext=sanitizeGa4CheckoutContext(legal)||{};
-        const payload={tenant_id:context.tenant_id,price_version_id:billing.offer.price_version_id,provider:"stripe",legal_version:"2026-09-26-b2b-b2c-v4",immediate_performance_requested:true,analytics_linked:Boolean(analyticsContext.client_id)};
+        const payload={tenant_id:context.tenant_id,price_version_id:billing.offer.price_version_id,provider:"stripe",legal_version:"2026-10-04-b2b-b2c-v5",immediate_performance_requested:true,analytics_linked:Boolean(analyticsContext.client_id)};
         const result=await store.idempotent(checkoutIdempotencyKey,"customer.billing.checkout",payload,async()=>{
           const session=await createStripeCheckout(config,billing,checkoutIdempotencyKey,analyticsContext);
           await store.recordCustomerLegalAcceptance(context.tenant_id,context.id,{
-            acceptance_type:"subscription_checkout",document_version:"2026-09-26-b2b-b2c-v4",
+            acceptance_type:"subscription_checkout",document_version:"2026-10-04-b2b-b2c-v5",
             documents:{cgu:"/conditions-utilisation/",conditions:"/conditions-abonnement/",privacy:"/confidentialite/",retractation:"/retractation/",cancellation:"/resilier-contrat/"},
             immediate_performance_requested:true,evidence:{source:"customer_checkout",stripe_checkout_created:true}
           });
