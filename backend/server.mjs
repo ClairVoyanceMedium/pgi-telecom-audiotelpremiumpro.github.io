@@ -319,7 +319,7 @@ export function createBackend(options={}){
           }
         }
         let referralAttribution=null;
-        if(dossier&&typeof store.captureLeadReferral==="function"&&body.referral_code){
+        if(dossier?.created===true&&typeof store.captureLeadReferral==="function"&&body.referral_code){
           try{referralAttribution=await store.captureLeadReferral(dossier.id,body.referral_code);}
           catch(error){process.stderr.write(JSON.stringify({level:"warn",event:"referral_attribution_failed",code:String(error?.code||"REFERRAL_ATTRIBUTION_FAILED")})+"\n");}
         }
