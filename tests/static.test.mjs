@@ -66,7 +66,7 @@ test("public contact and opening forms keep marketing consent optional explicit 
 test("la marque client reste Audiotel Premium Pro et la plateforme reste multisectorielle",()=>{
   assert.match(clientPortal,/PGI Telecom/);
   assert.match(clientPortal,/Audiotel Premium Pro/);
-  assert.doesNotMatch(clientPortal,/PGI Telecom • Audiotel Premium Pro/);
+  assert.doesNotMatch(clientPortal,/PGI • Telecom - Audiotel Premium Pro/);
   assert.doesNotMatch(clientPortal,/voyance|voyant/i);
   assert.match(clientServiceCenter,/Audiotel Premium Pro/);
   assert.match(index,/Intervenants/);
