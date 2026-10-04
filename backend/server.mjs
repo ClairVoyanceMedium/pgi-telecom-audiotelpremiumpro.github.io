@@ -950,6 +950,12 @@ export function createBackend(options={}){
         }
       }
 
+      if(method==="GET"&&pathname==="/api/v1/customer/referral"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        return done(res,metrics,started,"customer.referral.overview",200,await store.customerReferralOverview(context.tenant_id));
+      }
+
       if(method==="GET"&&pathname==="/api/v1/customer/portability"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
@@ -1418,6 +1424,20 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/carrier-switches/options"){
         requireRole(actor,["admin","readonly"]);
         return done(res,metrics,started,"carrier.switch_options",200,await store.carrierAdminOverview());
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/platform/referrals"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.referrals",200,await store.referralProgramAdminOverview());
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/platform/referrals/settings"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        if(typeof body.enabled!=="boolean")throw problem(400,"INVALID_REFERRAL_PROGRAM_STATE");
+        const payload={enabled:body.enabled};
+        const result=await store.idempotent(req.headers["idempotency-key"],"referral.program.settings",payload,()=>store.setReferralProgramEnabled(body.enabled,actor));
+        return done(res,metrics,started,"platform.referral_settings",200,{...result.value,replayed:result.replayed});
       }
 
       if(method==="GET"&&pathname==="/api/v1/platform/overview"){
