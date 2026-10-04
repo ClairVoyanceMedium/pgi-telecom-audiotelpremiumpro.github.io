@@ -59,7 +59,7 @@ export async function customerReferralSummary(store,{tenantId,publicBaseUrl}={})
   ))[0]||{};
   if(!state.enabled)return {...state,code:null,share_url:null,total:Number(counts.total||0),pending:Number(counts.pending||0),qualified:Number(counts.qualified||0)};
   const code=await ensureReferralCode(store,id),base=String(publicBaseUrl||"").replace(/\/$/,"");
-  return {...state,code,share_url:base?base+"/client.html?register=1&ref="+encodeURIComponent(code):null,total:Number(counts.total||0),pending:Number(counts.pending||0),qualified:Number(counts.qualified||0)};
+  return {...state,code,share_url:base?base+"/demande-ouverture/?ref="+encodeURIComponent(code):null,total:Number(counts.total||0),pending:Number(counts.pending||0),qualified:Number(counts.qualified||0)};
 }
 export async function captureReferral(store,{referredTenantPublicId,referralCode}={}){
   const code=validReferralCode(referralCode);
