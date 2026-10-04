@@ -1,4 +1,4 @@
--- PGI Telecom — object storage references, retention and privacy request lifecycle.
+-- PGI Telecom : object storage references, retention and privacy request lifecycle.
 
 CREATE TABLE object_assets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

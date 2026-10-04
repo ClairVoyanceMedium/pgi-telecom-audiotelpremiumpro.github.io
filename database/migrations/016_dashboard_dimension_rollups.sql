@@ -1,4 +1,4 @@
--- PGI Telecom — exact dashboard dimension rollups.
+-- PGI Telecom : exact dashboard dimension rollups.
 -- Keeps rich cockpit charts bounded when raw CDR volume becomes very large.
 
 CREATE TABLE dashboard_dimension_rollups_daily (

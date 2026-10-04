@@ -1,4 +1,4 @@
--- PGI Telecom — caller experience and degraded-network rollups.
+-- PGI Telecom : caller experience and degraded-network rollups.
 -- Adds scalable wait/IVR/queue analytics without scanning full CDR history.
 
 CREATE TABLE experience_rollups_hourly_sharded (

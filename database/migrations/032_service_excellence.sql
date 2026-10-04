@@ -1,4 +1,4 @@
--- PGI Telecom — service excellence, customer incident ownership and safe routing simulation support.
+-- PGI Telecom : service excellence, customer incident ownership and safe routing simulation support.
 -- Expand-only. Adds a single traceable customer incident record instead of duplicating telecom or billing facts.
 
 CREATE TABLE tenant_service_incidents (

@@ -100,7 +100,7 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.match(guide,/"@type":"FAQPage"/);
     assert.match(guide,/"@type":"BreadcrumbList"/);
     assert.match(guide,/"@type":"Article"/);
-    assert.match(guide,/Arcep — numéros SVA/);
+    assert.match(guide,/Arcep : numéros SVA/);
     assert.ok(guide.includes("economie.gouv.fr"));
     const application=seoPages[seoSlugs.indexOf("demande-ouverture")];
     assert.match(application,/id="order-form"/);

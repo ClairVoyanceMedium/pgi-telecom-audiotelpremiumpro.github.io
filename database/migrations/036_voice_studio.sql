@@ -1,4 +1,4 @@
--- PGI Telecom — Voice Studio / SVI versionné, simulable et multi-client.
+-- PGI Telecom : Voice Studio / SVI versionné, simulable et multi-client.
 -- Expand-only. Aucun routage opérateur réel n'est activé par cette migration.
 
 CREATE TABLE tenant_voice_services (

@@ -1,4 +1,4 @@
--- PGI Telecom — Stripe Connect card payment foundation.
+-- PGI Telecom : Stripe Connect card payment foundation.
 -- Expand-only. Card payments remain disabled until a connected Stripe account is fully onboarded.
 
 CREATE TABLE tenant_card_payment_accounts (

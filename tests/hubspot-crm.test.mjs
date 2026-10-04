@@ -233,7 +233,7 @@ test("support contact reuses an existing open ticket and appends a note",async()
   const fetchImpl=async(url,options={})=>{const body=options.body?JSON.parse(options.body):null;requests.push({url,method:options.method||"GET",body});
     if(url.endsWith("/crm/v3/objects/contacts/search"))return response(200,{results:[{id:"501",properties:{email:"visiteur@example.test"}}]});
     if(url.includes("/crm/v3/objects/contacts/501?associations=tickets"))return response(200,{id:"501",associations:{tickets:{results:[{id:"701"}]}}});
-    if(url.includes("/crm/v3/objects/tickets/701?properties="))return response(200,{id:"701",properties:{subject:"Contact site — Accueil",hs_pipeline:"0",hs_pipeline_stage:"1"}});
+    if(url.includes("/crm/v3/objects/tickets/701?properties="))return response(200,{id:"701",properties:{subject:"Contact site : Accueil",hs_pipeline:"0",hs_pipeline_stage:"1"}});
     if(url.endsWith("/crm/v4/associations/notes/contacts/labels"))return response(200,{results:[{category:"HUBSPOT_DEFINED",typeId:202,label:null}]});
     if(url.endsWith("/crm/v4/associations/notes/tickets/labels"))return response(200,{results:[{category:"HUBSPOT_DEFINED",typeId:220,label:null}]});
     if(url.endsWith("/crm/v3/objects/notes")&&options.method==="POST")return response(201,{id:"801"});

@@ -1,4 +1,4 @@
--- PGI Telecom — automated operator orchestration for inbound portability.
+-- PGI Telecom : automated operator orchestration for inbound portability.
 -- Expand-only. Sensitive portability credentials remain encrypted in tenant_portability_requests
 -- and are decrypted only in worker memory immediately before an operator call.
 

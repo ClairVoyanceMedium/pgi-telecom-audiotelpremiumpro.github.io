@@ -1,4 +1,4 @@
--- Audiotel Premium Pro — customer referral program.
+-- Audiotel Premium Pro : customer referral program.
 -- Fail-closed for new claims, immutable reward snapshots, historical claims retained.
 
 CREATE TABLE platform_feature_flags (

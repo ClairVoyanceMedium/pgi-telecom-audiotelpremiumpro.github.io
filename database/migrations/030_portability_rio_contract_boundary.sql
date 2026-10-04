@@ -1,4 +1,4 @@
--- PGI Telecom — French SVA RIO and source-contract separation.
+-- PGI Telecom : French SVA RIO and source-contract separation.
 -- Expand-only. Portability moves the number; it never assigns the donor contract,
 -- its debt, penalties or remaining commitment to PGI.
 

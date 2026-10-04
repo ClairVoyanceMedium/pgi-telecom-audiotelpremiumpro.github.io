@@ -1,4 +1,4 @@
--- PGI Telecom — multi-tenant / wholesale SVA foundation.
+-- PGI Telecom : multi-tenant / wholesale SVA foundation.
 -- Additive only: existing single-tenant runtime remains compatible.
 
 CREATE TABLE tenants (

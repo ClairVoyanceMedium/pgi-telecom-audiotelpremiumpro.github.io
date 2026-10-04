@@ -1,4 +1,4 @@
--- PGI Telecom — international market foundation.
+-- PGI Telecom : international market foundation.
 -- Additive only. France remains the default market; no foreign market is activated automatically.
 
 CREATE TABLE operating_markets (
