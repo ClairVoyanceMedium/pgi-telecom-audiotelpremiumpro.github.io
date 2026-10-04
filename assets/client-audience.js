@@ -19,9 +19,6 @@ function apply(){
 }
 function hydratePublicOrderIntent(){
   try{
-    const ref=String(new URLSearchParams(location.search).get("ref")||"").trim().toUpperCase();
-    if(/^APP-[A-F0-9]{12}$/.test(ref))window.PGIOrderMeta=Object.assign({},window.PGIOrderMeta||{},{referral_code:ref,acquisition_source:"referral"});
-
     const raw=sessionStorage.getItem("pgi_public_order_intent_v1");if(!raw)return;
     const x=JSON.parse(raw),age=Date.now()-Number(x.created_at||0);
     if(!x||x.version!==1||age<0||age>3600000){sessionStorage.removeItem("pgi_public_order_intent_v1");return}
@@ -29,7 +26,7 @@ function hydratePublicOrderIntent(){
     if(["individual","business"].includes(x.account_type))set("register-account-type",x.account_type);
     set("register-first-name",x.first_name);set("register-last-name",x.last_name);set("register-email",x.email);set("register-phone",x.phone);
     if(x.account_type==="business")set("register-company",x.company_name);
-    window.PGIOrderMeta=Object.assign({},window.PGIOrderMeta||{},{acquisition_source:window.PGIOrderMeta?.referral_code?"referral":"public_marketing_site",service_intent:String(x.service_intent||"").slice(0,40)});
+    window.PGIOrderMeta={acquisition_source:"public_marketing_site",service_intent:String(x.service_intent||"").slice(0,40)};
     sessionStorage.removeItem("pgi_public_order_intent_v1");
   }catch(_e){try{sessionStorage.removeItem("pgi_public_order_intent_v1")}catch(_x){}}
 }
