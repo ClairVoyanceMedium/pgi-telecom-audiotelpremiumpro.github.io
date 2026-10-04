@@ -1,4 +1,4 @@
-# Téléphonie — couche opérateur minimale
+# Téléphonie : couche opérateur minimale
 
 Ce dossier documente l'interface attendue entre l'opérateur SVA et PGI Telecom.
 

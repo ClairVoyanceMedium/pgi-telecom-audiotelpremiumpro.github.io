@@ -1,6 +1,6 @@
 # Runbook d'exploitation
 
-## Priorité 1 — appel impossible
+## Priorité 1 : appel impossible
 
 1. Vérifier l'état du trunk SIP.
 2. Vérifier la résolution DNS et la connectivité vers le SBC opérateur.
@@ -9,7 +9,7 @@
 5. Vérifier les limites de concurrence.
 6. Ne jamais modifier le numéro public ou le palier D080 comme action de dépannage automatique.
 
-## Priorité 1 — écart financier
+## Priorité 1 : écart financier
 
 1. Geler l'état de réconciliation, sans supprimer de CDR.
 2. Calculer minutes éligibles internes.

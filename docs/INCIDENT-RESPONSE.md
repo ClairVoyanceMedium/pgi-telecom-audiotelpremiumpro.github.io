@@ -20,7 +20,7 @@
 - métrique secondaire indisponible ;
 - défaut sans impact client.
 
-## P1 — actions immédiates
+## P1 : actions immédiates
 
 1. Ne pas supprimer de données.
 2. Noter heure de début et symptômes.

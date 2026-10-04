@@ -1,4 +1,4 @@
-# Go-live opérateur SVA — checklist de preuve
+# Go-live opérateur SVA : checklist de preuve
 
 ## Règle
 

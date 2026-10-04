@@ -1,4 +1,4 @@
-# Préparation au lancement — PGI Telecom / Audiotel Premium Pro
+# Préparation au lancement : PGI Telecom / Audiotel Premium Pro
 
 ## Principe
 

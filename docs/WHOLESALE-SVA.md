@@ -1,4 +1,4 @@
-# PGI Telecom — trajectoire Wholesale SVA
+# PGI Telecom : trajectoire Wholesale SVA
 
 Dernière vérification marché et réglementation : 18 septembre 2026.
 
@@ -61,7 +61,7 @@ Les règles déontologiques SVA applicables depuis le 1er septembre 2026 sont pu
 
 ## Phases
 
-### Phase A — PGI éditeur unique
+### Phase A : PGI éditeur unique
 
 Flux :
 
@@ -78,7 +78,7 @@ FreeSWITCH / routage / experts
 
 L'opérateur amont fournit le 089 et la collecte. PGI fournit le service et toute la couche technique.
 
-### Phase B — PGI plateforme multi-éditeurs
+### Phase B : PGI plateforme multi-éditeurs
 
 Flux :
 
@@ -110,7 +110,7 @@ L'opérateur attributaire reste le titulaire réglementaire de l'affectation. PG
 - facturation de la plateforme ;
 - rapprochement entre relevés amont et comptes clients.
 
-### Phase C — PGI opérateur SVA attributaire
+### Phase C : PGI opérateur SVA attributaire
 
 Objectifs supplémentaires :
 
@@ -122,10 +122,10 @@ Objectifs supplémentaires :
 6. Mettre en place les procédures KYC/LCB-FT et de contrôle des éditeurs.
 7. Assurer portabilité, ouverture réseau, lutte antifraude, réconciliation et obligations de reporting.
 
-AF2M — souscription opérateur SVA :
+AF2M : souscription opérateur SVA :
 https://af2m.org/souscrire-aux-cgs-sva/
 
-ARCEP — taxes de numérotation :
+ARCEP : taxes de numérotation :
 https://www.arcep.fr/la-regulation/grands-dossiers-thematiques-transverses/la-numerotation/taxes-de-numerotation.html
 
 ## Candidats amont identifiés

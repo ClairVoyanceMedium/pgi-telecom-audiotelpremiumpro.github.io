@@ -1,4 +1,4 @@
-# Marque et terminologie — Audiotel Premium Pro
+# Marque et terminologie : Audiotel Premium Pro
 
 ## Règle de marque
 

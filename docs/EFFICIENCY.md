@@ -1,4 +1,4 @@
-# Operator Efficiency 1.16 — PGI • Telecom
+# Operator Efficiency 1.16 : PGI • Telecom
 
 ## Objectif
 

@@ -1,4 +1,4 @@
-# Cockpit Intelligence — PGI • Telecom
+# Cockpit Intelligence : PGI • Telecom
 
 ## Rôle
 

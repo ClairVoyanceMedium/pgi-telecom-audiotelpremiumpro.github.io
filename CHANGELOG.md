@@ -1,4 +1,4 @@
-## 1.31.0 — Tarif plateforme 4,90 € TTC — 2026-10-04
+## 1.31.0 : Tarif plateforme 4,90 € TTC : 2026-10-04
 
 - abonnement plateforme courant porté à 4,90 € TTC par mois après le mois en cours offert ;
 - nouvelle version tarifaire SQL 064 à 490 centimes, sans réécriture des versions historiques à 2,00 € et 3,00 € ;
@@ -6,7 +6,7 @@
 - garde-fous de production renforcés pour empêcher le retour silencieux d’un tarif à 3,00 € comme valeur courante ;
 - version applicative portée à 1.31.0.
 
-## Monthly Contract & Site Protection v3 — 2026-09-26
+## Monthly Contract & Site Protection v3 : 2026-09-26
 
 - abonnement plateforme à durée indéterminée, facturé mensuellement d’avance ;
 - première période mensuelle due lors de la souscription, puis renouvellement mensuel jusqu’à résiliation ;
@@ -19,7 +19,7 @@
 - profil voyance non présélectionné juridiquement ; page numéro SVA alignée particuliers/professionnels ;
 - version probatoire portée à 2026-09-26-b2b-b2c-v3.
 
-## Dual B2B/B2C Terms v2 — 2026-09-26
+## Dual B2B/B2C Terms v2 : 2026-09-26
 
 - conditions générales restructurées pour particuliers, non-professionnels et professionnels ;
 - qualification juridique réelle prioritaire sur le simple profil sélectionné ;
@@ -28,7 +28,7 @@
 - bouton de souscription rendu explicite : « Souscrire avec obligation de paiement » ;
 - nouvelle version probatoire : 2026-09-26-b2b-b2c-v2.
 
-## Legal Shield — 2026-09-26
+## Legal Shield : 2026-09-26
 
 - refonte complète des CGU et conditions d’abonnement avec séparation B2B/B2C ;
 - responsabilité éditoriale SVA, antifraude, trafic artificiel, suspension proportionnée et retenues de reversement justifiées ;
@@ -39,7 +39,7 @@
 - demande d’exécution immédiate et conséquences de rétractation rendues explicites ;
 - exigence de fonctionnalité de rétractation en ligne applicable depuis le 19 juin 2026 verrouillée avant tout lancement B2C.
 
-## 1.30.7 — Mobile-first sans dérive horizontale — 2026-09-24
+## 1.30.7 : Mobile-first sans dérive horizontale : 2026-09-24
 
 - suppression du débordement horizontal global sur mobile sans casser les tableaux et onglets défilants ;
 - confinement des SVG, cartes, grilles, en-têtes et panneaux dans la largeur réelle de l’écran ;
@@ -47,7 +47,7 @@
 - correction des badges longs du portail client et du menu mobile plein écran ;
 - cache PWA renouvelé pour livrer immédiatement les feuilles de style corrigées.
 
-## 1.30.6 — Revenue Recovery Stripe & continuité SVA — 2026-09-24
+## 1.30.6 : Revenue Recovery Stripe & continuité SVA : 2026-09-24
 
 - délai de grâce de 72 heures après le premier échec de renouvellement ;
 - fenêtre de récupération de 14 jours alignée sur Stripe Smart Retries ;
@@ -56,7 +56,7 @@
 - suspension automatique à l’échéance, avec rétablissement automatique après paiement ;
 - régularisation depuis le Stripe Customer Portal et alertes administrateur progressives.
 
-## 1.30.5 — Checkout Stripe : clarté contractuelle — 2026-09-24
+## 1.30.5 : Checkout Stripe : clarté contractuelle : 2026-09-24
 
 - description d’abonnement transmise à Stripe sans tarif codé en dur ;
 - mention explicite dans Checkout : l’abonnement concerne l’accès à la plateforme PGI Telecom ;
@@ -64,7 +64,7 @@
 - conservation de la collecte d’adresse et d’identifiant fiscal déjà configurée ;
 - aucune donnée KYC, fiscale ou bancaire ajoutée au dépôt.
 
-## 1.30.4 — Stripe Billing : renouvellements & impayés — 2026-09-24
+## 1.30.4 : Stripe Billing : renouvellements & impayés : 2026-09-24
 
 - traitement serveur de `invoice.paid`, `invoice.payment_failed` et `invoice.payment_action_required` ;
 - relecture de l’abonnement Stripe avant toute mise à jour issue d’une facture ;
@@ -74,7 +74,7 @@
 - tests dédiés aux renouvellements, impayés et factures sans abonnement ;
 - aucune donnée KYC, fiscale ou bancaire ajoutée au dépôt.
 
-## 1.30.3 — Identité publique PGI & SEO canonique — 2026-09-24
+## 1.30.3 : Identité publique PGI & SEO canonique : 2026-09-24
 
 - suppression de l’ancien domaine GitHub ClairVoyanceMedium des métadonnées publiques ;
 - URL Vercel PGI utilisée par défaut pour canonical, Open Graph et schema.org ;
@@ -84,7 +84,7 @@
 - cache PWA incrémenté en v46 pour diffuser la nouvelle identité publique ;
 - aucune donnée KYC, fiscale ou adresse légale inventée.
 
-## 1.30.2 — Branding production & Stripe Billing — 2026-09-24
+## 1.30.2 : Branding production & Stripe Billing : 2026-09-24
 
 - logo officiel renforcé dans Paramètres, abonnement client, footer client et impressions/PDF ;
 - branding PGI conservé dans les rapports imprimés via les en-têtes et pieds de page déjà présents ;
@@ -95,7 +95,7 @@
 - aucune identité KYC, adresse légale, immatriculation fiscale ou TVA inventée ;
 - factures Stripe prêtes à reprendre le branding global du compte dès validation du fichier logo dans les paramètres Stripe.
 
-## 1.30.0 — SVA Compliance Center multi-organismes — 2026-09-20
+## 1.30.0 : SVA Compliance Center multi-organismes : 2026-09-20
 
 - nouveau SVA Compliance Center premium, lazy-loadé depuis le cockpit ;
 - registre distinct ARCEP, APNF/RSVA, af2m 2026, DGCCRF, CNIL, 33700, médiation et évaluation ACPR/DSP2 ;
@@ -109,7 +109,7 @@
 - aucune certification ou approbation d'organisme revendiquée ;
 - aucun branchement opérateur, APNF/RSVA, AF2M, DGCCRF, CNIL, ACPR, Stripe ou PSP activé.
 
-## 1.29.0 — Operational Assurance — 2026-09-20
+## 1.29.0 : Operational Assurance : 2026-09-20
 
 - validation 4 yeux pour l'activation des bascules opérateur critiques ;
 - identités staff PGI distinctes et second administrateur créable depuis la Control Tower ;
@@ -122,7 +122,7 @@
 - projections de charge bornées et toujours `dry_run=true / mutates_state=false` ;
 - aucun branchement Stripe, opérateur SVA, APNF/RSVA ou PSP activé.
 
-## 1.28.0 — PGI Control Tower, Policy Engine & Digital Twin — 2026-09-20
+## 1.28.0 : PGI Control Tower, Policy Engine & Digital Twin : 2026-09-20
 
 - nouvelle PGI Control Tower premium, chargée à la demande depuis la palette de commandes ;
 - score de readiness interne et priorités critiques agrégées depuis les données existantes ;
@@ -134,7 +134,7 @@
 - module frontend lazy afin de préserver le budget du shell ;
 - aucune connexion Stripe, opérateur, APNF/RSVA ou PSP activée.
 
-## 1.27.0 — Surveillance réglementaire proactive — 2026-09-20
+## 1.27.0 : Surveillance réglementaire proactive : 2026-09-20
 
 - file persistante `regulatory_review_alerts` pour les échéances et contrôles réglementaires à traiter ;
 - classification cockpit : bloquant, aujourd'hui, bientôt et revue non planifiée ;
@@ -146,7 +146,7 @@
 - worker distribué et API privée dédiés ;
 - version portée à 1.27.0, sans connexion Stripe, opérateur, APNF ou PSP supplémentaire.
 
-## 1.26.0 — Cockpit conformité ARCEP — 2026-09-20
+## 1.26.0 : Cockpit conformité ARCEP : 2026-09-20
 
 - fiche « Conformité ARCEP 2026 » directement accessible pour chaque numéro externe ;
 - affichage séparé des 8 garde-fous ARCEP 2026 et de leur statut courant ;
@@ -157,7 +157,7 @@
 - affichage du prix d'abonnement harmonisé à **3,00 EUR TTC/mois** dans le cockpit ;
 - aucune connexion Stripe, opérateur, APNF ou PSP activée.
 
-## 1.25.0 — Garde-fous ARCEP 2026 — 2026-09-20
+## 1.25.0 : Garde-fous ARCEP 2026 : 2026-09-20
 
 - décision ARCEP 2025-2215 ajoutée aux références suivies pour le plan applicable au 1er janvier 2026 ;
 - verrou fail-closed supplémentaire pour les numéros français 081, 082 et 089 ;
@@ -170,7 +170,7 @@
 - abonnement externe fixé à 3,00 EUR TTC/mois, montant final client avec fiscalité incluse lorsqu’elle s’applique ;
 - aucune connexion Stripe, opérateur, APNF ou PSP activée par cette version.
 
-## Regulatory Trust & abonnement 3 EUR — 2026-09-20
+## Regulatory Trust & abonnement 3 EUR : 2026-09-20
 
 - prix courant de l'abonnement externe porté à 3,00 EUR TTC/mois par nouvelle version tarifaire, avec `tax_behavior=inclusive` ;
 - Regulatory Evidence Pack exportable par numéro depuis le cockpit ;
@@ -179,7 +179,7 @@
 - chaque export est journalisé dans l'audit ;
 - RIO brut, secrets de portabilité, numéros d'appelants et contenu des appels exclus de l'export.
 
-## Sécurité client & graphiques avancés — 2026-09-20
+## Sécurité client & graphiques avancés : 2026-09-20
 
 - changement de mot de passe depuis l'espace client avec vérification de l'ancien mot de passe ;
 - hachage scrypt conservé, nouveau sel et invalidation de session après changement ;
@@ -187,7 +187,7 @@
 - portail client à huit visualisations principales sans requêtes API supplémentaires ;
 - cockpit administrateur vérifié : graphiques avancés déjà présents, aucun doublon inutile ajouté.
 
-## Analytique & exports — 2026-09-20
+## Analytique & exports : 2026-09-20
 
 - portail client passé en noir et gris anthracite ;
 - nom de la société mis au premier plan dans le bandeau ;
@@ -196,7 +196,7 @@
 - centre d’export administrateur chargé à la demande : appels, synthèse, finance et PDF ;
 - aucune dépendance graphique externe et aucun ajout au cache critique du portail client.
 
-## Portail client Audiotel — 2026-09-20
+## Portail client Audiotel : 2026-09-20
 
 - nouvel espace client séparé du cockpit PGI ;
 - trafic, minutes, numéros, appels, reversements, abonnement et routage en lecture seule ;
@@ -208,7 +208,7 @@
 
 # Changelog
 
-## 1.23.0 — 2026-09-19
+## 1.23.0 : 2026-09-19
 
 Customer Fleet & Headroom :
 
@@ -227,7 +227,7 @@ Customer Fleet & Headroom :
 - migration 021, tests backend, PostgreSQL, hyperscale et statiques renforcés ;
 - version front, backend, Docker et manifests scale alignée sur 1.23.0.
 
-## 1.22.0 — 2026-09-19
+## 1.22.0 : 2026-09-19
 
 Cockpit d’administration totale :
 
@@ -263,7 +263,7 @@ Cockpit d’administration totale :
 - version front, backend, Docker et manifests scale alignée sur 1.22.0.
 
 
-## 1.21.0 — 2026-09-19
+## 1.21.0 : 2026-09-19
 
 Customer Control Center :
 
@@ -286,7 +286,7 @@ Customer Control Center :
 - migration 020 et cache PWA v24 ;
 - version front, backend, Docker et manifests scale alignée sur 1.21.0.
 
-## 1.20.0 — 2026-09-19
+## 1.20.0 : 2026-09-19
 
 External Subscription Gate :
 
@@ -306,7 +306,7 @@ External Subscription Gate :
 - cache PWA v23 ;
 - version front, backend, Docker et manifests scale alignée sur 1.20.0.
 
-## 1.19.0 — 2026-09-19
+## 1.19.0 : 2026-09-19
 
 Performance Radar & Benchmark Intelligence :
 
@@ -324,7 +324,7 @@ Performance Radar & Benchmark Intelligence :
 - versions front, backend, Docker et manifests scale alignées sur 1.19.0.
 
 
-## 1.18.0 — 2026-09-19
+## 1.18.0 : 2026-09-19
 
 Caller Experience Intelligence :
 
@@ -343,7 +343,7 @@ Caller Experience Intelligence :
 - cache PWA v21 et budgets front stricts conservés ;
 - versions front, backend, Docker et manifests scale alignées sur 1.18.0.
 
-## 1.17.0 — 2026-09-19
+## 1.17.0 : 2026-09-19
 
 Command Center et temps réel distribué :
 
@@ -359,7 +359,7 @@ Command Center et temps réel distribué :
 - budgets stricts conservés : `app.js` 90 KiB et shell 260 KiB ;
 - versions front, backend, Docker et manifests scale alignées sur 1.17.0.
 
-## 1.16.0 — 2026-09-19
+## 1.16.0 : 2026-09-19
 
 Operator Efficiency et optimisation du temps de travail :
 
@@ -383,7 +383,7 @@ Operator Efficiency et optimisation du temps de travail :
 - `app.js` maintenu sous le budget strict de 90 KiB sans relever la limite ;
 - versions front, backend, Docker et manifests scale alignées sur 1.16.0.
 
-## 1.15.0 — 2026-09-19
+## 1.15.0 : 2026-09-19
 
 Cockpit Intelligence et supervision enrichie :
 
@@ -405,7 +405,7 @@ Cockpit Intelligence et supervision enrichie :
 - cache PWA porté à v18 ;
 - front, backend, Docker et exemples de scale alignés sur 1.15.0.
 
-## 1.14.0 — 2026-09-19
+## 1.14.0 : 2026-09-19
 
 Résilience hyperscale et isolation renforcée :
 
@@ -427,7 +427,7 @@ Résilience hyperscale et isolation renforcée :
 - cache PWA porté à v17 ;
 - versions front/backend/Docker alignées sur 1.14.0.
 
-## 1.13.0 — 2026-09-18
+## 1.13.0 : 2026-09-18
 
 Fondation hyperscale pour plusieurs millions de clients :
 
@@ -448,7 +448,7 @@ Fondation hyperscale pour plusieurs millions de clients :
 - cache PWA porté à v16 ;
 - versions front/backend/Docker alignées sur 1.13.0.
 
-## 1.12.0 — 2026-09-18
+## 1.12.0 : 2026-09-18
 
 Fondation internationale multi-marchés :
 
@@ -468,7 +468,7 @@ Fondation internationale multi-marchés :
 - versions front/backend/Docker alignées sur 1.12.0.
 
 
-## 1.11.1 — 2026-09-18
+## 1.11.1 : 2026-09-18
 
 Durcissement mobile petits écrans :
 
@@ -480,7 +480,7 @@ Durcissement mobile petits écrans :
 - versions front/backend/Docker alignées sur 1.11.1.
 
 
-## 1.11.0 — 2026-09-18
+## 1.11.0 : 2026-09-18
 
 Optimisation mobile Android et iOS :
 
@@ -497,7 +497,7 @@ Optimisation mobile Android et iOS :
 - versions front/backend/Docker alignées sur 1.11.0.
 
 
-## 1.10.2 — 2026-09-18
+## 1.10.2 : 2026-09-18
 
 Identité mobile :
 
@@ -506,7 +506,7 @@ Identité mobile :
 - cache PWA porté à v12 et versions alignées sur 1.10.2.
 
 
-## 1.10.1 — 2026-09-18
+## 1.10.1 : 2026-09-18
 
 Ergonomie mobile et identité :
 
@@ -518,7 +518,7 @@ Ergonomie mobile et identité :
 - cache PWA porté à v11 et versions alignées sur 1.10.1.
 
 
-## 1.10.0 — 2026-09-18
+## 1.10.0 : 2026-09-18
 
 Pilotage SVA orienté lancement et mobile :
 
@@ -536,7 +536,7 @@ Pilotage SVA orienté lancement et mobile :
 - cache PWA porté à v10 et versions front/backend/Docker alignées sur 1.10.0.
 
 
-## 1.9.0 — 2026-09-18
+## 1.9.0 : 2026-09-18
 
 Wholesale SVA Control Center et nouveau nom officiel :
 
@@ -556,7 +556,7 @@ Wholesale SVA Control Center et nouveau nom officiel :
 - version front/backend/Docker/PWA alignée sur 1.9.0, cache PWA v9.
 
 
-## 1.8.0 — 2026-09-18
+## 1.8.0 : 2026-09-18
 
 Fondation Wholesale SVA / multi-clients :
 
@@ -577,7 +577,7 @@ Fondation Wholesale SVA / multi-clients :
 La release n'active pas un portail revendeur ni la circulation de fonds de tiers : ces fonctions restent volontairement bloquées jusqu'à validation des contrats opérateur, du KYC et du cadre de paiement.
 
 
-## 1.7.0 — 2026-09-18
+## 1.7.0 : 2026-09-18
 
 Refonte Executive Premium du cockpit :
 
@@ -594,7 +594,7 @@ Refonte Executive Premium du cockpit :
 - cache PWA et couleurs système alignés sur la palette Premium 1.7.
 
 
-## 1.6.0 — 2026-09-18
+## 1.6.0 : 2026-09-18
 
 Déploiement et exploitation Premium 24/7 :
 
@@ -617,7 +617,7 @@ Déploiement et exploitation Premium 24/7 :
 - rétention bornée des sauvegardes PostgreSQL et validation renforcée des CDR avant stockage.
 
 
-## 1.5.0 — 2026-09-18
+## 1.5.0 : 2026-09-18
 
 Durcissement Premium préproduction avant choix opérateur :
 
@@ -642,7 +642,7 @@ Durcissement Premium préproduction avant choix opérateur :
 - CI renforcée sur production, SQL, migrations, shell, sécurité et non-régression.
 
 
-## 1.4.0 — 2026-09-18
+## 1.4.0 : 2026-09-18
 
 Branchement du cockpit sur le backend privé :
 
@@ -658,7 +658,7 @@ Branchement du cockpit sur le backend privé :
 - tests statiques anti-régression sur le chemin production.
 
 
-## 1.3.0 — 2026-09-18
+## 1.3.0 : 2026-09-18
 
 Cockpit dashboard Ultra Premium :
 
@@ -678,7 +678,7 @@ Cockpit dashboard Ultra Premium :
 - suppression des faux compteurs live en mode démo ;
 - responsive renforcé desktop/tablette/mobile.
 
-## 1.2.0 — 2026-09-18
+## 1.2.0 : 2026-09-18
 
 Abstraction complète de l'opérateur SVA :
 
@@ -697,7 +697,7 @@ Abstraction complète de l'opérateur SVA :
 - dashboard opérateur actif/standby/portabilité ;
 - validation automatique des profils opérateur.
 
-## 1.1.0 — 2026-09-18
+## 1.1.0 : 2026-09-18
 
 Durcissement technique avant branchement opérateur :
 
@@ -722,7 +722,7 @@ Durcissement technique avant branchement opérateur :
 - préflight, healthcheck, SLO et observabilité ;
 - conteneurs Postgres/Valkey durcis.
 
-## 1.0.0 — 2026-09-18
+## 1.0.0 : 2026-09-18
 
 Première base PGI Telecom • Audiotel Premium Pro :
 

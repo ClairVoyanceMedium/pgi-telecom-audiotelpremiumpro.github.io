@@ -1,4 +1,4 @@
-# SVA Compliance Center — version 1.30
+# SVA Compliance Center : version 1.30
 
 Le SVA Compliance Center complète le Regulatory Trust Center et les garde-fous ARCEP 2026. Il structure les preuves liées à l'écosystème SVA français sans revendiquer de certification, d'agrément, d'adhésion ou d'approbation d'un organisme.
 

@@ -1,6 +1,6 @@
 # Roadmap
 
-## Phase 1 — Front Premium Pro
+## Phase 1 : Front Premium Pro
 État : réalisé
 
 - dashboard ;
@@ -13,22 +13,22 @@
 - sécurité dépôt ;
 - documentation.
 
-## Phase 2 — Publication GitHub Pages
+## Phase 2 : Publication GitHub Pages
 État : bloqué par réglage dépôt
 
 Voir issue #6.
 
-## Phase 3 — Opérateur SVA D080
+## Phase 3 : Opérateur SVA D080
 État : en attente de contractualisation
 
 Voir issue #7.
 
-## Phase 4 — Infrastructure privée
+## Phase 4 : Infrastructure privée
 État : en attente de VPS/serveur
 
 Voir issue #8.
 
-## Phase 5 — Téléphonie réelle
+## Phase 5 : Téléphonie réelle
 
 - Kamailio/OpenSIPS ;
 - FreeSWITCH ;
@@ -37,7 +37,7 @@ Voir issue #8.
 - présence experts ;
 - CDR temps réel.
 
-## Phase 6 — Finance réelle
+## Phase 6 : Finance réelle
 
 - contrat opérateur ;
 - import CDR ;
@@ -45,7 +45,7 @@ Voir issue #8.
 - règlements ;
 - alertes.
 
-## Phase 7 — Production
+## Phase 7 : Production
 
 - authentification ;
 - rôles ;

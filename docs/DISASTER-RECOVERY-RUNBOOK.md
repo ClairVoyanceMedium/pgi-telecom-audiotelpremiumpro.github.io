@@ -1,4 +1,4 @@
-# Disaster Recovery — runbook opérationnel
+# Disaster Recovery : runbook opérationnel
 
 ## Objectif
 
@@ -25,19 +25,19 @@ Doivent exister et être vérifiés périodiquement :
 
 ## Classification
 
-### DR-1 — corruption/perte de données
+### DR-1 : corruption/perte de données
 Priorité maximale. Toute écriture non indispensable est stoppée avant de modifier la base.
 
-### DR-2 — indisponibilité base principale
+### DR-2 : indisponibilité base principale
 L’application peut être indisponible ou partiellement indisponible. Ne jamais promouvoir une base non vérifiée uniquement pour rétablir l’interface.
 
-### DR-3 — mauvais déploiement applicatif
+### DR-3 : mauvais déploiement applicatif
 Utiliser d’abord le rollback de release. Ne pas restaurer la base si les données sont saines.
 
-### DR-4 — panne opérateur
+### DR-4 : panne opérateur
 Le trafic téléphonique doit être traité séparément de l’interface. Utiliser la bascule opérateur uniquement si la destination standby est réellement prête et validée.
 
-### DR-5 — compromission
+### DR-5 : compromission
 Préserver les preuves, révoquer les secrets concernés, isoler l’accès et ne pas restaurer un environnement compromis sans comprendre le vecteur initial.
 
 ## Procédure base PostgreSQL
