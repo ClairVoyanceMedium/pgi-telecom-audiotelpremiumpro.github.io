@@ -43,7 +43,7 @@ test("referral program has a server-side global switch",()=>{
   const migration=read("database/migrations/064_revenue_growth_referral.sql");
   const domain=read("backend/src/revenue-growth.mjs");
   const server=read("backend/server.mjs");
-  const admin=read("assets/platform-admin-tools.js");
+  const admin=read("assets/platform-referral-admin.js");
   assert.match(migration,/referral_enabled boolean NOT NULL DEFAULT true/);
   assert.match(domain,/reason:"disabled"/);
   assert.match(domain,/status='qualified'/);
