@@ -275,8 +275,9 @@ async function handleGoogleCredential(response,tenantOverride){
   var invite=new URLSearchParams(location.search).get("invite")||"";
   var tenant=tenantOverride||$("customer-tenant").value||"";
   try{
-    var remember=Boolean($("customer-remember")&&$("customer-remember").checked);
-    var result=await window.PGICustomerApi.google(credential,tenant,invite,remember);state.googleCredential=null;
+    var remember=Boolean($("customer-remember")&&$("customer-remember").checked),legal={};
+    if(invite){var accepted=Boolean($("activation-legal")&&$("activation-legal").checked);if(!accepted){setAuthMessage("Acceptez les conditions contractuelles avant d’activer votre espace.",true);return;}legal={legal_terms_accepted:true,privacy_notice_acknowledged:true,legal_version:"2026-09-26-b2b-b2c-v4"};}
+    var result=await window.PGICustomerApi.google(credential,tenant,invite,remember,legal);state.googleCredential=null;
     if(result&&result.pending_contract){
       setAuthMessage("Accès client non autorisé. Contactez PGI Telecom si votre dossier a déjà été validé.",true);
       return;
@@ -457,10 +458,11 @@ async function submitActivation(e){
   e.preventDefault();setAuthMessage("");
   var p=$("activation-password").value,c=$("activation-password-confirm").value;
   if(p!==c){setAuthMessage("Les deux mots de passe sont différents.",true);return;}
-  var token=new URLSearchParams(location.search).get("invite")||"";
+  var token=new URLSearchParams(location.search).get("invite")||"",accepted=Boolean($("activation-legal")&&$("activation-legal").checked);
+  if(!accepted){setAuthMessage("Acceptez les conditions contractuelles avant d’activer votre espace.",true);return;}
   try{
-    var result=await window.PGICustomerApi.activate(token,$("activation-name").value.trim(),p);state.user=result.user;history.replaceState(null,"",location.pathname);showApp();
-  }catch(err){setAuthMessage(err.code==="CUSTOMER_ACCOUNT_EXISTS"?"Un compte existe déjà pour cette adresse. Connectez-vous avec votre compte existant.":"Activation impossible ou invitation expirée.",true);}
+    var result=await window.PGICustomerApi.activate(token,$("activation-name").value.trim(),p,{legal_terms_accepted:true,privacy_notice_acknowledged:true,legal_version:"2026-09-26-b2b-b2c-v4"});state.user=result.user;history.replaceState(null,"",location.pathname);showApp();
+  }catch(err){var messages={CUSTOMER_ACCOUNT_EXISTS:"Un compte existe déjà pour cette adresse. Connectez-vous avec votre compte existant.",REGISTRATION_LEGAL_TERMS_REQUIRED:"Acceptez les conditions contractuelles avant d’activer votre espace.",LEGAL_DOCUMENT_VERSION_OUTDATED:"Les conditions ont été mises à jour. Rechargez la page avant de continuer."};setAuthMessage(messages[err.code]||"Activation impossible ou invitation expirée.",true);}
 }
 function csvCell(v){return '"'+String(v==null?"":v).replace(/"/g,'""')+'"';}
 function downloadCsv(name,rows){
@@ -599,9 +601,12 @@ async function init(){
   var resetToken=authHash.get("password-reset")||"",emailChangeToken=authHash.get("email-change")||"";
   if(resetToken){showReset();return;}
   if(emailChangeToken&&!state.demo){await confirmEmailChangeFromHash(emailChangeToken);return;}
-  if(location.search.includes("register=1")){showRegister();return;}
+  if(location.search.includes("register=1")){showLogin();setAuthMessage("La création libre de compte est désactivée. L’accès client est envoyé automatiquement après une demande d’ouverture enregistrée.",false);return;}
   if(state.demo){showApp();return;}
   if(location.search.includes("invite=")){showActivation();return;}
+  var openingState=new URLSearchParams(location.search).get("opening");
+  if(openingState==="access-sent"){showLogin();setAuthMessage("Votre dossier a été créé. Un e-mail sécurisé vient de vous être envoyé pour activer votre espace client.",false);return;}
+  if(openingState==="received"){showLogin();setAuthMessage("Votre demande d’ouverture a bien été enregistrée. Consultez votre e-mail pour la suite de votre dossier.",false);return;}
   try{var me=await window.PGICustomerApi.me();state.user=me.user;showApp();}catch(_e){showLogin();}
 }
 window.addEventListener("pageshow",function(){
