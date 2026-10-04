@@ -1,4 +1,4 @@
--- Audiotel Premium Pro — SVA ecosystem compliance center.
+-- Audiotel Premium Pro : SVA ecosystem compliance center.
 -- Expand-only. Adds AF2M 2026, APNF/RSVA, consumer-protection and privacy readiness.
 -- Existing active lines are not suspended by this migration.
 -- No external operator, APNF/RSVA, AF2M, DGCCRF, CNIL, ACPR or PSP connection is activated.

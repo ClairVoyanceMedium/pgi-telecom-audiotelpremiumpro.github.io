@@ -1,4 +1,4 @@
--- PGI Telecom — independent motivational jackpot baseline.
+-- PGI Telecom : independent motivational jackpot baseline.
 -- Expand-only and non-destructive: jackpot display state is isolated from official
 -- dashboard metrics, CDRs, settlements and revenue distributions.
 

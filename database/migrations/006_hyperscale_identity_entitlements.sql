@@ -1,4 +1,4 @@
--- PGI Telecom — hyperscale identity, entitlement and customer-lifecycle foundation.
+-- PGI Telecom : hyperscale identity, entitlement and customer-lifecycle foundation.
 -- Additive only. Keeps the current administrator login intact while preparing self-service tenants.
 
 ALTER TABLE app_users

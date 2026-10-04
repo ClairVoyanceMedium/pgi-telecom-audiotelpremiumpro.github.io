@@ -1,4 +1,4 @@
--- PGI Telecom — operational assurance & four-eyes control.
+-- PGI Telecom : operational assurance & four-eyes control.
 -- Expand-only. No external operator, APNF/RSVA, payment or Stripe connection is activated.
 
 BEGIN;

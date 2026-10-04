@@ -1,4 +1,4 @@
--- PGI Telecom — hyperscale foundation.
+-- PGI Telecom : hyperscale foundation.
 -- Additive only. Prepares the control plane and data plane for millions of tenants.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;

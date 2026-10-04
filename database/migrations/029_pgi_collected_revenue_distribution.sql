@@ -1,4 +1,4 @@
--- PGI Telecom — PGI-collected SVA revenue distribution.
+-- PGI Telecom : PGI-collected SVA revenue distribution.
 -- Upstream operator money is accounted to PGI first. PGI margin is then deducted
 -- before the tenant/client amount becomes payable. No bank transfer is executed here.
 

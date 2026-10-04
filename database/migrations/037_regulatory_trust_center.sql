@@ -1,4 +1,4 @@
--- Audiotel Premium Pro — Regulatory Trust Center.
+-- Audiotel Premium Pro : Regulatory Trust Center.
 -- Expand-only. Adds fail-closed SVA regulatory evidence and abuse controls.
 -- No operator, numbering or payment provider connection is activated by this migration.
 

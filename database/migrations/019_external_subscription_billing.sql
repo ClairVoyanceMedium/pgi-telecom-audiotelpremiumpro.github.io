@@ -1,4 +1,4 @@
--- PGI Telecom — paid external subscription gate for premium-rate calling.
+-- PGI Telecom : paid external subscription gate for premium-rate calling.
 -- Internal PGI usage remains exempt. External tenants require a paid active monthly subscription.
 
 CREATE TABLE service_plan_price_versions (

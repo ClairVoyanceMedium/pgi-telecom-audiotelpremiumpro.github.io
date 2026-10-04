@@ -1,4 +1,4 @@
--- PGI Telecom — resilient distributed work queue and dead-letter audit.
+-- PGI Telecom : resilient distributed work queue and dead-letter audit.
 
 ALTER TABLE work_queue
   ADD COLUMN lease_expires_at timestamptz,

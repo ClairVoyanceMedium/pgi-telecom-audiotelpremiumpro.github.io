@@ -1,4 +1,4 @@
--- PGI Telecom — multi-region disaster recovery and data-residency foundation.
+-- PGI Telecom : multi-region disaster recovery and data-residency foundation.
 
 CREATE TABLE platform_regions (
   region_key text PRIMARY KEY,

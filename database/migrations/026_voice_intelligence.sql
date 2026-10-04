@@ -1,4 +1,4 @@
--- PGI Telecom — voice intelligence, carrier health and NOC incident history.
+-- PGI Telecom : voice intelligence, carrier health and NOC incident history.
 -- Expand-only. Adds diagnostics inspired by carrier-grade voice observability without external paid services.
 
 ALTER TABLE calls ADD COLUMN IF NOT EXISTS ringing_at timestamptz;

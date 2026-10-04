@@ -1,4 +1,4 @@
--- PGI Telecom — scalable RTP/voice quality rollups for the cockpit.
+-- PGI Telecom : scalable RTP/voice quality rollups for the cockpit.
 
 CREATE TABLE quality_rollups_hourly_sharded (
   bucket_start timestamptz NOT NULL,

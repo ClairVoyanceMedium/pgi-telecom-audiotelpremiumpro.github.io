@@ -1,4 +1,4 @@
--- Audiotel Premium Pro — ARCEP 2026 numbering-plan guardrails.
+-- Audiotel Premium Pro : ARCEP 2026 numbering-plan guardrails.
 -- Expand-only. Encodes operational gates derived from decision ARCEP 2025-2215,
 -- effective numbering-plan version from 1 January 2026.
 -- No operator, numbering, APNF, payment or Stripe connection is activated here.

@@ -1,4 +1,4 @@
--- PGI Telecom — external customer identity boundary.
+-- PGI Telecom : external customer identity boundary.
 -- External tenant users are intentionally separate from app_users (PGI staff/control-plane users).
 
 ALTER TABLE tenants
