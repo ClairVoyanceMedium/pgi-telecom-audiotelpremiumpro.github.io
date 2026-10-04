@@ -8,7 +8,7 @@
     "check:static": "node scripts/check-static.mjs",
     "check:secrets": "node scripts/check-secrets.mjs",
     "test": "node --test tests/*.test.mjs",
-    "verify": "npm run check:js && npm run check:perf-tools && npm run check:backend && npm run check:static && npm run check:html && npm run check:size && npm run check:carriers && npm run check:dependencies && npm run check:production && npm run check:shell && npm run check:sql && npm run check:migrations && npm run check:lock && npm run check:secrets && npm test",
+    "verify": "npm run check:js && npm run check:perf-tools && npm run check:backend && npm run check:static && npm run check:html && npm run check:size && npm run check:carriers && npm run check:dependencies && npm run check:production && npm run check:shell && npm run check:sql && npm run check:migrations && npm run check:lock && npm run check:punctuation && npm run check:secrets && npm test",
     "check:html": "node scripts/check-html.mjs",
     "check:size": "node scripts/check-size.mjs",
     "build:static": "node scripts/build-static.mjs",
@@ -29,7 +29,8 @@
     "production:smoke": "node scripts/production-smoke.mjs",
     "check:perf-tools": "node --check scripts/performance-load.mjs && node --check scripts/synthetic-probe.mjs && node --check scripts/resilience-drill.mjs && node --check scripts/production-smoke.mjs",
     "start:platform": "sh scripts/start-platform.sh",
-    "verify:vercel": "node --check scripts/build-static.mjs && node --check site/site.js && node --check site/site-search.js && node --check site/hubspot-tracking.js && node --check backend/server.mjs && node --check backend/src/static-site.mjs && node scripts/check-html.mjs && node scripts/check-size.mjs && node scripts/check-secrets.mjs && node --test tests/marketing-site.test.mjs tests/production-static-build.test.mjs tests/platform-hosting.test.mjs"
+    "verify:vercel": "node --check scripts/build-static.mjs && node --check site/site.js && node --check site/site-search.js && node --check site/hubspot-tracking.js && node --check backend/server.mjs && node --check backend/src/static-site.mjs && node scripts/check-html.mjs && node scripts/check-size.mjs && node scripts/check-secrets.mjs && node --test tests/marketing-site.test.mjs tests/production-static-build.test.mjs tests/platform-hosting.test.mjs",
+    "check:punctuation": "node scripts/check-no-em-dash.mjs"
   },
   "engines": {
     "node": ">=20"
