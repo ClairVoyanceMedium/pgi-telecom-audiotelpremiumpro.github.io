@@ -50,8 +50,9 @@ function syncType(){
   if(companyWrap)companyWrap.hidden=!business;
   if(company){company.disabled=!business;if(!business)company.value=""}
 }
+function referralCode(){const c=String(new URLSearchParams(location.search).get("ref")||"").trim().toUpperCase();return /^[A-Z0-9]{8,24}$/.test(c)?c:""}
 function snapshot(){const type=selectedType();
-  return {version:1,created_at:Date.now(),account_type:type,first_name:value("order-first-name").slice(0,80),last_name:value("order-last-name").slice(0,80),company_name:type==="business"?value("order-company").slice(0,200):"",email:value("order-email").slice(0,320),phone:value("order-phone").slice(0,40),service_intent:value("order-service-intent"),country_code:"FR",preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"Europe/Paris"),processing_consent:!!document.getElementById("order-processing-consent")?.checked,marketing_consent:!!document.getElementById("order-marketing-consent")?.checked,marketing_consent_version:"2026-10-01-v1",website:value("order-website")};
+  return {version:1,created_at:Date.now(),account_type:type,first_name:value("order-first-name").slice(0,80),last_name:value("order-last-name").slice(0,80),company_name:type==="business"?value("order-company").slice(0,200):"",email:value("order-email").slice(0,320),phone:value("order-phone").slice(0,40),service_intent:value("order-service-intent"),referral_code:referralCode(),country_code:"FR",preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"Europe/Paris"),processing_consent:!!document.getElementById("order-processing-consent")?.checked,marketing_consent:!!document.getElementById("order-marketing-consent")?.checked,marketing_consent_version:"2026-10-01-v1",website:value("order-website")};
 }
 function saveDraft(){try{sessionStorage.setItem(DRAFT_KEY,JSON.stringify(snapshot()))}catch(_e){}}
 function hydrateDraft(){
