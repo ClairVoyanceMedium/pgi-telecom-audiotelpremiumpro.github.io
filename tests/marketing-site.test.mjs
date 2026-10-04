@@ -27,6 +27,8 @@ const switchOperator=fs.readFileSync("site/seo/changer-operateur-audiotel.html",
 const portability=fs.readFileSync("site/seo/portabilite-numero-sva.html","utf8");
 const priorityPortability=fs.readFileSync("site/seo/portabilite-prioritaire.html","utf8");
 const referralLanding=fs.readFileSync("site/seo/parrainage-audiotel.html","utf8");
+const referralLandingScript=fs.readFileSync("site/referral-landing.js","utf8");
+const clientReferral=fs.readFileSync("assets/client-referral.js","utf8");
 const withoutSiret=fs.readFileSync("site/seo/audiotel-sans-siret.html","utf8");
 const businessLive=fs.readFileSync("site/seo/business-live-audiotel.html","utf8");
 
@@ -579,13 +581,22 @@ test("homepage explains the 4.9 percent CB fee without mixing it with Stripe fee
   assert.match(html,/ni l’abonnement Audiotel Premium Pro à 4,90€ TTC \/ mois/);
 });
 
-test("new complementary products are public, indexable and operationally explicit",()=>{
+test("new complementary products are public, indexable and commercially explicit",()=>{
   assert.match(priorityPortability,/9,90€ TTC/);
   assert.match(priorityPortability,/portabilité standard reste gratuite/i);
   assert.match(priorityPortability,/Aucun délai opérateur garanti/i);
   assert.match(priorityPortability,/traitement administratif prioritaire/i);
-  assert.match(referralLanding,/abonnement actif et payé/i);
-  assert.match(referralLanding,/Programme activable ou désactivable/i);
+  assert.match(referralLanding,/Vos recommandations peuvent vous rapporter/i);
+  assert.match(referralLanding,/Une récompense par filleul qualifié/i);
+  assert.match(referralLanding,/récompenses qui peuvent s’additionner/i);
+  assert.match(referralLanding,/Voir ma récompense et mon lien/i);
+  assert.match(referralLanding,/Aucune démarche compliquée/i);
+  assert.match(referralLanding,/site\/referral-landing\.js/);
+  assert.match(referralLandingScript,/\/api\/v1\/public\/referral-program/);
+  assert.match(referralLandingScript,/data-referral-example/);
+  assert.match(referralLandingScript,/Intl\.NumberFormat\("fr-FR"/);
+  assert.match(clientReferral,/Recommander et cumuler mes récompenses/);
+  assert.match(buildStatic,/"site\/referral-landing\.js"/);
   assert.match(buildStatic,/"portabilite-prioritaire"/);
   assert.match(buildStatic,/"parrainage-audiotel"/);
   assert.match(sitemap,/portabilite-prioritaire/);
