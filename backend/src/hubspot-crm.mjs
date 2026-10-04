@@ -59,6 +59,9 @@ export function buildHubSpotLeadSubmission(input={},options={}){
   if(!["individual","business"].includes(accountType))throw problem("HUBSPOT_ACCOUNT_TYPE_INVALID");
   const intentKey=String(input.service_intent||"advice").toLowerCase();
   const intent=INTENT_LABELS[intentKey]||INTENT_LABELS.advice;
+  const referralCode=clean(input.referral_code,24).toUpperCase().replace(/[^A-Z0-9]/g,"");
+  const referral=referralCode.length>=8?referralCode:"";
+  const projectLabel=referral?intent.label+" | Parrainage : "+referral:intent.label;
   const firstName=clean(input.first_name,80),lastName=clean(input.last_name,80);
   if(!firstName||!lastName)throw problem("HUBSPOT_NAME_REQUIRED");
 
@@ -70,7 +73,7 @@ export function buildHubSpotLeadSubmission(input={},options={}){
   if(accountType==="business")field(fields,"company",clean(input.company_name,160));
   field(fields,"type_de_client",accountType==="business"?"Professionnel":"Particulier");
   field(fields,"type_de_demande",intent.hubspot);
-  field(fields,"besoin__projet_audiotel",intent.label);
+  field(fields,"besoin__projet_audiotel",projectLabel);
   field(fields,"pgi_dossier_ref",clean(input.dossier_ref,40));
   field(fields,"lifecyclestage","lead");
   if(options.enrich!==false){
@@ -268,6 +271,7 @@ export async function syncHubSpotCommercialLead(input={},options={}){
   if(contact){
     const current=contact.properties||{};
     effectiveStatus=advanceCommercialStatus(current.statut_commercial_pgi,requestedStatus);
+    const preserveReferral=/Parrainage\s*:/i.test(String(current.besoin__projet_audiotel||""))&&!/Parrainage\s*:/i.test(String(baseProps.besoin__projet_audiotel||""));
     const update={
       firstname:baseProps.firstname,
       lastname:baseProps.lastname,
@@ -275,7 +279,7 @@ export async function syncHubSpotCommercialLead(input={},options={}){
       company:baseProps.company,
       type_de_client:baseProps.type_de_client,
       type_de_demande:baseProps.type_de_demande,
-      besoin__projet_audiotel:baseProps.besoin__projet_audiotel,
+      besoin__projet_audiotel:preserveReferral?current.besoin__projet_audiotel:baseProps.besoin__projet_audiotel,
       pgi_dossier_ref:baseProps.pgi_dossier_ref
     };
     if(!current.hubspot_owner_id)update.hubspot_owner_id=HUBSPOT_OWNER_ID;
