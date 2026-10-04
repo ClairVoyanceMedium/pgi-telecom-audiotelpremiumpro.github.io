@@ -48,7 +48,7 @@ test("focused SEO pages remain published without cluttering the homepage",()=>{
 });
 
 test("public pricing and savings simulation stay explicit and non-guaranteed",()=>{
-  assert.match(html,/3€ TTC \/ mois/);
+  assert.match(html,/4,90€ TTC \/ mois/);
   assert.match(html,/Le mois en cours est offert/);
   assert.match(html,/Sans engagement de durée/);
   assert.match(html,/Résiliation possible à tout moment/);
@@ -219,7 +219,7 @@ test("marketing page exposes structured service data without fabricated social p
   assert.match(html,/"@type":"WebPage"/);
   assert.match(html,/"@type":"Service"/);
   assert.ok(html.includes("support@audiotel-premium-pro.com"));
-  assert.match(html,/"price":"3\.00"/);
+  assert.match(html,/"price":"4\.90"/);
   assert.match(html,/"priceCurrency":"EUR"/);
   assert.match(html,/"serviceType":\["Numéro surtaxé Audiotel"/);
   assert.doesNotMatch(html,/aggregateRating|"review"|bestRating|ratingValue/);
