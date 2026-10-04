@@ -2087,7 +2087,8 @@ export class PostgresStore{
     const take=clampInt(limit,100,1,500);
     return this.sql.unsafe(
       "INSERT INTO work_queue(queue_name,tenant_id,dedupe_key,priority,payload,available_at,max_attempts)"+
-      " SELECT 'portability',p.tenant_id,'portability:'||p.id||CASE WHEN p.status='cancelled' THEN ':cancel' ELSE ':auto' END,20,"+
+      " SELECT 'portability',p.tenant_id,'portability:'||p.id||CASE WHEN p.status='cancelled' THEN ':cancel' ELSE ':auto' END,"+
+      " CASE WHEN p.processing_tier='priority' AND p.priority_payment_status='paid' THEN 5 ELSE 20 END,"+
       " jsonb_build_object('request_id',p.id,'action',CASE WHEN p.status='cancelled' THEN 'cancel' ELSE 'auto' END),now(),20"+
       " FROM tenant_portability_requests p"+
       " WHERE ("+
@@ -2095,9 +2096,9 @@ export class PostgresStore{
       "   OR (p.status='cancelled' AND p.operator_portability_reference IS NOT NULL AND p.automation_state IN ('cancelling','action_required','failed'))"+
       " )"+
       " AND p.automation_next_at<=now()"+
-      " ORDER BY p.automation_next_at ASC,p.id ASC LIMIT $1"+
+      " ORDER BY CASE WHEN p.processing_tier='priority' AND p.priority_payment_status='paid' THEN 0 ELSE 1 END,p.automation_next_at ASC,p.id ASC LIMIT $1"+
       " ON CONFLICT(queue_name,dedupe_key) WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL"+
-      " DO UPDATE SET available_at=LEAST(work_queue.available_at,EXCLUDED.available_at)"+
+      " DO UPDATE SET available_at=LEAST(work_queue.available_at,EXCLUDED.available_at),priority=LEAST(work_queue.priority,EXCLUDED.priority)"+
       " RETURNING id,tenant_id,dedupe_key,available_at",
       [take]
     );
@@ -4675,8 +4676,8 @@ export class PostgresStore{
       " account_holder_name,desired_port_date,status,ownership_status,operator_portability_reference,scheduled_at,completed_at,rejection_reason,"+
       " tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,tariff_verified_at,"+
       " rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,"+
-      " automation_state,automation_last_error,automation_last_sync_at,operator_status,created_at,updated_at"+
-      " FROM tenant_scoped_portability_requests_v4 ORDER BY created_at DESC,id DESC LIMIT 50"
+      " automation_state,automation_last_error,automation_last_sync_at,operator_status,processing_tier,priority_fee_minor,priority_fee_currency,priority_payment_status,priority_paid_at,created_at,updated_at"+
+      " FROM tenant_scoped_portability_requests_v5 ORDER BY created_at DESC,id DESC LIMIT 50"
     ));
   }
 
@@ -4706,6 +4707,7 @@ export class PostgresStore{
     if(rate!=null&&(!Number.isFinite(rate)||rate<0||rate>10000))throw problem(400,"INVALID_PORTABILITY_TARIFF");
     const serviceFamily=String(input.service_family||"premium_rate").trim().toLowerCase();
     const desiredDate=input.desired_port_date?dateOnlyValue(input.desired_port_date,"desired_port_date"):null;
+    const priorityRequested=input.priority_requested===true;
     if(!["premium_rate","shared_cost","freephone","other"].includes(serviceFamily))throw problem(400,"INVALID_SERVICE_FAMILY");
     if(input.authorization_confirmed!==true||input.number_owner_confirmed!==true)throw problem(400,"PORTABILITY_AUTHORIZATION_REQUIRED");
     const result=await this.sql.begin(async tx=>{
@@ -4723,11 +4725,11 @@ export class PostgresStore{
       ))[0];
       if(existing)throw problem(409,"PORTABILITY_ALREADY_REQUESTED");
       const rows=await tx.unsafe(
-        "INSERT INTO tenant_portability_requests(tenant_id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,account_holder_name,desired_port_date,authorization_confirmed,number_owner_confirmed,rio_ciphertext,rio_fingerprint,rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,tariff_code,service_rate_ttc_per_min,currency,metadata)"+
-        " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::date,true,true,$10,$11,$12,$13,CASE WHEN $13=\'verified\' THEN now() ELSE NULL END,\'none\',true,$14,$15,$16,$17::jsonb)"+
-        " RETURNING id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,account_holder_name,desired_port_date,status,ownership_status,tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,created_at",
-        [id,country,e164,String(input.number||"").trim().slice(0,40)||e164,serviceFamily,operatorName,operatorReference,holderName,desiredDate,rioCiphertext,rioHash,rioLast4,rioStatus,tariffCode,rate,currency,
-         JSON.stringify({source:"customer_portal",original_number:String(input.number||"").trim().slice(0,40),source_contract_transfer_mode:"none"})]
+        "INSERT INTO tenant_portability_requests(tenant_id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,account_holder_name,desired_port_date,authorization_confirmed,number_owner_confirmed,rio_ciphertext,rio_fingerprint,rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,tariff_code,service_rate_ttc_per_min,currency,automation_next_at,priority_payment_status,metadata)"+
+        " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::date,true,true,$10,$11,$12,$13,CASE WHEN $13=\'verified\' THEN now() ELSE NULL END,\'none\',true,$14,$15,$16,CASE WHEN $17::boolean THEN now()+interval '15 minutes' ELSE now() END,CASE WHEN $17::boolean THEN 'pending' ELSE 'not_required' END,$18::jsonb)"+
+        " RETURNING id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,account_holder_name,desired_port_date,status,ownership_status,tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,processing_tier,priority_payment_status,created_at",
+        [id,country,e164,String(input.number||"").trim().slice(0,40)||e164,serviceFamily,operatorName,operatorReference,holderName,desiredDate,rioCiphertext,rioHash,rioLast4,rioStatus,tariffCode,rate,currency,priorityRequested,
+         JSON.stringify({source:"customer_portal",original_number:String(input.number||"").trim().slice(0,40),source_contract_transfer_mode:"none",priority_requested:priorityRequested})]
       );
       const request=rows[0];
       await tx.unsafe(
@@ -4740,14 +4742,70 @@ export class PostgresStore{
       );
       await tx.unsafe(
         "INSERT INTO work_queue(queue_name,tenant_id,dedupe_key,priority,payload,available_at,max_attempts)"+
-        " VALUES('portability',$1,$2,20,$3::jsonb,now(),20)"+
+        " VALUES('portability',$1,$2,20,$3::jsonb,CASE WHEN $4::boolean THEN now()+interval '15 minutes' ELSE now() END,20)"+
         " ON CONFLICT(queue_name,dedupe_key) WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL"+
         " DO UPDATE SET available_at=LEAST(work_queue.available_at,EXCLUDED.available_at)",
-        [id,"portability:"+request.id+":auto",JSON.stringify({request_id:Number(request.id),action:"auto"})]
+        [id,"portability:"+request.id+":auto",JSON.stringify({request_id:Number(request.id),action:"auto"}),priorityRequested]
       );
       return request;
     });
     this.eventBus.publish("portability.requested",{tenant_id:id,request_id:Number(result.id),requested_e164:e164,country_code:country});
+    return result;
+  }
+
+  async customerPortabilityPriorityPreparation(tenantId,requestId){
+    const tenant=Number(tenantId),id=Number(requestId);
+    if(!Number.isInteger(tenant)||tenant<=0||!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_PORTABILITY_REQUEST");
+    const row=(await this.readSql.unsafe(
+      "SELECT p.id,p.status,p.requested_e164,p.processing_tier,p.priority_payment_status,t.public_id AS tenant_public_id,t.billing_email,t.status AS tenant_status"+
+      " FROM tenant_portability_requests p JOIN tenants t ON t.id=p.tenant_id WHERE p.id=$1 AND p.tenant_id=$2 LIMIT 1",
+      [id,tenant]
+    ))[0];
+    if(!row)throw problem(404,"PORTABILITY_REQUEST_NOT_FOUND");
+    if(["ported","rejected","cancelled"].includes(String(row.status)))throw problem(409,"PORTABILITY_REQUEST_FINAL");
+    if(row.priority_payment_status==="paid")throw problem(409,"PORTABILITY_PRIORITY_ALREADY_PAID");
+    return {tenant:{id:row.tenant_public_id,billing_email:row.billing_email,status:row.tenant_status},request:{id:Number(row.id),requested_e164:row.requested_e164},amount_minor:990,currency:"EUR"};
+  }
+
+  async attachCustomerPortabilityPriorityCheckout(tenantId,requestId,session={}){
+    const tenant=Number(tenantId),id=Number(requestId),checkout=String(session.session_id||"").trim();
+    if(!/^cs_[A-Za-z0-9_]+$/.test(checkout))throw problem(400,"INVALID_PORTABILITY_PRIORITY_CHECKOUT");
+    const rows=await this.sql.unsafe(
+      "UPDATE tenant_portability_requests SET priority_payment_status='pending',priority_fee_minor=990,priority_fee_currency='EUR',priority_checkout_reference=$3,updated_at=now()"+
+      " WHERE id=$1 AND tenant_id=$2 AND status NOT IN ('ported','rejected','cancelled') AND priority_payment_status<>'paid'"+
+      " RETURNING id,processing_tier,priority_payment_status,priority_fee_minor,priority_fee_currency,priority_checkout_reference",
+      [id,tenant,checkout]
+    );
+    if(!rows.length)throw problem(409,"PORTABILITY_PRIORITY_NOT_AVAILABLE");
+    return {...rows[0],priority_fee_minor:Number(rows[0].priority_fee_minor)};
+  }
+
+  async applyPortabilityPriorityPayment(payload={}){
+    const provider=String(payload.provider||"").trim().toLowerCase(),eventId=String(payload.provider_event_id||"").trim(),eventType=String(payload.event_type||"").trim();
+    const tenantPublicId=String(payload.tenant_public_id||"").trim(),requestId=Number(payload.portability_request_id),status=String(payload.payment_status||"").trim().toLowerCase();
+    const amount=Number(payload.amount_minor),currency=String(payload.currency||"").trim().toUpperCase(),checkout=String(payload.provider_checkout_reference||"").trim()||null,payment=String(payload.provider_payment_reference||"").trim()||null,eventTime=payload.event_time||new Date().toISOString();
+    if(provider!=="stripe"||!eventId||!Number.isInteger(requestId)||requestId<=0)throw problem(400,"INVALID_PORTABILITY_PRIORITY_EVENT");
+    if(!["paid","expired"].includes(status)||amount!==990||currency!=="EUR")throw problem(409,"PORTABILITY_PRIORITY_PAYMENT_MISMATCH");
+    if(!Number.isFinite(Date.parse(eventTime)))throw problem(400,"INVALID_PORTABILITY_PRIORITY_EVENT_TIME");
+    const normalized={provider,provider_event_id:eventId,event_type:eventType,tenant_public_id:tenantPublicId,portability_request_id:requestId,payment_status:status,amount_minor:amount,currency,provider_checkout_reference:checkout,provider_payment_reference:payment,event_time:eventTime};
+    const hash=createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
+    const result=await this.sql.begin(async tx=>{
+      await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",[provider+":"+eventId]);
+      const seen=(await tx.unsafe("SELECT payload_sha256,portability_request_id FROM portability_priority_payment_events WHERE provider=$1 AND provider_event_id=$2 LIMIT 1",[provider,eventId]))[0];
+      if(seen){if(String(seen.payload_sha256)!==hash)throw problem(409,"PORTABILITY_PRIORITY_EVENT_COLLISION");return {duplicate:true,request_id:Number(seen.portability_request_id)};}
+      const tenant=(await tx.unsafe("SELECT id FROM tenants WHERE public_id=$1::uuid LIMIT 1",[tenantPublicId]))[0];if(!tenant)throw problem(404,"BILLING_TENANT_NOT_FOUND");
+      const request=(await tx.unsafe("SELECT * FROM tenant_portability_requests WHERE id=$1 AND tenant_id=$2 FOR UPDATE",[requestId,tenant.id]))[0];if(!request)throw problem(404,"PORTABILITY_REQUEST_NOT_FOUND");
+      await tx.unsafe("INSERT INTO portability_priority_payment_events(provider,provider_event_id,tenant_id,portability_request_id,event_type,payment_status,amount_minor,currency,provider_checkout_reference,provider_payment_reference,event_time,payload_sha256) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::timestamptz,$12)",[provider,eventId,tenant.id,requestId,eventType,status,amount,currency,checkout,payment,eventTime,hash]);
+      if(status==="paid"){
+        await tx.unsafe("UPDATE tenant_portability_requests SET processing_tier='priority',priority_fee_minor=990,priority_fee_currency='EUR',priority_payment_status='paid',priority_checkout_reference=COALESCE($2,priority_checkout_reference),priority_payment_reference=COALESCE($3,priority_payment_reference),priority_paid_at=COALESCE(priority_paid_at,$4::timestamptz),automation_next_at=now(),updated_at=now() WHERE id=$1",[requestId,checkout,payment,eventTime]);
+        await tx.unsafe("INSERT INTO work_queue(queue_name,tenant_id,dedupe_key,priority,payload,available_at,max_attempts) VALUES('portability',$1,$2,5,$3::jsonb,now(),20) ON CONFLICT(queue_name,dedupe_key) WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL DO UPDATE SET priority=LEAST(work_queue.priority,5),available_at=LEAST(work_queue.available_at,now())",[tenant.id,"portability:"+requestId+":auto",JSON.stringify({request_id:requestId,action:"auto"})]);
+      }else if(request.priority_payment_status!=="paid"){
+        await tx.unsafe("UPDATE tenant_portability_requests SET priority_payment_status='expired',priority_checkout_reference=COALESCE($2,priority_checkout_reference),updated_at=now() WHERE id=$1",[requestId,checkout]);
+      }
+      await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'portability.priority.payment','tenant_portability_request',$2,$3::jsonb)",[tenant.id,String(requestId),JSON.stringify({provider_event_id:eventId,payment_status:status,amount_minor:amount,currency})]);
+      return {duplicate:false,request_id:requestId,tenant_id:Number(tenant.id),payment_status:status};
+    });
+    if(!result.duplicate)this.eventBus.publish("portability.priority.payment",{tenant_id:result.tenant_id,request_id:requestId,payment_status:status});
     return result;
   }
 
