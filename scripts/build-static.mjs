@@ -161,6 +161,8 @@ const seoPages=[
   "reversement-audiotel",
   "numero-sva",
   "portabilite-numero-sva",
+  "portabilite-prioritaire",
+  "parrainage-audiotel",
   "numero-surtaxe-08",
   "tarif-numero-sva",
   "comparateur-audiotel",
@@ -188,7 +190,7 @@ const searchCategory={
   "solutions-audiotel":"Solutions","business-live-audiotel":"Suivi en direct","audiotel-sans-siret":"Ouverture",
   "changer-operateur-audiotel":"Portabilité","monetiser-ses-appels":"Guide","combien-rapporte-numero-surtaxe":"Revenus","audiotel-voyance":"Métiers","audiotel-independants":"Métiers",
   "audiotel-coaching":"Métiers","audiotel-professionnels":"Métiers","reversement-audiotel":"Reversements",
-  "numero-sva":"Numéro SVA","portabilite-numero-sva":"Portabilité","numero-surtaxe-08":"Numéro 08",
+  "numero-sva":"Numéro SVA","portabilite-numero-sva":"Portabilité","portabilite-prioritaire":"Portabilité","parrainage-audiotel":"Parrainage","numero-surtaxe-08":"Numéro 08",
   "tarif-numero-sva":"Tarifs","comparateur-audiotel":"Comparateur","paiement-cb-audiotel":"Paiement CB",
   "guide-audiotel-sva":"Guide","demande-ouverture":"Ouverture","mentions-legales":"Juridique",
   "conditions-utilisation":"Juridique","conditions-abonnement":"Juridique","confidentialite":"Confidentialité",
@@ -197,6 +199,8 @@ const searchCategory={
 };
 const searchHints={
   "portabilite-numero-sva":"portabilité portage transfert conserver garder numéro changer opérateur",
+  "portabilite-prioritaire":"portabilité prioritaire priorité accélérer dossier 9,90 traitement rapide file",
+  "parrainage-audiotel":"parrainage parrain filleul recommandation code lien prime récompense",
   "changer-operateur-audiotel":"changer opérateur concurrent transfert portabilité conserver numéro",
   "monetiser-ses-appels":"monétiser appels clients revenus numéro surtaxé",
   "combien-rapporte-numero-surtaxe":"combien rapporte numéro surtaxé revenus gains reversement",
@@ -493,7 +497,7 @@ function injectRevenueQuickNav(html){
     .replace('aria-labelledby="revenue-quick-nav-title"','aria-label="Accès rapides Audiotel Premium Pro"')
     .replace('class="revenue-quick-tab revenue-quick-tab-client" href="#tarif"','class="revenue-quick-tab revenue-quick-tab-client" href="/#tarif"');
   if(out.includes('class="revenue-quick-nav"'))return out;
-  const nav='<section class="revenue-quick-nav" aria-label="Accès rapides Audiotel Premium Pro"><div class="wrap"><nav class="revenue-quick-tabs" aria-label="Accès rapides Audiotel Premium Pro"><a class="revenue-quick-tab revenue-quick-tab-primary" href="/portabilite-numero-sva/"><small>DÉJÀ UN NUMÉRO SURTAXÉ ?</small><strong>Demander ma portabilité</strong><span>Conserver mon numéro s’il est éligible</span></a><a class="revenue-quick-tab" href="/demande-ouverture/?type=nouveau"><small>NOUVEAU CLIENT</small><strong>Demander votre numéro surtaxé</strong><span>Préparer mon ouverture</span></a><a class="revenue-quick-tab" href="/comparateur-audiotel/"><small>COMPARAISON</small><strong>Comparer mon offre</strong><span>Voir l’écart à activité identique</span></a><a class="revenue-quick-tab" href="/paiement-cb-audiotel/"><small>SERVICE COMPLÉMENTAIRE</small><strong>Paiement CB</strong><span>Encaisser consultations et forfaits</span></a><a class="revenue-quick-tab revenue-quick-tab-client" href="/#tarif"><small>PRIX CLAIR</small><strong>Voir le tarif</strong><span>4,90€ TTC / mois après le mois en cours offert</span></a></nav></div></section>';
+  const nav='<section class="revenue-quick-nav" aria-label="Accès rapides Audiotel Premium Pro"><div class="wrap"><nav class="revenue-quick-tabs" aria-label="Accès rapides Audiotel Premium Pro"><a class="revenue-quick-tab revenue-quick-tab-primary" href="/portabilite-numero-sva/"><small>DÉJÀ UN NUMÉRO SURTAXÉ ?</small><strong>Demander ma portabilité</strong><span>Conserver mon numéro s’il est éligible</span></a><a class="revenue-quick-tab" href="/demande-ouverture/?type=nouveau"><small>NOUVEAU CLIENT</small><strong>Demander mon numéro surtaxé</strong><span>Préparer mon ouverture</span></a><a class="revenue-quick-tab" href="/comparateur-audiotel/"><small>MES REVENUS</small><strong>Estimer mes revenus potentiels</strong><span>Voir l’écart à activité identique</span></a><a class="revenue-quick-tab" href="/paiement-cb-audiotel/"><small>SERVICE COMPLÉMENTAIRE</small><strong>Encaisser par carte bancaire</strong><span>Créer et envoyer un lien de paiement sécurisé</span></a><a class="revenue-quick-tab revenue-quick-tab-client" href="/#tarif"><small>PRIX CLAIR</small><strong>Voir le tarif</strong><span>4,90€ TTC / mois après le mois en cours offert</span></a></nav></div></section>';
   return out.replace("</body>",nav+"\n</body>");
 }
 

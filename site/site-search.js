@@ -24,11 +24,15 @@ const aliases={
   "reversement":["revenu","gain","gains","commission","minute","remuneration"],
   "revenu":["reversement","gain","gains","simulation","comparateur"],
   "gain":["revenu","reversement","comparateur"],
-  "tarif":["prix","cout","3 euro","3€","abonnement"],
-  "prix":["tarif","cout","abonnement","3€"],
+  "tarif":["prix","cout","4,90 euro","4,90€","abonnement"],
+  "prix":["tarif","cout","abonnement","4,90€"],
   "carte":["paiement cb","paiement carte","cb"],
   "cb":["paiement cb","carte bancaire","paiement"],
-  "paiement":["paiement cb","carte bancaire","abonnement"],
+  "paiement":["paiement cb","carte bancaire","lien de paiement","encaisser","abonnement"],
+  "prioritaire":["portabilite prioritaire","priorite","9,90","traitement dossier"],
+  "parrainage":["parrain","filleul","recommandation","code parrainage","prime"],
+  "parrain":["parrainage","filleul","recommandation"],
+  "filleul":["parrainage","parrain","recompense"],
   "business":["business live","suivi direct","temps reel"],
   "live":["business live","temps reel","direct"],
   "siret":["sans siret","particulier","independant"],
@@ -47,9 +51,11 @@ const aliases={
 const popular=[
   {title:"Portabilité de mon numéro",url:"/portabilite-numero-sva/",description:"Conserver un numéro surtaxé éligible et préparer son transfert."},
   {title:"Demander un nouveau numéro",url:"/numero-sva/",description:"Comprendre l’ouverture et préparer une demande de numéro SVA."},
-  {title:"Comparer mon offre",url:"/comparateur-audiotel/",description:"Comparer reversements et potentiel à activité identique."},
+  {title:"Estimer mes revenus potentiels",url:"/comparateur-audiotel/",description:"Comparer reversements et potentiel à activité identique."},
+  {title:"Portabilité prioritaire",url:"/portabilite-prioritaire/",description:"Faire traiter un dossier de portabilité en priorité chez PGI Telecom pour 9,90€ TTC."},
+  {title:"Parrainage Audiotel",url:"/parrainage-audiotel/",description:"Comprendre le code de parrainage et les conditions de récompense."},
   {title:"Tarif Audiotel Premium Pro",url:"/#tarif",description:"Voir le tarif de la plateforme et les conditions affichées."},
-  {title:"Paiement par carte bancaire",url:"/paiement-cb-audiotel/",description:"Découvrir le service complémentaire de paiement CB sécurisé."}
+  {title:"Encaisser par carte bancaire",url:"/paiement-cb-audiotel/",description:"Créer et envoyer un lien de paiement sécurisé pour une consultation ou un forfait."}
 ];
 
 let indexPromise=null,entries=[],active=-1,lastTrackedQuery="";
@@ -113,6 +119,8 @@ const intentBoost=(entry,q)=>{
     if(path==="/portabilite-numero-sva/")return 280;
     if(path==="/changer-operateur-audiotel/")return 190;
   }
+  if(/\b(prioritaire|priorite|urgent|accelerer)\b/.test(q)&&/\b(portabilite|portage|dossier)\b/.test(q)&&path==="/portabilite-prioritaire/")return 300;
+  if(/\b(parrainage|parrain|filleul|recommandation)\b/.test(q)&&path==="/parrainage-audiotel/")return 300;
   if(/\b(combien|rapporte|gagner|gain|revenu)\b/.test(q)&&path==="/combien-rapporte-numero-surtaxe/")return 220;
   if(/\b(moneti|valoriser)\w*/.test(q)&&path==="/monetiser-ses-appels/")return 220;
   return 0;

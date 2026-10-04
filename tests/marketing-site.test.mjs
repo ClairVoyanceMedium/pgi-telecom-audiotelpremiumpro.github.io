@@ -25,6 +25,8 @@ const cardPaymentsLanding=fs.readFileSync("site/seo/paiement-cb-audiotel.html","
 const solutions=fs.readFileSync("site/seo/solutions-audiotel.html","utf8");
 const switchOperator=fs.readFileSync("site/seo/changer-operateur-audiotel.html","utf8");
 const portability=fs.readFileSync("site/seo/portabilite-numero-sva.html","utf8");
+const priorityPortability=fs.readFileSync("site/seo/portabilite-prioritaire.html","utf8");
+const referralLanding=fs.readFileSync("site/seo/parrainage-audiotel.html","utf8");
 const withoutSiret=fs.readFileSync("site/seo/audiotel-sans-siret.html","utf8");
 const businessLive=fs.readFileSync("site/seo/business-live-audiotel.html","utf8");
 
@@ -329,9 +331,10 @@ test("homepage bottom quick navigation prioritizes the highest-value commercial 
   assert.match(html,/DÉJÀ UN NUMÉRO SURTAXÉ \?/);
   assert.match(html,/class="revenue-quick-nav"/);
   assert.match(html,/Demander ma portabilité/);
-  assert.match(html,/Demander votre numéro surtaxé/);
-  assert.match(html,/Comparer mon offre/);
-  assert.match(html,/Paiement CB/);
+  assert.match(html,/Demander mon numéro surtaxé/);
+  assert.match(html,/Estimer mes revenus potentiels/);
+  assert.match(html,/Encaisser par carte bancaire/);
+  assert.match(html,/Créer et envoyer un lien de paiement sécurisé/);
   assert.match(html,/Voir le tarif/);
   assert.match(html,/href="\/portabilite-numero-sva\//);
   assert.match(html,/href="\/comparateur-audiotel\//);
@@ -572,6 +575,21 @@ test("homepage explains the 4.9 percent CB fee without mixing it with Stripe fee
   assert.match(html,/ni à l’abonnement Audiotel Premium Pro à 4,90€ TTC \/ mois/);
 });
 
+test("new complementary products are public, indexable and operationally explicit",()=>{
+  assert.match(priorityPortability,/9,90€ TTC/);
+  assert.match(priorityPortability,/portabilité standard reste gratuite/i);
+  assert.match(priorityPortability,/Aucun délai opérateur garanti/i);
+  assert.match(priorityPortability,/traitement administratif prioritaire/i);
+  assert.match(referralLanding,/abonnement actif et payé/i);
+  assert.match(referralLanding,/Programme activable ou désactivable/i);
+  assert.match(buildStatic,/"portabilite-prioritaire"/);
+  assert.match(buildStatic,/"parrainage-audiotel"/);
+  assert.match(sitemap,/portabilite-prioritaire/);
+  assert.match(sitemap,/parrainage-audiotel/);
+  assert.match(html,/data-current-year/);
+  assert.match(js,/new Date\(\)\.getFullYear\(\)/);
+});
+
 test("payment CB conversion landing is built, indexable and commercially explicit",()=>{
   assert.doesNotMatch(cardPaymentsLanding,/Stripe Connect/i);
   assert.match(cardPaymentsLanding,/Paiement CB sécurisé/);
@@ -639,10 +657,14 @@ test("solutions hub separates the four customer intents",()=>{
   assert.match(solutions,/Obtenir un nouveau numéro/);
   assert.match(solutions,/Suivre mes appels et reversements/);
   assert.match(solutions,/Ajouter le paiement par carte/);
+  assert.match(solutions,/Prioriser ma portabilité/);
+  assert.match(solutions,/Parrainer un nouveau client/);
   assert.match(solutions,/href="\/portabilite-numero-sva\//);
   assert.match(solutions,/href="\/numero-sva\//);
   assert.match(solutions,/href="\/reversement-audiotel\//);
   assert.match(solutions,/href="\/paiement-cb-audiotel\//);
+  assert.match(solutions,/href="\/portabilite-prioritaire\//);
+  assert.match(solutions,/href="\/parrainage-audiotel\//);
   assert.match(buildStatic,/"solutions-audiotel"/);
 });
 

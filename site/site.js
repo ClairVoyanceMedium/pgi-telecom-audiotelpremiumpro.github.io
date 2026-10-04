@@ -15,6 +15,7 @@
     }).catch(function(){});
   }catch(_e){}
 })();
+(()=>{const y=String(new Date().getFullYear());document.querySelectorAll("[data-current-year]").forEach(el=>{el.textContent=y})})();
 (()=>{
 const $=id=>document.getElementById(id);
 const gap=$("saving-gap"),hours=$("saving-hours"),days=$("saving-days");

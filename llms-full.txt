@@ -44,6 +44,14 @@ Explains the 081, 082 and 089 premium-rate ranges and consumer-information guard
 https://audiotel-premium-pro.com/portabilite-numero-sva/
 Explains a cautious portability workflow: identification, eligibility, programming and final operator confirmation.
 
+### Portabilité prioritaire
+https://audiotel-premium-pro.com/portabilite-prioritaire/
+Optional one-time 9.90 EUR incl. tax service that prioritizes PGI Telecom administrative handling of an eligible portability case. Standard incoming portability remains free within the platform and follows the normal queue. The option does not guarantee any operator or third-party completion date.
+
+### Parrainage Audiotel
+https://audiotel-premium-pro.com/parrainage-audiotel/
+Referral program that PGI Telecom can enable or disable. When active, eligible customers can share a personal code or link. A reward is earned only after the referred customer is actually activated with an active paid subscription. The applicable reward amount is controlled by the program and displayed to the customer.
+
 ### Reversement Audiotel
 A commercial/financial amount linked to eligible traffic under the applicable contract. On Audiotel Premium Pro, expected, confirmed and validated amounts are intentionally distinguished to avoid presenting an estimate as acquired revenue.
 
