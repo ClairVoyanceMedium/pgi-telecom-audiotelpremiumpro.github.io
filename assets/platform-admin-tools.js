@@ -19,18 +19,18 @@ function ensure(){
   if($("platform-admin-dialog"))return $("platform-admin-dialog");
   const s=document.createElement("style");s.id="platform-admin-style";s.textContent=".pa-dialog{width:min(900px,calc(100vw - 24px));max-width:none;max-height:calc(100dvh - 24px);padding:0;border:1px solid rgba(128,158,192,.18);border-radius:20px;background:#07101b;color:#dcebf5}.pa-dialog::backdrop{background:rgba(0,0,0,.76);backdrop-filter:blur(8px)}.pa-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:16px 18px;border-bottom:1px solid rgba(128,158,192,.1)}.pa-head p{margin:0 0 4px;color:#58d8ff;font-size:7px;font-weight:900;letter-spacing:.08em}.pa-head h2{margin:0;font-size:19px}.pa-close{width:42px;height:42px;border:1px solid rgba(128,158,192,.16);border-radius:12px;background:#0a1421;color:#b9cad8;font-size:20px}.pa-body{max-height:calc(100dvh - 100px);overflow:auto;padding:14px}.pa-feedback{min-height:18px;color:#71889e;font-size:8px}.pa-feedback.ok{color:#8de4c6}.pa-feedback.error{color:#ff9d9d}.pa-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.pa-card{padding:13px;border:1px solid rgba(128,158,192,.11);border-radius:14px;background:rgba(10,18,30,.88)}.pa-card h3{margin:0 0 10px;font-size:13px}.pa-state{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:10px}.pa-state div{padding:9px;border:1px solid rgba(128,158,192,.08);border-radius:10px}.pa-state span{display:block;color:#687f95;font-size:6.5px;text-transform:uppercase}.pa-state strong{display:block;margin-top:4px;font-size:10px}.pa-field{display:grid;gap:5px;margin-top:9px;color:#71879b;font-size:7px;font-weight:850;text-transform:uppercase}.pa-field input,.pa-field select{width:100%;min-height:42px;padding:8px 10px;border:1px solid rgba(128,158,192,.15);border-radius:10px;background:#06101a;color:#eef7fb;font-size:12px}.pa-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}.pa-btn{min-height:40px;padding:8px 11px;border:1px solid rgba(53,216,255,.2);border-radius:10px;background:rgba(53,216,255,.055);color:#ddf8ff;font-size:8px;font-weight:850;cursor:pointer}.pa-btn.danger{border-color:rgba(239,68,68,.25);color:#ffb0b0;background:rgba(239,68,68,.06)}.pa-btn.success{border-color:rgba(34,211,165,.25);color:#9ceaca;background:rgba(34,211,165,.06)}.pa-btn:disabled{opacity:.4}.pa-list{display:grid;gap:6px;margin-top:10px}.pa-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;padding:9px;border:1px solid rgba(128,158,192,.08);border-radius:10px}.pa-row strong{display:block;font-size:8.5px}.pa-row small{display:block;margin-top:3px;color:#6d8398;font-size:7px}.pa-note{color:#6f8599;font-size:7.5px;line-height:1.5}.pa-badge{display:inline-flex;align-items:center;padding:4px 7px;border:1px solid rgba(128,158,192,.13);border-radius:999px;color:#9cb0c2;font-size:6.5px;font-weight:900;text-transform:uppercase}.pa-badge.ok{border-color:rgba(34,211,165,.25);color:#9ceaca}.pa-badge.warn{border-color:rgba(245,158,11,.25);color:#ffd28a}.pa-badge.bad{border-color:rgba(239,68,68,.25);color:#ffb0b0}@media(max-width:760px){.pa-dialog{width:100vw;max-height:92dvh;margin:auto 0 0;border-radius:22px 22px 0 0;border-bottom:0}.pa-grid{grid-template-columns:1fr}.pa-body{padding:10px}.pa-field input,.pa-field select{min-height:44px;font-size:16px}.pa-btn{min-height:44px}.pa-state{grid-template-columns:1fr 1fr}}";
   document.head.appendChild(s);
-  const d=document.createElement("dialog");d.id="platform-admin-dialog";d.className="pa-dialog";d.innerHTML='<header class="pa-head"><div><p>ADMINISTRATION PLATEFORME</p><h2>Abonnement & opérateur</h2></div><button class="pa-close" type="button" aria-label="Fermer">×</button></header><main id="pa-body" class="pa-body"></main>';
+  const d=document.createElement("dialog");d.id="platform-admin-dialog";d.className="pa-dialog";d.innerHTML='<header class="pa-head"><div><p>ADMINISTRATION PLATEFORME</p><h2>Abonnement, opérateur & acquisition</h2></div><button class="pa-close" type="button" aria-label="Fermer">×</button></header><main id="pa-body" class="pa-body"></main>';
   document.body.appendChild(d);d.querySelector(".pa-close").addEventListener("click",()=>d.close());d.addEventListener("click",e=>{if(e.target===d)d.close();});d.addEventListener("click",handle);return d;
 }
 function feedback(msg,type=""){const e=$("pa-feedback");if(e){e.textContent=msg||"";e.className="pa-feedback "+type;}}
 async function load(){
   const body=$("pa-body");if(!body)return;body.innerHTML='<p class="pa-note">Chargement de l’administration…</p>';
   try{
-    const [billing,carrier,platform]=await Promise.all([window.PGIApi.subscriptionBilling(),window.PGIApi.carrierSwitchOptions(),window.PGIApi.wholesaleOverview()]);
-    render(billing,carrier,platform);
+    const [billing,carrier,platform,referral]=await Promise.all([window.PGIApi.subscriptionBilling(),window.PGIApi.carrierSwitchOptions(),window.PGIApi.wholesaleOverview(),window.PGIApi.referralProgram()]);
+    render(billing,carrier,platform,referral);
   }catch(e){body.innerHTML='<p class="pa-note">Administration disponible uniquement lorsque l’API privée de production est connectée. '+esc(e.code||"")+'</p>';}
 }
-function render(billing,carrier,platform){
+function render(billing,carrier,platform,referral){
   lastPlatform=platform||null;
   const price=billing.current_price||{},route=carrier.route||{},targets=(carrier.targets||[]).filter(x=>Number(x.carrier_id)!==Number(route.active_carrier_id));
   const switches=carrier.recent_switches||[];
@@ -42,10 +42,40 @@ function render(billing,carrier,platform){
   const platformRows=rcontrols.slice(0,8).map(x=>'<div class="pa-row"><div><strong>'+esc(String(x.control_key||"").replace(/_/g," "))+'</strong><small>'+esc(x.market||"Plateforme")+(x.valid_until?" • valable jusqu’au "+esc(date(x.valid_until)):"")+'</small></div><span class="pa-badge '+(x.status==="verified"?"":"warn")+'">'+esc(x.status||"—")+'</span></div>').join("");
 
   $("pa-body").innerHTML='<p id="pa-feedback" class="pa-feedback" role="status"></p><div class="pa-grid"><section class="pa-card"><h3>Tarif abonnement externe</h3><div class="pa-state"><div><span>Tarif courant</span><strong>'+money(price.amount_minor||0,price.currency||"EUR")+' TTC/mois</strong></div><div><span>Modèle</span><strong>Versionné</strong></div></div><label class="pa-field">Nouveau tarif mensuel en EUR<input id="pa-price" type="number" min="0.01" step="0.01" placeholder="3.00"></label><label class="pa-field">Date d’effet<input id="pa-effective" type="datetime-local"></label><div class="pa-actions"><button class="pa-btn" data-price-publish>Publier une nouvelle version</button></div><p class="pa-note">La publication ne réécrit jamais les anciens tarifs. Les contrats existants restent reliés à leur version tant qu’ils ne sont pas migrés explicitement.</p><div class="pa-list">'+(history||'<p class="pa-note">Aucun historique.</p>')+'</div></section><section class="pa-card"><h3>Bascule opérateur SVA</h3><div class="pa-state"><div><span>Actif</span><strong>'+esc(route.active_carrier||"Non configuré")+'</strong></div><div><span>Standby</span><strong>'+esc(route.standby_carrier||"Aucun")+'</strong></div><div><span>Génération</span><strong>'+esc(route.generation||1)+'</strong></div><div><span>Connexion</span><strong>'+esc(route.active_connection_state||"—")+'</strong></div></div><label class="pa-field">Cible prête<select id="pa-target"><option value="">Sélectionner…</option>'+targetOptions+'</select></label><label class="pa-field">Fenêtre rollback en minutes<input id="pa-rollback" type="number" min="5" max="10080" value="1440"></label><div class="pa-actions"><button class="pa-btn" data-switch-plan '+(!targets.length?"disabled":"")+'>1. Préparer la bascule</button></div><p class="pa-note">La préparation ne modifie pas la route active. L’activation exige la validation d’un second administrateur dans Control Tower. Le rollback d’urgence reste disponible dans la fenêtre configurée.</p><div class="pa-list">'+(swRows||'<p class="pa-note">Aucune bascule récente.</p>')+'</div></section><section class="pa-card"><h3>Regulatory Trust Center</h3><div class="pa-state"><div><span>Numéros prêts</span><strong>'+esc(rs.numbers_ready||0)+' / '+esc(rs.numbers_total||0)+'</strong></div><div><span>Preuves chaînées</span><strong>'+esc(rs.evidence_events||0)+'</strong></div><div><span>Bloquants</span><strong>'+esc(rs.review_blocking||0)+'</strong></div><div><span>Aujourd’hui</span><strong>'+esc(rs.review_today||0)+'</strong></div><div><span>Bientôt</span><strong>'+esc(rs.review_soon||0)+'</strong></div><div><span>Preuves ARCEP 2026</span><strong>'+esc(rs.arcep_2026_evidence_events||0)+'</strong></div><div><span>Écosystème SVA prêt</span><strong>'+esc(rs.sva_ecosystem_ready||0)+'</strong></div><div><span>Signalements ouverts</span><strong>'+esc(rs.abuse_open||0)+'</strong></div><div><span>Critiques</span><strong>'+esc(rs.abuse_critical||0)+'</strong></div></div><p class="pa-note">Activation externe fail-closed : Trust Center + ARCEP 2026 + readiness SVA requis. Les échéances n’entraînent aucune suspension automatique.</p><div class="pa-actions"><button class="pa-btn" type="button" data-regulatory-attention>Voir les échéances à traiter</button></div><div class="pa-list">'+(regulatoryRows||'<p class="pa-note">Aucun numéro externe à contrôler.</p>')+'</div></section><section class="pa-card"><h3>Contrôles plateforme</h3><div class="pa-state"><div><span>Vérifiés</span><strong>'+esc(rs.platform_controls_verified||0)+'</strong></div><div><span>À corriger</span><strong>'+esc(rs.platform_controls_attention||0)+'</strong></div></div><p class="pa-note">Préparation CE, APNF/RSVA, CGS AF2M, MAN, traçabilité anti-fraude, notifications d’incident et traitement 33700.</p><div class="pa-list">'+(platformRows||'<p class="pa-note">Contrôles à documenter lors de la contractualisation opérateur.</p>')+'</div></section><section id="pa-compliance-editor" class="pa-card pa-wide" hidden></section></div>';
+  const referralState=referral||{},referralSummary=referralState.summary||{};
+  const referralCard=document.createElement("section");
+  referralCard.className="pa-card";
+  referralCard.id="pa-referral-program";
+  const active=referralState.enabled===true,canManage=referralState.can_manage===true;
+  referralCard.innerHTML='<h3>Programme de parrainage</h3>'+
+    '<div class="pa-state"><div><span>État</span><strong>'+(active?"ACTIVÉ":"DÉSACTIVÉ")+'</strong></div>'+
+    '<div><span>Codes actifs</span><strong>'+esc(referralSummary.active_codes||0)+'</strong></div>'+
+    '<div><span>Demandes attribuées</span><strong>'+esc(referralSummary.attributed_leads||0)+'</strong></div>'+
+    '<div><span>Conversions</span><strong>'+esc(referralSummary.converted||0)+'</strong></div></div>'+
+    '<p class="pa-note">'+(active?"Les clients autorisés voient leur lien personnel. Les nouvelles attributions sont acceptées.":"Les liens clients sont masqués et aucun ancien code ne peut créer une nouvelle attribution. L’historique est conservé.")+'</p>'+
+    (referralState.reward_label?'<p class="pa-note"><strong>Avantage actuel :</strong> '+esc(referralState.reward_label)+'</p>':'')+
+    '<div class="pa-actions"><button class="pa-btn '+(active?"danger":"success")+'" type="button" data-referral-toggle="'+(active?"off":"on")+'" '+(canManage?"":"disabled")+'>'+(active?"Désactiver le parrainage":"Activer le parrainage")+'</button></div>'+
+    (!canManage?'<p class="pa-note">Seul un administrateur peut modifier ce réglage.</p>':'');
+  const complianceMount=$("pa-compliance-editor");
+  if(complianceMount)complianceMount.insertAdjacentElement("beforebegin",referralCard);
+
 }
 
 async function handle(e){
   if(busy)return;
+  const referralToggle=e.target.closest("[data-referral-toggle]");
+  if(referralToggle){
+    const enabled=referralToggle.dataset.referralToggle==="on";
+    const question=enabled?"Activer le programme de parrainage maintenant ?":"Désactiver le programme de parrainage ? Les liens clients seront masqués et les anciens codes ne pourront plus créer de nouvelle attribution.";
+    if(!confirm(question))return;
+    busy=true;feedback(enabled?"Activation du parrainage…":"Désactivation du parrainage…");
+    try{
+      await window.PGIApi.setReferralProgram(enabled,window.PGIApi.newIdempotencyKey());
+      busy=false;feedback(enabled?"Parrainage activé.":"Parrainage désactivé. Historique conservé.","ok");
+      await load();
+    }catch(err){busy=false;feedback(err.code||"Modification du parrainage impossible","error");}
+    return;
+  }
   const attention=e.target.closest("[data-regulatory-attention]");
   if(attention){
     try{
