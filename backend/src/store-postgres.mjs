@@ -7438,7 +7438,7 @@ export class PostgresStore{
     if(Number(service.service_incidents_critical||0)>0)push("critical","SERVICE_CRITICAL","Incidents critiques",service.service_incidents_critical+" incident(s) de service critique(s) ouvert(s).");
     if(Number(service.routing_unavailable||0)>0)push("critical","ROUTING_UNAVAILABLE","Routage indisponible",service.routing_unavailable+" alerte(s) de routage sans destination disponible.");
     if(Number(queue.dead_lettered||0)>0)push("critical","DEAD_LETTERS","Travaux en échec",queue.dead_lettered+" tâche(s) en dead-letter à examiner.");
-    if(risk.level==="critical"||risk.level==="high")push(risk.level==="critical"?"critical":"warning","RISK_ENGINE","Risk Engine",risk.score+"/100 — "+risk.signals.length+" signal(s) agrégé(s).");
+    if(risk.level==="critical"||risk.level==="high")push(risk.level==="critical"?"critical":"warning","RISK_ENGINE","Risk Engine",risk.score+"/100 : "+risk.signals.length+" signal(s) agrégé(s).");
     if(slo.state==="critical"||slo.state==="burning")push(slo.state==="critical"?"critical":"warning","SLO_BURN","SLO opérationnels",slo.score+" % des objectifs instantanés respectés.");
     if(shadowBilling.status==="critical")push("critical","SHADOW_BILLING_VARIANCE","Écart shadow billing","Un écart de rapprochement supérieur au seuil interne est détecté.");
     if(pendingApprovals>0)push("warning","FOUR_EYES_PENDING","Validations 4 yeux",pendingApprovals+" changement(s) critique(s) attendent un second administrateur.");
