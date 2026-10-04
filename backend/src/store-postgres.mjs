@@ -2284,6 +2284,121 @@ export class PostgresStore{
     };
   }
 
+  async referralProgramAdmin(){
+    const [featureRows,summaryRows,recent]=await Promise.all([
+      this.readSql.unsafe(
+        "SELECT feature_key,enabled,config,created_at,updated_at FROM platform_feature_controls WHERE feature_key='referral_program' LIMIT 1"
+      ),
+      this.readSql.unsafe(
+        "SELECT"+
+        " (SELECT count(*)::bigint FROM tenant_referral_codes WHERE status='active') AS active_codes,"+
+        " (SELECT count(*)::bigint FROM referral_attributions) AS attributed_leads,"+
+        " (SELECT count(*)::bigint FROM referral_attributions WHERE status IN ('converted','rewarded')) AS converted,"+
+        " (SELECT count(*)::bigint FROM referral_attributions WHERE status='rewarded') AS rewarded"
+      ),
+      this.readSql.unsafe(
+        "SELECT r.public_id::text AS public_id,r.referral_code,r.status,r.source,r.created_at,r.updated_at,"+
+        " ref.display_name AS referrer,referred.display_name AS referred"+
+        " FROM referral_attributions r"+
+        " JOIN tenants ref ON ref.id=r.referrer_tenant_id"+
+        " JOIN tenants referred ON referred.id=r.referred_tenant_id"+
+        " ORDER BY r.created_at DESC,r.id DESC LIMIT 20"
+      )
+    ]);
+    const feature=featureRows[0]||{feature_key:"referral_program",enabled:false,config:{},created_at:null,updated_at:null};
+    const config=feature.config&&typeof feature.config==="object"?feature.config:{};
+    return {
+      feature_key:"referral_program",
+      enabled:feature.enabled===true,
+      config,
+      reward_label:String(config.reward_label||""),
+      created_at:feature.created_at||null,
+      updated_at:feature.updated_at||null,
+      summary:numberFields(summaryRows[0]||{},["active_codes","attributed_leads","converted","rewarded"]),
+      recent
+    };
+  }
+
+  async setReferralProgram(enabled,actor={}){
+    if(typeof enabled!=="boolean")throw problem(400,"REFERRAL_ENABLED_REQUIRED");
+    const actorId=numericActor(actor);
+    await this.sql.begin(async tx=>{
+      await tx.unsafe(
+        "INSERT INTO platform_feature_controls(feature_key,enabled,config,updated_by)"+
+        " VALUES('referral_program',$1,'{\"reward_mode\":\"manual\",\"reward_label\":\"Avantage de parrainage après activation du filleul\"}'::jsonb,$2)"+
+        " ON CONFLICT(feature_key) DO UPDATE SET enabled=EXCLUDED.enabled,updated_by=EXCLUDED.updated_by,updated_at=now()",
+        [enabled,actorId]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'platform.feature.update','platform_feature','referral_program',$2::jsonb)",
+        [actorId,JSON.stringify({feature_key:"referral_program",enabled})]
+      );
+    });
+    return this.referralProgramAdmin();
+  }
+
+  async customerReferralProgram(tenantId){
+    const id=Number(tenantId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_CONTEXT");
+    const featureRows=await this.readSql.unsafe(
+      "SELECT enabled,config FROM platform_feature_controls WHERE feature_key='referral_program' LIMIT 1"
+    );
+    const feature=featureRows[0],config=feature?.config&&typeof feature.config==="object"?feature.config:{};
+    if(feature?.enabled!==true)return {enabled:false,code:null,share_path:null,reward_label:"",summary:{attributed_leads:0,converted:0}};
+    const rows=await this.sql.unsafe(
+      "INSERT INTO tenant_referral_codes(tenant_id,code,status)"+
+      " SELECT id,'PGI-'||upper(substr(replace(public_id::text,'-',''),1,16)),'active' FROM tenants WHERE id=$1"+
+      " ON CONFLICT(tenant_id) DO UPDATE SET status='active',updated_at=now()"+
+      " RETURNING tenant_id,code,status,created_at,updated_at",
+      [id]
+    );
+    if(!rows[0])throw problem(404,"TENANT_NOT_FOUND");
+    const counts=await this.readSql.unsafe(
+      "SELECT count(*)::bigint AS attributed_leads,"+
+      " count(*) FILTER(WHERE status IN ('converted','rewarded'))::bigint AS converted"+
+      " FROM referral_attributions WHERE referrer_tenant_id=$1",
+      [id]
+    );
+    const summary=numberFields(counts[0]||{},["attributed_leads","converted"]);
+    return {
+      enabled:true,
+      code:rows[0].code,
+      share_path:"/demande-ouverture/?ref="+encodeURIComponent(rows[0].code),
+      reward_label:String(config.reward_label||""),
+      summary
+    };
+  }
+
+  async recordReferralLead(code,referredTenantPublicId){
+    const normalized=String(code||"").trim().toUpperCase();
+    if(!/^PGI-[A-Z0-9]{12,24}$/.test(normalized))return null;
+    const tenantPublicId=String(referredTenantPublicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantPublicId))return null;
+    return this.sql.begin(async tx=>{
+      const featureRows=await tx.unsafe(
+        "SELECT enabled FROM platform_feature_controls WHERE feature_key='referral_program' FOR SHARE"
+      );
+      if(featureRows[0]?.enabled!==true)return null;
+      const refRows=await tx.unsafe(
+        "SELECT tenant_id,code FROM tenant_referral_codes WHERE code=$1 AND status='active' FOR SHARE",
+        [normalized]
+      );
+      const referredRows=await tx.unsafe(
+        "SELECT id FROM tenants WHERE public_id=$1::uuid FOR SHARE",
+        [tenantPublicId]
+      );
+      const referrerId=Number(refRows[0]?.tenant_id),referredId=Number(referredRows[0]?.id);
+      if(!referrerId||!referredId||referrerId===referredId)return null;
+      const inserted=await tx.unsafe(
+        "INSERT INTO referral_attributions(referrer_tenant_id,referred_tenant_id,referral_code,status,source)"+
+        " VALUES($1,$2,$3,'lead','public_opening') ON CONFLICT(referred_tenant_id) DO NOTHING"+
+        " RETURNING public_id::text AS public_id,referrer_tenant_id,referred_tenant_id,referral_code,status,source,created_at",
+        [referrerId,referredId,normalized]
+      );
+      return inserted[0]||null;
+    });
+  }
+
   async createSubscriptionPrice(payload={},actor={}){
     const amountMinor=Number(payload.amount_minor);
     if(!Number.isInteger(amountMinor)||amountMinor<=0||amountMinor>100000000)throw problem(400,"INVALID_SUBSCRIPTION_PRICE");
