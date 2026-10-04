@@ -26,7 +26,8 @@ function feedback(msg,type=""){const e=$("pa-feedback");if(e){e.textContent=msg|
 async function load(){
   const body=$("pa-body");if(!body)return;body.innerHTML='<p class="pa-note">Chargement de l’administration…</p>';
   try{
-    const [billing,carrier,platform,referral]=await Promise.all([window.PGIApi.subscriptionBilling(),window.PGIApi.carrierSwitchOptions(),window.PGIApi.wholesaleOverview(),window.PGIApi.referralProgram().catch(()=>null)]);\n    render(billing,carrier,platform,referral);
+    const [billing,carrier,platform,referral]=await Promise.all([window.PGIApi.subscriptionBilling(),window.PGIApi.carrierSwitchOptions(),window.PGIApi.wholesaleOverview(),window.PGIApi.referralProgram().catch(()=>null)]);
+    render(billing,carrier,platform,referral);
   }catch(e){body.innerHTML='<p class="pa-note">Administration disponible uniquement lorsque l’API privée de production est connectée. '+esc(e.code||"")+'</p>';}
 }
 function render(billing,carrier,platform,referral){
