@@ -178,6 +178,67 @@ export async function createStripeCheckout(config,billing,idempotencyKey,analyti
   if(!session?.url||!/^https:\/\/checkout\.stripe\.com\//i.test(session.url))throw failure(502,"STRIPE_CHECKOUT_URL_INVALID");
   return {url:session.url,session_id:session.id,price_id:price.id,provider:"stripe"};
 }
+export async function createStripePortabilityPriorityCheckout(config,input={},idempotencyKey){
+  if(config?.stripeLiveMode){
+    const readiness=await stripeProviderReadiness(config);
+    if(!readiness.account_ready)throw failure(503,readiness.readiness_reason==="account_activation_required"?"PAYMENT_ACCOUNT_NOT_READY":"PAYMENT_PROVIDER_UNAVAILABLE");
+  }
+  const tenantPublicId=String(input.tenant_public_id||"").trim();
+  const requestId=Number(input.portability_request_id);
+  const billingEmail=String(input.billing_email||"").trim().toLowerCase();
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantPublicId))throw failure(400,"INVALID_BILLING_TENANT");
+  if(!Number.isInteger(requestId)||requestId<=0)throw failure(400,"INVALID_PORTABILITY_REQUEST");
+  const expectedMeta={service_type:"portability_priority",tenant_public_id:tenantPublicId,portability_request_id:String(requestId),amount_minor:"990",currency:"EUR"};
+  const existingSession=String(input.existing_checkout_session_reference||"").trim();
+  if(/^cs_(?:test_|live_)?[A-Za-z0-9]+$/.test(existingSession)){
+    const existing=await stripeApi(config,"/v1/checkout/sessions/"+encodeURIComponent(existingSession));
+    const meta=existing?.metadata&&typeof existing.metadata==="object"?existing.metadata:{};
+    const same=String(meta.service_type||"")==="portability_priority"&&String(meta.tenant_public_id||"")===tenantPublicId&&String(meta.portability_request_id||"")===String(requestId);
+    if(same&&existing?.status==="open"&&existing?.url&&/^https:\/\/checkout\.stripe\.com\//i.test(existing.url)){
+      return {url:existing.url,session_id:String(existing.id),expires_at:periodIso(existing.expires_at),provider:"stripe",amount_minor:990,currency:"EUR",reused:true};
+    }
+    if(same&&existing?.status==="complete")throw failure(409,"PORTABILITY_PRIORITY_PAYMENT_PROCESSING");
+  }
+  const params={
+    mode:"payment",
+    success_url:baseUrl(config)+"/client.html?portability_priority=success",
+    cancel_url:baseUrl(config)+"/client.html?portability_priority=cancelled",
+    client_reference_id:tenantPublicId,
+    line_items:[{price_data:{currency:"eur",unit_amount:990,tax_behavior:"inclusive",product_data:{name:"Portabilité prioritaire",description:"Priorisation du traitement administratif par PGI Telecom. Aucun délai opérateur n'est garanti."}},quantity:1}],
+    metadata:expectedMeta,
+    payment_intent_data:{metadata:expectedMeta},
+    billing_address_collection:"auto",
+    locale:"auto"
+  };
+  if(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(billingEmail))params.customer_email=billingEmail;
+  const session=await stripeApi(config,"/v1/checkout/sessions",{method:"POST",params,idempotencyKey});
+  if(!session?.url||!/^https:\/\/checkout\.stripe\.com\//i.test(session.url))throw failure(502,"STRIPE_CHECKOUT_URL_INVALID");
+  return {url:session.url,session_id:String(session.id),expires_at:periodIso(session.expires_at),provider:"stripe",amount_minor:990,currency:"EUR",reused:false};
+}
+
+export function normalizeStripePortabilityPriorityEvent(event){
+  const type=String(event?.type||"");
+  if(!["checkout.session.completed","checkout.session.async_payment_succeeded","checkout.session.async_payment_failed","checkout.session.expired"].includes(type))return null;
+  const obj=event?.data?.object;
+  if(!obj||typeof obj!=="object")return null;
+  const meta=obj.metadata&&typeof obj.metadata==="object"?obj.metadata:{};
+  if(String(meta.service_type||"")!=="portability_priority")return null;
+  const tenantPublicId=String(meta.tenant_public_id||"").trim(),requestId=Number(meta.portability_request_id);
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantPublicId)||!Number.isInteger(requestId)||requestId<=0)return null;
+  const paymentStatus=String(obj.payment_status||"").toLowerCase();
+  let status="pending";
+  if(type==="checkout.session.expired")status="expired";
+  else if(type==="checkout.session.async_payment_failed")status="failed";
+  else if(type==="checkout.session.async_payment_succeeded"||paymentStatus==="paid"||paymentStatus==="no_payment_required")status="paid";
+  const amount=Number(obj.amount_total),currency=String(obj.currency||meta.currency||"").toUpperCase();
+  return {
+    provider:"stripe",provider_event_id:String(event.id||""),event_type:type,event_time:eventIso(event),
+    tenant_public_id:tenantPublicId,portability_request_id:requestId,status,payment_status:paymentStatus||null,
+    checkout_session_reference:String(obj.id||""),payment_intent_reference:idValue(obj.payment_intent),
+    amount_minor:Number.isInteger(amount)?amount:null,currency:/^[A-Z]{3}$/.test(currency)?currency:null
+  };
+}
+
 export async function createStripePortalSession(config,billing){
   const customer=String(billing?.subscription?.provider_customer_reference||"");
   if(!/^cus_[A-Za-z0-9]+$/.test(customer))throw failure(409,"BILLING_CUSTOMER_NOT_AVAILABLE");
