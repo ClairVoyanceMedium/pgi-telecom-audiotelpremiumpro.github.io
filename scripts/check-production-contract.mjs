@@ -70,6 +70,7 @@ const arcep2026Migration=fs.readFileSync("database/migrations/040_arcep_2026_num
 const arcep2026EvidencePackMigration=fs.readFileSync("database/migrations/041_arcep_2026_evidence_pack.sql","utf8");
 const subscriptionTaxInclusiveMigration=fs.readFileSync("database/migrations/042_subscription_price_tax_inclusive.sql","utf8");
 const subscriptionPrice490Migration=fs.readFileSync("database/migrations/064_subscription_price_490.sql","utf8");
+const customerReferralMigration=fs.readFileSync("database/migrations/065_customer_referral_program.sql","utf8");
 const regulatoryReviewMonitoringMigration=fs.readFileSync("database/migrations/043_regulatory_review_monitoring.sql","utf8");
 const operationalAssuranceMigration=fs.readFileSync("database/migrations/044_operational_assurance.sql","utf8");
 const svaEcosystemMigration=fs.readFileSync("database/migrations/045_sva_ecosystem_compliance.sql","utf8");
@@ -90,6 +91,8 @@ const consumptionReceiptMigration=fs.readFileSync("database/migrations/052_consu
 const clientAccountProofUi=fs.readFileSync("assets/client-account-proof.js","utf8");
 const tenantConsumptionCheckUi=fs.readFileSync("assets/tenant-consumption-check.js","utf8");
 const clientPortalHtml=fs.readFileSync("client.html","utf8");
+const clientReferralUi=fs.readFileSync("assets/client-referral.js","utf8");
+const publicSiteSearch=fs.readFileSync("site/site-search.js","utf8");
 const adminLiveFinanceUi=fs.readFileSync("assets/live-finance.js","utf8");
 const performanceLoad=fs.readFileSync("scripts/performance-load.mjs","utf8");
 const syntheticProbe=fs.readFileSync("scripts/synthetic-probe.mjs","utf8");
@@ -317,9 +320,15 @@ if(!/target_percent:99\.9/.test(sloAssuranceSource)||!/prometheus_burn_rate/.tes
 if(!/Risk Engine/.test(controlTowerAssuranceUi)||!/Shadow billing/.test(controlTowerAssuranceUi)||!/Validations 4 yeux/.test(controlTowerAssuranceUi))failures.push("Control Tower assurance center must expose risk SLO finance and four-eyes workflow");
 for(const scenario of ["database_failure","worker_backlog","settlement_mismatch","hyperscale_growth"]){if(!digitalTwinSource.includes(scenario))failures.push("Digital Twin missing advanced scenario "+scenario);}
 if(!/audiotel-digital-twin\/2/.test(digitalTwinSource)||!/mutates_state:false/.test(digitalTwinSource))failures.push("advanced Digital Twin must remain bounded and non-mutating");
-if(!/pgi_publish_service_plan_price/.test(subscriptionPrice300Migration)||!/300/.test(subscriptionPrice300Migration)||!/3\.00 EUR\/month/.test(subscriptionPrice300Migration))failures.push("current external subscription reference price must remain versioned at 3 EUR/month");
+if(!/pgi_publish_service_plan_price/.test(subscriptionPrice300Migration)||!/300/.test(subscriptionPrice300Migration)||!/3\.00 EUR\/month/.test(subscriptionPrice300Migration))failures.push("historical 3 EUR subscription price version must remain auditable");
+if(!/pgi_publish_service_plan_price/.test(subscriptionPrice490Migration)||!/490/.test(subscriptionPrice490Migration)||!/4\.90 EUR TTC\/month/.test(subscriptionPrice490Migration)||!/2026-10-04T00:00:00Z/.test(subscriptionPrice490Migration))failures.push("current external subscription price must remain versioned at 4.90 EUR TTC/month");
 if(!/tax_behavior text NOT NULL DEFAULT 'inclusive'/.test(subscriptionTaxInclusiveMigration)||!/3\.00 EUR TTC\/month/.test(subscriptionTaxInclusiveMigration)||!/customer_price_basis','TTC'/.test(subscriptionTaxInclusiveMigration))failures.push("external subscription price must remain explicitly tax-inclusive at the customer-facing layer");
 if(!/tax_behavior IS DISTINCT FROM OLD\.tax_behavior/.test(subscriptionTaxInclusiveMigration)||!/subscription price tax behavior is immutable/.test(subscriptionTaxInclusiveMigration))failures.push("subscription tax behavior must remain immutable once published");
+if(!/customer_referral/.test(customerReferralMigration)||!/enabled boolean NOT NULL DEFAULT false/.test(customerReferralMigration)||!/paid_active_subscription/.test(customerReferralMigration)||!/customer_referral_rewards/.test(customerReferralMigration))failures.push("referral program must remain fail-closed with persistent reward history");
+if(!/referralProgramOverview/.test(postgresStore)||!/qualifyCustomerReferral/.test(postgresStore)||!/REFERRAL_MUST_PRECEDE_PAID_ACTIVATION/.test(postgresStore))failures.push("referral application layer must require paid subscription qualification and reject retroactive claims");
+if(!backendServer.includes("/api/v1/customer/referrals")||!backendServer.includes("/api/v1/platform/referral-program"))failures.push("referral customer and admin APIs must remain available");
+if(!/pgi:portal-loaded/.test(clientReferralUi)||!/pgi_referral_code/.test(clientReferralUi)||!/client-referral\.js/.test(buildStatic))failures.push("customer referral UI and referral-code continuity must ship in production");
+if(/"tarif":\[[^\]]*(?:3 euro|3€)/.test(publicSiteSearch)||/"prix":\[[^\]]*3€/.test(publicSiteSearch))failures.push("public search must not advertise the historical 3 EUR price as current");
 if(!/v\.tax_behavior/.test(postgresStore)||!/tax_behavior:"inclusive"/.test(postgresStore))failures.push("billing API must expose inclusive tax behavior");
 if(!/tenant_payout_terms/.test(pgiRevenueMigration)||!/tenant_revenue_distributions/.test(pgiRevenueMigration)||!/pgi_collects/.test(pgiRevenueMigration))failures.push("production must retain PGI-collected SVA revenue distribution");
 if(!/tenant_number_assignments_payout_terms_gate/.test(pgiRevenueMigration)||!/pgi_tenant_has_payout_terms/.test(pgiRevenueMigration))failures.push("external SVA activation must require PGI payout terms");
