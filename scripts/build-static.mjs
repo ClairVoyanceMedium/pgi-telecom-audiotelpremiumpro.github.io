@@ -206,7 +206,7 @@ const searchHints={
   "paiement-cb-audiotel":"paiement CB carte bancaire consultation forfait",
   "business-live-audiotel":"Business Live direct temps réel suivi appels",
   "audiotel-sans-siret":"sans SIRET particulier porteur projet",
-  "conditions-abonnement":"3€ abonnement prix résiliation paiement contrat",
+  "conditions-abonnement":"4,90 € abonnement prix résiliation paiement contrat",
   "resilier-contrat":"résilier résiliation abonnement contrat",
   "retractation":"rétractation consommateur droit",
   "confidentialite":"RGPD données confidentialité vie privée"
@@ -474,8 +474,7 @@ function simplifyPublicShell(html){
     .replaceAll("<span>Particulier ou professionnel</span>","<span>Particuliers, indépendants &amp; entreprises</span>")
     .replaceAll("<span>Activation soumise à validation</span>","<span>Activation après validation</span>")
     .replaceAll("<span>Activation après validation</span>","<span>Activation après validation</span><span>Sans engagement de durée</span>")
-    .replaceAll("4,90 € TTC / mois","4,90 € TTC / mois")
-    .replaceAll("3€ par mois","4,90 € TTC par mois");
+    .replaceAll("4,90 € par mois","4,90 € TTC par mois");
 }
 
 
