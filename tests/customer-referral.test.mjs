@@ -5,7 +5,7 @@ import fs from "node:fs";
 const store=fs.readFileSync(new URL("../backend/src/store-postgres.mjs",import.meta.url),"utf8");
 const server=fs.readFileSync(new URL("../backend/server.mjs",import.meta.url),"utf8");
 const admin=fs.readFileSync(new URL("../assets/platform-referral-admin.js",import.meta.url),"utf8");
-const commands=fs.readFileSync(new URL("../assets/command-palette.js",import.meta.url),"utf8");
+const platformAdmin=fs.readFileSync(new URL("../assets/platform-admin-tools.js",import.meta.url),"utf8");
 const customer=fs.readFileSync(new URL("../assets/client-referrals.js",import.meta.url),"utf8");
 const migration=fs.readFileSync(new URL("../database/migrations/065_customer_referral_program.sql",import.meta.url),"utf8");
 
@@ -29,7 +29,7 @@ test("referral reward qualifies only from a confirmed paid active invoice",()=>{
 
 test("admin can stop new referrals without erasing already registered rights",()=>{
   assert.match(server,/\/api\/v1\/platform\/referral-program/);
-  assert.match(commands,/platform-referral-admin\.js/);
+  assert.match(platformAdmin,/platform-referral-admin\.js/);
   assert.match(admin,/Désactiver les nouveaux parrainages/);
   assert.match(admin,/droits déjà enregistrés/);
   assert.match(customer,/nouveaux parrainages sont actuellement désactivés/);
