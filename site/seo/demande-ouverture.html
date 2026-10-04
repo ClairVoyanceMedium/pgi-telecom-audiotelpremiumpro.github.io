@@ -67,6 +67,11 @@
       <label>Adresse e-mail<input id="order-email" name="email" type="email" autocomplete="email" required maxlength="320"></label>
       <label>Téléphone <span>(facultatif)</span><input id="order-phone" name="phone" type="tel" autocomplete="tel" maxlength="40"></label>
       <label>Votre besoin principal<select id="order-service-intent" name="service_intent" required><option value="" selected disabled>Choisir</option><option value="new_number">Obtenir un nouveau numéro</option><option value="portability">Étudier la portabilité de mon numéro</option><option value="advice">Je souhaite être orienté</option></select></label>
+      <fieldset id="order-portability-options" class="account-choice" hidden>
+        <legend>Traitement de ma portabilité</legend>
+        <label><input type="radio" name="order_portability_priority" value="standard" checked><span><strong>Standard · 0 €</strong><small>Portabilité entrante gratuite côté Audiotel Premium Pro. Votre dossier suit la file normale.</small></span></label>
+        <label><input type="radio" name="order_portability_priority" value="priority"><span><strong>Priorité PGI · 9,90 € TTC une seule fois</strong><small>Votre dossier est traité avant les dossiers standard côté PGI. Le délai final reste dépendant des opérateurs et n’est pas garanti.</small></span></label>
+      </fieldset>
 <label class="order-processing-consent"><input id="order-processing-consent" name="processing_consent" type="checkbox" required><span>J’accepte que PGI Telecom – Audiotel Premium Pro stocke et traite les informations transmises afin de répondre à ma demande et préparer, le cas échéant, l’ouverture de mon service.</span></label>
 <label class="order-processing-consent order-marketing-consent"><input id="order-marketing-consent" name="marketing_consent" type="checkbox"><span>J’accepte de recevoir par e-mail les actualités, offres et informations commerciales d’Audiotel Premium Pro. Je peux me désinscrire à tout moment.</span></label>
 <label class="order-honeypot" aria-hidden="true">Ne pas remplir<input id="order-website" name="website" type="text" tabindex="-1" autocomplete="off"></label>
