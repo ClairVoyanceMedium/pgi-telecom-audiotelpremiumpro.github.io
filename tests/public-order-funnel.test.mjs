@@ -40,6 +40,9 @@ test("client registration carries acquisition source and service intent",()=>{
   assert.match(store,/\["new_number","portability","advice"\]/);
   assert.ok(store.includes("jsonb_build_object('first_name',$5::text,'last_name',$6::text,'phone',$7::text,'signup_source',$8::text"));
   assert.match(store,/acquisitionSource==="public_marketing_site"\?"public_marketing_site":"self_service_email"/);
+  assert.match(site,/referral_code:REFERRAL_CODE\|\|null/);
+  assert.match(audience,/referral_code:referral\|\|null/);
+  assert.match(store,/customer_referrals/);
 });
 
 test("GitHub Pages registration preview never pretends a real request was sent",()=>{
