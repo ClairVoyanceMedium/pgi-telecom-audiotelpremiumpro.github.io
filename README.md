@@ -1,8 +1,8 @@
 # Audiotel Premium Pro
 
-Plateforme Audiotel professionnelle. Le cockpit interne conserve l’identité « PGI • Telecom - Audiotel Premium Pro ».
+Plateforme Audiotel professionnelle. Le cockpit interne conserve l’identité « PGI Telecom • Audiotel Premium Pro ».
 
-> Convention produit : **Audiotel Premium Pro** est le nom public/client. **PGI • Telecom - Audiotel Premium Pro** désigne uniquement le cockpit interne. Les termes publics sont « services », « intervenants » et « postes » ; le nom technique historique `experts` reste conservé dans le code pour compatibilité.
+> Convention produit : **Audiotel Premium Pro** est le nom public/client. **PGI Telecom • Audiotel Premium Pro** désigne uniquement le cockpit interne. Les termes publics sont « services », « intervenants » et « postes » ; le nom technique historique `experts` reste conservé dans le code pour compatibilité.
 
 ## État actuel
 
@@ -177,7 +177,7 @@ Points verrouillés :
 - support `pointer: coarse` et réduction des effets hover non pertinents au tactile ;
 - métadonnées PWA Android/iOS et `display_override` pour l'installation.
 
-Le nom visible reste **PGI • Telecom - Audiotel Premium Pro**.
+Le nom visible reste **PGI Telecom • Audiotel Premium Pro**.
 
 
 ### Durcissement petits écrans 1.12.0
