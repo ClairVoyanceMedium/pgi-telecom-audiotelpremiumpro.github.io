@@ -402,3 +402,6 @@ body{padding-bottom:112px}
 /* home-hero-spacing-v176 */
 .home-page .site-header+main>.hero:first-child{padding-top:18px}
 @media(max-width:680px){.home-page .site-header+main>.hero:first-child{padding-top:14px}}
+
+/* referral-opening-v177 */
+.order-referral-note{display:grid;gap:4px;margin:0 0 14px;padding:12px 14px;border:1px solid rgba(232,179,110,.28);border-radius:13px;background:rgba(232,179,110,.07)}.order-referral-note strong{color:#f1cf9f;font-size:12px}.order-referral-note span{color:#c8b5a7;font-size:10px;line-height:1.45}
