@@ -3561,6 +3561,8 @@ export class PostgresStore{
     const acquisitionSource=String(input.acquisition_source||"")==="public_marketing_site"?"public_marketing_site":"self_service";
     const serviceIntentInput=String(input.service_intent||"").trim().toLowerCase();
     const serviceIntent=["new_number","portability","advice"].includes(serviceIntentInput)?serviceIntentInput:"";
+    const referralRaw=String(input.referral_code||"").trim().toUpperCase();
+    const referralCode=/^[A-Z0-9]{20}$/.test(referralRaw)?referralRaw:null;
     const authorityConfirmed=input.authority_confirmed===true;
     const legalAccepted=input.legal_terms_accepted===true,privacyAcknowledged=input.privacy_notice_acknowledged===true,legalVersion=String(input.legal_version||"").trim();
     if(firstName.length<1||lastName.length<1)throw problem(400,"CUSTOMER_NAME_REQUIRED");
@@ -3609,6 +3611,35 @@ export class PostgresStore{
         " RETURNING id,public_id,display_name,status,authorization_version",
         [slugBase,tenantName,effectiveCompanyName||tenantName,country,email,locale,currency,timezone]
       ))[0];
+      await tx.unsafe(
+        "INSERT INTO tenant_referral_codes(tenant_id,code) VALUES($1,upper(substr(replace($2::text,'-',''),1,20))) ON CONFLICT(tenant_id) DO NOTHING",
+        [tenant.id,tenant.public_id]
+      );
+      if(referralCode){
+        const referralEnabled=Boolean((await tx.unsafe("SELECT enabled FROM referral_program_settings WHERE singleton=true LIMIT 1"))[0]?.enabled);
+        if(referralEnabled){
+          const referrer=(await tx.unsafe(
+            "SELECT c.id AS code_id,c.tenant_id FROM tenant_referral_codes c JOIN tenants t ON t.id=c.tenant_id WHERE c.code=$1 AND t.status='active' AND t.tenant_type<>'internal' LIMIT 1",
+            [referralCode]
+          ))[0]||null;
+          if(referrer&&Number(referrer.tenant_id)!==Number(tenant.id)){
+            const referral=(await tx.unsafe(
+              "INSERT INTO tenant_referrals(referrer_tenant_id,referred_tenant_id,referral_code_id,status,reward_status,metadata) VALUES($1,$2,$3,'attributed','pending_qualification',$4::jsonb) ON CONFLICT(referred_tenant_id) DO NOTHING RETURNING id",
+              [Number(referrer.tenant_id),Number(tenant.id),Number(referrer.code_id),JSON.stringify({source:acquisitionSource,commercial_benefit:"pending_policy"})]
+            ))[0]||null;
+            if(referral){
+              await tx.unsafe(
+                "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'referral.attributed','tenant_referral',$2,$3::jsonb)",
+                [tenant.id,String(referral.id),JSON.stringify({referrer_tenant_id:Number(referrer.tenant_id),referred_tenant_id:Number(tenant.id),reward_status:"pending_qualification"})]
+              );
+              await tx.unsafe(
+                "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'referral.attributed','tenant_referral',$2,$3::jsonb)",
+                [tenant.id,String(referral.id),JSON.stringify({referral_id:Number(referral.id),referrer_tenant_id:Number(referrer.tenant_id),referred_tenant_id:Number(tenant.id)})]
+              );
+            }
+          }
+        }
+      }
       await tx.unsafe(
         "INSERT INTO tenant_kyc_profiles(tenant_id,entity_type,registration_country,registration_number,status,metadata)"+
         " VALUES($1,$2,$3,$4,'pending',$5::jsonb) ON CONFLICT(tenant_id) DO NOTHING",
@@ -4533,6 +4564,84 @@ export class PostgresStore{
       pgi_fee_paid_minor:Number(totals.pgi_fee_paid_minor||0),
       application_fee_bps:490,
       recent:recent.map(x=>({...x,amount_minor:Number(x.amount_minor),application_fee_minor:Number(x.application_fee_minor)}))
+    };
+  }
+
+  async referralProgramAdminOverview(){
+    const setting=(await this.readSql.unsafe(
+      "SELECT enabled,reward_kind,reward_policy_status,updated_by_staff_user_id,updated_at FROM referral_program_settings WHERE singleton=true LIMIT 1"
+    ))[0]||{enabled:false,reward_kind:"subscription_benefit",reward_policy_status:"unconfigured",updated_by_staff_user_id:null,updated_at:null};
+    const totals=(await this.readSql.unsafe(
+      "SELECT count(*)::int AS total,count(*) FILTER (WHERE status='attributed')::int AS attributed,count(*) FILTER (WHERE status='qualified')::int AS qualified,count(*) FILTER (WHERE reward_status='pending_policy')::int AS pending_policy,count(*) FILTER (WHERE reward_status='granted')::int AS granted FROM tenant_referrals"
+    ))[0]||{};
+    const recent=await this.readSql.unsafe(
+      "SELECT r.id,r.status,r.reward_status,r.attributed_at,r.qualified_at,r.rewarded_at,rt.public_id AS referrer_public_id,rt.display_name AS referrer_name,dt.public_id AS referred_public_id,dt.display_name AS referred_name FROM tenant_referrals r JOIN tenants rt ON rt.id=r.referrer_tenant_id JOIN tenants dt ON dt.id=r.referred_tenant_id ORDER BY r.attributed_at DESC,r.id DESC LIMIT 30"
+    );
+    return {
+      program_enabled:Boolean(setting.enabled),
+      reward_kind:String(setting.reward_kind||"subscription_benefit"),
+      reward_policy_status:String(setting.reward_policy_status||"unconfigured"),
+      updated_at:setting.updated_at||null,
+      totals:{
+        total:Number(totals.total||0),
+        attributed:Number(totals.attributed||0),
+        qualified:Number(totals.qualified||0),
+        pending_policy:Number(totals.pending_policy||0),
+        granted:Number(totals.granted||0)
+      },
+      recent
+    };
+  }
+
+  async setReferralProgramEnabled(enabled,actor){
+    if(typeof enabled!=="boolean")throw problem(400,"INVALID_REFERRAL_PROGRAM_STATE");
+    const userId=numericActor(actor);
+    return this.sql.begin(async tx=>{
+      const rows=await tx.unsafe(
+        "UPDATE referral_program_settings SET enabled=$1,updated_by_staff_user_id=$2,updated_at=now() WHERE singleton=true RETURNING enabled,reward_kind,reward_policy_status,updated_at",
+        [enabled,userId]
+      );
+      const row=rows[0];
+      if(!row)throw problem(503,"REFERRAL_PROGRAM_SETTINGS_UNAVAILABLE");
+      await tx.unsafe(
+        "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,$2,'referral_program','global',$3::jsonb)",
+        [userId,enabled?"referral.program.enabled":"referral.program.disabled",JSON.stringify({enabled,reward_kind:row.reward_kind,reward_policy_status:row.reward_policy_status,history_preserved:true})]
+      );
+      this.eventBus.publish("referral.program.updated",{enabled,updated_at:row.updated_at});
+      return {program_enabled:Boolean(row.enabled),reward_kind:row.reward_kind,reward_policy_status:row.reward_policy_status,updated_at:row.updated_at};
+    });
+  }
+
+  async customerReferralOverview(tenantId){
+    const id=Number(tenantId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    const tenant=(await this.readSql.unsafe("SELECT id,public_id,status,tenant_type FROM tenants WHERE id=$1 LIMIT 1",[id]))[0]||null;
+    if(!tenant||tenant.tenant_type==="internal")throw problem(404,"TENANT_NOT_FOUND");
+    const setting=(await this.readSql.unsafe(
+      "SELECT enabled,reward_kind,reward_policy_status,updated_at FROM referral_program_settings WHERE singleton=true LIMIT 1"
+    ))[0]||{enabled:false,reward_kind:"subscription_benefit",reward_policy_status:"unconfigured",updated_at:null};
+    const totals=(await this.readSql.unsafe(
+      "SELECT count(*)::int AS total,count(*) FILTER (WHERE status='attributed')::int AS attributed,count(*) FILTER (WHERE status='qualified')::int AS qualified,count(*) FILTER (WHERE reward_status='pending_policy')::int AS pending_policy,count(*) FILTER (WHERE reward_status='granted')::int AS granted FROM tenant_referrals WHERE referrer_tenant_id=$1",
+      [id]
+    ))[0]||{};
+    const eligible=Boolean(setting.enabled)&&tenant.status==="active";
+    let code=null;
+    if(eligible){
+      code=(await this.readSql.unsafe("SELECT code FROM tenant_referral_codes WHERE tenant_id=$1 LIMIT 1",[id]))[0]?.code||null;
+    }
+    return {
+      program_enabled:Boolean(setting.enabled),
+      eligible,
+      code,
+      reward_kind:String(setting.reward_kind||"subscription_benefit"),
+      reward_policy_status:String(setting.reward_policy_status||"unconfigured"),
+      totals:{
+        total:Number(totals.total||0),
+        attributed:Number(totals.attributed||0),
+        qualified:Number(totals.qualified||0),
+        pending_policy:Number(totals.pending_policy||0),
+        granted:Number(totals.granted||0)
+      }
     };
   }
 
