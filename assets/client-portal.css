@@ -265,15 +265,3 @@ html,body,.cp-app{overflow-anchor:none}
   .cp-brand-dialog-actions{display:grid;grid-template-columns:1fr 1fr}
   .cp-brand-dialog-actions .cp-primary,.cp-brand-dialog-actions .cp-ghost{width:100%;min-width:0;min-height:42px}
 }
-
-/* portability-commercial-priority-v177 */
-.cp-portability-options{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:12px 0;padding:11px;border:1px solid var(--line);border-radius:13px}
-.cp-portability-options legend{padding:0 6px;color:#cfd4d9;font-size:9px;font-weight:850}
-.cp-portability-option{display:flex;align-items:flex-start;gap:9px;padding:11px;border:1px solid var(--line);border-radius:11px;background:rgba(255,255,255,.016);cursor:pointer}
-.cp-portability-option:has(input:checked){border-color:rgba(215,167,106,.65);box-shadow:0 0 0 2px rgba(215,167,106,.08);background:rgba(215,167,106,.055)}
-.cp-portability-option input{margin-top:2px;accent-color:#d7a76a}.cp-portability-option span,.cp-portability-option strong,.cp-portability-option small{display:block}
-.cp-portability-option strong{font-size:9px;color:#e7e9eb}.cp-portability-option small{margin-top:5px;color:var(--muted);font-size:8px;line-height:1.5}.cp-portability-option-premium strong{color:#f0c987}
-.cp-portability-options>p{grid-column:1/-1;margin:0;color:var(--muted);font-size:7.5px;line-height:1.45}
-.cp-portability-priority{min-height:30px;padding:0 9px;border:1px solid rgba(215,167,106,.5);border-radius:8px;background:rgba(215,167,106,.09);color:#f0c987;cursor:pointer;font-size:8px;font-weight:850}
-.cp-portability-tier{padding:5px 7px;border:1px solid rgba(215,167,106,.4);border-radius:999px;color:#f0c987;font-size:7px;font-weight:900;letter-spacing:.05em}
-@media(max-width:620px){.cp-portability-options{grid-template-columns:1fr}}
