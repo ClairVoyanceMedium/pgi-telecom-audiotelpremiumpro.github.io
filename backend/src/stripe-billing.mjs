@@ -144,7 +144,7 @@ export async function createStripeCheckout(config,billing,idempotencyKey,analyti
     tenant_public_id:String(tenant.id||""),
     price_version_id:String(billing?.offer?.price_version_id||""),
     plan_key:String(billing?.offer?.plan_key||"external-sva-access"),
-    legal_version:"2026-09-26-b2b-b2c-v4",
+    legal_version:"2026-10-04-b2b-b2c-v5",
     contract_model:"indefinite_monthly_advance",
     introductory_offer:"current_month_free"
   };
