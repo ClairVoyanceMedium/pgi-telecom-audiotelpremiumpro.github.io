@@ -163,7 +163,7 @@ function render(data){
   $("kpi-minutes").textContent=nf(a.billable/60,1);$("kpi-revenue").textContent=money(a.revenue,a.currency);$("kpi-payout").textContent=money(a.payout,a.currency);
   $("portal-sync").textContent="Dernière consolidation : "+(a.updated?dt(a.updated):dt(data.server_time));
   $("traffic-total").textContent=nf(a.calls)+" appels";
-  renderAnalytics(data);renderNumbers(data);renderCalls(data);renderSettlements(data);renderSubscriptions(data);renderOnboarding(data);renderDestinations(data);renderPortabilitySummary(data);renderVoiceStudio(data);renderServiceCenter(data);if(I.apply)I.apply(document.body);
+  renderAnalytics(data);renderNumbers(data);renderCalls(data);renderSettlements(data);renderSubscriptions(data);renderOnboarding(data);renderDestinations(data);renderPortabilitySummary(data);renderVoiceStudio(data);renderServiceCenter(data);renderReferral();if(I.apply)I.apply(document.body);
 }
 async function loadPortal(){
   var range=rangeFor(state.range),data;
@@ -312,6 +312,20 @@ function renderPortabilitySummary(data){
   if(rows.length)ensurePortability().then(function(x){x.render(data);}).catch(function(){});
   else if(list)list.innerHTML='<p class="cp-empty">Aucune demande de portabilité en cours.</p>';
 }
+function renderReferral(){
+  var old=$("client-referral"),nav=document.querySelector('.cp-section-nav a[href="#client-referral"]');
+  if(state.demo){if(old)old.remove();if(nav)nav.remove();return;}
+  window.PGICustomerApi.referral().then(function(x){
+    if(!x||!x.program_enabled||!x.eligible||!x.code){if(old)old.remove();if(nav)nav.remove();return;}
+    var support=$("client-service-center");if(!support)return;
+    var section=old||document.createElement("section");section.id="client-referral";section.className="cp-panel cp-anchor-section";
+    var link=location.origin+"/demande-ouverture/?ref="+encodeURIComponent(x.code),t=x.totals||{};
+    section.innerHTML='<div class="cp-panel-head"><div><p class="cp-kicker">PARRAINAGE</p><h2>Recommander Audiotel Premium Pro</h2></div><span class="cp-chip ok">ACTIF</span></div><p class="cp-muted">Partagez votre lien personnel. Le parrainage est rattaché au dossier du filleul et n’est qualifié qu’après son activation effective comme client.</p><div class="cp-row"><div><strong>Mon lien de parrainage</strong><span>'+esc(link)+'</span></div><button id="client-referral-copy" class="cp-ghost" type="button">Copier</button></div><div class="cp-row"><div><strong>Suivi</strong><span>'+nf(t.total||0)+' dossier(s) attribué(s) · '+nf(t.qualified||0)+' qualifié(s)</span></div><span class="cp-chip neutral">'+esc(x.reward_policy_status==="configured"?"CONDITIONS ACTIVES":"AVANTAGE NON CHIFFRÉ")+'</span></div><p class="cp-billing-trust">Aucune commission en espèces n’est promise. Tout avantage éventuel suit les conditions de parrainage en vigueur et reste conditionné à l’activation effective du filleul.</p>';
+    if(!old)support.parentNode.insertBefore(section,support);
+    if(!nav){var n=document.createElement("a");n.href="#client-referral";n.textContent="Parrainage";document.querySelector(".cp-section-nav")?.appendChild(n);}
+    $("client-referral-copy")?.addEventListener("click",async function(){try{await navigator.clipboard.writeText(link);toast("Lien de parrainage copié");}catch(_e){var ta=document.createElement("textarea");ta.value=link;ta.hidden=true;document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();toast("Lien de parrainage copié");}});
+  }).catch(function(){if(old)old.remove();if(nav)nav.remove();});
+}
 function ensureServiceCenter(){
   if(serviceCenterController)return Promise.resolve(serviceCenterController);
   if(!serviceCenterPromise)serviceCenterPromise=import("./client-service-center.js").then(function(m){
@@ -349,6 +363,7 @@ function updateRegistrationNumberField(){
   input.inputMode=fr?"numeric":"text";
 }
 function openEmailVerification(r){return import("./customer-email-verification.js").then(m=>m.open({token:r.verification_token,email:r.user&&r.user.email||"",onVerified:u=>{state.user=u;showApp()}})).catch(()=>setAuthMessage("Vérification e-mail indisponible.",true))}
+function referralCodeFromUrl(){var raw=String(new URLSearchParams(location.search).get("ref")||"").trim().toUpperCase();return /^[A-Z0-9]{20}$/.test(raw)?raw:"";}
 async function submitRegistration(e){
   e.preventDefault();setAuthMessage("");
   var password=$("register-password").value,confirm=$("register-password-confirm").value;
@@ -370,7 +385,8 @@ async function submitRegistration(e){
     legal_version:"2026-09-26-b2b-b2c-v4",
     website:$("register-website").value,
     preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",
-    timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC")
+    timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC"),
+    referral_code:referralCodeFromUrl()
   };
   b&&(b.disabled=true);
   try{
