@@ -383,6 +383,7 @@ body{padding-bottom:112px}
 .public-search-empty span{font-size:10px;color:#929aa3}
 @media(max-width:980px){.public-search-wrap{justify-content:stretch}.public-search{width:100%}}
 @media(max-width:680px){
+  .site-header{overflow:visible!important}
   .public-search-wrap{width:calc(100% - 18px)!important;max-width:calc(100% - 18px)!important;padding-bottom:8px}
   .public-search-box{height:40px;border-radius:11px}
   .public-search-box input{font-size:12px}
