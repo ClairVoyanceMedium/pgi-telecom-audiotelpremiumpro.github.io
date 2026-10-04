@@ -286,11 +286,11 @@ test("Stripe priority checkout is a one-time 9.90 EUR PGI payment with portabili
   globalThis.fetch=async(url,init={})=>{
     calls.push({url:String(url),body:String(init.body||"")});
     assert.match(String(url),/\/v1\/checkout\/sessions$/);
-    const body=String(init.body||"");
+    const body=decodeURIComponent(String(init.body||""));
     assert.match(body,/mode=payment/);
-    assert.match(body,/unit_amount=990/);
-    assert.match(body,/pgi_payment_kind=portability_priority/);
-    assert.match(body,/portability_request_id=77/);
+    assert.match(body,/line_items\[0\]\[price_data\]\[unit_amount\]=990/);
+    assert.match(body,/metadata\[pgi_payment_kind\]=portability_priority/);
+    assert.match(body,/metadata\[portability_request_id\]=77/);
     return {ok:true,status:200,json:async()=>({id:"cs_test_priority77",url:"https://checkout.stripe.com/c/pay/cs_test_priority77"})};
   };
   try{
@@ -311,10 +311,10 @@ test("Stripe referral reward creates a negative customer balance transaction cre
   const original=globalThis.fetch;
   globalThis.fetch=async(url,init={})=>{
     assert.match(String(url),/\/v1\/customers\/cus_referrer1\/balance_transactions$/);
-    const body=String(init.body||"");
+    const body=decodeURIComponent(String(init.body||""));
     assert.match(body,/amount=-300/);
     assert.match(body,/currency=eur/);
-    assert.match(body,/reward_kind=one_month_free/);
+    assert.match(body,/metadata\[reward_kind\]=one_month_free/);
     return {ok:true,status:200,json:async()=>({id:"cbtxn_referral1",ending_balance:-300})};
   };
   try{
