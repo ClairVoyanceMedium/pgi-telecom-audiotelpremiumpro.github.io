@@ -44,6 +44,7 @@ const typeInputs=[...form.querySelectorAll('input[name="order_account_type"]')];
 const companyWrap=document.getElementById("order-company-wrap");
 const company=document.getElementById("order-company");
 const value=id=>String(document.getElementById(id)?.value||"").trim();
+function referralCode(){const raw=String(new URLSearchParams(location.search).get("ref")||"").trim().toUpperCase();return /^[A-Z0-9]{20}$/.test(raw)?raw:""}
 function selectedType(){return form.querySelector('input[name="order_account_type"]:checked')?.value||""}
 function syncType(){
   const type=selectedType(),business=type==="business";
@@ -51,7 +52,7 @@ function syncType(){
   if(company){company.disabled=!business;if(!business)company.value=""}
 }
 function snapshot(){const type=selectedType();
-  return {version:1,created_at:Date.now(),account_type:type,first_name:value("order-first-name").slice(0,80),last_name:value("order-last-name").slice(0,80),company_name:type==="business"?value("order-company").slice(0,200):"",email:value("order-email").slice(0,320),phone:value("order-phone").slice(0,40),service_intent:value("order-service-intent"),country_code:"FR",preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"Europe/Paris"),processing_consent:!!document.getElementById("order-processing-consent")?.checked,marketing_consent:!!document.getElementById("order-marketing-consent")?.checked,marketing_consent_version:"2026-10-01-v1",website:value("order-website")};
+  return {version:1,created_at:Date.now(),account_type:type,first_name:value("order-first-name").slice(0,80),last_name:value("order-last-name").slice(0,80),company_name:type==="business"?value("order-company").slice(0,200):"",email:value("order-email").slice(0,320),phone:value("order-phone").slice(0,40),service_intent:value("order-service-intent"),country_code:"FR",preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"Europe/Paris"),processing_consent:!!document.getElementById("order-processing-consent")?.checked,marketing_consent:!!document.getElementById("order-marketing-consent")?.checked,marketing_consent_version:"2026-10-01-v1",referral_code:referralCode(),website:value("order-website")};
 }
 function saveDraft(){try{sessionStorage.setItem(DRAFT_KEY,JSON.stringify(snapshot()))}catch(_e){}}
 function hydrateDraft(){

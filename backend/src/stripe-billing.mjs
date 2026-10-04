@@ -178,6 +178,67 @@ export async function createStripeCheckout(config,billing,idempotencyKey,analyti
   if(!session?.url||!/^https:\/\/checkout\.stripe\.com\//i.test(session.url))throw failure(502,"STRIPE_CHECKOUT_URL_INVALID");
   return {url:session.url,session_id:session.id,price_id:price.id,provider:"stripe"};
 }
+export const PORTABILITY_PRIORITY_FEE_MINOR=990;
+
+export async function createPortabilityPriorityCheckout(config,payment,idempotencyKey){
+  if(config?.stripeLiveMode){
+    const readiness=await stripeProviderReadiness(config);
+    if(!readiness.account_ready)throw failure(503,readiness.readiness_reason==="account_activation_required"?"PAYMENT_ACCOUNT_NOT_READY":"PAYMENT_PROVIDER_UNAVAILABLE");
+  }
+  const publicId=String(payment?.payment_public_id||"").trim();
+  const tenantPublicId=String(payment?.tenant_public_id||"").trim();
+  const portabilityId=String(payment?.portability_request_id||"").trim();
+  if(!/^[0-9a-f-]{36}$/i.test(publicId)||!tenantPublicId||!/^\d+$/.test(portabilityId))throw failure(400,"PORTABILITY_PRIORITY_PAYMENT_INVALID");
+  const metadata={
+    payment_kind:"portability_priority",
+    priority_payment_public_id:publicId,
+    tenant_public_id:tenantPublicId,
+    portability_request_id:portabilityId,
+    amount_minor:String(PORTABILITY_PRIORITY_FEE_MINOR),
+    currency:"EUR"
+  };
+  const params={
+    mode:"payment",
+    integration_identifier:"pgi_portability_priority_990_v1",
+    success_url:baseUrl(config)+"/client.html?portability=priority-success&session_id={CHECKOUT_SESSION_ID}",
+    cancel_url:baseUrl(config)+"/client.html?portability=priority-cancelled",
+    client_reference_id:tenantPublicId,
+    line_items:[{
+      price_data:{
+        currency:"eur",
+        unit_amount:PORTABILITY_PRIORITY_FEE_MINOR,
+        tax_behavior:"inclusive",
+        product_data:{
+          name:"Portabilité prioritaire Audiotel Premium Pro",
+          description:"Option ponctuelle de traitement prioritaire par PGI Telecom. La portabilité standard reste gratuite. Aucun délai d’un opérateur externe n’est garanti."
+        }
+      },
+      quantity:1
+    }],
+    metadata,
+    payment_intent_data:{
+      metadata,
+      description:"Portabilité prioritaire Audiotel Premium Pro — 9,90 € TTC"
+    },
+    billing_address_collection:"auto",
+    custom_text:{submit:{message:"Option ponctuelle à 9,90 € TTC. Elle priorise le traitement interne PGI Telecom uniquement et ne garantit aucun délai d’un opérateur externe."}},
+    locale:"auto"
+  };
+  const email=String(payment?.billing_email||"").trim().toLowerCase();
+  if(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))params.customer_email=email;
+  const session=await stripeApi(config,"/v1/checkout/sessions",{method:"POST",params,idempotencyKey});
+  if(!session?.url||!/^https:\/\/checkout\.stripe\.com\//i.test(session.url)||!/^cs_[A-Za-z0-9_]+$/.test(String(session.id||"")))throw failure(502,"STRIPE_CHECKOUT_URL_INVALID");
+  return {
+    url:session.url,
+    session_id:String(session.id),
+    payment_intent_id:idValue(session.payment_intent),
+    provider:"stripe",
+    amount_minor:PORTABILITY_PRIORITY_FEE_MINOR,
+    currency:"EUR",
+    expires_at:session.expires_at?new Date(Number(session.expires_at)*1000).toISOString():null
+  };
+}
+
 export async function createStripePortalSession(config,billing){
   const customer=String(billing?.subscription?.provider_customer_reference||"");
   if(!/^cus_[A-Za-z0-9]+$/.test(customer))throw failure(409,"BILLING_CUSTOMER_NOT_AVAILABLE");
@@ -226,6 +287,56 @@ function normalizeStatus(status,eventType){
   return "suspended";
 }
 function eventIso(event){const n=Number(event?.created);return Number.isFinite(n)?new Date(n*1000).toISOString():new Date().toISOString();}
+
+export function normalizePortabilityPriorityEvent(event){
+  const type=String(event?.type||""),obj=event?.data?.object;
+  if(!obj)return null;
+  if(["checkout.session.completed","checkout.session.async_payment_succeeded","checkout.session.async_payment_failed","checkout.session.expired"].includes(type)){
+    const meta=obj.metadata&&typeof obj.metadata==="object"?obj.metadata:{};
+    if(String(meta.payment_kind||"")!=="portability_priority")return null;
+    const publicId=String(meta.priority_payment_public_id||"");
+    if(!/^[0-9a-f-]{36}$/i.test(publicId))return null;
+    const amount=Number(obj.amount_total??meta.amount_minor),currency=String(obj.currency||meta.currency||"").toUpperCase();
+    let status="open";
+    if(type==="checkout.session.expired")status="expired";
+    else if(type==="checkout.session.async_payment_failed")status="failed";
+    else if(type==="checkout.session.async_payment_succeeded"||String(obj.payment_status||"").toLowerCase()==="paid")status="paid";
+    return {
+      provider:"stripe",
+      provider_event_id:String(event.id||""),
+      event_type:type,
+      event_time:eventIso(event),
+      payment_public_id:publicId,
+      status,
+      amount_minor:Number.isInteger(amount)?amount:null,
+      currency:/^[A-Z]{3}$/.test(currency)?currency:null,
+      provider_checkout_session_reference:String(obj.id||""),
+      provider_payment_intent_reference:idValue(obj.payment_intent)
+    };
+  }
+  if(["charge.refunded","charge.dispute.created"].includes(type)){
+    const meta=obj.metadata&&typeof obj.metadata==="object"?obj.metadata:{};
+    if(String(meta.payment_kind||"")!=="portability_priority")return null;
+    const publicId=String(meta.priority_payment_public_id||"");
+    if(!/^[0-9a-f-]{36}$/i.test(publicId))return null;
+    const amount=Number(obj.amount),refunded=type==="charge.refunded"?Number(obj.amount_refunded):0,currency=String(obj.currency||meta.currency||"").toUpperCase();
+    const fullyRefunded=type==="charge.refunded"&&Number.isInteger(amount)&&amount>0&&Number.isInteger(refunded)&&refunded>=amount;
+    return {
+      provider:"stripe",
+      provider_event_id:String(event.id||""),
+      event_type:type,
+      event_time:eventIso(event),
+      payment_public_id:publicId,
+      status:type==="charge.refunded"?(fullyRefunded?"refunded":"partially_refunded"):"disputed",
+      amount_minor:Number.isInteger(amount)?amount:null,
+      refunded_amount_minor:Number.isInteger(refunded)&&refunded>=0?refunded:null,
+      currency:/^[A-Z]{3}$/.test(currency)?currency:null,
+      provider_checkout_session_reference:null,
+      provider_payment_intent_reference:idValue(obj.payment_intent)
+    };
+  }
+  return null;
+}
 function periodIso(value){const n=Number(value);return Number.isFinite(n)&&n>0?new Date(n*1000).toISOString():null;}
 export function normalizeStripeSubscriptionEvent(event){
   const type=String(event?.type||""),obj=event?.data?.object;
