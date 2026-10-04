@@ -4669,10 +4669,11 @@ export class PostgresStore{
       const rewardMinor=Math.trunc(Number(cfg.reward_minor)||0),currency=String(cfg.currency||"EUR").toUpperCase();
       if(flag?.enabled!==true||rewardMinor<=0)throw problem(409,"REFERRAL_PROGRAM_DISABLED");
       const refCode=(await tx.unsafe(
-        "SELECT c.id,c.tenant_id,t.status FROM customer_referral_codes c JOIN tenants t ON t.id=c.tenant_id WHERE c.code=$1 AND c.status='active' LIMIT 1",
+        "SELECT c.id,c.tenant_id,t.status AS tenant_status,EXISTS(SELECT 1 FROM tenant_subscriptions s WHERE s.tenant_id=c.tenant_id AND s.status='active' AND s.current_period_end>now() AND (s.last_payment_status IS NULL OR s.last_payment_status IN ('paid','succeeded','success'))) AS paid_active"+
+        " FROM customer_referral_codes c JOIN tenants t ON t.id=c.tenant_id WHERE c.code=$1 AND c.status='active' LIMIT 1",
         [code]
       ))[0];
-      if(!refCode||refCode.status!=="active")throw problem(404,"REFERRAL_CODE_NOT_FOUND");
+      if(!refCode||refCode.tenant_status!=="active"||refCode.paid_active!==true)throw problem(404,"REFERRAL_CODE_NOT_FOUND");
       if(Number(refCode.tenant_id)===referred)throw problem(409,"REFERRAL_SELF_CLAIM");
       const target=(await tx.unsafe("SELECT id,status FROM tenants WHERE id=$1 AND tenant_type<>'internal' LIMIT 1 FOR UPDATE",[referred]))[0];
       if(!target)throw problem(404,"TENANT_NOT_FOUND");
@@ -4701,17 +4702,23 @@ export class PostgresStore{
     const id=Number(rewardId),reference=String(paidReference||"").trim().slice(0,180),actorId=numericActor(actor);
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_REFERRAL_REWARD");
     if(reference.length<3)throw problem(400,"REFERRAL_PAYMENT_REFERENCE_REQUIRED");
+    const existing=(await this.sql.unsafe(
+      "SELECT id,public_id::text AS public_id,tenant_id,amount_minor::bigint AS amount_minor,currency,status,earned_at,paid_at,paid_reference FROM customer_referral_rewards WHERE id=$1 LIMIT 1",
+      [id]
+    ))[0];
+    if(!existing)throw problem(404,"REFERRAL_REWARD_NOT_FOUND");
+    if(existing.status==="paid")return {...existing,amount_minor:Number(existing.amount_minor),already_paid:true};
+    if(existing.status!=="earned")throw problem(409,"REFERRAL_REWARD_NOT_PAYABLE");
     const row=(await this.sql.unsafe(
-      "UPDATE customer_referral_rewards SET status='paid',paid_at=COALESCE(paid_at,now()),paid_reference=COALESCE(paid_reference,$2)"+
-      " WHERE id=$1 AND status IN ('earned','paid') RETURNING id,public_id::text AS public_id,tenant_id,amount_minor::bigint AS amount_minor,currency,status,earned_at,paid_at,paid_reference",
+      "UPDATE customer_referral_rewards SET status='paid',paid_at=now(),paid_reference=$2 WHERE id=$1 AND status='earned' RETURNING id,public_id::text AS public_id,tenant_id,amount_minor::bigint AS amount_minor,currency,status,earned_at,paid_at,paid_reference",
       [id,reference]
     ))[0];
-    if(!row)throw problem(404,"REFERRAL_REWARD_NOT_FOUND");
+    if(!row)throw problem(409,"REFERRAL_REWARD_STATE_CHANGED");
     await this.sql.unsafe(
       "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'referral.reward.paid','customer_referral_reward',$3,$4::jsonb)",
       [row.tenant_id,actorId,String(row.id),JSON.stringify({amount_minor:Number(row.amount_minor),currency:row.currency,paid_reference:row.paid_reference})]
     );
-    return {...row,amount_minor:Number(row.amount_minor)};
+    return {...row,amount_minor:Number(row.amount_minor),already_paid:false};
   }
 
   async customerPortabilityRequests(tenantId){
