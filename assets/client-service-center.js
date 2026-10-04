@@ -1,10 +1,10 @@
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
-const dt=(v,locale)=>{if(!v)return"—";const d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat(locale||"fr-FR",{dateStyle:"short",timeStyle:"short"}).format(d):"—";};
+const dt=(v,locale)=>{if(!v)return"Non disponible";const d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat(locale||"fr-FR",{dateStyle:"short",timeStyle:"short"}).format(d):"Non disponible";};
 const states={open:"Ouvert",investigating:"Pris en charge",waiting_customer:"Votre réponse est attendue",monitoring:"Sous surveillance",resolved:"Résolu",closed:"Clos"};
 const priorities={low:"Faible",normal:"Normale",high:"Haute",critical:"Critique"};
 const cats={telephony:"Téléphonie",portability:"Portabilité",billing:"Facturation",payout:"Reversement",account:"Compte",routing:"Routage",quality:"Qualité",other:"Question générale / Contact"};
-const label=(map,v)=>map[String(v||"")]||String(v||"—");
+const label=(map,v)=>map[String(v||"")]||String(v||"Non disponible");
 let styled=false;
 
 function ensureStyle(){

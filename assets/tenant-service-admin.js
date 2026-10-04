@@ -3,7 +3,7 @@ import {esc,date} from "./tenant-control-utils.js";
 const states={open:"Ouvert",investigating:"Pris en charge",waiting_customer:"Client attendu",monitoring:"Surveillance",resolved:"Résolu",closed:"Clos"};
 const priorities={low:"Faible",normal:"Normale",high:"Haute",critical:"Critique"};
 const cats={telephony:"Téléphonie",portability:"Portabilité",billing:"Facturation",payout:"Reversement",account:"Compte",routing:"Routage",quality:"Qualité",other:"Question générale / Contact"};
-const lab=(map,v)=>map[v]||v||"—";
+const lab=(map,v)=>map[v]||v||"Non disponible";
 const serviceChip=v=>'<span class="td-chip '+esc(v||"neutral")+'">'+esc(lab(states,v))+"</span>";
 
 export function renderServiceOperations(data){

@@ -72,7 +72,7 @@ function render(root,data,mode){
       kpi("Revenus générés",money(cur.generated_revenue_ttc,currency),rev,"contre "+money(prev.generated_revenue_ttc,currency))+
       kpi("Appels",nf(cur.calls_total),calls,"contre "+nf(prev.calls_total))+
       kpi("Minutes facturables",nf(num(cur.billable_seconds)/60,1),mins,"contre "+nf(num(prev.billable_seconds)/60,1))+
-      kpi("Net client estimé",completeCur?money(cur.estimated_client_net_ht,currency):"—",net,completeCur&&completePrev?"comparaison selon conditions enregistrées":"conditions de reversement incomplètes")+
+      kpi("Net client estimé",completeCur?money(cur.estimated_client_net_ht,currency):"Non disponible",net,completeCur&&completePrev?"comparaison selon conditions enregistrées":"conditions de reversement incomplètes")+
     '</div>'+
     '<p class="yp-summary">'+esc(summarySentence(cur,prev,currency))+'</p>'+
     '<div class="yp-grid">'+

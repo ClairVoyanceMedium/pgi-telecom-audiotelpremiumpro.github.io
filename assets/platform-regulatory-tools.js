@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
-const dt=v=>{if(!v)return"—";const d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeStyle:"short"}).format(d):"—";};
+const dt=v=>{if(!v)return"Non disponible";const d=new Date(v);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeStyle:"short"}).format(d):"Non disponible";};
 const dateInput=v=>{if(!v)return"";const d=new Date(v);return Number.isFinite(d.getTime())?d.toISOString().slice(0,10):"";};
 
 const CONTROLS=[
