@@ -110,7 +110,7 @@ function mockProviders(originalFetch,state){
 
     if(u.startsWith("https://api.stripe.com/v1/prices?")){
       return Response.json({data:[{
-        id:"price_test_300",active:true,type:"recurring",currency:"eur",unit_amount:300,tax_behavior:"inclusive",
+        id:"price_test_490",active:true,type:"recurring",currency:"eur",unit_amount:490,tax_behavior:"inclusive",
         recurring:{interval:"month",interval_count:1}
       }]},{status:200});
     }
@@ -203,7 +203,7 @@ test("full customer journey works without a real operator and remains fail-close
     assert.equal(response.status,200);
     const portal=await response.json();
     assert.equal(portal.user.tenant.id,tenantPublicId);
-    assert.equal(portal.billing_offer.amount_minor,300);
+    assert.equal(portal.billing_offer.amount_minor,490);
     assert.equal(portal.billing_provider.checkout_available,true);
 
     response=await fetch(base+"/api/v1/customer/billing/checkout-session",{
@@ -223,7 +223,7 @@ test("full customer journey works without a real operator and remains fail-close
     assert.equal(checkout.provider,"stripe");
     assert.equal(checkout.session_id,"cs_test_customer_journey");
     assert.match(checkout.url,/^https:\/\/checkout\.stripe\.com\//);
-    assert.match(state.stripeCheckoutBody||"",/line_items%5B0%5D%5Bprice%5D=price_test_300/);
+    assert.match(state.stripeCheckoutBody||"",/line_items%5B0%5D%5Bprice%5D=price_test_490/);
 
     const billingStatusResponse=await fetch(base+"/api/v1/customer/billing/status",{headers:{Cookie:cookieHeader(customerCookies)}});
     assert.equal(billingStatusResponse.status,200);
@@ -242,7 +242,7 @@ test("full customer journey works without a real operator and remains fail-close
         },
         items:{data:[{
           current_period_start:now,current_period_end:now+31*86400,
-          price:{id:"price_test_300",unit_amount:300,currency:"eur",recurring:{interval:"month",interval_count:1}}
+          price:{id:"price_test_490",unit_amount:490,currency:"eur",recurring:{interval:"month",interval_count:1}}
         }]},
         current_period_start:now,current_period_end:now+31*86400,cancel_at_period_end:false
       }}
