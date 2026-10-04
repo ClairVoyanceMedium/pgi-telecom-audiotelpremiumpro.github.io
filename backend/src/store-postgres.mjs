@@ -2087,7 +2087,8 @@ export class PostgresStore{
     const take=clampInt(limit,100,1,500);
     return this.sql.unsafe(
       "INSERT INTO work_queue(queue_name,tenant_id,dedupe_key,priority,payload,available_at,max_attempts)"+
-      " SELECT 'portability',p.tenant_id,'portability:'||p.id||CASE WHEN p.status='cancelled' THEN ':cancel' ELSE ':auto' END,20,"+
+      " SELECT 'portability',p.tenant_id,'portability:'||p.id||CASE WHEN p.status='cancelled' THEN ':cancel' ELSE ':auto' END,"+
+      " CASE WHEN p.status<>'cancelled' AND p.priority_service_status='paid' THEN 5 WHEN p.status='cancelled' THEN 10 ELSE 20 END,"+
       " jsonb_build_object('request_id',p.id,'action',CASE WHEN p.status='cancelled' THEN 'cancel' ELSE 'auto' END),now(),20"+
       " FROM tenant_portability_requests p"+
       " WHERE ("+
@@ -2595,6 +2596,156 @@ export class PostgresStore{
     return {...result,dossier_ref};
   }
 
+  async captureLeadReferral(referredTenantId,rawCode){
+    const referred=Number(referredTenantId),code=String(rawCode||"").trim().toUpperCase();
+    if(!Number.isInteger(referred)||referred<=0)return {captured:false,reason:"invalid_referred_tenant"};
+    if(!/^PGI-[A-F0-9]{8}$/.test(code))return {captured:false,reason:"invalid_code"};
+    return this.sql.begin(async tx=>{
+      const referrer=(await tx.unsafe("SELECT c.tenant_id,t.status FROM tenant_referral_codes c JOIN tenants t ON t.id=c.tenant_id WHERE c.code=$1 LIMIT 1",[code]))[0];
+      if(!referrer||referrer.status==="closed")return {captured:false,reason:"code_not_found"};
+      if(Number(referrer.tenant_id)===referred)return {captured:false,reason:"self_referral"};
+      const row=(await tx.unsafe(
+        "INSERT INTO tenant_referrals(referrer_tenant_id,referred_tenant_id,referral_code,status,metadata) VALUES($1,$2,$3,'pending',$4::jsonb)"+
+        " ON CONFLICT(referred_tenant_id) DO NOTHING RETURNING id,referrer_tenant_id,referred_tenant_id,status,reward_minor,reward_currency,created_at",
+        [Number(referrer.tenant_id),referred,code,JSON.stringify({source:"public_opening_form"})]
+      ))[0]||null;
+      if(!row)return {captured:false,reason:"already_attributed"};
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'referral.attributed','tenant_referral',$2,$3::jsonb)",
+        [referred,String(row.id),JSON.stringify({referrer_tenant_id:Number(referrer.tenant_id),referral_code:code})]
+      );
+      return {captured:true,...row};
+    });
+  }
+
+  async ensureCustomerReferralCode(tenantId){
+    const id=Number(tenantId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    const existing=(await this.sql.unsafe("SELECT code,created_at FROM tenant_referral_codes WHERE tenant_id=$1 LIMIT 1",[id]))[0];
+    if(existing)return existing;
+    const tenant=(await this.sql.unsafe("SELECT public_id::text AS public_id,status FROM tenants WHERE id=$1 AND tenant_type<>'internal' LIMIT 1",[id]))[0];
+    if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+    if(tenant.status==="closed")throw problem(409,"TENANT_CLOSED");
+    const code="PGI-"+createHash("sha256").update(String(tenant.public_id)+"|"+String(id)+"|referral-v1").digest("hex").slice(0,8).toUpperCase();
+    const rows=await this.sql.unsafe(
+      "INSERT INTO tenant_referral_codes(tenant_id,code) VALUES($1,$2) ON CONFLICT(tenant_id) DO UPDATE SET tenant_id=EXCLUDED.tenant_id RETURNING code,created_at",
+      [id,code]
+    );
+    return rows[0];
+  }
+
+  async customerReferralOverview(tenantId){
+    const id=Number(tenantId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    const referralCode=await this.ensureCustomerReferralCode(id);
+    const rows=await this.readSql.unsafe(
+      "SELECT r.id,r.status,r.reward_minor,r.reward_currency,r.qualified_at,r.rewarded_at,r.created_at,t.display_name AS referred_name"+
+      " FROM tenant_referrals r JOIN tenants t ON t.id=r.referred_tenant_id WHERE r.referrer_tenant_id=$1 ORDER BY r.created_at DESC LIMIT 100",
+      [id]
+    );
+    const summary={pending:0,qualified:0,rewarded:0,total:rows.length,rewarded_minor:0};
+    for(const row of rows){
+      if(Object.prototype.hasOwnProperty.call(summary,row.status))summary[row.status]++;
+      if(row.status==="rewarded")summary.rewarded_minor+=Number(row.reward_minor||0);
+    }
+    return {
+      code:referralCode.code,
+      share_path:"/demande-ouverture/?ref="+encodeURIComponent(referralCode.code),
+      reward:{label:"1 mois offert",amount_minor:300,currency:"EUR",qualification:"activation réelle du service du filleul"},
+      summary,
+      referrals:rows
+    };
+  }
+
+  async qualifyReferralForTenant(referredTenantId,reason="service_activated"){
+    const referred=Number(referredTenantId);
+    if(!Number.isInteger(referred)||referred<=0)return null;
+    return this.sql.begin(async tx=>{
+      const referral=(await tx.unsafe("SELECT * FROM tenant_referrals WHERE referred_tenant_id=$1 AND status='pending' FOR UPDATE",[referred]))[0];
+      if(!referral)return null;
+      const active=(await tx.unsafe(
+        "SELECT EXISTS(SELECT 1 FROM tenant_number_assignments a JOIN sva_numbers n ON n.id=a.sva_number_id"+
+        " WHERE a.tenant_id=$1 AND a.status='active' AND n.status='active') AS ok",
+        [referred]
+      ))[0];
+      if(!active?.ok)return null;
+      const updated=(await tx.unsafe(
+        "UPDATE tenant_referrals SET status='qualified',qualification_reason=$2,qualified_at=now(),updated_at=now() WHERE id=$1"+
+        " RETURNING id,referrer_tenant_id,referred_tenant_id,status,reward_minor,reward_currency,qualified_at",
+        [referral.id,String(reason||"service_activated").slice(0,120)]
+      ))[0];
+      const billing=(await tx.unsafe(
+        "SELECT s.provider_customer_reference FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id"+
+        " WHERE s.tenant_id=$1 AND p.plan_key='external-sva-access' AND s.provider_customer_reference IS NOT NULL ORDER BY s.created_at DESC,s.id DESC LIMIT 1",
+        [updated.referrer_tenant_id]
+      ))[0]||null;
+      if(billing?.provider_customer_reference){
+        await tx.unsafe(
+          "INSERT INTO work_queue(queue_name,tenant_id,dedupe_key,priority,payload,available_at,max_attempts) VALUES('referral_reward',$1,$2,8,$3::jsonb,now(),50)"+
+          " ON CONFLICT(queue_name,dedupe_key) WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL DO UPDATE SET available_at=LEAST(work_queue.available_at,EXCLUDED.available_at)",
+          [updated.referrer_tenant_id,"referral_reward:"+updated.id,JSON.stringify({referral_id:Number(updated.id)})]
+        );
+      }
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'referral.qualified','tenant_referral',$2,$3::jsonb)",
+        [referred,String(updated.id),JSON.stringify({referrer_tenant_id:Number(updated.referrer_tenant_id),reason:String(reason||"service_activated").slice(0,120)})]
+      );
+      return updated;
+    });
+  }
+
+  async queuePendingReferralRewardsByTenantPublicId(tenantPublicId){
+    const publicId=String(tenantPublicId||"").trim();
+    if(!publicId)return {queued:0};
+    const rows=await this.sql.unsafe(
+      "INSERT INTO work_queue(queue_name,tenant_id,dedupe_key,priority,payload,available_at,max_attempts)"+
+      " SELECT 'referral_reward',r.referrer_tenant_id,'referral_reward:'||r.id,8,jsonb_build_object('referral_id',r.id),now(),50"+
+      " FROM tenant_referrals r JOIN tenants t ON t.id=r.referrer_tenant_id"+
+      " JOIN tenant_subscriptions s ON s.tenant_id=r.referrer_tenant_id AND s.provider_customer_reference IS NOT NULL"+
+      " WHERE t.public_id=$1::uuid AND r.status='qualified'"+
+      " ON CONFLICT(queue_name,dedupe_key) WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL DO UPDATE SET available_at=LEAST(work_queue.available_at,EXCLUDED.available_at)"+
+      " RETURNING id",
+      [publicId]
+    );
+    return {queued:rows.length};
+  }
+
+  async referralRewardPreparation(referralId){
+    const id=Number(referralId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_REFERRAL_ID");
+    const rows=await this.readSql.unsafe(
+      "SELECT r.id,r.referrer_tenant_id,r.referred_tenant_id,r.status,r.reward_minor,r.reward_currency,r.provider_reward_reference,"+
+      " s.provider_customer_reference FROM tenant_referrals r"+
+      " LEFT JOIN LATERAL (SELECT x.provider_customer_reference FROM tenant_subscriptions x JOIN service_plans p ON p.id=x.service_plan_id"+
+      " WHERE x.tenant_id=r.referrer_tenant_id AND p.plan_key='external-sva-access' AND x.provider_customer_reference IS NOT NULL"+
+      " ORDER BY x.created_at DESC,x.id DESC LIMIT 1) s ON true WHERE r.id=$1 LIMIT 1",
+      [id]
+    );
+    const row=rows[0];
+    if(!row)throw problem(404,"REFERRAL_NOT_FOUND");
+    return row;
+  }
+
+  async completeReferralReward(referralId,providerReference){
+    const id=Number(referralId),reference=String(providerReference||"").trim();
+    if(!Number.isInteger(id)||id<=0||!reference)throw problem(400,"INVALID_REFERRAL_REWARD");
+    return this.sql.begin(async tx=>{
+      const row=(await tx.unsafe("SELECT * FROM tenant_referrals WHERE id=$1 FOR UPDATE",[id]))[0];
+      if(!row)throw problem(404,"REFERRAL_NOT_FOUND");
+      if(row.status==="rewarded")return {...row,duplicate:true};
+      if(row.status!=="qualified")throw problem(409,"REFERRAL_NOT_QUALIFIED");
+      const updated=(await tx.unsafe(
+        "UPDATE tenant_referrals SET status='rewarded',provider_reward_reference=$2,rewarded_at=now(),updated_at=now() WHERE id=$1 RETURNING *",
+        [id,reference]
+      ))[0];
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'referral.rewarded','tenant_referral',$2,$3::jsonb)",
+        [updated.referrer_tenant_id,String(id),JSON.stringify({reward_minor:Number(updated.reward_minor),currency:updated.reward_currency,provider_reward_reference:reference})]
+      );
+      return {...updated,duplicate:false};
+    });
+  }
+
   async createTenant(payload={},actor={}){
     const displayName=String(payload.display_name||"").trim().slice(0,160);
     const legalName=String(payload.legal_name||displayName).trim().slice(0,200);
@@ -2894,6 +3045,7 @@ export class PostgresStore{
       );
       return {...updated[0],tenant_public_id:row.public_id,tenant:row.display_name,e164:row.e164,display_number:row.display_number,previous_status:previous,changed:true};
     });
+    if(result.changed&&result.status==="active")await this.qualifyReferralForTenant(Number(result.tenant_id),"number_assignment_activated");
     if(result.changed)this.eventBus.publish("number.assignment.status",{id,status:result.status,tenant_public_id:result.tenant_public_id});
     return result;
   }
@@ -4539,14 +4691,96 @@ export class PostgresStore{
   async customerPortabilityRequests(tenantId){
     const id=Number(tenantId);
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
-    return this.withTenantReadContext(id,async tx=>tx.unsafe(
-      "SELECT id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,"+
-      " account_holder_name,desired_port_date,status,ownership_status,operator_portability_reference,scheduled_at,completed_at,rejection_reason,"+
-      " tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,tariff_verified_at,"+
-      " rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,"+
-      " automation_state,automation_last_error,automation_last_sync_at,operator_status,created_at,updated_at"+
-      " FROM tenant_scoped_portability_requests_v4 ORDER BY created_at DESC,id DESC LIMIT 50"
-    ));
+    return this.withTenantReadContext(id,async tx=>{
+      const rows=await tx.unsafe(
+        "SELECT id,country_code,requested_e164,display_number,service_family,current_operator_name,current_operator_reference,"+
+        " account_holder_name,desired_port_date,status,ownership_status,operator_portability_reference,scheduled_at,completed_at,rejection_reason,"+
+        " tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,tariff_verified_at,"+
+        " rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,"+
+        " automation_state,automation_last_error,automation_last_sync_at,operator_status,created_at,updated_at"+
+        " FROM tenant_scoped_portability_requests_v4 ORDER BY created_at DESC,id DESC LIMIT 50"
+      );
+      if(!rows.length)return rows;
+      const priority=await tx.unsafe(
+        "SELECT id,priority_service_status,priority_fee_minor,priority_currency,priority_paid_at FROM tenant_portability_requests WHERE tenant_id=$1 AND id=ANY($2::bigint[])",
+        [id,rows.map(row=>Number(row.id))]
+      );
+      const byId=new Map(priority.map(row=>[Number(row.id),row]));
+      return rows.map(row=>({...row,...(byId.get(Number(row.id))||{priority_service_status:"standard",priority_fee_minor:990,priority_currency:"EUR",priority_paid_at:null})}));
+    });
+  }
+
+  async prepareCustomerPortabilityPriority(tenantId,requestId){
+    const tenant=Number(tenantId),id=Number(requestId);
+    if(!Number.isInteger(tenant)||tenant<=0||!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_PORTABILITY_REQUEST");
+    return this.sql.begin(async tx=>{
+      const row=(await tx.unsafe(
+        "SELECT p.id,p.tenant_id,p.status,p.priority_service_status,p.priority_fee_minor,p.priority_currency,p.priority_paid_at,t.public_id::text AS tenant_public_id"+
+        " FROM tenant_portability_requests p JOIN tenants t ON t.id=p.tenant_id WHERE p.id=$1 AND p.tenant_id=$2 FOR UPDATE OF p",
+        [id,tenant]
+      ))[0];
+      if(!row)throw problem(404,"PORTABILITY_REQUEST_NOT_FOUND");
+      if(["ported","rejected","cancelled"].includes(String(row.status)))throw problem(409,"PORTABILITY_PRIORITY_NOT_AVAILABLE");
+      if(row.priority_service_status==="paid")return {...row,already_paid:true};
+      const updated=(await tx.unsafe(
+        "UPDATE tenant_portability_requests SET priority_service_status='payment_pending',updated_at=now() WHERE id=$1 AND tenant_id=$2"+
+        " RETURNING id,tenant_id,status,priority_service_status,priority_fee_minor,priority_currency,priority_paid_at",
+        [id,tenant]
+      ))[0];
+      return {...updated,tenant_public_id:row.tenant_public_id,already_paid:false};
+    });
+  }
+
+  async attachCustomerPortabilityPriorityCheckout(tenantId,requestId,sessionReference){
+    const tenant=Number(tenantId),id=Number(requestId),reference=String(sessionReference||"").trim();
+    if(!Number.isInteger(tenant)||tenant<=0||!Number.isInteger(id)||id<=0||!/^cs_[A-Za-z0-9_]+$/.test(reference))throw problem(400,"INVALID_PORTABILITY_PRIORITY_CHECKOUT");
+    const rows=await this.sql.unsafe(
+      "UPDATE tenant_portability_requests SET priority_checkout_reference=$3,priority_service_status=CASE WHEN priority_service_status='paid' THEN 'paid' ELSE 'payment_pending' END,updated_at=now()"+
+      " WHERE id=$1 AND tenant_id=$2 RETURNING id,priority_service_status,priority_checkout_reference",
+      [id,tenant,reference]
+    );
+    if(!rows[0])throw problem(404,"PORTABILITY_REQUEST_NOT_FOUND");
+    return rows[0];
+  }
+
+  async applyPortabilityPriorityPaymentEvent(input={}){
+    const requestId=Number(input.request_id),tenantPublicId=String(input.tenant_public_id||"").trim();
+    const sessionReference=String(input.checkout_session_reference||"").trim();
+    const paymentIntent=String(input.payment_intent_reference||"").trim()||null;
+    const eventId=String(input.provider_event_id||"").trim().slice(0,255);
+    const amount=Math.trunc(Number(input.amount_minor)),currency=String(input.currency||"").trim().toUpperCase();
+    if(!Number.isInteger(requestId)||requestId<=0||!tenantPublicId||!eventId)throw problem(400,"INVALID_PORTABILITY_PRIORITY_EVENT");
+    return this.sql.begin(async tx=>{
+      const row=(await tx.unsafe(
+        "SELECT p.*,t.public_id::text AS tenant_public_id FROM tenant_portability_requests p JOIN tenants t ON t.id=p.tenant_id WHERE p.id=$1 FOR UPDATE OF p",
+        [requestId]
+      ))[0];
+      if(!row)throw problem(404,"PORTABILITY_REQUEST_NOT_FOUND");
+      if(String(row.tenant_public_id)!==tenantPublicId)throw problem(409,"PORTABILITY_PRIORITY_TENANT_MISMATCH");
+      if(row.priority_service_status==="paid")return {duplicate:true,request_id:requestId,tenant_id:Number(row.tenant_id),status:"paid"};
+      if(amount!==Number(row.priority_fee_minor)||currency!==String(row.priority_currency))throw problem(409,"PORTABILITY_PRIORITY_AMOUNT_MISMATCH");
+      const updated=(await tx.unsafe(
+        "UPDATE tenant_portability_requests SET priority_service_status='paid',priority_checkout_reference=COALESCE($2,priority_checkout_reference),"+
+        " priority_payment_intent_reference=COALESCE($3,priority_payment_intent_reference),priority_paid_at=COALESCE(priority_paid_at,now()),"+
+        " metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||$4::jsonb,updated_at=now() WHERE id=$1"+
+        " RETURNING id,tenant_id,status,priority_service_status,priority_fee_minor,priority_currency,priority_paid_at",
+        [requestId,sessionReference||null,paymentIntent,JSON.stringify({priority_service:"paid",priority_provider_event_id:eventId})]
+      ))[0];
+      await tx.unsafe(
+        "UPDATE work_queue SET priority=LEAST(priority,5),available_at=LEAST(available_at,now())"+
+        " WHERE queue_name='portability' AND tenant_id=$1 AND dedupe_key=$2 AND completed_at IS NULL AND failed_at IS NULL",
+        [updated.tenant_id,"portability:"+requestId+":auto"]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'portability.priority.paid','tenant_portability_request',$2,$3::jsonb)",
+        [updated.tenant_id,String(requestId),JSON.stringify({amount_minor:amount,currency,checkout_session_reference:sessionReference||null,payment_intent_reference:paymentIntent,provider_event_id:eventId})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'portability.priority.paid','tenant_portability_request',$2,$3::jsonb)",
+        [updated.tenant_id,String(requestId),JSON.stringify({amount_minor:amount,currency})]
+      );
+      return {duplicate:false,request_id:requestId,tenant_id:Number(updated.tenant_id),status:"paid",priority:5};
+    });
   }
 
   async createCustomerPortabilityRequest(tenantId,input={}){
@@ -4847,6 +5081,7 @@ export class PostgresStore{
       );
       return {request,number,assignment,carrier:{id:carrier.id,name:carrier.name},already_completed:false,tenant_public_id:tenant.public_id};
     });
+    if(!result.already_completed)await this.qualifyReferralForTenant(Number(result.request.tenant_id),"portability_completed");
     this.eventBus.publish("portability.completed",{tenant_id:Number(result.request.tenant_id),request_id:id,sva_number_id:Number(result.number?.id),requested_e164:result.request.requested_e164});
     return result;
   }
