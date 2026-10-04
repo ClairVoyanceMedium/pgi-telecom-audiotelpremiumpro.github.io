@@ -1,4 +1,4 @@
--- Audiotel Premium Pro — selective, tenant-scoped metric reset epochs.
+-- Audiotel Premium Pro : selective, tenant-scoped metric reset epochs.
 -- Expand-only and non-destructive: CDRs, settlements and audit history remain immutable/readable.
 -- A platform reset is scope='global' with tenant_id NULL.
 -- A customer-company reset is scope='global' with its tenant_id populated.

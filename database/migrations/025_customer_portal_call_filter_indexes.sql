@@ -1,4 +1,4 @@
--- PGI Telecom — indexes for scalable customer portal call filtering.
+-- PGI Telecom : indexes for scalable customer portal call filtering.
 -- Expand-only: improves tenant/status/number filtering without changing data.
 
 CREATE INDEX IF NOT EXISTS call_facts_tenant_status_time_idx

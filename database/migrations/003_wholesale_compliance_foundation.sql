@@ -1,4 +1,4 @@
--- PGI Telecom — wholesale regulatory and payment-compliance foundation.
+-- PGI Telecom : wholesale regulatory and payment-compliance foundation.
 -- Additive only. No production role is enabled by this migration.
 
 ALTER TABLE tenant_number_assignments

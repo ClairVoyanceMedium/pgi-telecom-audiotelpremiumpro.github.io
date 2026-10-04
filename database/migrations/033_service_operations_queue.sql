@@ -1,4 +1,4 @@
--- PGI Telecom — scalable service operations queue and attachment linkage.
+-- PGI Telecom : scalable service operations queue and attachment linkage.
 -- Additive only. Keeps the incident model independent from any storage provider.
 
 CREATE INDEX tenant_service_incidents_ops_queue_idx

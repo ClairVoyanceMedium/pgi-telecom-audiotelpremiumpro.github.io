@@ -1,4 +1,4 @@
--- PGI Telecom — scalable tenant directory.
+-- PGI Telecom : scalable tenant directory.
 -- Prefix-search columns avoid sequential scans when the customer directory grows.
 
 ALTER TABLE tenants

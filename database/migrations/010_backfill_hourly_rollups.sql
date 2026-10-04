@@ -1,4 +1,4 @@
--- PGI Telecom — backfill hyperscale hourly rollups from the authoritative call facts.
+-- PGI Telecom : backfill hyperscale hourly rollups from the authoritative call facts.
 -- Runs before the 1.13 API starts because production gates startup on all migrations succeeding.
 
 INSERT INTO platform_rollups_hourly_sharded(

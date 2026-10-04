@@ -1,4 +1,4 @@
--- PGI Telecom — verified tariff and atomic completion guards for customer port-in.
+-- PGI Telecom : verified tariff and atomic completion guards for customer port-in.
 -- Expand-only. The public number remains the canonical E.164 identity through the move.
 
 ALTER TABLE tenant_portability_requests

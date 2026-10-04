@@ -1,4 +1,4 @@
--- PGI Telecom — customer SVA port-in workflow.
+-- PGI Telecom : customer SVA port-in workflow.
 -- Expand-only. A portability request does not activate routing or prove ownership.
 
 CREATE TABLE tenant_portability_requests (

@@ -1,4 +1,4 @@
--- PGI Telecom — active call financial telemetry for customer/admin live counters.
+-- PGI Telecom : active call financial telemetry for customer/admin live counters.
 -- This table is an operational estimate only. Authoritative accounting remains the final CDR
 -- plus the reconciled tenant revenue distribution.
 

@@ -1,4 +1,4 @@
--- PGI Telecom — sharded hourly operational rollups.
+-- PGI Telecom : sharded hourly operational rollups.
 -- Keeps long-range dashboards bounded even when call_facts contains very large histories.
 
 CREATE TABLE platform_rollups_hourly_sharded (

@@ -1,4 +1,4 @@
--- PGI Telecom — external customer control center and unpaid subscription alerts.
+-- PGI Telecom : external customer control center and unpaid subscription alerts.
 -- Additive only. Internal PGI tenant is never subject to these external-customer controls.
 
 CREATE INDEX tenants_directory_country_status_cursor_idx

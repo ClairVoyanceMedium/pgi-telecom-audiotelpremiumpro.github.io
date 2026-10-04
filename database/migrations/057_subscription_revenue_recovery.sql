@@ -1,4 +1,4 @@
--- PGI Telecom — subscription revenue recovery and dunning state.
+-- PGI Telecom : subscription revenue recovery and dunning state.
 -- Expand-only: strict provisioning remains paid-only; established routing receives a bounded recovery window.
 
 ALTER TABLE tenant_subscriptions

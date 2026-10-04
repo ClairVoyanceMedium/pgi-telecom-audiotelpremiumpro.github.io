@@ -1,4 +1,4 @@
--- Audiotel Premium Pro — extend immutable Evidence Pack registry with ARCEP 2026 chain metadata.
+-- Audiotel Premium Pro : extend immutable Evidence Pack registry with ARCEP 2026 chain metadata.
 -- Expand-only. Historical exports remain valid and keep NULL in the new columns.
 
 ALTER TABLE sva_regulatory_evidence_pack_exports

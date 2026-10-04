@@ -1,6 +1,6 @@
 BEGIN;
 
--- Audiotel Premium Pro — customer relations, billing disputes and offboarding.
+-- Audiotel Premium Pro : customer relations, billing disputes and offboarding.
 -- Expand-only. ChatGPT/agent automation may prepare and execute reversible steps,
 -- but money movement, permanent number release and final termination remain gated.
 
