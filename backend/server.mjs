@@ -999,7 +999,11 @@ export function createBackend(options={}){
           if(existing.url&&existing.status==="open"){
             return done(res,metrics,started,"customer.portability.priority_checkout",200,{request:checkoutContext,checkout:{url:existing.url,expires_at:existing.expires_at,reused:true},amount_minor:990,currency:"EUR"});
           }
-          const e=new Error("Priority checkout is no longer open");e.status=409;e.code="PORTABILITY_PRIORITY_CHECKOUT_EXPIRED";throw e;
+          await store.applyPriorityPortabilityPayment({
+            request_id:Number(match.id),tenant_public_id:checkoutContext.tenant_public_id,
+            checkout_session_reference:checkoutContext.priority_checkout_session_reference,
+            payment_status:"failed",amount_minor:990,currency:"EUR",provider_event_id:null
+          });
         }
         const session=await createPriorityPortabilityCheckout(config,{tenant_public_id:checkoutContext.tenant_public_id,request_id:Number(match.id),customer_email:context.email},idempotencyKey);
         const saved=await store.attachPriorityPortabilityCheckout(context.tenant_id,match.id,session);
