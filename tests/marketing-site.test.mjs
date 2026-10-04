@@ -84,6 +84,7 @@ test("public search covers the complete published site with ranked, intent and f
   assert.match(buildStatic,/Rechercher sur tout le site/);
   assert.match(buildStatic,/\/site\/site-search\.js/);
   assert.match(css,/public-site-search-v174/);
+  assert.match(css,/\.site-header\{overflow:visible!important\}/);
   assert.match(siteSearch,/site-search-index\.json/);
   assert.match(siteSearch,/scoreEntry/);
   assert.match(siteSearch,/distance=/);
