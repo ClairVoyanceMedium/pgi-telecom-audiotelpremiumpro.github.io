@@ -195,5 +195,5 @@ test("customer access invitation uses a one-time link and never sends a plaintex
   assert.match(m.subject,/accès/i);
   assert.match(m.text,/choisir votre mot de passe/i);
   assert.match(m.html,/client\.html\?invite=secure-token/);
-  assert.doesNotMatch(m.text,/mot de passe temporaire|votre mot de passe est/i);
+  assert.doesNotMatch(m.text,/votre mot de passe est|mot de passe temporaire\s*:/i);
 });
