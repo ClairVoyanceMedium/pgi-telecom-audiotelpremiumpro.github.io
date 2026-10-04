@@ -1021,6 +1021,18 @@ export function createBackend(options={}){
           if(existing.url&&existing.status==="open"){
             return done(res,metrics,started,"customer.portability.priority_checkout",200,{request:checkoutContext,checkout:{url:existing.url,expires_at:existing.expires_at,reused:true},amount_minor:990,currency:"EUR"});
           }
+          if(existing.payment_status==="paid"){
+            const applied=await store.applyPriorityPortabilityPayment({
+              request_id:Number(match.id),tenant_public_id:checkoutContext.tenant_public_id,
+              checkout_session_reference:checkoutContext.priority_checkout_session_reference,
+              payment_intent_reference:existing.payment_intent_reference,payment_status:"paid",
+              amount_minor:existing.amount_minor,currency:existing.currency,provider_event_id:null
+            });
+            return done(res,metrics,started,"customer.portability.priority_checkout",200,{request:checkoutContext,checkout:null,paid:true,priority_status:applied.status,amount_minor:990,currency:"EUR"});
+          }
+          if(existing.status==="complete"){
+            const e=new Error("Priority payment is still processing");e.status=409;e.code="PORTABILITY_PRIORITY_PAYMENT_PROCESSING";throw e;
+          }
           await store.applyPriorityPortabilityPayment({
             request_id:Number(match.id),tenant_public_id:checkoutContext.tenant_public_id,
             checkout_session_reference:checkoutContext.priority_checkout_session_reference,
