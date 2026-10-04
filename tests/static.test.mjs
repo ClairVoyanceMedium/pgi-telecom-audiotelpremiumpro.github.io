@@ -6,6 +6,7 @@ const read=file=>fs.readFileSync(file,"utf8");
 const index=read("index.html");
 const clientPortal=read("client.html");
 const clientPortalApi=read("assets/client-portal-api.js");
+const clientReferral=read("assets/client-referral.js");
 const clientPortalJs=read("assets/client-portal.js");
 const clientBilling=read("assets/client-billing.js");
 const customerEmailVerification=read("assets/customer-email-verification.js");
@@ -54,6 +55,16 @@ const publicOrder=read("site/seo/demande-ouverture.html");
 const sw=read("service-worker.js");
 const manifest=read("manifest.webmanifest");
 const buildStatic=read("scripts/build-static.mjs");
+
+test("le parrainage client reste serveur, optionnel et conditionné au paiement réel",()=>{
+  assert.match(clientPortal,/id="client-referral-mount"/);
+  assert.match(clientPortal,/client-referral\.js/);
+  assert.match(clientPortalApi,/\/customer\/referral/);
+  assert.match(clientReferral,/abonnement actif et payé/i);
+  assert.match(clientReferral,/pgi:portal-loaded/);
+  assert.ok(buildStatic.includes('"assets/client-referral.js"'));
+  assert.doesNotMatch(sw,/client-referral\.js/);
+});
 
 test("public contact and opening forms keep marketing consent optional explicit and versioned",()=>{
   assert.match(contactWidget,/name="marketing_consent" type="checkbox"/);
