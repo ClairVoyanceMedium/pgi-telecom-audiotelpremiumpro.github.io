@@ -41,8 +41,9 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
       const priorityStatus=String(x.priority_service_status||"standard").toLowerCase();
       if(priorityStatus==="paid")meta.push("Priorité PGI activée");
       const priorityPrice=money(Number(x.priority_fee_minor||990)/100,x.priority_currency||"EUR",locale);
+      const priorityLabel=priorityStatus==="payment_pending"?"Finaliser la priorité":"Activer la priorité";
       const priorityAction=priorityEligible&&priorityStatus!=="paid"
-        ?'<button class="cp-ghost cp-portability-priority" type="button" data-portability-priority="'+esc(x.id)+'">Priorité PGI · '+esc(priorityPrice)+'</button>'
+        ?'<button class="cp-ghost cp-portability-priority" type="button" data-portability-priority="'+esc(x.id)+'">'+esc(priorityLabel)+' · '+esc(priorityPrice)+'</button>'
         :priorityStatus==="paid"?'<span class="cp-chip ok">PRIORITÉ ACTIVE</span>':"";
       const cancelAction=cancellable?'<button class="cp-portability-cancel" type="button" data-portability-cancel="'+esc(x.id)+'">Annuler</button>':"";
       return '<div class="cp-row cp-portability-row"><div><strong>'+esc(x.display_number||x.requested_e164||"Numéro")+'</strong><span>'+esc(meta.filter(Boolean).join(" · "))+'</span><small>Standard : gratuit, file normale. Priorité PGI : 9,90 € TTC une seule fois, traitement interne avant les dossiers standard. Le délai final dépend des opérateurs et n’est pas garanti.</small></div><div class="cp-portability-actions">'+chip(status)+priorityAction+cancelAction+'</div></div>';
