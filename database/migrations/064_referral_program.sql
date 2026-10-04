@@ -18,12 +18,18 @@ VALUES(true,false,'subscription_benefit','unconfigured');
 CREATE TABLE tenant_referral_codes (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   tenant_id bigint NOT NULL UNIQUE REFERENCES tenants(id) ON DELETE CASCADE,
-  code text NOT NULL UNIQUE CHECK (code ~ '^[A-Z0-9]{16}$'),
+  code text NOT NULL UNIQUE CHECK (code ~ '^[A-Z0-9]{20}$'),
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX tenant_referral_codes_code_idx
   ON tenant_referral_codes(code);
+
+INSERT INTO tenant_referral_codes(tenant_id,code)
+SELECT id,upper(substr(replace(public_id::text,'-',''),1,20))
+FROM tenants
+WHERE tenant_type<>'internal'
+ON CONFLICT (tenant_id) DO NOTHING;
 
 CREATE TABLE tenant_referrals (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
