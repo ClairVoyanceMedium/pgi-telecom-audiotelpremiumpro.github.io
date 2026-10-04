@@ -307,7 +307,7 @@ export function createBackend(options={}){
         }
         if(dossier?.public_id&&body.referral_code){
           try{await captureReferral(store,{referredTenantPublicId:dossier.public_id,referralCode:body.referral_code});}
-          catch(error){process.stderr.write(JSON.stringify({level:"error",event:"opening_referral_capture_failed",code:String(error?.code||"UNKNOWN")})+"\\n");}
+          catch(error){process.stderr.write(JSON.stringify({level:"error",event:"opening_referral_capture_failed",code:String(error?.code||"UNKNOWN")})+"\n");}
         }
         try{formResult=await submitHubSpotLead(body,{pageUri,pageName:"Demande d’ouverture Audiotel Premium Pro",hutk});}
         catch(error){logHubSpotSyncFailure("public_lead_form",error);}
