@@ -335,7 +335,7 @@ test("homepage bottom quick navigation prioritizes the highest-value commercial 
   assert.match(html,/Estimer mes revenus potentiels/);
   assert.match(html,/Encaisser par carte bancaire/);
   assert.match(html,/Créer et envoyer un lien de paiement sécurisé/);
-  assert.match(html,/Parrainer un nouveau client/);
+  assert.match(html,/Recommander Audiotel Premium Pro/);
   assert.match(html,/Partager mon lien et suivre mes récompenses/);
   assert.match(html,/href="\/portabilite-numero-sva\//);
   assert.match(html,/href="\/comparateur-audiotel\//);
@@ -590,9 +590,8 @@ test("new complementary products are public, indexable and operationally explici
   assert.match(buildStatic,/"parrainage-audiotel"/);
   assert.match(sitemap,/portabilite-prioritaire/);
   assert.match(sitemap,/parrainage-audiotel/);
-  assert.match(html,/data-current-month/);
-  assert.match(html,/data-current-year/);
-  assert.match(html,/\.\.\. Des reversements plus généreux/);
+  assert.match(html,/data-current-period-badge/);
+  assert.match(html,/En octobre 2026 \.\.\. Des reversements plus généreux/);
   assert.match(js,/Intl\.DateTimeFormat\("fr-FR"/);
   assert.match(js,/timeZone:"Europe\/Paris"/);
 });
