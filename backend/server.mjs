@@ -14,7 +14,7 @@ import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData,scopeCustomerAnnualProgressData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
-import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
+import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortabilityPriorityCheckout,createStripeCustomerCredit,createStripePortalSession,verifyStripeWebhook,normalizeStripePortabilityPriorityEvent,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
 import {STRIPE_CONNECT_APPLICATION_FEE_BPS,stripeConnectState,createStripeConnectedAccount,retrieveStripeConnectedAccount,normalizeStripeConnectedAccount,createStripeConnectOnboardingLink,createStripeCardCheckout,retrieveStripeCardCheckout,normalizeStripeConnectPaymentEvent,hashStripeEventPayload} from "./src/stripe-connect.mjs";
 import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStripe,buildGa4RefundFromStripe,sendGa4Measurement} from "./src/ga4-measurement.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
@@ -22,6 +22,24 @@ import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
 import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail,syncHubSpotCustomerIncident,ensureHubSpotCardPaymentSchema,syncHubSpotCardPaymentState} from "./src/hubspot-crm.mjs";
 import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
+
+async function processReferralRewards(store,config,activatedTenantPublicId,{qualifyActivated=false}={}){
+  if(typeof store.qualifyReferralForTenant!=="function"||typeof store.pendingReferralRewardsForReferrer!=="function")return {qualified:false,rewarded:0};
+  const candidates=[],direct=qualifyActivated?await store.qualifyReferralForTenant(activatedTenantPublicId):null;
+  if(direct?.provider_customer_reference)candidates.push(direct);
+  const pending=await store.pendingReferralRewardsForReferrer(activatedTenantPublicId);
+  if(Array.isArray(pending))candidates.push(...pending);
+  const seen=new Set();let rewarded=0;
+  for(const candidate of candidates){
+    const referred=String(candidate?.referred_tenant_public_id||"");if(!referred||seen.has(referred)||!candidate?.provider_customer_reference)continue;seen.add(referred);
+    try{
+      const credit=await createStripeCustomerCredit(config,candidate,"referral-credit/"+referred);
+      const marked=await store.markReferralRewarded(referred,credit.id);
+      if(!marked?.duplicate)rewarded++;
+    }catch(error){process.stderr.write(JSON.stringify({level:"warn",event:"referral_reward_failed",referred_tenant_public_id:referred,code:error?.code||"REFERRAL_REWARD_FAILED"})+"\n");}
+  }
+  return {qualified:Boolean(direct),rewarded};
+}
 
 export async function createDefaultBackend(){
   const config=loadConfig();
@@ -164,6 +182,11 @@ export function createBackend(options={}){
           invalidateStripeProviderReadiness();
           return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,account_readiness_invalidated:true});
         }
+        const priorityPayment=normalizeStripePortabilityPriorityEvent(event);
+        if(priorityPayment){
+          const result=await store.applyPortabilityPriorityPaymentEvent(priorityPayment);
+          return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,type:String(event.type||""),portability_priority:true,duplicate:Boolean(result?.duplicate),status:result?.status||priorityPayment.status});
+        }
         const refund=config.ga4MeasurementEnabled&&config.ga4ApiSecret?await normalizeStripeRefundEvent(event,config):null;
         if(refund){
           const analytics=await deliverGa4StripeEvent(store,config,"refund",refund.provider_event_id,refund.refund_id,buildGa4RefundFromStripe(refund));
@@ -176,6 +199,8 @@ export function createBackend(options={}){
         if(normalized.status==="active"){
           onboarding=await autoAdvanceTenantAfterBilling(store,config,normalized.tenant_public_id);
           await syncHubSpotTenantLifecycle(store,normalized.tenant_public_id,"En attente d’ouverture","billing_active");
+          const firstPaidReferral=normalized.event_type==="invoice.paid"&&Number(normalized.provider_invoice_amount_paid_minor||0)>0;
+          await processReferralRewards(store,config,normalized.tenant_public_id,{qualifyActivated:firstPaidReferral});
         }
         const analytics=normalized.event_type==="invoice.paid"
           ?await deliverGa4StripeEvent(store,config,"purchase",normalized.provider_event_id,normalized.provider_invoice_reference,buildGa4PurchaseFromStripe(normalized))
@@ -950,6 +975,11 @@ export function createBackend(options={}){
         }
       }
 
+      if(method==="GET"&&pathname==="/api/v1/customer/referrals"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        return done(res,metrics,started,"customer.referrals.overview",200,await store.customerReferralOverview(context.tenant_id));
+      }
       if(method==="GET"&&pathname==="/api/v1/customer/portability"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
@@ -962,6 +992,18 @@ export function createBackend(options={}){
         const payload={tenant_id:context.tenant_id,...body};
         const result=await store.idempotent(req.headers["idempotency-key"],"customer.portability.create",payload,()=>store.createCustomerPortabilityRequest(context.tenant_id,body));
         return done(res,metrics,started,"customer.portability.create",201,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/customer/portability/:id/priority-checkout");
+      if(method==="POST"&&match){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        const idempotencyKey=String(req.headers["idempotency-key"]||"");
+        const quote=await store.portabilityPriorityCheckoutContext(context.tenant_id,match.id);
+        if(quote.priority_payment_status==="paid")return done(res,metrics,started,"customer.portability.priority_checkout",200,{already_active:true,priority_price_minor:quote.priority_price_minor,currency:"EUR"});
+        if(quote.checkout_url)return done(res,metrics,started,"customer.portability.priority_checkout",200,{checkout:{url:quote.checkout_url,expires_at:quote.checkout_expires_at},priority_price_minor:quote.priority_price_minor,currency:"EUR",reused:true});
+        const checkout=await createStripePortabilityPriorityCheckout(config,{tenant_public_id:context.tenant_public_id,request_id:Number(match.id),amount_minor:quote.priority_price_minor,currency:"EUR",customer_email:context.email||quote.billing_email||null,provider_customer_reference:quote.provider_customer_reference||null},idempotencyKey);
+        await store.attachPortabilityPriorityCheckout(context.tenant_id,match.id,checkout);
+        return done(res,metrics,started,"customer.portability.priority_checkout",201,{checkout:{url:checkout.url,expires_at:checkout.expires_at},priority_price_minor:checkout.amount_minor,currency:checkout.currency});
       }
       match=routeMatch(pathname,"/api/v1/customer/portability/:id/cancel");
       if(method==="POST"&&match){
