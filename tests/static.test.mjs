@@ -139,7 +139,7 @@ test("les baselines statistiques avancées restent hors du parcours utilisateur 
 });
 
 test("le nom officiel et les vues principales sont présents",()=>{
-  assert.match(index,/PGI • Telecom - Audiotel Premium Pro/);
+  assert.match(index,/PGI Telecom/);\n  assert.match(index,/Audiotel Premium Pro/);
   assert.match(index,/data-view="overview"><span>⌂<\/span>Cockpit/);
   assert.match(index,/data-view="system"><span>⌁<\/span>Supervision/);
   for(const view of ["calls","finance","experts","carriers","wholesale","settings"]){
