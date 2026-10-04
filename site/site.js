@@ -1,3 +1,10 @@
+(function captureReferralCode(){
+  try{
+    const code=String(new URLSearchParams(location.search).get("ref")||"").trim().toUpperCase();
+    if(/^[A-Z0-9]{8,24}$/.test(code))localStorage.setItem("pgi_referral_code",code);
+  }catch(_e){}
+})();
+
 (function migrateLegacyRootServiceWorker(){
   if(!("serviceWorker" in navigator))return;
   try{

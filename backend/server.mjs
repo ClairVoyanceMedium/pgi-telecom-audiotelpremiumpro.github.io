@@ -798,6 +798,33 @@ export function createBackend(options={}){
         const withdrawalReady=config.onlineWithdrawalReady===true&&typeof store.customerWithdrawalFeatureReady==="function"&&await store.customerWithdrawalFeatureReady();
         return done(res,metrics,started,"customer.billing.status",200,{billing_provider:await billingProviderStatus(config),b2c_commercial_ready:config.b2cCommercialReady===true&&withdrawalReady,b2c_readiness:{legal_operator:config.legalOperatorConfigured===true,consumer_mediator:config.consumerMediatorConfigured===true,online_withdrawal:withdrawalReady},...billing});
       }
+      if(method==="GET"&&pathname==="/api/v1/customer/referrals"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"finance.read");
+        return done(res,metrics,started,"customer.referrals",200,await store.customerReferralOverview(context.tenant_id));
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/referrals/code"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"billing.manage");
+        const idempotencyKey=String(req.headers["idempotency-key"]||"").trim();
+        if(!idempotencyKey||idempotencyKey.length>200){const e=new Error("Idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
+        const payload={tenant_id:context.tenant_id};
+        const result=await store.idempotent(idempotencyKey,"customer.referral.code",payload,()=>store.ensureCustomerReferralCode(context.tenant_id));
+        return done(res,metrics,started,"customer.referral_code",201,{...result.value,replayed:result.replayed});
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/referrals/claim"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"billing.manage");
+        const idempotencyKey=String(req.headers["idempotency-key"]||"").trim();
+        if(!idempotencyKey||idempotencyKey.length>200){const e=new Error("Idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
+        const body=await readJson(req,config.bodyLimitBytes),code=String(body.code||"").trim().toUpperCase(),payload={tenant_id:context.tenant_id,code};
+        const result=await store.idempotent(idempotencyKey,"customer.referral.claim",payload,()=>store.claimCustomerReferral(context.tenant_id,code));
+        return done(res,metrics,started,"customer.referral_claim",201,{...result.value,replayed:result.replayed});
+      }
+
       if(method==="POST"&&pathname==="/api/v1/customer/billing/checkout-session"){
         requireCustomerCsrf(req,customerActor,config);
         const checkoutIdempotencyKey=String(req.headers["idempotency-key"]||"").trim();
@@ -1886,6 +1913,16 @@ export function createBackend(options={}){
         requireRole(actor,["admin","finance","readonly"]);
         const overview=await store.subscriptionBillingOverview();
         return done(res,metrics,started,"platform.subscription_billing",200,{...overview,billing_provider:billingProviderStatus(config)});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/platform/referral-program"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.referral_program",200,await store.referralProgramOverview());
+      }
+      if(method==="PUT"&&pathname==="/api/v1/platform/referral-program"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        return done(res,metrics,started,"platform.referral_program_update",200,await store.updateReferralProgram(body,actor));
       }
 
       if(method==="POST"&&pathname==="/api/v1/platform/subscription-prices"){

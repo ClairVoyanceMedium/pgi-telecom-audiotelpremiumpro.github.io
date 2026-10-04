@@ -71,7 +71,7 @@ test("evidence pack is private, hashed, privacy-minimised and exportable",()=>{
   assert.ok(adminUi.includes("evidence-pack-"));
 });
 
-test("current external subscription reference price is 3 EUR without rewriting the historical 2 EUR migration",()=>{
+test("historical 3 EUR subscription price remains auditable without rewriting the historical 2 EUR migration",()=>{
   assert.ok(priceMigration.includes("300"));
   assert.ok(priceMigration.includes("2026-09-20T19:33:00Z"));
   assert.ok(priceMigration.includes("pgi_publish_service_plan_price"));

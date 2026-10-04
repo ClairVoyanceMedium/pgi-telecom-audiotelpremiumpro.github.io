@@ -144,8 +144,7 @@ test("private HubSpot CRM sync never downgrades an advanced commercial status",a
 test("server orchestrates CRM sync and confirmation without creating HubSpot tasks",()=>{
   const server=fs.readFileSync("backend/server.mjs","utf8");
   assert.match(server,/syncHubSpotCommercialLead/);
-  assert.match(server,/commercialStatus:"Nouveau prospect"/);
-  assert.match(server,/commercialStatus:"Dossier en préparation"/);
+  assert.match(server,/commercialStatus:dossier\?"Dossier en préparation":"Nouveau prospect"/);
   assert.match(server,/templateKey:"lead_received"/);
   assert.doesNotMatch(server,/hs_task_subject|objects\/tasks/);
 });

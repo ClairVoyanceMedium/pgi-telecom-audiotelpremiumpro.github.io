@@ -1,3 +1,13 @@
+## 1.32.0 — Parrainage pilotable & cohérence tarifaire — 2026-10-04
+
+- programme de parrainage activable ou désactivable globalement depuis l’administration ;
+- récompense configurable, figée au moment de l’attribution et acquise uniquement après activation réellement payée du filleul ;
+- nouveaux codes et nouvelles attributions bloqués lorsque le programme est désactivé, sans suppression de l’historique ni des droits déjà engagés ;
+- protections anti-abus contre auto-parrainage, attribution rétroactive après paiement et utilisation d’un parrain non éligible ;
+- espace client avec code, lien partageable, attribution reçue et suivi des récompenses sans exposition de données personnelles du filleul ;
+- tarif courant 4,90 € TTC renforcé dans les garde-fous de production et le moteur de recherche interne, 3,00 € conservé uniquement comme historique ;
+- version applicative portée à 1.32.0.
+
 ## 1.31.0 — Tarif plateforme 4,90 € TTC — 2026-10-04
 
 - abonnement plateforme courant porté à 4,90 € TTC par mois après le mois en cours offert ;

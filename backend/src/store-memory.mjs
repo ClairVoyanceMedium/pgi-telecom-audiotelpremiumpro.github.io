@@ -55,6 +55,11 @@ export class MemoryStore{
     this.nextSwitchId=1;
     this.subscriptionPrices=[{id:1,plan_key:"external-sva-access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,effective_from:"2026-09-20T19:33:00Z",effective_to:"2026-10-04T00:00:00Z"},{id:2,plan_key:"external-sva-access",currency:"EUR",amount_minor:490,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,effective_from:"2026-10-04T00:00:00Z",effective_to:null}];
     this.subscriptionEvents=new Set();
+    this.referralFeature={enabled:false,configuration:{reward_minor:0,currency:"EUR",qualification:"paid_active_subscription"},updated_at:null};
+    this.referralCodes=new Map();
+    this.customerReferrals=[];
+    this.customerReferralRewards=[];
+    this.referralPaidTenants=new Set();
     this.adminAlerts=[];
     this.customerExperiencePreferencesMap=new Map();
     this.customerLegalAcceptances=[];
@@ -1236,6 +1241,65 @@ export class MemoryStore{
     if(String(input.document_version||"")!=="2026-09-26-b2b-b2c-v4")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
     const row={public_id:randomUUID(),tenant_id:Number(tenantId),customer_principal_id:String(principalId),acceptance_type:String(input.acceptance_type||""),document_version:"2026-09-26-b2b-b2c-v4",documents:structuredClone(input.documents&&typeof input.documents==="object"?input.documents:{}),immediate_performance_requested:input.immediate_performance_requested===true,evidence:structuredClone(input.evidence&&typeof input.evidence==="object"?input.evidence:{}),accepted_at:new Date().toISOString()};
     this.customerLegalAcceptances.push(row);this.#audit("customer.legal_acceptance",String(principalId),{acceptance_type:row.acceptance_type,document_version:row.document_version});return structuredClone(row);
+  }
+
+
+  async referralProgramOverview(){
+    const earned=this.customerReferralRewards.filter(x=>x.status==="earned"),paid=this.customerReferralRewards.filter(x=>x.status==="paid");
+    return structuredClone({
+      feature_key:"customer_referral",enabled:this.referralFeature.enabled,configuration:this.referralFeature.configuration,
+      summary:{active_codes:[...this.referralCodes.values()].filter(x=>x.status==="active").length,referrals_total:this.customerReferrals.length,claimed:this.customerReferrals.filter(x=>x.status==="claimed").length,qualified:this.customerReferrals.filter(x=>["qualified","rewarded"].includes(x.status)).length,rewards_earned:earned.length,rewards_earned_minor:earned.reduce((a,x)=>a+x.amount_minor,0),rewards_paid:paid.length,rewards_paid_minor:paid.reduce((a,x)=>a+x.amount_minor,0)},
+      updated_at:this.referralFeature.updated_at
+    });
+  }
+  async updateReferralProgram(input={},actor={}){
+    const current=this.referralFeature.configuration,rewardMinor=input.reward_minor==null?Number(current.reward_minor||0):Number(input.reward_minor),currency=String(input.currency||current.currency||"EUR").trim().toUpperCase(),enabled=input.enabled==null?this.referralFeature.enabled:input.enabled===true;
+    if(!Number.isInteger(rewardMinor)||rewardMinor<0||rewardMinor>10000000)throw problem(400,"INVALID_REFERRAL_REWARD");
+    if(!/^[A-Z]{3}$/.test(currency))throw problem(400,"INVALID_REFERRAL_CURRENCY");
+    if(enabled&&rewardMinor<=0)throw problem(409,"REFERRAL_REWARD_REQUIRED");
+    this.referralFeature={enabled,configuration:{reward_minor:rewardMinor,currency,qualification:"paid_active_subscription"},updated_at:new Date().toISOString()};
+    this.#audit("referral.program.update","customer_referral",{enabled,reward_minor:rewardMinor,currency,actor:actor?.sub||null});
+    return this.referralProgramOverview();
+  }
+  async customerReferralOverview(tenantId){
+    const id=Number(tenantId),program=await this.referralProgramOverview(),code=this.referralCodes.get(id)||null,inbound=this.customerReferrals.find(x=>x.referred_tenant_id===id)||null,paid=this.referralPaidTenants.has(id);
+    const outgoingRows=this.customerReferrals.filter(x=>x.referrer_tenant_id===id),outbound={claimed:0,qualified:0,rewarded:0,rejected:0,total:outgoingRows.length};
+    for(const x of outgoingRows)if(Object.hasOwn(outbound,x.status))outbound[x.status]++;
+    const rewards=[...new Set(this.customerReferralRewards.filter(x=>x.tenant_id===id).map(x=>x.currency+":"+x.status))].map(k=>{const [currency,status]=k.split(":"),rows=this.customerReferralRewards.filter(x=>x.tenant_id===id&&x.currency===currency&&x.status===status);return{status,count:rows.length,amount_minor:rows.reduce((a,x)=>a+x.amount_minor,0),currency};});
+    return structuredClone({enabled:program.enabled,configuration:program.configuration,code,can_share:program.enabled&&paid,can_claim:program.enabled&&!paid&&!inbound,has_active_paid_subscription:paid,outbound,rewards,inbound});
+  }
+  async ensureCustomerReferralCode(tenantId){
+    const id=Number(tenantId);
+    if(!this.referralFeature.enabled)throw problem(409,"REFERRAL_PROGRAM_DISABLED");
+    if(!this.referralPaidTenants.has(id))throw problem(409,"REFERRAL_ACTIVE_SUBSCRIPTION_REQUIRED");
+    const existing=this.referralCodes.get(id);
+    if(existing){existing.status="active";existing.disabled_at=null;return structuredClone(existing);}
+    const code=randomUUID().replace(/-/g,"").slice(0,12).toUpperCase(),row={public_id:randomUUID(),code,status:"active",created_at:new Date().toISOString(),disabled_at:null};
+    this.referralCodes.set(id,row);return structuredClone(row);
+  }
+  async claimCustomerReferral(tenantId,rawCode){
+    const id=Number(tenantId),code=String(rawCode||"").trim().toUpperCase();
+    if(!/^[A-Z0-9]{8,24}$/.test(code))throw problem(400,"INVALID_REFERRAL_CODE");
+    if(!this.referralFeature.enabled)throw problem(409,"REFERRAL_PROGRAM_DISABLED");
+    if(this.referralPaidTenants.has(id))throw problem(409,"REFERRAL_MUST_PRECEDE_PAID_ACTIVATION");
+    if(this.customerReferrals.some(x=>x.referred_tenant_id===id))throw problem(409,"REFERRAL_ALREADY_CLAIMED");
+    const owner=[...this.referralCodes.entries()].find(([,x])=>x.code===code&&x.status==="active");
+    if(!owner)throw problem(404,"REFERRAL_CODE_NOT_FOUND");
+    if(owner[0]===id)throw problem(409,"REFERRAL_SELF_REFERRAL_FORBIDDEN");
+    if(!this.referralPaidTenants.has(owner[0]))throw problem(409,"REFERRAL_REFERRER_NOT_ELIGIBLE");
+    const rewardMinor=Number(this.referralFeature.configuration.reward_minor||0);
+    if(rewardMinor<=0)throw problem(409,"REFERRAL_REWARD_NOT_CONFIGURED");
+    const row={id:this.customerReferrals.length+1,public_id:randomUUID(),referrer_tenant_id:owner[0],referred_tenant_id:id,status:"claimed",reward_minor:rewardMinor,reward_currency:this.referralFeature.configuration.currency,claimed_at:new Date().toISOString(),qualified_at:null,rewarded_at:null,rejected_at:null};
+    this.customerReferrals.push(row);return structuredClone(row);
+  }
+  async qualifyCustomerReferral(tenantId,subscriptionId){
+    const id=Number(tenantId),sid=Number(subscriptionId),referral=this.customerReferrals.find(x=>x.referred_tenant_id===id&&x.status==="claimed");
+    if(!referral)return{qualified:false,reason:"no_claim"};
+    if(!this.referralPaidTenants.has(id))return{qualified:false,reason:"subscription_not_paid_active"};
+    referral.status="qualified";referral.qualified_at=new Date().toISOString();referral.qualification_subscription_id=sid;
+    let reward=this.customerReferralRewards.find(x=>x.referral_id===referral.id)||null;
+    if(!reward){reward={id:this.customerReferralRewards.length+1,public_id:randomUUID(),referral_id:referral.id,tenant_id:referral.referrer_tenant_id,amount_minor:referral.reward_minor,currency:referral.reward_currency,status:"earned",earned_at:new Date().toISOString()};this.customerReferralRewards.push(reward);}
+    return structuredClone({qualified:true,referral_public_id:referral.public_id,reward});
   }
 
   async customerBillingPreparation(tenantId){void tenantId;return {tenant:{id:"00000000-0000-4000-8000-000000000001",name:"Société Démo",billing_email:"demo@example.test",country_code:"FR",locale:"fr-FR",currency:"EUR",timezone:"Europe/Paris",status:"pending"},offer:{price_version_id:2,plan_key:"external-sva-access",plan_name:"External SVA Access",market:null,currency:"EUR",amount_minor:490,tax_behavior:"inclusive",billing_interval:"month",interval_count:1},reference_offer:{price_version_id:2,plan_key:"external-sva-access",plan_name:"External SVA Access",currency:"EUR",amount_minor:490,tax_behavior:"inclusive",billing_interval:"month",interval_count:1},pricing_state:"local_price_ready",subscription:null,premium_call_access:false,billing_currency:{currency:"EUR",source:"country_default",catalog_version:"2026-09-20",accepted_currencies:["EUR"],local_price_configured:true},checkout_prefill:{email:"demo@example.test",locale:"fr-FR",country_code:"FR",currency:"EUR"},return_paths:{success:"client.html?billing=success",cancel:"client.html?billing=cancelled"}};}
