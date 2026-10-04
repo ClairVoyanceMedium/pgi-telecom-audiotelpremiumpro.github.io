@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-const [migration,server,postgres,memory,adminApi,clientApi,adminUi,clientUi,clientHtml,siteScript,siteSearch,productionCheck]=await Promise.all([
+const [migration,server,postgres,memory,adminApi,clientApi,adminUi,referralAdminUi,clientUi,clientHtml,siteScript,siteSearch,productionCheck]=await Promise.all([
   readFile(new URL("../database/migrations/065_customer_referral_program.sql",import.meta.url),"utf8"),
   readFile(new URL("../backend/server.mjs",import.meta.url),"utf8"),
   readFile(new URL("../backend/src/store-postgres.mjs",import.meta.url),"utf8"),
@@ -10,6 +10,7 @@ const [migration,server,postgres,memory,adminApi,clientApi,adminUi,clientUi,clie
   readFile(new URL("../assets/api-client.js",import.meta.url),"utf8"),
   readFile(new URL("../assets/client-portal-api.js",import.meta.url),"utf8"),
   readFile(new URL("../assets/platform-admin-tools.js",import.meta.url),"utf8"),
+  readFile(new URL("../assets/platform-referral-admin.js",import.meta.url),"utf8"),
   readFile(new URL("../assets/client-referral.js",import.meta.url),"utf8"),
   readFile(new URL("../client.html",import.meta.url),"utf8"),
   readFile(new URL("../site/site.js",import.meta.url),"utf8"),
@@ -44,7 +45,8 @@ test("admin and customer surfaces expose controlled referral workflows",()=>{
   assert.match(clientApi,/createReferralCode:function/);
   assert.match(clientApi,/claimReferral:function/);
   assert.match(adminUi,/Programme de parrainage/);
-  assert.match(adminUi,/data-referral-save/);
+  assert.match(adminUi,/data-referral-admin/);
+  assert.match(referralAdminUi,/referral-admin-save/);
   assert.match(clientHtml,/assets\/client-referral\.js/);
   assert.match(clientUi,/pgi:portal-loaded/);
 });
