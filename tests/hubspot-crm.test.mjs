@@ -26,6 +26,9 @@ test("HubSpot lead payload maps the public funnel to existing CRM properties",()
   assert.equal(fields.type_de_client,"Professionnel");
   assert.equal(fields.type_de_demande,"Portabilité d’un numéro existant");
   assert.equal(fields.besoin__projet_audiotel,"Portabilité d’un numéro existant");
+  const referralPayload=buildHubSpotLeadSubmission({...sample,referral_code:"ABCD1234"});
+  const referralFields=Object.fromEntries(referralPayload.fields.map(x=>[x.name,x.value]));
+  assert.equal(referralFields.besoin__projet_audiotel,"Portabilité d’un numéro existant | Parrainage : ABCD1234");
   assert.equal(fields.lifecyclestage,"lead");
   assert.equal(fields.statut_commercial_pgi,"Nouveau prospect");
   assert.equal(fields.hubspot_owner_id,"99851906");
