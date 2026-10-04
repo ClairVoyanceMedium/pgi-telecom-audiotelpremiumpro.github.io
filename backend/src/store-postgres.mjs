@@ -2087,7 +2087,7 @@ export class PostgresStore{
     const take=clampInt(limit,100,1,500);
     return this.sql.unsafe(
       "INSERT INTO work_queue(queue_name,tenant_id,dedupe_key,priority,payload,available_at,max_attempts)"+
-      " SELECT 'portability',p.tenant_id,'portability:'||p.id||CASE WHEN p.status='cancelled' THEN ':cancel' ELSE ':auto' END,20,"+
+      " SELECT 'portability',p.tenant_id,'portability:'||p.id||CASE WHEN p.status='cancelled' THEN ':cancel' ELSE ':auto' END,CASE WHEN EXISTS(SELECT 1 FROM tenant_portability_priority_orders po WHERE po.portability_request_id=p.id AND po.status='paid') THEN 5 ELSE 20 END,"+
       " jsonb_build_object('request_id',p.id,'action',CASE WHEN p.status='cancelled' THEN 'cancel' ELSE 'auto' END),now(),20"+
       " FROM tenant_portability_requests p"+
       " WHERE ("+
@@ -2095,7 +2095,7 @@ export class PostgresStore{
       "   OR (p.status='cancelled' AND p.operator_portability_reference IS NOT NULL AND p.automation_state IN ('cancelling','action_required','failed'))"+
       " )"+
       " AND p.automation_next_at<=now()"+
-      " ORDER BY p.automation_next_at ASC,p.id ASC LIMIT $1"+
+      " ORDER BY CASE WHEN EXISTS(SELECT 1 FROM tenant_portability_priority_orders po WHERE po.portability_request_id=p.id AND po.status=\'paid\') THEN 0 ELSE 1 END,p.automation_next_at ASC,p.id ASC LIMIT $1"+
       " ON CONFLICT(queue_name,dedupe_key) WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL"+
       " DO UPDATE SET available_at=LEAST(work_queue.available_at,EXCLUDED.available_at)"+
       " RETURNING id,tenant_id,dedupe_key,available_at",
@@ -2484,7 +2484,30 @@ export class PostgresStore{
           [tenant.id,subscriptionId]
         );
       }
-      return {duplicate:false,subscription_id:subscriptionId,tenant_id:Number(tenant.id),status};
+      let referralQualified=false;
+      if(appliedLatest&&paidCurrent){
+        const referral=(await tx.unsafe(
+          "SELECT id,referrer_tenant_id,reward_minor,reward_currency FROM customer_referrals WHERE referred_tenant_id=$1 AND status='claimed' FOR UPDATE LIMIT 1",
+          [tenant.id]
+        ))[0]||null;
+        if(referral&&Number(referral.reward_minor)>0){
+          await tx.unsafe(
+            "UPDATE customer_referrals SET status='qualified',qualified_at=COALESCE(qualified_at,now()),qualification_subscription_id=$2 WHERE id=$1",
+            [referral.id,subscriptionId]
+          );
+          await tx.unsafe(
+            "INSERT INTO customer_referral_rewards(referral_id,tenant_id,amount_minor,currency,status,metadata)"+
+            " VALUES($1,$2,$3,$4,'earned',$5::jsonb) ON CONFLICT(referral_id) DO NOTHING",
+            [referral.id,referral.referrer_tenant_id,referral.reward_minor,referral.reward_currency,JSON.stringify({qualification:"paid_active_subscription",subscription_id:subscriptionId})]
+          );
+          await tx.unsafe(
+            "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'customer.referral.qualified','customer_referral',$2,$3::jsonb)",
+            [referral.referrer_tenant_id,String(referral.id),JSON.stringify({referral_id:referral.id,referred_tenant_id:tenant.id,reward_minor:Number(referral.reward_minor),currency:referral.reward_currency})]
+          );
+          referralQualified=true;
+        }
+      }
+      return {duplicate:false,subscription_id:subscriptionId,tenant_id:Number(tenant.id),status,referral_qualified:referralQualified};
     });
     if(!result.duplicate)this.eventBus.publish("subscription.changed",{id:result.subscription_id,tenant_id:result.tenant_id,status:result.status});
     return result;
@@ -3561,6 +3584,8 @@ export class PostgresStore{
     const acquisitionSource=String(input.acquisition_source||"")==="public_marketing_site"?"public_marketing_site":"self_service";
     const serviceIntentInput=String(input.service_intent||"").trim().toLowerCase();
     const serviceIntent=["new_number","portability","advice"].includes(serviceIntentInput)?serviceIntentInput:"";
+    const referralCodeRaw=String(input.referral_code||"").trim().toUpperCase();
+    const referralCode=/^[A-Z0-9]{8,24}$/.test(referralCodeRaw)?referralCodeRaw:"";
     const authorityConfirmed=input.authority_confirmed===true;
     const legalAccepted=input.legal_terms_accepted===true,privacyAcknowledged=input.privacy_notice_acknowledged===true,legalVersion=String(input.legal_version||"").trim();
     if(firstName.length<1||lastName.length<1)throw problem(400,"CUSTOMER_NAME_REQUIRED");
@@ -3609,6 +3634,23 @@ export class PostgresStore{
         " RETURNING id,public_id,display_name,status,authorization_version",
         [slugBase,tenantName,effectiveCompanyName||tenantName,country,email,locale,currency,timezone]
       ))[0];
+      let referralClaimed=false;
+      if(referralCode){
+        const feature=(await tx.unsafe("SELECT enabled,configuration FROM platform_feature_flags WHERE feature_key='customer_referral' LIMIT 1"))[0]||null;
+        const cfg=feature?.configuration&&typeof feature.configuration==="object"?feature.configuration:{};
+        const rewardMinor=Number(cfg.reward_minor||0),rewardCurrency=String(cfg.currency||"EUR").toUpperCase();
+        if(feature?.enabled===true&&Number.isInteger(rewardMinor)&&rewardMinor>0&&/^[A-Z]{3}$/.test(rewardCurrency)){
+          const codeRow=(await tx.unsafe("SELECT id,tenant_id FROM customer_referral_codes WHERE code=$1 AND status='active' LIMIT 1",[referralCode]))[0]||null;
+          if(codeRow&&Number(codeRow.tenant_id)!==Number(tenant.id)){
+            const claimed=await tx.unsafe(
+              "INSERT INTO customer_referrals(referral_code_id,referrer_tenant_id,referred_tenant_id,status,reward_minor,reward_currency,metadata)"+
+              " VALUES($1,$2,$3,'claimed',$4,$5,$6::jsonb) ON CONFLICT(referred_tenant_id) DO NOTHING RETURNING id",
+              [codeRow.id,codeRow.tenant_id,tenant.id,rewardMinor,rewardCurrency,JSON.stringify({source:"self_service_registration"})]
+            );
+            referralClaimed=claimed.length>0;
+          }
+        }
+      }
       await tx.unsafe(
         "INSERT INTO tenant_kyc_profiles(tenant_id,entity_type,registration_country,registration_number,status,metadata)"+
         " VALUES($1,$2,$3,$4,'pending',$5::jsonb) ON CONFLICT(tenant_id) DO NOTHING",
@@ -3648,7 +3690,7 @@ export class PostgresStore{
       );
       principal=(await tx.unsafe("SELECT id,email,display_name,status,email_verified,session_version FROM customer_principals WHERE id=$1::uuid",[principal.id]))[0];
       const refreshedTenant=(await tx.unsafe("SELECT id,public_id,display_name,status,authorization_version,created_at FROM tenants WHERE id=$1",[tenant.id]))[0];
-      return {...principal,tenant_id:refreshedTenant.id,tenant_public_id:refreshedTenant.public_id,tenant_name:refreshedTenant.display_name,tenant_status:refreshedTenant.status,dossier_ref:dossierReference(refreshedTenant.id,refreshedTenant.created_at),customer_role:"owner",authorization_version:refreshedTenant.authorization_version};
+      return {...principal,tenant_id:refreshedTenant.id,tenant_public_id:refreshedTenant.public_id,tenant_name:refreshedTenant.display_name,tenant_status:refreshedTenant.status,dossier_ref:dossierReference(refreshedTenant.id,refreshedTenant.created_at),customer_role:"owner",authorization_version:refreshedTenant.authorization_version,referral_claimed:referralClaimed};
     });
     this.eventBus.publish("customer.self_registered",{tenant_public_id:result.tenant_public_id,email:result.email,country_code:country,acquisition_source:acquisitionSource,service_intent:serviceIntent||null});
     return result;
@@ -4536,6 +4578,180 @@ export class PostgresStore{
     };
   }
 
+  async referralProgramStatus(){
+    const row=(await this.readSql.unsafe("SELECT enabled,configuration,updated_at FROM platform_feature_flags WHERE feature_key='customer_referral' LIMIT 1"))[0]||{enabled:false,configuration:{}};
+    const cfg=row.configuration&&typeof row.configuration==="object"?row.configuration:{};
+    const stats=(await this.readSql.unsafe(
+      "SELECT count(*)::int AS total,count(*) FILTER(WHERE status='claimed')::int AS claimed,count(*) FILTER(WHERE status='qualified')::int AS qualified,"+
+      " count(*) FILTER(WHERE status='rewarded')::int AS rewarded,count(*) FILTER(WHERE status='rejected')::int AS rejected FROM customer_referrals"
+    ))[0]||{};
+    return {
+      enabled:row.enabled===true,reward_minor:Number(cfg.reward_minor||0),
+      currency:/^[A-Z]{3}$/.test(String(cfg.currency||"EUR").toUpperCase())?String(cfg.currency||"EUR").toUpperCase():"EUR",
+      qualification:"paid_active_subscription",updated_at:row.updated_at||null,
+      stats:{total:Number(stats.total||0),claimed:Number(stats.claimed||0),qualified:Number(stats.qualified||0),rewarded:Number(stats.rewarded||0),rejected:Number(stats.rejected||0)}
+    };
+  }
+
+  async updateReferralProgram(input={},actor={}){
+    const enabled=input.enabled===true,rewardMinor=Number(input.reward_minor),currency=String(input.currency||"EUR").trim().toUpperCase();
+    if(!Number.isInteger(rewardMinor)||rewardMinor<0||rewardMinor>100000)throw problem(400,"INVALID_REFERRAL_REWARD");
+    if(enabled&&rewardMinor<=0)throw problem(400,"REFERRAL_REWARD_REQUIRED");
+    if(!/^[A-Z]{3}$/.test(currency))throw problem(400,"INVALID_REFERRAL_CURRENCY");
+    const actorId=numericActor(actor);
+    await this.sql.begin(async tx=>{
+      await tx.unsafe(
+        "UPDATE platform_feature_flags SET enabled=$2,configuration=$3::jsonb,updated_by=$4,updated_at=now() WHERE feature_key=$1",
+        ["customer_referral",enabled,JSON.stringify({reward_minor:rewardMinor,currency,qualification:"paid_active_subscription"}),actorId]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'customer_referral.configure','platform_feature_flag',$2,$3::jsonb)",
+        [actorId,"customer_referral",JSON.stringify({enabled,reward_minor:rewardMinor,currency})]
+      );
+    });
+    return this.referralProgramStatus();
+  }
+
+  async customerReferralProgram(tenantId){
+    const id=Number(tenantId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    const feature=(await this.readSql.unsafe("SELECT enabled,configuration FROM platform_feature_flags WHERE feature_key='customer_referral' LIMIT 1"))[0]||null;
+    const cfg=feature?.configuration&&typeof feature.configuration==="object"?feature.configuration:{};
+    const rewardMinor=Number(cfg.reward_minor||0),currency=String(cfg.currency||"EUR").toUpperCase();
+    if(feature?.enabled!==true||!Number.isInteger(rewardMinor)||rewardMinor<=0||!/^[A-Z]{3}$/.test(currency)){
+      return {enabled:false,reward_minor:0,currency:"EUR",qualification:"paid_active_subscription"};
+    }
+    return this.sql.begin(async tx=>{
+      await tx.unsafe("SELECT set_config('pgi.tenant_id',$1,true)",[String(id)]);
+      await tx.unsafe(
+        "INSERT INTO customer_referral_codes(tenant_id,code,status) VALUES($1,upper(substr(replace(gen_random_uuid()::text,'-',''),1,16)),'active')"+
+        " ON CONFLICT(tenant_id) DO UPDATE SET status='active',disabled_at=NULL",
+        [id]
+      );
+      const code=(await tx.unsafe("SELECT code FROM customer_referral_codes WHERE tenant_id=$1 AND status='active' LIMIT 1",[id]))[0]?.code||null;
+      const counts=(await tx.unsafe(
+        "SELECT count(*)::int AS total,count(*) FILTER(WHERE status='claimed')::int AS claimed,count(*) FILTER(WHERE status='qualified')::int AS qualified,count(*) FILTER(WHERE status='rewarded')::int AS rewarded"+
+        " FROM customer_referrals WHERE referrer_tenant_id=$1",[id]
+      ))[0]||{};
+      const rewards=(await tx.unsafe(
+        "SELECT COALESCE(sum(amount_minor) FILTER(WHERE status IN ('earned','paid')),0)::bigint AS earned_minor,COALESCE(sum(amount_minor) FILTER(WHERE status='paid'),0)::bigint AS paid_minor"+
+        " FROM customer_referral_rewards WHERE tenant_id=$1",[id]
+      ))[0]||{};
+      const recent=await tx.unsafe(
+        "SELECT public_id,status,reward_minor,reward_currency,claimed_at,qualified_at,rewarded_at FROM customer_referrals WHERE referrer_tenant_id=$1 ORDER BY claimed_at DESC,id DESC LIMIT 10",[id]
+      );
+      const base=String(this.config.publicBaseUrl||"https://audiotel-premium-pro.com").replace(/\/$/,"");
+      return {
+        enabled:true,reward_minor:rewardMinor,currency,qualification:"paid_active_subscription",code,
+        share_url:code?base+"/client.html?register=1&ref="+encodeURIComponent(code):null,
+        stats:{total:Number(counts.total||0),claimed:Number(counts.claimed||0),qualified:Number(counts.qualified||0),rewarded:Number(counts.rewarded||0),earned_minor:Number(rewards.earned_minor||0),paid_minor:Number(rewards.paid_minor||0)},
+        recent
+      };
+    });
+  }
+
+  async portabilityPriorityProgramStatus(){
+    const row=(await this.readSql.unsafe("SELECT enabled,configuration FROM platform_feature_flags WHERE feature_key='portability_priority' LIMIT 1"))[0]||{enabled:false,configuration:{}};
+    const cfg=row.configuration&&typeof row.configuration==="object"?row.configuration:{};
+    const amount=Number(cfg.price_minor||990),currency=String(cfg.currency||"EUR").toUpperCase();
+    return {enabled:row.enabled===true,amount_minor:Number.isInteger(amount)&&amount>0?amount:990,currency:/^[A-Z]{3}$/.test(currency)?currency:"EUR",scope:"pgi_internal_queue"};
+  }
+
+  async createCustomerPortabilityPriorityOrder(tenantId,requestId,customerPrincipalId,legal={}){
+    const id=Number(tenantId),rid=Number(requestId),principal=String(customerPrincipalId||"");
+    if(!Number.isInteger(id)||id<=0||!Number.isInteger(rid)||rid<=0)throw problem(400,"INVALID_PORTABILITY_REQUEST");
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(principal))throw problem(400,"INVALID_CUSTOMER_PRINCIPAL");
+    if(legal.terms_accepted!==true||legal.immediate_performance_requested!==true)throw problem(400,"PORTABILITY_PRIORITY_LEGAL_ACCEPTANCE_REQUIRED");
+    if(String(legal.legal_version||"")!=="2026-10-04-priority-v1")throw problem(409,"PORTABILITY_PRIORITY_TERMS_OUTDATED");
+    const offer=await this.portabilityPriorityProgramStatus();
+    if(!offer.enabled)throw problem(409,"PORTABILITY_PRIORITY_UNAVAILABLE");
+    return this.sql.begin(async tx=>{
+      await tx.unsafe("SELECT set_config('pgi.tenant_id',$1,true)",[String(id)]);
+      const request=(await tx.unsafe(
+        "SELECT id,tenant_id,status,display_number,requested_e164 FROM tenant_portability_requests WHERE id=$1 AND tenant_id=$2 FOR UPDATE",[rid,id]
+      ))[0]||null;
+      if(!request)throw problem(404,"PORTABILITY_REQUEST_NOT_FOUND");
+      if(!["submitted","awaiting_documents","eligibility_check","operator_pending","scheduled"].includes(String(request.status)))throw problem(409,"PORTABILITY_PRIORITY_NOT_ELIGIBLE");
+      const existing=(await tx.unsafe(
+        "SELECT o.*,t.public_id AS tenant_public_id FROM tenant_portability_priority_orders o JOIN tenants t ON t.id=o.tenant_id"+
+        " WHERE o.tenant_id=$1 AND o.portability_request_id=$2 AND o.status IN ('created','open','paid') ORDER BY o.created_at DESC,o.id DESC LIMIT 1 FOR UPDATE",
+        [id,rid]
+      ))[0]||null;
+      if(existing)return {...existing,display_number:request.display_number,requested_e164:request.requested_e164};
+      const row=(await tx.unsafe(
+        "INSERT INTO tenant_portability_priority_orders(tenant_id,portability_request_id,created_by_customer_principal_id,amount_minor,currency,status,legal_version,terms_accepted_at,immediate_performance_requested_at,metadata)"+
+        " VALUES($1,$2,$3::uuid,$4,$5,'created',$6,now(),now(),$7::jsonb) RETURNING *",
+        [id,rid,principal,offer.amount_minor,offer.currency,"2026-10-04-priority-v1",JSON.stringify({scope:"pgi_internal_queue",operator_delay_guarantee:false})]
+      ))[0];
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,action,entity_type,entity_id,details) VALUES($1,'portability.priority.request','portability_priority_order',$2,$3::jsonb)",
+        [id,String(row.id),JSON.stringify({portability_request_id:rid,amount_minor:offer.amount_minor,currency:offer.currency,immediate_performance_requested:true})]
+      );
+      const tenant=(await tx.unsafe("SELECT public_id FROM tenants WHERE id=$1",[id]))[0];
+      return {...row,tenant_public_id:tenant.public_id,display_number:request.display_number,requested_e164:request.requested_e164};
+    });
+  }
+
+  async attachCustomerPortabilityPriorityCheckout(tenantId,orderPublicId,checkout={}){
+    const id=Number(tenantId),publicId=String(orderPublicId||""),session=String(checkout.session_id||"").trim();
+    if(!Number.isInteger(id)||id<=0||!/^[0-9a-f-]{36}$/i.test(publicId)||!/^cs_[A-Za-z0-9_]+$/.test(session))throw problem(400,"INVALID_PRIORITY_CHECKOUT");
+    const rows=await this.sql.unsafe(
+      "UPDATE tenant_portability_priority_orders SET provider_checkout_session_reference=$3,status='open',expires_at=$4::timestamptz,updated_at=now()"+
+      " WHERE tenant_id=$1 AND public_id=$2::uuid AND status IN ('created','open') RETURNING *",
+      [id,publicId,session,checkout.expires_at||null]
+    );
+    if(!rows[0])throw problem(409,"PORTABILITY_PRIORITY_ORDER_NOT_OPEN");
+    return rows[0];
+  }
+
+  async applyPortabilityPriorityPaymentEvent(event={}){
+    const provider=String(event.provider||"stripe"),eventId=String(event.provider_event_id||""),orderPublicId=String(event.order_public_id||"");
+    const status=String(event.status||"").toLowerCase(),amount=Number(event.amount_minor),currency=String(event.currency||"").toUpperCase();
+    if(provider!=="stripe"||!eventId||!/^[0-9a-f-]{36}$/i.test(orderPublicId)||!["paid","failed","expired"].includes(status)||!Number.isInteger(amount)||amount<=0||!/^[A-Z]{3}$/.test(currency))throw problem(400,"INVALID_PRIORITY_PAYMENT_EVENT");
+    const normalized={provider,provider_event_id:eventId,order_public_id:orderPublicId,status,amount_minor:amount,currency,checkout_session_reference:event.checkout_session_reference||null,payment_intent_reference:event.payment_intent_reference||null,event_time:event.event_time||new Date().toISOString()};
+    const hash=createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
+    const result=await this.sql.begin(async tx=>{
+      await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",[provider+":"+eventId]);
+      const seen=(await tx.unsafe("SELECT id,payload_sha256 FROM portability_priority_provider_events WHERE provider=$1 AND provider_event_id=$2",[provider,eventId]))[0]||null;
+      if(seen){
+        if(String(seen.payload_sha256)!==hash)throw problem(409,"PRIORITY_PAYMENT_EVENT_COLLISION");
+        return {duplicate:true};
+      }
+      const order=(await tx.unsafe("SELECT * FROM tenant_portability_priority_orders WHERE public_id=$1::uuid FOR UPDATE",[orderPublicId]))[0]||null;
+      if(!order)throw problem(404,"PORTABILITY_PRIORITY_ORDER_NOT_FOUND");
+      if(Number(order.amount_minor)!==amount||String(order.currency)!==currency)throw problem(409,"PORTABILITY_PRIORITY_AMOUNT_MISMATCH");
+      await tx.unsafe(
+        "INSERT INTO portability_priority_provider_events(provider,provider_event_id,priority_order_id,event_type,payload_sha256,normalized_details) VALUES($1,$2,$3,$4,$5,$6::jsonb)",
+        [provider,eventId,order.id,String(event.event_type||status),hash,JSON.stringify(normalized)]
+      );
+      let nextStatus=String(order.status);
+      if(status==="paid")nextStatus="paid";
+      else if(nextStatus!=="paid"&&["failed","expired"].includes(status))nextStatus=status;
+      await tx.unsafe(
+        "UPDATE tenant_portability_priority_orders SET status=$2,provider_checkout_session_reference=COALESCE($3,provider_checkout_session_reference),provider_payment_intent_reference=COALESCE($4,provider_payment_intent_reference),"+
+        " paid_at=CASE WHEN $2='paid' THEN COALESCE(paid_at,now()) ELSE paid_at END,updated_at=now() WHERE id=$1",
+        [order.id,nextStatus,event.checkout_session_reference||null,event.payment_intent_reference||null]
+      );
+      if(nextStatus==="paid"){
+        await tx.unsafe(
+          "UPDATE tenant_portability_requests SET automation_next_at=LEAST(automation_next_at,now()),updated_at=now() WHERE id=$1 AND tenant_id=$2 AND status NOT IN ('ported','rejected','cancelled')",
+          [order.portability_request_id,order.tenant_id]
+        );
+        await tx.unsafe(
+          "UPDATE work_queue SET priority=LEAST(priority,5),available_at=LEAST(available_at,now()) WHERE queue_name='portability' AND tenant_id=$1 AND dedupe_key=$2 AND completed_at IS NULL AND failed_at IS NULL",
+          [order.tenant_id,"portability:"+order.portability_request_id+":auto"]
+        );
+      }
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,action,entity_type,entity_id,details) VALUES($1,'portability.priority.payment','portability_priority_order',$2,$3::jsonb)",
+        [order.tenant_id,String(order.id),JSON.stringify({status:nextStatus,provider_event_id:eventId,amount_minor:amount,currency})]
+      );
+      return {duplicate:false,tenant_id:Number(order.tenant_id),portability_request_id:Number(order.portability_request_id),status:nextStatus};
+    });
+    if(!result.duplicate)this.eventBus.publish("portability.priority.changed",result);
+    return result;
+  }
+
   async customerPortabilityRequests(tenantId){
     const id=Number(tenantId);
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
@@ -4544,8 +4760,13 @@ export class PostgresStore{
       " account_holder_name,desired_port_date,status,ownership_status,operator_portability_reference,scheduled_at,completed_at,rejection_reason,"+
       " tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,tariff_verified_at,"+
       " rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,"+
-      " automation_state,automation_last_error,automation_last_sync_at,operator_status,created_at,updated_at"+
-      " FROM tenant_scoped_portability_requests_v4 ORDER BY created_at DESC,id DESC LIMIT 50"
+      " automation_state,automation_last_error,automation_last_sync_at,operator_status,created_at,updated_at,"+
+      " COALESCE((SELECT po.status FROM tenant_portability_priority_orders po WHERE po.portability_request_id=p.id ORDER BY po.created_at DESC,po.id DESC LIMIT 1),'standard') AS priority_status,"+
+      " (SELECT po.amount_minor FROM tenant_portability_priority_orders po WHERE po.portability_request_id=p.id ORDER BY po.created_at DESC,po.id DESC LIMIT 1) AS priority_amount_minor,"+
+      " (SELECT po.currency FROM tenant_portability_priority_orders po WHERE po.portability_request_id=p.id ORDER BY po.created_at DESC,po.id DESC LIMIT 1) AS priority_currency,"+
+      " COALESCE((SELECT enabled FROM platform_feature_flags WHERE feature_key='portability_priority'),false) AS priority_available,"+
+      " COALESCE((SELECT (configuration->>'price_minor')::int FROM platform_feature_flags WHERE feature_key='portability_priority'),990) AS priority_offer_minor"+
+      " FROM tenant_scoped_portability_requests_v4 p ORDER BY created_at DESC,id DESC LIMIT 50"
     ));
   }
 
@@ -5114,8 +5335,13 @@ export class PostgresStore{
         "SELECT id,country_code,requested_e164,display_number,service_family,current_operator_name,desired_port_date,status,ownership_status,"+
         " operator_portability_reference,scheduled_at,completed_at,rejection_reason,tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,tariff_verified_at,"+
         " rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,"+
-        " automation_state,automation_last_error,automation_last_sync_at,operator_status,created_at,updated_at"+
-        " FROM tenant_scoped_portability_requests_v4 ORDER BY created_at DESC,id DESC LIMIT 20"
+        " automation_state,automation_last_error,automation_last_sync_at,operator_status,created_at,updated_at,"+
+      " COALESCE((SELECT po.status FROM tenant_portability_priority_orders po WHERE po.portability_request_id=p.id ORDER BY po.created_at DESC,po.id DESC LIMIT 1),'standard') AS priority_status,"+
+      " (SELECT po.amount_minor FROM tenant_portability_priority_orders po WHERE po.portability_request_id=p.id ORDER BY po.created_at DESC,po.id DESC LIMIT 1) AS priority_amount_minor,"+
+      " (SELECT po.currency FROM tenant_portability_priority_orders po WHERE po.portability_request_id=p.id ORDER BY po.created_at DESC,po.id DESC LIMIT 1) AS priority_currency,"+
+      " COALESCE((SELECT enabled FROM platform_feature_flags WHERE feature_key='portability_priority'),false) AS priority_available,"+
+      " COALESCE((SELECT (configuration->>'price_minor')::int FROM platform_feature_flags WHERE feature_key='portability_priority'),990) AS priority_offer_minor"+
+        " FROM tenant_scoped_portability_requests_v4 p ORDER BY created_at DESC,id DESC LIMIT 20"
       );
       const serviceIncidents=await tx.unsafe(
         "SELECT id,public_id,category,severity,status,source,title,description,assigned_team,first_response_due_at,target_resolution_at,first_responded_at,last_customer_update_at,last_pgi_update_at,resolved_at,created_at,updated_at"+
