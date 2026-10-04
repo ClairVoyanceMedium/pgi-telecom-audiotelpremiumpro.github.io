@@ -219,7 +219,7 @@ test("marketing page exposes structured service data without fabricated social p
   assert.match(html,/"@type":"WebPage"/);
   assert.match(html,/"@type":"Service"/);
   assert.ok(html.includes("support@audiotel-premium-pro.com"));
-  assert.match(html,/"price":"3\.00"/);
+  assert.match(html,/"price":"4\.90"/);
   assert.match(html,/"priceCurrency":"EUR"/);
   assert.match(html,/"serviceType":\["Numéro surtaxé Audiotel"/);
   assert.doesNotMatch(html,/aggregateRating|"review"|bestRating|ratingValue/);
@@ -397,13 +397,13 @@ test("public commercial copy is concise while legal and machine-readable price s
 
 test("fixed monthly subscription is never presented as a starting price",()=>{
   assert.match(html,/Mois en cours offert/);
-  assert.doesNotMatch(html,/À partir de <strong>3€/);
+  assert.doesNotMatch(html,/À partir de <strong>4,90€/);
 });
 
 test("mobile offer states the fixed subscription and frames competitive value as an objective",()=>{
   assert.match(html,/4,90€ TTC \/ mois/);
   assert.match(html,/Comparez ce que vos appels peuvent réellement vous rapporter\./);
-  assert.doesNotMatch(html,/À partir de <strong>3€/);
+  assert.doesNotMatch(html,/À partir de <strong>4,90€/);
 });
 
 test("subscription is clearly marketed as no-commitment while keeping the period-end effect explicit",()=>{
