@@ -43,6 +43,14 @@ ALTER TABLE tenant_portability_requests
     CHECK (processing_class IN ('standard','priority')),
   ADD COLUMN priority_paid_at timestamptz;
 
+CREATE VIEW tenant_scoped_portability_requests_v5
+WITH (security_barrier=true)
+AS
+SELECT v.*,p.processing_class,p.priority_paid_at
+FROM tenant_scoped_portability_requests_v4 v
+JOIN tenant_portability_requests p ON p.id=v.id
+WHERE p.tenant_id=pgi_require_tenant_context();
+
 CREATE TABLE portability_priority_orders (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   public_id uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE,
