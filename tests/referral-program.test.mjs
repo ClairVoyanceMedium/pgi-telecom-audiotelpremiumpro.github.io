@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-const migration=fs.readFileSync("database/migrations/061_referral_program_controls.sql","utf8");
+const migration=fs.readFileSync("database/migrations/063_referral_program_controls.sql","utf8");
 const server=fs.readFileSync("backend/server.mjs","utf8");
 const postgres=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
 const memory=fs.readFileSync("backend/src/store-memory.mjs","utf8");
