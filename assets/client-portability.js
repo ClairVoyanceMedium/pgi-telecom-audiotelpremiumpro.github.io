@@ -79,7 +79,8 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
         priority_terms_accepted:true,
         privacy_notice_acknowledged:true,
         immediate_performance_requested:true,
-        legal_version:"2026-09-26-b2b-b2c-v4"
+        legal_version:"2026-09-26-b2b-b2c-v4",
+        priority_terms_version:"2026-10-04-portability-priority-v1"
       },window.PGICustomerApi.newIdempotencyKey());
       const url=String(result&&result.checkout&&result.checkout.url||"");
       if(!/^https:\/\/checkout\.stripe\.com\//i.test(url))throw Object.assign(new Error("INVALID_CHECKOUT_URL"),{code:"INVALID_CHECKOUT_URL"});
