@@ -341,6 +341,13 @@ test("homepage bottom quick navigation prioritizes the highest-value commercial 
   assert.match(css,/background:rgba\(42,45,49,\.985\)!important/);
   assert.match(buildStatic,/function injectRevenueQuickNav/);
   assert.match(buildStatic,/function normalizePublicBranding/);
+  assert.match(buildStatic,/Demander mon numéro surtaxé/);
+  assert.match(buildStatic,/Estimer mes reversements/);
+  assert.match(buildStatic,/Créer un lien de paiement CB/);
+  assert.match(buildStatic,/Parrainer un nouveau client/);
+  assert.doesNotMatch(buildStatic,/Demander votre numéro surtaxé/);
+  assert.doesNotMatch(buildStatic,/Comparer mon offre/);
+  assert.doesNotMatch(buildStatic,/<strong>Voir le tarif<\/strong>/);
 });
 
 test("homepage hero explains the 08 premium-rate number simply",()=>{
