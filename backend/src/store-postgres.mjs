@@ -2639,8 +2639,8 @@ export class PostgresStore{
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     const referralCode=await this.ensureCustomerReferralCode(id);
     const rows=await this.readSql.unsafe(
-      "SELECT r.id,r.status,r.reward_minor,r.reward_currency,r.qualified_at,r.rewarded_at,r.created_at,t.display_name AS referred_name"+
-      " FROM tenant_referrals r JOIN tenants t ON t.id=r.referred_tenant_id WHERE r.referrer_tenant_id=$1 ORDER BY r.created_at DESC LIMIT 100",
+      "SELECT r.id,r.status,r.reward_minor,r.reward_currency,r.qualified_at,r.rewarded_at,r.created_at"+
+      " FROM tenant_referrals r WHERE r.referrer_tenant_id=$1 ORDER BY r.created_at DESC LIMIT 100",
       [id]
     );
     const summary={pending:0,qualified:0,rewarded:0,total:rows.length,rewarded_minor:0};
