@@ -1434,9 +1434,9 @@ CREATE TABLE schema_bootstrap_migrations (
 
 INSERT INTO schema_bootstrap_migrations(version,checksum) VALUES
   ('001_baseline','c3da5c9577b073a6bcdb4af3857524f41a29689126cf9ae6aa04ea95e4473512'),
-  ('002_wholesale_multitenant_foundation','09906e258342074ebd5a5c8b09a542ae448f14d5355af5e07327c3eb126089f5'),
-  ('003_wholesale_compliance_foundation','c703e0f5d0875073418a2765f94898c8dbe66ce568323f61a431e0ce614c5f02'),
-  ('004_international_market_foundation','af4d7deb38de9dfced53d6535bb8ef795b7bfb5834f2b9169923e9b19f12fb69'),
-  ('005_hyperscale_foundation','8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69');
+  ('002_wholesale_multitenant_foundation','ad299a9f9e2dd71774e9d6674488674d051ed394647b57d6688c125ef2b3f91b'),
+  ('003_wholesale_compliance_foundation','b405b5c24bd3033b6dfafb60518e402d0788741d9c0ab7ea42a98588282c1522'),
+  ('004_international_market_foundation','41818ccb56c4099147808fe84f6411e226b7b37a77de94cc2a919b795abb210f'),
+  ('005_hyperscale_foundation','99ad128d4d6bdb0abb48dfdcf1331f50f62193af80452e47306791895aecb027');
 
 COMMIT;
