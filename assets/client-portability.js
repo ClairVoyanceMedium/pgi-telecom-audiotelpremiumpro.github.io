@@ -8,7 +8,8 @@ const label=v=>labels[String(v||"").toLowerCase()]||String(v||"—");
 const chip=v=>{const s=String(v||"").toLowerCase(),tone=s==="ported"?"ok":["submitted","awaiting_documents","eligibility_check","operator_pending","scheduled"].includes(s)?"warn":["rejected"].includes(s)?"bad":"neutral";return '<span class="cp-chip '+tone+'">'+esc(label(v))+"</span>";};
 
 export function createController({getData,getDemo,reload,toast,countryCodes,locale}){
-  let busy=false,countriesReady=false,bound=false;
+  let busy=false,countriesReady=false,bound=false,priorityPromise=null;
+  const priority=()=>priorityPromise||(priorityPromise=import("./client-portability-priority.js").then(m=>m.createController({getDemo,reload,toast})));
   function populateCountries(){
     const select=$("portability-country");if(!select||countriesReady)return;
     const data=getData()||{},tenantCountry=data.tenant&&data.tenant.country_code,current=String(tenantCountry||"FR").toUpperCase();
@@ -72,34 +73,6 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
     try{await window.PGICustomerApi.cancelPortability(id,window.PGICustomerApi.newIdempotencyKey());await reload();toast("Demande de portabilité annulée.");}
     catch{toast("Cette demande ne peut plus être annulée.");}finally{busy=false;}
   }
-  async function priority(id){
-    if(busy)return;
-    if(getDemo()){toast("La priorité PGI sera disponible sur un dossier réel.");return;}
-    busy=true;
-    try{
-      const result=await window.PGICustomerApi.createPortabilityPriorityCheckout(id,window.PGICustomerApi.newIdempotencyKey());
-      if(result&&result.already_paid){await reload();toast("La priorité PGI est déjà activée sur ce dossier.");return;}
-      if(result&&result.payment_confirmation_pending){toast("Paiement reçu. La confirmation sécurisée est en cours, aucun nouveau paiement n’est nécessaire.");setTimeout(()=>reload().catch(()=>{}),1800);return;}
-      if(result&&result.url&&/^https:\/\/checkout\.stripe\.com\//i.test(result.url)){location.assign(result.url);return;}
-      throw new Error("CHECKOUT_URL_MISSING");
-    }catch(err){
-      const messages={
-        PORTABILITY_PRIORITY_NOT_AVAILABLE:"La priorité n’est plus disponible pour ce dossier.",
-        B2C_COMMERCIAL_NOT_READY:"Cette option n’est pas encore disponible pour ce dossier particulier.",
-        PAYMENT_ACCOUNT_NOT_READY:"Le paiement sécurisé est momentanément indisponible.",
-        PAYMENT_PROVIDER_UNAVAILABLE:"Le paiement sécurisé est momentanément indisponible."
-      };
-      toast(messages[err&&err.code]||"Impossible d’ouvrir le paiement de la priorité pour le moment.");
-    }finally{busy=false;}
-  }
-  function handlePriorityReturn(){
-    const params=new URLSearchParams(location.search),state=params.get("portability-priority");
-    if(!state)return;
-    if(state==="success")toast("Paiement reçu. La priorité sera affichée dès confirmation sécurisée du paiement.");
-    if(state==="cancelled")toast("Paiement annulé. Votre portabilité reste gratuite et conserve la file standard.");
-    const url=new URL(location.href);url.searchParams.delete("portability-priority");url.searchParams.delete("session_id");
-    history.replaceState(null,"",url.pathname+(url.search?"?"+url.searchParams.toString():"")+url.hash);
-  }
   function bind(){
     if(bound)return;bound=true;
     $("portability-close")?.addEventListener("click",close);
@@ -107,11 +80,11 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
     $("client-portability-form")?.addEventListener("submit",submit);
     $("portability-list")?.addEventListener("click",e=>{
       const priorityButton=e.target.closest("[data-portability-priority]");
-      if(priorityButton){priority(priorityButton.dataset.portabilityPriority);return;}
+      if(priorityButton){priority().then(x=>x.activate(priorityButton.dataset.portabilityPriority));return;}
       const cancelButton=e.target.closest("[data-portability-cancel]");
       if(cancelButton)cancel(cancelButton.dataset.portabilityCancel);
     });
-    handlePriorityReturn();
+    if(new URLSearchParams(location.search).has("portability-priority"))priority().then(x=>x.handleReturn());
   }
   bind();
   return {render,open};
