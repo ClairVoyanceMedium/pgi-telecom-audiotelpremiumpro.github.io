@@ -3699,18 +3699,37 @@ export class PostgresStore{
     return result.row;
   }
 
-  async customerGoogleSignIn(identity,invitationHash=null){
+  async customerGoogleSignIn(identity,invitationHash=null,legal={}){
     if(!identity||identity.provider!=="google"||!identity.subject||!identity.email||identity.email_verified!==true)throw problem(400,"INVALID_GOOGLE_IDENTITY");
+    if(invitationHash){
+      if(legal.accepted!==true||legal.privacy_acknowledged!==true)throw problem(400,"REGISTRATION_LEGAL_TERMS_REQUIRED");
+      if(String(legal.document_version||"")!=="2026-09-26-b2b-b2c-v4")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
+    }
     return this.sql.begin(async tx=>{
       let invitation=null;
       if(invitationHash){
-        invitation=(await tx.unsafe("SELECT i.id,i.tenant_id,i.email,i.role,i.status,i.expires_at,t.status AS tenant_status FROM customer_tenant_invitations i JOIN tenants t ON t.id=i.tenant_id WHERE i.token_hash=$1 FOR UPDATE",[String(invitationHash)]))[0];
+        invitation=(await tx.unsafe(
+          "SELECT i.id,i.tenant_id,i.email,i.role,i.status,i.expires_at,t.status AS tenant_status,t.preferred_locale,t.timezone,k.metadata AS lead_metadata"+
+          " FROM customer_tenant_invitations i JOIN tenants t ON t.id=i.tenant_id LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id WHERE i.token_hash=$1 FOR UPDATE",
+          [String(invitationHash)]
+        ))[0];
         if(!invitation)throw problem(404,"INVITATION_NOT_FOUND");
         if(invitation.status!=="pending")throw problem(409,"INVITATION_NOT_PENDING");
         if(Date.parse(invitation.expires_at)<=Date.now())throw problem(410,"INVITATION_EXPIRED");
         if(String(invitation.email).trim().toLowerCase()!==identity.email)throw problem(403,"GOOGLE_INVITATION_EMAIL_MISMATCH");
         if(!["active","pending"].includes(invitation.tenant_status))throw problem(409,"TENANT_NOT_ACTIVE");
       }
+      const lead=invitation?.lead_metadata&&typeof invitation.lead_metadata==="object"?invitation.lead_metadata:{};
+      const accountType=["individual","business"].includes(String(lead.account_type||""))?String(lead.account_type):"individual";
+      const leadMeta=invitation?{
+        first_name:String(lead.first_name||"").slice(0,80)||null,
+        last_name:String(lead.last_name||"").slice(0,80)||null,
+        phone:String(lead.phone||"").slice(0,40)||null,
+        signup_source:"public_opening_invitation",
+        service_intent:String(lead.service_intent||"advice").slice(0,40),
+        account_type:accountType,
+        authority_confirmed:true
+      }:{};
       let principal=(await tx.unsafe("SELECT p.id,p.email,p.display_name,p.status,p.session_version FROM customer_federated_identities f JOIN customer_principals p ON p.id=f.customer_principal_id WHERE f.provider='google' AND f.provider_subject=$1 FOR UPDATE",[identity.subject]))[0]||null;
       if(!principal){
         principal=(await tx.unsafe("SELECT id,email,display_name,status,session_version FROM customer_principals WHERE email_normalized=$1 FOR UPDATE",[identity.email]))[0]||null;
@@ -3718,9 +3737,15 @@ export class PostgresStore{
         if(principal&&!invitation&&!identity.authoritative_email)throw problem(409,"GOOGLE_LINK_REQUIRES_INVITATION");
         if(principal&&!["active","pending"].includes(principal.status))throw problem(409,"CUSTOMER_ACCOUNT_DISABLED");
         if(!principal){
-          principal=(await tx.unsafe("INSERT INTO customer_principals(email,display_name,status,email_verified) VALUES($1,$2,'active',true) RETURNING id,email,display_name,status,session_version",[identity.email,identity.display_name||identity.email]))[0];
+          principal=(await tx.unsafe(
+            "INSERT INTO customer_principals(email,display_name,status,preferred_locale,timezone,email_verified,metadata) VALUES($1,$2,'active',$3,$4,true,$5::jsonb) RETURNING id,email,display_name,status,session_version",
+            [identity.email,identity.display_name||identity.email,invitation?.preferred_locale||"fr-FR",invitation?.timezone||"Europe/Paris",JSON.stringify(leadMeta)]
+          ))[0];
         }else if(invitation){
-          await tx.unsafe("UPDATE customer_principals SET email_verified=true,status='active',updated_at=now() WHERE id=$1::uuid",[principal.id]);
+          await tx.unsafe(
+            "UPDATE customer_principals SET email_verified=true,status='active',preferred_locale=$2,timezone=$3,metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||$4::jsonb,updated_at=now() WHERE id=$1::uuid",
+            [principal.id,invitation.preferred_locale||"fr-FR",invitation.timezone||"Europe/Paris",JSON.stringify(leadMeta)]
+          );
         }else{
           await tx.unsafe("UPDATE customer_principals SET email_verified=true,updated_at=now() WHERE id=$1::uuid",[principal.id]);
         }
@@ -3731,8 +3756,19 @@ export class PostgresStore{
         }
       }
       if(invitation){
-        await tx.unsafe("UPDATE customer_principals SET status='active',email_verified=true,updated_at=now() WHERE id=$1::uuid",[principal.id]);
+        await tx.unsafe(
+          "UPDATE customer_principals SET status='active',email_verified=true,preferred_locale=$2,timezone=$3,metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||$4::jsonb,updated_at=now() WHERE id=$1::uuid",
+          [principal.id,invitation.preferred_locale||"fr-FR",invitation.timezone||"Europe/Paris",JSON.stringify(leadMeta)]
+        );
         await tx.unsafe("INSERT INTO customer_tenant_memberships(tenant_id,customer_principal_id,role,status) VALUES($1,$2::uuid,$3,'active') ON CONFLICT(tenant_id,customer_principal_id) DO UPDATE SET role=EXCLUDED.role,status='active',updated_at=now()",[invitation.tenant_id,principal.id,invitation.role]);
+        await tx.unsafe(
+          "INSERT INTO customer_legal_acceptances(tenant_id,customer_principal_id,acceptance_type,document_version,documents,account_type,evidence) VALUES($1,$2::uuid,'account_terms',$3,$4::jsonb,$5,$6::jsonb)",
+          [invitation.tenant_id,principal.id,"2026-09-26-b2b-b2c-v4",JSON.stringify({cgu:"/conditions-utilisation/",conditions:"/conditions-abonnement/",privacy:"/confidentialite/",cookies:"/cookies-traceurs/"}),accountType,JSON.stringify({source:"customer_google_invitation_activation",authority_confirmed:true,privacy_notice_acknowledged:true})]
+        );
+        await tx.unsafe(
+          "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'customer.legal_acceptance','customer_principal',$2,$3::jsonb)",
+          [invitation.tenant_id,String(principal.id),JSON.stringify({acceptance_type:"account_terms",document_version:"2026-09-26-b2b-b2c-v4",source:"customer_google_invitation_activation"})]
+        );
         await tx.unsafe("UPDATE customer_tenant_invitations SET status='accepted',accepted_by_customer_principal_id=$1::uuid,accepted_at=now() WHERE id=$2::uuid",[principal.id,invitation.id]);
       }
       await tx.unsafe("UPDATE customer_principals SET email_verified=true,last_authenticated_at=now(),updated_at=now() WHERE id=$1::uuid",[principal.id]);
@@ -3956,21 +3992,34 @@ export class PostgresStore{
     });
   }
 
-  async activateCustomerPortalInvitation(tokenHash,displayName,passwordHash){
+  async activateCustomerPortalInvitation(tokenHash,displayName,passwordHash,legal={}){
     if(!/^[a-f0-9]{64}$/.test(String(tokenHash||"")))throw problem(400,"INVALID_INVITATION_TOKEN");
     displayName=String(displayName||"").trim();
     if(!displayName||displayName.length>160)throw problem(400,"INVALID_CUSTOMER_NAME");
     if(String(passwordHash||"").length<20)throw problem(400,"INVALID_PASSWORD_HASH");
+    if(legal.accepted!==true||legal.privacy_acknowledged!==true)throw problem(400,"REGISTRATION_LEGAL_TERMS_REQUIRED");
+    if(String(legal.document_version||"")!=="2026-09-26-b2b-b2c-v4")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
     return this.sql.begin(async tx=>{
       const invitations=await tx.unsafe(
-        "SELECT i.id,i.tenant_id,i.email,i.role,i.status,i.expires_at,t.public_id,t.display_name AS tenant_name,t.status AS tenant_status,t.authorization_version"+
-        " FROM customer_tenant_invitations i JOIN tenants t ON t.id=i.tenant_id"+
+        "SELECT i.id,i.tenant_id,i.email,i.role,i.status,i.expires_at,t.public_id,t.display_name AS tenant_name,t.status AS tenant_status,t.authorization_version,t.preferred_locale,t.timezone,k.metadata AS lead_metadata"+
+        " FROM customer_tenant_invitations i JOIN tenants t ON t.id=i.tenant_id LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id"+
         " WHERE i.token_hash=$1 FOR UPDATE",[String(tokenHash)]
       );
       const inv=invitations[0];if(!inv)throw problem(404,"INVITATION_NOT_FOUND");
       if(inv.status!=="pending")throw problem(409,"INVITATION_NOT_PENDING");
       if(Date.parse(inv.expires_at)<=Date.now())throw problem(410,"INVITATION_EXPIRED");
       if(inv.tenant_status!=="active"&&inv.tenant_status!=="pending")throw problem(409,"TENANT_NOT_ACTIVE");
+      const lead=inv.lead_metadata&&typeof inv.lead_metadata==="object"?inv.lead_metadata:{};
+      const accountType=["individual","business"].includes(String(lead.account_type||""))?String(lead.account_type):"individual";
+      const principalMeta={
+        first_name:String(lead.first_name||"").slice(0,80)||null,
+        last_name:String(lead.last_name||"").slice(0,80)||null,
+        phone:String(lead.phone||"").slice(0,40)||null,
+        signup_source:"public_opening_invitation",
+        service_intent:String(lead.service_intent||"advice").slice(0,40),
+        account_type:accountType,
+        authority_confirmed:true
+      };
       let principals=await tx.unsafe(
         "SELECT id,email,display_name,status,session_version FROM customer_principals WHERE email_normalized=lower(btrim($1)) FOR UPDATE",[inv.email]
       );
@@ -3978,11 +4027,15 @@ export class PostgresStore{
         const credential=await tx.unsafe("SELECT customer_principal_id FROM customer_password_credentials WHERE customer_principal_id=$1::uuid",[principals[0].id]);
         if(credential.length)throw problem(409,"CUSTOMER_ACCOUNT_EXISTS");
         if(principals[0].status!=="active"&&principals[0].status!=="pending")throw problem(409,"CUSTOMER_ACCOUNT_DISABLED");
-        await tx.unsafe("UPDATE customer_principals SET display_name=$1,status='active',updated_at=now() WHERE id=$2::uuid",[displayName,principals[0].id]);
+        await tx.unsafe(
+          "UPDATE customer_principals SET display_name=$1,status='active',preferred_locale=$2,timezone=$3,metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||$4::jsonb,updated_at=now() WHERE id=$5::uuid",
+          [displayName,inv.preferred_locale||"fr-FR",inv.timezone||"Europe/Paris",JSON.stringify(principalMeta),principals[0].id]
+        );
       }else{
         principals=await tx.unsafe(
-          "INSERT INTO customer_principals(email,display_name,status,email_verified) VALUES($1,$2,'active',false)"+
-          " RETURNING id,email,display_name,status,session_version",[inv.email,displayName]
+          "INSERT INTO customer_principals(email,display_name,status,preferred_locale,timezone,email_verified,metadata) VALUES($1,$2,'active',$3,$4,false,$5::jsonb)"+
+          " RETURNING id,email,display_name,status,session_version",
+          [inv.email,displayName,inv.preferred_locale||"fr-FR",inv.timezone||"Europe/Paris",JSON.stringify(principalMeta)]
         );
       }
       const principal=principals[0];
@@ -3994,6 +4047,15 @@ export class PostgresStore{
         "INSERT INTO customer_tenant_memberships(tenant_id,customer_principal_id,role,status) VALUES($1,$2::uuid,$3,'active')"+
         " ON CONFLICT(tenant_id,customer_principal_id) DO UPDATE SET role=EXCLUDED.role,status='active',updated_at=now()",
         [inv.tenant_id,principal.id,inv.role]
+      );
+      await tx.unsafe(
+        "INSERT INTO customer_legal_acceptances(tenant_id,customer_principal_id,acceptance_type,document_version,documents,account_type,evidence)"+
+        " VALUES($1,$2::uuid,'account_terms',$3,$4::jsonb,$5,$6::jsonb)",
+        [inv.tenant_id,principal.id,"2026-09-26-b2b-b2c-v4",JSON.stringify({cgu:"/conditions-utilisation/",conditions:"/conditions-abonnement/",privacy:"/confidentialite/",cookies:"/cookies-traceurs/"}),accountType,JSON.stringify({source:"customer_invitation_activation",authority_confirmed:true,privacy_notice_acknowledged:true})]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'customer.legal_acceptance','customer_principal',$2,$3::jsonb)",
+        [inv.tenant_id,String(principal.id),JSON.stringify({acceptance_type:"account_terms",document_version:"2026-09-26-b2b-b2c-v4",source:"customer_invitation_activation"})]
       );
       await tx.unsafe(
         "UPDATE customer_tenant_invitations SET status='accepted',accepted_by_customer_principal_id=$1::uuid,accepted_at=now() WHERE id=$2::uuid",
