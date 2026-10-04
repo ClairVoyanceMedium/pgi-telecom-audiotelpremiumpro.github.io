@@ -45,7 +45,8 @@ test("referral is server gated, configurable, hidden when disabled and qualified
 });
 
 test("new commercial implementation contains no em dash",()=>{
+  const forbidden=String.fromCodePoint(0x2014);
   for(const [name,content] of Object.entries({server,store,stripe,client,portability,referral,admin,migration,siteJs,buildStatic})){
-    assert.equal(content.includes("—"),false,name+" contains an em dash");
+    assert.equal(content.includes(forbidden),false,name+" contains an em dash");
   }
 });
