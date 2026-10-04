@@ -68,6 +68,8 @@ passkeyAssertOptions:function(){return post("/customer/security/passkeys/assert-
 passkeyVerify:function(body){return post("/customer/security/passkeys/verify",body);},
 billingStatus:function(){return get("/customer/billing/status",5000);},
 cardPaymentStatus:function(){return get("/customer/card-payments/status",8000);},
+referrals:function(){return get("/customer/referrals",8000);},
+createReferralCode:function(idempotencyKey){return post("/customer/referrals/code",{},idempotencyKey);},
 activateCardPayments:function(idempotencyKey){return post("/customer/card-payments/connect",{},idempotencyKey);},
 createCardPaymentCheckout:function(payload,idempotencyKey){return post("/customer/card-payments/checkout-session",payload||{},idempotencyKey);},
 newIdempotencyKey:function(){return typeof crypto!=="undefined"&&crypto.randomUUID?crypto.randomUUID():"customer-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2);},
