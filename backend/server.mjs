@@ -14,7 +14,7 @@ import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData,scopeCustomerAnnualProgressData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
-import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,verifyStripeWebhook,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
+import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,createStripePortabilityPriorityCheckout,createStripeCustomerBalanceCredit,verifyStripeWebhook,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
 import {STRIPE_CONNECT_APPLICATION_FEE_BPS,stripeConnectState,createStripeConnectedAccount,retrieveStripeConnectedAccount,normalizeStripeConnectedAccount,createStripeConnectOnboardingLink,createStripeCardCheckout,retrieveStripeCardCheckout,normalizeStripeConnectPaymentEvent,hashStripeEventPayload} from "./src/stripe-connect.mjs";
 import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStripe,buildGa4RefundFromStripe,sendGa4Measurement} from "./src/ga4-measurement.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
@@ -164,6 +164,25 @@ export function createBackend(options={}){
           invalidateStripeProviderReadiness();
           return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,account_readiness_invalidated:true});
         }
+        const stripeObject=event?.data?.object||{};
+        const priorityMeta=stripeObject?.metadata||{};
+        const priorityType=String(event.type||"");
+        if(
+          ["checkout.session.completed","checkout.session.async_payment_succeeded"].includes(priorityType)&&
+          String(priorityMeta.pgi_payment_kind||"")==="portability_priority"&&
+          String(stripeObject.payment_status||"")==="paid"
+        ){
+          const priorityResult=await store.applyPortabilityPriorityPaymentEvent({
+            provider_event_id:String(event.id||""),
+            request_id:Number(priorityMeta.portability_request_id),
+            tenant_public_id:String(priorityMeta.tenant_public_id||""),
+            checkout_session_reference:String(stripeObject.id||""),
+            payment_intent_reference:String(stripeObject.payment_intent||""),
+            amount_minor:Number(stripeObject.amount_total),
+            currency:String(stripeObject.currency||"").toUpperCase()
+          });
+          return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,type:priorityType,portability_priority:true,duplicate:Boolean(priorityResult.duplicate)});
+        }
         const refund=config.ga4MeasurementEnabled&&config.ga4ApiSecret?await normalizeStripeRefundEvent(event,config):null;
         if(refund){
           const analytics=await deliverGa4StripeEvent(store,config,"refund",refund.provider_event_id,refund.refund_id,buildGa4RefundFromStripe(refund));
@@ -176,6 +195,7 @@ export function createBackend(options={}){
         if(normalized.status==="active"){
           onboarding=await autoAdvanceTenantAfterBilling(store,config,normalized.tenant_public_id);
           await syncHubSpotTenantLifecycle(store,normalized.tenant_public_id,"En attente d’ouverture","billing_active");
+          if(typeof store.queuePendingReferralRewardsByTenantPublicId==="function")await store.queuePendingReferralRewardsByTenantPublicId(normalized.tenant_public_id);
         }
         const analytics=normalized.event_type==="invoice.paid"
           ?await deliverGa4StripeEvent(store,config,"purchase",normalized.provider_event_id,normalized.provider_invoice_reference,buildGa4PurchaseFromStripe(normalized))
@@ -298,6 +318,11 @@ export function createBackend(options={}){
             throw error;
           }
         }
+        let referralAttribution=null;
+        if(dossier&&typeof store.captureLeadReferral==="function"&&body.referral_code){
+          try{referralAttribution=await store.captureLeadReferral(dossier.id,body.referral_code);}
+          catch(error){process.stderr.write(JSON.stringify({level:"warn",event:"referral_attribution_failed",code:String(error?.code||"REFERRAL_ATTRIBUTION_FAILED")})+"\n");}
+        }
         try{formResult=await submitHubSpotLead(body,{pageUri,pageName:"Demande d’ouverture Audiotel Premium Pro",hutk});}
         catch(error){logHubSpotSyncFailure("public_lead_form",error);}
         try{
@@ -327,7 +352,8 @@ export function createBackend(options={}){
           dossier_ref:dossier?.dossier_ref||null,
           dossier_created:Boolean(dossier?.created),
           client_portal_invited:Boolean(customerAccess?.invitation_created||customerAccess?.reason==="pending_invitation"),
-          access_email_sent:Boolean(customerAccess?.email_sent)
+          access_email_sent:Boolean(customerAccess?.email_sent),
+          referral_attributed:Boolean(referralAttribution?.captured)
         });
       }
 
@@ -963,6 +989,36 @@ export function createBackend(options={}){
         const result=await store.idempotent(req.headers["idempotency-key"],"customer.portability.create",payload,()=>store.createCustomerPortabilityRequest(context.tenant_id,body));
         return done(res,metrics,started,"customer.portability.create",201,{...result.value,replayed:result.replayed});
       }
+      match=routeMatch(pathname,"/api/v1/customer/portability/:id/priority-checkout-session");
+      if(method==="POST"&&match){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"billing.manage");
+        const key=String(req.headers["idempotency-key"]||"").trim();
+        if(!key||key.length>200){const e=new Error("Checkout idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
+        const prepared=await store.prepareCustomerPortabilityPriority(context.tenant_id,match.id);
+        if(prepared.already_paid)return done(res,metrics,started,"customer.portability.priority_checkout",200,{already_paid:true,status:"paid"});
+        const billing=await store.customerBillingPreparation(context.tenant_id);
+        const individual=String(billing.tenant?.customer_type||"business")==="individual";
+        const withdrawalReady=!individual||(config.onlineWithdrawalReady===true&&typeof store.customerWithdrawalFeatureReady==="function"&&await store.customerWithdrawalFeatureReady());
+        if(individual&&(config.b2cCommercialReady!==true||!withdrawalReady)){
+          return done(res,metrics,started,"customer.portability.priority_checkout",409,{error:{code:"B2C_COMMERCIAL_NOT_READY"}});
+        }
+        const payload={tenant_id:context.tenant_id,request_id:Number(match.id),amount_minor:Number(prepared.priority_fee_minor),currency:String(prepared.priority_currency)};
+        const result=await store.idempotent(key,"customer.portability.priority_checkout",payload,async()=>{
+          const session=await createStripePortabilityPriorityCheckout(config,billing,prepared,key);
+          await store.attachCustomerPortabilityPriorityCheckout(context.tenant_id,match.id,session.session_id);
+          return session;
+        });
+        return done(res,metrics,started,"customer.portability.priority_checkout",201,{...result.value,replayed:result.replayed});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/customer/referrals"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        return done(res,metrics,started,"customer.referrals",200,await store.customerReferralOverview(context.tenant_id));
+      }
+
       match=routeMatch(pathname,"/api/v1/customer/portability/:id/cancel");
       if(method==="POST"&&match){
         requireCustomerCsrf(req,customerActor,config);
@@ -1981,6 +2037,20 @@ export function createBackend(options={}){
   const queueHandlers={
     ...createPortabilityQueueHandlers({store,config}),
     ...createOutboundPortabilityQueueHandlers({store,config}),
+    referral_reward:async item=>{
+      const referralId=Number(item?.payload?.referral_id);
+      if(!Number.isInteger(referralId)||referralId<=0)return;
+      const reward=await store.referralRewardPreparation(referralId);
+      if(reward.status==="rewarded")return;
+      if(reward.status!=="qualified")return;
+      if(!reward.provider_customer_reference)throw Object.assign(new Error("REFERRAL_REWARD_CUSTOMER_NOT_READY"),{code:"REFERRAL_REWARD_CUSTOMER_NOT_READY"});
+      const credit=await createStripeCustomerBalanceCredit(
+        config,reward.provider_customer_reference,Number(reward.reward_minor),String(reward.reward_currency||"EUR"),
+        {referral_id:String(referralId),referred_tenant_id:String(reward.referred_tenant_id),reward_kind:"one_month_free"},
+        "referral-reward/"+String(referralId)
+      );
+      await store.completeReferralReward(referralId,credit.reference);
+    },
     ...(options.queueHandlers||{})
   };
   const workers=config.processRole==="api"
