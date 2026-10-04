@@ -7,7 +7,7 @@ function referralUrl(code){return location.origin+"/demande-ouverture/?parrain="
 function render(data){
   state=data||{};var box=$("client-referral-mount");if(!box)return;
   if(state.enabled!==true){box.hidden=true;box.innerHTML="";return;}
-  box.hidden=false;
+  box.className="cp-panel cp-chart-card";box.hidden=false;
   var reward=money(state.reward_minor,state.currency),summary=state.summary||{},code=String(state.code||"");
   var eligibility=state.eligible===true?"Votre parrainage est actif.":"Disponible après activation de votre compte et confirmation du premier paiement.";
   var codeBlock="";
