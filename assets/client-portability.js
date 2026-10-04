@@ -73,12 +73,13 @@ export function createController({getData,getDemo,reload,toast,countryCodes,loca
     const accepted=window.confirm(
       "Option Priorité "+String(price||"9,90 €")+" TTC, paiement unique.\n\n"+
       "Je demande expressément que la prise en charge prioritaire interne PGI commence dès la confirmation du paiement. "+
+      "Je reconnais qu’après exécution complète de cette prestation, je ne disposerai plus du droit de rétractation pour cette prestation. "+
       "Cette option ne garantit ni l’éligibilité du numéro, ni un délai de l’opérateur, ni une date de portage."
     );
     if(!accepted)return;
     busy=true;
     try{
-      const r=await window.PGICustomerApi.createPortabilityPriorityCheckout(id,{terms_accepted:true,immediate_performance_requested:true,legal_version:"2026-10-04-priority-v1"},window.PGICustomerApi.newIdempotencyKey());
+      const r=await window.PGICustomerApi.createPortabilityPriorityCheckout(id,{terms_accepted:true,immediate_performance_requested:true,withdrawal_loss_acknowledged:true,legal_version:"2026-10-04-priority-v1"},window.PGICustomerApi.newIdempotencyKey());
       const url=r&&r.checkout&&r.checkout.url;
       if(!url||!/^https:\/\/checkout\.stripe\.com\//i.test(url))throw new Error("CHECKOUT_URL_INVALID");
       location.assign(url);

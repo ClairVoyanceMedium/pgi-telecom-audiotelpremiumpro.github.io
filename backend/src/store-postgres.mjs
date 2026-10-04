@@ -4661,7 +4661,7 @@ export class PostgresStore{
     const id=Number(tenantId),rid=Number(requestId),principal=String(customerPrincipalId||"");
     if(!Number.isInteger(id)||id<=0||!Number.isInteger(rid)||rid<=0)throw problem(400,"INVALID_PORTABILITY_REQUEST");
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(principal))throw problem(400,"INVALID_CUSTOMER_PRINCIPAL");
-    if(legal.terms_accepted!==true||legal.immediate_performance_requested!==true)throw problem(400,"PORTABILITY_PRIORITY_LEGAL_ACCEPTANCE_REQUIRED");
+    if(legal.terms_accepted!==true||legal.immediate_performance_requested!==true||legal.withdrawal_loss_acknowledged!==true)throw problem(400,"PORTABILITY_PRIORITY_LEGAL_ACCEPTANCE_REQUIRED");
     if(String(legal.legal_version||"")!=="2026-10-04-priority-v1")throw problem(409,"PORTABILITY_PRIORITY_TERMS_OUTDATED");
     const offer=await this.portabilityPriorityProgramStatus();
     if(!offer.enabled)throw problem(409,"PORTABILITY_PRIORITY_UNAVAILABLE");
@@ -4679,13 +4679,13 @@ export class PostgresStore{
       ))[0]||null;
       if(existing)return {...existing,display_number:request.display_number,requested_e164:request.requested_e164};
       const row=(await tx.unsafe(
-        "INSERT INTO tenant_portability_priority_orders(tenant_id,portability_request_id,created_by_customer_principal_id,amount_minor,currency,status,legal_version,terms_accepted_at,immediate_performance_requested_at,metadata)"+
-        " VALUES($1,$2,$3::uuid,$4,$5,'created',$6,now(),now(),$7::jsonb) RETURNING *",
+        "INSERT INTO tenant_portability_priority_orders(tenant_id,portability_request_id,created_by_customer_principal_id,amount_minor,currency,status,legal_version,terms_accepted_at,immediate_performance_requested_at,withdrawal_loss_acknowledged_at,metadata)"+
+        " VALUES($1,$2,$3::uuid,$4,$5,'created',$6,now(),now(),now(),$7::jsonb) RETURNING *",
         [id,rid,principal,offer.amount_minor,offer.currency,"2026-10-04-priority-v1",JSON.stringify({scope:"pgi_internal_queue",operator_delay_guarantee:false})]
       ))[0];
       await tx.unsafe(
         "INSERT INTO audit_log(tenant_id,action,entity_type,entity_id,details) VALUES($1,'portability.priority.request','portability_priority_order',$2,$3::jsonb)",
-        [id,String(row.id),JSON.stringify({portability_request_id:rid,amount_minor:offer.amount_minor,currency:offer.currency,immediate_performance_requested:true})]
+        [id,String(row.id),JSON.stringify({portability_request_id:rid,amount_minor:offer.amount_minor,currency:offer.currency,immediate_performance_requested:true,withdrawal_loss_acknowledged:true})]
       );
       const tenant=(await tx.unsafe("SELECT public_id FROM tenants WHERE id=$1",[id]))[0];
       return {...row,tenant_public_id:tenant.public_id,display_number:request.display_number,requested_e164:request.requested_e164};

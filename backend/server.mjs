@@ -983,7 +983,7 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes);
         const idempotencyKey=String(req.headers["idempotency-key"]||"").trim();
         if(!idempotencyKey||idempotencyKey.length>200){const e=new Error("Idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
-        const payload={tenant_id:context.tenant_id,request_id:match.id,terms_accepted:body.terms_accepted===true,immediate_performance_requested:body.immediate_performance_requested===true,legal_version:String(body.legal_version||"")};
+        const payload={tenant_id:context.tenant_id,request_id:match.id,terms_accepted:body.terms_accepted===true,immediate_performance_requested:body.immediate_performance_requested===true,withdrawal_loss_acknowledged:body.withdrawal_loss_acknowledged===true,legal_version:String(body.legal_version||"")};
         const result=await store.idempotent(idempotencyKey,"customer.portability.priority_checkout",payload,async()=>{
           const order=await store.createCustomerPortabilityPriorityOrder(context.tenant_id,match.id,context.id,body);
           const checkout=await createStripePortabilityPriorityCheckout(config,order);

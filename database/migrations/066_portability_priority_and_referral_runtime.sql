@@ -20,6 +20,7 @@ CREATE TABLE tenant_portability_priority_orders (
   legal_version text NOT NULL,
   terms_accepted_at timestamptz NOT NULL,
   immediate_performance_requested_at timestamptz NOT NULL,
+  withdrawal_loss_acknowledged_at timestamptz NOT NULL,
   paid_at timestamptz,
   expires_at timestamptz,
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
