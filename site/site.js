@@ -51,7 +51,7 @@ function syncType(){
   if(company){company.disabled=!business;if(!business)company.value=""}
 }
 function snapshot(){const type=selectedType();
-  return {version:1,created_at:Date.now(),account_type:type,first_name:value("order-first-name").slice(0,80),last_name:value("order-last-name").slice(0,80),company_name:type==="business"?value("order-company").slice(0,200):"",email:value("order-email").slice(0,320),phone:value("order-phone").slice(0,40),service_intent:value("order-service-intent"),country_code:"FR",preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"Europe/Paris"),processing_consent:!!document.getElementById("order-processing-consent")?.checked,marketing_consent:!!document.getElementById("order-marketing-consent")?.checked,marketing_consent_version:"2026-10-01-v1",website:value("order-website")};
+  return {version:1,created_at:Date.now(),account_type:type,first_name:value("order-first-name").slice(0,80),last_name:value("order-last-name").slice(0,80),company_name:type==="business"?value("order-company").slice(0,200):"",email:value("order-email").slice(0,320),phone:value("order-phone").slice(0,40),service_intent:value("order-service-intent"),country_code:"FR",preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"Europe/Paris"),processing_consent:!!document.getElementById("order-processing-consent")?.checked,marketing_consent:!!document.getElementById("order-marketing-consent")?.checked,marketing_consent_version:"2026-10-01-v1",referral_code:value("order-referral-code").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,24),website:value("order-website")};
 }
 function saveDraft(){try{sessionStorage.setItem(DRAFT_KEY,JSON.stringify(snapshot()))}catch(_e){}}
 function hydrateDraft(){
@@ -61,7 +61,7 @@ function hydrateDraft(){
     if(!x||x.version!==1||age<0||age>MAX_AGE){sessionStorage.removeItem(DRAFT_KEY);return}
     const set=(id,v)=>{const el=document.getElementById(id);if(el&&v!=null&&!el.value)el.value=String(v)};
     if(["individual","business"].includes(x.account_type)){const radio=form.querySelector('input[name="order_account_type"][value="'+x.account_type+'"]');if(radio)radio.checked=true}
-    set("order-first-name",x.first_name);set("order-last-name",x.last_name);set("order-company",x.company_name);set("order-email",x.email);set("order-phone",x.phone);set("order-service-intent",x.service_intent);
+    set("order-first-name",x.first_name);set("order-last-name",x.last_name);set("order-company",x.company_name);set("order-email",x.email);set("order-phone",x.phone);set("order-service-intent",x.service_intent);set("order-referral-code",x.referral_code);
   }catch(_e){try{sessionStorage.removeItem(DRAFT_KEY)}catch(_x){}}
 }
 function applyRequestedProfile(){
@@ -75,7 +75,21 @@ function applyRequestedIntent(){
   const intent=map[requested],select=document.getElementById("order-service-intent");
   if(intent&&select&&!select.value)select.value=intent;
 }
-hydrateDraft();applyRequestedProfile();applyRequestedIntent();
+async function applyReferralProgram(){
+  const wrap=document.getElementById("order-referral-wrap"),input=document.getElementById("order-referral-code"),help=document.getElementById("order-referral-help");
+  if(!wrap||!input)return;
+  try{
+    const r=await fetch("/api/v1/public/referral-program",{headers:{"Accept":"application/json"},credentials:"same-origin",cache:"no-store"}),data=await r.json().catch(()=>({}));
+    if(!r.ok||data.enabled!==true){wrap.hidden=true;input.disabled=true;input.value="";return;}
+    wrap.hidden=false;input.disabled=false;
+    const q=new URLSearchParams(location.search),requested=String(q.get("parrain")||q.get("ref")||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,24);
+    if(requested.length>=8)input.value=requested;
+    if(help&&Number(data.reward_minor)>0){
+      try{help.textContent="Code vérifié côté serveur. Le parrain reçoit "+new Intl.NumberFormat("fr-FR",{style:"currency",currency:data.currency||"EUR"}).format(Number(data.reward_minor)/100)+" uniquement après activation réelle et abonnement payé du filleul.";}catch(_e){}
+    }
+  }catch(_e){wrap.hidden=true;input.disabled=true;input.value="";}
+}
+hydrateDraft();applyRequestedProfile();applyRequestedIntent();applyReferralProgram();
 typeInputs.forEach(x=>x.addEventListener("change",syncType));
 document.querySelectorAll("[data-order-type]").forEach(link=>link.addEventListener("click",()=>{
   const radio=form.querySelector('input[name="order_account_type"][value="'+link.dataset.orderType+'"]');
