@@ -699,6 +699,25 @@ export function createBackend(options={}){
           return Number(event?.payload?.tenant_id||0)===tenantId;
         });
       }
+      if(method==="GET"&&pathname==="/api/v1/customer/referrals"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"overview.read");
+        const referral=await store.customerReferralOverview(context.tenant_id);
+        const base=String(config.publicBaseUrl||"https://audiotel-premium-pro.com").replace(/\/$/,"");
+        const canCreate=["owner","admin"].includes(String(context.customer_role||""));
+        return done(res,metrics,started,"customer.referrals",200,{...referral,can_create:canCreate,share_url:referral.enabled&&referral.code?base+"/demande-ouverture/?parrain="+encodeURIComponent(referral.code):null});
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/referrals/code"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"overview.read");
+        if(!["owner","admin"].includes(String(context.customer_role||""))){const e=new Error("Referral owner required");e.status=403;e.code="CUSTOMER_OWNER_REQUIRED";throw e;}
+        const code=await store.ensureCustomerReferralCode(context.tenant_id);
+        const base=String(config.publicBaseUrl||"https://audiotel-premium-pro.com").replace(/\/$/,"");
+        return done(res,metrics,started,"customer.referral_code",200,{...code,share_url:base+"/demande-ouverture/?parrain="+encodeURIComponent(code.code)});
+      }
+
       if(method==="GET"&&pathname==="/api/v1/customer/jackpot"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
@@ -1418,6 +1437,17 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/carrier-switches/options"){
         requireRole(actor,["admin","readonly"]);
         return done(res,metrics,started,"carrier.switch_options",200,await store.carrierAdminOverview());
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/platform/referrals/settings"){
+        requireRole(actor,["admin"]);
+        return done(res,metrics,started,"platform.referral_settings",200,await store.referralProgramSettings());
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/platform/referrals/settings"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        return done(res,metrics,started,"platform.referral_settings_update",200,await store.updateReferralProgramSettings(body,actor));
       }
 
       if(method==="GET"&&pathname==="/api/v1/platform/overview"){
