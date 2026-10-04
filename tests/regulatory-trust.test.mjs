@@ -76,6 +76,7 @@ test("current external subscription reference price is 3 EUR without rewriting t
   assert.ok(priceMigration.includes("2026-09-20T19:33:00Z"));
   assert.ok(priceMigration.includes("pgi_publish_service_plan_price"));
   assert.ok(memory.includes("amount_minor:300"));
+  assert.ok(memory.includes("amount_minor:490"));
 });
 
 test("production verification protects regulatory trust center",()=>{
