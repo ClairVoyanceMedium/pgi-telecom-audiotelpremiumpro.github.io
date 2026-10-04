@@ -14,7 +14,7 @@ import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData,scopeCustomerAnnualProgressData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
-import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,createStripePortabilityPriorityCheckout,createStripeCustomerBalanceCredit,verifyStripeWebhook,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
+import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,createStripePortabilityPriorityCheckout,retrieveStripePortabilityPriorityCheckout,createStripeCustomerBalanceCredit,verifyStripeWebhook,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
 import {STRIPE_CONNECT_APPLICATION_FEE_BPS,stripeConnectState,createStripeConnectedAccount,retrieveStripeConnectedAccount,normalizeStripeConnectedAccount,createStripeConnectOnboardingLink,createStripeCardCheckout,retrieveStripeCardCheckout,normalizeStripeConnectPaymentEvent,hashStripeEventPayload} from "./src/stripe-connect.mjs";
 import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStripe,buildGa4RefundFromStripe,sendGa4Measurement} from "./src/ga4-measurement.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
@@ -998,6 +998,15 @@ export function createBackend(options={}){
         if(!key||key.length>200){const e=new Error("Checkout idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
         const prepared=await store.prepareCustomerPortabilityPriority(context.tenant_id,match.id);
         if(prepared.already_paid)return done(res,metrics,started,"customer.portability.priority_checkout",200,{already_paid:true,status:"paid"});
+        if(prepared.priority_checkout_reference){
+          try{
+            const existing=await retrieveStripePortabilityPriorityCheckout(config,prepared.priority_checkout_reference);
+            if(existing.paid)return done(res,metrics,started,"customer.portability.priority_checkout",202,{payment_confirmation_pending:true,session_id:existing.session_id});
+            if(existing.open)return done(res,metrics,started,"customer.portability.priority_checkout",200,{...existing,reused:true,provider:"stripe",amount_minor:Number(prepared.priority_fee_minor),currency:String(prepared.priority_currency)});
+          }catch(error){
+            if(!["STRIPE_INVALID_REQUEST_ERROR","INVALID_PORTABILITY_PRIORITY_CHECKOUT","PORTABILITY_PRIORITY_CHECKOUT_MISMATCH"].includes(String(error?.code||"")))throw error;
+          }
+        }
         const billing=await store.customerBillingPreparation(context.tenant_id);
         const individual=String(billing.tenant?.customer_type||"business")==="individual";
         const withdrawalReady=!individual||(config.onlineWithdrawalReady===true&&typeof store.customerWithdrawalFeatureReady==="function"&&await store.customerWithdrawalFeatureReady());
