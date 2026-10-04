@@ -50,10 +50,6 @@ CREATE INDEX IF NOT EXISTS tenant_referrals_referrer_idx
 CREATE INDEX IF NOT EXISTS tenant_referrals_status_idx
   ON tenant_referrals(status,created_at DESC);
 
-CREATE OR REPLACE TRIGGER tenant_referrals_touch_updated
-BEFORE UPDATE ON tenant_referrals
-FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
-
 COMMENT ON COLUMN tenant_portability_requests.priority_service_status IS
 'Optional 9.90 EUR TTC PGI internal dossier priority. Standard portability remains free. Paid priority never guarantees an operator porting date.';
 COMMENT ON TABLE tenant_referrals IS
