@@ -53,7 +53,7 @@ export class MemoryStore{
     this.nextCallId=1;
     this.nextBaselineId=1;
     this.nextSwitchId=1;
-    this.subscriptionPrices=[{id:1,plan_key:"external-sva-access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,effective_from:"2026-09-20T19:33:00Z",effective_to:null}];
+    this.subscriptionPrices=[{id:1,plan_key:"external-sva-access",currency:"EUR",amount_minor:300,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,effective_from:"2026-09-20T19:33:00Z",effective_to:"2026-10-04T11:29:00Z"},{id:2,plan_key:"external-sva-access",currency:"EUR",amount_minor:490,tax_behavior:"inclusive",billing_interval:"month",interval_count:1,effective_from:"2026-10-04T11:29:00Z",effective_to:null}];
     this.subscriptionEvents=new Set();
     this.adminAlerts=[];
     this.customerExperiencePreferencesMap=new Map();
@@ -1372,7 +1372,7 @@ export class MemoryStore{
         upstream_payout_ht:0,platform_fee_ht:0,net_payout_ht:0,
         payment_compliance_active:false,
         external_subscriptions_active:0,subscription_access_enabled:0,subscription_access_blocked:0,
-        subscription_unpaid_alerts:0,subscription_price_minor:300,subscription_price_currency:"EUR",internal_billing_exempt:true
+        subscription_unpaid_alerts:0,subscription_price_minor:490,subscription_price_currency:"EUR",internal_billing_exempt:true
       },
       tenants:[],
       numbers:[],
