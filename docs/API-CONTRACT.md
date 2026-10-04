@@ -526,3 +526,24 @@ Les transferts Resend vers la boîte interne utilisent l’expéditeur d’origi
 Les demandes de support ne créent jamais automatiquement un deal commercial. Un dossier APP existant peut être affiché comme contexte, mais le support reste porté par un ticket.
 
 Les objectifs de première réponse et de résolution des tickets internes sont calculés en minutes ouvrées Europe/Paris, du lundi au vendredi de 08:30 à 19:00. Les niveaux exposés au client sont formulés en termes d’impact plutôt qu’en priorité technique brute.
+
+
+### GET /platform/referral-program
+
+Lecture privée \`admin / finance / readonly\`. Retourne l’état global du programme de parrainage, la récompense courante et des agrégats non personnels.
+
+### PUT /platform/referral-program
+
+Écriture privée \`admin\` avec protection CSRF. Active ou désactive le programme et publie la récompense applicable aux nouvelles attributions. L’activation échoue si la récompense n’est pas strictement positive. La désactivation bloque les nouveaux codes et nouvelles attributions sans supprimer l’historique.
+
+### GET /customer/referrals
+
+Lecture de l’état de parrainage du tenant courant. Aucun nom, e-mail ou autre donnée personnelle du filleul n’est exposé au parrain.
+
+### POST /customer/referrals/code
+
+Crée ou réactive le code du client éligible. Requiert un abonnement actif et payé, la permission de facturation, CSRF et une clé d’idempotence.
+
+### POST /customer/referrals/claim
+
+Enregistre un code reçu avant la première activation payée du filleul. Requiert la permission de facturation, CSRF et une clé d’idempotence. L’auto-parrainage, le parrainage rétroactif et l’utilisation d’un parrain non éligible sont refusés. La récompense est figée lors de l’attribution et n’est acquise qu’après confirmation serveur d’un abonnement actif et payé.
