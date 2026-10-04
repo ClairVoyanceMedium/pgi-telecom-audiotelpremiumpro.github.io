@@ -5,7 +5,7 @@ info:
   description: API privée du cockpit Audiotel. Les réponses réelles nécessitent authentification.
 servers:
   - url: https://api.example.invalid/api/v1
-    description: Placeholder — remplacé au déploiement
+    description: Placeholder : remplacé au déploiement
 paths:
   /health:
     get:

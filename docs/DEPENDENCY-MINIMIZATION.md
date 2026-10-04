@@ -1,4 +1,4 @@
-# Dépendances minimales — architecture PGI souveraine
+# Dépendances minimales : architecture PGI souveraine
 
 ## Objectif
 

@@ -1,5 +1,5 @@
 # PGI Telecom • Audiotel Premium Pro
-# Modèle de variables — ne contient aucun secret réel.
+# Modèle de variables : ne contient aucun secret réel.
 
 PGI_ENV=production
 PGI_TIMEZONE=UTC

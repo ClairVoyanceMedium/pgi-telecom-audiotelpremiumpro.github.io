@@ -1,4 +1,4 @@
-# Architecture hyperscale — PGI • Telecom
+# Architecture hyperscale : PGI • Telecom
 
 ## Objectif
 

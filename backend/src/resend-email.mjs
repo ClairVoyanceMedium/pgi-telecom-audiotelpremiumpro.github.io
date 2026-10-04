@@ -197,7 +197,7 @@ export async function sendSupportTicketNotification(config,options={}){
   const subject=supportTicketSubject(ticketId,title);
   const eventId=String(options.eventId||("support-notify/"+ticketId+"/"+Date.now())).trim().slice(0,180);
   const text=[
-    eventType+" — Audiotel Premium Pro","",
+    eventType+" : Audiotel Premium Pro","",
     "Ticket : "+ticketId,"Client : "+customer,
     options.dossierRef?"Dossier commercial existant : "+cleanText(options.dossierRef,40):"",
     options.category?"Catégorie : "+cleanText(options.category,80):"",
@@ -441,7 +441,7 @@ export function buildTransactionalMessage(config,templateKey,data={}){
       foot:"Conservez cet accusé de réception. Le traitement administratif de votre demande et, le cas échéant, les conséquences financières sont déterminés selon les règles légales et contractuelles applicables."
     },
     withdrawal_internal:{
-      subject:"Rétractation B2C reçue — traitement requis",
+      subject:"Rétractation B2C reçue : traitement requis",
       title:"Nouvelle déclaration de rétractation",
       lead:"Une déclaration de rétractation en ligne vient d’être enregistrée.",
       paragraphs:[

@@ -1,4 +1,4 @@
-# Plan de mesure Analytics — PGI Telecom
+# Plan de mesure Analytics : PGI Telecom
 
 Dernière mise à jour : 29 septembre 2026.
 
@@ -30,7 +30,7 @@ Le contrôleur unique `site/hubspot-tracking.js` pilote Google Analytics et HubS
 - `/client.html` accepte uniquement les événements métier consentis ; le tag GTM correspondant a `send_page_view=false`.
 - La balise GA4 directe est la voie primaire de collecte après consentement. GTM reste chargé pour les autres balises et ne doit pas contenir une seconde balise GA4 de page vue pour ce même flux, afin d’éviter les doublons.
 
-## État de production GTM — anti-doublon
+## État de production GTM : anti-doublon
 
 Le conteneur Web `GTM-5L6NW5JZ` est conservé mais le site le maintient actuellement en **mode veille** (`GTM_MODE=standby`). Cette décision est volontaire : une version historique du conteneur avait été publiée avec une balise GA4 sur les pages publiques et une balise dédiée à `/client.html`, alors que la collecte navigateur est désormais assurée directement par `gtag.js` avec `G-SZY50J75N7`. Charger simultanément ces deux chemins sans nettoyage du conteneur créerait un risque de double `page_view` et de double comptage d’événements.
 
@@ -217,7 +217,7 @@ Les livraisons sont journalisées par clé stable pour empêcher un webhook Stri
 Le secret Measurement Protocol reste exclusivement dans l'environnement serveur. Il ne doit jamais être injecté dans un fichier JavaScript public, une page HTML, Stripe Metadata ou HubSpot. Chaque envoi serveur force également `ad_user_data=DENIED` et `ad_personalization=DENIED` dans le bloc de consentement Measurement Protocol, afin qu’aucun usage publicitaire ne soit implicitement activé par ces conversions serveur.
 
 
-## Couverture comportementale étendue — 29 septembre 2026
+## Couverture comportementale étendue : 29 septembre 2026
 
 Le contrôleur GA4 mesure désormais, après consentement uniquement, les interactions suivantes sans envoyer de texte libre ni de données personnelles :
 

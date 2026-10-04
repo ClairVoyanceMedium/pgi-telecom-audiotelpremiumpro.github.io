@@ -381,7 +381,7 @@ Les buckets d'attention visibles dans le cockpit sont `blocking`, `today` et `so
 
 Acquitte une alerte réglementaire ouverte. L'opération exige le rôle administrateur, CSRF et idempotence. Elle ne modifie aucune preuve réglementaire, aucun statut de contrôle et aucun routage.
 
-### POST /platform/tenant-number-assignments/:id/regulatory-evidence — next_review_at
+### POST /platform/tenant-number-assignments/:id/regulatory-evidence : next_review_at
 
 Le payload de preuve accepte désormais un `next_review_at` futur. Lorsqu'il est fourni, la prochaine revue du profil concerné est mise à jour dans la même transaction que l'ajout de preuve, puis les anciennes alertes de ce framework sont résolues avant le prochain recalcul.
 

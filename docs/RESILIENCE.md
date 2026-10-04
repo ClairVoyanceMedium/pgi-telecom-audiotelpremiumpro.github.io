@@ -1,4 +1,4 @@
-# Résilience et continuité de service — PGI • Telecom
+# Résilience et continuité de service : PGI • Telecom
 
 ## Principes
 

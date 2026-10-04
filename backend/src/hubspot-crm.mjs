@@ -237,7 +237,7 @@ async function createCardPaymentCrmNote(contact,tenantPublicId,props,{token,fetc
   const dealId=await preferredContactDealId(contact.id,{token,fetchImpl});
   const dealType=dealId?await noteDealAssociationType({token,fetchImpl}):null;
   const body=[
-    "<strong>Paiement CB — synchronisation Stripe Connect</strong>",
+    "<strong>Paiement CB : synchronisation Stripe Connect</strong>",
     "<br><strong>Événement :</strong> "+escapeHubSpotHtml(clean(eventType,120)),
     "<br><strong>Tenant :</strong> "+escapeHubSpotHtml(clean(tenantPublicId,80)),
     "<br><strong>Statut :</strong> "+escapeHubSpotHtml(props.pgi_stripe_connect_status),
@@ -246,7 +246,7 @@ async function createCardPaymentCrmNote(contact,tenantPublicId,props,{token,fetc
     "<br><strong>Paiements payés :</strong> "+escapeHubSpotHtml(props.pgi_paiements_cb_payes),
     "<br><strong>Volume CB :</strong> "+escapeHubSpotHtml(props.pgi_volume_cb_eur)+" €",
     "<br><strong>Commission cumulée :</strong> "+escapeHubSpotHtml(props.pgi_commission_cb_cumulee_eur)+" €",
-    "<br><strong>Propriétés CRM dédiées :</strong> "+(schemaReady?"synchronisées":"indisponibles — note de secours enregistrée")
+    "<br><strong>Propriétés CRM dédiées :</strong> "+(schemaReady?"synchronisées":"indisponibles : note de secours enregistrée")
   ].join("");
   const associations=[{to:{id:String(contact.id)},types:[{associationCategory:"HUBSPOT_DEFINED",associationTypeId:contactType}]}];
   if(dealId&&dealType)associations.push({to:{id:String(dealId)},types:[{associationCategory:"HUBSPOT_DEFINED",associationTypeId:dealType}]});
@@ -313,7 +313,7 @@ export async function syncHubSpotSupportMessage(input={},options={}){
   if(message.length<2)throw problem("HUBSPOT_CONTACT_MESSAGE_INVALID");
   const {contact,created:contactCreated}=await ensureSupportContact(contactEmail,{token,fetchImpl});
   const pagePath=clean(input.pagePath||input.page_path||"/",500)||"/",pageTitle=clean(input.pageTitle||input.page_title||"",180),pageContext=supportPageContext(pagePath);
-  const ticketSubject=clean("Contact site — "+pageContext,180);
+  const ticketSubject=clean("Contact site : "+pageContext,180);
   const ticketContent=["Message reçu depuis la bulle de contact du site Audiotel Premium Pro.","","Page : "+(pageTitle||pageContext),"Catégorie : "+pageContext,"Chemin : "+pagePath,"","Message :",message].join("\n");
   const support=await ensureSupportTicket(contact,{subject:ticketSubject,content:ticketContent,sourceType:"FORM",category:"GENERAL_INQUIRY",priority:"MEDIUM"},{token,fetchImpl});
   const marketing=await applyHubSpotMarketingConsent(contact,input,{token,fetchImpl,source:clean(input.source,80)||"floating_email_widget"});
@@ -413,7 +413,7 @@ async function noteTicketAssociationType({token,fetchImpl}){
 function supportSubjectFromInbound(value){
   const cleanSubject=clean(String(value||"").replace(/^\s*((re|fw|fwd)\s*:\s*)+/i,""),170)||"Sans objet";
   if(/^\[Ticket [0-9a-f-]{36}\]/i.test(cleanSubject))return cleanSubject;
-  return clean("Email — "+cleanSubject,180);
+  return clean("Email : "+cleanSubject,180);
 }
 function hubSpotTicketPriority(severity){return ({critical:"URGENT",high:"HIGH",normal:"MEDIUM",low:"LOW"})[String(severity||"normal")]||"MEDIUM";}
 
@@ -471,7 +471,7 @@ async function ensureCommercialDeal(contact,input,{token,fetchImpl,status}){
   const label=INTENT_LABELS[intentKey]||INTENT_LABELS.advice;
   const name=clean(input.company_name,120)||[clean(input.first_name,60),clean(input.last_name,60)].filter(Boolean).join(" ")||"Prospect Audiotel";
   const dossierRef=/^APP-\d{4}-[0-9A-Z]{5,18}$/i.test(clean(input.dossier_ref,40))?clean(input.dossier_ref,40).toUpperCase():"";
-  const dealName=clean([name,dossierRef,label.label].filter(Boolean).join(" — "),200);
+  const dealName=clean([name,dossierRef,label.label].filter(Boolean).join(" : "),200);
   const detail=await hubSpotPrivateRequest("/crm/v3/objects/contacts/"+encodeURIComponent(contact.id)+"?associations=deals&properties=email",{
     token,fetchImpl,method:"GET"
   });

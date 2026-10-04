@@ -33,7 +33,7 @@ const response=await fetch("https://api.indexnow.org/indexnow",{
 
 const body=await response.text();
 if(![200,202].includes(response.status)){
-  throw new Error("IndexNow rejected submission: HTTP "+response.status+(body?" — "+body.slice(0,500):""));
+  throw new Error("IndexNow rejected submission: HTTP "+response.status+(body?" : "+body.slice(0,500):""));
 }
 
 console.log("IndexNow notified:",payload.urlList.length,"canonical URLs; status",response.status);

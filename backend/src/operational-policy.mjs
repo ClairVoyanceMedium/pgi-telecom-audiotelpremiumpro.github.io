@@ -12,7 +12,7 @@ function requireTrue(facts,key,code,label,blockers,actions,unknownIsBlocker=fals
   const value=flag(facts[key]);
   if(value===true)return;
   if(value===false)return add(blockers,code,label);
-  add(unknownIsBlocker?blockers:actions,code+"_UNKNOWN",label+" — état à confirmer",unknownIsBlocker?"blocker":"action");
+  add(unknownIsBlocker?blockers:actions,code+"_UNKNOWN",label+" : état à confirmer",unknownIsBlocker?"blocker":"action");
 }
 function actionTrue(facts,key,code,label,actions){
   if(flag(facts[key])!==true)add(actions,code,label,"action");

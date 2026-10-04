@@ -1,4 +1,4 @@
-# Regulatory Trust Center — France SVA
+# Regulatory Trust Center : France SVA
 
 ## Objectif
 
