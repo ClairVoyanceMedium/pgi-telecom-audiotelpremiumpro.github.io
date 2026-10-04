@@ -402,3 +402,8 @@ body{padding-bottom:112px}
 /* home-hero-spacing-v176 */
 .home-page .site-header+main>.hero:first-child{padding-top:18px}
 @media(max-width:680px){.home-page .site-header+main>.hero:first-child{padding-top:14px}}
+
+/* homepage-header-logo-v176 */
+.home-page .brand-full img{width:365px;max-height:88px}
+@media(max-width:980px){.home-page .brand-full img{width:295px;max-height:80px}}
+@media(max-width:680px){.home-page .brand-full img{width:250px;max-height:72px}}

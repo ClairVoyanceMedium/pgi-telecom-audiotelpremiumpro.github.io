@@ -335,10 +335,11 @@ test("homepage bottom quick navigation prioritizes the highest-value commercial 
   assert.match(html,/Estimer mes revenus potentiels/);
   assert.match(html,/Encaisser par carte bancaire/);
   assert.match(html,/Créer et envoyer un lien de paiement sécurisé/);
-  assert.match(html,/Voir le tarif/);
+  assert.match(html,/Parrainer un nouveau client/);
+  assert.match(html,/Partager mon lien et suivre mes récompenses/);
   assert.match(html,/href="\/portabilite-numero-sva\//);
   assert.match(html,/href="\/comparateur-audiotel\//);
-  assert.match(html,/href="#tarif"/);
+  assert.match(html,/href="\/parrainage-audiotel\//);
   assert.match(css,/revenue-quick-nav-v172/);
   assert.match(css,/global-public-fixed-nav-v175/);
   assert.match(css,/background:rgba\(42,45,49,\.985\)!important/);
@@ -485,6 +486,10 @@ test("public branding and client access wording are explicit",()=>{
   assert.match(css,/brand-full img\{width:340px;max-height:82px\}/);
   assert.match(css,/@media\(max-width:980px\)[\s\S]*brand-full img\{width:275px;max-height:76px\}/);
   assert.match(css,/@media\(max-width:680px\)[\s\S]*brand-full img\{width:240px;max-height:70px\}/);
+  assert.match(css,/homepage-header-logo-v176/);
+  assert.match(css,/\.home-page \.brand-full img\{width:365px;max-height:88px\}/);
+  assert.match(css,/@media\(max-width:980px\)\{\.home-page \.brand-full img\{width:295px;max-height:80px\}\}/);
+  assert.match(css,/@media\(max-width:680px\)\{\.home-page \.brand-full img\{width:250px;max-height:72px\}\}/);
 });
 
 test("hero copy is condensed and the primary potential gain is highlighted in green",()=>{
@@ -585,8 +590,11 @@ test("new complementary products are public, indexable and operationally explici
   assert.match(buildStatic,/"parrainage-audiotel"/);
   assert.match(sitemap,/portabilite-prioritaire/);
   assert.match(sitemap,/parrainage-audiotel/);
+  assert.match(html,/data-current-month/);
   assert.match(html,/data-current-year/);
-  assert.match(js,/new Date\(\)\.getFullYear\(\)/);
+  assert.match(html,/\.\.\. Des reversements plus généreux/);
+  assert.match(js,/Intl\.DateTimeFormat\("fr-FR"/);
+  assert.match(js,/timeZone:"Europe\/Paris"/);
 });
 
 test("payment CB conversion landing is built, indexable and commercially explicit",()=>{
