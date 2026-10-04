@@ -405,7 +405,7 @@ test("fixed monthly subscription is never presented as a starting price",()=>{
 
 test("mobile offer states the fixed subscription and frames competitive value as an objective",()=>{
   assert.match(html,/4,90€ TTC \/ mois/);
-  assert.match(html,/Comparez ce que vos appels peuvent réellement vous rapporter\./);
+  assert.match(html,/Comparez vos revenus potentiels\./);
   assert.doesNotMatch(html,/À partir de <strong>4,90€/);
 });
 
@@ -568,11 +568,10 @@ test("homepage removes duplicated dynamic cards and keeps one simulator badge pl
 });
 
 test("homepage explains the 4.9 percent CB fee without mixing it with Stripe fees or subscription",()=>{
-  assert.match(html,/COMMISSION DE SERVICE AUDIOTEL PREMIUM PRO · PAIEMENTS CB/);
+  assert.match(html,/COMMISSION AUDIOTEL PREMIUM PRO · PAIEMENTS CB/);
   assert.match(html,/4,9 %/);
-  assert.match(html,/Ce 4,9 % correspond à la commission de service/);
-  assert.match(html,/ni aux frais de traitement du prestataire de paiement/);
-  assert.match(html,/ni à l’abonnement Audiotel Premium Pro à 4,90€ TTC \/ mois/);
+  assert.match(html,/Cette commission n’inclut ni les frais du prestataire de paiement/);
+  assert.match(html,/ni l’abonnement Audiotel Premium Pro à 4,90€ TTC \/ mois/);
 });
 
 test("new complementary products are public, indexable and operationally explicit",()=>{
@@ -693,7 +692,8 @@ test("homepage restores an explicit compact comparison table without inventing r
 });
 
 test("CB cards explain the service before asking for a click",()=>{
-  assert.match(html,/paiement CB sécurisé, suivi dans l’espace client/);
+  assert.match(html,/lien de paiement CB sécurisé/);
+  assert.match(html,/suivi dans votre espace client/);
   assert.match(html,/prestataire de paiement/);
   assert.match(html,/4,9 %/);
   assert.match(solutions,/Envoyez à votre client un lien de paiement sécurisé/);
