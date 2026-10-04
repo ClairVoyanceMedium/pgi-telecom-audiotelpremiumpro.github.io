@@ -2087,7 +2087,8 @@ export class PostgresStore{
     const take=clampInt(limit,100,1,500);
     return this.sql.unsafe(
       "INSERT INTO work_queue(queue_name,tenant_id,dedupe_key,priority,payload,available_at,max_attempts)"+
-      " SELECT 'portability',p.tenant_id,'portability:'||p.id||CASE WHEN p.status='cancelled' THEN ':cancel' ELSE ':auto' END,20,"+
+      " SELECT 'portability',p.tenant_id,'portability:'||p.id||CASE WHEN p.status='cancelled' THEN ':cancel' ELSE ':auto' END,"+
+      " CASE WHEN p.status='cancelled' THEN 10 WHEN p.processing_class='priority' THEN 15 ELSE 20 END,"+
       " jsonb_build_object('request_id',p.id,'action',CASE WHEN p.status='cancelled' THEN 'cancel' ELSE 'auto' END),now(),20"+
       " FROM tenant_portability_requests p"+
       " WHERE ("+
@@ -2095,7 +2096,7 @@ export class PostgresStore{
       "   OR (p.status='cancelled' AND p.operator_portability_reference IS NOT NULL AND p.automation_state IN ('cancelling','action_required','failed'))"+
       " )"+
       " AND p.automation_next_at<=now()"+
-      " ORDER BY p.automation_next_at ASC,p.id ASC LIMIT $1"+
+      " ORDER BY CASE WHEN p.status='cancelled' THEN 0 WHEN p.processing_class='priority' THEN 1 ELSE 2 END,p.automation_next_at ASC,p.id ASC LIMIT $1"+
       " ON CONFLICT(queue_name,dedupe_key) WHERE dedupe_key IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL"+
       " DO UPDATE SET available_at=LEAST(work_queue.available_at,EXCLUDED.available_at)"+
       " RETURNING id,tenant_id,dedupe_key,available_at",
@@ -4544,8 +4545,8 @@ export class PostgresStore{
       " account_holder_name,desired_port_date,status,ownership_status,operator_portability_reference,scheduled_at,completed_at,rejection_reason,"+
       " tariff_code,service_rate_ttc_per_min::float8,currency,tariff_verification_status,tariff_verified_at,"+
       " rio_last4,rio_validation_status,rio_validated_at,source_contract_transfer_mode,source_contract_liability_acknowledged,"+
-      " automation_state,automation_last_error,automation_last_sync_at,operator_status,created_at,updated_at"+
-      " FROM tenant_scoped_portability_requests_v4 ORDER BY created_at DESC,id DESC LIMIT 50"
+      " automation_state,automation_last_error,automation_last_sync_at,operator_status,processing_class,priority_paid_at,created_at,updated_at"+
+      " FROM tenant_scoped_portability_requests_v5 ORDER BY created_at DESC,id DESC LIMIT 50"
     ));
   }
 
