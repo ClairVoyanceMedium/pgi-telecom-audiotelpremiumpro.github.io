@@ -178,6 +178,67 @@ export async function createStripeCheckout(config,billing,idempotencyKey,analyti
   if(!session?.url||!/^https:\/\/checkout\.stripe\.com\//i.test(session.url))throw failure(502,"STRIPE_CHECKOUT_URL_INVALID");
   return {url:session.url,session_id:session.id,price_id:price.id,provider:"stripe"};
 }
+export async function createStripePortabilityPriorityCheckout(config,billing,request,idempotencyKey){
+  if(config?.stripeLiveMode){
+    const readiness=await stripeProviderReadiness(config);
+    if(!readiness.account_ready)throw failure(503,readiness.readiness_reason==="account_activation_required"?"PAYMENT_ACCOUNT_NOT_READY":"PAYMENT_PROVIDER_UNAVAILABLE");
+  }
+  const tenant=billing?.tenant||{},subscription=billing?.subscription||{};
+  const requestId=Number(request?.id),amount=Math.trunc(Number(request?.priority_fee_minor||990));
+  const currency=String(request?.priority_currency||"EUR").trim().toLowerCase();
+  if(!Number.isInteger(requestId)||requestId<=0)throw failure(400,"INVALID_PORTABILITY_REQUEST");
+  if(amount!==990||currency!=="eur")throw failure(409,"PORTABILITY_PRIORITY_PRICE_MISMATCH");
+  const metadata={
+    pgi_payment_kind:"portability_priority",
+    tenant_public_id:String(tenant.id||""),
+    portability_request_id:String(requestId),
+    amount_minor:String(amount),
+    currency:currency.toUpperCase()
+  };
+  const params={
+    mode:"payment",
+    success_url:baseUrl(config)+"/client.html?portability-priority=success&session_id={CHECKOUT_SESSION_ID}",
+    cancel_url:baseUrl(config)+"/client.html?portability-priority=cancelled",
+    client_reference_id:String(tenant.id||""),
+    line_items:[{price_data:{currency,unit_amount:amount,tax_behavior:"inclusive",product_data:{name:"Portabilité prioritaire Audiotel Premium Pro",description:"Traitement prioritaire du dossier par PGI Telecom. Le délai final de portage reste dépendant des opérateurs."}},quantity:1}],
+    metadata,
+    payment_intent_data:{metadata},
+    billing_address_collection:"required",
+    locale:"auto"
+  };
+  const customer=String(subscription.provider_customer_reference||"");
+  if(/^cus_[A-Za-z0-9]+$/.test(customer)){
+    params.customer=customer;
+    params.customer_update={address:"auto",name:"auto"};
+  }else if(tenant.billing_email){
+    params.customer_email=String(tenant.billing_email);
+  }
+  const session=await stripeApi(config,"/v1/checkout/sessions",{method:"POST",params,idempotencyKey});
+  if(!session?.url||!/^https:\/\/checkout\.stripe\.com\//i.test(session.url))throw failure(502,"STRIPE_CHECKOUT_URL_INVALID");
+  return {url:session.url,session_id:session.id,provider:"stripe",amount_minor:amount,currency:"EUR"};
+}
+
+export async function createStripeCustomerBalanceCredit(config,customerReference,amountMinor,currency="EUR",metadata={},idempotencyKey){
+  const customer=String(customerReference||"").trim();
+  const amount=Math.trunc(Number(amountMinor));
+  const c=String(currency||"EUR").trim().toLowerCase();
+  if(!/^cus_[A-Za-z0-9]+$/.test(customer))throw failure(409,"BILLING_CUSTOMER_NOT_AVAILABLE");
+  if(!Number.isInteger(amount)||amount<=0||amount>100000)throw failure(400,"INVALID_CUSTOMER_CREDIT_AMOUNT");
+  if(!/^[a-z]{3}$/.test(c))throw failure(400,"INVALID_CUSTOMER_CREDIT_CURRENCY");
+  const cleanMetadata={};
+  for(const [key,value] of Object.entries(metadata||{})){
+    const k=String(key||"").replace(/[^A-Za-z0-9_.-]/g,"_").slice(0,40);
+    if(k)cleanMetadata[k]=String(value??"").slice(0,500);
+  }
+  const transaction=await stripeApi(config,"/v1/customers/"+encodeURIComponent(customer)+"/balance_transactions",{
+    method:"POST",
+    params:{amount:-amount,currency:c,description:"Parrainage Audiotel Premium Pro : 1 mois offert",metadata:cleanMetadata},
+    idempotencyKey
+  });
+  if(!transaction?.id)throw failure(502,"STRIPE_CUSTOMER_CREDIT_INVALID");
+  return {provider:"stripe",reference:String(transaction.id),amount_minor:amount,currency:c.toUpperCase(),ending_balance:Number(transaction.ending_balance||0)};
+}
+
 export async function createStripePortalSession(config,billing){
   const customer=String(billing?.subscription?.provider_customer_reference||"");
   if(!/^cus_[A-Za-z0-9]+$/.test(customer))throw failure(409,"BILLING_CUSTOMER_NOT_AVAILABLE");
