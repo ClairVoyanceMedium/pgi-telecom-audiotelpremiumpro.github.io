@@ -63,6 +63,7 @@ export class MemoryStore{
     this.referralCodes=new Map();
     this.referralClaims=[];
     this.referralRewards=[];
+    this.dailyReports=new Map();
     this.staffUsers=[{id:1,public_id:randomUUID(),login_name:"local-admin",email:"local-admin@staff.pgi.invalid",display_name:"Local Simulator",role:"admin",enabled:true,password_hash:null,session_version:1,last_login_at:null,created_at:new Date().toISOString()}];
     this.nextStaffUserId=2;
   }
@@ -1430,6 +1431,25 @@ export class MemoryStore{
   async registerWebauthnCredential(ownerType,ownerId,input={}){this._passkeys=this._passkeys||[];if(this._passkeys.some(x=>x.credential_id===input.credential_id))throw problem(409,"WEBAUTHN_CREDENTIAL_EXISTS");const row={id:this._passkeys.length+1,public_id:randomUUID(),owner_type:ownerType,owner_id:String(ownerId),credential_id:input.credential_id,public_key_spki:input.public_key_spki,sign_count:Number(input.sign_count||0),transports:input.transports||[],label:input.label||"Passkey",enabled:true,created_at:new Date().toISOString(),last_verified_at:null};this._passkeys.push(row);const{public_key_spki,...safe}=row;return structuredClone(safe);}
   async webauthnCredential(ownerType,ownerId,credentialId){this._passkeys=this._passkeys||[];return structuredClone(this._passkeys.find(x=>x.owner_type===ownerType&&String(x.owner_id)===String(ownerId)&&x.credential_id===credentialId&&x.enabled)||null);}
   async markWebauthnVerified(id,signCount){this._passkeys=this._passkeys||[];const x=this._passkeys.find(v=>v.id===Number(id));if(!x)throw problem(404,"WEBAUTHN_CREDENTIAL_NOT_FOUND");if(Number(signCount)>0)x.sign_count=Number(signCount);x.last_verified_at=new Date().toISOString();return{id:x.id,public_id:x.public_id,last_verified_at:x.last_verified_at,sign_count:x.sign_count};}
+
+  async claimDailyInternalReport(reportDate){
+    const date=String(reportDate||"");if(!/^\d{4}-\d{2}-\d{2}$/.test(date))throw problem(400,"INVALID_DAILY_REPORT_DATE");
+    const current=this.dailyReports.get(date);
+    if(current?.state==="sent")return {claimed:false,reason:"already_sent",report:structuredClone(current)};
+    if(current?.state==="sending"&&Date.now()-Date.parse(current.last_attempt_at)<15*60000)return {claimed:false,reason:"already_sending",report:structuredClone(current)};
+    const row={report_date:date,state:"sending",attempt_count:Number(current?.attempt_count||0)+1,last_attempt_at:new Date().toISOString(),sent_at:current?.sent_at||null,provider_email_id:current?.provider_email_id||null,last_error_code:null,snapshot:current?.snapshot||{}};
+    this.dailyReports.set(date,row);return {claimed:true,reason:"claimed",report:structuredClone(row)};
+  }
+  async dailyInternalReportState(reportDate){const row=this.dailyReports.get(String(reportDate||""));return row?structuredClone(row):null;}
+  async dailyInternalReportSnapshot(){return {customers_total:0,customers_new:0,incidents_new:0,incidents_open:0,incidents_critical_open:0,portability_new:0,portability_open:0,portability_priority_paid:0,portability_priority_revenue_minor_eur:0,card_payments_paid:0,card_volume_minor_eur:0,card_pgi_fee_minor_eur:0,referrals_claimed:0,referral_rewards_earned:0,emails_attention:0,emails_pending:0,outbox_pending:this.outbox.filter(x=>!x.published_at).length,operational_critical_open:0};}
+  async completeDailyInternalReport(reportDate,{messageId=null,snapshot={}}={}){
+    const date=String(reportDate||""),row=this.dailyReports.get(date);if(!row||row.state!=="sending")throw problem(409,"DAILY_REPORT_NOT_CLAIMED");
+    Object.assign(row,{state:"sent",sent_at:new Date().toISOString(),provider_email_id:messageId||null,snapshot,last_error_code:null});return structuredClone(row);
+  }
+  async failDailyInternalReport(reportDate,errorCode,snapshot={}){
+    const row=this.dailyReports.get(String(reportDate||""));if(!row||row.state!=="sending")return null;
+    Object.assign(row,{state:"failed",snapshot,last_error_code:String(errorCode||"DAILY_REPORT_SEND_FAILED")});return structuredClone(row);
+  }
 
   async serviceOperationsHealth(){return {service_incidents_open:0,service_incidents_critical:0,service_first_response_overdue:0,service_resolution_overdue:0,routing_unavailable:0,portability_attention:0};}
 
