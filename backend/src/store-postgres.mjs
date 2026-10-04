@@ -2952,6 +2952,10 @@ export class PostgresStore{
       if(status==="active"){
         const access=await tx.unsafe("SELECT pgi_tenant_has_premium_call_access($1,NULL,now()) AS allowed",[tenant.id]);
         if(!access[0]?.allowed)throw problem(409,"PAID_SUBSCRIPTION_REQUIRED_FOR_ACTIVATION");
+        await tx.unsafe(
+          "UPDATE referral_attributions SET status='converted',updated_at=now() WHERE referred_tenant_id=$1 AND status='lead'",
+          [tenant.id]
+        );
       }
       let suspendedAssignments=0;
       if(status==="suspended"){
