@@ -178,6 +178,43 @@ export async function createStripeCheckout(config,billing,idempotencyKey,analyti
   if(!session?.url||!/^https:\/\/checkout\.stripe\.com\//i.test(session.url))throw failure(502,"STRIPE_CHECKOUT_URL_INVALID");
   return {url:session.url,session_id:session.id,price_id:price.id,provider:"stripe"};
 }
+export async function createStripePortabilityPriorityCheckout(config,preparation,idempotencyKey){
+  if(config?.stripeLiveMode){
+    const readiness=await stripeProviderReadiness(config);
+    if(!readiness.account_ready)throw failure(503,readiness.readiness_reason==="account_activation_required"?"PAYMENT_ACCOUNT_NOT_READY":"PAYMENT_PROVIDER_UNAVAILABLE");
+  }
+  const tenant=preparation?.tenant||{},request=preparation?.request||{};
+  const amount=Number(preparation?.amount_minor),currency=String(preparation?.currency||"EUR").toLowerCase();
+  if(!Number.isInteger(amount)||amount!==990||currency!=="eur")throw failure(409,"PORTABILITY_PRIORITY_PRICE_INVALID");
+  if(!request.id||!tenant.id)throw failure(409,"PORTABILITY_PRIORITY_CONTEXT_INVALID");
+  const metadata={
+    purpose:"portability_priority",
+    tenant_public_id:String(tenant.id),
+    portability_request_id:String(request.id),
+    amount_minor:String(amount),
+    currency:"EUR",
+    legal_version:"2026-09-26-b2b-b2c-v4"
+  };
+  const params={
+    mode:"payment",
+    integration_identifier:"pgi_portability_priority_990",
+    success_url:baseUrl(config)+"/client.html?portability_priority=success&session_id={CHECKOUT_SESSION_ID}",
+    cancel_url:baseUrl(config)+"/client.html?portability_priority=cancelled",
+    client_reference_id:String(tenant.id),
+    line_items:[{price_data:{currency,unit_amount:amount,tax_behavior:"inclusive",product_data:{name:"Portabilité prioritaire Audiotel Premium Pro",description:"Traitement prioritaire du dossier par PGI Telecom. Les délais dépendant des opérateurs ou de tiers ne sont ni raccourcis ni garantis."}},quantity:1}],
+    metadata,
+    payment_intent_data:{metadata},
+    billing_address_collection:"required",
+    tax_id_collection:{enabled:true},
+    custom_text:{submit:{message:"9,90 € TTC en paiement unique. Cette option donne une priorité de traitement interne chez PGI Telecom, sans garantie sur les délais des opérateurs ou des tiers."}},
+    locale:"auto"
+  };
+  if(tenant.billing_email)params.customer_email=String(tenant.billing_email);
+  const session=await stripeApi(config,"/v1/checkout/sessions",{method:"POST",params,idempotencyKey});
+  if(!session?.url||!/^https:\/\/checkout\.stripe\.com\//i.test(session.url))throw failure(502,"STRIPE_CHECKOUT_URL_INVALID");
+  return {url:session.url,session_id:String(session.id||""),amount_minor:amount,currency:"EUR",provider:"stripe"};
+}
+
 export async function createStripePortalSession(config,billing){
   const customer=String(billing?.subscription?.provider_customer_reference||"");
   if(!/^cus_[A-Za-z0-9]+$/.test(customer))throw failure(409,"BILLING_CUSTOMER_NOT_AVAILABLE");
@@ -227,6 +264,31 @@ function normalizeStatus(status,eventType){
 }
 function eventIso(event){const n=Number(event?.created);return Number.isFinite(n)?new Date(n*1000).toISOString():new Date().toISOString();}
 function periodIso(value){const n=Number(value);return Number.isFinite(n)&&n>0?new Date(n*1000).toISOString():null;}
+export function normalizeStripePortabilityPriorityEvent(event){
+  const type=String(event?.type||"");
+  if(!["checkout.session.completed","checkout.session.async_payment_succeeded","checkout.session.expired"].includes(type))return null;
+  const obj=event?.data?.object,meta=obj?.metadata&&typeof obj.metadata==="object"?obj.metadata:{};
+  if(String(meta.purpose||"")!=="portability_priority")return null;
+  const tenant=String(meta.tenant_public_id||""),requestId=Number(meta.portability_request_id),amount=Number(obj?.amount_total??meta.amount_minor),currency=String(obj?.currency||meta.currency||"").toUpperCase();
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenant))return null;
+  if(!Number.isInteger(requestId)||requestId<=0||!Number.isInteger(amount)||amount<0||!/^[A-Z]{3}$/.test(currency))return null;
+  const paymentStatus=type==="checkout.session.expired"?"expired":String(obj?.payment_status||"").toLowerCase()==="paid"?"paid":"pending";
+  if(type!=="checkout.session.expired"&&paymentStatus!=="paid")return null;
+  return {
+    provider:"stripe",
+    provider_event_id:String(event?.id||""),
+    event_type:type,
+    event_time:eventIso(event),
+    tenant_public_id:tenant,
+    portability_request_id:requestId,
+    payment_status:paymentStatus,
+    amount_minor:amount,
+    currency,
+    provider_checkout_reference:String(obj?.id||""),
+    provider_payment_reference:idValue(obj?.payment_intent)
+  };
+}
+
 export function normalizeStripeSubscriptionEvent(event){
   const type=String(event?.type||""),obj=event?.data?.object;
   if(!obj)return null;
