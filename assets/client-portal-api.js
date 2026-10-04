@@ -79,6 +79,7 @@ cancelPortability:function(id,idempotencyKey){return post("/customer/portability
 portal:function(from,to){var q=new URLSearchParams({from:from,to:to});return get("/customer/portal?"+q.toString(),12000);},
 resetMetrics:function(metricKeys,idempotencyKey){return post("/customer/metrics/reset",{metric_keys:metricKeys},idempotencyKey);},
 jackpot:function(){return request("/customer/jackpot");},
+referral:function(){return get("/customer/referral",5000);},
 resetJackpot:function(k){return post("/customer/jackpot/reset",{},k);},
 saveJackpotSchedule:function(p,k){return post("/customer/jackpot/reset-schedule",p,k);},
 incidents:function(id){var q=id?"?incident_id="+encodeURIComponent(id):"";return get("/customer/incidents"+q,8000);},
