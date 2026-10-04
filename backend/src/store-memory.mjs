@@ -59,6 +59,10 @@ export class MemoryStore{
     this.customerExperiencePreferencesMap=new Map();
     this.customerLegalAcceptances=[];
     this.customerWithdrawalRequests=[];
+    this.referralProgram={enabled:false,reward_minor:0,currency:"EUR",qualification:"paid_active_subscription",updated_at:null};
+    this.referralCodes=new Map();
+    this.referrals=[];
+    this.referralRewards=[];
     this.staffUsers=[{id:1,public_id:randomUUID(),login_name:"local-admin",email:"local-admin@staff.pgi.invalid",display_name:"Local Simulator",role:"admin",enabled:true,password_hash:null,session_version:1,last_login_at:null,created_at:new Date().toISOString()}];
     this.nextStaffUserId=2;
   }
@@ -1221,6 +1225,41 @@ export class MemoryStore{
     if(row.status!=="pending")throw problem(409,"CUSTOMER_INVITATION_NOT_PENDING");
     row.status="revoked";return structuredClone(row);
   }
+
+  async referralProgramOverview(){
+    return {program:structuredClone(this.referralProgram),summary:{claims:this.referrals.length,qualified:this.referrals.filter(x=>["qualified","rewarded"].includes(x.status)).length,rewarded:this.referrals.filter(x=>x.status==="rewarded").length,earned_minor:this.referralRewards.filter(x=>["earned","paid"].includes(x.status)).reduce((a,x)=>a+Number(x.amount_minor||0),0),paid_minor:this.referralRewards.filter(x=>x.status==="paid").reduce((a,x)=>a+Number(x.amount_minor||0),0)},recent:structuredClone(this.referrals.slice(-50).reverse())};
+  }
+  async updateReferralProgram(input={}){
+    const reward=input.reward_minor==null?Number(this.referralProgram.reward_minor||0):Number(input.reward_minor),currency=String(input.currency||this.referralProgram.currency||"EUR").toUpperCase(),enabled=input.enabled===true;
+    if(!Number.isInteger(reward)||reward<0)throw problem(400,"INVALID_REFERRAL_REWARD");
+    if(!/^[A-Z]{3}$/.test(currency))throw problem(400,"INVALID_REFERRAL_CURRENCY");
+    if(enabled&&reward<=0)throw problem(409,"REFERRAL_REWARD_REQUIRED");
+    this.referralProgram={enabled,reward_minor:reward,currency,qualification:"paid_active_subscription",updated_at:new Date().toISOString()};
+    return this.referralProgramOverview();
+  }
+  async customerReferralOverview(tenantId){
+    const key=String(tenantId);
+    if(this.referralProgram.enabled&&!this.referralCodes.has(key))this.referralCodes.set(key,"DEMO"+createHash("sha256").update(key).digest("hex").slice(0,8).toUpperCase());
+    const rows=this.referrals.filter(x=>String(x.referrer_tenant_id)===key),incoming=this.referrals.find(x=>String(x.referred_tenant_id)===key)||null;
+    return {program:{...this.referralProgram,reward_minor:this.referralProgram.enabled?this.referralProgram.reward_minor:null},code:this.referralProgram.enabled?this.referralCodes.get(key)||null:null,summary:{claims:rows.length,pending:rows.filter(x=>x.status==="claimed").length,rewarded:rows.filter(x=>x.status==="rewarded").length,earned_minor:rows.filter(x=>x.status==="rewarded").reduce((a,x)=>a+Number(x.reward_minor||0),0)},referrals:structuredClone(rows),incoming:structuredClone(incoming)};
+  }
+  async claimCustomerReferral(tenantId,rawCode){
+    if(!this.referralProgram.enabled)throw problem(409,"REFERRAL_PROGRAM_DISABLED");
+    if(Number(this.referralProgram.reward_minor)<=0)throw problem(409,"REFERRAL_REWARD_NOT_CONFIGURED");
+    const code=String(rawCode||"").trim().toUpperCase().replace(/[^A-Z0-9]/g,""),referrer=[...this.referralCodes.entries()].find(([,v])=>v===code)?.[0];
+    if(!referrer)throw problem(404,"REFERRAL_CODE_NOT_FOUND");
+    if(String(referrer)===String(tenantId))throw problem(409,"SELF_REFERRAL_FORBIDDEN");
+    const existing=this.referrals.find(x=>String(x.referred_tenant_id)===String(tenantId));
+    if(existing){if(String(existing.referrer_tenant_id)!==String(referrer))throw problem(409,"REFERRAL_ALREADY_CLAIMED");return {accepted:true,already_claimed:true,...structuredClone(existing)}}
+    const row={public_id:randomUUID(),referrer_tenant_id:String(referrer),referred_tenant_id:String(tenantId),status:"claimed",reward_minor:Number(this.referralProgram.reward_minor),reward_currency:this.referralProgram.currency,claimed_at:new Date().toISOString()};
+    this.referrals.push(row);return {accepted:true,already_claimed:false,...structuredClone(row)};
+  }
+  async qualifyCustomerReferral(){return {qualified:false,reason:"simulator_no_paid_subscription"};}
+  async markReferralRewardPaid(id,input={}){
+    const row=this.referralRewards.find(x=>x.public_id===String(id));if(!row)throw problem(404,"REFERRAL_REWARD_NOT_FOUND");if(row.status==="cancelled")throw problem(409,"REFERRAL_REWARD_CANCELLED");
+    row.status="paid";row.paid_at=row.paid_at||new Date().toISOString();row.paid_reference=String(input.paid_reference||"").slice(0,160)||null;return structuredClone(row);
+  }
+
   async customerWithdrawalFeatureReady(){return true;}
 
   async createCustomerWithdrawalRequest(input={}){
