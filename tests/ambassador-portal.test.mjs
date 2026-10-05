@@ -15,6 +15,9 @@ const admin=fs.readFileSync("assets/referral-admin.js","utf8");
 const adminView=fs.readFileSync("assets/referral-admin-view.js","utf8");
 const resend=fs.readFileSync("backend/src/resend-email.mjs","utf8");
 const build=fs.readFileSync("scripts/build-static.mjs","utf8");
+const docker=fs.readFileSync("Dockerfile","utf8");
+const dockerVercel=fs.readFileSync("Dockerfile.vercel","utf8");
+const dockerPlatform=fs.readFileSync("infra/Dockerfile.platform","utf8");
 
 test("ambassador profiles are durable and distinct from subscriptions",()=>{
   assert.match(migration,/CREATE TABLE IF NOT EXISTS customer_ambassador_profiles/);
@@ -82,6 +85,12 @@ test("ambassador transactional emails and static publishing are present",()=>{
   assert.ok(build.includes('"assets/ambassador-api.js"'));
   assert.ok(build.includes('"assets/ambassador-portal.js"'));
   assert.ok(build.includes('"assets/ambassador-portal.css"'));
+});
+
+test("container images include the ambassador portal source required by static build",()=>{
+  for(const [name,content] of [["Dockerfile",docker],["Dockerfile.vercel",dockerVercel],["infra/Dockerfile.platform",dockerPlatform]]){
+    assert.match(content,/client\.html ambassadeur\.html paiement-cb-result\.html/,name);
+  }
 });
 
 test("new ambassador surfaces contain no em dash",()=>{
