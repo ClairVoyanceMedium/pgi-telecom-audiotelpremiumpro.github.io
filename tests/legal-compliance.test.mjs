@@ -135,7 +135,7 @@ test("all production paid flows fail closed until the verified legal operator id
   const config=read("backend/src/config.mjs");
   for(const key of ["PGI_LEGAL_OPERATOR_NAME","PGI_LEGAL_OPERATOR_STATUS","PGI_LEGAL_OPERATOR_ADDRESS","PGI_LEGAL_OPERATOR_REGISTRATION","PGI_PUBLICATION_DIRECTOR","PGI_CONSUMER_MEDIATOR_NAME","PGI_CONSUMER_MEDIATOR_CONTACT","PGI_CONSUMER_MEDIATOR_URL"])assert.ok(config.includes(key),key+" missing");
   const server=read("backend/server.mjs");
-  assert.equal((server.match(/customerCommercialReadinessBlock\(config,store,billing\)/g)||[]).length,4);
+  assert.equal((server.match(/const commercialBlock=await customerCommercialReadinessBlock\(config,store,billing\)/g)||[]).length,4);
   assert.match(server,/COMMERCIAL_LEGAL_IDENTITY_NOT_READY/);
   assert.match(server,/commercial_legal_ready/);
 });
