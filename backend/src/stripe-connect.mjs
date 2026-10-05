@@ -165,16 +165,13 @@ export async function retrieveStripeReferralRecipientAccount(config,accountId){
 export function normalizeStripeReferralRecipientAccount(account={}){
   const balance=account?.configuration?.recipient?.capabilities?.stripe_balance||{};
   const transferStatus=String(balance?.stripe_transfers?.status||"").toLowerCase();
-  const payoutStatus=String(balance?.payouts?.status||"").toLowerCase();
   const requirements=account?.requirements||{};
   const deadline=String(requirements?.summary?.minimum_deadline?.status||"").toLowerCase();
   const transfersEnabled=transferStatus==="active";
-  const payoutsEnabled=payoutStatus==="active"||transfersEnabled;
   const detailsSubmitted=!["currently_due","past_due","eventually_due"].includes(deadline)&&deadline!=="requirements_past_due";
   return {
     provider_account_reference:String(account?.id||""),
     transfers_enabled:transfersEnabled,
-    payouts_enabled:payoutsEnabled,
     details_submitted:detailsSubmitted,
     requirements_state:deadline||transferStatus||"unknown",
     status:transfersEnabled?"active":detailsSubmitted?"restricted":"onboarding"
