@@ -61,6 +61,7 @@ test("la vue sépare TTC, HT, dettes et créances au lieu de fabriquer un faux b
   assert.match(accounting,/Exporter CSV/);
   assert.match(accounting,/Imprimer \/ PDF/);
   assert.match(accounting,/data-acc-print/);
+  assert.match(accounting,/@media print/);
   assert.match(store,/status IN \(\'earned\',\'processing\',\'retry\',\'action_required\'\)/);
 });
 
