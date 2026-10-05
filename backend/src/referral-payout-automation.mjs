@@ -40,7 +40,7 @@ export async function runReferralAutomaticPayouts({store,config,limit=25}={}){
         if(waitingCode(code))waiting++;else retry++;
         results.push({id:item.id,state:waitingCode(code)?"waiting_account":"retry",error_code:code,next_attempt_at:next});continue;
       }
-      if(normalized.transfers_enabled!==true||normalized.details_submitted!==true){
+      if(normalized.transfers_enabled!==true){
         const next=nextIso(6*60*60*1000);
         await store.failAutomaticReferralPayout(item.id,{state:"waiting_account",error_code:"REFERRAL_PAYOUT_ACCOUNT_NOT_READY",next_attempt_at:next});
         waiting++;results.push({id:item.id,state:"waiting_account",next_attempt_at:next});continue;
