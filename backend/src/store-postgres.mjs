@@ -4634,7 +4634,7 @@ export class PostgresStore{
         "SELECT status,count(*)::int AS count,COALESCE(sum(reward_minor),0)::bigint AS reward_minor FROM customer_referrals GROUP BY status ORDER BY status"
       ),
       this.sql.unsafe(
-        "SELECT rw.id,rw.public_id::text AS public_id,rw.amount_minor::bigint AS amount_minor,rw.currency,rw.status,rw.earned_at,rw.paid_at,rw.paid_reference,"+
+        "SELECT rw.id,rw.public_id::text AS public_id,rw.amount_minor::bigint AS amount_minor,rw.currency,rw.status,rw.earned_at,rw.paid_at,rw.paid_reference,rw.metadata AS reward_metadata,"+
         " rt.display_name AS referrer_name,dt.display_name AS referred_name,rf.public_id::text AS referral_public_id,rf.metadata AS referral_metadata"+
         " FROM customer_referral_rewards rw JOIN customer_referrals rf ON rf.id=rw.referral_id"+
         " JOIN tenants rt ON rt.id=rf.referrer_tenant_id JOIN tenants dt ON dt.id=rf.referred_tenant_id"+
@@ -4663,7 +4663,7 @@ export class PostgresStore{
         "SELECT rt.public_id::text AS referrer_public_id,r.public_id::text AS public_id,r.status,r.reward_minor::bigint AS reward_minor,r.reward_currency,r.claimed_at,r.qualified_at,r.rewarded_at,r.rejected_at,r.metadata,"+
         " dt.id AS _referred_id,dt.public_id::text AS referred_public_id,dt.display_name AS referred_name,dt.billing_email AS referred_billing_email,dt.status AS referred_status,dt.country_code AS referred_country_code,dt.created_at AS referred_created_at,"+
         " (SELECT count(DISTINCT be.normalized_details->>'provider_invoice_reference')::int FROM subscription_billing_events be WHERE be.tenant_id=r.referred_tenant_id AND be.event_type='invoice.paid' AND COALESCE(be.normalized_details->>'provider_invoice_reference','')<>'' AND COALESCE(be.normalized_details->>'last_payment_status','paid')='paid' AND be.event_time>=r.claimed_at) AS paid_invoice_count,"+
-        " rw.id AS reward_id,rw.public_id::text AS reward_public_id,rw.amount_minor::bigint AS reward_amount_minor,rw.currency AS reward_currency_paid,rw.status AS reward_status,rw.earned_at,rw.paid_at,rw.paid_reference"+
+        " rw.id AS reward_id,rw.public_id::text AS reward_public_id,rw.amount_minor::bigint AS reward_amount_minor,rw.currency AS reward_currency_paid,rw.status AS reward_status,rw.earned_at,rw.paid_at,rw.paid_reference,rw.metadata AS reward_metadata"+
         " FROM customer_referrals r JOIN tenants rt ON rt.id=r.referrer_tenant_id JOIN tenants dt ON dt.id=r.referred_tenant_id LEFT JOIN customer_referral_rewards rw ON rw.referral_id=r.id"+
         " ORDER BY r.claimed_at DESC,r.id DESC LIMIT 500"
       ),
@@ -4686,7 +4686,7 @@ export class PostgresStore{
         public_id:row.public_id,status:row.status,reward_minor:Number(row.reward_minor||0),reward_currency:row.reward_currency,claimed_at:row.claimed_at,qualified_at:row.qualified_at,rewarded_at:row.rewarded_at,rejected_at:row.rejected_at,metadata:row.metadata||{},
         paid_invoice_count:paidInvoiceCount,qualification_paid_invoices:required,progress_percent:Math.min(100,Math.round((paidInvoiceCount/required)*100)),
         referred:{public_id:row.referred_public_id,name:row.referred_name,email:row.referred_billing_email,status:row.referred_status,country_code:row.referred_country_code,dossier_ref:dossierReference(Number(row._referred_id),row.referred_created_at)},
-        reward:row.reward_id?{id:row.reward_id,public_id:row.reward_public_id,amount_minor:Number(row.reward_amount_minor||0),currency:row.reward_currency_paid,status:row.reward_status,earned_at:row.earned_at,paid_at:row.paid_at,paid_reference:row.paid_reference}:null
+        reward:row.reward_id?{id:row.reward_id,public_id:row.reward_public_id,amount_minor:Number(row.reward_amount_minor||0),currency:row.reward_currency_paid,status:row.reward_status,earned_at:row.earned_at,paid_at:row.paid_at,paid_reference:row.paid_reference,metadata:row.reward_metadata||{}}:null
       };
       if(!referralsByReferrer.has(key))referralsByReferrer.set(key,[]);
       referralsByReferrer.get(key).push(item);
@@ -4822,6 +4822,36 @@ export class PostgresStore{
       );
       return {accepted:true,replayed:false,public_id:row.public_id,status:row.status,reward_minor:0,estimated_reward_minor:estimated.total_minor,currency:policy.currency,qualification_paid_invoices:policy.qualification_paid_invoices,claimed_at:row.claimed_at};
     });
+  }
+
+  async referralRewardsForAutomaticPayout(options={}){
+    const limit=Math.max(1,Math.min(100,Math.trunc(Number(options.limit)||25)));
+    const tenantId=options.tenant_id==null?null:Number(options.tenant_id);
+    if(tenantId!=null&&(!Number.isInteger(tenantId)||tenantId<=0))throw problem(400,"INVALID_TENANT_ID");
+    const rows=await this.readSql.unsafe(
+      "SELECT rw.id,rw.public_id::text AS public_id,rw.tenant_id,rw.amount_minor::bigint AS amount_minor,rw.currency,rw.status,rw.earned_at,rw.metadata,"+
+      " t.public_id::text AS tenant_public_id,t.display_name,t.billing_email,t.country_code,t.preferred_locale,"+
+      " a.provider_account_reference,a.status AS connect_status,a.charges_enabled,a.payouts_enabled,a.requirements_state"+
+      " FROM customer_referral_rewards rw JOIN tenants t ON t.id=rw.tenant_id"+
+      " LEFT JOIN tenant_card_payment_accounts a ON a.tenant_id=rw.tenant_id"+
+      " WHERE rw.status='earned' AND ($1::bigint IS NULL OR rw.tenant_id=$1)"+
+      " ORDER BY rw.earned_at,rw.id LIMIT $2",
+      [tenantId,limit]
+    );
+    return rows.map(row=>({...row,amount_minor:Number(row.amount_minor||0),tenant_id:Number(row.tenant_id)}));
+  }
+
+  async recordReferralAutomaticPayoutState(rewardId,state={}){
+    const id=Number(rewardId);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_REFERRAL_REWARD");
+    const safe=state&&typeof state==="object"&&!Array.isArray(state)?state:{};
+    const rows=await this.sql.unsafe(
+      "UPDATE customer_referral_rewards SET metadata=jsonb_set(COALESCE(metadata,'{}'::jsonb),'{automatic_payout}',COALESCE(metadata->'automatic_payout','{}'::jsonb)||$2::jsonb,true)"+
+      " WHERE id=$1 RETURNING id,public_id::text AS public_id,status,metadata",
+      [id,JSON.stringify(safe)]
+    );
+    if(!rows[0])throw problem(404,"REFERRAL_REWARD_NOT_FOUND");
+    return rows[0];
   }
 
   async settleCustomerReferralReward(rewardId,paidReference,actor={}){
