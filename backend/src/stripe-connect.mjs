@@ -86,30 +86,26 @@ export function stripeConnectState(config){
 
 export async function createStripeConnectedAccount(config,input={}){
   const email=cleanEmail(input.email),country=cleanCountry(input.country_code);
-  if(!email)throw error(400,"INVALID_CONNECT_EMAIL");
   const merchant=input.mode!=="referral";
   const configuration={
     recipient:{capabilities:{stripe_balance:{stripe_transfers:{requested:true}}}}
   };
   if(merchant){
     configuration.merchant={
-      capabilities:{card_payments:{requested:true}},
-      support:{url:baseUrl(config)}
+      capabilities:{card_payments:{requested:true}}
     };
   }
   const body={
-    contact_email:email,
     dashboard:"full",
     identity:{country},
     configuration
   };
+  // French Connect platforms should not prefill PII server-side. Stripe Hosted Onboarding
+  // collects identity and payout details directly from the account holder.
+  if(email&&country!=="FR")body.contact_email=email;
   if(merchant){
     body.defaults={
-      responsibilities:{fees_collector:"stripe",losses_collector:"stripe"},
-      profile:{
-        business_url:baseUrl(config),
-        product_description:"Services de consultation et de télécommunication proposés via Audiotel Premium Pro"
-      }
+      responsibilities:{fees_collector:"stripe",losses_collector:"stripe"}
     };
   }
   const account=await jsonRequest(config,"/v2/core/accounts",{method:"POST",body,idempotencyKey:input.idempotency_key,preview:true});
@@ -125,18 +121,13 @@ export async function ensureStripeConnectedAccountCapabilities(config,accountId,
   }
   if(input.merchant===true){
     configuration.merchant={
-      capabilities:{card_payments:{requested:true}},
-      support:{url:baseUrl(config)}
+      capabilities:{card_payments:{requested:true}}
     };
   }
   const body={configuration,include:["configuration.merchant","configuration.recipient","requirements","defaults"]};
   if(input.merchant===true){
     body.defaults={
-      responsibilities:{fees_collector:"stripe",losses_collector:"stripe"},
-      profile:{
-        business_url:baseUrl(config),
-        product_description:"Services de consultation et de télécommunication proposés via Audiotel Premium Pro"
-      }
+      responsibilities:{fees_collector:"stripe",losses_collector:"stripe"}
     };
   }
   return jsonRequest(config,"/v2/core/accounts/"+encodeURIComponent(accountId),{
