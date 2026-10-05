@@ -13,11 +13,33 @@ const referralProgram=()=>request("/platform/referral-program");
 const updateReferralProgram=(payload,key)=>request("/platform/referral-program","POST",payload,key);
 const settleReferralReward=(id,payload,key)=>request("/platform/referral-rewards/"+encodeURIComponent(id)+"/paid","POST",payload,key);
 function feedback(msg,type=""){ctx?.feedback?.(msg,type)}
+function tiersHtml(data){
+  const tiers=Array.isArray(data?.tiers)?data.tiers:[];
+  return tiers.map(t=>'<div class="pa-row"><div><strong>'+esc(t.label||((t.from||1)+" à "+(t.to||"+")))+' filleuls qualifiés : '+esc(money(t.reward_minor,data.currency||"EUR"))+' par filleul</strong><small>Barème fixe serveur. '+(t.to==null?'À partir du 25e filleul, ce montant reste permanent et non négociable.':'')+'</small></div><span class="pa-badge ok">FIXE</span></div>').join("");
+}
+function milestonesHtml(data){
+  const rows=Array.isArray(data?.milestones)?data.milestones:[];
+  return rows.map(x=>'<div class="pa-row"><div><strong>'+esc(x.label||("Filleul n°"+x.ordinal))+' : bonus '+esc(money(x.bonus_minor,data.currency||"EUR"))+'</strong><small>Le bonus s’ajoute automatiquement à la prime de palier lors de la qualification.</small></div><span class="pa-badge ok">AUTO</span></div>').join("");
+}
 function render(data){
-  const root=ctx.root,summary=data?.summary||{},rewards=Array.isArray(data?.rewards)?data.rewards:[];
+  const root=ctx.root,summary=data?.summary||{},rewards=Array.isArray(data?.rewards)?data.rewards:[],currency=data?.currency||"EUR";
   root.hidden=false;
-  const rows=rewards.slice(0,30).map(x=>'<div class="pa-row"><div><strong>'+esc(x.referrer_name||"Client")+' : '+money(x.amount_minor,x.currency||"EUR")+'</strong><small>Filleul : '+esc(x.referred_name||"Client")+' · '+esc(x.status||"earned")+' · acquis le '+esc(date(x.earned_at))+(x.paid_at?' · versé le '+esc(date(x.paid_at)):"")+'</small></div>'+(x.status==="earned"?'<button class="pa-btn success" type="button" data-referral-paid="'+esc(x.id)+'">Enregistrer comme versée</button>':'<span class="pa-badge ok">VERSÉE</span>')+'</div>').join("");
-  root.innerHTML='<div class="pa-head" style="padding:0 0 12px;border:0"><div><p>PARRAINAGE CLIENTS</p><h2>Programme et récompenses</h2></div><button class="pa-btn" type="button" data-referral-close>Fermer</button></div><div class="pa-state"><div><span>Programme</span><strong>'+(data?.enabled?"ACTIF":"DÉSACTIVÉ")+'</strong></div><div><span>Prime</span><strong>'+money(data?.reward_minor||0,data?.currency||"EUR")+'</strong></div><div><span>Demandes</span><strong>'+esc(summary.claimed||0)+'</strong></div><div><span>Qualifiées</span><strong>'+esc(summary.rewarded||0)+'</strong></div></div><label class="pa-field">Activation<select id="pa-referral-enabled"><option value="false" '+(!data?.enabled?"selected":"")+'>Désactivé</option><option value="true" '+(data?.enabled?"selected":"")+'>Activé</option></select></label><label class="pa-field">Prime par filleul qualifié en EUR<input id="pa-referral-reward" type="number" min="0" max="10000" step="0.01" value="'+esc(((Number(data?.reward_minor)||0)/100).toFixed(2))+'"></label><div class="pa-actions"><button class="pa-btn" type="button" data-referral-save>Enregistrer</button></div><p class="pa-note">La désactivation bloque les nouveaux parrainages. Les parrainages déjà enregistrés restent historisés avec leur prime figée. Une prime devient acquise uniquement après abonnement actif et payé du filleul. Enregistrer un versement ne déclenche aucun virement : cela consigne un paiement déjà effectué.</p><div class="pa-list">'+(rows||'<p class="pa-note">Aucune récompense acquise.</p>')+'</div>';
+  const rows=rewards.slice(0,50).map(x=>{
+    const meta=x.referral_metadata&&typeof x.referral_metadata==="object"?x.referral_metadata:{};
+    const base=Number(meta.base_reward_minor||0),bonus=Number(meta.milestone_bonus_minor||0),ordinal=Number(meta.qualification_ordinal||0);
+    const detail=(ordinal?'Filleul qualifié n°'+ordinal+' · ':'')+(base?'prime '+money(base,x.currency||currency):'')+(bonus?' + bonus '+money(bonus,x.currency||currency):'');
+    return '<div class="pa-row"><div><strong>'+esc(x.referrer_name||"Client")+' : '+money(x.amount_minor,x.currency||currency)+'</strong><small>Filleul : '+esc(x.referred_name||"Client")+' · '+(detail||'barème automatique')+' · acquis le '+esc(date(x.earned_at))+(x.paid_at?' · versé le '+esc(date(x.paid_at)):"")+'</small></div>'+(x.status==="earned"?'<button class="pa-btn success" type="button" data-referral-paid="'+esc(x.id)+'">Enregistrer comme versée</button>':'<span class="pa-badge ok">VERSÉE</span>')+'</div>';
+  }).join("");
+  root.innerHTML=
+    '<div class="pa-head" style="padding:0 0 12px;border:0"><div><p>PARRAINAGE CLIENTS</p><h2>Programme ambassadeur</h2></div><button class="pa-btn" type="button" data-referral-close>Fermer</button></div>'+
+    '<div class="pa-state"><div><span>Programme</span><strong>'+(data?.enabled?"ACTIF":"DÉSACTIVÉ")+'</strong></div><div><span>Qualification</span><strong>'+esc(data?.qualification_paid_invoices||3)+' PAIEMENTS</strong></div><div><span>Parrainages enregistrés</span><strong>'+esc(summary.claimed||0)+'</strong></div><div><span>Filleuls qualifiés</span><strong>'+esc(summary.rewarded||0)+'</strong></div><div><span>Primes à verser</span><strong>'+money(summary.earned_unpaid_minor||0,currency)+'</strong></div><div><span>Primes versées</span><strong>'+money(summary.paid_minor||0,currency)+'</strong></div></div>'+
+    '<label class="pa-field">Activation<select id="pa-referral-enabled"><option value="false" '+(!data?.enabled?"selected":"")+'>Désactivé</option><option value="true" '+(data?.enabled?"selected":"")+'>Activé</option></select></label>'+
+    '<div class="pa-actions"><button class="pa-btn" type="button" data-referral-save>Enregistrer l’état du programme</button></div>'+
+    '<p class="pa-note"><strong>Règle de qualification :</strong> une récompense devient acquise uniquement après 3 factures mensuelles distinctes réellement payées par le filleul. La désactivation bloque les nouveaux parrainages, sans supprimer l’historique ni les récompenses déjà acquises.</p>'+
+    '<div class="pa-list"><div class="pa-head"><div><p>BARÈME FIXE</p><h2>Prime par filleul qualifié</h2></div></div>'+tiersHtml(data)+'</div>'+
+    '<div class="pa-list"><div class="pa-head"><div><p>BONUS FIXES</p><h2>Paliers ambassadeur</h2></div></div>'+milestonesHtml(data)+'</div>'+
+    '<p class="pa-note">Le barème ne peut pas être modifié client par client. À partir du 25e filleul qualifié, la prime reste fixée à 20,00 € par filleul. Aucun pourcentage du chiffre d’affaires SVA n’est versé au titre du parrainage.</p>'+
+    '<div class="pa-list"><div class="pa-head"><div><p>RÉCOMPENSES ACQUISES</p><h2>Versements à suivre</h2></div></div>'+(rows||'<p class="pa-note">Aucune récompense acquise.</p>')+'</div>';
 }
 async function load(){
   if(!ctx?.root)return;
@@ -28,12 +50,10 @@ async function handle(e){
   if(busy)return;
   if(e.target.closest("[data-referral-close]")){ctx.root.hidden=true;ctx.root.innerHTML="";return}
   if(e.target.closest("[data-referral-save]")){
-    const enabled=document.getElementById("pa-referral-enabled")?.value==="true",amount=Number(document.getElementById("pa-referral-reward")?.value);
-    if(!Number.isFinite(amount)||amount<0||amount>10000)return feedback("Prime de parrainage invalide.","error");
-    if(enabled&&amount<=0)return feedback("Une prime positive est requise pour activer le programme.","error");
-    if(!confirm((enabled?"Activer":"Désactiver")+" le programme avec une prime de "+amount.toFixed(2)+" EUR par filleul qualifié ?"))return;
+    const enabled=document.getElementById("pa-referral-enabled")?.value==="true";
+    if(!confirm((enabled?"Activer":"Désactiver")+" le programme de parrainage avec le barème fixe en vigueur ?"))return;
     busy=true;feedback("Mise à jour du parrainage...");
-    try{await updateReferralProgram({enabled,reward_minor:Math.round(amount*100),currency:"EUR"},window.PGIApi.newIdempotencyKey());feedback("Programme de parrainage mis à jour.","ok");await load()}
+    try{await updateReferralProgram({enabled},window.PGIApi.newIdempotencyKey());feedback("Programme de parrainage mis à jour.","ok");await load()}
     catch(err){feedback(err?.code||"Mise à jour impossible","error")}finally{busy=false}
     return;
   }
