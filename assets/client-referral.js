@@ -35,7 +35,7 @@ function render(data){
     codeBlock='<div class="cp-row"><div><strong>Programme actuellement fermé</strong><span>Aucun nouveau parrainage ne peut être créé tant que le programme reste désactivé. Votre historique et vos récompenses acquises sont conservés.</span></div><span class="cp-chip">FERMÉ</span></div>';
   }
   var payoutBlock="";
-  if(payout&&payout.transfers_enabled===true&&payout.details_submitted===true){
+  if(payout&&payout.transfers_enabled===true){
     payoutBlock='<div class="cp-row"><div><strong>Versements automatiques activés</strong><span>Vos primes acquises sont versées automatiquement dès qu’elles deviennent exigibles, sans demande manuelle.</span></div><span class="cp-chip ok">ACTIF</span></div>';
   }else if(state.can_manage===true){
     payoutBlock='<div class="cp-row"><div><strong>Activer mes versements automatiques</strong><span>Finalisez une fois votre compte de versement sécurisé. Ensuite, chaque prime acquise sera réglée automatiquement.</span></div><button id="client-referral-payout-connect" class="cp-primary" type="button">'+(payout?"Finaliser l’activation":"Activer")+'</button></div>';
