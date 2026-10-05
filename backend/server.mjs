@@ -395,7 +395,7 @@ export function createBackend(options={}){
         requireSameOriginBrowser(req);
         const authKey=enforceAuthLoginRate(req,config,authBuckets,metrics);
         const body=await readJson(req,config.bodyLimitBytes);
-        const username=String(body.username||"").trim(),password=String(body.password||"");
+        const username=String(body.username||"").trim(),password=String(body.password||""),remember=body.remember_me===true;
         const staff=typeof store.staffLoginIdentity==="function"?await store.staffLoginIdentity(username):null;
         const staffLocked=Boolean(staff?.locked_until&&Date.now()<Date.parse(staff.locked_until));
         const staffOk=Boolean(staff&&!staffLocked&&staff.enabled!==false&&verifyPassword(password,staff.password_hash));
@@ -413,9 +413,10 @@ export function createBackend(options={}){
         authBuckets.delete(authKey);
         if(staffOk&&typeof store.recordStaffAuthSuccess==="function")await store.recordStaffAuthSuccess(staff.id);
         const sessionUser={id:String(user.id),role:user.role||"admin",name:user.display_name||"Administrator",session_version:Number(user.session_version||1)};
-        const issued=issueSession({secret:config.sessionSecret,user:sessionUser,ttlSeconds:config.sessionTtlSeconds});
-        return done(res,metrics,started,"auth.login",200,{user:{id:sessionUser.id,role:sessionUser.role,name:sessionUser.name}},{
-          "Set-Cookie":[sessionCookie(issued.token,config.sessionTtlSeconds),csrfCookie(issued.csrf,config.sessionTtlSeconds)]
+        const sessionTtl=remember?Number(config.adminRememberTtlSeconds||2592000):config.sessionTtlSeconds;
+        const issued=issueSession({secret:config.sessionSecret,user:sessionUser,ttlSeconds:sessionTtl});
+        return done(res,metrics,started,"auth.login",200,{user:{id:sessionUser.id,role:sessionUser.role,name:sessionUser.name},remembered:remember},{
+          "Set-Cookie":[sessionCookie(issued.token,sessionTtl),csrfCookie(issued.csrf,sessionTtl)]
         });
       }
 
