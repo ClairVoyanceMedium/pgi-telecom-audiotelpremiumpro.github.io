@@ -305,7 +305,7 @@ if(publicBaseUrl){
   );
   const urls=[
     {loc:publicBaseUrl+"/",sourcePath:"site/index.html"},
-    ...seoPages.map(slug=>({loc:publicBaseUrl+"/"+slug+"/",sourcePath:"site/seo/"+slug+".html"}))
+    ...seoPages.filter(slug=>slug!=="mentions-legales").map(slug=>({loc:publicBaseUrl+"/"+slug+"/",sourcePath:"site/seo/"+slug+".html"}))
   ];
   fs.writeFileSync(
     path.join(dist,"sitemap.xml"),
