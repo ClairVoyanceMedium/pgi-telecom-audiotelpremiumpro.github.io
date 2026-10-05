@@ -8,7 +8,7 @@ const badgeClass=v=>/paid|rewarded|active|qualified/.test(String(v||""))?"ok":/p
 const automaticPayoutState=reward=>String(reward?.metadata?.automatic_payout?.status||"").trim();
 const automaticPayoutLabel=reward=>{
   if(String(reward?.status||"")==="paid")return"VERSÉ AUTOMATIQUEMENT";
-  return ({awaiting_verification:"VÉRIFICATION STRIPE REQUISE",retry_pending:"NOUVELLE TENTATIVE AUTOMATIQUE",paid:"VERSÉ AUTOMATIQUEMENT"}[automaticPayoutState(reward)]||"VERSEMENT AUTOMATIQUE PROGRAMMÉ");
+  return ({awaiting_verification:"VÉRIFICATION STRIPE REQUISE",retry_pending:"NOUVELLE TENTATIVE AUTOMATIQUE",setup_blocked:"CONFIGURATION STRIPE À RÉSOUDRE",paid:"VERSÉ AUTOMATIQUEMENT"}[automaticPayoutState(reward)]||"VERSEMENT AUTOMATIQUE PROGRAMMÉ");
 };
 
 function tiersHtml(data){return (Array.isArray(data?.tiers)?data.tiers:[]).map(t=>'<div class="pa-row"><div><strong>'+esc(t.label||((t.from||1)+" à "+(t.to||"+")))+' filleuls qualifiés : '+esc(money(t.reward_minor,data.currency||"EUR"))+' par filleul</strong><small>Barème fixe serveur. '+(t.to==null?'À partir du 25e filleul, ce montant reste permanent et non négociable.':'')+'</small></div><span class="pa-badge ok">FIXE</span></div>').join("")}
