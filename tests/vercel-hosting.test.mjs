@@ -39,6 +39,8 @@ test("Vercel container keeps generic migrations out of cold start",()=>{
   assert.match(docker,/ENV PGI_PROTECT_MACHINE_ENDPOINTS=true/);
   assert.ok(docker.includes("llms.txt llms-full.txt fa0a7deb5d60bdf1260c8174ad8c71db.txt"));
   assert.match(start,/VERCEL_GIT_COMMIT_SHA/);
+  assert.match(start,/PGI_VERSION/);
+  assert.match(start,/package\.json/);
   assert.match(start,/PGI_PROCESS_ROLE=api/);
   assert.match(start,/DATABASE_URL/);
   assert.match(start,/build-static\.mjs/);
