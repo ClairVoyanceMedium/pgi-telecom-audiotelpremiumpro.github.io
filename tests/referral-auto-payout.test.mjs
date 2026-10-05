@@ -45,6 +45,8 @@ test("referral transfers have idempotency and immutable provider references",()=
 test("automatic payouts fail closed and retry without admin intervention",()=>{
   assert.match(store,/FOR UPDATE SKIP LOCKED/);
   assert.match(store,/payout_state='processing'/);
+  assert.match(store,/REFERRAL_PAYOUT_IN_PROGRESS/);
+  assert.doesNotMatch(migration,/payouts_enabled/);
   assert.match(automation,/REFERRAL_PAYOUT_ACCOUNT_REQUIRED/);
   assert.match(automation,/INSUFFICIENT_FUNDS/);
   assert.match(automation,/failAutomaticReferralPayout/);
