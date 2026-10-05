@@ -92,6 +92,8 @@ const files=[
   "assets/live-finance.css",
   "assets/cockpit-growth-suite.js",
   "assets/cockpit-growth-suite.css",
+  "assets/accounting-cockpit.js",
+  "assets/accounting-cockpit.css",
   "assets/performance-radar.js",
   "assets/voice-intelligence.js",
   "assets/subscription-billing-ui.js",
