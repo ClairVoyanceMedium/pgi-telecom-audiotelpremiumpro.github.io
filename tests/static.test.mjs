@@ -228,13 +228,16 @@ test("la fondation hyperscale reste visible",()=>{
 });
 
 test("la production exige une authentification et peut se déconnecter",()=>{
-  for(const id of ["auth-dialog","auth-form","auth-username","auth-password","auth-submit","logout-btn"]){
+  for(const id of ["auth-dialog","auth-form","auth-username","auth-password","auth-remember","auth-submit","logout-btn"]){
     assert.ok(index.includes('id="'+id+'"'),"missing #"+id);
   }
   assert.match(dataClient,/api\.me\(\)/);
   assert.match(app,/logoutProduction/);
   assert.match(app,/pgi:auth-required/);
   assert.match(app,/stopProductionEvents/);
+  assert.match(app,/auth-remember/);
+  assert.match(api,/remember:remember===true/);
+  assert.match(index,/30 jours/);
 });
 
 test("la production ne charge aucun faux CDR local",()=>{
