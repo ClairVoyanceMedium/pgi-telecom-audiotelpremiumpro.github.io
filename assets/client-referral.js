@@ -8,14 +8,46 @@ function tierLabel(t,currency){
   if(!t)return"";
   return (t.to==null?"À partir du "+t.from+"e":t.from+" à "+t.to)+" : "+money(t.reward_minor,currency)+" par filleul";
 }
+function payoutLabel(x){
+  var status=String(x&&x.payout_status||"");
+  if(status==="transferred"||String(x&&x.reward_status||"")==="paid")return{label:"VERSÉ",cls:"ok"};
+  if(status==="processing")return{label:"TRANSFERT EN COURS",cls:"ok"};
+  if(status==="missing_payout_details")return{label:"COORDONNÉES À COMPLÉTER",cls:""};
+  if(status==="failed")return{label:"REPRISE AUTOMATIQUE",cls:""};
+  if(status==="queued")return{label:"EN FILE",cls:""};
+  return null;
+}
 function renderRecent(rows,currency,required){
   if(!rows.length)return '<p class="cp-muted">Aucun filleul enregistré pour le moment.</p>';
   return '<div class="cp-stack">'+rows.map(function(x){
     var paid=Math.max(0,Math.min(required,Number(x.paid_invoice_count)||0)),qualified=x.status==="rewarded";
-    var label=qualified?"QUALIFIÉ":x.status==="rejected"?"REFUSÉ":paid+"/"+required+" PAIEMENTS";
+    var p=payoutLabel(x);
+    var label=p?p.label:(qualified?"QUALIFIÉ":x.status==="rejected"?"REFUSÉ":paid+"/"+required+" PAIEMENTS");
     var reward=qualified&&Number(x.reward_minor)>0?" · "+money(x.reward_minor,currency)+" acquis":"";
-    return '<div class="cp-row"><div><strong>Filleul '+esc(String(x.public_id||"").slice(0,8).toUpperCase())+'</strong><span>'+(qualified?"Les "+required+" factures mensuelles payées ont été validées.":"Progression : "+paid+" facture(s) mensuelle(s) payée(s) sur "+required+".")+esc(reward)+'</span></div><span class="cp-chip '+(qualified?"ok":"")+'">'+esc(label)+'</span></div>';
+    var detail=qualified
+      ?(p&&p.label==="VERSÉ"?"Prime automatiquement transférée via Stripe.":"Les "+required+" factures mensuelles payées ont été validées. Le versement suit automatiquement son état.")
+      :"Progression : "+paid+" facture(s) mensuelle(s) payée(s) sur "+required+".";
+    return '<div class="cp-row"><div><strong>Filleul '+esc(String(x.public_id||"").slice(0,8).toUpperCase())+'</strong><span>'+esc(detail+reward)+'</span></div><span class="cp-chip '+esc(p&&p.cls||qualified?"ok":"")+'">'+esc(label)+'</span></div>';
   }).join("")+'</div>';
+}
+function payoutBlock(payout,currency,canManage){
+  payout=payout||{};
+  var payable=Number(payout.payable_minor||0),paid=Number(payout.paid_minor||0);
+  var totals='<div class="cp-row"><div><strong>'+esc(money(payable,currency))+' à verser · '+esc(money(paid,currency))+' déjà versé</strong><span>Les coordonnées bancaires sont recueillies et conservées par Stripe. Audiotel Premium Pro ne stocke pas votre IBAN.</span></div></div>';
+  if(payout.ready===true){
+    return '<div class="cp-panel-head"><div><p class="cp-kicker">VERSEMENTS</p><h3>Primes automatiques</h3></div><span class="cp-chip ok">AUTOMATIQUES ACTIFS</span></div>'+totals+
+      '<p class="cp-muted">Dès qu’une prime devient acquise, Audiotel Premium Pro déclenche automatiquement son transfert vers votre compte Stripe. Stripe effectue ensuite le virement bancaire selon le calendrier de versement de votre compte.</p>';
+  }
+  var action="";
+  if(canManage===true){
+    var label=payout.configured===true?"Finaliser mes coordonnées de versement":"Activer mes versements automatiques";
+    action='<div class="cp-search-scopes"><button id="client-referral-payout-connect" class="cp-primary" type="button">'+esc(label)+'</button></div>';
+  }else{
+    action='<p class="cp-muted">Le propriétaire ou un administrateur du compte doit finaliser les coordonnées de versement.</p>';
+  }
+  var chip=payout.configured===true?"À FINALISER":"À ACTIVER";
+  return '<div class="cp-panel-head"><div><p class="cp-kicker">VERSEMENTS</p><h3>Primes automatiques</h3></div><span class="cp-chip">'+chip+'</span></div>'+totals+
+    '<p class="cp-muted">Cette étape est nécessaire une seule fois. Stripe collecte directement l’identité et les coordonnées bancaires requises. Une fois validées, les prochaines primes sont traitées automatiquement.</p>'+action;
 }
 function render(data){
   state=data||{};var box=$("client-referral-mount");if(!box)return;
@@ -32,7 +64,7 @@ function render(data){
   }else if(enabled){
     codeBlock='<p class="cp-muted">Le lien sera disponible après activation de votre compte et confirmation de votre abonnement actif et payé.</p>';
   }else{
-    codeBlock='<div class="cp-row"><div><strong>Programme actuellement fermé</strong><span>Aucun nouveau parrainage ne peut être créé tant que le programme reste désactivé. Votre historique et vos récompenses acquises sont conservés.</span></div><span class="cp-chip">FERMÉ</span></div>';
+    codeBlock='<div class="cp-row"><div><strong>Programme actuellement fermé</strong><span>Aucun nouveau parrainage ne peut être créé tant que le programme reste désactivé. Votre historique et vos récompenses acquises sont conservés et restent versables.</span></div><span class="cp-chip">FERMÉ</span></div>';
   }
   var scale=tiers.length?'<div class="cp-stack">'+tiers.map(function(t){return '<div class="cp-row"><div><strong>'+esc(tierLabel(t,currency))+'</strong><span>'+(t.to==null?'Ce montant reste fixe et non négociable à partir du 25e filleul qualifié.':'Prime automatique selon votre nombre total de filleuls qualifiés.')+'</span></div></div>';}).join("")+'</div>':"";
   var bonus=milestones.length?'<p class="cp-muted">Bonus fixes : '+milestones.map(function(x){return esc((x.ordinal===1?"1er":x.ordinal+"e")+" filleul +"+money(x.bonus_minor,currency));}).join(" · ")+'.</p>':"";
@@ -41,6 +73,7 @@ function render(data){
     '<p class="cp-muted">Une récompense devient acquise après <strong>3 factures mensuelles distinctes réellement payées</strong> par le filleul. Le barème est fixe, automatique et ne porte jamais sur le chiffre d’affaires SVA.</p>'+
     codeBlock+
     '<div class="cp-row"><div><strong>'+esc(String(summary.visits||0))+' visite(s) · '+esc(String(summary.prospects||0))+' demande(s)</strong><span>'+esc(String(summary.claimed||0))+' filleul(s) enregistré(s) · '+esc(String(summary.rewarded||0))+' qualifié(s) · '+esc(money(summary.reward_minor||0,currency))+' acquis.</span></div></div>'+
+    payoutBlock(state.payout,currency,state.can_manage===true)+
     '<div class="cp-panel-head"><div><p class="cp-kicker">BARÈME FIXE</p><h3>Prime par filleul qualifié</h3></div></div>'+scale+bonus+
     '<div class="cp-panel-head"><div><p class="cp-kicker">SUIVI</p><h3>Progression de mes filleuls</h3></div></div>'+renderRecent(recent,currency,required)+
     '<p id="client-referral-status" class="cp-form-message" aria-live="polite"></p>';
@@ -58,6 +91,21 @@ async function createCode(){
   catch(e){var map={REFERRAL_PROGRAM_DISABLED:"Le programme de parrainage est actuellement désactivé.",REFERRAL_REFERRER_NOT_ELIGIBLE:"Le parrainage sera disponible après activation du compte et confirmation de votre abonnement actif et payé.",REFERRAL_CODE_UNAVAILABLE:"Le lien de parrainage est momentanément indisponible."};status(map[e&&e.code]||"Le lien de parrainage n'a pas pu être créé.",true);}
   finally{busy=false;if(b)b.disabled=false;}
 }
+async function activatePayouts(){
+  if(busy||!root.PGICustomerApi||typeof root.PGICustomerApi.activateReferralPayouts!=="function")return;
+  busy=true;status("Ouverture sécurisée de Stripe...");
+  var b=$("client-referral-payout-connect");if(b)b.disabled=true;
+  try{
+    var result=await root.PGICustomerApi.activateReferralPayouts(root.PGICustomerApi.newIdempotencyKey());
+    var url=result&&result.onboarding&&result.onboarding.url;
+    if(!/^https:\/\//i.test(String(url||"")))throw new Error("INVALID_ONBOARDING_URL");
+    location.assign(url);
+  }catch(e){
+    var map={STRIPE_CONNECT_NOT_READY:"Le service de versement est momentanément indisponible.",CUSTOMER_ADMIN_REQUIRED:"Le propriétaire ou un administrateur doit effectuer cette opération.",IDEMPOTENCY_KEY_REQUIRED:"La demande sécurisée doit être relancée."};
+    status(map[e&&e.code]||"Les coordonnées de versement n'ont pas pu être ouvertes.",true);
+    busy=false;if(b)b.disabled=false;
+  }
+}
 async function copyLink(){
   var input=$("client-referral-link");if(!input)return;
   try{await navigator.clipboard.writeText(input.value);status("Lien copié.");}
@@ -66,6 +114,7 @@ async function copyLink(){
 function bind(){
   $("client-referral-create")?.addEventListener("click",createCode,{once:true});
   $("client-referral-copy")?.addEventListener("click",copyLink);
+  $("client-referral-payout-connect")?.addEventListener("click",activatePayouts,{once:true});
 }
 document.addEventListener("pgi:portal-loaded",refresh);
 root.addEventListener("pgi:auth-required",function(){var box=$("client-referral-mount");if(box){box.hidden=true;box.innerHTML="";}});
