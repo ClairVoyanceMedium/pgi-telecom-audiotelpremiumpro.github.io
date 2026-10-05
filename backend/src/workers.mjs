@@ -39,8 +39,9 @@ export function startWorkers({store,eventBus,config,queueHandlers={}}){
     const seconds=Math.min(3600,Math.max(60,60*Math.pow(2,Math.min(6,n-1))));
     return new Date(Date.now()+seconds*1000).toISOString();
   }
-  function referralMissingDetailsRetryAt(){
-    return new Date(Date.now()+6*3600000).toISOString();
+  function referralMissingDetailsRetryAt(hasConnectedAccount){
+    const delayMs=hasConnectedAccount?10*60000:6*3600000;
+    return new Date(Date.now()+delayMs).toISOString();
   }
 
   const runAlerts=async()=>{
@@ -67,7 +68,7 @@ export function startWorkers({store,eventBus,config,queueHandlers={}}){
             await store.deferCustomerReferralPayout(reward.id,{
               status:"missing_payout_details",
               error_code:!accountRef?"REFERRAL_PAYOUT_ACCOUNT_MISSING":"REFERRAL_PAYOUT_ACCOUNT_NOT_READY",
-              retry_at:referralMissingDetailsRetryAt()
+              retry_at:referralMissingDetailsRetryAt(Boolean(accountRef))
             });
             stats.referralPayoutDeferred++;
             continue;
