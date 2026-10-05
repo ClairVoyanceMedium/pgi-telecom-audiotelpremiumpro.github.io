@@ -137,7 +137,7 @@ test("referral rewards use one idempotent Stripe transfer to the connected accou
   let captured=null;
   globalThis.fetch=async(url,init)=>{
     captured={url:String(url),init};
-    return {ok:true,json:async()=>({id:"tr_referral_123",amount:2000,currency:"eur",created:1760000100})};
+    return {ok:true,json:async()=>({id:"tr_referral123",amount:2000,currency:"eur",created:1760000100})};
   };
   try{
     const rewardId="22222222-2222-4222-8222-222222222222";
@@ -145,7 +145,7 @@ test("referral rewards use one idempotent Stripe transfer to the connected accou
       {stripeSecretKey:"sk_test_"+"x".repeat(24),stripeApiVersion:"2026-08-26.dahlia"},
       {connected_account:accountId,tenant_public_id:"33333333-3333-4333-8333-333333333333",reward_public_id:rewardId,amount_minor:2000,currency:"EUR",idempotency_key:"referral-reward/"+rewardId+"/v1"}
     );
-    assert.equal(result.provider_transfer_reference,"tr_referral_123");
+    assert.equal(result.provider_transfer_reference,"tr_referral123");
     assert.match(captured.url,/\/v1\/transfers$/);
     assert.equal(captured.init.headers["Idempotency-Key"],"referral-reward/"+rewardId+"/v1");
     const form=new URLSearchParams(captured.init.body);
