@@ -244,7 +244,25 @@ CREATE TRIGGER platform_accounting_lines_immutable_trg
 BEFORE UPDATE OR DELETE ON platform_accounting_lines
 FOR EACH ROW EXECUTE FUNCTION pgi_accounting_protect_validated();
 
-CREATE FUNCTION pgi_accounting_guard_closed_period()\nRETURNS trigger\nLANGUAGE plpgsql\nAS $accounting$\nDECLARE\n  v_state text;\n  v_period char(7);\nBEGIN\n  v_period=to_char(NEW.entry_date,'YYYY-MM');\n  SELECT state INTO v_state FROM platform_accounting_periods WHERE period_key=v_period;\n  IF v_state='closed' THEN\n    RAISE EXCEPTION 'ACCOUNTING_PERIOD_CLOSED:%',v_period\n      USING ERRCODE='55000';\n  END IF;\n  RETURN NEW;\nEND\n$accounting$;\n\nCREATE TRIGGER platform_accounting_entries_closed_period_trg
+CREATE FUNCTION pgi_accounting_guard_closed_period()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $accounting$
+DECLARE
+  v_state text;
+  v_period char(7);
+BEGIN
+  v_period=to_char(NEW.entry_date,'YYYY-MM');
+  SELECT state INTO v_state FROM platform_accounting_periods WHERE period_key=v_period;
+  IF v_state='closed' THEN
+    RAISE EXCEPTION 'ACCOUNTING_PERIOD_CLOSED:%',v_period
+      USING ERRCODE='55000';
+  END IF;
+  RETURN NEW;
+END
+$accounting$;
+
+CREATE TRIGGER platform_accounting_entries_closed_period_trg
 BEFORE INSERT OR UPDATE OF entry_date,status ON platform_accounting_entries
 FOR EACH ROW EXECUTE FUNCTION pgi_accounting_guard_closed_period();
 
