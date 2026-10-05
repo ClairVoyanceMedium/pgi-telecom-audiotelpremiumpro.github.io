@@ -4741,7 +4741,7 @@ export class PostgresStore{
         [id]
       ),
       this.sql.unsafe(
-        "SELECT provider_account_reference,status,transfers_enabled,payouts_enabled,details_submitted,requirements_state,last_synced_at,created_at,updated_at FROM customer_referral_payout_accounts WHERE tenant_id=$1 LIMIT 1",
+        "SELECT provider_account_reference,status,transfers_enabled,details_submitted,requirements_state,last_synced_at,created_at,updated_at FROM customer_referral_payout_accounts WHERE tenant_id=$1 LIMIT 1",
         [id]
       ),
       this.sql.unsafe(
@@ -4765,7 +4765,7 @@ export class PostgresStore{
       can_manage:program.enabled===true,
       eligibility_reason:eligible?null:(program.enabled!==true?"program_disabled":tenant.status!=="active"?"tenant_not_active":"subscription_not_paid"),
       next_reward:{...next},
-      payout_account:payoutAccount?{provider:"stripe",status:payoutAccount.status,transfers_enabled:payoutAccount.transfers_enabled===true,payouts_enabled:payoutAccount.payouts_enabled===true,details_submitted:payoutAccount.details_submitted===true,requirements_state:payoutAccount.requirements_state,last_synced_at:payoutAccount.last_synced_at}:null,
+      payout_account:payoutAccount?{provider:"stripe",status:payoutAccount.status,transfers_enabled:payoutAccount.transfers_enabled===true,details_submitted:payoutAccount.details_submitted===true,requirements_state:payoutAccount.requirements_state,last_synced_at:payoutAccount.last_synced_at}:null,
       summary:{visits:Number(summary.visits||0),prospects:Number(summary.prospects||0),claimed:Number(summary.claimed||0),rewarded,reward_minor:Number(summary.reward_minor||0)},
       recent:recent.map(x=>({...x,reward_minor:Number(x.reward_minor||0),paid_invoice_count:Number(x.paid_invoice_count||0)}))
     };
@@ -4834,7 +4834,7 @@ export class PostgresStore{
   async customerReferralPayoutAccount(tenantId){
     const id=Number(tenantId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     const rows=await this.readSql.unsafe(
-      "SELECT id,tenant_id,provider,provider_account_reference,status,transfers_enabled,payouts_enabled,details_submitted,requirements_state,last_synced_at,created_at,updated_at FROM customer_referral_payout_accounts WHERE tenant_id=$1 LIMIT 1",
+      "SELECT id,tenant_id,provider,provider_account_reference,status,transfers_enabled,details_submitted,requirements_state,last_synced_at,created_at,updated_at FROM customer_referral_payout_accounts WHERE tenant_id=$1 LIMIT 1",
       [id]
     );
     return rows[0]||null;
@@ -4845,11 +4845,11 @@ export class PostgresStore{
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     if(!/^acct_[A-Za-z0-9]+$/.test(ref))throw problem(400,"INVALID_REFERRAL_PAYOUT_ACCOUNT");
     const rows=await this.sql.unsafe(
-      "INSERT INTO customer_referral_payout_accounts(tenant_id,provider_account_reference,status,transfers_enabled,payouts_enabled,details_submitted,requirements_state,last_synced_at,metadata)"+
-      " VALUES($1,$2,$3,$4,$5,$6,$7,now(),$8::jsonb)"+
-      " ON CONFLICT(tenant_id) DO UPDATE SET provider_account_reference=EXCLUDED.provider_account_reference,status=EXCLUDED.status,transfers_enabled=EXCLUDED.transfers_enabled,payouts_enabled=EXCLUDED.payouts_enabled,details_submitted=EXCLUDED.details_submitted,requirements_state=EXCLUDED.requirements_state,last_synced_at=now(),metadata=customer_referral_payout_accounts.metadata||EXCLUDED.metadata"+
-      " RETURNING id,tenant_id,provider,provider_account_reference,status,transfers_enabled,payouts_enabled,details_submitted,requirements_state,last_synced_at,created_at,updated_at",
-      [id,ref,String(input.status||"pending"),input.transfers_enabled===true,input.payouts_enabled===true,input.details_submitted===true,input.requirements_state||null,JSON.stringify(input.metadata&&typeof input.metadata==="object"?input.metadata:{})]
+      "INSERT INTO customer_referral_payout_accounts(tenant_id,provider_account_reference,status,transfers_enabled,details_submitted,requirements_state,last_synced_at,metadata)"+
+      " VALUES($1,$2,$3,$4,$5,$6,now(),$7::jsonb)"+
+      " ON CONFLICT(tenant_id) DO UPDATE SET provider_account_reference=EXCLUDED.provider_account_reference,status=EXCLUDED.status,transfers_enabled=EXCLUDED.transfers_enabled,details_submitted=EXCLUDED.details_submitted,requirements_state=EXCLUDED.requirements_state,last_synced_at=now(),metadata=customer_referral_payout_accounts.metadata||EXCLUDED.metadata"+
+      " RETURNING id,tenant_id,provider,provider_account_reference,status,transfers_enabled,details_submitted,requirements_state,last_synced_at,created_at,updated_at",
+      [id,ref,String(input.status||"pending"),input.transfers_enabled===true,input.details_submitted===true,input.requirements_state||null,JSON.stringify(input.metadata&&typeof input.metadata==="object"?input.metadata:{})]
     );
     return rows[0];
   }
@@ -4858,9 +4858,9 @@ export class PostgresStore{
     const id=Number(tenantId),ref=String(input.provider_account_reference||"").trim();
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     const rows=await this.sql.unsafe(
-      "UPDATE customer_referral_payout_accounts SET status=$3,transfers_enabled=$4,payouts_enabled=$5,details_submitted=$6,requirements_state=$7,last_synced_at=now() WHERE tenant_id=$1 AND provider_account_reference=$2"+
-      " RETURNING id,tenant_id,provider,provider_account_reference,status,transfers_enabled,payouts_enabled,details_submitted,requirements_state,last_synced_at,created_at,updated_at",
-      [id,ref,String(input.status||"restricted"),input.transfers_enabled===true,input.payouts_enabled===true,input.details_submitted===true,input.requirements_state||null]
+      "UPDATE customer_referral_payout_accounts SET status=$3,transfers_enabled=$4,details_submitted=$5,requirements_state=$6,last_synced_at=now() WHERE tenant_id=$1 AND provider_account_reference=$2"+
+      " RETURNING id,tenant_id,provider,provider_account_reference,status,transfers_enabled,details_submitted,requirements_state,last_synced_at,created_at,updated_at",
+      [id,ref,String(input.status||"restricted"),input.transfers_enabled===true,input.details_submitted===true,input.requirements_state||null]
     );
     if(!rows[0])throw problem(404,"REFERRAL_PAYOUT_ACCOUNT_NOT_FOUND");
     return rows[0];
@@ -4870,9 +4870,9 @@ export class PostgresStore{
     const ref=String(input.provider_account_reference||"").trim();
     if(!/^acct_[A-Za-z0-9]+$/.test(ref))throw problem(400,"INVALID_REFERRAL_PAYOUT_ACCOUNT");
     const rows=await this.sql.unsafe(
-      "UPDATE customer_referral_payout_accounts SET status=$2,transfers_enabled=$3,payouts_enabled=$4,details_submitted=$5,requirements_state=$6,last_synced_at=now() WHERE provider_account_reference=$1"+
-      " RETURNING id,tenant_id,provider,provider_account_reference,status,transfers_enabled,payouts_enabled,details_submitted,requirements_state,last_synced_at,created_at,updated_at",
-      [ref,String(input.status||"restricted"),input.transfers_enabled===true,input.payouts_enabled===true,input.details_submitted===true,input.requirements_state||null]
+      "UPDATE customer_referral_payout_accounts SET status=$2,transfers_enabled=$3,details_submitted=$4,requirements_state=$5,last_synced_at=now() WHERE provider_account_reference=$1"+
+      " RETURNING id,tenant_id,provider,provider_account_reference,status,transfers_enabled,details_submitted,requirements_state,last_synced_at,created_at,updated_at",
+      [ref,String(input.status||"restricted"),input.transfers_enabled===true,input.details_submitted===true,input.requirements_state||null]
     );
     return rows[0]||null;
   }
@@ -4896,7 +4896,7 @@ export class PostgresStore{
       const rows=await tx.unsafe(
         "SELECT rw.id,rw.public_id::text AS public_id,rw.tenant_id,rw.amount_minor::bigint AS amount_minor,rw.currency,rw.payout_attempt_count,"+
         " t.public_id::text AS tenant_public_id,t.display_name,t.billing_email,t.country_code,"+
-        " pa.provider_account_reference,pa.status AS payout_account_status,pa.transfers_enabled,pa.payouts_enabled,pa.details_submitted,pa.requirements_state"+
+        " pa.provider_account_reference,pa.status AS payout_account_status,pa.transfers_enabled,pa.details_submitted,pa.requirements_state"+
         " FROM customer_referral_rewards rw JOIN tenants t ON t.id=rw.tenant_id"+
         " LEFT JOIN customer_referral_payout_accounts pa ON pa.tenant_id=rw.tenant_id"+
         " WHERE rw.id=ANY($1::bigint[]) ORDER BY rw.earned_at ASC,rw.id ASC",
