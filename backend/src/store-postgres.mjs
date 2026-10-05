@@ -4569,7 +4569,7 @@ export class PostgresStore{
   }
 
   async referralProgramPublicState(){
-    const row=(await this.readSql.unsafe(
+    const row=(await this.sql.unsafe(
       "SELECT enabled,configuration FROM platform_feature_flags WHERE feature_key='customer_referral' LIMIT 1"
     ))[0]||null;
     const cfg=row?.configuration&&typeof row.configuration==="object"?row.configuration:{};
@@ -4580,10 +4580,10 @@ export class PostgresStore{
   async referralProgramAdminState(){
     const program=await this.referralProgramPublicState();
     const [counts,rewards]=await Promise.all([
-      this.readSql.unsafe(
+      this.sql.unsafe(
         "SELECT status,count(*)::int AS count,COALESCE(sum(reward_minor),0)::bigint AS reward_minor FROM customer_referrals GROUP BY status ORDER BY status"
       ),
-      this.readSql.unsafe(
+      this.sql.unsafe(
         "SELECT rw.id,rw.public_id::text AS public_id,rw.amount_minor::bigint AS amount_minor,rw.currency,rw.status,rw.earned_at,rw.paid_at,rw.paid_reference,"+
         " rt.display_name AS referrer_name,dt.display_name AS referred_name,rf.public_id::text AS referral_public_id"+
         " FROM customer_referral_rewards rw JOIN customer_referrals rf ON rf.id=rw.referral_id"+
@@ -4619,16 +4619,16 @@ export class PostgresStore{
     const program=await this.referralProgramPublicState();
     if(!program.enabled)return {...program,code:null,eligible:false,eligibility_reason:"program_disabled",summary:{claimed:0,rewarded:0,reward_minor:0},recent:[]};
     const [tenantRows,codeRows,summaryRows,recent]=await Promise.all([
-      this.readSql.unsafe(
+      this.sql.unsafe(
         "SELECT t.status,EXISTS(SELECT 1 FROM tenant_subscriptions s WHERE s.tenant_id=t.id AND s.status='active' AND s.current_period_end>now() AND (s.last_payment_status IS NULL OR s.last_payment_status IN ('paid','succeeded','success'))) AS paid_active FROM tenants t WHERE t.id=$1 AND t.tenant_type<>'internal' LIMIT 1",
         [id]
       ),
-      this.readSql.unsafe("SELECT code,status,created_at FROM customer_referral_codes WHERE tenant_id=$1 LIMIT 1",[id]),
-      this.readSql.unsafe(
+      this.sql.unsafe("SELECT code,status,created_at FROM customer_referral_codes WHERE tenant_id=$1 LIMIT 1",[id]),
+      this.sql.unsafe(
         "SELECT count(*)::int AS claimed,count(*) FILTER(WHERE status='rewarded')::int AS rewarded,COALESCE(sum(reward_minor) FILTER(WHERE status='rewarded'),0)::bigint AS reward_minor FROM customer_referrals WHERE referrer_tenant_id=$1",
         [id]
       ),
-      this.readSql.unsafe(
+      this.sql.unsafe(
         "SELECT public_id::text AS public_id,status,reward_minor::bigint AS reward_minor,reward_currency,claimed_at,qualified_at,rewarded_at,rejected_at FROM customer_referrals WHERE referrer_tenant_id=$1 ORDER BY claimed_at DESC,id DESC LIMIT 20",
         [id]
       )
