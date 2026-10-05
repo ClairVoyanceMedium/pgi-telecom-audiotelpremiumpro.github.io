@@ -135,6 +135,8 @@ test("Railway deployment keeps app and database private-by-reference",()=>{
   assert.ok(docker.includes("llms.txt llms-full.txt fa0a7deb5d60bdf1260c8174ad8c71db.txt"));
   assert.match(start,/DATABASE_URL/);
   assert.match(start,/PGI_STATIC_DIR/);
+  assert.match(start,/PGI_VERSION/);
+  assert.match(start,/package\.json/);
   assert.match(start,/bootstrap-database\.mjs/);
   assert.match(bootstrap,/to_regclass\('public\.calls'\)/);
   assert.match(bootstrap,/refusing destructive bootstrap/);
