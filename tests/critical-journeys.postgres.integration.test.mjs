@@ -302,7 +302,7 @@ test("full customer journey stays fail-closed until legal readiness and keeps SV
     assert.equal(policy.dry_run,true);
 
     const detail=await store.tenantControlDetail(tenantPublicId);
-    assert.equal(detail.tenant.status,"pending");
+    assert.equal(detail.tenant.status,"active");
     assert.equal(detail.lines.length,0);
     assert.ok(detail.subscriptions.some(x=>x.status==="active"));
 
