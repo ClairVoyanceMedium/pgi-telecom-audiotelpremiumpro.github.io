@@ -605,6 +605,8 @@ test("new complementary products are public, indexable and commercially explicit
   assert.doesNotMatch(referralLanding,/site\/referral-landing\.js/);
   assert.match(tracking,/\/api\/v1\/public\/referral-program/);
   assert.match(tracking,/data-referral-example/);
+  assert.match(tracking,/const quickTab=link\.closest\("\\.revenue-quick-tab"\)/);
+  assert.match(tracking,/quickTab\.hidden=false/);
   assert.match(tracking,/Intl\.NumberFormat\("fr-FR"/);
   assert.match(clientReferral,/Recommander et cumuler mes récompenses/);
   assert.match(buildStatic,/"portabilite-prioritaire"/);
