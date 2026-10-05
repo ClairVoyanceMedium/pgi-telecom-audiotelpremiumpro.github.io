@@ -42,17 +42,7 @@ export function startWorkers({store,eventBus,config,queueHandlers={}}){
       if(typeof store.acquireWorkerLease==="function"){
         const acquired=await store.acquireWorkerLease("alerts",ownerId,config.workerLeaseSeconds||45);
         if(!acquired){
-          if(config.stripeSecretKey&&typeof store.openReferralRewardPayoutBatch==="function"&&typeof store.confirmCustomerReferralRewardPayout==="function"){
-        stats.referralPayoutRuns++;
-        try{
-          const payout=await drainReferralRewardPayouts({store,config,limit:25});
-          stats.referralPayoutPaid+=Number(payout.paid||0);stats.referralPayoutDeferred+=Number(payout.deferred||0);
-          stats.lastReferralPayoutSuccessAt=new Date().toISOString();
-        }catch{
-          stats.referralPayoutErrors++;stats.lastReferralPayoutErrorAt=new Date().toISOString();
-        }
-      }
-      stats.lastAlertsSuccessAt=new Date().toISOString();
+          stats.lastAlertsSuccessAt=new Date().toISOString();
           return;
         }
       }
@@ -98,6 +88,16 @@ export function startWorkers({store,eventBus,config,queueHandlers={}}){
               });
             }
           }catch(_error){}
+        }
+      }
+      if(config.stripeSecretKey&&typeof store.openReferralRewardPayoutBatch==="function"&&typeof store.confirmCustomerReferralRewardPayout==="function"){
+        stats.referralPayoutRuns++;
+        try{
+          const payout=await drainReferralRewardPayouts({store,config,limit:25});
+          stats.referralPayoutPaid+=Number(payout.paid||0);stats.referralPayoutDeferred+=Number(payout.deferred||0);
+          stats.lastReferralPayoutSuccessAt=new Date().toISOString();
+        }catch{
+          stats.referralPayoutErrors++;stats.lastReferralPayoutErrorAt=new Date().toISOString();
         }
       }
       stats.lastAlertsSuccessAt=new Date().toISOString();
