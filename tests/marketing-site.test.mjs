@@ -267,12 +267,12 @@ test("public funnels preserve legal customer qualification and non-promissory fi
   assert.match(liveFinance,/reversements validés font foi/);
 });
 
-test("legal notice is indexable, discoverable and does not invent missing legal identity",()=>{
-  assert.match(legalNotice,/name="robots" content="index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1"/);
+test("incomplete legal notice stays public but out of search and AI discovery",()=>{
+  assert.match(legalNotice,/name="robots" content="noindex,follow,noarchive"/);
   assert.match(legalNotice,/"@type":"WebPage"/);
-  assert.match(sitemap,/mentions-legales/);
-  assert.match(llms,/mentions-legales/);
-  assert.match(llmsFull,/### Mentions légales/);
+  assert.doesNotMatch(sitemap,/mentions-legales/);
+  assert.doesNotMatch(llms,/mentions-legales/);
+  assert.doesNotMatch(llmsFull,/### Mentions légales/);
   assert.match(legalNotice,/À compléter avant ouverture commerciale/);
 });
 
