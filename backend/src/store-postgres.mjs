@@ -4835,6 +4835,9 @@ export class PostgresStore{
       " FROM customer_referral_rewards rw JOIN tenants t ON t.id=rw.tenant_id"+
       " LEFT JOIN tenant_card_payment_accounts a ON a.tenant_id=rw.tenant_id"+
       " WHERE rw.status='earned' AND ($1::bigint IS NULL OR rw.tenant_id=$1)"+
+      " AND (COALESCE(rw.metadata->'automatic_payout'->>'status','') NOT IN ('retry_pending','setup_blocked')"+
+      " OR COALESCE(NULLIF(rw.metadata->'automatic_payout'->>'last_attempt_at','')::timestamptz,'-infinity'::timestamptz) < now() -"+
+      " CASE WHEN rw.metadata->'automatic_payout'->>'status'='setup_blocked' THEN interval '24 hours' ELSE interval '1 hour' END)"+
       " ORDER BY rw.earned_at,rw.id LIMIT $2",
       [tenantId,limit]
     );
