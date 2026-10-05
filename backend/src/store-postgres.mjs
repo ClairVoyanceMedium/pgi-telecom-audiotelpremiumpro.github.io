@@ -4847,10 +4847,10 @@ export class PostgresStore{
       const inserted=await this.sql.unsafe(
         "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload)"+
         " SELECT $1,'referral.monthly_digest','customer_referral_program',$2,$3::jsonb"+
-        " WHERE NOT EXISTS(SELECT 1 FROM outbox_events WHERE tenant_id=$1 AND event_type='referral.monthly_digest' AND aggregate_id=$2)",
+        " WHERE NOT EXISTS(SELECT 1 FROM outbox_events WHERE tenant_id=$1 AND event_type='referral.monthly_digest' AND aggregate_id=$2) RETURNING id",
         [row.tenant_id,month,JSON.stringify(payload)]
       );
-      if(inserted.count==null||Number(inserted.count)>0)queued++;
+      if(inserted.length)queued++;
     }
     return {enabled:true,queued,month};
   }
@@ -4860,6 +4860,7 @@ export class PostgresStore{
     const currency=String(params.currency||"EUR").trim().toUpperCase();
     if(!/^[A-Z]{3}$/.test(currency))throw problem(400,"INVALID_CURRENCY");
     const monthFilter=" >= date_trunc('month',now() AT TIME ZONE 'Europe/Paris')-(($2::int-1)*interval '1 month')";
+    const monthFilterSingle=" >= date_trunc('month',now() AT TIME ZONE 'Europe/Paris')-(($1::int-1)*interval '1 month')";
     const paidRatio="CASE WHEN cs.confirmed_amount_ht>0 THEN LEAST(1::numeric,GREATEST(0::numeric,cs.paid_amount_ht/cs.confirmed_amount_ht)) WHEN cs.status='paid' THEN 1::numeric ELSE 0::numeric END";
     const [calendar,subscriptions,priority,cardIn,cardRefund,sva,clientPayouts,refEarned,refPaid,refClaimed,refValidated,current]=await Promise.all([
       this.readSql.unsafe(
@@ -4925,11 +4926,11 @@ export class PostgresStore{
       ),
       this.readSql.unsafe(
         "SELECT to_char(date_trunc('month',r.claimed_at AT TIME ZONE 'Europe/Paris'),'YYYY-MM') AS month,count(*)::int AS count FROM customer_referrals r"+
-        " WHERE (r.claimed_at AT TIME ZONE 'Europe/Paris')"+monthFilter+" GROUP BY 1 ORDER BY 1",[currency,months]
+        " WHERE (r.claimed_at AT TIME ZONE 'Europe/Paris')"+monthFilterSingle+" GROUP BY 1 ORDER BY 1",[months]
       ),
       this.readSql.unsafe(
         "SELECT to_char(date_trunc('month',r.rewarded_at AT TIME ZONE 'Europe/Paris'),'YYYY-MM') AS month,count(*)::int AS count FROM customer_referrals r"+
-        " WHERE r.status='rewarded' AND r.rewarded_at IS NOT NULL AND (r.rewarded_at AT TIME ZONE 'Europe/Paris')"+monthFilter+" GROUP BY 1 ORDER BY 1",[currency,months]
+        " WHERE r.status='rewarded' AND r.rewarded_at IS NOT NULL AND (r.rewarded_at AT TIME ZONE 'Europe/Paris')"+monthFilterSingle+" GROUP BY 1 ORDER BY 1",[months]
       ),
       this.readSql.unsafe(
         "SELECT"+
