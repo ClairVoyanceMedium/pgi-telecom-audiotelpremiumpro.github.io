@@ -3,7 +3,8 @@ import {emailHash,normalizeEmail,sendTransactionalEmail} from "./resend-email.mj
 const OUTBOX_TYPES=[
   "customer.self_registered","tenant.status","subscription.changed",
   "portability.requested","service.incident.created","service.incident.note","service.incident.changed",
-  "tenant.revenue_distribution.updated","consumer.withdrawal.received"
+  "tenant.revenue_distribution.updated","consumer.withdrawal.received",
+  "referral.reward.earned","referral.reward.paid"
 ];
 const TERMINAL_SEND_STATES=new Set(["accepted","sent","delivered","delayed","clicked","bounced","complained","suppressed"]);
 const EMAIL_RE=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -203,6 +204,14 @@ async function messagesForEvent(store,config,event){
   }
   if(event.event_type==="tenant.revenue_distribution.updated"){
     if(customerEmail&&String(p.status||"")==="payable")return [msg("customer",customerEmail,customerName,"payout_available","billing",event,{...base,currency:p.currency||null})];
+  }
+  if(event.event_type==="referral.reward.earned"){
+    if(!customerEmail)return [];
+    return [msg("customer",customerEmail,customerName,"referral_reward_earned","billing",event,{...base,amount_minor:p.amount_minor,currency:p.currency,qualification_paid_invoices:p.qualification_paid_invoices||p.paid_invoice_count||3})];
+  }
+  if(event.event_type==="referral.reward.paid"){
+    if(!customerEmail)return [];
+    return [msg("customer",customerEmail,customerName,"referral_reward_paid","billing",event,{...base,amount_minor:p.amount_minor,currency:p.currency,payout_provider:p.payout_provider,provider_transfer_reference:p.provider_transfer_reference})];
   }
   return [];
 }
