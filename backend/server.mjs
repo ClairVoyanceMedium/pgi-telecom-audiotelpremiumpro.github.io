@@ -1038,6 +1038,70 @@ export function createBackend(options={}){
         }
       }
 
+      if(method==="POST"&&pathname==="/api/v1/ambassador/auth/password/forgot"){
+        if(config.authMode!=="session")return done(res,metrics,started,"ambassador.auth.password_forgot",404,{error:{code:"AUTH_DISABLED"}});
+        requireSameOriginBrowser(req);enforceRegistrationRate(req,config,registrationBuckets);
+        const body=await readJson(req,config.bodyLimitBytes),email=String(body.email||"").trim().toLowerCase();
+        const token=randomBytes(32).toString("base64url"),tokenHash=createHash("sha256").update(token).digest("hex");
+        const record={token_hash:tokenHash,requested_at:new Date().toISOString(),expires_at:new Date(Date.now()+30*60000).toISOString()};
+        const target=await store.beginCustomerPasswordReset(email,record);
+        if(target){
+          const actionUrl=config.publicBaseUrl+"/ambassadeur.html#password-reset="+encodeURIComponent(token);
+          try{
+            await sendTransactionalEmail(config,{to:target.email,name:target.display_name||target.email,senderRole:"support",templateKey:"password_reset",data:{name:target.display_name||target.email,locale:target.preferred_locale,action_url:actionUrl},idempotencyKey:"ambassador-password-reset/"+tokenHash,internalEventId:"ambassador-password-reset/"+tokenHash});
+          }catch(error){logSecurityEmailFailure("ambassador_password_reset",error);}
+        }
+        return done(res,metrics,started,"ambassador.auth.password_forgot",202,{ok:true,message:"PASSWORD_RESET_IF_ACCOUNT_EXISTS"});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/ambassador/dashboard"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        if(typeof store.customerReferralPayoutAccount==="function"){
+          const local=await store.customerReferralPayoutAccount(context.tenant_id);
+          if(local?.provider_account_reference){
+            try{
+              const remote=await retrieveStripeReferralRecipientAccount(config,local.provider_account_reference);
+              await store.syncCustomerReferralPayoutAccount(context.tenant_id,normalizeStripeReferralRecipientAccount(remote));
+            }catch(_error){}
+          }
+        }
+        return done(res,metrics,started,"ambassador.dashboard",200,await store.ambassadorDashboard(context.tenant_id));
+      }
+      if(method==="POST"&&pathname==="/api/v1/ambassador/referral/code"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        const profile=await store.ambassadorProfileForTenant(context.tenant_id);
+        if(!profile||profile.status!=="active"){const e=new Error("Ambassador profile required");e.status=403;e.code="AMBASSADOR_PROFILE_NOT_ACTIVE";throw e;}
+        if(!["owner","admin"].includes(context.customer_role)){const e=new Error("Owner or admin required");e.status=403;e.code="CUSTOMER_ADMIN_REQUIRED";throw e;}
+        const payload={tenant_id:context.tenant_id,action:"ensure_referral_code"};
+        const result=await store.idempotent(req.headers["idempotency-key"],"ambassador.referral.code",payload,()=>store.ensureCustomerReferralCode(context.tenant_id));
+        return done(res,metrics,started,"ambassador.referral_code",201,{...result.value,replayed:result.replayed});
+      }
+      if(method==="POST"&&pathname==="/api/v1/ambassador/payout-account"){
+        requireCustomerCsrf(req,customerActor,config);
+        if(!stripeConnectState(config).configured)return done(res,metrics,started,"ambassador.payout.connect",503,{error:{code:"STRIPE_CONNECT_NOT_READY"}});
+        const idempotencyKey=String(req.headers["idempotency-key"]||"").trim();
+        if(!idempotencyKey||idempotencyKey.length>200){const e=new Error("Idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
+        const context=await store.customerSessionContext(customerActor),profile=await store.ambassadorProfileForTenant(context.tenant_id);
+        if(!profile||profile.status!=="active"){const e=new Error("Ambassador profile required");e.status=403;e.code="AMBASSADOR_PROFILE_NOT_ACTIVE";throw e;}
+        if(!["owner","admin"].includes(context.customer_role)){const e=new Error("Owner or admin required");e.status=403;e.code="CUSTOMER_ADMIN_REQUIRED";throw e;}
+        const billing=await store.customerBillingPreparation(context.tenant_id);
+        let local=await store.customerReferralPayoutAccount(context.tenant_id);
+        if(!local){
+          const account=await createStripeReferralRecipientAccount(config,{
+            email:billing.tenant?.billing_email||context.email,
+            country_code:billing.tenant?.country_code||"FR",
+            idempotency_key:"ambassador-payout-account/"+String(billing.tenant?.id||context.tenant_id)
+          });
+          local=await store.upsertCustomerReferralPayoutAccount(context.tenant_id,{...normalizeStripeReferralRecipientAccount(account),metadata:{source:"ambassador_portal"}});
+        }else{
+          try{local=await store.syncCustomerReferralPayoutAccount(context.tenant_id,normalizeStripeReferralRecipientAccount(await retrieveStripeReferralRecipientAccount(config,local.provider_account_reference)))}catch(_error){}
+        }
+        const link=await createStripeReferralOnboardingLink(config,local.provider_account_reference,{idempotency_key:idempotencyKey});
+        return done(res,metrics,started,"ambassador.payout.connect",201,{account:{status:local.status,transfers_enabled:local.transfers_enabled===true,details_submitted:local.details_submitted===true,requirements_state:local.requirements_state||null},onboarding:link});
+      }
+
       if(method==="GET"&&pathname==="/api/v1/customer/referral"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
