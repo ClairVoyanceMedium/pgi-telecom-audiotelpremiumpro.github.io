@@ -350,7 +350,7 @@ export async function expertAccountingSnapshot(store,params={}){
   const from=(fiscal?.from||new Date(Date.UTC(year,0,1))).toISOString().slice(0,10);
   const to=(fiscal?.toExclusive||new Date(Date.UTC(year+1,0,1))).toISOString().slice(0,10);
   const periodFrom=from.slice(0,7),periodTo=new Date(new Date(to+"T00:00:00Z").getTime()-86400000).toISOString().slice(0,7);
-  const [entries,trial,ledger,accounts,journals,vat,periods,bank,documents]=await Promise.all([
+  const [entries,trial,ledger,accounts,journals,vat,periods,periodEvents,bank,bankTransactions,documents]=await Promise.all([
     store.readSql.unsafe(
       "SELECT e.id,e.public_id,e.source_type,e.source_key,e.journal_code,e.entry_number,e.entry_date,e.piece_ref,e.piece_date,e.label,e.currency,e.status,e.expert_note,e.validated_at,e.created_at,"+
       " COALESCE(sum(l.debit_minor),0)::bigint AS debit_minor,COALESCE(sum(l.credit_minor),0)::bigint AS credit_minor,"+
@@ -389,8 +389,17 @@ export async function expertAccountingSnapshot(store,params={}){
     ),
     store.readSql.unsafe("SELECT period_key,state,review_started_at,closed_at,close_hash FROM platform_accounting_periods WHERE period_key>=$1 AND period_key<=$2 ORDER BY period_key",[periodFrom,periodTo]),
     store.readSql.unsafe(
+      "SELECT id,period_key,previous_state,new_state,reason,actor_user_id,occurred_at FROM platform_accounting_period_events WHERE period_key>=$1 AND period_key<=$2 ORDER BY occurred_at DESC,id DESC LIMIT 250",
+      [periodFrom,periodTo]
+    ),
+    store.readSql.unsafe(
       "SELECT reconciliation_state,count(*)::int AS count,COALESCE(sum(abs(amount_minor)),0)::bigint AS amount_minor"+
       " FROM platform_bank_transactions WHERE booked_at>=$1::date AND booked_at<$2::date GROUP BY reconciliation_state ORDER BY reconciliation_state",
+      [from,to]
+    ),
+    store.readSql.unsafe(
+      "SELECT id,external_key,booked_at,value_at,amount_minor,currency,label,counterparty,source,reconciliation_state,matched_entry_id,imported_at"+
+      " FROM platform_bank_transactions WHERE booked_at>=$1::date AND booked_at<$2::date ORDER BY booked_at DESC,id DESC LIMIT 500",
       [from,to]
     ),
     store.readSql.unsafe(
@@ -401,7 +410,7 @@ export async function expertAccountingSnapshot(store,params={}){
   return {
     schema_version:"audiotel-expert-accounting/1",generated_at:new Date().toISOString(),year,
     fiscal_range:{from,to_exclusive:to,close_date:fiscal?.close?.toISOString().slice(0,10)||null},
-    settings,entries,trial_balance:trial,general_ledger:ledger,accounts,journals,vat_summary:vat,periods,bank_reconciliation:bank,
+    settings,entries,trial_balance:trial,general_ledger:ledger,accounts,journals,vat_summary:vat,periods,period_events:periodEvents,bank_reconciliation:bank,bank_transactions:bankTransactions,
     documents:documents[0]||{document_count:0,hashed_count:0},
     fec_readiness:{ready:fec.blockers.length===0,blockers:fec.blockers,close_date:fec.close_date,counts:fec.counts,unmatched_bank:fec.unmatched_bank},
     accounting_policy:{
