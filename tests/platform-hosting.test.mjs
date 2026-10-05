@@ -81,6 +81,14 @@ test("same-origin static handler serves marketing at root and keeps private UI n
     assert.equal(client.headers.get("cache-control"),"no-store");
     assert.match(client.headers.get("content-security-policy")||"",/accounts\.google\.com/);
     assert.match(client.headers.get("content-security-policy")||"",/www\.googleapis\.com/);
+    fs.mkdirSync(path.join(root,"parrainage-audiotel"),{recursive:true});
+    fs.writeFileSync(path.join(root,"parrainage-audiotel","index.html"),"referral");
+    const canonicalPublic=await fetch(base+"/parrainage-audiotel",{redirect:"manual"});
+    assert.equal(canonicalPublic.status,308);
+    assert.equal(canonicalPublic.headers.get("location"),"/parrainage-audiotel/");
+    const canonicalLegacyHtml=await fetch(base+"/parrainage-audiotel.html",{redirect:"manual"});
+    assert.equal(canonicalLegacyHtml.status,308);
+    assert.equal(canonicalLegacyHtml.headers.get("location"),"/parrainage-audiotel/");
     fs.mkdirSync(path.join(root,"site"),{recursive:true});
     fs.writeFileSync(path.join(root,"site","app.css"),"body{}");
     const immutableAsset=await fetch(base+"/site/app.css?v=release123");
