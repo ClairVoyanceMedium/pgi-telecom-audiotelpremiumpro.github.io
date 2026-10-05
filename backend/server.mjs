@@ -22,6 +22,7 @@ import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
 import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail,syncHubSpotCustomerIncident,ensureHubSpotCardPaymentSchema,syncHubSpotCardPaymentState} from "./src/hubspot-crm.mjs";
 import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
+import {ensureAmbassadorAccountingSchema,ambassadorProgramPublicState,registerAmbassador,rotateAmbassadorAccess,ambassadorDashboard,updateAmbassadorPreferences,claimAmbassadorReferral,qualifyAmbassadorAfterPayment,ambassadorAdminState,updateAmbassadorProgram,updateAmbassadorProfile,settleAmbassadorPayout,syncAccountingLedger,recordAccountingRefund,accountingOverview,accountingLedger,accountingSettings,updateAccountingSettings,runAmbassadorEmailCadence} from "./src/ambassador-accounting.mjs";
 
 export async function createDefaultBackend(){
   const config=loadConfig();
@@ -37,6 +38,8 @@ export async function createDefaultBackend(){
     }
     try{await ensureHubSpotCardPaymentSchema();}
     catch(error){logHubSpotSyncFailure("card_payment_schema",error);}
+    try{await ensureAmbassadorAccountingSchema(store);}
+    catch(error){process.stderr.write(JSON.stringify({level:"error",event:"ambassador_accounting_schema_failed",code:String(error?.code||"SCHEMA_FAILED")})+"\n");}
     return createBackend({config,eventBus,store,closeStore:true});
   }
   return createBackend({config,eventBus});
@@ -143,6 +146,7 @@ export function createBackend(options={}){
         if(connectPayment){
           connectPayment.payload_sha256=hashStripeEventPayload(event);
           const result=await store.applyCardPaymentProviderEvent(connectPayment);
+          try{await syncAccountingLedger(store);}catch(error){process.stderr.write(JSON.stringify({level:"warn",event:"accounting_sync_failed",source:"card_payment",code:String(error?.code||"SYNC_FAILED")})+"\n");}
           let crm_sync=false;
           if(result?.request?.tenant_id){
             try{
@@ -167,16 +171,28 @@ export function createBackend(options={}){
         const portabilityPriority=normalizeStripePortabilityPriorityEvent(event);
         if(portabilityPriority){
           const result=await store.applyPortabilityPriorityProviderEvent(portabilityPriority);
+          try{await syncAccountingLedger(store);}catch(error){process.stderr.write(JSON.stringify({level:"warn",event:"accounting_sync_failed",source:"priority_portability",code:String(error?.code||"SYNC_FAILED")})+"\n");}
           return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,type:String(event.type||""),portability_priority:true,duplicate:Boolean(result.duplicate),updated:Boolean(result.updated),status:result.status});
         }
         const refund=config.ga4MeasurementEnabled&&config.ga4ApiSecret?await normalizeStripeRefundEvent(event,config):null;
         if(refund){
+          try{await recordAccountingRefund(store,refund);}catch(error){process.stderr.write(JSON.stringify({level:"warn",event:"accounting_refund_failed",code:String(error?.code||"SYNC_FAILED")})+"\n");}
           const analytics=await deliverGa4StripeEvent(store,config,"refund",refund.provider_event_id,refund.refund_id,buildGa4RefundFromStripe(refund));
           return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,type:String(event.type||""),analytics});
         }
         const normalized=await normalizeStripeBillingEvent(event,config);
         if(!normalized)return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,ignored:true,type:String(event.type||"")});
         const result=await store.applySubscriptionBillingEvent(normalized);
+        let ambassadorQualification=null;
+        if(!result.duplicate&&normalized.event_type==="invoice.paid"){
+          try{
+            ambassadorQualification=await qualifyAmbassadorAfterPayment(store,result.tenant_id,result.subscription_id);
+            if(ambassadorQualification?.qualified&&config.transactionalEmailEnabled){
+              try{await sendTransactionalEmail(config,{to:ambassadorQualification.email,name:ambassadorQualification.display_name,senderRole:"notifications",templateKey:"ambassador_reward_earned",data:{sequence_number:ambassadorQualification.sequence_number,base_reward_minor:ambassadorQualification.base_reward_minor,bonus_reward_minor:ambassadorQualification.bonus_reward_minor,total_reward_minor:ambassadorQualification.total_reward_minor,currency:ambassadorQualification.currency,action_url:config.publicBaseUrl+"/ambassadeur-audiotel/"},idempotencyKey:"ambassador-reward/"+ambassadorQualification.ambassador_id+"/"+ambassadorQualification.sequence_number,internalEventId:"ambassador-reward/"+ambassadorQualification.ambassador_id+"/"+ambassadorQualification.sequence_number});}catch(error){logSecurityEmailFailure("ambassador_reward",error);}
+            }
+          }catch(error){process.stderr.write(JSON.stringify({level:"warn",event:"ambassador_qualification_failed",code:String(error?.code||"QUALIFICATION_FAILED")})+"\n");}
+          try{await syncAccountingLedger(store);}catch(error){process.stderr.write(JSON.stringify({level:"warn",event:"accounting_sync_failed",source:"subscription",code:String(error?.code||"SYNC_FAILED")})+"\n");}
+        }
         let onboarding=null;
         if(normalized.status==="active"){
           onboarding=await autoAdvanceTenantAfterBilling(store,config,normalized.tenant_public_id);
@@ -243,13 +259,57 @@ export function createBackend(options={}){
         if(typeof store.scanUnpaidSubscriptions==="function")await store.scanUnpaidSubscriptions(500);
         const delivery=await drainTransactionalEmails({store,config,limit:100});
         const dunning=await drainDunningTransactionalEmails({store,config,limit:100});
-        return done(res,metrics,started,"email.dispatch",200,{ok:true,delivery,dunning});
+        let ambassador={enabled:false},accounting={inserted:0};
+        try{ambassador=await runAmbassadorEmailCadence({store,config,sendTransactionalEmail});}catch(error){process.stderr.write(JSON.stringify({level:"warn",event:"ambassador_email_cadence_failed",code:String(error?.code||"EMAIL_FAILED")})+"\n");}
+        try{accounting=await syncAccountingLedger(store);}catch(error){process.stderr.write(JSON.stringify({level:"warn",event:"accounting_daily_sync_failed",code:String(error?.code||"SYNC_FAILED")})+"\n");}
+        return done(res,metrics,started,"email.dispatch",200,{ok:true,delivery,dunning,ambassador,accounting});
       }
 
       if(method==="GET"&&pathname==="/api/v1/internal/business-live/reset-schedules/run"){
         authorizeCron(req,config);
         const result=typeof store.runDueBusinessLiveResets==="function"?await store.runDueBusinessLiveResets(250):{scanned:0,executed:0,failed:0,results:[]};
         return done(res,metrics,started,"business_live.reset_schedules",200,{ok:true,...result});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/public/ambassador-program"){
+        return done(res,metrics,started,"public.ambassador_program",200,await ambassadorProgramPublicState(store));
+      }
+      if(method==="POST"&&pathname==="/api/v1/public/ambassadors"){
+        requireSameOriginBrowser(req);
+        const body=await readJson(req,config.bodyLimitBytes);
+        if(String(body.website||"").trim())return done(res,metrics,started,"public.ambassador_register",202,{accepted:false});
+        const result=await registerAmbassador(store,body);
+        let email_sent=false;
+        if(config.transactionalEmailEnabled){
+          try{
+            const actionUrl=config.publicBaseUrl+"/ambassadeur-audiotel/#access="+encodeURIComponent(result.access_token);
+            await sendTransactionalEmail(config,{to:result.email,name:result.display_name,senderRole:"notifications",templateKey:"ambassador_welcome",data:{code:result.code,action_url:actionUrl,currency:"EUR"},idempotencyKey:"ambassador-welcome/"+result.public_id+"/"+Date.now(),internalEventId:"ambassador-welcome/"+result.public_id});
+            email_sent=true;
+          }catch(error){logSecurityEmailFailure("ambassador_welcome",error);}
+        }
+        return done(res,metrics,started,"public.ambassador_register",201,{accepted:true,email_sent});
+      }
+      if(method==="POST"&&pathname==="/api/v1/public/ambassadors/access-link"){
+        requireSameOriginBrowser(req);
+        const body=await readJson(req,config.bodyLimitBytes);
+        let result=null;
+        try{result=await rotateAmbassadorAccess(store,body.email);}catch(error){if(String(error?.code||"")!=="INVALID_AMBASSADOR_EMAIL")throw error;}
+        if(result&&config.transactionalEmailEnabled){
+          try{
+            const actionUrl=config.publicBaseUrl+"/ambassadeur-audiotel/#access="+encodeURIComponent(result.access_token);
+            await sendTransactionalEmail(config,{to:result.email,name:result.display_name,senderRole:"notifications",templateKey:"ambassador_access_link",data:{action_url:actionUrl},idempotencyKey:"ambassador-access/"+result.public_id+"/"+Date.now(),internalEventId:"ambassador-access/"+result.public_id});
+          }catch(error){logSecurityEmailFailure("ambassador_access",error);}
+        }
+        return done(res,metrics,started,"public.ambassador_access",202,{accepted:true});
+      }
+      if(method==="GET"&&pathname==="/api/v1/public/ambassadors/dashboard"){
+        const token=String(req.headers["x-ambassador-token"]||"");
+        return done(res,metrics,started,"public.ambassador_dashboard",200,await ambassadorDashboard(store,token,config));
+      }
+      if(method==="POST"&&pathname==="/api/v1/public/ambassadors/preferences"){
+        requireSameOriginBrowser(req);
+        const token=String(req.headers["x-ambassador-token"]||""),body=await readJson(req,config.bodyLimitBytes);
+        return done(res,metrics,started,"public.ambassador_preferences",200,await updateAmbassadorPreferences(store,token,body));
       }
 
       if(method==="GET"&&pathname==="/api/v1/public/referral-program"){
@@ -307,6 +367,10 @@ export function createBackend(options={}){
             process.stderr.write(JSON.stringify({level:"warn",event:"opening_dossier_automation_failed",code:String(error?.code||"OPENING_DOSSIER_FAILED"),status:Number(error?.status)||null})+"\n");
             throw error;
           }
+        }
+        if(dossier&&body.referral_code&&dossier.referral?.accepted!==true){
+          try{dossier.ambassador_referral=await claimAmbassadorReferral(store,dossier.id,body.referral_code,"public_opening_form");}
+          catch(error){const safe=["AMBASSADOR_CODE_NOT_FOUND","AMBASSADOR_PROGRAM_DISABLED","AMBASSADOR_SELF_CLAIM","AMBASSADOR_TARGET_NOT_ELIGIBLE","REFERRAL_ALREADY_CLAIMED"];if(!safe.includes(String(error?.code||"")))throw error;dossier.ambassador_referral={accepted:false,error_code:String(error?.code||"AMBASSADOR_REJECTED")};}
         }
         try{formResult=await submitHubSpotLead(body,{pageUri,pageName:"Demande d’ouverture Audiotel Premium Pro",hutk});}
         catch(error){logHubSpotSyncFailure("public_lead_form",error);}
@@ -1583,6 +1647,52 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/platform/tenants/summary"){
         requireRole(actor,["admin","finance","readonly"]);
         return done(res,metrics,started,"platform.tenant_summary",200,await store.customerAdminSummary());
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/platform/ambassadors"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.ambassadors",200,await ambassadorAdminState(store));
+      }
+      if(method==="POST"&&pathname==="/api/v1/platform/ambassador-program"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={enabled:body.enabled===true,motivation_email_enabled:body.motivation_email_enabled!==false};
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.ambassador_program.update",payload,()=>updateAmbassadorProgram(store,payload,actor));
+        return done(res,metrics,started,"platform.ambassador_program_update",200,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/platform/ambassadors/:id/status");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={id:match.id,status:String(body.status||""),payout_compliance_status:String(body.payout_compliance_status||"")};
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.ambassador.update",payload,()=>updateAmbassadorProfile(store,match.id,payload,actor));
+        return done(res,metrics,started,"platform.ambassador_update",200,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/platform/ambassadors/:id/payout");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes),payload={id:match.id,paid_reference:String(body.paid_reference||"").trim()};
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.ambassador.payout",payload,()=>settleAmbassadorPayout(store,match.id,payload.paid_reference,actor));
+        try{await syncAccountingLedger(store);}catch{}
+        return done(res,metrics,started,"platform.ambassador_payout",200,{...result.value,replayed:result.replayed});
+      }
+      if(method==="GET"&&pathname==="/api/v1/platform/accounting/overview"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.accounting_overview",200,await accountingOverview(store,config,Object.fromEntries(url.searchParams.entries())));
+      }
+      if(method==="GET"&&pathname==="/api/v1/platform/accounting/ledger"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.accounting_ledger",200,await accountingLedger(store,Object.fromEntries(url.searchParams.entries())));
+      }
+      if(method==="GET"&&pathname==="/api/v1/platform/accounting/settings"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.accounting_settings",200,await accountingSettings(store));
+      }
+      if(method==="POST"&&pathname==="/api/v1/platform/accounting/settings"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.accounting_settings.update",body,()=>updateAccountingSettings(store,body,actor));
+        return done(res,metrics,started,"platform.accounting_settings_update",200,{...result.value,replayed:result.replayed});
       }
 
       if(method==="GET"&&pathname==="/api/v1/platform/referral-program"){
