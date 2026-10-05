@@ -2584,7 +2584,6 @@ export class PostgresStore{
             );
           }
         }
-        }
       }
       return {duplicate:false,subscription_id:subscriptionId,tenant_id:Number(tenant.id),status};
     });
