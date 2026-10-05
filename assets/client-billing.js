@@ -24,22 +24,22 @@ export function createController(ctx){
       const cadence=offer.billing_interval==="year"?"an":"mois",offerPrice=money(n(offer.amount_minor)/100,offer.currency)+" TTC / "+cadence;
       if(offerDetail)offerDetail.textContent=offerPrice+" · "+tr("facturé mensuellement d’avance · résiliation à tout moment, effet fin de période");
       if(offerChip){offerChip.textContent=money(n(offer.amount_minor)/100,offer.currency);offerChip.className="cp-chip ok";}
-      if(start)start.textContent=tr("Souscrire avec obligation de paiement")+" — "+offerPrice;
+      if(start)start.textContent=tr("Souscrire avec obligation de paiement")+" : "+offerPrice;
     }else{
       const resolvedCurrency=currencyInfo.currency||((data.tenant||{}).default_currency)||"EUR";
       if(offerDetail)offerDetail.textContent=tr("Devise automatique")+" : "+resolvedCurrency+" · "+tr("tarif local à configurer");
       if(offerChip){offerChip.textContent=resolvedCurrency;offerChip.className="cp-chip warn";}
     }
-    if(stateEl)stateEl.textContent=needsRecovery?tr("Paiement à régulariser. Utilisez le portail sécurisé pour mettre à jour votre moyen de paiement."):connected?tr("Prestataire de paiement configuré."):tr("Architecture de paiement prête, prestataire non connecté.");
-    if(chipEl){chipEl.textContent=needsRecovery?tr("À RÉGULARISER"):connected?tr("PRÊT"):tr("NON CONNECTÉ");chipEl.className="cp-chip "+(needsRecovery?"warn":connected?"ok":"neutral");}
-    if(start){start.disabled=b2cBlocked;start.setAttribute("aria-disabled",String(b2cBlocked||!provider.checkout_available||!offer));if(b2cBlocked)start.textContent=tr("Souscription particulier indisponible");else start.title=!offer?tr("Tarif indisponible pour ce compte."):!provider.checkout_available?tr("Paiement en ligne pas encore activé."):"";}
+    if(stateEl)stateEl.textContent=b2cBlocked?tr("Votre demande est enregistrée. La souscription payante sera proposée après validation des conditions de conformité applicables."):needsRecovery?tr("Paiement à régulariser. Utilisez le portail sécurisé pour mettre à jour votre moyen de paiement."):connected?tr("Prestataire de paiement configuré."):tr("Architecture de paiement prête, prestataire non connecté.");
+    if(chipEl){chipEl.textContent=b2cBlocked?tr("DOSSIER EN ATTENTE"):needsRecovery?tr("À RÉGULARISER"):connected?tr("PRÊT"):tr("NON CONNECTÉ");chipEl.className="cp-chip "+(b2cBlocked||needsRecovery?"warn":connected?"ok":"neutral");}
+    if(start){start.disabled=b2cBlocked;start.setAttribute("aria-disabled",String(b2cBlocked||!provider.checkout_available||!offer));if(b2cBlocked){start.textContent=tr("Souscription après validation du dossier");start.title=tr("Votre dossier reste enregistré. Le paiement sera proposé lorsque les conditions applicables seront réunies.");}else start.title=!offer?tr("Tarif indisponible pour ce compte."):!provider.checkout_available?tr("Paiement en ligne pas encore activé."):"";}
     if(manage){manage.textContent=needsRecovery?tr("Régulariser mon paiement"):tr("Gérer / résilier mon abonnement");manage.disabled=false;manage.setAttribute("aria-disabled",String(!provider.customer_portal_available||!rows.length));manage.title=!rows.length?tr("Aucun abonnement actif à gérer."):!provider.customer_portal_available?tr("Portail de facturation pas encore activé."):"";}
   }
   async function open(kind){
     const state=ctx.getState();if(state.billingBusy)return;
     if(state.demo){ctx.toast("Prestataire de paiement non connecté.");return;}
     const data=state.data||{},provider=data.billing_provider||{},offer=data.billing_offer||null,rows=data.subscriptions||[];
-    if(kind==="start"&&(data.tenant||{}).customer_type==="individual"&&!data.b2c_commercial_ready){ctx.toast("Souscription particulier indisponible.");return;}
+    if(kind==="start"&&(data.tenant||{}).customer_type==="individual"&&!data.b2c_commercial_ready){ctx.toast("Votre demande reste enregistrée. La souscription payante sera proposée lorsque les conditions applicables seront réunies.");return;}
     if(kind==="start"&&!offer){ctx.toast("Le tarif n’est pas encore disponible pour ce compte.");return;}
     if(kind==="start"&&!provider.checkout_available){ctx.toast("Le paiement en ligne n’est pas encore activé. Votre dossier reste enregistré.");return;}
     if(kind==="start"){
