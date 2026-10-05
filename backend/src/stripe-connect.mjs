@@ -102,6 +102,13 @@ export async function createStripeConnectedAccount(config,input={}){
       merchant:{
         capabilities:{card_payments:{requested:true}},
         support:{url:baseUrl(config)}
+      },
+      recipient:{
+        capabilities:{
+          stripe_balance:{
+            stripe_transfers:{requested:true}
+          }
+        }
       }
     }
   };
@@ -112,23 +119,26 @@ export async function createStripeConnectedAccount(config,input={}){
 
 export async function retrieveStripeConnectedAccount(config,accountId){
   if(!/^acct_[A-Za-z0-9]+$/.test(String(accountId||"")))throw error(400,"INVALID_CONNECT_ACCOUNT");
-  const query="?include%5B%5D=configuration.merchant&include%5B%5D=requirements&include%5B%5D=defaults";
+  const query="?include%5B%5D=configuration.merchant&include%5B%5D=configuration.recipient&include%5B%5D=requirements&include%5B%5D=defaults";
   return jsonRequest(config,"/v2/core/accounts/"+encodeURIComponent(accountId)+query,{preview:true});
 }
 
 export function normalizeStripeConnectedAccount(account={}){
   const card=account?.configuration?.merchant?.capabilities?.card_payments||{};
+  const transfers=account?.configuration?.recipient?.capabilities?.stripe_balance?.stripe_transfers||{};
   const requirements=account?.requirements||{};
   const cardStatus=String(card?.status||"").toLowerCase();
+  const transferStatus=String(transfers?.status||"").toLowerCase();
   const deadline=String(requirements?.summary?.minimum_deadline?.status||"").toLowerCase();
   const chargesEnabled=cardStatus==="active";
+  const payoutsEnabled=transferStatus==="active";
   const detailsSubmitted=!["currently_due","past_due","eventually_due"].includes(deadline)&&deadline!=="requirements_past_due";
   return {
     provider_account_reference:String(account?.id||""),
     charges_enabled:chargesEnabled,
-    payouts_enabled:chargesEnabled,
+    payouts_enabled:payoutsEnabled,
     details_submitted:detailsSubmitted,
-    requirements_state:deadline||cardStatus||"unknown",
+    requirements_state:deadline||cardStatus||transferStatus||"unknown",
     status:chargesEnabled?"active":detailsSubmitted?"restricted":"onboarding"
   };
 }
@@ -207,6 +217,40 @@ export async function createStripeCardCheckout(config,input={}){
     expires_at:session.expires_at?new Date(Number(session.expires_at)*1000).toISOString():null,
     application_fee_minor:fee,
     application_fee_bps:bps
+  };
+}
+
+export async function createStripeReferralTransfer(config,input={}){
+  const destination=String(input.destination_account||"").trim();
+  if(!/^acct_[A-Za-z0-9]+$/.test(destination))throw error(400,"DESTINATION_ACCOUNT_INVALID");
+  const amount=Math.trunc(Number(input.amount_minor));
+  if(!Number.isInteger(amount)||amount<=0||amount>100000000)throw error(400,"INVALID_REFERRAL_TRANSFER_AMOUNT");
+  const currency=String(input.currency||"EUR").trim().toLowerCase();
+  if(!/^[a-z]{3}$/.test(currency))throw error(400,"INVALID_REFERRAL_TRANSFER_CURRENCY");
+  const rewardId=cleanText(input.reward_public_id,80);
+  const tenantId=cleanText(input.tenant_public_id,80);
+  if(!rewardId)throw error(400,"REFERRAL_REWARD_REFERENCE_REQUIRED");
+  const transfer=await formRequest(config,"/v1/transfers",{
+    fields:{
+      amount,
+      currency,
+      destination,
+      description:"Prime de parrainage Audiotel Premium Pro",
+      transfer_group:"pgi_referral_"+rewardId.replace(/[^A-Za-z0-9]/g,"").slice(0,64),
+      metadata:{
+        pgi_referral_reward:rewardId,
+        pgi_tenant_public_id:tenantId
+      }
+    },
+    idempotencyKey:input.idempotency_key
+  });
+  if(!/^tr_[A-Za-z0-9]+$/.test(String(transfer?.id||"")))throw error(502,"STRIPE_TRANSFER_REFERENCE_INVALID");
+  return {
+    provider_transfer_reference:String(transfer.id),
+    destination_account:String(transfer.destination||destination),
+    amount_minor:Number(transfer.amount||amount),
+    currency:String(transfer.currency||currency).toUpperCase(),
+    created_at:transfer.created?new Date(Number(transfer.created)*1000).toISOString():new Date().toISOString()
   };
 }
 

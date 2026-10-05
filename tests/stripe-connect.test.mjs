@@ -6,7 +6,8 @@ import {
   normalizeStripeConnectedAccount,
   normalizeStripeConnectPaymentEvent,
   stripeConnectState,
-  createStripeConnectedAccount
+  createStripeConnectedAccount,
+  createStripeReferralTransfer
 } from "../backend/src/stripe-connect.mjs";
 
 const requestId="11111111-1111-4111-8111-111111111111";
@@ -28,19 +29,27 @@ test("Stripe Connect state exposes the fixed PGI fee and webhook readiness",()=>
 test("v2 connected-account capability is the readiness source of truth",()=>{
   const ready=normalizeStripeConnectedAccount({
     id:accountId,
-    configuration:{merchant:{capabilities:{card_payments:{status:"active"}}}},
+    configuration:{
+      merchant:{capabilities:{card_payments:{status:"active"}}},
+      recipient:{capabilities:{stripe_balance:{stripe_transfers:{status:"active"}}}}
+    },
     requirements:{summary:{minimum_deadline:{status:""}}}
   });
   assert.equal(ready.status,"active");
   assert.equal(ready.charges_enabled,true);
+  assert.equal(ready.payouts_enabled,true);
 
   const restricted=normalizeStripeConnectedAccount({
     id:accountId,
-    configuration:{merchant:{capabilities:{card_payments:{status:"inactive"}}}},
+    configuration:{
+      merchant:{capabilities:{card_payments:{status:"inactive"}}},
+      recipient:{capabilities:{stripe_balance:{stripe_transfers:{status:"inactive"}}}}
+    },
     requirements:{summary:{minimum_deadline:{status:"currently_due"}}}
   });
   assert.equal(restricted.status,"onboarding");
   assert.equal(restricted.charges_enabled,false);
+  assert.equal(restricted.payouts_enabled,false);
 });
 
 test("payment-intent events update the matching Connect request without trusting a return page",async()=>{
@@ -109,7 +118,10 @@ test("connected accounts are created with Accounts v2 merchant configuration",as
     captured={url:String(url),init};
     return {ok:true,json:async()=>({
       id:accountId,
-      configuration:{merchant:{capabilities:{card_payments:{status:"inactive"}}}},
+      configuration:{
+        merchant:{capabilities:{card_payments:{status:"inactive"}}},
+        recipient:{capabilities:{stripe_balance:{stripe_transfers:{status:"inactive"}}}}
+      },
       requirements:{summary:{minimum_deadline:{status:"currently_due"}}}
     })};
   };
@@ -125,6 +137,45 @@ test("connected accounts are created with Accounts v2 merchant configuration",as
     assert.equal(body.defaults.responsibilities.fees_collector,"stripe");
     assert.equal(body.defaults.responsibilities.losses_collector,"stripe");
     assert.equal(body.configuration.merchant.capabilities.card_payments.requested,true);
+    assert.equal(body.configuration.recipient.capabilities.stripe_balance.stripe_transfers.requested,true);
+  }finally{globalThis.fetch=original;}
+});
+
+test("referral rewards use an idempotent platform transfer to the verified connected account",async()=>{
+  const original=globalThis.fetch;
+  let captured=null;
+  globalThis.fetch=async(url,init)=>{
+    captured={url:String(url),init};
+    return {ok:true,json:async()=>({
+      id:"tr_referral_123",
+      amount:3200,
+      currency:"eur",
+      destination:accountId,
+      created:1791232800
+    })};
+  };
+  try{
+    const transfer=await createStripeReferralTransfer(
+      {stripeSecretKey:"sk_live_"+"x".repeat(24),stripeApiVersion:"2026-08-26.dahlia"},
+      {
+        destination_account:accountId,
+        amount_minor:3200,
+        currency:"EUR",
+        reward_public_id:"11111111-1111-4111-8111-111111111111",
+        tenant_public_id:"22222222-2222-4222-8222-222222222222",
+        idempotency_key:"pgi-referral-reward:11111111-1111-4111-8111-111111111111"
+      }
+    );
+    assert.match(captured.url,/\/v1\/transfers$/);
+    const body=new URLSearchParams(String(captured.init.body||""));
+    assert.equal(body.get("amount"),"3200");
+    assert.equal(body.get("currency"),"eur");
+    assert.equal(body.get("destination"),accountId);
+    assert.equal(body.get("metadata[pgi_referral_reward]"),"11111111-1111-4111-8111-111111111111");
+    assert.equal(captured.init.headers["Idempotency-Key"],"pgi-referral-reward:11111111-1111-4111-8111-111111111111");
+    assert.equal(transfer.provider_transfer_reference,"tr_referral_123");
+    assert.equal(transfer.amount_minor,3200);
+    assert.equal(transfer.currency,"EUR");
   }finally{globalThis.fetch=original;}
 });
 
