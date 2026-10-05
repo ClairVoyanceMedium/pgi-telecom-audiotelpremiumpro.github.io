@@ -1,7 +1,7 @@
 import {randomUUID} from "node:crypto";
 import {evaluateAlerts} from "./alerts.mjs";
 import {drainTransactionalEmails,drainDunningTransactionalEmails} from "./email-dispatcher.mjs";
-import {retrieveStripeCardCheckout} from "./stripe-connect.mjs";
+import {retrieveStripeCardCheckout,retrieveStripeConnectedAccount,normalizeStripeConnectedAccount,createStripeReferralTransfer} from "./stripe-connect.mjs";
 
 export function startWorkers({store,eventBus,config,queueHandlers={}}){
   let stopped=false;
@@ -9,6 +9,7 @@ export function startWorkers({store,eventBus,config,queueHandlers={}}){
   const timers=[];
   const stats={
     outboxRuns:0,outboxErrors:0,alertsRuns:0,alertsErrors:0,
+    referralPayoutProcessed:0,referralPayoutDeferred:0,referralPayoutErrors:0,
     queueRuns:0,queueErrors:0,queueProcessed:0,queueDeadLetters:0,
     lastOutboxSuccessAt:null,lastAlertsSuccessAt:null,lastQueueSuccessAt:null,
     lastOutboxErrorAt:null,lastAlertsErrorAt:null,lastQueueErrorAt:null
@@ -33,6 +34,15 @@ export function startWorkers({store,eventBus,config,queueHandlers={}}){
     }
   };
 
+  function referralRetryAt(attempt){
+    const n=Math.max(1,Math.trunc(Number(attempt)||1));
+    const seconds=Math.min(86400,Math.max(60,60*Math.pow(2,Math.min(8,n-1))));
+    return new Date(Date.now()+seconds*1000).toISOString();
+  }
+  function referralMissingDetailsRetryAt(){
+    return new Date(Date.now()+6*3600000).toISOString();
+  }
+
   const runAlerts=async()=>{
     if(stopped)return;
     stats.alertsRuns++;
@@ -40,7 +50,50 @@ export function startWorkers({store,eventBus,config,queueHandlers={}}){
       if(typeof store.acquireWorkerLease==="function"){
         const acquired=await store.acquireWorkerLease("alerts",ownerId,config.workerLeaseSeconds||45);
         if(!acquired){
-          stats.lastAlertsSuccessAt=new Date().toISOString();
+          if(config.stripeSecretKey&&typeof store.claimCustomerReferralPayoutBatch==="function"){
+        const payoutBatch=await store.claimCustomerReferralPayoutBatch(20);
+        for(const reward of payoutBatch){
+          let accountRef=String(reward.provider_account_reference||"");
+          let transfersEnabled=reward.transfers_enabled===true;
+          if(accountRef&&!transfersEnabled&&typeof store.syncCustomerCardPaymentAccount==="function"){
+            try{
+              const remote=await retrieveStripeConnectedAccount(config,accountRef);
+              const normalized=normalizeStripeConnectedAccount(remote);
+              await store.syncCustomerCardPaymentAccount(reward.tenant_id||reward.referrer_tenant_id||0,normalized).catch(()=>null);
+              transfersEnabled=normalized.transfers_enabled===true;
+            }catch(_error){}
+          }
+          if(!accountRef||!transfersEnabled){
+            await store.deferCustomerReferralPayout(reward.id,{
+              status:"missing_payout_details",
+              error_code:!accountRef?"REFERRAL_PAYOUT_ACCOUNT_MISSING":"REFERRAL_PAYOUT_ACCOUNT_NOT_READY",
+              retry_at:referralMissingDetailsRetryAt()
+            });
+            stats.referralPayoutDeferred++;
+            continue;
+          }
+          try{
+            const transfer=await createStripeReferralTransfer(config,{
+              connected_account:accountRef,
+              tenant_public_id:reward.tenant_public_id,
+              reward_public_id:reward.public_id,
+              amount_minor:reward.amount_minor,
+              currency:reward.currency,
+              idempotency_key:"referral-reward/"+reward.public_id+"/v1"
+            });
+            await store.completeCustomerReferralPayout(reward.id,transfer);
+            stats.referralPayoutProcessed++;
+          }catch(error){
+            await store.deferCustomerReferralPayout(reward.id,{
+              status:"failed",
+              error_code:error?.code||"REFERRAL_PAYOUT_TRANSFER_FAILED",
+              retry_at:referralRetryAt(reward.payout_attempt_count)
+            }).catch(()=>null);
+            stats.referralPayoutErrors++;
+          }
+        }
+      }
+      stats.lastAlertsSuccessAt=new Date().toISOString();
           return;
         }
       }
