@@ -68,7 +68,7 @@ test("cockpit can approve suspend and reject ambassador applications",()=>{
   assert.match(admin,/ambassadorProfiles/);
   assert.match(admin,/updateAmbassadorStatus/);
   assert.match(adminView,/CANDIDATURES AMBASSADEURS/);
-  assert.match(adminView,/Valider et envoyer l’accès/);
+  assert.match(adminView,/Valider l’accès/);
   assert.match(adminView,/Suspendre/);
   assert.match(adminView,/Refuser/);
 });
