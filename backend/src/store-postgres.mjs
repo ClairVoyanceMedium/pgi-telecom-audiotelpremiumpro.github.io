@@ -4400,7 +4400,7 @@ export class PostgresStore{
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     return this.withTenantReadContext(id,async tx=>{
       const rows=await tx.unsafe(
-        "SELECT id,tenant_id,provider,provider_account_reference,status,charges_enabled,payouts_enabled,details_submitted,application_fee_bps,requirements_state,last_synced_at,created_at,updated_at FROM tenant_card_payment_accounts WHERE tenant_id=$1 LIMIT 1",
+        "SELECT id,tenant_id,provider,provider_account_reference,status,charges_enabled,payouts_enabled,transfers_enabled,details_submitted,application_fee_bps,requirements_state,recipient_requirements_state,last_synced_at,created_at,updated_at FROM tenant_card_payment_accounts WHERE tenant_id=$1 LIMIT 1",
         [id]
       );
       return rows[0]||null;
@@ -4414,11 +4414,11 @@ export class PostgresStore{
     const fee=Math.max(0,Math.min(3000,Number(input.application_fee_bps)||490));
     return this.withTenantContext(id,async tx=>{
       const rows=await tx.unsafe(
-        "INSERT INTO tenant_card_payment_accounts(tenant_id,provider_account_reference,status,charges_enabled,payouts_enabled,details_submitted,application_fee_bps,requirements_state,last_synced_at,metadata)"+
-        " VALUES($1,$2,$3,$4,$5,$6,$7,$8,now(),$9::jsonb)"+
-        " ON CONFLICT(tenant_id) DO UPDATE SET provider_account_reference=EXCLUDED.provider_account_reference,status=EXCLUDED.status,charges_enabled=EXCLUDED.charges_enabled,payouts_enabled=EXCLUDED.payouts_enabled,details_submitted=EXCLUDED.details_submitted,application_fee_bps=tenant_card_payment_accounts.application_fee_bps,requirements_state=EXCLUDED.requirements_state,last_synced_at=now(),metadata=tenant_card_payment_accounts.metadata||EXCLUDED.metadata"+
-        " RETURNING id,tenant_id,provider,provider_account_reference,status,charges_enabled,payouts_enabled,details_submitted,application_fee_bps,requirements_state,last_synced_at,created_at,updated_at",
-        [id,ref,String(input.status||"pending"),input.charges_enabled===true,input.payouts_enabled===true,input.details_submitted===true,fee,input.requirements_state||null,JSON.stringify(input.metadata&&typeof input.metadata==="object"?input.metadata:{})]
+        "INSERT INTO tenant_card_payment_accounts(tenant_id,provider_account_reference,status,charges_enabled,payouts_enabled,transfers_enabled,details_submitted,application_fee_bps,requirements_state,recipient_requirements_state,last_synced_at,metadata)"+
+        " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),$11::jsonb)"+
+        " ON CONFLICT(tenant_id) DO UPDATE SET provider_account_reference=EXCLUDED.provider_account_reference,status=EXCLUDED.status,charges_enabled=EXCLUDED.charges_enabled,payouts_enabled=EXCLUDED.payouts_enabled,transfers_enabled=EXCLUDED.transfers_enabled,details_submitted=EXCLUDED.details_submitted,application_fee_bps=tenant_card_payment_accounts.application_fee_bps,requirements_state=EXCLUDED.requirements_state,recipient_requirements_state=EXCLUDED.recipient_requirements_state,last_synced_at=now(),metadata=tenant_card_payment_accounts.metadata||EXCLUDED.metadata"+
+        " RETURNING id,tenant_id,provider,provider_account_reference,status,charges_enabled,payouts_enabled,transfers_enabled,details_submitted,application_fee_bps,requirements_state,recipient_requirements_state,last_synced_at,created_at,updated_at",
+        [id,ref,String(input.status||"pending"),input.charges_enabled===true,input.payouts_enabled===true,input.transfers_enabled===true,input.details_submitted===true,fee,input.requirements_state||null,input.recipient_requirements_state||null,JSON.stringify(input.metadata&&typeof input.metadata==="object"?input.metadata:{})]
       );
       return rows[0];
     });
@@ -4429,8 +4429,8 @@ export class PostgresStore{
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     return this.withTenantContext(id,async tx=>{
       const rows=await tx.unsafe(
-        "UPDATE tenant_card_payment_accounts SET status=$3,charges_enabled=$4,payouts_enabled=$5,details_submitted=$6,requirements_state=$7,last_synced_at=now() WHERE tenant_id=$1 AND provider_account_reference=$2 RETURNING id,tenant_id,provider,provider_account_reference,status,charges_enabled,payouts_enabled,details_submitted,application_fee_bps,requirements_state,last_synced_at,created_at,updated_at",
-        [id,ref,String(input.status||"restricted"),input.charges_enabled===true,input.payouts_enabled===true,input.details_submitted===true,input.requirements_state||null]
+        "UPDATE tenant_card_payment_accounts SET status=$3,charges_enabled=$4,payouts_enabled=$5,transfers_enabled=$6,details_submitted=$7,requirements_state=$8,recipient_requirements_state=$9,last_synced_at=now() WHERE tenant_id=$1 AND provider_account_reference=$2 RETURNING id,tenant_id,provider,provider_account_reference,status,charges_enabled,payouts_enabled,transfers_enabled,details_submitted,application_fee_bps,requirements_state,recipient_requirements_state,last_synced_at,created_at,updated_at",
+        [id,ref,String(input.status||"restricted"),input.charges_enabled===true,input.payouts_enabled===true,input.transfers_enabled===true,input.details_submitted===true,input.requirements_state||null,input.recipient_requirements_state||null]
       );
       if(!rows[0])throw problem(404,"CARD_PAYMENT_ACCOUNT_NOT_FOUND");
       return rows[0];
@@ -4441,8 +4441,8 @@ export class PostgresStore{
     const ref=String(input.provider_account_reference||"").trim();
     if(!/^acct_[A-Za-z0-9]+$/.test(ref))throw problem(400,"INVALID_CONNECT_ACCOUNT");
     const rows=await this.sql.unsafe(
-      "UPDATE tenant_card_payment_accounts SET status=$2,charges_enabled=$3,payouts_enabled=$4,details_submitted=$5,requirements_state=$6,last_synced_at=now() WHERE provider_account_reference=$1 RETURNING id,tenant_id,provider,provider_account_reference,status,charges_enabled,payouts_enabled,details_submitted,application_fee_bps,requirements_state,last_synced_at,created_at,updated_at",
-      [ref,String(input.status||"restricted"),input.charges_enabled===true,input.payouts_enabled===true,input.details_submitted===true,input.requirements_state||null]
+      "UPDATE tenant_card_payment_accounts SET status=$2,charges_enabled=$3,payouts_enabled=$4,transfers_enabled=$5,details_submitted=$6,requirements_state=$7,recipient_requirements_state=$8,last_synced_at=now() WHERE provider_account_reference=$1 RETURNING id,tenant_id,provider,provider_account_reference,status,charges_enabled,payouts_enabled,transfers_enabled,details_submitted,application_fee_bps,requirements_state,recipient_requirements_state,last_synced_at,created_at,updated_at",
+      [ref,String(input.status||"restricted"),input.charges_enabled===true,input.payouts_enabled===true,input.transfers_enabled===true,input.details_submitted===true,input.requirements_state||null,input.recipient_requirements_state||null]
     );
     return rows[0]||null;
   }
@@ -4496,7 +4496,7 @@ export class PostgresStore{
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     return this.withTenantReadContext(id,async tx=>{
       const account=(await tx.unsafe(
-        "SELECT provider_account_reference,status,charges_enabled,payouts_enabled,details_submitted,application_fee_bps,requirements_state,last_synced_at FROM tenant_card_payment_accounts WHERE tenant_id=$1 LIMIT 1",
+        "SELECT provider_account_reference,status,charges_enabled,payouts_enabled,transfers_enabled,details_submitted,application_fee_bps,requirements_state,recipient_requirements_state,last_synced_at FROM tenant_card_payment_accounts WHERE tenant_id=$1 LIMIT 1",
         [id]
       ))[0]||null;
       const summary=(await tx.unsafe(
