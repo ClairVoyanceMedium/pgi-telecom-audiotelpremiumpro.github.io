@@ -4629,7 +4629,7 @@ export class PostgresStore{
 
   async referralProgramAdminState(){
     const program=await this.referralProgramPublicState();
-    const [counts,rewards,funnelRows]=await Promise.all([
+    const [counts,rewards,funnelRows,ambassadorRows,referralRows,svaRows]=await Promise.all([
       this.sql.unsafe(
         "SELECT status,count(*)::int AS count,COALESCE(sum(reward_minor),0)::bigint AS reward_minor FROM customer_referrals GROUP BY status ORDER BY status"
       ),
@@ -4642,15 +4642,71 @@ export class PostgresStore{
       ),
       this.sql.unsafe(
         "SELECT count(*) FILTER(WHERE event_type='visit')::int AS visits,count(*) FILTER(WHERE event_type='prospect')::int AS prospects FROM customer_referral_events"
-      ).catch(error=>String(error?.code||"")==="42P01"?[{visits:0,prospects:0}]:Promise.reject(error))
+      ).catch(error=>String(error?.code||"")==="42P01"?[{visits:0,prospects:0}]:Promise.reject(error)),
+      this.sql.unsafe(
+        "SELECT rt.id AS _tenant_id,rt.public_id::text AS public_id,rt.display_name,rt.billing_email,rt.status AS tenant_status,rt.country_code,rt.default_currency,rt.created_at AS tenant_created_at,"+
+        " c.code,c.status AS code_status,c.created_at AS code_created_at,"+
+        " COALESCE(ev.visits,0)::int AS visits,COALESCE(ev.prospects,0)::int AS prospects,"+
+        " COALESCE(rs.referrals_count,0)::int AS referrals_count,COALESCE(rs.rewarded_count,0)::int AS rewarded_count,COALESCE(rs.reward_minor,0)::bigint AS reward_minor,"+
+        " COALESCE(rw.earned_unpaid_minor,0)::bigint AS earned_unpaid_minor,COALESCE(rw.paid_minor,0)::bigint AS paid_minor,"+
+        " COALESCE(sva.net_payout_ht,0)::numeric AS sva_net_payout_ht,COALESCE(sva.paid_ht,0)::numeric AS sva_paid_ht,COALESCE(sva.payable_ht,0)::numeric AS sva_payable_ht,COALESCE(sva.held_ht,0)::numeric AS sva_held_ht,"+
+        " COALESCE(sva.paid_count,0)::int AS sva_paid_count,COALESCE(sva.payable_count,0)::int AS sva_payable_count,sva.last_paid_at,"+
+        " (SELECT count(DISTINCT d2.currency)::int FROM tenant_revenue_distributions d2 WHERE d2.tenant_id=rt.id) AS sva_currency_count"+
+        " FROM customer_referral_codes c JOIN tenants rt ON rt.id=c.tenant_id"+
+        " LEFT JOIN LATERAL (SELECT count(*) FILTER(WHERE e.event_type='visit')::int AS visits,count(*) FILTER(WHERE e.event_type='prospect')::int AS prospects FROM customer_referral_events e WHERE e.referral_code_id=c.id) ev ON true"+
+        " LEFT JOIN LATERAL (SELECT count(*)::int AS referrals_count,count(*) FILTER(WHERE r.status='rewarded')::int AS rewarded_count,COALESCE(sum(r.reward_minor) FILTER(WHERE r.status='rewarded'),0)::bigint AS reward_minor FROM customer_referrals r WHERE r.referrer_tenant_id=rt.id) rs ON true"+
+        " LEFT JOIN LATERAL (SELECT COALESCE(sum(x.amount_minor) FILTER(WHERE x.status='earned'),0)::bigint AS earned_unpaid_minor,COALESCE(sum(x.amount_minor) FILTER(WHERE x.status='paid'),0)::bigint AS paid_minor FROM customer_referral_rewards x JOIN customer_referrals r ON r.id=x.referral_id WHERE r.referrer_tenant_id=rt.id) rw ON true"+
+        " LEFT JOIN LATERAL (SELECT COALESCE(sum(d.net_payout_ht),0)::numeric AS net_payout_ht,COALESCE(sum(d.net_payout_ht) FILTER(WHERE d.status='paid'),0)::numeric AS paid_ht,COALESCE(sum(d.net_payout_ht) FILTER(WHERE d.status='payable'),0)::numeric AS payable_ht,COALESCE(sum(d.held_amount_ht),0)::numeric AS held_ht,count(*) FILTER(WHERE d.status='paid')::int AS paid_count,count(*) FILTER(WHERE d.status='payable')::int AS payable_count,max(d.paid_at) AS last_paid_at FROM tenant_revenue_distributions d WHERE d.tenant_id=rt.id AND d.currency=COALESCE(rt.default_currency,'EUR')) sva ON true"+
+        " WHERE rt.tenant_type<>'internal' ORDER BY c.created_at DESC,c.id DESC LIMIT 250"
+      ),
+      this.sql.unsafe(
+        "SELECT rt.public_id::text AS referrer_public_id,r.public_id::text AS public_id,r.status,r.reward_minor::bigint AS reward_minor,r.reward_currency,r.claimed_at,r.qualified_at,r.rewarded_at,r.rejected_at,r.metadata,"+
+        " dt.id AS _referred_id,dt.public_id::text AS referred_public_id,dt.display_name AS referred_name,dt.billing_email AS referred_billing_email,dt.status AS referred_status,dt.country_code AS referred_country_code,dt.created_at AS referred_created_at,"+
+        " (SELECT count(DISTINCT be.normalized_details->>'provider_invoice_reference')::int FROM subscription_billing_events be WHERE be.tenant_id=r.referred_tenant_id AND be.event_type='invoice.paid' AND COALESCE(be.normalized_details->>'provider_invoice_reference','')<>'' AND COALESCE(be.normalized_details->>'last_payment_status','paid')='paid' AND be.event_time>=r.claimed_at) AS paid_invoice_count,"+
+        " rw.id AS reward_id,rw.public_id::text AS reward_public_id,rw.amount_minor::bigint AS reward_amount_minor,rw.currency AS reward_currency_paid,rw.status AS reward_status,rw.earned_at,rw.paid_at,rw.paid_reference"+
+        " FROM customer_referrals r JOIN tenants rt ON rt.id=r.referrer_tenant_id JOIN tenants dt ON dt.id=r.referred_tenant_id LEFT JOIN customer_referral_rewards rw ON rw.referral_id=r.id"+
+        " ORDER BY r.claimed_at DESC,r.id DESC LIMIT 500"
+      ),
+      this.sql.unsafe(
+        "SELECT t.public_id::text AS referrer_public_id,d.currency,d.period_start,d.period_end,d.upstream_payout_ht,d.platform_fee_ht,d.net_payout_ht,d.unallocated_amount_ht,d.held_amount_ht,d.status,d.payment_due_date,d.paid_at,d.payment_reference,d.statement_reference,d.created_at"+
+        " FROM tenant_revenue_distributions d JOIN tenants t ON t.id=d.tenant_id"+
+        " WHERE EXISTS (SELECT 1 FROM customer_referral_codes c WHERE c.tenant_id=d.tenant_id)"+
+        " ORDER BY d.period_end DESC,d.id DESC LIMIT 500"
+      )
     ]);
     const funnel=funnelRows[0]||{};
     const summary={visits:Number(funnel.visits||0),prospects:Number(funnel.prospects||0),claimed:0,qualified:0,rewarded:0,rejected:0,reward_minor:0,earned_unpaid_minor:0,paid_minor:0};
     for(const row of counts){const key=String(row.status||"");if(Object.prototype.hasOwnProperty.call(summary,key))summary[key]=Number(row.count||0);summary.reward_minor+=Number(row.reward_minor||0);}
     for(const row of rewards){if(row.status==="earned")summary.earned_unpaid_minor+=Number(row.amount_minor||0);if(row.status==="paid")summary.paid_minor+=Number(row.amount_minor||0);}
-    return {...program,summary,rewards:rewards.map(x=>({...x,amount_minor:Number(x.amount_minor||0)}))};
+    const referralsByReferrer=new Map();
+    for(const row of referralRows){
+      const key=String(row.referrer_public_id||"");if(!key)continue;
+      const paidInvoiceCount=Number(row.paid_invoice_count||0),required=Math.max(1,Number(program.qualification_paid_invoices||3));
+      const item={
+        public_id:row.public_id,status:row.status,reward_minor:Number(row.reward_minor||0),reward_currency:row.reward_currency,claimed_at:row.claimed_at,qualified_at:row.qualified_at,rewarded_at:row.rewarded_at,rejected_at:row.rejected_at,metadata:row.metadata||{},
+        paid_invoice_count:paidInvoiceCount,qualification_paid_invoices:required,progress_percent:Math.min(100,Math.round((paidInvoiceCount/required)*100)),
+        referred:{public_id:row.referred_public_id,name:row.referred_name,email:row.referred_billing_email,status:row.referred_status,country_code:row.referred_country_code,dossier_ref:dossierReference(Number(row._referred_id),row.referred_created_at)},
+        reward:row.reward_id?{id:row.reward_id,public_id:row.reward_public_id,amount_minor:Number(row.reward_amount_minor||0),currency:row.reward_currency_paid,status:row.reward_status,earned_at:row.earned_at,paid_at:row.paid_at,paid_reference:row.paid_reference}:null
+      };
+      if(!referralsByReferrer.has(key))referralsByReferrer.set(key,[]);
+      referralsByReferrer.get(key).push(item);
+    }
+    const svaByReferrer=new Map();
+    for(const row of svaRows){
+      const key=String(row.referrer_public_id||"");if(!key)continue;
+      const item={currency:row.currency,period_start:row.period_start,period_end:row.period_end,upstream_payout_ht:Number(row.upstream_payout_ht||0),platform_fee_ht:Number(row.platform_fee_ht||0),net_payout_ht:Number(row.net_payout_ht||0),unallocated_amount_ht:Number(row.unallocated_amount_ht||0),held_amount_ht:Number(row.held_amount_ht||0),status:row.status,payment_due_date:row.payment_due_date,paid_at:row.paid_at,payment_reference:row.payment_reference,statement_reference:row.statement_reference,created_at:row.created_at};
+      if(!svaByReferrer.has(key))svaByReferrer.set(key,[]);
+      svaByReferrer.get(key).push(item);
+    }
+    const ambassadors=ambassadorRows.map(row=>({
+      public_id:row.public_id,name:row.display_name,email:row.billing_email,status:row.tenant_status,country_code:row.country_code,currency:row.default_currency||program.currency||"EUR",dossier_ref:dossierReference(Number(row._tenant_id),row.tenant_created_at),
+      code:row.code,code_status:row.code_status,code_created_at:row.code_created_at,
+      summary:{visits:Number(row.visits||0),prospects:Number(row.prospects||0),referrals:Number(row.referrals_count||0),rewarded:Number(row.rewarded_count||0),reward_minor:Number(row.reward_minor||0),earned_unpaid_minor:Number(row.earned_unpaid_minor||0),paid_minor:Number(row.paid_minor||0)},
+      sva:{currency:row.default_currency||"EUR",net_payout_ht:Number(row.sva_net_payout_ht||0),paid_ht:Number(row.sva_paid_ht||0),payable_ht:Number(row.sva_payable_ht||0),held_ht:Number(row.sva_held_ht||0),paid_count:Number(row.sva_paid_count||0),payable_count:Number(row.sva_payable_count||0),last_paid_at:row.last_paid_at,currency_count:Number(row.sva_currency_count||0),recent:svaByReferrer.get(String(row.public_id||""))||[]},
+      referrals:referralsByReferrer.get(String(row.public_id||""))||[]
+    }));
+    return {...program,summary,rewards:rewards.map(x=>({...x,amount_minor:Number(x.amount_minor||0)})),ambassadors};
   }
-
   async updateReferralProgram(input={},actor={}){
     const enabled=input.enabled===true,actorId=numericActor(actor),configuration=referralPublicPolicy();
     await this.sql.unsafe(

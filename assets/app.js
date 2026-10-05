@@ -102,8 +102,8 @@ var queuedMode=state.pendingSyncMode||"dashboard";state.pendingSync=false;state.
 function refreshData(options){
 if(RUNTIME.mode==="production")syncProductionData({mode:"full",forceMeta:!!(options&&options.forceMeta)});else render();}
 async function submitLogin(){
-var username=$("auth-username"),password=$("auth-password"),button=$("auth-submit"),msg=$("auth-message");if(!username||!password||!window.PGIApi)return;if(button)button.disabled=true;if(msg)msg.textContent="Connexion…";try{
-await window.PGIApi.login(username.value,password.value);password.value="";closeLogin();await syncProductionData({mode:"full",forceMeta:true});}catch(e){
+var username=$("auth-username"),password=$("auth-password"),remember=$("auth-remember"),button=$("auth-submit"),msg=$("auth-message");if(!username||!password||!window.PGIApi)return;if(button)button.disabled=true;if(msg)msg.textContent="Connexion…";try{
+await window.PGIApi.login(username.value,password.value,!!(remember&&remember.checked));password.value="";closeLogin();await syncProductionData({mode:"full",forceMeta:true});}catch(e){
 if(msg)msg.textContent=e&&e.status===429?"Trop de tentatives. Réessayez dans un instant.":"Identifiants invalides ou API indisponible.";password.focus();}finally{
 if(button)button.disabled=false;}
 }

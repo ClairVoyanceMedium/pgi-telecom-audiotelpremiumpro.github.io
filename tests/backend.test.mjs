@@ -16,7 +16,7 @@ function config(overrides={}){
   return {
     mode:"simulator",authMode:"disabled",host:"127.0.0.1",port:0,
     sessionSecret:"",adminPasswordHash:"",ingestToken:"",
-    adminUsername:"admin",sessionTtlSeconds:3600,bodyLimitBytes:262144,rateLimitPerMinute:10000,heavyReadRateLimitPerMinute:10000,writeRateLimitPerMinute:10000,
+    adminUsername:"admin",sessionTtlSeconds:3600,adminRememberTtlSeconds:2592000,bodyLimitBytes:262144,rateLimitPerMinute:10000,heavyReadRateLimitPerMinute:10000,writeRateLimitPerMinute:10000,
     authMaxFailures:8,authFailureWindowSeconds:900,
     serviceRateTtcPerMin:.8,payoutRateHtPerMin:.46,expertCostHtPerMin:.18,reconciliationToleranceHt:.01,
     version:"test",...overrides
@@ -165,6 +165,31 @@ test("admin login has a dedicated per-client brute-force limit",async()=>{
   }finally{
     await app.close();
   }
+});
+
+test("admin remember-me extends only the signed cookie lifetime and never stores credentials",async()=>{
+  const password="remember-admin-password-123";
+  const app=createBackend({config:config({
+    authMode:"session",sessionSecret:"x".repeat(40),adminPasswordHash:hashPassword(password),
+    sessionTtlSeconds:3600,adminRememberTtlSeconds:2592000
+  })});
+  const address=await app.listen(),base="http://127.0.0.1:"+address.port;
+  try{
+    const response=await fetch(base+"/api/v1/auth/login",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({username:"admin",password,remember:true})
+    });
+    assert.equal(response.status,200);
+    const body=await response.json();
+    assert.equal(body.remembered,true);
+    assert.equal(body.expires_in,2592000);
+    const cookie=String(response.headers.get("set-cookie")||"");
+    assert.match(cookie,/__Host-pgi_session=/);
+    assert.match(cookie,/HttpOnly/);
+    assert.match(cookie,/Secure/);
+    assert.match(cookie,/SameSite=Strict/);
+    assert.match(cookie,/Max-Age=2592000/);
+  }finally{await app.close();}
 });
 
 test("distinct staff accounts can authenticate independently for four-eyes control",async()=>{

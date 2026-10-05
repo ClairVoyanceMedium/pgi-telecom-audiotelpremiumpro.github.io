@@ -35,6 +35,7 @@ const serviceWorker=fs.readFileSync("service-worker.js","utf8");
 const manifestSource=fs.readFileSync("manifest.webmanifest","utf8");
 const buildStatic=fs.readFileSync("scripts/build-static.mjs","utf8");
 const security=fs.readFileSync("backend/src/security.mjs","utf8");
+const backendConfig=fs.readFileSync("backend/src/config.mjs","utf8");
 const staticRelease=fs.readFileSync("scripts/static-release.sh","utf8");
 const wholesaleMigration=fs.readFileSync("database/migrations/002_wholesale_multitenant_foundation.sql","utf8");
 const wholesaleComplianceMigration=fs.readFileSync("database/migrations/003_wholesale_compliance_foundation.sql","utf8");
@@ -142,6 +143,8 @@ if(!/\/api\/v1\/public\/referral-program/.test(backendServer)||!/\/api\/v1\/cust
 if(!/count\(DISTINCT normalized_details->>'provider_invoice_reference'\)/.test(postgresStore)||!/REFERRAL_QUALIFICATION_PAID_INVOICES/.test(postgresStore)||!/REFERRAL_SELF_CLAIM/.test(postgresStore)||!/REFERRAL_ALREADY_CLAIMED/.test(postgresStore))failures.push("referral rewards must require three distinct paid invoices and retain anti-abuse");
 if(!/pgi:portal-loaded/.test(clientReferral)||!/3 factures mensuelles distinctes réellement payées/i.test(clientReferral)||!/paid_invoice_count/.test(clientReferral))failures.push("customer referral UI must expose the three-payment qualification progress");
 if(!/referral-admin\.js/.test(platformAdminTools)||!/updateReferralProgram/.test(referralAdmin)||!/settleReferralReward/.test(referralAdmin)||!/barème fixe/i.test(referralAdmin)||!/25e filleul/i.test(referralAdmin))failures.push("referral administration must remain fixed, lazy and auditable");
+if(!/Fiches complètes par client/.test(referralAdmin)||!/Qualification abonnement/.test(referralAdmin)||!/Reversements SVA du client ambassadeur/.test(referralAdmin)||!/paid_invoice_count/.test(postgresStore)||!/svaByReferrer/.test(postgresStore)||!/tenant_revenue_distributions/.test(postgresStore))failures.push("referral administration must expose per-ambassador qualification, rewards and SVA payout evidence");
+if(!/auth-remember/.test(indexSource)||!/remember:remember===true/.test(apiClient)||!/body\.remember===true/.test(backendServer)||!/adminRememberTtlSeconds/.test(backendConfig)||!/PGI_ADMIN_REMEMBER_TTL_SECONDS/.test(envExample)||!/PGI_ADMIN_REMEMBER_TTL_SECONDS/.test(compose))failures.push("admin remember-me must remain explicit, server-issued and configurable");
 if(!/\/api\/v1\/platform\/accounting/.test(backendServer)||!/async platformAccounting/.test(postgresStore)||!/tax_basis_separated:true/.test(postgresStore)||!/statutory_ledger:false/.test(postgresStore))failures.push("platform accounting must remain source-based and tax-basis separated");
 if(!/Abonnements encaissés TTC/.test(accountingCockpit)||!/Marge SVA encaissée HT/.test(accountingCockpit)||!/Créances opérateurs HT/.test(accountingCockpit))failures.push("accounting cockpit must preserve distinct cash, margin and receivable views");
 
