@@ -1794,6 +1794,40 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.referral_reward_paid",200,{...result.value,replayed:result.replayed});
       }
 
+      if(method==="GET"&&pathname==="/api/v1/platform/ambassadors"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.ambassadors",200,await store.ambassadorAdminState());
+      }
+      match=routeMatch(pathname,"/api/v1/platform/ambassadors/:id/status");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const status=String(body.status||"").trim().toLowerCase(),reason=String(body.reason||"").trim();
+        const payload={id:match.id,status,reason};
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.ambassador.status",payload,()=>store.setAmbassadorProfileStatus(match.id,status,actor,reason));
+        let access=null,referralCode=null;
+        if(status==="active"){
+          try{
+            const program=await store.referralProgramPublicState();
+            if(program.enabled===true)referralCode=await store.ensureCustomerReferralCode(result.value.tenant_id);
+          }catch(error){
+            if(String(error?.code||"")!=="REFERRAL_PROGRAM_DISABLED")throw error;
+          }
+          const email=String(result.value.billing_email||"").trim().toLowerCase();
+          const auth=email?await store.customerAuthLookup(email):null;
+          const existing=Array.isArray(auth?.memberships)&&auth.memberships.some(x=>String(x.public_id)===String(result.value.tenant_public_id));
+          if(existing){
+            access={invitation_created:false,email_sent:false,reason:"existing_user"};
+          }else if(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+            const token=randomBytes(32).toString("base64url"),tokenHash=createHash("sha256").update(token).digest("hex");
+            const invitation=await store.createCustomerPortalInvitation(result.value.tenant_public_id,{email,role:"owner",expires_in_hours:72},tokenHash);
+            const emailSent=await sendAmbassadorAccessInvitation(config,{...result.value,...invitation},token,"profile-active");
+            access={invitation_created:true,email_sent:emailSent};
+          }else access={invitation_created:false,email_sent:false,reason:"missing_email"};
+        }
+        return done(res,metrics,started,"platform.ambassador_status",200,{...result.value,customer_access:access,referral_code:referralCode?.code||null,replayed:result.replayed});
+      }
+
       if(method==="GET"&&pathname==="/api/v1/platform/tenants"){
         requireRole(actor,["admin","finance","readonly"]);
         const params=Object.fromEntries(url.searchParams.entries());
