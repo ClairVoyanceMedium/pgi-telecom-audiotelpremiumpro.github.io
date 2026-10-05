@@ -6,7 +6,8 @@ import {
   normalizeStripeConnectedAccount,
   normalizeStripeConnectPaymentEvent,
   stripeConnectState,
-  createStripeConnectedAccount
+  createStripeConnectedAccount,
+  createStripeReferralTransfer
 } from "../backend/src/stripe-connect.mjs";
 
 const requestId="11111111-1111-4111-8111-111111111111";
@@ -28,11 +29,12 @@ test("Stripe Connect state exposes the fixed PGI fee and webhook readiness",()=>
 test("v2 connected-account capability is the readiness source of truth",()=>{
   const ready=normalizeStripeConnectedAccount({
     id:accountId,
-    configuration:{merchant:{capabilities:{card_payments:{status:"active"}}}},
+    configuration:{merchant:{capabilities:{card_payments:{status:"active"}}},recipient:{capabilities:{stripe_balance:{stripe_transfers:{status:"active"}}}}},
     requirements:{summary:{minimum_deadline:{status:""}}}
   });
   assert.equal(ready.status,"active");
   assert.equal(ready.charges_enabled,true);
+  assert.equal(ready.transfers_enabled,true);
 
   const restricted=normalizeStripeConnectedAccount({
     id:accountId,
@@ -125,6 +127,32 @@ test("connected accounts are created with Accounts v2 merchant configuration",as
     assert.equal(body.defaults.responsibilities.fees_collector,"stripe");
     assert.equal(body.defaults.responsibilities.losses_collector,"stripe");
     assert.equal(body.configuration.merchant.capabilities.card_payments.requested,true);
+    assert.equal(body.configuration.recipient.capabilities.stripe_balance.stripe_transfers.requested,true);
+    assert.equal(body.contact_email,undefined);
+  }finally{globalThis.fetch=original;}
+});
+
+test("referral rewards use one idempotent Stripe transfer to the connected account",async()=>{
+  const original=globalThis.fetch;
+  let captured=null;
+  globalThis.fetch=async(url,init)=>{
+    captured={url:String(url),init};
+    return {ok:true,json:async()=>({id:"tr_referral_123",amount:2000,currency:"eur",created:1760000100})};
+  };
+  try{
+    const rewardId="22222222-2222-4222-8222-222222222222";
+    const result=await createStripeReferralTransfer(
+      {stripeSecretKey:"sk_test_"+"x".repeat(24),stripeApiVersion:"2026-08-26.dahlia"},
+      {connected_account:accountId,tenant_public_id:"33333333-3333-4333-8333-333333333333",reward_public_id:rewardId,amount_minor:2000,currency:"EUR",idempotency_key:"referral-reward/"+rewardId+"/v1"}
+    );
+    assert.equal(result.provider_transfer_reference,"tr_referral_123");
+    assert.match(captured.url,/\/v1\/transfers$/);
+    assert.equal(captured.init.headers["Idempotency-Key"],"referral-reward/"+rewardId+"/v1");
+    const form=new URLSearchParams(captured.init.body);
+    assert.equal(form.get("destination"),accountId);
+    assert.equal(form.get("amount"),"2000");
+    assert.equal(form.get("currency"),"eur");
+    assert.equal(form.get("metadata[pgi_referral_reward]"),rewardId);
   }finally{globalThis.fetch=original;}
 });
 
