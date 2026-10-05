@@ -2878,6 +2878,28 @@ async function sendCustomerAccessInvitation(config,target,token,reason="manual")
     return false;
   }
 }
+async function sendAmbassadorAccessInvitation(config,target,token,reason="approval"){
+  const email=String(target?.billing_email||target?.email||"").trim().toLowerCase();
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return false;
+  const base=String(config.publicBaseUrl||"https://audiotel-premium-pro.com").replace(/\/+$/,"");
+  const actionUrl=base+"/ambassadeur.html?invite="+encodeURIComponent(String(token||""));
+  const eventId="ambassador-access-invitation/"+String(target?.public_id||target?.tenant_public_id||email)+"/"+String(reason||"approval");
+  try{
+    await sendTransactionalEmail(config,{
+      to:email,
+      name:String(target?.display_name||email),
+      senderRole:"support",
+      templateKey:"ambassador_access_invitation",
+      data:{name:String(target?.display_name||email),action_url:actionUrl,login_identifier:email},
+      idempotencyKey:eventId,
+      internalEventId:eventId
+    });
+    return true;
+  }catch(error){
+    logSecurityEmailFailure("ambassador_access_invitation",error);
+    return false;
+  }
+}
 function logHttpRequest(config,{requestId,traceId,route,method,status,durationMs}){
   if(config?.mode!=="production")return;
   const level=status>=500?"error":status>=400?"warn":"info";
