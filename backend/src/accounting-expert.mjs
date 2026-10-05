@@ -1,3 +1,5 @@
+import {randomUUID} from "node:crypto";
+
 const FEC_FIELDS=[
   "JournalCode","JournalLib","EcritureNum","EcritureDate","CompteNum","CompteLib",
   "CompAuxNum","CompAuxLib","PieceRef","PieceDate","EcritureLib","Debit","Credit",
@@ -471,9 +473,126 @@ export async function validateExpertAccountingEntry(store,id,input={},actor={}){
   });
 }
 
+export async function createExpertAccountingEntry(store,input={},actor={}){
+  if(!store?.sql?.begin)throw problem(503,"EXPERT_ACCOUNTING_REQUIRES_POSTGRES");
+  const journal=text(input.journal_code||"OD",8).toUpperCase();
+  const entryDate=text(input.entry_date,10),pieceDate=text(input.piece_date||input.entry_date,10);
+  const pieceRef=text(input.piece_ref,120),label=text(input.label,240),currency=text(input.currency||"EUR",3).toUpperCase();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(entryDate)||!/^\d{4}-\d{2}-\d{2}$/.test(pieceDate))throw problem(400,"INVALID_ACCOUNTING_DATE");
+  if(!pieceRef||!label||!/^[A-Z]{3}$/.test(currency))throw problem(400,"INVALID_ACCOUNTING_ENTRY");
+  const lines=Array.isArray(input.lines)?input.lines:[];
+  if(lines.length<2||lines.length>40)throw problem(400,"INVALID_ACCOUNTING_LINES");
+  const normalized=lines.map((line,index)=>({
+    line_no:index+1,account_num:accountNumber(line.account_num),
+    auxiliary_num:text(line.auxiliary_num,80)||null,auxiliary_label:text(line.auxiliary_label,160)||null,
+    line_label:text(line.line_label,240)||label,debit_minor:minor(line.debit_minor||0),credit_minor:minor(line.credit_minor||0),
+    vat_code:text(line.vat_code,40)||null
+  }));
+  for(const line of normalized)if((line.debit_minor>0)===(line.credit_minor>0))throw problem(400,"INVALID_ACCOUNTING_LINE_SIDE");
+  const debit=normalized.reduce((s,x)=>s+x.debit_minor,0),credit=normalized.reduce((s,x)=>s+x.credit_minor,0);
+  if(debit<=0||debit!==credit)throw problem(400,"ACCOUNTING_ENTRY_NOT_BALANCED",{debit_minor:debit,credit_minor:credit});
+  return store.sql.begin(async tx=>{
+    const period=entryDate.slice(0,7);
+    const periodState=(await tx.unsafe("SELECT state FROM platform_accounting_periods WHERE period_key=$1 FOR SHARE",[period]))[0];
+    if(periodState?.state==="closed")throw problem(409,"ACCOUNTING_PERIOD_CLOSED");
+    const journalRow=(await tx.unsafe("SELECT journal_code FROM platform_accounting_journals WHERE journal_code=$1 AND active=true",[journal]))[0];
+    if(!journalRow)throw problem(400,"INVALID_ACCOUNTING_JOURNAL");
+    const accountRows=await tx.unsafe("SELECT account_num,label,active FROM platform_accounting_accounts WHERE account_num=ANY($1::text[])",[[...new Set(normalized.map(x=>x.account_num))]]);
+    const byAccount=new Map(accountRows.map(x=>[String(x.account_num),x]));
+    for(const line of normalized)if(!byAccount.get(line.account_num)?.active)throw problem(400,"ACCOUNTING_ACCOUNT_NOT_ACTIVE",{account_num:line.account_num});
+    const sourceKey="manual:"+randomUUID();
+    const entry=(await tx.unsafe(
+      "INSERT INTO platform_accounting_entries(source_type,source_key,source_hash,journal_code,entry_date,piece_ref,piece_date,label,currency,source_payload,expert_note)"+
+      " VALUES('manual',$1,$2,$3,$4::date,$5,$6::date,$7,$8,$9::jsonb,$10) RETURNING id,public_id,status,entry_date,journal_code,piece_ref,label,currency",
+      [sourceKey,sourceKey,journal,entryDate,pieceRef,pieceDate,label,currency,JSON.stringify({created_by:actorId(actor)}),text(input.expert_note,1000)||null]
+    ))[0];
+    for(const line of normalized){
+      const account=byAccount.get(line.account_num);
+      await tx.unsafe(
+        "INSERT INTO platform_accounting_lines(entry_id,line_no,account_num,account_label,auxiliary_num,auxiliary_label,line_label,debit_minor,credit_minor,currency,vat_code)"+
+        " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+        [entry.id,line.line_no,line.account_num,account.label,line.auxiliary_num,line.auxiliary_label,line.line_label,line.debit_minor,line.credit_minor,currency,line.vat_code]
+      );
+    }
+    return entry;
+  });
+}
+
+export async function reverseExpertAccountingEntry(store,id,input={},actor={}){
+  const entryId=Number(id);
+  if(!Number.isInteger(entryId)||entryId<=0)throw problem(400,"INVALID_ACCOUNTING_ENTRY_ID");
+  const reason=text(input.reason,1000);
+  if(reason.length<5)throw problem(400,"ACCOUNTING_REVERSAL_REASON_REQUIRED");
+  const reversalDate=text(input.reversal_date||new Date().toISOString().slice(0,10),10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(reversalDate))throw problem(400,"INVALID_ACCOUNTING_DATE");
+  return store.sql.begin(async tx=>{
+    const original=(await tx.unsafe("SELECT * FROM platform_accounting_entries WHERE id=$1 FOR SHARE",[entryId]))[0];
+    if(!original)throw problem(404,"ACCOUNTING_ENTRY_NOT_FOUND");
+    if(!["validated","reversal"].includes(original.status))throw problem(409,"ACCOUNTING_ENTRY_NOT_VALIDATED");
+    const period=reversalDate.slice(0,7);
+    const periodState=(await tx.unsafe("SELECT state FROM platform_accounting_periods WHERE period_key=$1 FOR SHARE",[period]))[0];
+    if(periodState?.state==="closed")throw problem(409,"ACCOUNTING_PERIOD_CLOSED");
+    const lines=await tx.unsafe("SELECT * FROM platform_accounting_lines WHERE entry_id=$1 ORDER BY line_no",[entryId]);
+    if(lines.length<2)throw problem(409,"ACCOUNTING_ENTRY_LINES_MISSING");
+    const year=Number(reversalDate.slice(0,4));
+    const seq=(await tx.unsafe(
+      "INSERT INTO platform_accounting_sequences(fiscal_year,next_number) VALUES($1,2)"+
+      " ON CONFLICT(fiscal_year) DO UPDATE SET next_number=platform_accounting_sequences.next_number+1 RETURNING next_number-1 AS assigned",
+      [year]
+    ))[0];
+    const entryNumber=String(year)+String(seq.assigned).padStart(10,"0");
+    const sourceKey="reversal:"+entryId+":"+randomUUID();
+    const reversed=(await tx.unsafe(
+      "INSERT INTO platform_accounting_entries(source_type,source_key,source_hash,journal_code,entry_number,entry_date,piece_ref,piece_date,label,currency,status,expert_note,source_payload,validated_at,validated_by)"+
+      " VALUES('reversal',$1,$2,$3,$4,$5::date,$6,$5::date,$7,$8,'reversal',$9,$10::jsonb,now(),$11)"+
+      " RETURNING id,public_id,entry_number,entry_date,journal_code,piece_ref,label,currency,status,validated_at",
+      [sourceKey,sourceKey,original.journal_code,entryNumber,reversalDate,"EXT-"+text(original.piece_ref,110),"Contrepassation "+text(original.label,200),original.currency,reason,JSON.stringify({reverses_entry_id:entryId,reverses_entry_number:original.entry_number}),actorId(actor)]
+    ))[0];
+    for(const line of lines){
+      await tx.unsafe(
+        "INSERT INTO platform_accounting_lines(entry_id,line_no,account_num,account_label,auxiliary_num,auxiliary_label,line_label,debit_minor,credit_minor,lettering,lettering_date,amount_currency_minor,currency,vat_code)"+
+        " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
+        [reversed.id,line.line_no,line.account_num,line.account_label,line.auxiliary_num,line.auxiliary_label,"Contrepassation "+text(line.line_label,190),Number(line.credit_minor||0),Number(line.debit_minor||0),line.lettering,line.lettering_date,line.amount_currency_minor==null?null:-Number(line.amount_currency_minor),line.currency,line.vat_code]
+      );
+    }
+    return reversed;
+  });
+}
+
+export async function matchAccountingBankTransaction(store,id,input={},actor={}){
+  const bankId=Number(id),entryId=Number(input.entry_id);
+  if(!Number.isInteger(bankId)||bankId<=0||!Number.isInteger(entryId)||entryId<=0)throw problem(400,"INVALID_BANK_RECONCILIATION");
+  return store.sql.begin(async tx=>{
+    const bank=(await tx.unsafe("SELECT * FROM platform_bank_transactions WHERE id=$1 FOR UPDATE",[bankId]))[0];
+    if(!bank)throw problem(404,"BANK_TRANSACTION_NOT_FOUND");
+    if(bank.reconciliation_state==="matched"){
+      if(Number(bank.matched_entry_id)===entryId)return bank;
+      throw problem(409,"BANK_TRANSACTION_ALREADY_MATCHED");
+    }
+    const entry=(await tx.unsafe("SELECT id,status,entry_number,entry_date,label FROM platform_accounting_entries WHERE id=$1 FOR SHARE",[entryId]))[0];
+    if(!entry)throw problem(404,"ACCOUNTING_ENTRY_NOT_FOUND");
+    if(!["validated","reversal"].includes(entry.status))throw problem(409,"ACCOUNTING_ENTRY_NOT_VALIDATED");
+    const amount=Math.abs(Number(bank.amount_minor||0));
+    const expectedSide=Number(bank.amount_minor)>=0?"debit_minor":"credit_minor";
+    const match=(await tx.unsafe(
+      "SELECT l.id FROM platform_accounting_lines l WHERE l.entry_id=$1 AND l.account_num LIKE '512%' AND "+expectedSide+"=$2 LIMIT 1",
+      [entryId,amount]
+    ))[0];
+    if(!match)throw problem(409,"BANK_ENTRY_AMOUNT_OR_ACCOUNT_MISMATCH",{expected_account_prefix:"512",amount_minor:amount,side:expectedSide});
+    const updated=(await tx.unsafe(
+      "UPDATE platform_bank_transactions SET reconciliation_state='matched',matched_entry_id=$2 WHERE id=$1 RETURNING id,external_key,booked_at,amount_minor,currency,label,reconciliation_state,matched_entry_id",
+      [bankId,entryId]
+    ))[0];
+    if(store.eventBus?.publish)store.eventBus.publish("platform.accounting.bank_matched",{bank_transaction_id:bankId,entry_id:entryId,actor_id:actorId(actor)});
+    return updated;
+  });
+}
+
 export async function setAccountingPeriodState(store,period,input={},actor={}){
-  const key=normalizePeriod(period),state=String(input.state||"").trim();
+  const key=normalizePeriod(period),state=String(input.state||"").trim(),reason=text(input.reason,1000)||null;
   if(!["open","review","closed"].includes(state))throw problem(400,"INVALID_ACCOUNTING_PERIOD_STATE");
+  const previous=(await store.readSql.unsafe("SELECT state FROM platform_accounting_periods WHERE period_key=$1",[key]))[0]?.state||null;
+  if(previous==="closed"&&state!=="closed"&&(!reason||reason.length<10))throw problem(409,"ACCOUNTING_PERIOD_REOPEN_REASON_REQUIRED");
   if(state==="closed"){
     const checks=(await store.readSql.unsafe(
       "SELECT"+
@@ -512,6 +631,10 @@ export async function setAccountingPeriodState(store,period,input={},actor={}){
     " RETURNING period_key,state,review_started_at,closed_at,close_hash",
     [key,state,actorId(actor),closeHash]
   ))[0];
+  await store.sql.unsafe(
+    "INSERT INTO platform_accounting_period_events(period_key,previous_state,new_state,reason,actor_user_id) VALUES($1,$2,$3,$4,$5)",
+    [key,previous,state,reason,actorId(actor)]
+  );
   return row;
 }
 
