@@ -25,6 +25,9 @@ test("earned referral reward transfers funds before it is marked paid",async t=>
         requirements:{summary:{}}
       });
     }
+    if(String(url).includes("/v1/transfers?")){
+      return jsonResponse({object:"list",data:[]});
+    }
     if(String(url).endsWith("/v1/transfers")){
       return jsonResponse({id:"tr_reward123",amount:1200,currency:"eur",created:1791230000});
     }
@@ -51,11 +54,13 @@ test("earned referral reward transfers funds before it is marked paid",async t=>
     id:7,
     input:{provider:"stripe",transfer_reference:"tr_reward123",destination_account:"acct_referrer"}
   });
-  assert.equal(calls.length,2);
+  assert.equal(calls.length,3);
   assert.match(calls[0].url,/\/v2\/core\/accounts\/acct_referrer/);
-  assert.match(calls[1].url,/\/v1\/transfers$/);
-  assert.equal(calls[1].options.headers["Idempotency-Key"],"referral-reward-v1-b373a1bd-1e2a-4fc9-a38d-aebda0d2c5e7");
-  const form=new URLSearchParams(calls[1].options.body);
+  assert.match(calls[1].url,/\/v1\/transfers\?/);
+  assert.match(calls[1].url,/transfer_group=referral_reward_b373a1bd-1e2a-4fc9-a38d-aebda0d2c5e7/);
+  assert.match(calls[2].url,/\/v1\/transfers$/);
+  assert.equal(calls[2].options.headers["Idempotency-Key"],"referral-reward-v1-b373a1bd-1e2a-4fc9-a38d-aebda0d2c5e7");
+  const form=new URLSearchParams(calls[2].options.body);
   assert.equal(form.get("amount"),"1200");
   assert.equal(form.get("currency"),"eur");
   assert.equal(form.get("destination"),"acct_referrer");
@@ -124,6 +129,52 @@ test("inactive transfer capability is requested then safely deferred when still 
   assert.match(deferred.reason,/REFERRAL_PAYOUT_ONBOARDING_REQUIRED:pending/);
 });
 
+test("an existing matching Stripe transfer is reconciled instead of recreated",async t=>{
+  const original=global.fetch;
+  const calls=[];
+  global.fetch=async(url,options={})=>{
+    calls.push({url:String(url),options});
+    if(String(url).includes("/v2/core/accounts/acct_existing")){
+      return jsonResponse({
+        id:"acct_existing",
+        configuration:{recipient:{capabilities:{stripe_balance:{stripe_transfers:{status:"active"}}}}},
+        requirements:{summary:{}}
+      });
+    }
+    if(String(url).includes("/v1/transfers?")){
+      return jsonResponse({
+        object:"list",
+        data:[{
+          id:"tr_existing123",
+          amount:2000,
+          currency:"eur",
+          destination:"acct_existing",
+          transfer_group:"referral_reward_existing-reward",
+          metadata:{pgi_referral_reward:"existing-reward"},
+          reversed:false,
+          created:1791230000
+        }]
+      });
+    }
+    throw new Error("a second transfer must not be created");
+  };
+  t.after(()=>{global.fetch=original;});
+  let settled=null;
+  const store={
+    prepareReferralRewardPayout:async()=>({
+      id:10,public_id:"existing-reward",tenant_id:15,tenant_public_id:"tenant-15",
+      amount_minor:2000,currency:"EUR",status:"earned",provider_account_reference:"acct_existing"
+    }),
+    settleAutomatedCustomerReferralReward:async(id,input)=>{settled={id,input};return {id,status:"paid"};},
+    deferReferralRewardPayout:async()=>{}
+  };
+  const result=await processReferralPayoutWork({payload:{reward_id:10}},{store,config});
+  assert.equal(result.paid,true);
+  assert.equal(result.transfer_reference,"tr_existing123");
+  assert.equal(calls.length,2);
+  assert.equal(settled.input.transfer_reference,"tr_existing123");
+});
+
 test("production contract keeps automatic referral payouts durable and non-manual",()=>{
   const stripe=fs.readFileSync("backend/src/stripe-connect.mjs","utf8");
   const automation=fs.readFileSync("backend/src/referral-payout-automation.mjs","utf8");
@@ -137,6 +188,8 @@ test("production contract keeps automatic referral payouts durable and non-manua
 
   assert.match(stripe,/configuration:\{recipient:\{capabilities:\{stripe_balance:\{stripe_transfers:\{requested:true\}\}\}\}\}/);
   assert.match(stripe,/formRequest\(config,"\/v1\/transfers"/);
+  assert.match(stripe,/transfer_group/);
+  assert.match(automation,/findStripeReferralTransfer/);
   assert.match(automation,/referral-reward-v1-/);
   assert.match(store,/async settleAutomatedCustomerReferralReward/);
   assert.match(store,/status='paid'.*payout_state='paid'/s);
