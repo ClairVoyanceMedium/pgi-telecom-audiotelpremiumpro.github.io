@@ -4587,6 +4587,33 @@ export class PostgresStore{
     };
   }
 
+  async recordCustomerReferralEvent(codeInput,eventTypeInput,visitorTokenInput,metadata={}){
+    const code=String(codeInput||"").trim().toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,24);
+    const eventType=String(eventTypeInput||"").trim().toLowerCase();
+    const visitorToken=String(visitorTokenInput||"").trim().toLowerCase();
+    if(!/^[A-Z0-9]{8,24}$/.test(code))throw problem(400,"INVALID_REFERRAL_CODE");
+    if(!["visit","prospect"].includes(eventType))throw problem(400,"INVALID_REFERRAL_EVENT");
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(visitorToken))throw problem(400,"INVALID_REFERRAL_VISITOR_TOKEN");
+    const safeMetadata={
+      source:String(metadata?.source||"").trim().slice(0,80)||"unknown",
+      page_path:String(metadata?.page_path||"").trim().slice(0,240)||null
+    };
+    try{
+      const rows=await this.sql.unsafe(
+        "INSERT INTO customer_referral_events(referral_code_id,event_type,visitor_token,metadata)"+
+        " SELECT c.id,$2,$3::uuid,$4::jsonb FROM customer_referral_codes c"+
+        " JOIN platform_feature_flags f ON f.feature_key='customer_referral'"+
+        " WHERE c.code=$1 AND c.status='active' AND f.enabled=true"+
+        " ON CONFLICT(referral_code_id,event_type,visitor_token) DO NOTHING RETURNING id,occurred_at",
+        [code,eventType,visitorToken,JSON.stringify(safeMetadata)]
+      );
+      return {accepted:true,recorded:rows.length>0,replayed:rows.length===0};
+    }catch(error){
+      if(String(error?.code||"")==="42P01")return {accepted:false,recorded:false,replayed:false};
+      throw error;
+    }
+  }
+
   async referralProgramPublicState(){
     const policy=referralPublicPolicy();
     try{
@@ -4645,7 +4672,10 @@ export class PostgresStore{
       this.sql.unsafe("SELECT code,status,created_at FROM customer_referral_codes WHERE tenant_id=$1 LIMIT 1",[id]),
       this.sql.unsafe(
         "SELECT count(*)::int AS claimed,count(*) FILTER(WHERE status='rewarded')::int AS rewarded,"+
-        " COALESCE(sum(reward_minor) FILTER(WHERE status='rewarded'),0)::bigint AS reward_minor FROM customer_referrals WHERE referrer_tenant_id=$1",
+        " COALESCE(sum(reward_minor) FILTER(WHERE status='rewarded'),0)::bigint AS reward_minor,"+
+        " (SELECT count(*)::int FROM customer_referral_events e JOIN customer_referral_codes c ON c.id=e.referral_code_id WHERE c.tenant_id=$1 AND e.event_type='visit') AS visits,"+
+        " (SELECT count(*)::int FROM customer_referral_events e JOIN customer_referral_codes c ON c.id=e.referral_code_id WHERE c.tenant_id=$1 AND e.event_type='prospect') AS prospects"+
+        " FROM customer_referrals WHERE referrer_tenant_id=$1",
         [id]
       ),
       this.sql.unsafe(
@@ -4669,7 +4699,7 @@ export class PostgresStore{
       can_manage:program.enabled===true,
       eligibility_reason:eligible?null:(program.enabled!==true?"program_disabled":tenant.status!=="active"?"tenant_not_active":"subscription_not_paid"),
       next_reward:{...next},
-      summary:{claimed:Number(summary.claimed||0),rewarded,reward_minor:Number(summary.reward_minor||0)},
+      summary:{visits:Number(summary.visits||0),prospects:Number(summary.prospects||0),claimed:Number(summary.claimed||0),rewarded,reward_minor:Number(summary.reward_minor||0)},
       recent:recent.map(x=>({...x,reward_minor:Number(x.reward_minor||0),paid_invoice_count:Number(x.paid_invoice_count||0)}))
     };
   }
