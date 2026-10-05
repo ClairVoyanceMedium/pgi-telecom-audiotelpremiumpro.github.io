@@ -2523,6 +2523,7 @@ export class PostgresStore{
             );
           }
         }
+      }
       return {duplicate:false,subscription_id:subscriptionId,tenant_id:Number(tenant.id),status};
     });
     if(!result.duplicate)this.eventBus.publish("subscription.changed",{id:result.subscription_id,tenant_id:result.tenant_id,status:result.status});
@@ -4667,7 +4668,7 @@ export class PostgresStore{
     };
   }
 
-  async ensureCustomerReferralCode(async ensureCustomerReferralCode(tenantId){
+  async ensureCustomerReferralCode(tenantId){
     const id=Number(tenantId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     const program=await this.referralProgramPublicState();if(!program.enabled)throw problem(409,"REFERRAL_PROGRAM_DISABLED");
     const tenant=(await this.sql.unsafe(
@@ -4727,7 +4728,7 @@ export class PostgresStore{
     });
   }
 
-  async settleCustomerReferralReward(async settleCustomerReferralReward(rewardId,paidReference,actor={}){
+  async settleCustomerReferralReward(rewardId,paidReference,actor={}){
     const id=Number(rewardId),reference=String(paidReference||"").trim().slice(0,180),actorId=numericActor(actor);
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_REFERRAL_REWARD");
     if(reference.length<3)throw problem(400,"REFERRAL_PAYMENT_REFERENCE_REQUIRED");
