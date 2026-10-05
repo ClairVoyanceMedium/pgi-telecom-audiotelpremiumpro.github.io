@@ -4,7 +4,7 @@ import fs from "node:fs";
 import {normalizeStripeReferralRecipientAccount} from "../backend/src/stripe-connect.mjs";
 
 const read=file=>fs.readFileSync(file,"utf8");
-const migration=read("database/migrations/068_referral_automatic_payouts.sql");
+const migration=read("database/migrations/069_referral_automatic_payouts.sql");
 const stripe=read("backend/src/stripe-connect.mjs");
 const automation=read("backend/src/referral-payout-automation.mjs");
 const store=read("backend/src/store-postgres.mjs");
