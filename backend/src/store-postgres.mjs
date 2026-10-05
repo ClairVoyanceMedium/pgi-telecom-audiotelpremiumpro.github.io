@@ -6907,6 +6907,168 @@ export class PostgresStore{
     };
   }
 
+  async platformAccounting(params={}){
+    const rawMonth=String(params.month||"").trim(),now=new Date();
+    const fallbackMonth=now.getUTCFullYear()+"-"+String(now.getUTCMonth()+1).padStart(2,"0");
+    const month=/^\d{4}-(0[1-9]|1[0-2])$/.test(rawMonth)?rawMonth:fallbackMonth;
+    const [yearText,monthText]=month.split("-"),year=Number(yearText),monthIndex=Number(monthText)-1;
+    if(year<2020||year>2100)throw problem(400,"INVALID_ACCOUNTING_MONTH");
+    const selectedFrom=new Date(Date.UTC(year,monthIndex,1)),selectedTo=new Date(Date.UTC(year,monthIndex+1,1));
+    const historyFrom=new Date(Date.UTC(year,monthIndex-11,1));
+    const historyTo=selectedTo;
+    const requestedCurrency=String(params.currency||"EUR").trim().toUpperCase();
+    if(!/^[A-Z]{3}$/.test(requestedCurrency))throw problem(400,"INVALID_CURRENCY");
+    const fromIso=historyFrom.toISOString(),toIso=historyTo.toISOString(),currency=requestedCurrency;
+    const paidRatio="CASE WHEN cs.confirmed_amount_ht>0 THEN LEAST(1::numeric,GREATEST(0::numeric,cs.paid_amount_ht/cs.confirmed_amount_ht)) WHEN cs.status='paid' THEN 1::numeric ELSE 0::numeric END";
+    const [
+      subscriptionRows,priorityRows,cardRows,cardRefundRows,svaCollectedRows,svaBookedRows,clientPaidRows,
+      referralRows,referralPaidRows,currentReferral,currentClient,currentCarrier,currencyRows
+    ]=await Promise.all([
+      this.readSql.unsafe(
+        "SELECT date_trunc('month',event_time)::date AS bucket,count(*)::int AS count,"+
+        " COALESCE(sum((normalized_details->>'provider_invoice_amount_paid_minor')::bigint),0)::bigint AS amount_minor"+
+        " FROM subscription_billing_events WHERE event_type='invoice.paid' AND event_time>=$1::timestamptz AND event_time<$2::timestamptz"+
+        " AND upper(COALESCE(normalized_details->>'provider_invoice_currency',''))=$3"+
+        " AND COALESCE(normalized_details->>'provider_invoice_amount_paid_minor','') ~ '^[0-9]+$'"+
+        " GROUP BY 1 ORDER BY 1",[fromIso,toIso,currency]
+      ),
+      this.readSql.unsafe(
+        "SELECT date_trunc('month',(metadata->'priority_service'->>'paid_at')::timestamptz)::date AS bucket,count(*)::int AS count,"+
+        " COALESCE(sum((metadata->'priority_service'->>'amount_minor')::bigint),0)::bigint AS amount_minor"+
+        " FROM tenant_portability_requests WHERE COALESCE(metadata->'priority_service'->>'status','')='paid'"+
+        " AND upper(COALESCE(metadata->'priority_service'->>'currency',''))=$3"+
+        " AND COALESCE(metadata->'priority_service'->>'amount_minor','') ~ '^[0-9]+$'"+
+        " AND COALESCE(metadata->'priority_service'->>'paid_at','')<>''"+
+        " AND (metadata->'priority_service'->>'paid_at')::timestamptz>=$1::timestamptz"+
+        " AND (metadata->'priority_service'->>'paid_at')::timestamptz<$2::timestamptz GROUP BY 1 ORDER BY 1",
+        [fromIso,toIso,currency]
+      ),
+      this.readSql.unsafe(
+        "SELECT date_trunc('month',paid_at)::date AS bucket,count(*)::int AS count,COALESCE(sum(amount_minor),0)::bigint AS volume_minor,"+
+        " COALESCE(sum(application_fee_minor),0)::bigint AS fee_minor FROM tenant_card_payment_requests"+
+        " WHERE status='paid' AND currency=$3 AND paid_at>=$1::timestamptz AND paid_at<$2::timestamptz GROUP BY 1 ORDER BY 1",
+        [fromIso,toIso,currency]
+      ),
+      this.readSql.unsafe(
+        "SELECT date_trunc('month',refunded_at)::date AS bucket,count(*)::int AS count,COALESCE(sum(application_fee_minor),0)::bigint AS fee_minor"+
+        " FROM tenant_card_payment_requests WHERE status='refunded' AND currency=$3 AND refunded_at>=$1::timestamptz AND refunded_at<$2::timestamptz GROUP BY 1 ORDER BY 1",
+        [fromIso,toIso,currency]
+      ),
+      this.readSql.unsafe(
+        "SELECT date_trunc('month',cs.paid_at)::date AS bucket,COALESCE(sum(d.platform_fee_ht*("+paidRatio+")),0)::float8 AS margin_collected_ht"+
+        " FROM tenant_revenue_distributions d JOIN carrier_settlements cs ON cs.id=d.upstream_settlement_id"+
+        " WHERE d.currency=$3 AND cs.paid_at>=$1::timestamptz AND cs.paid_at<$2::timestamptz GROUP BY 1 ORDER BY 1",
+        [fromIso,toIso,currency]
+      ),
+      this.readSql.unsafe(
+        "SELECT date_trunc('month',d.period_end::timestamp)::date AS bucket,COALESCE(sum(d.platform_fee_ht),0)::float8 AS margin_booked_ht,"+
+        " COALESCE(sum(d.upstream_payout_ht),0)::float8 AS upstream_payout_ht"+
+        " FROM tenant_revenue_distributions d WHERE d.currency=$3 AND d.period_end>=$1::date AND d.period_end<$2::date GROUP BY 1 ORDER BY 1",
+        [fromIso.slice(0,10),toIso.slice(0,10),currency]
+      ),
+      this.readSql.unsafe(
+        "SELECT date_trunc('month',paid_at)::date AS bucket,count(*)::int AS count,COALESCE(sum(net_payout_ht),0)::float8 AS amount_ht"+
+        " FROM tenant_revenue_distributions WHERE currency=$3 AND status='paid' AND paid_at>=$1::timestamptz AND paid_at<$2::timestamptz GROUP BY 1 ORDER BY 1",
+        [fromIso,toIso,currency]
+      ),
+      this.readSql.unsafe(
+        "SELECT date_trunc('month',earned_at)::date AS bucket,count(*)::int AS count,COALESCE(sum(amount_minor),0)::bigint AS amount_minor"+
+        " FROM customer_referral_rewards WHERE currency=$3 AND status IN ('earned','paid') AND earned_at>=$1::timestamptz AND earned_at<$2::timestamptz GROUP BY 1 ORDER BY 1",
+        [fromIso,toIso,currency]
+      ),
+      this.readSql.unsafe(
+        "SELECT date_trunc('month',paid_at)::date AS bucket,count(*)::int AS count,COALESCE(sum(amount_minor),0)::bigint AS amount_minor"+
+        " FROM customer_referral_rewards WHERE currency=$3 AND status='paid' AND paid_at>=$1::timestamptz AND paid_at<$2::timestamptz GROUP BY 1 ORDER BY 1",
+        [fromIso,toIso,currency]
+      ),
+      this.readSql.unsafe(
+        "SELECT count(*)::int AS count,COALESCE(sum(amount_minor),0)::bigint AS amount_minor FROM customer_referral_rewards WHERE currency=$1 AND status='earned'",
+        [currency]
+      ),
+      this.readSql.unsafe(
+        "SELECT COALESCE(sum(net_payout_ht) FILTER(WHERE status IN ('reconciled','payable')),0)::float8 AS payable_ht,"+
+        " COALESCE(sum(net_payout_ht) FILTER(WHERE status IN ('blocked_terms','blocked_compliance')),0)::float8 AS blocked_ht,"+
+        " count(*) FILTER(WHERE status IN ('reconciled','payable'))::int AS payable_count,count(*) FILTER(WHERE status IN ('blocked_terms','blocked_compliance'))::int AS blocked_count"+
+        " FROM tenant_revenue_distributions WHERE currency=$1",[currency]
+      ),
+      this.readSql.unsafe(
+        "SELECT COALESCE(sum(GREATEST(confirmed_amount_ht-paid_amount_ht,0)),0)::float8 AS receivable_ht,count(*) FILTER(WHERE confirmed_amount_ht>paid_amount_ht)::int AS count"+
+        " FROM carrier_settlements WHERE currency=$1",[currency]
+      ),
+      this.readSql.unsafe(
+        "SELECT DISTINCT currency FROM ("+
+        " SELECT upper(normalized_details->>'provider_invoice_currency') AS currency FROM subscription_billing_events WHERE event_type='invoice.paid'"+
+        " UNION SELECT currency::text FROM tenant_card_payment_requests"+
+        " UNION SELECT currency::text FROM tenant_revenue_distributions"+
+        " UNION SELECT currency::text FROM customer_referral_rewards"+
+        ") x WHERE currency ~ '^[A-Z]{3}$' ORDER BY currency"
+      )
+    ]);
+    const key=v=>{const d=new Date(v);return Number.isFinite(d.getTime())?d.toISOString().slice(0,7):String(v||"").slice(0,7);};
+    const maps={
+      subscriptions:new Map(subscriptionRows.map(x=>[key(x.bucket),x])),
+      priority:new Map(priorityRows.map(x=>[key(x.bucket),x])),
+      cards:new Map(cardRows.map(x=>[key(x.bucket),x])),
+      cardRefunds:new Map(cardRefundRows.map(x=>[key(x.bucket),x])),
+      svaCollected:new Map(svaCollectedRows.map(x=>[key(x.bucket),x])),
+      svaBooked:new Map(svaBookedRows.map(x=>[key(x.bucket),x])),
+      clientPaid:new Map(clientPaidRows.map(x=>[key(x.bucket),x])),
+      referralEarned:new Map(referralRows.map(x=>[key(x.bucket),x])),
+      referralPaid:new Map(referralPaidRows.map(x=>[key(x.bucket),x]))
+    };
+    const history=[];
+    for(let i=0;i<12;i++){
+      const d=new Date(Date.UTC(historyFrom.getUTCFullYear(),historyFrom.getUTCMonth()+i,1)),bucket=d.toISOString().slice(0,7);
+      const s=maps.subscriptions.get(bucket)||{},p=maps.priority.get(bucket)||{},card=maps.cards.get(bucket)||{},refund=maps.cardRefunds.get(bucket)||{},
+        sc=maps.svaCollected.get(bucket)||{},sb=maps.svaBooked.get(bucket)||{},cp=maps.clientPaid.get(bucket)||{},re=maps.referralEarned.get(bucket)||{},rp=maps.referralPaid.get(bucket)||{};
+      history.push({
+        month:bucket,currency,
+        subscriptions_collected_ttc_minor:Number(s.amount_minor||0),subscriptions_paid_invoices:Number(s.count||0),
+        portability_priority_collected_ttc_minor:Number(p.amount_minor||0),portability_priority_sales:Number(p.count||0),
+        card_payment_volume_minor:Number(card.volume_minor||0),card_payment_pgi_fee_minor:Number(card.fee_minor||0),card_payment_count:Number(card.count||0),
+        card_payment_refunded_fee_minor:Number(refund.fee_minor||0),card_payment_refund_count:Number(refund.count||0),
+        sva_margin_booked_ht:Number(sb.margin_booked_ht||0),sva_margin_collected_ht:Number(sc.margin_collected_ht||0),sva_upstream_payout_ht:Number(sb.upstream_payout_ht||0),
+        client_payout_paid_ht:Number(cp.amount_ht||0),client_payout_paid_count:Number(cp.count||0),
+        referral_rewards_earned_minor:Number(re.amount_minor||0),referral_rewards_earned_count:Number(re.count||0),
+        referral_rewards_paid_minor:Number(rp.amount_minor||0),referral_rewards_paid_count:Number(rp.count||0)
+      });
+    }
+    const selected=history.find(x=>x.month===month)||history[history.length-1];
+    const currentClientRow=currentClient[0]||{},currentReferralRow=currentReferral[0]||{},currentCarrierRow=currentCarrier[0]||{};
+    return {
+      schema_version:"audiotel-platform-accounting/1",
+      generated_at:new Date().toISOString(),
+      month,
+      range:{from:selectedFrom.toISOString(),to_exclusive:selectedTo.toISOString()},
+      currency,
+      currencies:currencyRows.map(x=>String(x.currency)).filter(Boolean).length?currencyRows.map(x=>String(x.currency)).filter(Boolean):[currency],
+      selected,
+      current_balances:{
+        referral_rewards_payable_minor:Number(currentReferralRow.amount_minor||0),
+        referral_rewards_payable_count:Number(currentReferralRow.count||0),
+        client_payout_payable_ht:Number(currentClientRow.payable_ht||0),
+        client_payout_payable_count:Number(currentClientRow.payable_count||0),
+        client_payout_blocked_ht:Number(currentClientRow.blocked_ht||0),
+        client_payout_blocked_count:Number(currentClientRow.blocked_count||0),
+        carrier_receivable_ht:Number(currentCarrierRow.receivable_ht||0),
+        carrier_receivable_count:Number(currentCarrierRow.count||0)
+      },
+      monthly_history:history,
+      accounting_policy:{
+        authoritative_sources:["subscription_billing_events","tenant_portability_requests.priority_service","tenant_card_payment_requests","tenant_revenue_distributions","carrier_settlements","customer_referral_rewards"],
+        tax_basis_separated:true,
+        no_fx_conversion:true,
+        statutory_ledger:false,
+        notes:[
+          "Abonnements et portabilité prioritaire sont présentés en montants encaissés TTC issus de Stripe.",
+          "Marge SVA et reversements clients sont présentés en HT selon les rapprochements opérateurs.",
+          "Les frais carte bancaire PGI sont présentés selon le montant d'application fee enregistré, sans reconstituer une TVA non fournie par la source.",
+          "Les totaux de bases fiscales différentes ne sont jamais additionnés en bénéfice comptable."
+        ]
+      }
+    };
+  }
+
   async createTenantPayoutTerms(publicId,input={},actor={}){
     publicId=String(publicId||"").trim();
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
