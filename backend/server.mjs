@@ -296,6 +296,39 @@ export function createBackend(options={}){
         return done(res,metrics,started,"public.withdrawal_status",200,{available:config.onlineWithdrawalReady===true&&schemaReady});
       }
 
+      if(method==="POST"&&pathname==="/api/v1/public/ambassador/apply"){
+        requireSameOriginBrowser(req);
+        enforceRegistrationRate(req,config,registrationBuckets);
+        const body=await readJson(req,config.bodyLimitBytes);
+        if(String(body.website||"").trim())return done(res,metrics,started,"public.ambassador_apply",202,{accepted:false});
+        const application=await store.ensureAmbassadorApplication({
+          name:body.name,email:body.email,phone:body.phone,note:body.note,country_code:body.country_code||"FR"
+        });
+        const eventId="ambassador-application/"+String(application.public_id);
+        try{
+          await sendTransactionalEmail(config,{
+            to:application.email,
+            name:application.display_name||application.email,
+            senderRole:"support",
+            templateKey:"ambassador_application_received",
+            data:{name:application.display_name||application.email},
+            idempotencyKey:eventId,
+            internalEventId:eventId
+          });
+        }catch(error){logSecurityEmailFailure("ambassador_application_received",error);}
+        try{
+          await syncHubSpotSupportMessage({
+            email:application.email,
+            message:["Demande ambassadeur Audiotel Premium Pro","Nom : "+String(application.display_name||""),body.phone?"Téléphone : "+String(body.phone):"",body.note?"Précision : "+String(body.note):""].filter(Boolean).join("\n"),
+            pagePath:"/parrainage-audiotel/",
+            pageTitle:"Demande ambassadeur Audiotel Premium Pro",
+            marketing_consent:false,
+            source:"ambassador_application"
+          });
+        }catch(error){logHubSpotSyncFailure("ambassador_application",error);}
+        return done(res,metrics,started,"public.ambassador_apply",202,{accepted:true,status:application.status,application_id:application.public_id,already_active:application.already_active===true});
+      }
+
       if(method==="POST"&&pathname==="/api/v1/public/contact"){
         requireSameOriginBrowser(req);
         if(!config.transactionalEmailEnabled||!config.resendApiKey)return done(res,metrics,started,"public.contact",503,{error:{code:"CONTACT_UNAVAILABLE"}});
