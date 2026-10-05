@@ -11,6 +11,7 @@ const store=read("backend/src/store-postgres.mjs");
 const server=read("backend/server.mjs");
 const vercel=JSON.parse(read("vercel.json"));
 const client=read("assets/client-referral.js");
+const clientPayout=read("assets/client-referral-payout.js");
 const accounting=read("assets/accounting-cockpit.js");
 
 test("recipient readiness uses the Stripe Accounts v2 transfer capability",()=>{
@@ -56,8 +57,9 @@ test("automatic payouts fail closed and retry without admin intervention",()=>{
 
 test("customer self-service and accounting print are wired",()=>{
   assert.match(server,/\/api\/v1\/customer\/referral\/payout-account/);
-  assert.match(client,/client-referral-payout-connect/);
-  assert.match(client,/Versements automatiques activés/);
+  assert.match(client,/client-referral-payout\.js/);
+  assert.match(clientPayout,/client-referral-payout-connect/);
+  assert.match(clientPayout,/Versements automatiques activés/);
   assert.match(accounting,/data-acc-print/);
   assert.match(accounting,/window\.print\(\)/);
 });
