@@ -17,7 +17,7 @@ RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
   && npm cache clean --force \
   && rm -rf /root/.npm
 
-COPY --chown=node:node index.html client.html paiement-cb-result.html sitemap.xml manifest.webmanifest service-worker.js robots.txt llms.txt llms-full.txt fa0a7deb5d60bdf1260c8174ad8c71db.txt .nojekyll ./
+COPY --chown=node:node index.html client.html ambassadeur.html paiement-cb-result.html sitemap.xml manifest.webmanifest service-worker.js robots.txt llms.txt llms-full.txt fa0a7deb5d60bdf1260c8174ad8c71db.txt .nojekyll ./
 COPY --chown=node:node site ./site
 COPY --chown=node:node assets ./assets
 COPY --chown=node:node backend ./backend
