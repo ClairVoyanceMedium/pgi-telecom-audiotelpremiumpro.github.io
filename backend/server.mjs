@@ -269,6 +269,12 @@ export function createBackend(options={}){
         return done(res,metrics,started,"referral_payouts.run",200,{ok:true,...result});
       }
 
+      if(method==="GET"&&pathname==="/api/v1/internal/accounting/refresh"){
+        authorizeCron(req,config);
+        const result=await refreshExpertAccountingLedger(store,{sub:"system-accounting-cron"});
+        return done(res,metrics,started,"accounting_expert.auto_refresh",200,{ok:true,...result});
+      }
+
       if(method==="GET"&&pathname==="/api/v1/public/referral-program"){
         const program=typeof store.referralProgramPublicState==="function"?await store.referralProgramPublicState():{enabled:false,reward_minor:0,currency:"EUR"};
         return done(res,metrics,started,"public.referral_program",200,program);
