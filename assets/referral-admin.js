@@ -4,7 +4,6 @@ function cookie(name){const p=encodeURIComponent(name)+"=";for(const part of Str
 async function request(path,method="GET",body=null,key=""){const headers={"Accept":"application/json"};if(body!==null)headers["Content-Type"]="application/json";const csrf=cookie("__Host-pgi_csrf");if(csrf&&method!=="GET")headers["X-CSRF-Token"]=csrf;if(key)headers["Idempotency-Key"]=key;const res=await fetch(apiBase()+path,{method,credentials:"include",cache:"no-store",headers,body:body===null?undefined:JSON.stringify(body)}),payload=await res.json().catch(()=>null);if(!res.ok){const e=new Error(payload?.error?.code||"API_HTTP_"+res.status);e.code=payload?.error?.code||"API_HTTP_"+res.status;e.status=res.status;throw e}return payload}
 const referralProgram=()=>request("/platform/referral-program");
 const updateReferralProgram=(payload,key)=>request("/platform/referral-program","POST",payload,key);
-const settleReferralReward=(id,payload,key)=>request("/platform/referral-rewards/"+encodeURIComponent(id)+"/paid","POST",payload,key);
 const feedback=(msg,type="")=>ctx?.feedback?.(msg,type);
 function ensureStyle(){if(document.getElementById("referral-admin-css"))return;const link=document.createElement("link");link.id="referral-admin-css";link.rel="stylesheet";link.href=new URL("./referral-admin.css",import.meta.url).href;document.head.appendChild(link)}
 function view(){return viewPromise||(viewPromise=import("./referral-admin-view.js"))}
@@ -22,14 +21,7 @@ async function handle(e){
     try{await updateReferralProgram({enabled},window.PGIApi.newIdempotencyKey());feedback("Programme de parrainage mis à jour.","ok");await load()}catch(err){feedback(err?.code||"Mise à jour impossible","error")}finally{busy=false}
     return;
   }
-  const paid=e.target.closest("[data-referral-paid]");
-  if(paid){
-    const reference=prompt("Référence du paiement déjà effectué au parrain :");
-    if(!reference||String(reference).trim().length<3)return;
-    if(!confirm("Confirmer que cette prime a déjà été versée et enregistrer la référence ?"))return;
-    busy=true;feedback("Enregistrement du versement...");
-    try{await settleReferralReward(paid.dataset.referralPaid,{paid_reference:String(reference).trim()},window.PGIApi.newIdempotencyKey());feedback("Versement enregistré.","ok");await load()}catch(err){feedback(err?.code||"Enregistrement impossible","error")}finally{busy=false}
-  }
+
 }
 export async function open(options={}){
   if(!options.root)throw Object.assign(new Error("REFERRAL_ADMIN_ROOT_MISSING"),{code:"REFERRAL_ADMIN_ROOT_MISSING"});

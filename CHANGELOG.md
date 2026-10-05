@@ -1,3 +1,14 @@
+## 1.32.0 : Parrainage et comptabilité automatisés : 2026-10-05
+
+- qualification des filleuls maintenue après 3 factures mensuelles distinctes réellement payées ;
+- primes ambassadeur versées automatiquement via Stripe Connect, sans saisie d’IBAN dans Audiotel Premium Pro ;
+- compte Stripe unique par client, utilisable pour les paiements CB et les primes de parrainage ;
+- file transactionnelle persistante avec idempotence, reprise après incident, verrouillage concurrent et référence Stripe unique ;
+- cockpit parrainage transformé en supervision des versements, sans action manuelle de paiement ;
+- espace ambassadeur enrichi avec activation Stripe Hosted Onboarding et suivi des primes à verser ou déjà versées ;
+- comptabilité enrichie avec l’état des primes automatiques, export CSV et impression A4 paysage ;
+- version applicative portée à 1.32.0.
+
 ## 1.31.0 : Tarif plateforme 4,90 € TTC : 2026-10-04
 
 - abonnement plateforme courant porté à 4,90 € TTC par mois après le mois en cours offert ;
