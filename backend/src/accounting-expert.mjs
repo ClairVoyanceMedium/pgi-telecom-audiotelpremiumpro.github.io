@@ -633,51 +633,55 @@ export async function matchAccountingBankTransaction(store,id,input={},actor={})
 export async function setAccountingPeriodState(store,period,input={},actor={}){
   const key=normalizePeriod(period),state=String(input.state||"").trim(),reason=text(input.reason,1000)||null;
   if(!["open","review","closed"].includes(state))throw problem(400,"INVALID_ACCOUNTING_PERIOD_STATE");
-  const previous=(await store.readSql.unsafe("SELECT state FROM platform_accounting_periods WHERE period_key=$1",[key]))[0]?.state||null;
-  if(previous==="closed"&&state!=="closed"&&(!reason||reason.length<10))throw problem(409,"ACCOUNTING_PERIOD_REOPEN_REASON_REQUIRED");
-  if(state==="closed"){
-    const checks=(await store.readSql.unsafe(
-      "SELECT"+
-      " count(*) FILTER(WHERE status='draft')::int AS drafts,"+
-      " count(*) FILTER(WHERE status IN ('validated','reversal') AND NOT pgi_accounting_entry_balanced(id))::int AS unbalanced"+
-      " FROM platform_accounting_entries WHERE entry_date>=($1||'-01')::date AND entry_date<(($1||'-01')::date+interval '1 month')",
-      [key]
-    ))[0]||{};
-    const suspense=(await store.readSql.unsafe(
-      "SELECT count(*)::int AS count FROM platform_accounting_lines l JOIN platform_accounting_entries e ON e.id=l.entry_id JOIN platform_accounting_accounts a ON a.account_num=l.account_num"+
-      " WHERE e.entry_date>=($1||'-01')::date AND e.entry_date<(($1||'-01')::date+interval '1 month') AND e.status IN ('validated','reversal') AND a.suspense",
-      [key]
-    ))[0]?.count||0;
-    const bank=(await store.readSql.unsafe(
-      "SELECT count(*)::int AS count FROM platform_bank_transactions WHERE booked_at>=($1||'-01')::date AND booked_at<(($1||'-01')::date+interval '1 month') AND reconciliation_state='unmatched'",
-      [key]
-    ))[0]?.count||0;
-    if(Number(checks.drafts)>0||Number(checks.unbalanced)>0||Number(suspense)>0||Number(bank)>0){
-      throw problem(409,"ACCOUNTING_PERIOD_NOT_CLOSABLE",{drafts:Number(checks.drafts||0),unbalanced:Number(checks.unbalanced||0),suspense:Number(suspense||0),unmatched_bank:Number(bank||0)});
+  return store.sql.begin(async tx=>{
+    await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",["accounting-period:"+key]);
+    const existing=(await tx.unsafe("SELECT period_key,state FROM platform_accounting_periods WHERE period_key=$1 FOR UPDATE",[key]))[0];
+    const previous=existing?.state||null;
+    if(previous==="closed"&&state!=="closed"&&(!reason||reason.length<10))throw problem(409,"ACCOUNTING_PERIOD_REOPEN_REASON_REQUIRED");
+    if(state==="closed"){
+      const checks=(await tx.unsafe(
+        "SELECT"+
+        " count(*) FILTER(WHERE status='draft')::int AS drafts,"+
+        " count(*) FILTER(WHERE status IN ('validated','reversal') AND NOT pgi_accounting_entry_balanced(id))::int AS unbalanced"+
+        " FROM platform_accounting_entries WHERE entry_date>=($1||'-01')::date AND entry_date<(($1||'-01')::date+interval '1 month')",
+        [key]
+      ))[0]||{};
+      const suspense=(await tx.unsafe(
+        "SELECT count(*)::int AS count FROM platform_accounting_lines l JOIN platform_accounting_entries e ON e.id=l.entry_id JOIN platform_accounting_accounts a ON a.account_num=l.account_num"+
+        " WHERE e.entry_date>=($1||'-01')::date AND e.entry_date<(($1||'-01')::date+interval '1 month') AND e.status IN ('validated','reversal') AND a.suspense",
+        [key]
+      ))[0]?.count||0;
+      const bank=(await tx.unsafe(
+        "SELECT count(*)::int AS count FROM platform_bank_transactions WHERE booked_at>=($1||'-01')::date AND booked_at<(($1||'-01')::date+interval '1 month') AND reconciliation_state='unmatched'",
+        [key]
+      ))[0]?.count||0;
+      if(Number(checks.drafts)>0||Number(checks.unbalanced)>0||Number(suspense)>0||Number(bank)>0){
+        throw problem(409,"ACCOUNTING_PERIOD_NOT_CLOSABLE",{drafts:Number(checks.drafts||0),unbalanced:Number(checks.unbalanced||0),suspense:Number(suspense||0),unmatched_bank:Number(bank||0)});
+      }
     }
-  }
-  const hashRows=state==="closed"?await store.readSql.unsafe(
-    "SELECT md5(COALESCE(string_agg(e.id::text||':'||COALESCE(e.entry_number,'')||':'||e.source_hash||':'||l.account_num||':'||l.debit_minor||':'||l.credit_minor,'|' ORDER BY e.entry_date,e.id,l.line_no),'')) AS hash"+
-    " FROM platform_accounting_entries e JOIN platform_accounting_lines l ON l.entry_id=e.id"+
-    " WHERE e.entry_date>=($1||'-01')::date AND e.entry_date<(($1||'-01')::date+interval '1 month')",
-    [key]
-  ):null;
-  const closeHash=state==="closed"?String(hashRows?.[0]?.hash||""):null;
-  const row=(await store.sql.unsafe(
-    "INSERT INTO platform_accounting_periods(period_key,state,review_started_at,closed_at,closed_by,close_hash)"+
-    " VALUES($1,$2,CASE WHEN $2='review' THEN now() ELSE NULL END,CASE WHEN $2='closed' THEN now() ELSE NULL END,CASE WHEN $2='closed' THEN $3 ELSE NULL END,$4)"+
-    " ON CONFLICT(period_key) DO UPDATE SET state=EXCLUDED.state,review_started_at=CASE WHEN EXCLUDED.state='review' THEN COALESCE(platform_accounting_periods.review_started_at,now()) WHEN EXCLUDED.state='open' THEN NULL ELSE platform_accounting_periods.review_started_at END,"+
-    " closed_at=CASE WHEN EXCLUDED.state='closed' THEN now() WHEN EXCLUDED.state='open' THEN NULL ELSE platform_accounting_periods.closed_at END,"+
-    " closed_by=CASE WHEN EXCLUDED.state='closed' THEN EXCLUDED.closed_by WHEN EXCLUDED.state='open' THEN NULL ELSE platform_accounting_periods.closed_by END,"+
-    " close_hash=CASE WHEN EXCLUDED.state='closed' THEN EXCLUDED.close_hash WHEN EXCLUDED.state='open' THEN NULL ELSE platform_accounting_periods.close_hash END"+
-    " RETURNING period_key,state,review_started_at,closed_at,close_hash",
-    [key,state,actorId(actor),closeHash]
-  ))[0];
-  await store.sql.unsafe(
-    "INSERT INTO platform_accounting_period_events(period_key,previous_state,new_state,reason,actor_user_id) VALUES($1,$2,$3,$4,$5)",
-    [key,previous,state,reason,actorId(actor)]
-  );
-  return row;
+    const hashRows=state==="closed"?await tx.unsafe(
+      "SELECT md5(COALESCE(string_agg(e.id::text||':'||COALESCE(e.entry_number,'')||':'||e.source_hash||':'||l.account_num||':'||l.debit_minor||':'||l.credit_minor,'|' ORDER BY e.entry_date,e.id,l.line_no),'')) AS hash"+
+      " FROM platform_accounting_entries e JOIN platform_accounting_lines l ON l.entry_id=e.id"+
+      " WHERE e.entry_date>=($1||'-01')::date AND e.entry_date<(($1||'-01')::date+interval '1 month')",
+      [key]
+    ):null;
+    const closeHash=state==="closed"?String(hashRows?.[0]?.hash||""):null;
+    const row=(await tx.unsafe(
+      "INSERT INTO platform_accounting_periods(period_key,state,review_started_at,closed_at,closed_by,close_hash)"+
+      " VALUES($1,$2,CASE WHEN $2='review' THEN now() ELSE NULL END,CASE WHEN $2='closed' THEN now() ELSE NULL END,CASE WHEN $2='closed' THEN $3 ELSE NULL END,$4)"+
+      " ON CONFLICT(period_key) DO UPDATE SET state=EXCLUDED.state,review_started_at=CASE WHEN EXCLUDED.state='review' THEN COALESCE(platform_accounting_periods.review_started_at,now()) WHEN EXCLUDED.state='open' THEN NULL ELSE platform_accounting_periods.review_started_at END,"+
+      " closed_at=CASE WHEN EXCLUDED.state='closed' THEN now() WHEN EXCLUDED.state='open' THEN NULL ELSE platform_accounting_periods.closed_at END,"+
+      " closed_by=CASE WHEN EXCLUDED.state='closed' THEN EXCLUDED.closed_by WHEN EXCLUDED.state='open' THEN NULL ELSE platform_accounting_periods.closed_by END,"+
+      " close_hash=CASE WHEN EXCLUDED.state='closed' THEN EXCLUDED.close_hash WHEN EXCLUDED.state='open' THEN NULL ELSE platform_accounting_periods.close_hash END"+
+      " RETURNING period_key,state,review_started_at,closed_at,close_hash",
+      [key,state,actorId(actor),closeHash]
+    ))[0];
+    await tx.unsafe(
+      "INSERT INTO platform_accounting_period_events(period_key,previous_state,new_state,reason,actor_user_id) VALUES($1,$2,$3,$4,$5)",
+      [key,previous,state,reason,actorId(actor)]
+    );
+    return row;
+  });
 }
 
 export async function importAccountingBankTransactions(store,input={},actor={}){
