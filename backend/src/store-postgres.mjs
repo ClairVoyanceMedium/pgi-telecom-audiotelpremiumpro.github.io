@@ -110,6 +110,65 @@ function consumptionDiff(stored,current){
   return out;
 }
 
+async function ensureReferralPayoutAutomationSchema(sql){
+  const ready=async()=>{
+    const rows=await sql.unsafe(
+      "SELECT to_regclass('public.customer_referral_payout_accounts') IS NOT NULL AS payout_accounts,"+
+      " (SELECT count(*)=8 FROM information_schema.columns WHERE table_schema='public' AND table_name='customer_referral_rewards'"+
+      " AND column_name=ANY(ARRAY['payout_state','payout_attempt_count','payout_last_attempt_at','payout_next_attempt_at','payout_last_error','payout_destination_reference','provider_transfer_reference','payout_completed_at'])) AS reward_columns"
+    );
+    return rows[0]?.payout_accounts===true&&rows[0]?.reward_columns===true;
+  };
+  if(await ready())return {repaired:false};
+  const lockKey="pgi_referral_payout_schema_v1";
+  await sql.unsafe("SELECT pg_advisory_lock(hashtext($1))",[lockKey]);
+  try{
+    if(await ready())return {repaired:false};
+    await sql.begin(async tx=>{
+      await tx.unsafe(
+        "CREATE TABLE IF NOT EXISTS customer_referral_payout_accounts ("+
+        "id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,"+
+        "tenant_id bigint NOT NULL UNIQUE REFERENCES tenants(id) ON DELETE CASCADE,"+
+        "provider text NOT NULL DEFAULT 'stripe' CHECK (provider IN ('stripe')),"+
+        "provider_account_reference text NOT NULL UNIQUE,"+
+        "status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','onboarding','restricted','active','disabled')),"+
+        "transfers_enabled boolean NOT NULL DEFAULT false,"+
+        "details_submitted boolean NOT NULL DEFAULT false,"+
+        "requirements_state text,metadata jsonb NOT NULL DEFAULT '{}'::jsonb,last_synced_at timestamptz,"+
+        "created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now())"
+      );
+      await tx.unsafe("CREATE INDEX IF NOT EXISTS customer_referral_payout_accounts_status_idx ON customer_referral_payout_accounts(status,transfers_enabled,updated_at DESC)");
+      await tx.unsafe(
+        "DO $pgi$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='customer_referral_payout_accounts_touch_updated'"+
+        " AND tgrelid='customer_referral_payout_accounts'::regclass AND NOT tgisinternal) THEN "+
+        "CREATE TRIGGER customer_referral_payout_accounts_touch_updated BEFORE UPDATE ON customer_referral_payout_accounts "+
+        "FOR EACH ROW EXECUTE FUNCTION touch_updated_at(); END IF; END $pgi$"
+      );
+      await tx.unsafe(
+        "ALTER TABLE customer_referral_rewards"+
+        " ADD COLUMN IF NOT EXISTS payout_state text NOT NULL DEFAULT 'pending' CHECK (payout_state IN ('pending','processing','waiting_account','retry','transferred','manual','cancelled')),"+
+        " ADD COLUMN IF NOT EXISTS payout_attempt_count integer NOT NULL DEFAULT 0 CHECK (payout_attempt_count >= 0),"+
+        " ADD COLUMN IF NOT EXISTS payout_last_attempt_at timestamptz,"+
+        " ADD COLUMN IF NOT EXISTS payout_next_attempt_at timestamptz,"+
+        " ADD COLUMN IF NOT EXISTS payout_last_error text,"+
+        " ADD COLUMN IF NOT EXISTS payout_destination_reference text,"+
+        " ADD COLUMN IF NOT EXISTS provider_transfer_reference text,"+
+        " ADD COLUMN IF NOT EXISTS payout_completed_at timestamptz"
+      );
+      await tx.unsafe(
+        "UPDATE customer_referral_rewards SET payout_state=CASE WHEN status='paid' THEN 'manual' WHEN status='cancelled' THEN 'cancelled' ELSE payout_state END,"+
+        " payout_completed_at=CASE WHEN status='paid' THEN COALESCE(payout_completed_at,paid_at) ELSE payout_completed_at END"+
+        " WHERE (status='paid' AND payout_state<>'manual') OR (status='cancelled' AND payout_state<>'cancelled')"
+      );
+      await tx.unsafe("CREATE UNIQUE INDEX IF NOT EXISTS customer_referral_rewards_transfer_ref_uidx ON customer_referral_rewards(provider_transfer_reference) WHERE provider_transfer_reference IS NOT NULL");
+      await tx.unsafe("CREATE INDEX IF NOT EXISTS customer_referral_rewards_auto_payout_due_idx ON customer_referral_rewards(status,payout_state,payout_next_attempt_at,earned_at,id) WHERE status='earned'");
+    });
+    return {repaired:true};
+  }finally{
+    try{await sql.unsafe("SELECT pg_advisory_unlock(hashtext($1))",[lockKey]);}catch{}
+  }
+}
+
 export class PostgresStore{
   constructor(sql,config,eventBus,readSql=null){
     this.sql=sql;
@@ -131,6 +190,7 @@ export class PostgresStore{
     });
     const sql=makeClient(config.databaseUrl,config.databasePoolMax);
     await sql.unsafe("select 1 as ok");
+    await ensureReferralPayoutAutomationSchema(sql);
     let readSql=sql;
     if(config.databaseReadUrl){
       readSql=makeClient(config.databaseReadUrl,config.databaseReadPoolMax);
@@ -2594,8 +2654,8 @@ export class PostgresStore{
       ))[0];
       if(existing){
         await tx.unsafe(
-          "UPDATE tenant_kyc_profiles SET metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||$2::jsonb,updated_at=now() WHERE tenant_id=$1",
-          [existing.id,JSON.stringify({source:"public_opening_form",account_type:accountType,first_name:firstName,last_name:lastName,phone:phone||null,service_intent:serviceIntent})]
+          "UPDATE tenant_kyc_profiles SET metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||jsonb_build_object('source','public_opening_form','account_type',$2::text,'first_name',$3::text,'last_name',$4::text,'phone',$5::text,'service_intent',$6::text),updated_at=now() WHERE tenant_id=$1",
+          [existing.id,accountType,firstName,lastName,phone||null,serviceIntent]
         );
         return {...existing,created:false};
       }
@@ -2612,8 +2672,8 @@ export class PostgresStore{
         [slugBase,tenantName,accountType==="business"?(companyName||tenantName):tenantName,country,email,locale,currency,timezone]
       ))[0];
       await tx.unsafe(
-        "INSERT INTO tenant_kyc_profiles(tenant_id,entity_type,registration_country,registration_number,status,metadata) VALUES($1,$2,$3,$4,'pending',$5::jsonb) ON CONFLICT(tenant_id) DO NOTHING",
-        [tenant.id,accountType==="individual"?"individual":"company",country,registrationNumber||null,JSON.stringify({source:"public_opening_form",account_type:accountType,first_name:firstName,last_name:lastName,phone:phone||null,service_intent:serviceIntent,registration_optional:true})]
+        "INSERT INTO tenant_kyc_profiles(tenant_id,entity_type,registration_country,registration_number,status,metadata) VALUES($1,$2,$3,$4,'pending',jsonb_build_object('source','public_opening_form','account_type',$5::text,'first_name',$6::text,'last_name',$7::text,'phone',$8::text,'service_intent',$9::text,'registration_optional',true)) ON CONFLICT(tenant_id) DO NOTHING",
+        [tenant.id,accountType==="individual"?"individual":"company",country,registrationNumber||null,accountType,firstName,lastName,phone||null,serviceIntent]
       );
       await tx.unsafe(
         "INSERT INTO tenant_market_profiles(tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region)"+
@@ -3662,8 +3722,8 @@ export class PostgresStore{
       ))[0];
       await tx.unsafe(
         "INSERT INTO tenant_kyc_profiles(tenant_id,entity_type,registration_country,registration_number,status,metadata)"+
-        " VALUES($1,$2,$3,$4,'pending',$5::jsonb) ON CONFLICT(tenant_id) DO NOTHING",
-        [tenant.id,accountType==="individual"?"individual":"company",country,registrationNumber||null,JSON.stringify({source:acquisitionSource,registration_optional:true,account_type:accountType,service_intent:serviceIntent||null})]
+        " VALUES($1,$2,$3,$4,'pending',jsonb_build_object('source',$5::text,'registration_optional',true,'account_type',$6::text,'service_intent',$7::text)) ON CONFLICT(tenant_id) DO NOTHING",
+        [tenant.id,accountType==="individual"?"individual":"company",country,registrationNumber||null,acquisitionSource,accountType,serviceIntent||null]
       );
       await tx.unsafe(
         "INSERT INTO tenant_market_profiles(tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region)"+
@@ -3761,7 +3821,7 @@ export class PostgresStore{
       if(invitationHash){
         invitation=(await tx.unsafe(
           "SELECT i.id,i.tenant_id,i.email,i.role,i.status,i.expires_at,t.status AS tenant_status,t.preferred_locale,t.timezone,k.metadata AS lead_metadata"+
-          " FROM customer_tenant_invitations i JOIN tenants t ON t.id=i.tenant_id LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id WHERE i.token_hash=$1 FOR UPDATE",
+          " FROM customer_tenant_invitations i JOIN tenants t ON t.id=i.tenant_id LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id WHERE i.token_hash=$1 FOR UPDATE OF i,t",
           [String(invitationHash)]
         ))[0];
         if(!invitation)throw problem(404,"INVITATION_NOT_FOUND");
@@ -3789,13 +3849,13 @@ export class PostgresStore{
         if(principal&&!["active","pending"].includes(principal.status))throw problem(409,"CUSTOMER_ACCOUNT_DISABLED");
         if(!principal){
           principal=(await tx.unsafe(
-            "INSERT INTO customer_principals(email,display_name,status,preferred_locale,timezone,email_verified,metadata) VALUES($1,$2,'active',$3,$4,true,$5::jsonb) RETURNING id,email,display_name,status,session_version",
-            [identity.email,identity.display_name||identity.email,invitation?.preferred_locale||"fr-FR",invitation?.timezone||"Europe/Paris",JSON.stringify(leadMeta)]
+            "INSERT INTO customer_principals(email,display_name,status,preferred_locale,timezone,email_verified,metadata) VALUES($1,$2,'active',$3,$4,true,jsonb_build_object('first_name',$5::text,'last_name',$6::text,'phone',$7::text,'signup_source','public_opening_invitation','service_intent',$8::text,'account_type',$9::text,'authority_confirmed',true)) RETURNING id,email,display_name,status,session_version",
+            [identity.email,identity.display_name||identity.email,invitation?.preferred_locale||"fr-FR",invitation?.timezone||"Europe/Paris",leadMeta.first_name,leadMeta.last_name,leadMeta.phone,leadMeta.service_intent,leadMeta.account_type]
           ))[0];
         }else if(invitation){
           await tx.unsafe(
-            "UPDATE customer_principals SET email_verified=true,status='active',preferred_locale=$2,timezone=$3,metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||$4::jsonb,updated_at=now() WHERE id=$1::uuid",
-            [principal.id,invitation.preferred_locale||"fr-FR",invitation.timezone||"Europe/Paris",JSON.stringify(leadMeta)]
+            "UPDATE customer_principals SET email_verified=true,status='active',preferred_locale=$2,timezone=$3,metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||jsonb_build_object('first_name',$4::text,'last_name',$5::text,'phone',$6::text,'signup_source','public_opening_invitation','service_intent',$7::text,'account_type',$8::text,'authority_confirmed',true),updated_at=now() WHERE id=$1::uuid",
+            [principal.id,invitation.preferred_locale||"fr-FR",invitation.timezone||"Europe/Paris",leadMeta.first_name,leadMeta.last_name,leadMeta.phone,leadMeta.service_intent,leadMeta.account_type]
           );
         }else{
           await tx.unsafe("UPDATE customer_principals SET email_verified=true,updated_at=now() WHERE id=$1::uuid",[principal.id]);
@@ -3808,8 +3868,8 @@ export class PostgresStore{
       }
       if(invitation){
         await tx.unsafe(
-          "UPDATE customer_principals SET status='active',email_verified=true,preferred_locale=$2,timezone=$3,metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||$4::jsonb,updated_at=now() WHERE id=$1::uuid",
-          [principal.id,invitation.preferred_locale||"fr-FR",invitation.timezone||"Europe/Paris",JSON.stringify(leadMeta)]
+          "UPDATE customer_principals SET status='active',email_verified=true,preferred_locale=$2,timezone=$3,metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||jsonb_build_object('first_name',$4::text,'last_name',$5::text,'phone',$6::text,'signup_source','public_opening_invitation','service_intent',$7::text,'account_type',$8::text,'authority_confirmed',true),updated_at=now() WHERE id=$1::uuid",
+          [principal.id,invitation.preferred_locale||"fr-FR",invitation.timezone||"Europe/Paris",leadMeta.first_name,leadMeta.last_name,leadMeta.phone,leadMeta.service_intent,leadMeta.account_type]
         );
         await tx.unsafe("INSERT INTO customer_tenant_memberships(tenant_id,customer_principal_id,role,status) VALUES($1,$2::uuid,$3,'active') ON CONFLICT(tenant_id,customer_principal_id) DO UPDATE SET role=EXCLUDED.role,status='active',updated_at=now()",[invitation.tenant_id,principal.id,invitation.role]);
         await tx.unsafe(
@@ -4054,7 +4114,7 @@ export class PostgresStore{
       const invitations=await tx.unsafe(
         "SELECT i.id,i.tenant_id,i.email,i.role,i.status,i.expires_at,t.public_id,t.display_name AS tenant_name,t.status AS tenant_status,t.authorization_version,t.preferred_locale,t.timezone,k.metadata AS lead_metadata"+
         " FROM customer_tenant_invitations i JOIN tenants t ON t.id=i.tenant_id LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id"+
-        " WHERE i.token_hash=$1 FOR UPDATE",[String(tokenHash)]
+        " WHERE i.token_hash=$1 FOR UPDATE OF i,t",[String(tokenHash)]
       );
       const inv=invitations[0];if(!inv)throw problem(404,"INVITATION_NOT_FOUND");
       if(inv.status!=="pending")throw problem(409,"INVITATION_NOT_PENDING");
@@ -4079,14 +4139,14 @@ export class PostgresStore{
         if(credential.length)throw problem(409,"CUSTOMER_ACCOUNT_EXISTS");
         if(principals[0].status!=="active"&&principals[0].status!=="pending")throw problem(409,"CUSTOMER_ACCOUNT_DISABLED");
         await tx.unsafe(
-          "UPDATE customer_principals SET display_name=$1,status='active',preferred_locale=$2,timezone=$3,metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||$4::jsonb,updated_at=now() WHERE id=$5::uuid",
-          [displayName,inv.preferred_locale||"fr-FR",inv.timezone||"Europe/Paris",JSON.stringify(principalMeta),principals[0].id]
+          "UPDATE customer_principals SET display_name=$1,status='active',preferred_locale=$2,timezone=$3,metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||jsonb_build_object('first_name',$4::text,'last_name',$5::text,'phone',$6::text,'signup_source','public_opening_invitation','service_intent',$7::text,'account_type',$8::text,'authority_confirmed',true),updated_at=now() WHERE id=$9::uuid",
+          [displayName,inv.preferred_locale||"fr-FR",inv.timezone||"Europe/Paris",principalMeta.first_name,principalMeta.last_name,principalMeta.phone,principalMeta.service_intent,principalMeta.account_type,principals[0].id]
         );
       }else{
         principals=await tx.unsafe(
-          "INSERT INTO customer_principals(email,display_name,status,preferred_locale,timezone,email_verified,metadata) VALUES($1,$2,'active',$3,$4,false,$5::jsonb)"+
+          "INSERT INTO customer_principals(email,display_name,status,preferred_locale,timezone,email_verified,metadata) VALUES($1,$2,'active',$3,$4,false,jsonb_build_object('first_name',$5::text,'last_name',$6::text,'phone',$7::text,'signup_source','public_opening_invitation','service_intent',$8::text,'account_type',$9::text,'authority_confirmed',true))"+
           " RETURNING id,email,display_name,status,session_version",
-          [inv.email,displayName,inv.preferred_locale||"fr-FR",inv.timezone||"Europe/Paris",JSON.stringify(principalMeta)]
+          [inv.email,displayName,inv.preferred_locale||"fr-FR",inv.timezone||"Europe/Paris",principalMeta.first_name,principalMeta.last_name,principalMeta.phone,principalMeta.service_intent,principalMeta.account_type]
         );
       }
       const principal=principals[0];
@@ -4635,9 +4695,11 @@ export class PostgresStore{
       ),
       this.sql.unsafe(
         "SELECT rw.id,rw.public_id::text AS public_id,rw.amount_minor::bigint AS amount_minor,rw.currency,rw.status,rw.earned_at,rw.paid_at,rw.paid_reference,"+
+        " rw.payout_state,rw.payout_attempt_count,rw.payout_last_attempt_at,rw.payout_next_attempt_at,rw.payout_last_error,rw.payout_destination_reference,rw.provider_transfer_reference,rw.payout_completed_at,"+
+        " pa.status AS payout_account_status,pa.transfers_enabled AS payout_account_transfers_enabled,pa.details_submitted AS payout_account_details_submitted,pa.requirements_state AS payout_account_requirements_state,"+
         " rt.display_name AS referrer_name,dt.display_name AS referred_name,rf.public_id::text AS referral_public_id,rf.metadata AS referral_metadata"+
         " FROM customer_referral_rewards rw JOIN customer_referrals rf ON rf.id=rw.referral_id"+
-        " JOIN tenants rt ON rt.id=rf.referrer_tenant_id JOIN tenants dt ON dt.id=rf.referred_tenant_id"+
+        " JOIN tenants rt ON rt.id=rf.referrer_tenant_id JOIN tenants dt ON dt.id=rf.referred_tenant_id LEFT JOIN customer_referral_payout_accounts pa ON pa.tenant_id=rw.tenant_id"+
         " ORDER BY CASE rw.status WHEN 'earned' THEN 0 WHEN 'paid' THEN 1 ELSE 2 END,rw.earned_at DESC,rw.id DESC LIMIT 50"
       ),
       this.sql.unsafe(
@@ -4663,7 +4725,7 @@ export class PostgresStore{
         "SELECT rt.public_id::text AS referrer_public_id,r.public_id::text AS public_id,r.status,r.reward_minor::bigint AS reward_minor,r.reward_currency,r.claimed_at,r.qualified_at,r.rewarded_at,r.rejected_at,r.metadata,"+
         " dt.id AS _referred_id,dt.public_id::text AS referred_public_id,dt.display_name AS referred_name,dt.billing_email AS referred_billing_email,dt.status AS referred_status,dt.country_code AS referred_country_code,dt.created_at AS referred_created_at,"+
         " (SELECT count(DISTINCT be.normalized_details->>'provider_invoice_reference')::int FROM subscription_billing_events be WHERE be.tenant_id=r.referred_tenant_id AND be.event_type='invoice.paid' AND COALESCE(be.normalized_details->>'provider_invoice_reference','')<>'' AND COALESCE(be.normalized_details->>'last_payment_status','paid')='paid' AND be.event_time>=r.claimed_at) AS paid_invoice_count,"+
-        " rw.id AS reward_id,rw.public_id::text AS reward_public_id,rw.amount_minor::bigint AS reward_amount_minor,rw.currency AS reward_currency_paid,rw.status AS reward_status,rw.earned_at,rw.paid_at,rw.paid_reference"+
+        " rw.id AS reward_id,rw.public_id::text AS reward_public_id,rw.amount_minor::bigint AS reward_amount_minor,rw.currency AS reward_currency_paid,rw.status AS reward_status,rw.earned_at,rw.paid_at,rw.paid_reference,rw.payout_state AS reward_payout_state,rw.payout_attempt_count AS reward_payout_attempt_count,rw.payout_next_attempt_at AS reward_payout_next_attempt_at,rw.payout_last_error AS reward_payout_last_error,rw.provider_transfer_reference AS reward_provider_transfer_reference"+
         " FROM customer_referrals r JOIN tenants rt ON rt.id=r.referrer_tenant_id JOIN tenants dt ON dt.id=r.referred_tenant_id LEFT JOIN customer_referral_rewards rw ON rw.referral_id=r.id"+
         " ORDER BY r.claimed_at DESC,r.id DESC LIMIT 500"
       ),
@@ -4686,7 +4748,7 @@ export class PostgresStore{
         public_id:row.public_id,status:row.status,reward_minor:Number(row.reward_minor||0),reward_currency:row.reward_currency,claimed_at:row.claimed_at,qualified_at:row.qualified_at,rewarded_at:row.rewarded_at,rejected_at:row.rejected_at,metadata:row.metadata||{},
         paid_invoice_count:paidInvoiceCount,qualification_paid_invoices:required,progress_percent:Math.min(100,Math.round((paidInvoiceCount/required)*100)),
         referred:{public_id:row.referred_public_id,name:row.referred_name,email:row.referred_billing_email,status:row.referred_status,country_code:row.referred_country_code,dossier_ref:dossierReference(Number(row._referred_id),row.referred_created_at)},
-        reward:row.reward_id?{id:row.reward_id,public_id:row.reward_public_id,amount_minor:Number(row.reward_amount_minor||0),currency:row.reward_currency_paid,status:row.reward_status,earned_at:row.earned_at,paid_at:row.paid_at,paid_reference:row.paid_reference}:null
+        reward:row.reward_id?{id:row.reward_id,public_id:row.reward_public_id,amount_minor:Number(row.reward_amount_minor||0),currency:row.reward_currency_paid,status:row.reward_status,earned_at:row.earned_at,paid_at:row.paid_at,paid_reference:row.paid_reference,payout_state:row.reward_payout_state,payout_attempt_count:Number(row.reward_payout_attempt_count||0),payout_next_attempt_at:row.reward_payout_next_attempt_at,payout_last_error:row.reward_payout_last_error,provider_transfer_reference:row.reward_provider_transfer_reference}:null
       };
       if(!referralsByReferrer.has(key))referralsByReferrer.set(key,[]);
       referralsByReferrer.get(key).push(item);
@@ -4724,7 +4786,7 @@ export class PostgresStore{
   async customerReferralOverview(tenantId){
     const id=Number(tenantId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     const program=await this.referralProgramPublicState();
-    const [tenantRows,codeRows,summaryRows,recent]=await Promise.all([
+    const [tenantRows,codeRows,summaryRows,payoutAccountRows,recent]=await Promise.all([
       this.sql.unsafe(
         "SELECT t.status,EXISTS(SELECT 1 FROM tenant_subscriptions s WHERE s.tenant_id=t.id AND s.status='active' AND s.current_period_end>now() AND (s.last_payment_status IS NULL OR s.last_payment_status IN ('paid','succeeded','success'))) AS paid_active FROM tenants t WHERE t.id=$1 AND t.tenant_type<>'internal' LIMIT 1",
         [id]
@@ -4739,6 +4801,10 @@ export class PostgresStore{
         [id]
       ),
       this.sql.unsafe(
+        "SELECT provider_account_reference,status,transfers_enabled,details_submitted,requirements_state,last_synced_at,created_at,updated_at FROM customer_referral_payout_accounts WHERE tenant_id=$1 LIMIT 1",
+        [id]
+      ),
+      this.sql.unsafe(
         "SELECT r.public_id::text AS public_id,r.status,r.reward_minor::bigint AS reward_minor,r.reward_currency,r.claimed_at,r.qualified_at,r.rewarded_at,r.rejected_at,r.metadata,r.referred_tenant_id,"+
         " (SELECT count(DISTINCT be.normalized_details->>'provider_invoice_reference')::int FROM subscription_billing_events be"+
         " WHERE be.tenant_id=r.referred_tenant_id AND be.event_type='invoice.paid'"+
@@ -4750,7 +4816,7 @@ export class PostgresStore{
       )
     ]);
     const tenant=tenantRows[0]||null;if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
-    const code=codeRows[0]||null,summary=summaryRows[0]||{},rewarded=Number(summary.rewarded||0),next=referralRewardForOrdinal(rewarded+1);
+    const code=codeRows[0]||null,summary=summaryRows[0]||{},payoutAccount=payoutAccountRows[0]||null,rewarded=Number(summary.rewarded||0),next=referralRewardForOrdinal(rewarded+1);
     const eligible=program.enabled===true&&tenant.status==="active"&&tenant.paid_active===true;
     return {
       ...program,
@@ -4759,6 +4825,7 @@ export class PostgresStore{
       can_manage:program.enabled===true,
       eligibility_reason:eligible?null:(program.enabled!==true?"program_disabled":tenant.status!=="active"?"tenant_not_active":"subscription_not_paid"),
       next_reward:{...next},
+      payout_account:payoutAccount?{provider:"stripe",status:payoutAccount.status,transfers_enabled:payoutAccount.transfers_enabled===true,details_submitted:payoutAccount.details_submitted===true,requirements_state:payoutAccount.requirements_state,last_synced_at:payoutAccount.last_synced_at}:null,
       summary:{visits:Number(summary.visits||0),prospects:Number(summary.prospects||0),claimed:Number(summary.claimed||0),rewarded,reward_minor:Number(summary.reward_minor||0)},
       recent:recent.map(x=>({...x,reward_minor:Number(x.reward_minor||0),paid_invoice_count:Number(x.paid_invoice_count||0)}))
     };
@@ -4824,25 +4891,153 @@ export class PostgresStore{
     });
   }
 
+  async customerReferralPayoutAccount(tenantId){
+    const id=Number(tenantId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    const rows=await this.readSql.unsafe(
+      "SELECT id,tenant_id,provider,provider_account_reference,status,transfers_enabled,details_submitted,requirements_state,last_synced_at,created_at,updated_at FROM customer_referral_payout_accounts WHERE tenant_id=$1 LIMIT 1",
+      [id]
+    );
+    return rows[0]||null;
+  }
+
+  async upsertCustomerReferralPayoutAccount(tenantId,input={}){
+    const id=Number(tenantId),ref=String(input.provider_account_reference||"").trim();
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    if(!/^acct_[A-Za-z0-9]+$/.test(ref))throw problem(400,"INVALID_REFERRAL_PAYOUT_ACCOUNT");
+    const rows=await this.sql.unsafe(
+      "INSERT INTO customer_referral_payout_accounts(tenant_id,provider_account_reference,status,transfers_enabled,details_submitted,requirements_state,last_synced_at,metadata)"+
+      " VALUES($1,$2,$3,$4,$5,$6,now(),$7::jsonb)"+
+      " ON CONFLICT(tenant_id) DO UPDATE SET provider_account_reference=EXCLUDED.provider_account_reference,status=EXCLUDED.status,transfers_enabled=EXCLUDED.transfers_enabled,details_submitted=EXCLUDED.details_submitted,requirements_state=EXCLUDED.requirements_state,last_synced_at=now(),metadata=customer_referral_payout_accounts.metadata||EXCLUDED.metadata"+
+      " RETURNING id,tenant_id,provider,provider_account_reference,status,transfers_enabled,details_submitted,requirements_state,last_synced_at,created_at,updated_at",
+      [id,ref,String(input.status||"pending"),input.transfers_enabled===true,input.details_submitted===true,input.requirements_state||null,JSON.stringify(input.metadata&&typeof input.metadata==="object"?input.metadata:{})]
+    );
+    return rows[0];
+  }
+
+  async syncCustomerReferralPayoutAccount(tenantId,input={}){
+    const id=Number(tenantId),ref=String(input.provider_account_reference||"").trim();
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    const rows=await this.sql.unsafe(
+      "UPDATE customer_referral_payout_accounts SET status=$3,transfers_enabled=$4,details_submitted=$5,requirements_state=$6,last_synced_at=now() WHERE tenant_id=$1 AND provider_account_reference=$2"+
+      " RETURNING id,tenant_id,provider,provider_account_reference,status,transfers_enabled,details_submitted,requirements_state,last_synced_at,created_at,updated_at",
+      [id,ref,String(input.status||"restricted"),input.transfers_enabled===true,input.details_submitted===true,input.requirements_state||null]
+    );
+    if(!rows[0])throw problem(404,"REFERRAL_PAYOUT_ACCOUNT_NOT_FOUND");
+    return rows[0];
+  }
+
+  async syncReferralPayoutAccountByProviderReference(input={}){
+    const ref=String(input.provider_account_reference||"").trim();
+    if(!/^acct_[A-Za-z0-9]+$/.test(ref))throw problem(400,"INVALID_REFERRAL_PAYOUT_ACCOUNT");
+    const rows=await this.sql.unsafe(
+      "UPDATE customer_referral_payout_accounts SET status=$2,transfers_enabled=$3,details_submitted=$4,requirements_state=$5,last_synced_at=now() WHERE provider_account_reference=$1"+
+      " RETURNING id,tenant_id,provider,provider_account_reference,status,transfers_enabled,details_submitted,requirements_state,last_synced_at,created_at,updated_at",
+      [ref,String(input.status||"restricted"),input.transfers_enabled===true,input.details_submitted===true,input.requirements_state||null]
+    );
+    return rows[0]||null;
+  }
+
+  async claimAutomaticReferralPayoutBatch(limit=25){
+    const n=Math.max(1,Math.min(100,Number(limit)||25));
+    return this.sql.begin(async tx=>{
+      const picked=await tx.unsafe(
+        "SELECT id FROM customer_referral_rewards WHERE status='earned' AND ("+
+        " (payout_state IN ('pending','retry','waiting_account') AND (payout_next_attempt_at IS NULL OR payout_next_attempt_at<=now()))"+
+        " OR (payout_state='processing' AND payout_last_attempt_at<now()-interval '15 minutes'))"+
+        " ORDER BY earned_at ASC,id ASC FOR UPDATE SKIP LOCKED LIMIT $1",
+        [n]
+      );
+      const ids=picked.map(x=>Number(x.id)).filter(Number.isInteger);
+      if(!ids.length)return [];
+      await tx.unsafe(
+        "UPDATE customer_referral_rewards SET payout_state='processing',payout_attempt_count=payout_attempt_count+1,payout_last_attempt_at=now(),payout_next_attempt_at=NULL,payout_last_error=NULL WHERE id=ANY($1::bigint[])",
+        [ids]
+      );
+      const rows=await tx.unsafe(
+        "SELECT rw.id,rw.public_id::text AS public_id,rw.tenant_id,rw.amount_minor::bigint AS amount_minor,rw.currency,rw.payout_attempt_count,"+
+        " t.public_id::text AS tenant_public_id,t.display_name,t.billing_email,t.country_code,"+
+        " pa.provider_account_reference,pa.status AS payout_account_status,pa.transfers_enabled,pa.details_submitted,pa.requirements_state"+
+        " FROM customer_referral_rewards rw JOIN tenants t ON t.id=rw.tenant_id"+
+        " LEFT JOIN customer_referral_payout_accounts pa ON pa.tenant_id=rw.tenant_id"+
+        " WHERE rw.id=ANY($1::bigint[]) ORDER BY rw.earned_at ASC,rw.id ASC",
+        [ids]
+      );
+      return rows.map(x=>({...x,amount_minor:Number(x.amount_minor),payout_attempt_count:Number(x.payout_attempt_count||0)}));
+    });
+  }
+
+  async completeAutomaticReferralPayout(rewardId,transfer={}){
+    const id=Number(rewardId),reference=String(transfer.provider_transfer_reference||"").trim(),destination=String(transfer.destination_account||"").trim();
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_REFERRAL_REWARD");
+    if(!/^tr_[A-Za-z0-9]+$/.test(reference))throw problem(400,"INVALID_REFERRAL_TRANSFER_REFERENCE");
+    if(!/^acct_[A-Za-z0-9]+$/.test(destination))throw problem(400,"INVALID_REFERRAL_PAYOUT_DESTINATION");
+    return this.sql.begin(async tx=>{
+      const existing=(await tx.unsafe(
+        "SELECT id,public_id::text AS public_id,tenant_id,amount_minor::bigint AS amount_minor,currency,status,provider_transfer_reference FROM customer_referral_rewards WHERE id=$1 FOR UPDATE",
+        [id]
+      ))[0];
+      if(!existing)throw problem(404,"REFERRAL_REWARD_NOT_FOUND");
+      if(existing.status==="paid"){
+        if(existing.provider_transfer_reference&&existing.provider_transfer_reference!==reference)throw problem(409,"REFERRAL_TRANSFER_REFERENCE_MISMATCH");
+        return {...existing,amount_minor:Number(existing.amount_minor),already_paid:true};
+      }
+      if(existing.status!=="earned")throw problem(409,"REFERRAL_REWARD_NOT_PAYABLE");
+      if(Number(transfer.amount_minor)!==Number(existing.amount_minor)||String(transfer.currency||"").toUpperCase()!==String(existing.currency||"").toUpperCase())throw problem(409,"REFERRAL_TRANSFER_AMOUNT_MISMATCH");
+      const row=(await tx.unsafe(
+        "UPDATE customer_referral_rewards SET status='paid',paid_at=COALESCE($4::timestamptz,now()),paid_reference=$2,payout_state='transferred',payout_destination_reference=$3,provider_transfer_reference=$2,payout_completed_at=COALESCE($4::timestamptz,now()),payout_next_attempt_at=NULL,payout_last_error=NULL"+
+        " WHERE id=$1 AND status='earned' RETURNING id,public_id::text AS public_id,tenant_id,amount_minor::bigint AS amount_minor,currency,status,earned_at,paid_at,paid_reference,payout_state,provider_transfer_reference,payout_destination_reference,payout_attempt_count",
+        [id,reference,destination,transfer.created_at||null]
+      ))[0];
+      if(!row)throw problem(409,"REFERRAL_REWARD_STATE_CHANGED");
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'referral.reward.paid.auto','customer_referral_reward',$2,$3::jsonb)",
+        [row.tenant_id,String(row.id),JSON.stringify({amount_minor:Number(row.amount_minor),currency:row.currency,provider_transfer_reference:reference,destination_account:destination,livemode:transfer.livemode===true})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'referral.reward.paid','customer_referral_reward',$2,$3::jsonb)",
+        [row.tenant_id,String(row.id),JSON.stringify({reward_id:Number(row.id),amount_minor:Number(row.amount_minor),currency:row.currency,provider:"stripe",provider_transfer_reference:reference})]
+      );
+      return {...row,amount_minor:Number(row.amount_minor),payout_attempt_count:Number(row.payout_attempt_count||0),already_paid:false};
+    });
+  }
+
+  async failAutomaticReferralPayout(rewardId,input={}){
+    const id=Number(rewardId),state=String(input.state||"retry"),code=String(input.error_code||"REFERRAL_PAYOUT_FAILED").trim().slice(0,160);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_REFERRAL_REWARD");
+    if(!["retry","waiting_account"].includes(state))throw problem(400,"INVALID_REFERRAL_PAYOUT_STATE");
+    const nextAt=input.next_attempt_at&&Number.isFinite(Date.parse(input.next_attempt_at))?new Date(input.next_attempt_at).toISOString():new Date(Date.now()+3600000).toISOString();
+    const rows=await this.sql.unsafe(
+      "UPDATE customer_referral_rewards SET payout_state=$2,payout_last_error=$3,payout_next_attempt_at=$4::timestamptz WHERE id=$1 AND status='earned'"+
+      " RETURNING id,tenant_id,status,payout_state,payout_attempt_count,payout_last_error,payout_next_attempt_at",
+      [id,state,code,nextAt]
+    );
+    if(rows[0])await this.sql.unsafe(
+      "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'referral.reward.payout_retry','customer_referral_reward',$2,$3::jsonb)",
+      [rows[0].tenant_id,String(id),JSON.stringify({state,error_code:code,next_attempt_at:nextAt,attempt_count:Number(rows[0].payout_attempt_count||0)})]
+    );
+    return rows[0]||null;
+  }
+
   async settleCustomerReferralReward(rewardId,paidReference,actor={}){
     const id=Number(rewardId),reference=String(paidReference||"").trim().slice(0,180),actorId=numericActor(actor);
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_REFERRAL_REWARD");
     if(reference.length<3)throw problem(400,"REFERRAL_PAYMENT_REFERENCE_REQUIRED");
     const existing=(await this.sql.unsafe(
-      "SELECT id,public_id::text AS public_id,tenant_id,amount_minor::bigint AS amount_minor,currency,status,earned_at,paid_at,paid_reference FROM customer_referral_rewards WHERE id=$1 LIMIT 1",
+      "SELECT id,public_id::text AS public_id,tenant_id,amount_minor::bigint AS amount_minor,currency,status,earned_at,paid_at,paid_reference,payout_state FROM customer_referral_rewards WHERE id=$1 LIMIT 1",
       [id]
     ))[0];
     if(!existing)throw problem(404,"REFERRAL_REWARD_NOT_FOUND");
     if(existing.status==="paid")return {...existing,amount_minor:Number(existing.amount_minor),already_paid:true};
     if(existing.status!=="earned")throw problem(409,"REFERRAL_REWARD_NOT_PAYABLE");
+    if(existing.payout_state==="processing")throw problem(409,"REFERRAL_PAYOUT_IN_PROGRESS");
     const row=(await this.sql.unsafe(
-      "UPDATE customer_referral_rewards SET status='paid',paid_at=now(),paid_reference=$2 WHERE id=$1 AND status='earned' RETURNING id,public_id::text AS public_id,tenant_id,amount_minor::bigint AS amount_minor,currency,status,earned_at,paid_at,paid_reference",
+      "UPDATE customer_referral_rewards SET status='paid',paid_at=now(),paid_reference=$2,payout_state='manual',payout_completed_at=now(),payout_next_attempt_at=NULL,payout_last_error=NULL WHERE id=$1 AND status='earned' RETURNING id,public_id::text AS public_id,tenant_id,amount_minor::bigint AS amount_minor,currency,status,earned_at,paid_at,paid_reference,payout_state",
       [id,reference]
     ))[0];
     if(!row)throw problem(409,"REFERRAL_REWARD_STATE_CHANGED");
     await this.sql.unsafe(
       "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'referral.reward.paid','customer_referral_reward',$3,$4::jsonb)",
-      [row.tenant_id,actorId,String(row.id),JSON.stringify({amount_minor:Number(row.amount_minor),currency:row.currency,paid_reference:row.paid_reference})]
+      [row.tenant_id,actorId,String(row.id),JSON.stringify({amount_minor:Number(row.amount_minor),currency:row.currency,paid_reference:row.paid_reference,payout_state:"manual"})]
     );
     return {...row,amount_minor:Number(row.amount_minor),already_paid:false};
   }

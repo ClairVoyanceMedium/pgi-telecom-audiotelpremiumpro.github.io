@@ -40,11 +40,12 @@ function render(data){
     '<div class="cp-panel-head"><div><p class="cp-kicker">PARRAINAGE</p><h2>Mon espace ambassadeur</h2></div><span>'+esc(String(summary.rewarded||0))+' qualifié(s)</span></div>'+
     '<p class="cp-muted">Une récompense devient acquise après <strong>3 factures mensuelles distinctes réellement payées</strong> par le filleul. Le barème est fixe, automatique et ne porte jamais sur le chiffre d’affaires SVA.</p>'+
     codeBlock+
+    '<div id="client-referral-payout"></div>'+
     '<div class="cp-row"><div><strong>'+esc(String(summary.visits||0))+' visite(s) · '+esc(String(summary.prospects||0))+' demande(s)</strong><span>'+esc(String(summary.claimed||0))+' filleul(s) enregistré(s) · '+esc(String(summary.rewarded||0))+' qualifié(s) · '+esc(money(summary.reward_minor||0,currency))+' acquis.</span></div></div>'+
     '<div class="cp-panel-head"><div><p class="cp-kicker">BARÈME FIXE</p><h3>Prime par filleul qualifié</h3></div></div>'+scale+bonus+
     '<div class="cp-panel-head"><div><p class="cp-kicker">SUIVI</p><h3>Progression de mes filleuls</h3></div></div>'+renderRecent(recent,currency,required)+
     '<p id="client-referral-status" class="cp-form-message" aria-live="polite"></p>';
-  bind();
+  bind();mountPayout(state);
 }
 function status(message,bad){var e=$("client-referral-status");if(e){e.textContent=message||"";e.classList.toggle("bad",bad===true);}}
 async function refresh(){
@@ -67,6 +68,7 @@ function bind(){
   $("client-referral-create")?.addEventListener("click",createCode,{once:true});
   $("client-referral-copy")?.addEventListener("click",copyLink);
 }
+function mountPayout(data){import("./client-referral-payout.js").then(function(m){m.mountReferralPayout(data,root.PGICustomerApi,status);}).catch(function(){var e=$("client-referral-payout");if(e)e.innerHTML='<p class="cp-muted">Versements temporairement indisponibles.</p>';});}
 document.addEventListener("pgi:portal-loaded",refresh);
 root.addEventListener("pgi:auth-required",function(){var box=$("client-referral-mount");if(box){box.hidden=true;box.innerHTML="";}});
 })(window);

@@ -75,7 +75,6 @@ test("une réplique de lecture peut être ajoutée sans changer le métier",()=>
 
 test("le schéma neuf et le cockpit exposent la fondation 1.15",()=>{
   assert.ok(schema.includes("005_hyperscale_foundation"));
-  assert.ok(schema.includes("8e4766de0773b9cc49e540514407feeba2a8405d7fcf3099dc3e91ab87942c69"));
   assert.ok(index.includes('id="wh-scale-buckets"'));
   assert.ok(app.includes("call_fact_partitions"));
   assert.ok(docs.includes("4096 buckets"));

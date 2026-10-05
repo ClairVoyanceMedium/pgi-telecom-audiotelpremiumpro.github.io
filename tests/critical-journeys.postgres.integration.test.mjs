@@ -5,7 +5,6 @@ import {createBackend} from "../backend/server.mjs";
 import {PostgresStore} from "../backend/src/store-postgres.mjs";
 import {EventBus} from "../backend/src/event-bus.mjs";
 import {hashPassword} from "../backend/src/security.mjs";
-import {verificationTokenHash,emailVerificationCodeHash} from "../backend/src/resend-email.mjs";
 
 const url=process.env.PGI_TEST_DATABASE_URL;
 const run=Boolean(url);
@@ -23,7 +22,7 @@ function backendConfig(){
     mode:"production",processRole:"api",authMode:"session",host:"127.0.0.1",port:0,
     sessionSecret:"s".repeat(48),adminUsername:"admin",adminPasswordHash:hashPassword("admin-password-123456"),
     ingestToken:"",bodyLimitBytes:262144,rateLimitPerMinute:10000,heavyReadRateLimitPerMinute:10000,writeRateLimitPerMinute:10000,
-    authMaxFailures:8,authFailureWindowSeconds:900,sessionTtlSeconds:3600,
+    authMaxFailures:8,authFailureWindowSeconds:900,sessionTtlSeconds:3600,customerSelfRegistrationEnabled:false,
     serviceRateTtcPerMin:.8,payoutRateHtPerMin:.46,expertCostHtPerMin:.18,reconciliationToleranceHt:.01,
     version:"customer-journey-postgres-test",releaseId:"f".repeat(40),
     emailVerificationEnabled:true,emailVerificationPepper:"p".repeat(48),emailVerificationTtlMinutes:10,
@@ -101,9 +100,9 @@ function mockProviders(originalFetch,state){
     if(u==="https://api.resend.com/emails"){
       const body=JSON.parse(String(init.body||"{}"));
       state.emails.push(body);
-      if(String(body.subject||"").includes("code de vérification")){
-        const match=String(body.text||"").match(/\b(\d{6})\b/);
-        if(match)state.verificationCode=match[1];
+      if(String(body.subject||"")==="Vos accès client Audiotel Premium Pro sont prêts"){
+        const invitationMatch=(String(body.text||"")+"\n"+String(body.html||"")).match(/client\.html\?invite=([A-Za-z0-9_-]{32,})/);
+        if(invitationMatch)state.invitationToken=invitationMatch[1];
       }
       return Response.json({id:"email_"+state.emails.length},{status:200});
     }
@@ -123,7 +122,7 @@ function mockProviders(originalFetch,state){
   };
 }
 
-test("full customer journey works without a real operator and remains fail-closed for SVA activation",{skip:!run},async()=>{
+test("full customer journey stays fail-closed until legal readiness and keeps SVA activation gated",{skip:!run},async()=>{
   const bus=new EventBus();
   const store=await PostgresStore.connect(storeConfig(),bus);
   // Isolate this end-to-end journey from e-mail outbox events produced by earlier integration suites.
@@ -134,7 +133,7 @@ test("full customer journey works without a real operator and remains fail-close
   const base="http://127.0.0.1:"+address.port;
   const originalFetch=globalThis.fetch;
   const previousToken=process.env.PGI_HUBSPOT_PRIVATE_APP_TOKEN;
-  const state={hubspotFormSubmissions:0,contact:null,deal:null,emails:[],verificationCode:null,stripeCheckoutBody:null};
+  const state={hubspotFormSubmissions:0,contact:null,deal:null,emails:[],invitationToken:null,stripeCheckoutBody:null};
   globalThis.fetch=mockProviders(originalFetch,state);
   process.env.PGI_HUBSPOT_PRIVATE_APP_TOKEN="pat-test-"+ "h".repeat(40);
 
@@ -154,47 +153,40 @@ test("full customer journey works without a real operator and remains fail-close
     let payload=await response.json();
     assert.equal(payload.accepted,true);
     assert.equal(payload.commercial_sync,true);
-    assert.equal(state.contact.statut_commercial_pgi,"Nouveau prospect");
-    assert.equal(state.deal.dealstage,"appointmentscheduled");
-    assert.ok(state.emails.some(x=>x.subject==="Nous avons bien reçu votre demande"));
+    assert.equal(state.contact.statut_commercial_pgi,"Dossier en préparation");
+    assert.equal(state.deal.dealstage,"contractsent");
+    assert.equal(payload.client_portal_invited,true);
+    assert.equal(payload.access_email_sent,true);
+    assert.ok(state.emails.some(x=>x.subject==="Vos accès client Audiotel Premium Pro sont prêts"));
+    assert.match(state.invitationToken||"",/^[A-Za-z0-9_-]{32,}$/);
 
     response=await fetch(base+"/api/v1/customer/auth/register",{
       method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({email,password:"long-password-12345"})
+    });
+    assert.equal(response.status,403);
+    const closedRegistration=await response.json();
+    assert.equal(closedRegistration.error.code,"CUSTOMER_INVITATION_REQUIRED");
+
+    response=await fetch(base+"/api/v1/customer/auth/activate",{
+      method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
-        first_name:"Camille",last_name:"Martin",account_type:"business",company_name:"Cabinet Parcours",country_code:"FR",
-        registration_number:"",phone:"+33600000000",email,password:"long-password-12345",
-        service_intent:"new_number",acquisition_source:"public_marketing_site",
-        authority_confirmed:true,legal_terms_accepted:true,privacy_notice_acknowledged:true,
-        legal_version:"2026-09-26-b2b-b2c-v4",website:"",preferred_locale:"fr-FR",timezone:"Europe/Paris"
+        token:state.invitationToken,display_name:"Camille Martin",password:"long-password-12345",
+        legal_terms_accepted:true,privacy_notice_acknowledged:true,legal_version:"2026-09-26-b2b-b2c-v4"
       })
     });
     assert.equal(response.status,201);
     payload=await response.json();
-    assert.equal(payload.account_created,true);
-    assert.equal(payload.email_verification_required,true);
-    assert.match(payload.verification_token,/^[A-Za-z0-9_-]{32,}$/);
     tenantPublicId=payload.user.tenant.id;
+    assert.match(String(tenantPublicId||""),/^[0-9a-f-]{36}$/i);
+    assert.equal(payload.user.email,email);
+    assert.equal(payload.user.role,"owner");
     const metadataRow=(await store.sql.unsafe("SELECT jsonb_typeof(metadata) AS metadata_type,metadata->>'first_name' AS first_name,metadata->>'last_name' AS last_name FROM customer_principals WHERE email_normalized=$1",[email]))[0];
     assert.equal(metadataRow.metadata_type,"object");
     assert.equal(metadataRow.first_name,"Camille");
     assert.equal(metadataRow.last_name,"Martin");
     assert.equal(state.contact.statut_commercial_pgi,"Dossier en préparation");
     assert.equal(state.deal.dealstage,"contractsent");
-    assert.match(state.verificationCode||"",/^\d{6}$/);
-    const storedVerification=(await store.sql.unsafe(
-      "SELECT metadata#>>'{email_verification,token_hash}' AS token_hash,metadata#>>'{email_verification,code_hash}' AS code_hash FROM customer_principals WHERE email_normalized=$1",
-      [email]
-    ))[0];
-    assert.equal(storedVerification.token_hash,verificationTokenHash(payload.verification_token));
-    assert.equal(storedVerification.code_hash,emailVerificationCodeHash(cfg,payload.verification_token,state.verificationCode));
-
-    response=await fetch(base+"/api/v1/customer/auth/email/verify",{
-      method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({token:payload.verification_token,code:state.verificationCode})
-    });
-    assert.equal(response.status,200);
-    const verified=await response.json();
-    assert.equal(verified.email_verified,true);
     const customerCookies=cookiesFrom(response.headers);
     assert.ok(customerCookies.has("__Host-pgi_customer_session"));
     assert.ok(customerCookies.has("__Host-pgi_customer_csrf"));
@@ -206,6 +198,27 @@ test("full customer journey works without a real operator and remains fail-close
     assert.equal(portal.billing_offer.amount_minor,490);
     assert.equal(portal.billing_provider.checkout_available,true);
 
+    response=await fetch(base+"/api/v1/customer/billing/checkout-session",{
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json","Idempotency-Key":randomUUID(),
+        "X-CSRF-Token":customerCookies.get("__Host-pgi_customer_csrf"),
+        Cookie:cookieHeader(customerCookies)
+      },
+      body:JSON.stringify({
+        subscription_terms_accepted:true,privacy_notice_acknowledged:true,immediate_performance_requested:true,
+        legal_version:"2026-09-26-b2b-b2c-v4"
+      })
+    });
+    assert.equal(response.status,409);
+    const blockedCheckout=await response.json();
+    assert.equal(blockedCheckout.error.code,"COMMERCIAL_LEGAL_IDENTITY_NOT_READY");
+    assert.equal(blockedCheckout.commercial_readiness.legal_operator,false);
+    assert.equal(state.stripeCheckoutBody,null);
+
+    // Continue the billing leg with the legal-operator prerequisite explicitly simulated as ready.
+    // This preserves the production fail-closed guard while still exercising Stripe checkout and webhook ingestion.
+    cfg.legalOperatorConfigured=true;
     response=await fetch(base+"/api/v1/customer/billing/checkout-session",{
       method:"POST",
       headers:{
@@ -281,7 +294,7 @@ test("full customer journey works without a real operator and remains fail-close
     assert.ok(subscriptionDeliveries.some(x=>x.template_key==="subscription_created"&&["accepted","sent","delivered","clicked"].includes(String(x.state))),
       "subscription_created delivery missing: "+JSON.stringify(subscriptionDeliveries));
     const emailSubjects=state.emails.map(x=>x.subject);
-    assert.ok(emailSubjects.includes("Votre demande d’ouverture a bien été reçue"),JSON.stringify(emailSubjects));
+    assert.ok(emailSubjects.includes("Votre compte Audiotel Premium Pro est activé"),JSON.stringify(emailSubjects));
     assert.ok(emailSubjects.includes("Abonnement Audiotel Premium Pro créé"),JSON.stringify(emailSubjects));
 
     const policy=await store.operationalPolicyEvaluation({intent:"activate_number",tenant_public_id:tenantPublicId});
@@ -289,11 +302,11 @@ test("full customer journey works without a real operator and remains fail-close
     assert.equal(policy.dry_run,true);
 
     const detail=await store.tenantControlDetail(tenantPublicId);
-    assert.equal(detail.tenant.status,"pending");
+    assert.equal(detail.tenant.status,"active");
     assert.equal(detail.lines.length,0);
     assert.ok(detail.subscriptions.some(x=>x.status==="active"));
 
-    assert.ok(state.hubspotFormSubmissions>=2);
+    assert.equal(state.hubspotFormSubmissions,1);
     assert.ok(state.emails.length>=3);
   }finally{
     globalThis.fetch=originalFetch;
