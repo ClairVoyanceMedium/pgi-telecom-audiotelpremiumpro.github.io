@@ -110,26 +110,82 @@ export async function createStripeConnectedAccount(config,input={}){
   return account;
 }
 
+export async function createStripeReferralRecipientAccount(config,input={}){
+  const email=cleanEmail(input.email),country=cleanCountry(input.country_code);
+  if(!email)throw error(400,"INVALID_CONNECT_EMAIL");
+  const body={
+    contact_email:email,
+    dashboard:"full",
+    identity:{country},
+    configuration:{
+      recipient:{
+        capabilities:{stripe_balance:{stripe_transfers:{requested:true}}}
+      }
+    }
+  };
+  const account=await jsonRequest(config,"/v2/core/accounts",{method:"POST",body,idempotencyKey:input.idempotency_key,preview:true});
+  if(!/^acct_[A-Za-z0-9]+$/.test(String(account?.id||"")))throw error(502,"STRIPE_CONNECT_ACCOUNT_INVALID");
+  return account;
+}
+
 export async function retrieveStripeConnectedAccount(config,accountId){
   if(!/^acct_[A-Za-z0-9]+$/.test(String(accountId||"")))throw error(400,"INVALID_CONNECT_ACCOUNT");
-  const query="?include%5B%5D=configuration.merchant&include%5B%5D=requirements&include%5B%5D=defaults";
+  const query="?include%5B%5D=configuration.merchant&include%5B%5D=configuration.recipient&include%5B%5D=requirements&include%5B%5D=defaults";
   return jsonRequest(config,"/v2/core/accounts/"+encodeURIComponent(accountId)+query,{preview:true});
+}
+
+export function stripeTransferCapabilityStatus(account={}){
+  return String(account?.configuration?.recipient?.capabilities?.stripe_balance?.stripe_transfers?.status||"").trim().toLowerCase();
+}
+
+export async function ensureStripeMerchantCapability(config,accountId,input={}){
+  if(!/^acct_[A-Za-z0-9]+$/.test(String(accountId||"")))throw error(400,"INVALID_CONNECT_ACCOUNT");
+  const current=input.account||await retrieveStripeConnectedAccount(config,accountId);
+  if(current?.configuration?.merchant)return current;
+  const body={
+    defaults:{
+      responsibilities:{fees_collector:"stripe",losses_collector:"stripe"},
+      profile:{
+        business_url:baseUrl(config),
+        product_description:"Services de consultation et de télécommunication proposés via Audiotel Premium Pro"
+      }
+    },
+    configuration:{
+      merchant:{
+        capabilities:{card_payments:{requested:true}},
+        support:{url:baseUrl(config)}
+      }
+    }
+  };
+  return jsonRequest(config,"/v2/core/accounts/"+encodeURIComponent(accountId),{method:"POST",body,idempotencyKey:input.idempotency_key,preview:true});
+}
+
+export async function ensureStripeTransferCapability(config,accountId,input={}){
+  if(!/^acct_[A-Za-z0-9]+$/.test(String(accountId||"")))throw error(400,"INVALID_CONNECT_ACCOUNT");
+  const current=input.account||await retrieveStripeConnectedAccount(config,accountId);
+  const status=stripeTransferCapabilityStatus(current);
+  if(status&&status!=="inactive")return current;
+  const body={configuration:{recipient:{capabilities:{stripe_balance:{stripe_transfers:{requested:true}}}}}};
+  return jsonRequest(config,"/v2/core/accounts/"+encodeURIComponent(accountId),{method:"POST",body,idempotencyKey:input.idempotency_key,preview:true});
 }
 
 export function normalizeStripeConnectedAccount(account={}){
   const card=account?.configuration?.merchant?.capabilities?.card_payments||{};
   const requirements=account?.requirements||{};
   const cardStatus=String(card?.status||"").toLowerCase();
+  const transferStatus=stripeTransferCapabilityStatus(account);
   const deadline=String(requirements?.summary?.minimum_deadline?.status||"").toLowerCase();
-  const chargesEnabled=cardStatus==="active";
+  const chargesEnabled=cardStatus==="active",transfersEnabled=transferStatus==="active";
   const detailsSubmitted=!["currently_due","past_due","eventually_due"].includes(deadline)&&deadline!=="requirements_past_due";
   return {
     provider_account_reference:String(account?.id||""),
     charges_enabled:chargesEnabled,
-    payouts_enabled:chargesEnabled,
+    payouts_enabled:chargesEnabled||transfersEnabled,
+    transfers_enabled:transfersEnabled,
+    transfer_capability_status:transferStatus||"not_requested",
     details_submitted:detailsSubmitted,
-    requirements_state:deadline||cardStatus||"unknown",
-    status:chargesEnabled?"active":detailsSubmitted?"restricted":"onboarding"
+    requirements_state:deadline||cardStatus||transferStatus||"unknown",
+    status:chargesEnabled?"active":transfersEnabled?"active":detailsSubmitted?"restricted":"onboarding"
   };
 }
 
@@ -150,6 +206,26 @@ export async function createStripeConnectOnboardingLink(config,accountId,input={
   const link=await jsonRequest(config,"/v2/core/account_links",{method:"POST",body,idempotencyKey:input.idempotency_key,preview:true});
   if(!/^https:\/\//i.test(String(link?.url||"")))throw error(502,"STRIPE_CONNECT_LINK_INVALID");
   return {url:link.url,expires_at:link.expires_at||null};
+}
+
+export async function createStripeReferralTransfer(config,input={}){
+  const accountId=String(input.connected_account||"").trim();
+  const amount=Math.trunc(Number(input.amount_minor)),currency=String(input.currency||"EUR").trim().toLowerCase();
+  const rewardPublicId=cleanText(input.reward_public_id,80),tenantPublicId=cleanText(input.tenant_public_id,80);
+  if(!/^acct_[A-Za-z0-9]+$/.test(accountId))throw error(400,"INVALID_CONNECT_ACCOUNT");
+  if(!Number.isInteger(amount)||amount<=0||amount>100000000)throw error(400,"INVALID_REFERRAL_TRANSFER_AMOUNT");
+  if(!/^[a-z]{3}$/.test(currency))throw error(400,"INVALID_REFERRAL_TRANSFER_CURRENCY");
+  if(!rewardPublicId)throw error(400,"INVALID_REFERRAL_REWARD_REFERENCE");
+  const transfer=await formRequest(config,"/v1/transfers",{
+    fields:{
+      amount,currency,destination:accountId,
+      description:"Audiotel Premium Pro - prime parrainage",
+      metadata:{referral_reward_public_id:rewardPublicId,tenant_public_id:tenantPublicId}
+    },
+    idempotencyKey:input.idempotency_key||("referral-reward/"+rewardPublicId)
+  });
+  if(!/^tr_[A-Za-z0-9]+$/.test(String(transfer?.id||"")))throw error(502,"STRIPE_REFERRAL_TRANSFER_INVALID");
+  return {id:String(transfer.id),amount_minor:Number(transfer.amount||amount),currency:String(transfer.currency||currency).toUpperCase(),destination:String(transfer.destination||accountId)};
 }
 
 export function calculateApplicationFee(amountMinor,bps=STRIPE_CONNECT_APPLICATION_FEE_BPS){

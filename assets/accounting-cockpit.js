@@ -45,7 +45,7 @@ function balances(d){
 }
 function history(d){
   const rows=Array.isArray(d.monthly_history)?d.monthly_history:[],c=d.currency||"EUR";
-  return '<section class="acc-section"><div class="acc-section-head"><div><p class="panel-kicker">HISTORIQUE</p><h3>12 mois de pilotage comptable</h3></div><button class="acc-btn" type="button" data-acc-export>Exporter CSV</button></div><div class="acc-table"><table><thead><tr><th>Mois</th><th>Abonnements TTC</th><th>Priorité TTC</th><th>Commission CB PGI</th><th>Marge SVA encaissée HT</th><th>Marge SVA comptabilisée HT</th><th>Reversements clients payés HT</th><th>Parrainage acquis</th><th>Parrainage versé</th></tr></thead><tbody>'+
+  return '<section class="acc-section"><div class="acc-section-head"><div><p class="panel-kicker">HISTORIQUE</p><h3>12 mois de pilotage comptable</h3></div></div><div class="acc-table"><table><thead><tr><th>Mois</th><th>Abonnements TTC</th><th>Priorité TTC</th><th>Commission CB PGI</th><th>Marge SVA encaissée HT</th><th>Marge SVA comptabilisée HT</th><th>Reversements clients payés HT</th><th>Parrainage acquis</th><th>Parrainage versé</th></tr></thead><tbody>'+
     rows.map(x=>'<tr><td>'+esc(monthLabel(x.month))+'</td><td>'+esc(moneyMinor(x.subscriptions_collected_ttc_minor,c))+'</td><td>'+esc(moneyMinor(x.portability_priority_collected_ttc_minor,c))+'</td><td>'+esc(moneyMinor((x.card_payment_pgi_fee_minor||0)-(x.card_payment_refunded_fee_minor||0),c))+'</td><td>'+esc(money(x.sva_margin_collected_ht,c))+'</td><td>'+esc(money(x.sva_margin_booked_ht,c))+'</td><td>'+esc(money(x.client_payout_paid_ht,c))+'</td><td>'+esc(moneyMinor(x.referral_rewards_earned_minor,c))+'</td><td>'+esc(moneyMinor(x.referral_rewards_paid_minor,c))+'</td></tr>').join("")+
     '</tbody></table></div></section>';
 }
@@ -60,7 +60,7 @@ function render(d){
   const currencies=Array.isArray(d.currencies)&&d.currencies.length?d.currencies:[currency];
   root.innerHTML='<div class="acc">'+
     '<div class="acc-head"><div><p class="panel-kicker">COMPTABILITÉ</p><h2>Pilotage comptable Audiotel Premium Pro</h2><p class="acc-note">Vue consolidée des encaissements, marges, reversements et primes, sans mélange artificiel des bases fiscales.</p></div>'+
-    '<div class="acc-controls"><label>Mois<input type="month" data-acc-month value="'+esc(month)+'"></label><label>Devise<select data-acc-currency>'+currencies.map(x=>'<option value="'+esc(x)+'" '+(x===currency?"selected":"")+'>'+esc(x)+'</option>').join("")+'</select></label><button class="acc-btn" type="button" data-acc-refresh>Actualiser</button></div></div>'+
+    '<div class="acc-controls"><label>Mois<input type="month" data-acc-month value="'+esc(month)+'"></label><label>Devise<select data-acc-currency>'+currencies.map(x=>'<option value="'+esc(x)+'" '+(x===currency?"selected":"")+'>'+esc(x)+'</option>').join("")+'</select></label><button class="acc-btn" type="button" data-acc-refresh>Actualiser</button><button class="acc-btn" type="button" data-acc-export>Exporter CSV</button><button class="acc-btn" type="button" data-acc-print>Imprimer</button></div></div>'+
     selectedCards(d)+balances(d)+history(d)+policy(d)+
   '</div>';
   bind();
@@ -73,11 +73,23 @@ function exportCsv(){
   const blob=new Blob(["\ufeff"+rows.map(r=>r.map(csvCell).join(";")).join("\r\n")],{type:"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");
   a.href=url;a.download="audiotel-comptabilite-"+month+"-"+c+".csv";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
+function printAccounting(){
+  if(!root||!current)return;
+  const title="Comptabilité Audiotel Premium Pro - "+monthLabel(month)+" - "+String(current.currency||currency);
+  const w=window.open("","_blank","width=1200,height=900");
+  if(!w){window.print();return;}
+  w.opener=null;
+  w.document.write('<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>'+esc(title)+'</title><style>@page{size:A4 landscape;margin:12mm}body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0}h1{font-size:20px;margin:0 0 6px}.meta{font-size:11px;color:#555;margin:0 0 18px}.acc-controls,.acc-btn{display:none!important}.acc-kpis,.acc-balance-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.acc-kpi,.acc-balance,.acc-section{border:1px solid #bbb;border-radius:8px;padding:9px;margin-bottom:10px}.acc-kpi span,.acc-balance span,.panel-kicker{font-size:9px;text-transform:uppercase;color:#555}.acc-kpi strong,.acc-balance strong{display:block;font-size:15px;margin-top:4px}.acc-kpi small,.acc-balance small,.acc-note{font-size:9px;color:#555}.acc-head{display:none}.acc-section-head{display:flex;justify-content:space-between;align-items:end}.acc-section h3{font-size:13px;margin:0 0 8px}.acc-table{overflow:visible}.acc-table table{width:100%;border-collapse:collapse}.acc-table th,.acc-table td{font-size:8px;border:1px solid #ccc;padding:4px;text-align:right}.acc-table th:first-child,.acc-table td:first-child{text-align:left}</style></head><body><h1>'+esc(title)+'</h1><p class="meta">Édité le '+esc(new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeStyle:"short"}).format(new Date()))+'</p>'+root.innerHTML+'</body></html>');
+  w.document.close();
+  w.focus();
+  setTimeout(()=>{w.print();w.close();},120);
+}
 function bind(){
   root.querySelector("[data-acc-month]")?.addEventListener("change",e=>{month=e.target.value||month;load();});
   root.querySelector("[data-acc-currency]")?.addEventListener("change",e=>{currency=e.target.value||currency;load();});
   root.querySelector("[data-acc-refresh]")?.addEventListener("click",load);
   root.querySelector("[data-acc-export]")?.addEventListener("click",exportCsv);
+  root.querySelector("[data-acc-print]")?.addEventListener("click",printAccounting);
 }
 async function load(){
   if(!root||busy)return;busy=true;

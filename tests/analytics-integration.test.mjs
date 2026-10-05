@@ -28,7 +28,16 @@ test("GTM and HubSpot load only through the unified consent controller",()=>{
   assert.doesNotMatch(client,/googletagmanager\.com/);
 });
 
-test("new commercial pages have dedicated GA4 grouping and click identifiers",()=>{\n  assert.match(tracking,/portabilite-prioritaire/);\n  assert.match(tracking,/parrainage-audiotel/);\n  assert.match(tracking,/"portability_priority"/);\n  assert.match(tracking,/"referral"/);\n  assert.match(tracking,/return "Parrainage"/);\n  assert.match(tracking,/return "Paiement CB"/);\n});\n\ntest("private surfaces and automatic client page views stay excluded",()=>{
+test("new commercial pages have dedicated GA4 grouping and click identifiers",()=>{
+  assert.match(tracking,/portabilite-prioritaire/);
+  assert.match(tracking,/parrainage-audiotel/);
+  assert.match(tracking,/"portability_priority"/);
+  assert.match(tracking,/"referral"/);
+  assert.match(tracking,/return "Parrainage"/);
+  assert.match(tracking,/return "Paiement CB"/);
+});
+
+test("private surfaces and automatic client page views stay excluded",()=>{
   assert.match(tracking,/cockpit/);
   assert.match(tracking,/admin/);
   assert.match(tracking,/CLIENT_RE/);
