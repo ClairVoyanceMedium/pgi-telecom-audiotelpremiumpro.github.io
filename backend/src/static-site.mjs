@@ -51,22 +51,20 @@ export function createStaticSiteHandler(rootDir){
       return true;
     }
 
-    const legalSlugs=new Set([
-      "mentions-legales",
-      "conditions-utilisation",
-      "conditions-abonnement",
-      "confidentialite",
-      "accord-traitement-donnees",
-      "cookies-traceurs",
-      "resilier-contrat",
-      "retractation"
-    ]);
     const rawPath=String(pathname||"");
-    const legalMatch=rawPath.match(/^\/([^/]+?)(?:\.html)?\/?$/);
-    if(legalMatch&&legalSlugs.has(legalMatch[1])&&rawPath!=="/"+legalMatch[1]+"/"){
-      res.writeHead(308,{"Location":"/"+legalMatch[1]+"/","Cache-Control":"no-store"});
-      res.end();
-      return true;
+    const publicPageMatch=rawPath.match(/^\/([^/]+?)(?:\.html)?$/);
+    if(publicPageMatch){
+      const canonicalIndex=path.resolve(root,publicPageMatch[1],"index.html");
+      if(canonicalIndex.startsWith(root+path.sep)){
+        try{
+          const canonicalStat=await fs.promises.stat(canonicalIndex);
+          if(canonicalStat.isFile()){
+            res.writeHead(308,{"Location":"/"+publicPageMatch[1]+"/","Cache-Control":"no-store"});
+            res.end();
+            return true;
+          }
+        }catch{}
+      }
     }
 
     const requestedPath=String(pathname||"")==="/cockpit"?"/cockpit.html":pathname;
