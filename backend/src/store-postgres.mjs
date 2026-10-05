@@ -2250,10 +2250,10 @@ export class PostgresStore{
     );
     await this.sql.unsafe(
       "UPDATE customer_referral_payouts p SET state='recipient_missing',last_error_code='STRIPE_RECIPIENT_NOT_READY',"+
-      " last_error_message='Compte Stripe non prêt pour les versements automatiques.'"+
+      " last_error_message='Compte Stripe à configurer pour les versements automatiques.'"+
       " FROM customer_referral_rewards rw WHERE rw.id=p.reward_id AND rw.status='earned'"+
       " AND p.state IN ('queued','retryable_error')"+
-      " AND NOT EXISTS (SELECT 1 FROM tenant_card_payment_accounts a WHERE a.tenant_id=p.tenant_id AND a.status='active' AND a.payouts_enabled=true)"
+      " AND NOT EXISTS (SELECT 1 FROM tenant_card_payment_accounts a WHERE a.tenant_id=p.tenant_id AND a.provider_account_reference IS NOT NULL)"
     );
     const rows=await this.readSql.unsafe(
       "SELECT p.public_id::text AS payout_public_id,p.tenant_id,p.state,p.provider_account_reference AS previous_account_reference,"+
@@ -2261,7 +2261,7 @@ export class PostgresStore{
       " FROM customer_referral_payouts p JOIN customer_referral_rewards rw ON rw.id=p.reward_id"+
       " JOIN tenant_card_payment_accounts a ON a.tenant_id=p.tenant_id"+
       " WHERE rw.status='earned' AND p.state IN ('queued','recipient_missing','retryable_error')"+
-      " AND a.status='active' AND a.payouts_enabled=true"+
+      " AND a.provider_account_reference IS NOT NULL"+
       " AND (p.state<>'recipient_missing' OR p.provider_account_reference IS DISTINCT FROM a.provider_account_reference OR p.updated_at<=now()-interval '6 hours')"+
       " AND NOT EXISTS (SELECT 1 FROM work_queue w WHERE w.queue_name='referral_payout' AND w.dedupe_key='referral_payout:'||p.public_id::text"+
       " AND w.completed_at IS NULL AND w.failed_at IS NULL AND w.dead_lettered_at IS NULL)"+
@@ -4886,7 +4886,7 @@ export class PostgresStore{
   async customerReferralOverview(tenantId){
     const id=Number(tenantId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     const program=await this.referralProgramPublicState();
-    const [tenantRows,codeRows,summaryRows,recent]=await Promise.all([
+    const [tenantRows,codeRows,summaryRows,recent,payoutAccountRows]=await Promise.all([
       this.sql.unsafe(
         "SELECT t.status,EXISTS(SELECT 1 FROM tenant_subscriptions s WHERE s.tenant_id=t.id AND s.status='active' AND s.current_period_end>now() AND (s.last_payment_status IS NULL OR s.last_payment_status IN ('paid','succeeded','success'))) AS paid_active FROM tenants t WHERE t.id=$1 AND t.tenant_type<>'internal' LIMIT 1",
         [id]
@@ -4909,10 +4909,14 @@ export class PostgresStore{
         " AND be.event_time>=r.claimed_at) AS paid_invoice_count"+
         " FROM customer_referrals r WHERE r.referrer_tenant_id=$1 ORDER BY r.claimed_at DESC,r.id DESC LIMIT 20",
         [id]
+      ),
+      this.sql.unsafe(
+        "SELECT status,payouts_enabled,details_submitted,requirements_state,last_synced_at FROM tenant_card_payment_accounts WHERE tenant_id=$1 LIMIT 1",
+        [id]
       )
     ]);
     const tenant=tenantRows[0]||null;if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
-    const code=codeRows[0]||null,summary=summaryRows[0]||{},rewarded=Number(summary.rewarded||0),next=referralRewardForOrdinal(rewarded+1);
+    const code=codeRows[0]||null,summary=summaryRows[0]||{},rewarded=Number(summary.rewarded||0),next=referralRewardForOrdinal(rewarded+1),payoutAccount=payoutAccountRows[0]||null;
     const eligible=program.enabled===true&&tenant.status==="active"&&tenant.paid_active===true;
     return {
       ...program,
@@ -4921,6 +4925,14 @@ export class PostgresStore{
       can_manage:program.enabled===true,
       eligibility_reason:eligible?null:(program.enabled!==true?"program_disabled":tenant.status!=="active"?"tenant_not_active":"subscription_not_paid"),
       next_reward:{...next},
+      payout_setup:{
+        configured:Boolean(payoutAccount),
+        payouts_enabled:payoutAccount?.payouts_enabled===true,
+        details_submitted:payoutAccount?.details_submitted===true,
+        status:payoutAccount?.status||"not_configured",
+        requirements_state:payoutAccount?.requirements_state||null,
+        last_synced_at:payoutAccount?.last_synced_at||null
+      },
       summary:{visits:Number(summary.visits||0),prospects:Number(summary.prospects||0),claimed:Number(summary.claimed||0),rewarded,reward_minor:Number(summary.reward_minor||0)},
       recent:recent.map(x=>({...x,reward_minor:Number(x.reward_minor||0),paid_invoice_count:Number(x.paid_invoice_count||0)}))
     };
