@@ -288,6 +288,7 @@ async function fecBlockers(store,settings,year){
   const bounds=fiscalBounds(settings||{},year);
   const from=(bounds?.from||new Date(Date.UTC(year,0,1))).toISOString().slice(0,10);
   const to=(bounds?.toExclusive||new Date(Date.UTC(year+1,0,1))).toISOString().slice(0,10);
+  const periodFrom=from.slice(0,7),periodTo=new Date(new Date(to+"T00:00:00Z").getTime()-86400000).toISOString().slice(0,7);
   const rows=await store.readSql.unsafe(
     "SELECT"+
     " count(DISTINCT e.id) FILTER(WHERE e.status='draft')::int AS draft_entries,"+
@@ -302,8 +303,8 @@ async function fecBlockers(store,settings,year){
   );
   const counts=rows[0]||{};
   const periodRows=await store.readSql.unsafe(
-    "SELECT period_key,state FROM platform_accounting_periods WHERE period_key LIKE $1 ORDER BY period_key",
-    [year+"-%"]
+    "SELECT period_key,state FROM platform_accounting_periods WHERE period_key>=$1 AND period_key<=$2 ORDER BY period_key",
+    [periodFrom,periodTo]
   );
   const bankRows=await store.readSql.unsafe(
     "SELECT count(*)::int AS unmatched FROM platform_bank_transactions WHERE booked_at>=$1::date AND booked_at<$2::date AND reconciliation_state='unmatched'",
@@ -348,6 +349,7 @@ export async function expertAccountingSnapshot(store,params={}){
   const fiscal=fiscalBounds(settings||{},year);
   const from=(fiscal?.from||new Date(Date.UTC(year,0,1))).toISOString().slice(0,10);
   const to=(fiscal?.toExclusive||new Date(Date.UTC(year+1,0,1))).toISOString().slice(0,10);
+  const periodFrom=from.slice(0,7),periodTo=new Date(new Date(to+"T00:00:00Z").getTime()-86400000).toISOString().slice(0,7);
   const [entries,trial,ledger,accounts,journals,vat,periods,bank,documents]=await Promise.all([
     store.readSql.unsafe(
       "SELECT e.id,e.public_id,e.source_type,e.source_key,e.journal_code,e.entry_number,e.entry_date,e.piece_ref,e.piece_date,e.label,e.currency,e.status,e.expert_note,e.validated_at,e.created_at,"+
@@ -385,7 +387,7 @@ export async function expertAccountingSnapshot(store,params={}){
       " GROUP BY COALESCE(l.vat_code,'UNCLASSIFIED') ORDER BY 1",
       [from,to]
     ),
-    store.readSql.unsafe("SELECT period_key,state,review_started_at,closed_at,close_hash FROM platform_accounting_periods WHERE period_key LIKE $1 ORDER BY period_key",[year+"-%"]),
+    store.readSql.unsafe("SELECT period_key,state,review_started_at,closed_at,close_hash FROM platform_accounting_periods WHERE period_key>=$1 AND period_key<=$2 ORDER BY period_key",[periodFrom,periodTo]),
     store.readSql.unsafe(
       "SELECT reconciliation_state,count(*)::int AS count,COALESCE(sum(abs(amount_minor)),0)::bigint AS amount_minor"+
       " FROM platform_bank_transactions WHERE booked_at>=$1::date AND booked_at<$2::date GROUP BY reconciliation_state ORDER BY reconciliation_state",
