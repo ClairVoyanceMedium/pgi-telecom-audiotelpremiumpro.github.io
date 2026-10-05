@@ -45,7 +45,7 @@ function balances(d){
 }
 function history(d){
   const rows=Array.isArray(d.monthly_history)?d.monthly_history:[],c=d.currency||"EUR";
-  return '<section class="acc-section"><div class="acc-section-head"><div><p class="panel-kicker">HISTORIQUE</p><h3>12 mois de pilotage comptable</h3></div><button class="acc-btn" type="button" data-acc-export>Exporter CSV</button></div><div class="acc-table"><table><thead><tr><th>Mois</th><th>Abonnements TTC</th><th>Priorité TTC</th><th>Commission CB PGI</th><th>Marge SVA encaissée HT</th><th>Marge SVA comptabilisée HT</th><th>Reversements clients payés HT</th><th>Parrainage acquis</th><th>Parrainage versé</th></tr></thead><tbody>'+
+  return '<section class="acc-section"><div class="acc-section-head"><div><p class="panel-kicker">HISTORIQUE</p><h3>12 mois de pilotage comptable</h3></div><div class="acc-controls"><button class="acc-btn" type="button" data-acc-print>Imprimer / PDF</button><button class="acc-btn" type="button" data-acc-export>Exporter CSV</button></div></div><div class="acc-table"><table><thead><tr><th>Mois</th><th>Abonnements TTC</th><th>Priorité TTC</th><th>Commission CB PGI</th><th>Marge SVA encaissée HT</th><th>Marge SVA comptabilisée HT</th><th>Reversements clients payés HT</th><th>Parrainage acquis</th><th>Parrainage versé</th></tr></thead><tbody>'+
     rows.map(x=>'<tr><td>'+esc(monthLabel(x.month))+'</td><td>'+esc(moneyMinor(x.subscriptions_collected_ttc_minor,c))+'</td><td>'+esc(moneyMinor(x.portability_priority_collected_ttc_minor,c))+'</td><td>'+esc(moneyMinor((x.card_payment_pgi_fee_minor||0)-(x.card_payment_refunded_fee_minor||0),c))+'</td><td>'+esc(money(x.sva_margin_collected_ht,c))+'</td><td>'+esc(money(x.sva_margin_booked_ht,c))+'</td><td>'+esc(money(x.client_payout_paid_ht,c))+'</td><td>'+esc(moneyMinor(x.referral_rewards_earned_minor,c))+'</td><td>'+esc(moneyMinor(x.referral_rewards_paid_minor,c))+'</td></tr>').join("")+
     '</tbody></table></div></section>';
 }
@@ -77,6 +77,7 @@ function bind(){
   root.querySelector("[data-acc-month]")?.addEventListener("change",e=>{month=e.target.value||month;load();});
   root.querySelector("[data-acc-currency]")?.addEventListener("change",e=>{currency=e.target.value||currency;load();});
   root.querySelector("[data-acc-refresh]")?.addEventListener("click",load);
+  root.querySelector("[data-acc-print]")?.addEventListener("click",()=>window.print());
   root.querySelector("[data-acc-export]")?.addEventListener("click",exportCsv);
 }
 async function load(){
