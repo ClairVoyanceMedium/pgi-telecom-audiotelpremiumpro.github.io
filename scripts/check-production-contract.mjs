@@ -455,7 +455,7 @@ try{
   failures.push("production config contract rejected: "+error.message);
 }
 
-if(!/ticketContactAssociationType/.test(hubspotCrm)||!/crm\/v3\/objects\/tickets/.test(hubspotCrm)||!/hs_pipeline_stage:"1"/.test(hubspotCrm)||!/source_type:"FORM"/.test(hubspotCrm))failures.push("public contact bubble must create a support ticket, not a commercial dossier");
+if(!/ticketContactAssociationType/.test(hubspotCrm)||!/crm\/v3\/objects\/tickets/.test(hubspotCrm)||!/hs_pipeline_stage:"1"/.test(hubspotCrm)||!/sourceType:"FORM"/.test(hubspotCrm)||!/source_type:clean\(input\.sourceType/.test(hubspotCrm))failures.push("public contact bubble must create a support ticket, not a commercial dossier");
 if(!/sendSupportTicketNotification/.test(backendServer)||!/sendSupportTicketReply/.test(backendServer)||!/recordServiceIncidentEmailNote/.test(backendServer)||!/syncHubSpotCustomerIncident/.test(backendServer))failures.push("authenticated support must bridge portal messages, email replies and HubSpot tickets");
 if(!/reply_to:senderEmail/.test(resendEmailSource)||!/support-journal@/.test(resendEmailSource)||!/receivedAttachmentPaths/.test(resendEmailSource)||!/In-Reply-To/.test(resendEmailSource))failures.push("inbound support forwarding must retain Reply-To, threading metadata and attachments");
 if(!/isServiceBusinessMinute/.test(postgresStore)||!/Europe\/Paris/.test(postgresStore))failures.push("support SLA deadlines must use Europe/Paris business hours");
