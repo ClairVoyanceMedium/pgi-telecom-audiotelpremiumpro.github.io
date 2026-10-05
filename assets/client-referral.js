@@ -39,7 +39,7 @@ function render(data){
   var bonus=milestones.length?'<p class="cp-muted">Bonus fixes : '+milestones.map(function(x){return esc((x.ordinal===1?"1er":x.ordinal+"e")+" filleul +"+money(x.bonus_minor,currency));}).join(" · ")+'.</p>':"";
   box.innerHTML=
     '<div class="cp-panel-head"><div><p class="cp-kicker">PARRAINAGE</p><h2>Mon espace ambassadeur</h2></div><span>'+esc(String(summary.rewarded||0))+' qualifié(s)</span></div>'+
-    '<p class="cp-muted">Prime acquise après <strong>3 factures mensuelles distinctes payées</strong>. Barème fixe, sans commission SVA.</p>'+
+    '<p class="cp-muted">Prime acquise après <strong>3 factures mensuelles distinctes réellement payées</strong>. Barème fixe, sans commission SVA.</p>'+
     codeBlock+
     '<div class="cp-row"><div><strong>'+esc(String(summary.visits||0))+' visite(s) · '+esc(String(summary.prospects||0))+' demande(s)</strong><span>'+esc(String(summary.claimed||0))+' filleul(s) enregistré(s) · '+esc(String(summary.rewarded||0))+' qualifié(s) · '+esc(money(summary.reward_minor||0,currency))+' acquis.</span></div></div>'+
     payoutBlock+
