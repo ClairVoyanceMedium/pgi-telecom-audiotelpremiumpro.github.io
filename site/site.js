@@ -84,9 +84,16 @@ async function applyReferralProgram(){
     if(!r.ok||data.enabled!==true){wrap.hidden=true;input.disabled=true;input.value="";return;}
     wrap.hidden=false;input.disabled=false;
     const q=new URLSearchParams(location.search),requested=String(q.get("parrain")||q.get("ref")||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,24);
-    if(requested.length>=8)input.value=requested;
-    if(help&&Number(data.reward_minor)>0){
-      try{help.textContent="Code vérifié côté serveur. Le parrain reçoit "+new Intl.NumberFormat("fr-FR",{style:"currency",currency:data.currency||"EUR"}).format(Number(data.reward_minor)/100)+" uniquement après activation réelle et abonnement payé du filleul.";}catch(_e){}
+    if(requested.length>=8){
+      input.value=requested;
+      try{
+        const k="pgi_referral_visitor_v1";let visitor=localStorage.getItem(k);
+        if(!visitor){visitor=(crypto&&typeof crypto.randomUUID==="function"?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2));localStorage.setItem(k,visitor)}
+        fetch("/api/v1/public/referral-visit",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",keepalive:true,body:JSON.stringify({code:requested,visitor_key:visitor})}).catch(()=>{});
+      }catch(_track){}
+    }
+    if(help){
+      help.textContent="Code vérifié côté serveur. La récompense du parrain est calculée automatiquement selon son rang uniquement après 3 mensualités distinctes réellement payées par le filleul.";
     }
   }catch(_e){wrap.hidden=true;input.disabled=true;input.value="";}
 }

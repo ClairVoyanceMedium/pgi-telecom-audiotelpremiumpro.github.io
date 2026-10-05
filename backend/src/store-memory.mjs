@@ -1282,6 +1282,22 @@ export class MemoryStore{
 
   async customerProfitability(params={}){void params;return {schema_version:"audiotel-customer-profitability/1",period:"365d",since:null,currency:"EUR",currencies:["EUR"],accounting_basis:"tenant_revenue_distributions.platform_fee_ht",cash_basis:"carrier paid amount / confirmed amount",excludes:["general_platform_overhead","unconnected_subscription_cash"],tenant:null,summary:{upstream_payout_ht:0,margin_booked_ht:0,margin_collected_ht:0,client_net_payout_ht:0,unallocated_amount_ht:0,customers_with_distribution:0,top5_margin_collected_ht:0,top5_concentration_percent:0},ranking:[],trend:[]};}
 
+  async platformAccounting(params={}){
+    const currency=String(params.currency||"EUR").trim().toUpperCase(),months=Math.max(1,Math.min(36,Number(params.months)||12));
+    const now=new Date(),rows=[];
+    for(let i=months-1;i>=0;i--){const d=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-i,1));rows.push({month:d.toISOString().slice(0,7),subscription_transactions:0,subscription_cash_ttc_minor:0,priority_portability_transactions:0,priority_portability_cash_ttc_minor:0,card_payment_transactions:0,card_payment_volume_minor:0,card_payment_pgi_fee_minor:0,sva_distributions:0,sva_upstream_payout_ht_minor:0,sva_platform_fee_ht_minor:0,sva_client_net_payout_ht_minor:0,sva_unallocated_ht_minor:0,referral_rewards:0,referral_commissions_earned_minor:0,referral_commissions_paid_minor:0});}
+    return {schema_version:"audiotel-platform-accounting/1",currency,months_requested:months,since:rows[0]?.month+"-01T00:00:00.000Z",basis:{subscriptions:"encaissements Stripe TTC confirmés par facture payée",priority_portability:"encaissements TTC confirmés par paiement de portabilité prioritaire",card_payments:"volume encaissé pour les clients et commission PGI séparée",sva:"montants HT issus des distributions SVA consolidées",referrals:"commissions ambassadeurs acquises et payées séparément"},tax_separation_notice:"Les totaux TTC et HT restent séparés.",stripe_processing_fees:{available:false,amount_minor:null,reason:"non_disponible_dans_le_ledger_local"},summary:{subscription_cash_ttc_minor:0,priority_portability_cash_ttc_minor:0,card_payment_volume_minor:0,card_payment_pgi_fee_minor:0,sva_upstream_payout_ht_minor:0,sva_platform_fee_ht_minor:0,sva_client_net_payout_ht_minor:0,sva_unallocated_ht_minor:0,referral_commissions_earned_minor:0,referral_commissions_paid_minor:0},months:rows};
+  }
+  async referralProgramPublicState(){
+    return {enabled:this.referralDemoEnabled!==false,program_version:"ambassador-2026-10",currency:"EUR",qualification:"three_paid_monthly_invoices",qualification_paid_invoices:3,payout_threshold_minor:2000,reward_minor:1000,tiers:[{from:1,to:4,reward_minor:1000},{from:5,to:9,reward_minor:1200},{from:10,to:24,reward_minor:1500},{from:25,to:null,reward_minor:2000}],bonuses:{"1":500,"5":2000,"10":5000}};
+  }
+  async referralProgramAdminState(){return {...await this.referralProgramPublicState(),summary:{claimed:0,qualified:0,rewarded:0,rejected:0,reward_minor:0,earned_minor:0,paid_minor:0},rewards:[]};}
+  async updateReferralProgram(input={}){this.referralDemoEnabled=input.enabled===true;return this.referralProgramAdminState();}
+  async customerReferralOverview(){return {...await this.referralProgramPublicState(),code:"PGIDEMO2026",eligible:true,eligibility_reason:null,account_mode:"ambassador",summary:{clicks:0,claimed:0,pending:0,rewarded:0,reward_minor:0},next_reward:{ordinal:1,base_reward_minor:1000,bonus_minor:500,total_reward_minor:1500,tier_from:1,tier_to:4},recent:[]};}
+  async recordCustomerReferralVisit(){return {accepted:true};}
+  async ensureCustomerReferralCode(){return {...await this.referralProgramPublicState(),code:"PGIDEMO2026",status:"active",created_at:new Date().toISOString(),next_reward:{ordinal:1,base_reward_minor:1000,bonus_minor:500,total_reward_minor:1500,tier_from:1,tier_to:4}};}
+  async settleCustomerReferralReward(){throw problem(409,"REFERRAL_REWARD_DEMO_ONLY");}
+
   async customerAdminSummary(){
     return {tenants_total:0,tenants_active:0,tenants_new_24h:0,tenants_new_7d:0,latest_tenant_created_at:null,kyc_pending:0,subscription_unpaid_alerts:0,subscription_access_blocked:0,assignments_active:0,service_incidents_open:0,service_incidents_critical:0,service_sla_attention:0,routing_attention:0,portability_attention:0};
   }

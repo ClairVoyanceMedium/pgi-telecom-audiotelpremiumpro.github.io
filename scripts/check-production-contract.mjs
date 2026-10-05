@@ -52,6 +52,7 @@ const businessLiveScheduleSource=fs.readFileSync("backend/src/business-live-sche
 const vercelConfig=fs.readFileSync("vercel.json","utf8");
 const referralMigration=fs.readFileSync("database/migrations/065_customer_referral_program.sql","utf8");
 const referralRepairMigration=fs.readFileSync("database/migrations/066_repair_customer_referral_program.sql","utf8");
+const ambassadorAccountingMigration=fs.readFileSync("database/migrations/067_ambassador_accounting.sql","utf8");
 const clientReferral=fs.readFileSync("assets/client-referral.js","utf8");
 const referralAdmin=fs.readFileSync("assets/referral-admin.js","utf8");
 const vercelConfigData=JSON.parse(vercelConfig);
@@ -132,11 +133,12 @@ const wholesaleDoc=fs.readFileSync("docs/WHOLESALE-SVA.md","utf8");
 
 if(!/platform_feature_flags/.test(referralMigration)||!/customer_referral_rewards/.test(referralMigration))failures.push("referral schema must retain server feature flags and reward ledger");
 if(!/CREATE TABLE IF NOT EXISTS platform_feature_flags/i.test(referralRepairMigration)||!/CREATE TABLE IF NOT EXISTS customer_referral_rewards/i.test(referralRepairMigration)||!/ON CONFLICT\(feature_key\) DO NOTHING/i.test(referralRepairMigration))failures.push("referral schema repair must stay idempotent and fail-closed");
-if(!/42P01/.test(postgresStore)||!/enabled:false,reward_minor:0/.test(postgresStore))failures.push("public referral state must fail closed when referral schema is unavailable");
-if(!/\/api\/v1\/public\/referral-program/.test(backendServer)||!/\/api\/v1\/customer\/referral/.test(backendServer)||!/\/api\/v1\/platform\/referral-program/.test(backendServer))failures.push("referral public customer and admin APIs are required");
-if(!/paid_active_subscription/.test(postgresStore)||!/REFERRAL_SELF_CLAIM/.test(postgresStore)||!/REFERRAL_ALREADY_CLAIMED/.test(postgresStore))failures.push("referral rewards must remain payment-qualified and anti-abuse");
-if(!/pgi:portal-loaded/.test(clientReferral)||!/abonnement actif et payé/i.test(clientReferral))failures.push("customer referral UI must retain paid activation qualification");
-if(!/referral-admin\.js/.test(platformAdminTools)||!/updateReferralProgram/.test(referralAdmin)||!/settleReferralReward/.test(referralAdmin))failures.push("referral administration must remain lazy and auditable");
+if(!/42P01/.test(postgresStore)||!/referralPolicyState\(false\)/.test(postgresStore))failures.push("public referral state must fail closed when referral schema is unavailable");
+if(!/\/api\/v1\/public\/referral-program/.test(backendServer)||!/\/api\/v1\/public\/referral-visit/.test(backendServer)||!/\/api\/v1\/customer\/referral/.test(backendServer)||!/\/api\/v1\/platform\/referral-program/.test(backendServer))failures.push("referral public customer admin and visit APIs are required");
+if(!/three_paid_monthly_invoices/.test(postgresStore)||!/qualification_paid_invoices:3/.test(postgresStore)||!/DISTINCT normalized_details->>'provider_invoice_reference'/.test(postgresStore)||!/REFERRAL_SELF_CLAIM/.test(postgresStore)||!/REFERRAL_ALREADY_CLAIMED/.test(postgresStore))failures.push("referral rewards must require three distinct paid invoices and retain anti-abuse controls");
+if(!/customer_referral_visits/.test(ambassadorAccountingMigration)||!/reward_minor',2000/.test(ambassadorAccountingMigration))failures.push("ambassador migration must retain visit ledger and fixed 25+ tier");
+if(!/pgi:portal-loaded/.test(clientReferral)||!/3 mensualités distinctes/i.test(clientReferral)||!/summary\.clicks/.test(clientReferral))failures.push("customer ambassador UI must retain qualification and conversion tracking");
+if(!/referral-admin\.js/.test(platformAdminTools)||!/platform-accounting\.js/.test(platformAdminTools)||!/updateReferralProgram/.test(referralAdmin)||!/settleReferralReward/.test(referralAdmin))failures.push("ambassador and accounting administration must remain lazy and auditable");
 
 const requiredCompose=[
   "POSTGRES_PASSWORD",

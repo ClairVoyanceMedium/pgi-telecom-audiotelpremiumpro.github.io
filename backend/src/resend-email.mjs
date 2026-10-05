@@ -258,6 +258,7 @@ export function buildTransactionalMessage(config,templateKey,data={}){
   const firstName=name?name.split(/\s+/)[0]:"";
   const greeting=firstName?"Bonjour "+firstName+",":"Bonjour,";
   const portalUrl=sameOriginUrl(config,"/client.html");
+  const referralUrl=sameOriginUrl(config,"/client.html?referral=1");
   const billingUrl=sameOriginUrl(config,"/client.html?billing=payment-required");
   const logoUrl=sameOriginUrl(config,"/assets/audiotel-brand-logo-v33.png");
   const homeUrl=sameOriginUrl(config,"/");
@@ -455,6 +456,33 @@ export function buildTransactionalMessage(config,templateKey,data={}){
         safeDetail("Reçue le",data.submitted_at)
       ].filter(Boolean),
       foot:"Vérifier le contrat, l’état d’exécution et les suites de remboursement ou de facturation proportionnelle éventuellement applicables."
+    },
+    referral_claimed:{
+      subject:"Votre recommandation Ambassadeur est enregistrée",
+      title:"Un nouveau filleul est en cours de qualification",
+      lead:greeting,
+      paragraphs:["Votre lien Ambassadeur a généré une nouvelle recommandation.","La récompense sera calculée automatiquement selon le rang du filleul lorsqu’il aura réglé "+Number(data.required_paid_invoices||3)+" mensualités distinctes. Aucun règlement dupliqué ne peut accélérer cette qualification."],
+      cta:{label:"Suivre mes filleuls",url:referralUrl},
+      foot:"Le barème est fixe et automatique. Les commissions Ambassadeur restent séparées de vos éventuels reversements SVA."
+    },
+    referral_progress:{
+      subject:"Progression de votre filleul Audiotel Premium Pro",
+      title:"Votre recommandation avance",
+      lead:greeting,
+      paragraphs:["Une nouvelle mensualité de votre filleul vient d’être confirmée.","Progression : "+Number(data.paid_invoices||0)+" sur "+Number(data.required_paid_invoices||3)+" mensualités requises avant qualification. Vous n’avez aucune démarche à effectuer."],
+      cta:{label:"Voir ma progression Ambassadeur",url:referralUrl}
+    },
+    referral_reward_earned:{
+      subject:"Votre récompense Ambassadeur est acquise",
+      title:"Une nouvelle commission est acquise",
+      lead:greeting,
+      paragraphs:[
+        "Votre filleul vient de remplir la condition des 3 mensualités distinctes réellement payées.",
+        "Rang du filleul qualifié : "+Number(data.reward_ordinal||0)+". Base : "+((Number(data.base_reward_minor||0)/100).toFixed(2).replace(".",","))+" €. Bonus : "+((Number(data.bonus_minor||0)/100).toFixed(2).replace(".",","))+" €. Total acquis : "+((Number(data.amount_minor||0)/100).toFixed(2).replace(".",","))+" €.",
+        "Continuez à partager votre lien personnel : le barème augmente automatiquement avec le nombre de filleuls qualifiés, puis reste fixé à 20,00 € de base par filleul à partir du 25e."
+      ],
+      cta:{label:"Consulter mes récompenses",url:referralUrl},
+      foot:"Seuil indicatif de règlement : "+((Number(data.payout_threshold_minor||2000)/100).toFixed(2).replace(".",","))+" €. Le suivi affiché dans votre espace sécurisé reste la référence."
     },
     payout_available:{
       subject:"Votre reversement Audiotel Premium Pro est disponible",

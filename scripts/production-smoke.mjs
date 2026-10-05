@@ -25,7 +25,7 @@ await fetchCheck("site.cookies","/cookies-traceurs/",200,["Cookies et traceurs"]
 await fetchCheck("site.cancellation","/resilier-contrat/",200,["Résilier votre contrat","client.html?action=cancel-subscription","cesse de se renouveler"]);
 await fetchCheck("site.withdrawal","/retractation/",200,["14 jours","Fonctionnalité en ligne obligatoire","26 septembre 2026"]);
 await fetchCheck("withdrawal.status","/api/v1/public/withdrawal/status",200,[],b=>b&&b.available===true);
-await fetchCheck("referral.status","/api/v1/public/referral-program",200,[],b=>b&&typeof b.enabled==="boolean"&&Number.isFinite(Number(b.reward_minor))&&typeof b.currency==="string");
+await fetchCheck("referral.status","/api/v1/public/referral-program",200,[],b=>b&&typeof b.enabled==="boolean"&&b.qualification==="three_paid_monthly_invoices"&&Number(b.qualification_paid_invoices)===3&&Array.isArray(b.tiers)&&b.tiers.length===4&&typeof b.currency==="string");
 await fetchCheck("site.sitemap","/sitemap.xml",200,["<loc>https://audiotel-premium-pro.com/</loc>","/parrainage-audiotel/","/portabilite-prioritaire/"]);
 await fetchCheck("api.health","/api/v1/health",200,[],b=>b&&b.status==="ok"&&b.mode==="production");
 await fetchCheck("auth.boundary","/api/v1/customer/auth/me",401,["AUTH_REQUIRED"]);

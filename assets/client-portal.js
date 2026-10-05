@@ -370,7 +370,8 @@ async function submitRegistration(e){
     legal_version:"2026-09-26-b2b-b2c-v4",
     website:$("register-website").value,
     preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",
-    timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC")
+    timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC"),
+    service_intent:new URLSearchParams(location.search).get("ambassador")==="1"?"ambassador":""
   };
   b&&(b.disabled=true);
   try{
@@ -601,7 +602,16 @@ async function init(){
   var resetToken=authHash.get("password-reset")||"",emailChangeToken=authHash.get("email-change")||"";
   if(resetToken){showReset();return;}
   if(emailChangeToken&&!state.demo){await confirmEmailChangeFromHash(emailChangeToken);return;}
-  if(location.search.includes("register=1")){showLogin();setAuthMessage("La création libre de compte est désactivée. L’accès client est envoyé automatiquement après une demande d’ouverture enregistrée.",false);return;}
+  var authQuery=new URLSearchParams(location.search);
+  if(authQuery.get("register")==="1"&&authQuery.get("ambassador")==="1"){
+    var panel=$("register-panel"),form=$("customer-register-form"),title=$("register-panel-title"),copy=$("register-panel-copy"),opening=$("register-opening-link");
+    if(title)title.textContent="Créer mon espace Ambassadeur";
+    if(copy)copy.textContent="Créez votre espace Ambassadeur sécurisé. Après vérification de votre adresse e-mail, vous pourrez générer votre lien personnel et suivre vos filleuls et vos récompenses. Aucun abonnement Audiotel n’est requis pour devenir Ambassadeur.";
+    if(opening)opening.hidden=true;
+    if(form){form.hidden=false;form.removeAttribute("aria-hidden");}
+    showRegister();return;
+  }
+  if(authQuery.get("register")==="1"){showLogin();setAuthMessage("La création libre de compte client est désactivée. L’accès client est envoyé automatiquement après une demande d’ouverture enregistrée.",false);return;}
   if(state.demo){showApp();return;}
   if(location.search.includes("invite=")){showActivation();return;}
   var openingState=new URLSearchParams(location.search).get("opening");
