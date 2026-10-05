@@ -30,6 +30,12 @@ export function createStaticSiteHandler(rootDir){
     if(method!=="GET"&&method!=="HEAD")return false;
     if(pathname==="/metrics"||String(pathname||"").startsWith("/api/"))return false;
 
+    if(String(pathname||"")==="/ai.txt"){
+      res.writeHead(308,{"Location":"/llms.txt","Cache-Control":"public, max-age=86400"});
+      res.end();
+      return true;
+    }
+
     if(["/favicon.ico","/favicon.png"].includes(String(pathname||""))){
       res.writeHead(308,{"Location":"/assets/audiotel-brand-icon-v33.png","Cache-Control":"public, max-age=86400"});
       res.end();
