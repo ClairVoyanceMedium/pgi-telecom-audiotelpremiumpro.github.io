@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import {referralRewardForOrdinal,referralCumulativeRewardForCount,referralPublicPolicy} from "../backend/src/referral-policy.mjs";
 
 test("fixed referral tiers and milestones are exact",()=>{
@@ -24,4 +25,26 @@ test("referral public policy requires three paid monthly invoices and fixes 25+ 
   assert.equal(p.permanent_from_ordinal,25);
   assert.equal(p.permanent_reward_minor,2000);
   assert.equal(p.policy_version,"2026-10-05-fixed-v1");
+});
+
+
+test("earned referral rewards are paid automatically through an idempotent Stripe transfer",()=>{
+  const server=fs.readFileSync("backend/server.mjs","utf8");
+  const stripe=fs.readFileSync("backend/src/stripe-connect.mjs","utf8");
+  const store=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
+  const view=fs.readFileSync("assets/referral-admin-view.js","utf8");
+  const admin=fs.readFileSync("assets/referral-admin.js","utf8");
+  const vercel=JSON.parse(fs.readFileSync("vercel.json","utf8"));
+  assert.match(server,/processAutomaticReferralPayouts/);
+  assert.match(server,/\/api\/v1\/internal\/referral-payouts\/run/);
+  assert.match(stripe,/createStripeReferralRecipientAccount/);
+  assert.match(stripe,/stripe_transfers:\{requested:true\}/);
+  assert.match(stripe,/createStripeReferralTransfer/);
+  assert.match(stripe,/referral-reward\//);
+  assert.match(store,/referralRewardsForAutomaticPayout/);
+  assert.match(store,/recordReferralAutomaticPayoutState/);
+  assert.doesNotMatch(admin,/settleReferralReward|data-referral-paid/);
+  assert.doesNotMatch(view,/data-referral-paid/);
+  assert.match(view,/Versements automatiques/);
+  assert.ok(vercel.crons.some(x=>x.path==="/api/v1/internal/referral-payouts/run"&&x.schedule==="*/10 * * * *"));
 });
