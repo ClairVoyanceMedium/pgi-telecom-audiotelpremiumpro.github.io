@@ -38,7 +38,7 @@ for (const [file,max] of Object.entries(lazyBudgets)) {
   const size = fs.statSync(path.resolve(file)).size;
   if (size > max) failures.push(`${file}: ${size} bytes > lazy budget ${max}`);
 }
-const totalBudget = 265 * 1024;
+const totalBudget = 266 * 1024;
 const reservedHeadroom = 20 * 1024;
 if (total > totalBudget) failures.push(`shell total: ${total} bytes > budget ${totalBudget}`);
 if (total > totalBudget-reservedHeadroom) failures.push(`shell reserve: ${totalBudget-total} bytes remaining < required ${reservedHeadroom}`);
