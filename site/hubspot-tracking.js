@@ -470,18 +470,10 @@ function bindAmbassadorRequest(){
     form.dataset.busy="1";status.textContent="Envoi de votre demande ambassadeur...";
     const button=form.querySelector('button[type="submit"]');if(button)button.disabled=true;
     try{
-      const message=[
-        "Demande d’accès ambassadeur Audiotel Premium Pro",
-        "Statut souhaité : ambassadeur sans obligation d’être client",
-        "Nom : "+name,
-        phone?"Téléphone : "+phone:"",
-        note?"Précision : "+note:"",
-        "Le demandeur confirme qu’il sollicite un accès ambassadeur distinct de tout abonnement Audiotel Premium Pro."
-      ].filter(Boolean).join("\n");
-      const response=await fetch("/api/v1/public/contact",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify({email,message,website,page_path:location.pathname,page_title:document.title})});
+      const response=await fetch("/api/v1/public/ambassador/apply",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify({name,email,phone,note,website,country_code:"FR"})});
       const data=await response.json().catch(()=>({}));
       if(!response.ok||data.accepted!==true)throw new Error("AMBASSADOR_REQUEST_FAILED");
-      status.textContent="Votre demande ambassadeur a bien été transmise. Aucun abonnement Audiotel Premium Pro n’a été créé.";
+      status.textContent=data.already_active===true?"Votre profil ambassadeur est déjà actif. Vous pouvez utiliser votre espace ambassadeur.":"Votre demande ambassadeur est enregistrée. Vous recevrez un accès sécurisé après validation. Aucun abonnement Audiotel Premium Pro n’a été créé.";
       form.reset();
       window.PGIAnalytics?.track("generate_lead",{lead_type:"ambassador_external"});
     }catch(_error){
