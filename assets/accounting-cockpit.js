@@ -86,6 +86,8 @@ async function load(){
   catch(e){root.innerHTML='<div class="acc-empty">Comptabilité indisponible : '+esc(e?.code||e?.message||"erreur")+'.</div>';}
   finally{busy=false;}
 }
-export async function mountAccounting(host){
-  if(!host)return;root=host;css();root.hidden=false;await load();
+export async function mountAccounting(host,options={}){
+  if(!host)return;const sameHost=root===host;root=host;css();root.hidden=false;
+  if(sameHost&&current&&options.force!==true){render(current);return;}
+  await load();
 }
