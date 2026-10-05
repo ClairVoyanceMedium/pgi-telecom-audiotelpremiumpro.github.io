@@ -75,6 +75,7 @@ createBillingCheckout:function(idempotencyKey,legal){return post("/customer/bill
 createBillingPortal:function(){return post("/customer/billing/portal-session",{});},
 referral:function(){return get("/customer/referral",8000);},
 createReferralCode:function(idempotencyKey){return post("/customer/referral/code",{},idempotencyKey);},
+configureReferralPayout:function(idempotencyKey){return post("/customer/referral/payout-account",{},idempotencyKey);},
 portability:function(){return get("/customer/portability",8000);},
 createPortability:function(payload,idempotencyKey){return post("/customer/portability",payload,idempotencyKey);},
 createPortabilityPriorityCheckout:function(id,idempotencyKey){return post("/customer/portability/"+encodeURIComponent(id)+"/priority-checkout",{},idempotencyKey);},

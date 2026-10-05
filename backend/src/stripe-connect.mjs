@@ -112,7 +112,7 @@ export async function createStripeConnectedAccount(config,input={}){
 
 export async function retrieveStripeConnectedAccount(config,accountId){
   if(!/^acct_[A-Za-z0-9]+$/.test(String(accountId||"")))throw error(400,"INVALID_CONNECT_ACCOUNT");
-  const query="?include%5B%5D=configuration.merchant&include%5B%5D=requirements&include%5B%5D=defaults";
+  const query="?include%5B%5D=configuration.merchant&include%5B%5D=configuration.recipient&include%5B%5D=requirements&include%5B%5D=defaults";
   return jsonRequest(config,"/v2/core/accounts/"+encodeURIComponent(accountId)+query,{preview:true});
 }
 
@@ -133,20 +133,60 @@ export function normalizeStripeConnectedAccount(account={}){
   };
 }
 
+export async function createStripeReferralRecipientAccount(config,input={}){
+  const email=cleanEmail(input.email),country=cleanCountry(input.country_code);
+  if(!email)throw error(400,"INVALID_CONNECT_EMAIL");
+  const body={contact_email:email,dashboard:"express",identity:{country},configuration:{recipient:{capabilities:{stripe_balance:{stripe_transfers:{requested:true}}}}}};
+  const account=await jsonRequest(config,"/v2/core/accounts",{method:"POST",body,idempotencyKey:input.idempotency_key,preview:true});
+  if(!/^acct_[A-Za-z0-9]+$/.test(String(account?.id||"")))throw error(502,"STRIPE_CONNECT_ACCOUNT_INVALID");
+  return account;
+}
+
+export async function ensureStripeReferralRecipient(config,accountId,input={}){
+  if(!/^acct_[A-Za-z0-9]+$/.test(String(accountId||"")))throw error(400,"INVALID_CONNECT_ACCOUNT");
+  const body={configuration:{recipient:{capabilities:{stripe_balance:{stripe_transfers:{requested:true}}}}}};
+  return jsonRequest(config,"/v2/core/accounts/"+encodeURIComponent(accountId),{method:"POST",body,idempotencyKey:input.idempotency_key,preview:true});
+}
+
+export function normalizeStripeReferralPayoutAccount(account={}){
+  const balance=account?.configuration?.recipient?.capabilities?.stripe_balance||{};
+  const transferStatus=String(balance?.stripe_transfers?.status||"").toLowerCase(),payoutStatus=String(balance?.payouts?.status||"").toLowerCase();
+  const requirements=account?.requirements||{},deadline=String(requirements?.summary?.minimum_deadline?.status||"").toLowerCase();
+  const transfersEnabled=transferStatus==="active",payoutsEnabled=payoutStatus==="active";
+  const detailsSubmitted=transfersEnabled&&payoutsEnabled&&!["currently_due","past_due","requirements_past_due"].includes(deadline);
+  return {provider_account_reference:String(account?.id||""),transfers_enabled:transfersEnabled,payouts_enabled:payoutsEnabled,details_submitted:detailsSubmitted,requirements_state:deadline||[transferStatus,payoutStatus].filter(Boolean).join("/")||"unknown",status:transfersEnabled&&payoutsEnabled?"active":detailsSubmitted?"restricted":"onboarding"};
+}
+
+export async function findStripeReferralTransfer(config,input={}){
+  const destination=String(input.destination||""),group=String(input.transfer_group||"").trim();
+  if(!/^acct_[A-Za-z0-9]+$/.test(destination)||!/^PGI_REFERRAL_[A-Za-z0-9_-]{8,120}$/.test(group))throw error(400,"INVALID_REFERRAL_TRANSFER_LOOKUP");
+  const query=new URLSearchParams({destination,transfer_group:group,limit:"10"}),list=await jsonRequest(config,"/v1/transfers?"+query.toString());
+  const rows=Array.isArray(list?.data)?list.data:[];
+  return rows.find(x=>String(x?.destination||"")===destination&&String(x?.transfer_group||"")===group)||null;
+}
+
+export async function createStripeReferralTransfer(config,input={}){
+  const destination=String(input.destination||""),group=String(input.transfer_group||"").trim(),amount=Math.trunc(Number(input.amount_minor)),currency=String(input.currency||"EUR").trim().toLowerCase();
+  if(!/^acct_[A-Za-z0-9]+$/.test(destination))throw error(400,"INVALID_CONNECT_ACCOUNT");
+  if(!/^PGI_REFERRAL_[A-Za-z0-9_-]{8,120}$/.test(group))throw error(400,"INVALID_REFERRAL_TRANSFER_GROUP");
+  if(!Number.isInteger(amount)||amount<=0||amount>100000000)throw error(400,"INVALID_REFERRAL_TRANSFER_AMOUNT");
+  if(!/^[a-z]{3}$/.test(currency))throw error(400,"INVALID_REFERRAL_TRANSFER_CURRENCY");
+  const rewardId=String(input.reward_public_id||"").trim();
+  const transfer=await formRequest(config,"/v1/transfers",{idempotencyKey:input.idempotency_key,fields:{amount,currency,destination,transfer_group:group,description:"Prime ambassadeur Audiotel Premium Pro",metadata:{pgi_referral_reward:rewardId,pgi_transfer_group:group}}});
+  if(!/^tr_[A-Za-z0-9]+$/.test(String(transfer?.id||"")))throw error(502,"STRIPE_REFERRAL_TRANSFER_INVALID");
+  return transfer;
+}
+
 export async function createStripeConnectOnboardingLink(config,accountId,input={}){
   if(!/^acct_[A-Za-z0-9]+$/.test(String(accountId||"")))throw error(400,"INVALID_CONNECT_ACCOUNT");
-  const base=baseUrl(config);
-  const body={
-    account:String(accountId),
-    use_case:{
-      type:"account_onboarding",
-      account_onboarding:{
-        return_url:base+"/client.html?card_connect=return",
-        refresh_url:base+"/client.html?card_connect=refresh",
-        collection_options:{fields:"eventually_due"}
-      }
-    }
+  const base=baseUrl(config),flow=String(input.flow||"card_payments"),referral=flow==="referral_payout";
+  const onboarding={
+    return_url:base+(referral?"/client.html?referral_payout=return":"/client.html?card_connect=return"),
+    refresh_url:base+(referral?"/client.html?referral_payout=refresh":"/client.html?card_connect=refresh"),
+    collection_options:{fields:"eventually_due"}
   };
+  if(referral)onboarding.configurations=["recipient"];
+  const body={account:String(accountId),use_case:{type:"account_onboarding",account_onboarding:onboarding}};
   const link=await jsonRequest(config,"/v2/core/account_links",{method:"POST",body,idempotencyKey:input.idempotency_key,preview:true});
   if(!/^https:\/\//i.test(String(link?.url||"")))throw error(502,"STRIPE_CONNECT_LINK_INVALID");
   return {url:link.url,expires_at:link.expires_at||null};
