@@ -15,7 +15,7 @@ import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebA
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData,scopeCustomerAnnualProgressData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
 import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,createStripePortabilityPriorityCheckout,verifyStripeWebhook,normalizeStripePortabilityPriorityEvent,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
-import {STRIPE_CONNECT_APPLICATION_FEE_BPS,stripeConnectState,createStripeConnectedAccount,retrieveStripeConnectedAccount,normalizeStripeConnectedAccount,createStripeConnectOnboardingLink,createStripeCardCheckout,retrieveStripeCardCheckout,normalizeStripeConnectPaymentEvent,hashStripeEventPayload} from "./src/stripe-connect.mjs";
+import {STRIPE_CONNECT_APPLICATION_FEE_BPS,stripeConnectState,createStripeConnectedAccount,ensureStripeConnectedAccountCapabilities,retrieveStripeConnectedAccount,normalizeStripeConnectedAccount,createStripeConnectOnboardingLink,createStripeCardCheckout,retrieveStripeCardCheckout,normalizeStripeConnectPaymentEvent,hashStripeEventPayload} from "./src/stripe-connect.mjs";
 import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStripe,buildGa4RefundFromStripe,sendGa4Measurement} from "./src/ga4-measurement.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
@@ -930,9 +930,16 @@ export function createBackend(options={}){
           });
         }else{
           try{
-            const remote=await retrieveStripeConnectedAccount(config,local.provider_account_reference);
+            const remote=await ensureStripeConnectedAccountCapabilities(config,local.provider_account_reference,{
+              merchant:true,recipient:true,idempotency_key:"connect-capabilities/"+String(context.tenant_id)
+            });
             local=await store.syncCustomerCardPaymentAccount(context.tenant_id,normalizeStripeConnectedAccount(remote));
-          }catch(_error){}
+          }catch(_error){
+            try{
+              const remote=await retrieveStripeConnectedAccount(config,local.provider_account_reference);
+              local=await store.syncCustomerCardPaymentAccount(context.tenant_id,normalizeStripeConnectedAccount(remote));
+            }catch(_ignored){}
+          }
         }
         const link=await createStripeConnectOnboardingLink(config,local.provider_account_reference,{idempotency_key:idempotencyKey});
         let crm_sync=false;
@@ -986,8 +993,50 @@ export function createBackend(options={}){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
         requireCustomerPermission(context,"overview.read");
+        let payout_sync_error=null;
+        const payoutAccount=await store.customerCardPaymentAccount(context.tenant_id);
+        if(payoutAccount?.provider_account_reference&&stripeConnectState(config).api_configured){
+          try{
+            const remote=await retrieveStripeConnectedAccount(config,payoutAccount.provider_account_reference);
+            await store.syncCustomerCardPaymentAccount(context.tenant_id,normalizeStripeConnectedAccount(remote));
+          }catch(error){payout_sync_error=String(error?.code||"STRIPE_CONNECT_STATUS_UNAVAILABLE");}
+        }
         const overview=await store.customerReferralOverview(context.tenant_id);
-        return done(res,metrics,started,"customer.referral",200,{...overview,can_manage:["owner","admin"].includes(context.customer_role)});
+        return done(res,metrics,started,"customer.referral",200,{...overview,payout_sync_error,can_manage:["owner","admin"].includes(context.customer_role)});
+      }
+      if(method==="POST"&&pathname==="/api/v1/customer/referral/payout/connect"){
+        requireCustomerCsrf(req,customerActor,config);
+        if(!stripeConnectState(config).configured)return done(res,metrics,started,"customer.referral_payout.connect",503,{error:{code:"STRIPE_CONNECT_NOT_READY"}});
+        const idempotencyKey=String(req.headers["idempotency-key"]||"").trim();
+        if(!idempotencyKey||idempotencyKey.length>200){const e=new Error("Idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
+        const context=await store.customerSessionContext(customerActor);
+        if(!["owner","admin"].includes(context.customer_role)){const e=new Error("Owner or admin required");e.status=403;e.code="CUSTOMER_ADMIN_REQUIRED";throw e;}
+        const billing=await store.customerBillingPreparation(context.tenant_id);
+        let local=await store.customerCardPaymentAccount(context.tenant_id);
+        if(!local){
+          const account=await createStripeConnectedAccount(config,{
+            email:billing.tenant?.billing_email||context.email,
+            country_code:billing.tenant?.country_code||"FR",
+            mode:"referral",
+            idempotency_key:"referral-payout-account/"+String(billing.tenant?.id||context.tenant_id)
+          });
+          local=await store.upsertCustomerCardPaymentAccount(context.tenant_id,{
+            ...normalizeStripeConnectedAccount(account),
+            application_fee_bps:STRIPE_CONNECT_APPLICATION_FEE_BPS,
+            metadata:{source:"customer_referral_payout_activation"}
+          });
+        }else{
+          const remote=await ensureStripeConnectedAccountCapabilities(config,local.provider_account_reference,{
+            recipient:true,idempotency_key:"referral-payout-capabilities/"+String(context.tenant_id)
+          });
+          local=await store.syncCustomerCardPaymentAccount(context.tenant_id,normalizeStripeConnectedAccount(remote));
+        }
+        const link=await createStripeConnectOnboardingLink(config,local.provider_account_reference,{flow:"referral",idempotency_key:idempotencyKey});
+        return done(res,metrics,started,"customer.referral_payout.connect",201,{
+          provider:stripeConnectState(config),
+          payout:{automatic:true,configured:true,ready:local.transfers_enabled===true,transfers_enabled:local.transfers_enabled===true,requirements_state:local.recipient_requirements_state||null},
+          onboarding:link
+        });
       }
       if(method==="POST"&&pathname==="/api/v1/customer/referral/code"){
         requireCustomerCsrf(req,customerActor,config);
