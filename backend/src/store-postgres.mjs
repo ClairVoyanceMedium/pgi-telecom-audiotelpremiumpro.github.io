@@ -4648,8 +4648,12 @@ export class PostgresStore{
         [id]
       ),
       this.sql.unsafe(
-        "SELECT public_id::text AS public_id,status,reward_minor::bigint AS reward_minor,reward_currency,claimed_at,qualified_at,rewarded_at,rejected_at,metadata"+
-        " FROM customer_referrals WHERE referrer_tenant_id=$1 ORDER BY claimed_at DESC,id DESC LIMIT 20",
+        "SELECT r.public_id::text AS public_id,r.status,r.reward_minor::bigint AS reward_minor,r.reward_currency,r.claimed_at,r.qualified_at,r.rewarded_at,r.rejected_at,r.metadata,r.referred_tenant_id,"+
+        " (SELECT count(DISTINCT be.normalized_details->>'provider_invoice_reference')::int FROM subscription_billing_events be"+
+        " WHERE be.tenant_id=r.referred_tenant_id AND be.event_type='invoice.paid'"+
+        " AND COALESCE(be.normalized_details->>'provider_invoice_reference','')<>''"+
+        " AND COALESCE(be.normalized_details->>'last_payment_status','paid')='paid') AS paid_invoice_count"+
+        " FROM customer_referrals r WHERE r.referrer_tenant_id=$1 ORDER BY r.claimed_at DESC,r.id DESC LIMIT 20",
         [id]
       )
     ]);
@@ -4664,7 +4668,7 @@ export class PostgresStore{
       eligibility_reason:eligible?null:(program.enabled!==true?"program_disabled":tenant.status!=="active"?"tenant_not_active":"subscription_not_paid"),
       next_reward:{...next},
       summary:{claimed:Number(summary.claimed||0),rewarded,reward_minor:Number(summary.reward_minor||0)},
-      recent:recent.map(x=>({...x,reward_minor:Number(x.reward_minor||0)}))
+      recent:recent.map(x=>({...x,reward_minor:Number(x.reward_minor||0),paid_invoice_count:Number(x.paid_invoice_count||0)}))
     };
   }
 
