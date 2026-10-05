@@ -23,7 +23,7 @@ test("transactional recipient normalization is strict and hashing is determinist
 test("all production service templates render both plain text and html",()=>{
   const keys=[
     "email_verification","password_reset","password_changed","email_change_confirmation","email_changed","email_change_notice_old","passkey_added",
-    "lead_received","registration_received","customer_access_invitation","registration_internal","account_activated","account_suspended",
+    "lead_received","registration_received","customer_access_invitation","ambassador_application_received","ambassador_access_invitation","registration_internal","account_activated","account_suspended",
     "subscription_created","payment_succeeded","payment_recovered","payment_failed","payment_action_required",
     "payment_reminder","subscription_suspended","subscription_cancelled","payout_available","portability_received","portability_internal",
     "support_received","support_opened","support_internal","support_customer_reply","support_response","support_resolved"
