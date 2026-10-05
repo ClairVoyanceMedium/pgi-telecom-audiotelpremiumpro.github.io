@@ -455,9 +455,46 @@ function bindReferralLanding(){
     document.querySelectorAll("[data-referral-qualification]").forEach(el=>{el.textContent=String(required)});
   }).catch(()=>{if(status)status.textContent="La disponibilité du programme ne peut pas être confirmée pour le moment. Consultez votre espace client avant tout partage."});
 }
+function bindAmbassadorRequest(){
+  const form=document.getElementById("ambassador-request-form"),status=document.getElementById("ambassador-request-status");
+  if(!form||!status)return;
+  form.addEventListener("submit",async e=>{
+    e.preventDefault();
+    if(form.dataset.busy==="1")return;
+    const name=String(document.getElementById("ambassador-name")?.value||"").trim();
+    const email=String(document.getElementById("ambassador-email")?.value||"").trim();
+    const phone=String(document.getElementById("ambassador-phone")?.value||"").trim();
+    const note=String(document.getElementById("ambassador-note")?.value||"").trim();
+    const website=String(document.getElementById("ambassador-website")?.value||"").trim();
+    if(name.length<2||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){status.textContent="Renseignez votre nom et une adresse e-mail valide.";return}
+    form.dataset.busy="1";status.textContent="Envoi de votre demande ambassadeur...";
+    const button=form.querySelector('button[type="submit"]');if(button)button.disabled=true;
+    try{
+      const message=[
+        "Demande d’accès ambassadeur Audiotel Premium Pro",
+        "Statut souhaité : ambassadeur sans obligation d’être client",
+        "Nom : "+name,
+        phone?"Téléphone : "+phone:"",
+        note?"Précision : "+note:"",
+        "Le demandeur confirme qu’il sollicite un accès ambassadeur distinct de tout abonnement Audiotel Premium Pro."
+      ].filter(Boolean).join("\n");
+      const response=await fetch("/api/v1/public/contact",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify({email,message,website,page_path:location.pathname,page_title:document.title})});
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok||data.accepted!==true)throw new Error("AMBASSADOR_REQUEST_FAILED");
+      status.textContent="Votre demande ambassadeur a bien été transmise. Aucun abonnement Audiotel Premium Pro n’a été créé.";
+      form.reset();
+      window.PGIAnalytics?.track("generate_lead",{lead_type:"ambassador_external"});
+    }catch(_error){
+      status.textContent="La demande n’a pas pu être envoyée. Réessayez dans quelques instants.";
+    }finally{
+      form.dataset.busy="0";if(button)button.disabled=false;
+    }
+  });
+}
 function boot(){
   bindReferralAvailability();
   bindReferralLanding();
+  bindAmbassadorRequest();
   wrapCustomerApi();
   bindContentMeasurement();
   bindSectionMeasurement();
