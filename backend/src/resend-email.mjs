@@ -266,7 +266,51 @@ export function buildTransactionalMessage(config,templateKey,data={}){
   const actionUrl=safeActionUrl(config,data.action_url);
   const invoiceUrl=safeExternalHttpsUrl(data.invoice_url,["stripe.com"]);
   const invoicePdfUrl=safeExternalHttpsUrl(data.invoice_pdf_url,["stripe.com"]);
+  const amountText=(minor,currency="EUR")=>{try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:String(currency||"EUR")}).format((Number(minor)||0)/100)}catch{return ((Number(minor)||0)/100).toFixed(2)+" "+String(currency||"EUR")}};
   const cases={
+    ambassador_welcome:{
+      subject:"Bienvenue dans le programme Ambassadeur Audiotel Premium Pro",
+      title:"Votre accès Ambassadeur est prêt",
+      lead:greeting,
+      paragraphs:["Votre compte Ambassadeur est actif.",safeDetail("Votre code personnel",data.code),"Votre récompense est calculée automatiquement lorsqu’un client recommandé atteint trois mensualités réellement payées. Le barème est fixe et identique pour tous."].filter(Boolean),
+      cta:actionUrl?{label:"Ouvrir mon espace Ambassadeur",url:actionUrl}:null,
+      foot:"Gardez ce lien d’accès personnel. Vous pouvez en demander un nouveau à tout moment depuis la page Ambassadeur."
+    },
+    ambassador_access_link:{
+      subject:"Votre lien d’accès Ambassadeur Audiotel Premium Pro",
+      title:"Accéder à votre espace Ambassadeur",
+      lead:greeting,
+      paragraphs:["Un nouveau lien sécurisé a été demandé pour votre espace Ambassadeur.","Ce lien remplace le précédent sur les appareils qui ne sont plus connectés."],
+      cta:actionUrl?{label:"Ouvrir mon espace Ambassadeur",url:actionUrl}:null
+    },
+    ambassador_reward_earned:{
+      subject:"Nouvelle récompense Ambassadeur acquise",
+      title:"Votre recommandation est qualifiée",
+      lead:greeting,
+      paragraphs:["Un client recommandé vient d’atteindre les conditions de qualification.",safeDetail("Rang de qualification",data.sequence_number),safeDetail("Récompense client",amountText(data.base_reward_minor,data.currency)),Number(data.bonus_reward_minor)>0?safeDetail("Bonus de palier",amountText(data.bonus_reward_minor,data.currency)):null,safeDetail("Total ajouté",amountText(data.total_reward_minor,data.currency))].filter(Boolean),
+      cta:actionUrl?{label:"Consulter le programme Ambassadeur",url:actionUrl}:null
+    },
+    ambassador_nudge:{
+      subject:"Votre lien Ambassadeur est prêt à être partagé",
+      title:"Passez à votre première recommandation",
+      lead:greeting,
+      paragraphs:["Votre accès Ambassadeur est actif, mais aucune recommandation n’est encore enregistrée.","Partagez votre lien auprès de personnes réellement intéressées par une solution Audiotel. La qualité des recommandations compte davantage que le volume de clics."],
+      cta:actionUrl?{label:"Ouvrir le programme Ambassadeur",url:actionUrl}:null
+    },
+    ambassador_weekly_summary:{
+      subject:"Votre point hebdomadaire Ambassadeur",
+      title:"Votre progression de la semaine",
+      lead:greeting,
+      paragraphs:[safeDetail("Recommandations enregistrées",data.referrals),safeDetail("Clients qualifiés",data.qualified),safeDetail("Solde acquis",amountText(data.earned_minor,data.currency)),"Continuez à privilégier des recommandations ciblées et transparentes."].filter(Boolean),
+      cta:actionUrl?{label:"Consulter mon programme",url:actionUrl}:null
+    },
+    ambassador_monthly_summary:{
+      subject:"Votre bilan mensuel Ambassadeur",
+      title:"Votre bilan Ambassadeur",
+      lead:greeting,
+      paragraphs:[safeDetail("Recommandations enregistrées",data.referrals),safeDetail("Clients qualifiés",data.qualified),safeDetail("Solde acquis",amountText(data.earned_minor,data.currency)),safeDetail("Déjà versé",amountText(data.paid_minor,data.currency))].filter(Boolean),
+      cta:actionUrl?{label:"Consulter mon programme",url:actionUrl}:null
+    },
     email_verification:{
       subject:"Votre code de vérification Audiotel Premium Pro",
       title:"Vérification de votre adresse email",
