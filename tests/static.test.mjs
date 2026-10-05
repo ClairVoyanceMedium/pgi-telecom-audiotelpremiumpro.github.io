@@ -7,6 +7,7 @@ const index=read("index.html");
 const clientPortal=read("client.html");
 const clientPortalApi=read("assets/client-portal-api.js");
 const clientReferral=read("assets/client-referral.js");
+const clientReferralPayout=read("assets/client-referral-payout.js");
 const referralAdmin=read("assets/referral-admin.js");
 const clientPortalJs=read("assets/client-portal.js");
 const clientBilling=read("assets/client-billing.js");
@@ -63,7 +64,8 @@ test("le parrainage client reste serveur, optionnel et conditionné au paiement 
   assert.match(clientPortalApi,/\/customer\/referral/);
   assert.match(clientPortalApi,/activateReferralPayouts/);
   assert.match(clientReferral,/abonnement actif et payé/i);
-  assert.match(clientReferral,/Configurer mes versements automatiques/);
+  assert.match(clientReferralPayout,/Configurer mes versements automatiques/);
+  assert.match(read("client.html"),/client-referral-payout\.js/);
   assert.match(clientReferral,/pgi:portal-loaded/);
   assert.match(platformAdmin,/referral-admin\.js/);
   assert.match(referralAdmin,/updateReferralProgram/);
