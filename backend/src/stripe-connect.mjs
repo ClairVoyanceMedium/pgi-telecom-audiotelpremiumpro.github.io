@@ -17,7 +17,7 @@ function baseUrl(config){
 }
 async function jsonRequest(config,path,{method="GET",body,idempotencyKey,connectedAccount,preview=false}={}){
   const headers={Authorization:"Bearer "+requireKey(config),Accept:"application/json"};
-  if(preview)headers["Stripe-Version"]="2026-08-26.preview";
+  if(preview)headers["Stripe-Version"]="2026-09-30.endive";
   else if(config?.stripeApiVersion)headers["Stripe-Version"]=String(config.stripeApiVersion);
   if(body!==undefined)headers["Content-Type"]="application/json";
   if(idempotencyKey)headers["Idempotency-Key"]=String(idempotencyKey).slice(0,255);
