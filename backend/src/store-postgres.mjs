@@ -155,6 +155,11 @@ export class PostgresStore{
         " ADD COLUMN IF NOT EXISTS payout_last_error text"
       );
       await this.sql.unsafe(
+        "UPDATE customer_referral_rewards SET payout_state=CASE"+
+        " WHEN status='paid' THEN 'manual_paid' WHEN status='cancelled' THEN 'cancelled' ELSE payout_state END"+
+        " WHERE payout_state='pending' AND status IN ('paid','cancelled')"
+      );
+      await this.sql.unsafe(
         "CREATE UNIQUE INDEX IF NOT EXISTS customer_referral_rewards_transfer_unique"+
         " ON customer_referral_rewards(payout_provider,payout_transfer_reference) WHERE payout_transfer_reference IS NOT NULL"
       );
