@@ -2132,10 +2132,10 @@ export function createBackend(options={}){
           route:String(res.pgiRoute||"error"),
           code:String(error?.code||"INTERNAL_ERROR").slice(0,120),
           name:String(error?.name||"Error").slice(0,80),
-          table:error?.table?String(error.table).slice(0,120):null,
-          column:error?.column?String(error.column).slice(0,120):null,
-          constraint:error?.constraint?String(error.constraint).slice(0,160):null,
-          schema:error?.schema?String(error.schema).slice(0,120):null,
+          table:error?.table_name||error?.table?String(error.table_name||error.table).slice(0,120):null,
+          column:error?.column_name||error?.column?String(error.column_name||error.column).slice(0,120):null,
+          constraint:error?.constraint_name||error?.constraint?String(error.constraint_name||error.constraint).slice(0,160):null,
+          schema:error?.schema_name||error?.schema?String(error.schema_name||error.schema).slice(0,120):null,
           routine:error?.routine?String(error.routine).slice(0,120):null
         })+"\n");
       }
