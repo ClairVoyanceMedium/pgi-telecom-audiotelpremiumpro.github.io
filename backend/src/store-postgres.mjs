@@ -2503,7 +2503,7 @@ export class PostgresStore{
           const paidRow=(await tx.unsafe(
             "SELECT count(DISTINCT COALESCE(NULLIF(normalized_details->>'provider_invoice_reference',''),provider_event_id))::int AS paid_count"+
             " FROM subscription_billing_events WHERE tenant_id=$1 AND event_type='invoice.paid'"+
-            " AND COALESCE(NULLIF(normalized_details->>'provider_invoice_amount_paid_minor','')::bigint,0)>0",
+            " AND (COALESCE(normalized_details->>'provider_invoice_amount_paid_minor','')='' OR COALESCE(NULLIF(normalized_details->>'provider_invoice_amount_paid_minor','')::bigint,0)>0)",
             [tenant.id]
           ))[0]||{};
           const paidCount=Math.max(0,Number(paidRow.paid_count||0));
