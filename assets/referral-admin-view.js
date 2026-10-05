@@ -42,13 +42,12 @@ function globalRewards(data){
 }
 function ambassadorApplicationsHtml(data){
   const rows=Array.isArray(data?.ambassador_profiles)?data.ambassador_profiles:[],pending=rows.filter(x=>x.status==="pending");
-  const card=x=>'<article class="pa-referral-item"><div class="pa-referral-top"><div><strong>'+esc(x.display_name||"Ambassadeur")+'</strong><small>'+esc(x.billing_email||"email N/D")+' · '+esc(x.country_code||"N/D")+'</small></div><span class="pa-badge '+badgeClass(x.status)+'">'+esc(statusLabel(x.status))+'</span></div>'+
-    '<div class="pa-mini-grid"><div><span>Demande</span><strong>'+esc(date(x.requested_at))+'</strong></div><div><span>Téléphone</span><strong>'+esc(x.contact_phone||"N/D")+'</strong></div><div><span>Filleuls</span><strong>'+Number(x.referrals||0)+'</strong></div><div><span>Qualifiés</span><strong>'+Number(x.rewarded||0)+'</strong></div></div>'+
-    (x.application_note?'<p class="pa-note">'+esc(x.application_note)+'</p>':"")+
-    '<div class="pa-actions">'+(x.status!=="active"?'<button class="pa-btn" type="button" data-ambassador-status="active" data-ambassador-id="'+esc(x.public_id)+'">Valider et envoyer l’accès</button>':"")+
-    (x.status!=="suspended"?'<button class="pa-btn" type="button" data-ambassador-status="suspended" data-ambassador-id="'+esc(x.public_id)+'">Suspendre</button>':"")+
-    (x.status==="pending"?'<button class="pa-btn" type="button" data-ambassador-status="rejected" data-ambassador-id="'+esc(x.public_id)+'">Refuser</button>':"")+'</div></article>';
-  return '<div class="pa-list"><div class="pa-head"><div><p>CANDIDATURES AMBASSADEURS</p><h2>Non-clients et accès dédiés</h2></div><span class="pa-badge '+(pending.length?"warn":"ok")+'">'+pending.length+' en attente</span></div><p class="pa-note">La validation active uniquement le profil ambassadeur. Elle ne crée aucun abonnement Audiotel Premium Pro. Une invitation sécurisée vers l’espace ambassadeur est envoyée automatiquement lorsqu’un accès doit être créé.</p><div class="pa-referrals">'+(rows.length?rows.map(card).join(""):'<p class="pa-note">Aucune candidature ambassadeur.</p>')+'</div></div>';
+  const card=x=>'<article class="pa-referral-item"><div class="pa-referral-top"><div><strong>'+esc(x.display_name||"Ambassadeur")+'</strong><small>'+esc(x.billing_email||"N/D")+' · '+esc(date(x.requested_at))+'</small></div><span class="pa-badge '+badgeClass(x.status)+'">'+esc(statusLabel(x.status))+'</span></div>'+
+    (x.application_note?'<p class="pa-note">'+esc(x.application_note)+'</p>':"")+'<div class="pa-actions">'+
+    (x.status!=="active"?'<button class="pa-btn" data-ambassador-status="active" data-ambassador-id="'+esc(x.public_id)+'">Valider l’accès</button>':"")+
+    (x.status!=="suspended"?'<button class="pa-btn" data-ambassador-status="suspended" data-ambassador-id="'+esc(x.public_id)+'">Suspendre</button>':"")+
+    (x.status==="pending"?'<button class="pa-btn" data-ambassador-status="rejected" data-ambassador-id="'+esc(x.public_id)+'">Refuser</button>':"")+'</div></article>';
+  return '<div class="pa-list"><div class="pa-head"><div><p>CANDIDATURES</p><h2>Ambassadeurs non-clients</h2></div><span class="pa-badge '+(pending.length?"warn":"ok")+'">'+pending.length+' en attente</span></div><p class="pa-note">Validation = profil ambassadeur actif, sans abonnement Audiotel.</p><div class="pa-referrals">'+(rows.length?rows.map(card).join(""):'<p class="pa-note">Aucune candidature.</p>')+'</div></div>';
 }
 export function render(root,data){
   const summary=data?.summary||{},currency=data?.currency||"EUR",ambassadors=Array.isArray(data?.ambassadors)?data.ambassadors:[];
