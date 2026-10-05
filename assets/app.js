@@ -8,12 +8,8 @@ var carriers=["Orange","SFR","Bouygues","Free"];
 var number089="0890 80 24 24";
 var callToolsPromise=null;
 function callTools(){return callToolsPromise||(callToolsPromise=import("./call-tools.js"));}
-var accountingPromise=null;
-function renderAccounting(){
-var host=$("accounting-cockpit-root");if(!host)return;
-if(!accountingPromise)accountingPromise=import("./accounting-cockpit.js");
-accountingPromise.then(function(m){return m.mountAccounting(host);}).catch(function(e){host.innerHTML='<p class="muted">Comptabilité indisponible : '+esc(e&&e.message||"erreur")+'.</p>';});
-}
+var accountingPromise;
+function renderAccounting(){var h=$("accounting-cockpit-root");if(!h)return;(accountingPromise||(accountingPromise=import("./accounting-cockpit.js"))).then(function(m){m.mountAccounting(h);}).catch(function(){h.textContent="Comptabilité indisponible.";});}
 var cockpitProPromise=null,cockpitProPayload=null;
 function renderCockpitPro(payload){cockpitProPayload=payload;if(window.PGICockpitPro)return window.PGICockpitPro.render(payload);if(!cockpitProPromise)cockpitProPromise=import("./cockpit-pro.js").then(function(){if(window.PGICockpitPro)window.PGICockpitPro.render(cockpitProPayload);}).catch(function(){});}
 function $(id){return document.getElementById(id);}
