@@ -54,6 +54,9 @@ const referralMigration=fs.readFileSync("database/migrations/065_customer_referr
 const referralRepairMigration=fs.readFileSync("database/migrations/066_repair_customer_referral_program.sql","utf8");
 const clientReferral=fs.readFileSync("assets/client-referral.js","utf8");
 const referralAdmin=fs.readFileSync("assets/referral-admin.js","utf8");
+const ambassadorAccountingMigration=fs.readFileSync("database/migrations/067_ambassador_accounting.sql","utf8");
+const accountingCockpit=fs.readFileSync("assets/accounting-cockpit.js","utf8");
+const accountingCockpitCss=fs.readFileSync("assets/accounting-cockpit.css","utf8");
 const vercelConfigData=JSON.parse(vercelConfig);
 const businessLiveCron=Array.isArray(vercelConfigData.crons)&&vercelConfigData.crons.some(item=>item&&item.path==="/api/v1/internal/business-live/reset-schedules/run"&&item.schedule==="* * * * *");
 const qualityRollupMigration=fs.readFileSync("database/migrations/017_quality_rollups.sql","utf8");
@@ -132,11 +135,22 @@ const wholesaleDoc=fs.readFileSync("docs/WHOLESALE-SVA.md","utf8");
 
 if(!/platform_feature_flags/.test(referralMigration)||!/customer_referral_rewards/.test(referralMigration))failures.push("referral schema must retain server feature flags and reward ledger");
 if(!/CREATE TABLE IF NOT EXISTS platform_feature_flags/i.test(referralRepairMigration)||!/CREATE TABLE IF NOT EXISTS customer_referral_rewards/i.test(referralRepairMigration)||!/ON CONFLICT\(feature_key\) DO NOTHING/i.test(referralRepairMigration))failures.push("referral schema repair must stay idempotent and fail-closed");
-if(!/42P01/.test(postgresStore)||!/enabled:false,reward_minor:0/.test(postgresStore))failures.push("public referral state must fail closed when referral schema is unavailable");
-if(!/\/api\/v1\/public\/referral-program/.test(backendServer)||!/\/api\/v1\/customer\/referral/.test(backendServer)||!/\/api\/v1\/platform\/referral-program/.test(backendServer))failures.push("referral public customer and admin APIs are required");
-if(!/paid_active_subscription/.test(postgresStore)||!/REFERRAL_SELF_CLAIM/.test(postgresStore)||!/REFERRAL_ALREADY_CLAIMED/.test(postgresStore))failures.push("referral rewards must remain payment-qualified and anti-abuse");
-if(!/pgi:portal-loaded/.test(clientReferral)||!/abonnement actif et payé/i.test(clientReferral))failures.push("customer referral UI must retain paid activation qualification");
-if(!/referral-admin\.js/.test(platformAdminTools)||!/updateReferralProgram/.test(referralAdmin)||!/settleReferralReward/.test(referralAdmin))failures.push("referral administration must remain lazy and auditable");
+if(!/ambassador-2026-10-05-v1/.test(ambassadorAccountingMigration)||!/"qualification_payments_required":3/.test(ambassadorAccountingMigration)||!/"reward_minor":1000/.test(ambassadorAccountingMigration)||!/"reward_minor":1200/.test(ambassadorAccountingMigration)||!/"reward_minor":1500/.test(ambassadorAccountingMigration)||!/"reward_minor":2000/.test(ambassadorAccountingMigration))failures.push("Ambassador migration must lock the four reward tiers and three-payment qualification");
+if(!/"bonus_minor":500/.test(ambassadorAccountingMigration)||!/"bonus_minor":2000/.test(ambassadorAccountingMigration)||!/"bonus_minor":5000/.test(ambassadorAccountingMigration))failures.push("Ambassador milestone bonuses must remain fixed");
+if(!/REFERRAL_PAID_MONTHS_REQUIRED=3/.test(postgresStore)||!/REFERRAL_TIERS/.test(postgresStore)||!/REFERRAL_MILESTONE_BONUSES/.test(postgresStore)||!/event_type='invoice\.paid'/.test(postgresStore)||!/count\(DISTINCT COALESCE/.test(postgresStore)||!/referral-rank:/.test(postgresStore))failures.push("Referral qualification must be server-side, payment-backed and rank-serialized");
+if(!/42P01/.test(postgresStore)||!/enabled:false,\.\.\.fixed/.test(postgresStore))failures.push("Public referral state must fail closed without changing the fixed schedule");
+if(!/REFERRAL_SELF_CLAIM/.test(postgresStore)||!/REFERRAL_ALREADY_CLAIMED/.test(postgresStore)||!/ON CONFLICT\(referral_id\) DO NOTHING/.test(postgresStore))failures.push("Referral rewards must retain anti-abuse and duplicate protection");
+if(!/\/api\/v1\/public\/referral-program/.test(backendServer)||!/\/api\/v1\/customer\/referral/.test(backendServer)||!/\/api\/v1\/platform\/referral-program/.test(backendServer))failures.push("Referral public customer and admin APIs are required");
+if(!/pgi:portal-loaded/.test(clientReferral)||!/3 mensualités réellement encaissées/i.test(clientReferral)||!/20 € à partir du 25e/i.test(clientReferral))failures.push("Customer Ambassador UI must show the fixed qualification and top tier");
+if(/pa-referral-reward/.test(referralAdmin)||!/barème est verrouillé/i.test(referralAdmin)||!/3 mensualités réellement encaissées/i.test(referralAdmin))failures.push("Referral administration must not expose a mutable reward amount");
+if(!/referral-admin\.js/.test(platformAdminTools)||!/updateReferralProgram/.test(referralAdmin)||!/settleReferralReward/.test(referralAdmin))failures.push("Referral administration must remain lazy and auditable");
+if(!/\/api\/v1\/platform\/accounting/.test(backendServer)||!/async platformAccounting\(params=\{\}\)/.test(postgresStore)||!/audiotel-platform-accounting\/1/.test(postgresStore))failures.push("Platform accounting API must exist and use the authoritative store");
+if(!/statutory_ledger:false/.test(postgresStore)||!/tax_conversion_invented:false/.test(postgresStore)||!/mixed_tax_bases:true/.test(postgresStore))failures.push("Accounting must never invent statutory ledger or tax conversions");
+if(!/Argent réellement suivi, sans mélanger HT et TTC/.test(accountingCockpit)||!/Aucune conversion HT\/TTC n’est inventée/.test(accountingCockpit)||!/Exporter CSV/.test(accountingCockpit))failures.push("Accounting cockpit must expose management-accounting safeguards and export");
+if(!/admin-bottom-dock/.test(indexSource)||!/data-view="accounting"/.test(indexSource)||!/accounting-cockpit\.css/.test(indexSource)||!/accounting-cockpit\.js/.test(appSource))failures.push("Cockpit must expose a dedicated Accounting view and bottom management bar");
+if(!/\/platform\/accounting/.test(apiClient)||!/accounting-cockpit\.js/.test(buildStatic))failures.push("Accounting API and lazy module must be shipped in production");
+if(!/referral\.claimed/.test(emailDispatcher)||!/referral\.progress/.test(emailDispatcher)||!/referral\.reward\.earned/.test(emailDispatcher)||!/referral\.reward\.paid/.test(emailDispatcher)||!/referral_claimed/.test(resendEmailSource)||!/referral_progress/.test(resendEmailSource)||!/referral_reward_earned/.test(resendEmailSource)||!/referral_reward_paid/.test(resendEmailSource))failures.push("Ambassador lifecycle emails must remain event-driven and distinct");
+if(!/admin-bottom-dock/.test(accountingCockpitCss))failures.push("Accounting management dock styling must be shipped");
 
 const requiredCompose=[
   "POSTGRES_PASSWORD",

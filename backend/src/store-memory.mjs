@@ -1282,6 +1282,11 @@ export class MemoryStore{
 
   async customerProfitability(params={}){void params;return {schema_version:"audiotel-customer-profitability/1",period:"365d",since:null,currency:"EUR",currencies:["EUR"],accounting_basis:"tenant_revenue_distributions.platform_fee_ht",cash_basis:"carrier paid amount / confirmed amount",excludes:["general_platform_overhead","unconnected_subscription_cash"],tenant:null,summary:{upstream_payout_ht:0,margin_booked_ht:0,margin_collected_ht:0,client_net_payout_ht:0,unallocated_amount_ht:0,customers_with_distribution:0,top5_margin_collected_ht:0,top5_concentration_percent:0},ranking:[],trend:[]};}
 
+  async platformAccounting(params={}){
+    const from=params.from||new Date(Date.now()-30*86400000).toISOString(),to=params.to||new Date().toISOString();
+    return {schema_version:"audiotel-platform-accounting/1",generated_at:new Date().toISOString(),range:{from,to},currency:"EUR",market:params.market||null,basis:{subscriptions:"demo",portability_priority:"demo",card_fees:"demo",sva_cash:"demo",tenant_payouts:"demo",referrals:"demo"},integrity:{statutory_ledger:false,tax_conversion_invented:false,mixed_tax_bases:true,note:"Mode démonstration sans données comptables réelles."},summary:{subscription_cash_ttc_minor:0,subscription_count:0,portability_priority_cash_ttc_minor:0,portability_priority_count:0,card_fee_cash_minor:0,card_payment_count:0,sva_upstream_collected_ht_minor:0,sva_margin_collected_ht_minor:0,tenant_payouts_paid_ht_minor:0,referral_rewards_paid_minor:0,referral_rewards_earned_minor:0,referral_rewards_unpaid_minor:0,referral_rewards_unpaid_count:0,sva_upstream_booked_ht_minor:0,sva_margin_booked_ht_minor:0,sva_client_net_booked_ht_minor:0,sva_unallocated_ht_minor:0},monthly_history:[]};
+  }
+
   async customerAdminSummary(){
     return {tenants_total:0,tenants_active:0,tenants_new_24h:0,tenants_new_7d:0,latest_tenant_created_at:null,kyc_pending:0,subscription_unpaid_alerts:0,subscription_access_blocked:0,assignments_active:0,service_incidents_open:0,service_incidents_critical:0,service_sla_attention:0,routing_attention:0,portability_attention:0};
   }

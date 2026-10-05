@@ -266,6 +266,11 @@ export function buildTransactionalMessage(config,templateKey,data={}){
   const actionUrl=safeActionUrl(config,data.action_url);
   const invoiceUrl=safeExternalHttpsUrl(data.invoice_url,["stripe.com"]);
   const invoicePdfUrl=safeExternalHttpsUrl(data.invoice_pdf_url,["stripe.com"]);
+  const referralCurrency=String(data.currency||"EUR").toUpperCase();
+  const referralAmount=formatMinorAmount(data.amount_minor,referralCurrency,data.locale);
+  const referralBase=formatMinorAmount(data.base_reward_minor,referralCurrency,data.locale);
+  const referralBonus=formatMinorAmount(data.milestone_bonus_minor,referralCurrency,data.locale);
+  const referralNext=formatMinorAmount(data.next_tier_reward_minor,referralCurrency,data.locale);
   const cases={
     email_verification:{
       subject:"Votre code de vérification Audiotel Premium Pro",
@@ -462,6 +467,57 @@ export function buildTransactionalMessage(config,templateKey,data={}){
       lead:greeting,
       paragraphs:["Un reversement issu du trafic SVA a franchi les contrôles nécessaires et est maintenant indiqué comme disponible dans votre espace client.","Le statut affiché dans votre espace reste la référence pour le suivi du règlement."],
       cta:{label:"Consulter mes reversements",url:portalUrl}
+    },
+    referral_claimed:{
+      subject:"Votre lien Ambassadeur Audiotel Premium Pro a été utilisé",
+      title:"Un nouveau filleul est enregistré",
+      lead:greeting,
+      paragraphs:[
+        "Une nouvelle demande a été rattachée à votre lien Ambassadeur.",
+        "La récompense n’est pas encore acquise. Le filleul doit atteindre "+Number(data.qualification_payments_required||3)+" mensualités d’abonnement réellement encaissées.",
+        "Vous pouvez suivre sa progression depuis votre espace client."
+      ],
+      cta:{label:"Suivre mes filleuls",url:portalUrl},
+      foot:"Aucune récompense n’est comptabilisée avant la qualification complète du filleul."
+    },
+    referral_progress:{
+      subject:"Progression de votre filleul Ambassadeur Audiotel Premium Pro",
+      title:"Votre filleul progresse vers la qualification",
+      lead:greeting,
+      paragraphs:[
+        "Une nouvelle mensualité d’abonnement de votre filleul a été réellement encaissée.",
+        "Progression actuelle : "+Number(data.qualified_payments||0)+" sur "+Number(data.qualification_payments_required||3)+" mensualités requises.",
+        "La récompense deviendra acquise uniquement lorsque les trois mensualités requises auront été encaissées."
+      ],
+      cta:{label:"Suivre mes filleuls",url:portalUrl},
+      foot:"Cet email correspond à une progression réelle de votre parrainage. Il ne confirme pas encore un versement de récompense."
+    },
+    referral_reward_earned:{
+      subject:"Votre récompense Ambassadeur Audiotel Premium Pro est acquise",
+      title:"Récompense Ambassadeur acquise",
+      lead:greeting,
+      paragraphs:[
+        "Votre filleul a atteint les trois mensualités réellement encaissées requises.",
+        safeDetail("Rang du filleul qualifié",data.rank),
+        safeDetail("Récompense de base",referralBase),
+        Number(data.milestone_bonus_minor||0)>0?safeDetail("Bonus de palier",referralBonus):"",
+        safeDetail("Récompense totale acquise",referralAmount),
+        data.next_tier_min?safeDetail("Prochain palier de base","à partir du "+data.next_tier_min+"e filleul : "+referralNext):"Vous avez atteint le palier de base maximal à 20 € par nouveau filleul qualifié."
+      ].filter(Boolean),
+      cta:{label:"Voir mon programme Ambassadeur",url:portalUrl},
+      foot:"Le statut de versement affiché dans votre espace client reste la référence. Une récompense acquise n’est pas présentée comme payée avant l’enregistrement du versement réel."
+    },
+    referral_reward_paid:{
+      subject:"Versement Ambassadeur Audiotel Premium Pro enregistré",
+      title:"Versement de récompense enregistré",
+      lead:greeting,
+      paragraphs:[
+        "Le versement de votre récompense Ambassadeur a été enregistré dans votre suivi.",
+        safeDetail("Montant",referralAmount),
+        safeDetail("Référence de paiement",data.paid_reference)
+      ].filter(Boolean),
+      cta:{label:"Consulter mes récompenses",url:portalUrl},
+      foot:"Cette confirmation correspond à l’enregistrement d’un versement avec une référence de paiement."
     },
     portability_received:{
       subject:"Votre demande de portabilité a été reçue",
@@ -776,6 +832,11 @@ function localizeTransactionalModel(key,model,locale,name){
     out.secondaryCta={...out.secondaryCta,label:labels[lang]||out.secondaryCta.label};
   }
   return out;
+}
+function formatMinorAmount(value,currency="EUR",locale="fr-FR"){
+  const minor=Number(value||0),safeCurrency=/^[A-Z]{3}$/.test(String(currency||"").toUpperCase())?String(currency).toUpperCase():"EUR";
+  try{return new Intl.NumberFormat(String(locale||"fr-FR"),{style:"currency",currency:safeCurrency}).format(Number.isFinite(minor)?minor/100:0);}
+  catch{return ((Number.isFinite(minor)?minor:0)/100).toFixed(2)+" "+safeCurrency;}
 }
 function safeDetail(label,value){
   const v=cleanText(value||"",200);

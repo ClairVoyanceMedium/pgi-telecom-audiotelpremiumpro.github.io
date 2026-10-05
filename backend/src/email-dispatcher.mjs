@@ -168,6 +168,43 @@ async function messagesForEvent(store,config,event){
     if(p.status==="suspended")return [msg("customer",customerEmail,customerName,"subscription_suspended","billing",event,base)];
     return [];
   }
+  if(event.event_type==="referral.claimed"){
+    if(!customerEmail)return [];
+    return [msg("customer",customerEmail,customerName,"referral_claimed","billing",event,{...base,qualification_payments_required:Number(p.qualification_payments_required||3)})];
+  }
+  if(event.event_type==="referral.progress"){
+    if(!customerEmail)return [];
+    return [msg("customer",customerEmail,customerName,"referral_progress","billing",event,{
+      ...base,
+      qualified_payments:Number(p.qualified_payments||0),
+      qualification_payments_required:Number(p.qualification_payments_required||3)
+    })];
+  }
+  if(event.event_type==="referral.reward.earned"){
+    if(!customerEmail)return [];
+    return [msg("customer",customerEmail,customerName,"referral_reward_earned","billing",event,{
+      ...base,
+      amount_minor:Number(p.amount_minor||0),
+      currency:String(p.currency||"EUR"),
+      rank:Number(p.rank||0),
+      base_reward_minor:Number(p.base_reward_minor||0),
+      milestone_bonus_minor:Number(p.milestone_bonus_minor||0),
+      qualified_payments:Number(p.qualified_payments||3),
+      next_tier_min:p.next_tier_min==null?null:Number(p.next_tier_min),
+      next_tier_reward_minor:Number(p.next_tier_reward_minor||0)
+    })];
+  }
+  if(event.event_type==="referral.reward.paid"){
+    if(!customerEmail)return [];
+    const meta=jsonObject(p.metadata);
+    return [msg("customer",customerEmail,customerName,"referral_reward_paid","billing",event,{
+      ...base,
+      amount_minor:Number(p.amount_minor||0),
+      currency:String(p.currency||"EUR"),
+      paid_reference:String(p.paid_reference||""),
+      rank:Number(meta.rank||0)
+    })];
+  }
   if(event.event_type==="portability.requested"){
     return [
       customerEmail&&msg("customer",customerEmail,customerName,"portability_received","support",event,base),
