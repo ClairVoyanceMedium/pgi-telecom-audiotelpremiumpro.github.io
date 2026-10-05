@@ -107,7 +107,7 @@ test("consumer paid checkout stays fail-closed until B2C prerequisites are genui
   assert.match(postgres,/customer_type:tenant\.customer_type/);
   assert.match(server,/B2C_COMMERCIAL_NOT_READY/);
   assert.match(server,/b2c_commercial_ready/);
-  assert.match(billing,/Souscription après validation du dossier/);
+  assert.match(billing,/Dossier particulier en attente/);
   assert.match(withdrawal,/n’accepte une déclaration que lorsque son enregistrement durable/);
   assert.match(withdrawal,/souscription payante des comptes particuliers reste bloquée côté serveur/);
 });
