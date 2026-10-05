@@ -1569,6 +1569,12 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.digital_twin",200,await store.digitalTwinSimulation(body));
       }
 
+      if(method==="GET"&&pathname==="/api/v1/platform/accounting"){
+        requireRole(actor,["admin","finance","readonly"]);
+        const params=Object.fromEntries(url.searchParams.entries());
+        return done(res,metrics,started,"platform.accounting",200,await store.platformAccounting(params));
+      }
+
       if(method==="GET"&&pathname==="/api/v1/platform/customer-profitability"){
         requireRole(actor,["admin","finance","readonly"]);
         const params=Object.fromEntries(url.searchParams.entries());
