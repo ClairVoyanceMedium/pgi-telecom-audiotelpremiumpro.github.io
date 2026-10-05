@@ -2654,8 +2654,8 @@ export class PostgresStore{
       ))[0];
       if(existing){
         await tx.unsafe(
-          "UPDATE tenant_kyc_profiles SET metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||$2::jsonb,updated_at=now() WHERE tenant_id=$1",
-          [existing.id,JSON.stringify({source:"public_opening_form",account_type:accountType,first_name:firstName,last_name:lastName,phone:phone||null,service_intent:serviceIntent})]
+          "UPDATE tenant_kyc_profiles SET metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||jsonb_build_object('source','public_opening_form','account_type',$2::text,'first_name',$3::text,'last_name',$4::text,'phone',$5::text,'service_intent',$6::text),updated_at=now() WHERE tenant_id=$1",
+          [existing.id,accountType,firstName,lastName,phone||null,serviceIntent]
         );
         return {...existing,created:false};
       }
@@ -2672,8 +2672,8 @@ export class PostgresStore{
         [slugBase,tenantName,accountType==="business"?(companyName||tenantName):tenantName,country,email,locale,currency,timezone]
       ))[0];
       await tx.unsafe(
-        "INSERT INTO tenant_kyc_profiles(tenant_id,entity_type,registration_country,registration_number,status,metadata) VALUES($1,$2,$3,$4,'pending',$5::jsonb) ON CONFLICT(tenant_id) DO NOTHING",
-        [tenant.id,accountType==="individual"?"individual":"company",country,registrationNumber||null,JSON.stringify({source:"public_opening_form",account_type:accountType,first_name:firstName,last_name:lastName,phone:phone||null,service_intent:serviceIntent,registration_optional:true})]
+        "INSERT INTO tenant_kyc_profiles(tenant_id,entity_type,registration_country,registration_number,status,metadata) VALUES($1,$2,$3,$4,'pending',jsonb_build_object('source','public_opening_form','account_type',$5::text,'first_name',$6::text,'last_name',$7::text,'phone',$8::text,'service_intent',$9::text,'registration_optional',true)) ON CONFLICT(tenant_id) DO NOTHING",
+        [tenant.id,accountType==="individual"?"individual":"company",country,registrationNumber||null,accountType,firstName,lastName,phone||null,serviceIntent]
       );
       await tx.unsafe(
         "INSERT INTO tenant_market_profiles(tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region)"+
@@ -3722,8 +3722,8 @@ export class PostgresStore{
       ))[0];
       await tx.unsafe(
         "INSERT INTO tenant_kyc_profiles(tenant_id,entity_type,registration_country,registration_number,status,metadata)"+
-        " VALUES($1,$2,$3,$4,'pending',$5::jsonb) ON CONFLICT(tenant_id) DO NOTHING",
-        [tenant.id,accountType==="individual"?"individual":"company",country,registrationNumber||null,JSON.stringify({source:acquisitionSource,registration_optional:true,account_type:accountType,service_intent:serviceIntent||null})]
+        " VALUES($1,$2,$3,$4,'pending',jsonb_build_object('source',$5::text,'registration_optional',true,'account_type',$6::text,'service_intent',$7::text)) ON CONFLICT(tenant_id) DO NOTHING",
+        [tenant.id,accountType==="individual"?"individual":"company",country,registrationNumber||null,acquisitionSource,accountType,serviceIntent||null]
       );
       await tx.unsafe(
         "INSERT INTO tenant_market_profiles(tenant_id,market_id,status,preferred_locale,billing_currency,timezone,compliance_status,data_residency_region)"+
