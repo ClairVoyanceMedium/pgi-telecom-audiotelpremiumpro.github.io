@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import {createHash} from "node:crypto";
 
 const migration=fs.readFileSync("database/migrations/004_international_market_foundation.sql","utf8");
 const schema=fs.readFileSync("database/schema.sql","utf8");
@@ -59,9 +60,14 @@ test("le cockpit ne mélange pas les reversements multi-devises",()=>{
 
 test("une base neuve pré-enregistre uniquement des migrations checksum-vérifiées",()=>{
   assert.ok(schema.includes("CREATE TABLE schema_bootstrap_migrations"));
-  assert.ok(schema.includes("004_international_market_foundation"));
   assert.ok(migrator.includes("Bootstrap migration checksum mismatch"));
   assert.ok(migrator.includes("schema_bootstrap_migrations"));
+  const manifest=new Map([...schema.matchAll(/\\('([^']+)','([0-9a-f]{64})'\\)/g)].map(match=>[match[1],match[2]]));
+  for(const version of ["001_baseline","002_wholesale_multitenant_foundation","003_wholesale_compliance_foundation","004_international_market_foundation","005_hyperscale_foundation"]){
+    const content=fs.readFileSync("database/migrations/"+version+".sql","utf8");
+    const checksum=createHash("sha256").update(content).digest("hex");
+    assert.equal(manifest.get(version),checksum,version+" bootstrap checksum");
+  }
 });
 
 test("le cockpit opérationnel peut être filtré par marché",()=>{
