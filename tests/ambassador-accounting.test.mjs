@@ -24,6 +24,8 @@ test("Ambassador rewards are fixed server side and qualify after three distinct 
   assert.match(store,/rank:10,bonus_minor:5000/);
   assert.match(store,/count\(DISTINCT COALESCE\(NULLIF\(normalized_details->>'provider_invoice_reference',''\),provider_event_id\)\)/);
   assert.match(store,/event_type='invoice\.paid'/);
+  assert.match(store,/event_time>=\$2::timestamptz/);
+  assert.match(store,/referral\.progress/);
   assert.match(store,/referral-rank:/);
   assert.match(store,/ON CONFLICT\(referral_id\) DO NOTHING/);
 });
@@ -51,8 +53,8 @@ test("Accounting stays management-only and separates known tax bases",()=>{
 });
 
 test("Ambassador notifications distinguish claim, earned reward and recorded payout",()=>{
-  for(const event of ["referral.claimed","referral.reward.earned","referral.reward.paid"])assert.match(dispatcher,new RegExp(event.replaceAll(".","\\.")));
-  for(const template of ["referral_claimed","referral_reward_earned","referral_reward_paid"])assert.match(resend,new RegExp(template));
+  for(const event of ["referral.claimed","referral.progress","referral.reward.earned","referral.reward.paid"])assert.match(dispatcher,new RegExp(event.replaceAll(".","\\.")));
+  for(const template of ["referral_claimed","referral_progress","referral_reward_earned","referral_reward_paid"])assert.match(resend,new RegExp(template));
   assert.match(resend,/Une récompense acquise n’est pas présentée comme payée/);
   assert.match(resend,/Référence de paiement/);
 });
