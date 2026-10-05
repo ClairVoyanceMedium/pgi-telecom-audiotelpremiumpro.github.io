@@ -4629,7 +4629,7 @@ export class PostgresStore{
 
   async referralProgramAdminState(){
     const program=await this.referralProgramPublicState();
-    const [counts,rewards]=await Promise.all([
+    const [counts,rewards,funnelRows]=await Promise.all([
       this.sql.unsafe(
         "SELECT status,count(*)::int AS count,COALESCE(sum(reward_minor),0)::bigint AS reward_minor FROM customer_referrals GROUP BY status ORDER BY status"
       ),
@@ -4639,9 +4639,13 @@ export class PostgresStore{
         " FROM customer_referral_rewards rw JOIN customer_referrals rf ON rf.id=rw.referral_id"+
         " JOIN tenants rt ON rt.id=rf.referrer_tenant_id JOIN tenants dt ON dt.id=rf.referred_tenant_id"+
         " ORDER BY CASE rw.status WHEN 'earned' THEN 0 WHEN 'paid' THEN 1 ELSE 2 END,rw.earned_at DESC,rw.id DESC LIMIT 50"
-      )
+      ),
+      this.sql.unsafe(
+        "SELECT count(*) FILTER(WHERE event_type='visit')::int AS visits,count(*) FILTER(WHERE event_type='prospect')::int AS prospects FROM customer_referral_events"
+      ).catch(error=>String(error?.code||"")==="42P01"?[{visits:0,prospects:0}]:Promise.reject(error))
     ]);
-    const summary={claimed:0,qualified:0,rewarded:0,rejected:0,reward_minor:0,earned_unpaid_minor:0,paid_minor:0};
+    const funnel=funnelRows[0]||{};
+    const summary={visits:Number(funnel.visits||0),prospects:Number(funnel.prospects||0),claimed:0,qualified:0,rewarded:0,rejected:0,reward_minor:0,earned_unpaid_minor:0,paid_minor:0};
     for(const row of counts){const key=String(row.status||"");if(Object.prototype.hasOwnProperty.call(summary,key))summary[key]=Number(row.count||0);summary.reward_minor+=Number(row.reward_minor||0);}
     for(const row of rewards){if(row.status==="earned")summary.earned_unpaid_minor+=Number(row.amount_minor||0);if(row.status==="paid")summary.paid_minor+=Number(row.amount_minor||0);}
     return {...program,summary,rewards:rewards.map(x=>({...x,amount_minor:Number(x.amount_minor||0)}))};
