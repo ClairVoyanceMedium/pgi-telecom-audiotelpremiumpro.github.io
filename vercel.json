@@ -19,6 +19,10 @@
     {
       "path": "/api/v1/internal/referral-payouts/run",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/v1/internal/accounting/refresh",
+      "schedule": "17 * * * *"
     }
   ]
 }
