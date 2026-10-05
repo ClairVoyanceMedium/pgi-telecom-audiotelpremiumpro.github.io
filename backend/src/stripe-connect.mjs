@@ -102,6 +102,13 @@ export async function createStripeConnectedAccount(config,input={}){
       merchant:{
         capabilities:{card_payments:{requested:true}},
         support:{url:baseUrl(config)}
+      },
+      recipient:{
+        capabilities:{
+          stripe_balance:{
+            stripe_transfers:{requested:true}
+          }
+        }
       }
     }
   };
@@ -112,7 +119,7 @@ export async function createStripeConnectedAccount(config,input={}){
 
 export async function retrieveStripeConnectedAccount(config,accountId){
   if(!/^acct_[A-Za-z0-9]+$/.test(String(accountId||"")))throw error(400,"INVALID_CONNECT_ACCOUNT");
-  const query="?include%5B%5D=configuration.merchant&include%5B%5D=requirements&include%5B%5D=defaults";
+  const query="?include%5B%5D=configuration.merchant&include%5B%5D=configuration.recipient&include%5B%5D=requirements&include%5B%5D=defaults";
   return jsonRequest(config,"/v2/core/accounts/"+encodeURIComponent(accountId)+query,{preview:true});
 }
 
