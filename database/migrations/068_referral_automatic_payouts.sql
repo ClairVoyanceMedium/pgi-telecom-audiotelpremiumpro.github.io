@@ -9,7 +9,6 @@ CREATE TABLE IF NOT EXISTS customer_referral_payout_accounts (
   status text NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending','onboarding','restricted','active','disabled')),
   transfers_enabled boolean NOT NULL DEFAULT false,
-  payouts_enabled boolean NOT NULL DEFAULT false,
   details_submitted boolean NOT NULL DEFAULT false,
   requirements_state text,
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
