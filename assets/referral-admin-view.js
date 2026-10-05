@@ -47,7 +47,7 @@ function ambassadorApplicationsHtml(data){
     (x.status!=="active"?'<button class="pa-btn" data-ambassador-status="active" data-ambassador-id="'+esc(x.public_id)+'">Valider l’accès</button>':"")+
     (x.status!=="suspended"?'<button class="pa-btn" data-ambassador-status="suspended" data-ambassador-id="'+esc(x.public_id)+'">Suspendre</button>':"")+
     (x.status==="pending"?'<button class="pa-btn" data-ambassador-status="rejected" data-ambassador-id="'+esc(x.public_id)+'">Refuser</button>':"")+'</div></article>';
-  return '<div class="pa-list"><div class="pa-head"><div><p>CANDIDATURES</p><h2>Ambassadeurs non-clients</h2></div><span class="pa-badge '+(pending.length?"warn":"ok")+'">'+pending.length+' en attente</span></div><p class="pa-note">Validation = profil ambassadeur actif, sans abonnement Audiotel.</p><div class="pa-referrals">'+(rows.length?rows.map(card).join(""):'<p class="pa-note">Aucune candidature.</p>')+'</div></div>';
+  return '<div class="pa-list"><div class="pa-head"><div><p>CANDIDATURES</p><h2>Ambassadeurs non-clients</h2></div><span class="pa-badge '+(pending.length?"warn":"ok")+'">'+pending.length+' en attente</span></div><p class="pa-note">Profil actif, sans abonnement Audiotel.</p><div class="pa-referrals">'+(rows.length?rows.map(card).join(""):'<p class="pa-note">Aucune candidature.</p>')+'</div></div>';
 }
 export function render(root,data){
   const summary=data?.summary||{},currency=data?.currency||"EUR",ambassadors=Array.isArray(data?.ambassadors)?data.ambassadors:[];
