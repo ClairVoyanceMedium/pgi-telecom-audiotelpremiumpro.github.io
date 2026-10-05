@@ -21,11 +21,11 @@ export function createReferralPayoutQueueHandlers({store,config}){
       if(context?.done===true)return {done:true,replayed:true};
 
       const accountRef=String(context?.provider_account_reference||"").trim();
-      if(!/^acct_[A-Za-z0-9]+$/.test(accountRef)||context?.account_status!=="active"||context?.payouts_enabled!==true){
+      if(!/^acct_[A-Za-z0-9]+$/.test(accountRef)){
         await store.markReferralPayoutRecipientMissing(payoutPublicId,{
-          provider_account_reference:/^acct_[A-Za-z0-9]+$/.test(accountRef)?accountRef:null,
-          code:"STRIPE_RECIPIENT_NOT_READY",
-          message:"Compte Stripe non prêt pour les versements automatiques."
+          provider_account_reference:null,
+          code:"STRIPE_RECIPIENT_NOT_CONFIGURED",
+          message:"Compte Stripe à configurer pour recevoir les versements automatiques."
         });
         return {done:false,blocked:true};
       }
