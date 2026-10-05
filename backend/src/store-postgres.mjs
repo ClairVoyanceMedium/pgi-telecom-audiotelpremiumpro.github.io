@@ -2512,27 +2512,57 @@ export class PostgresStore{
           "UPDATE tenant_admin_alerts SET state='resolved',resolved_at=now(),updated_at=now() WHERE tenant_id=$1 AND subscription_id=$2 AND alert_type='subscription_unpaid' AND state<>'resolved'",
           [tenant.id,subscriptionId]
         );
+      }
+      if(eventType==="invoice.paid"){
         const referral=(await tx.unsafe(
-          "SELECT id,referrer_tenant_id,reward_minor,reward_currency FROM customer_referrals WHERE referred_tenant_id=$1 AND status='claimed' LIMIT 1 FOR UPDATE",
+          "SELECT id,referrer_tenant_id,referred_tenant_id,reward_currency,metadata FROM customer_referrals WHERE referred_tenant_id=$1 AND status='claimed' LIMIT 1 FOR UPDATE",
           [tenant.id]
         ))[0]||null;
-        if(referral&&Number(referral.reward_minor)>0){
-          await tx.unsafe(
-            "UPDATE customer_referrals SET status='rewarded',qualified_at=COALESCE(qualified_at,$2::timestamptz),rewarded_at=COALESCE(rewarded_at,$2::timestamptz),qualification_subscription_id=$3 WHERE id=$1",
-            [referral.id,eventTime,subscriptionId]
-          );
-          await tx.unsafe(
-            "INSERT INTO customer_referral_rewards(referral_id,tenant_id,amount_minor,currency,status,metadata) VALUES($1,$2,$3,$4,'earned',$5::jsonb) ON CONFLICT(referral_id) DO NOTHING",
-            [referral.id,referral.referrer_tenant_id,Number(referral.reward_minor),referral.reward_currency,JSON.stringify({qualification:"paid_active_subscription",subscription_id:subscriptionId})]
-          );
-          await tx.unsafe(
-            "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'referral.reward.earned','customer_referral',$2,$3::jsonb)",
-            [referral.referrer_tenant_id,String(referral.id),JSON.stringify({referred_tenant_id:Number(tenant.id),subscription_id:subscriptionId,amount_minor:Number(referral.reward_minor),currency:referral.reward_currency})]
-          );
-          await tx.unsafe(
-            "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'referral.reward.earned','customer_referral',$2,$3::jsonb)",
-            [referral.referrer_tenant_id,String(referral.id),JSON.stringify({referral_id:Number(referral.id),amount_minor:Number(referral.reward_minor),currency:referral.reward_currency})]
-          );
+        if(referral){
+          const paidMonthsRow=(await tx.unsafe(
+            "SELECT count(DISTINCT COALESCE(NULLIF(normalized_details->>'provider_invoice_reference',''),provider_event_id))::int AS paid_months"+
+            " FROM subscription_billing_events WHERE tenant_id=$1 AND event_type='invoice.paid'"+
+            " AND COALESCE(normalized_details->>'provider_invoice_amount_paid_minor','') ~ '^[0-9]+$'"+
+            " AND (normalized_details->>'provider_invoice_amount_paid_minor')::bigint>0"+
+            " AND COALESCE(normalized_details->>'provider_invoice_currency','EUR')='EUR'"+
+            " AND COALESCE(normalized_details->>'provider_invoice_billing_reason','') IN ('subscription_create','subscription_cycle')",
+            [tenant.id]
+          ))[0]||{};
+          const paidMonths=Number(paidMonthsRow.paid_months||0);
+          if(paidMonths>=REFERRAL_QUALIFYING_PAID_MONTHS){
+            await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",["referral-reward:"+String(referral.referrer_tenant_id)]);
+            const countRow=(await tx.unsafe(
+              "SELECT count(*)::int AS rewarded_count FROM customer_referrals WHERE referrer_tenant_id=$1 AND status='rewarded' AND id<>$2",
+              [referral.referrer_tenant_id,referral.id]
+            ))[0]||{};
+            const rule=referralRewardForOrdinal(Number(countRow.rewarded_count||0)+1);
+            const referralMetadata={
+              ...(referral.metadata&&typeof referral.metadata==="object"?referral.metadata:{}),
+              reward_rule_version:REFERRAL_RULE_VERSION,
+              qualification:"three_paid_monthly_subscriptions",
+              qualification_paid_months:REFERRAL_QUALIFYING_PAID_MONTHS,
+              referral_ordinal:rule.ordinal,
+              base_reward_minor:rule.base_minor,
+              milestone_bonus_minor:rule.bonus_minor
+            };
+            await tx.unsafe(
+              "UPDATE customer_referrals SET status='rewarded',reward_minor=$2,reward_currency='EUR',qualified_at=COALESCE(qualified_at,$3::timestamptz),rewarded_at=COALESCE(rewarded_at,$3::timestamptz),qualification_subscription_id=$4,metadata=$5::jsonb WHERE id=$1 AND status='claimed'",
+              [referral.id,rule.total_minor,eventTime,subscriptionId,JSON.stringify(referralMetadata)]
+            );
+            const rewardMetadata={qualification:"three_paid_monthly_subscriptions",qualification_paid_months:REFERRAL_QUALIFYING_PAID_MONTHS,subscription_id:subscriptionId,referral_ordinal:rule.ordinal,base_reward_minor:rule.base_minor,milestone_bonus_minor:rule.bonus_minor,reward_rule_version:REFERRAL_RULE_VERSION};
+            await tx.unsafe(
+              "INSERT INTO customer_referral_rewards(referral_id,tenant_id,amount_minor,currency,status,metadata) VALUES($1,$2,$3,'EUR','earned',$4::jsonb) ON CONFLICT(referral_id) DO NOTHING",
+              [referral.id,referral.referrer_tenant_id,rule.total_minor,JSON.stringify(rewardMetadata)]
+            );
+            await tx.unsafe(
+              "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'referral.reward.earned','customer_referral',$2,$3::jsonb)",
+              [referral.referrer_tenant_id,String(referral.id),JSON.stringify({referred_tenant_id:Number(tenant.id),subscription_id:subscriptionId,amount_minor:rule.total_minor,currency:"EUR",...rewardMetadata})]
+            );
+            await tx.unsafe(
+              "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'referral.reward.earned','customer_referral',$2,$3::jsonb)",
+              [referral.referrer_tenant_id,String(referral.id),JSON.stringify({referral_id:Number(referral.id),amount_minor:rule.total_minor,currency:"EUR",referral_ordinal:rule.ordinal,base_reward_minor:rule.base_minor,milestone_bonus_minor:rule.bonus_minor,qualification_paid_months:REFERRAL_QUALIFYING_PAID_MONTHS,reward_rule_version:REFERRAL_RULE_VERSION})]
+            );
+          }
         }
       }
       return {duplicate:false,subscription_id:subscriptionId,tenant_id:Number(tenant.id),status};
