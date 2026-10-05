@@ -1400,6 +1400,11 @@ export class MemoryStore{
   async markWebauthnVerified(id,signCount){this._passkeys=this._passkeys||[];const x=this._passkeys.find(v=>v.id===Number(id));if(!x)throw problem(404,"WEBAUTHN_CREDENTIAL_NOT_FOUND");if(Number(signCount)>0)x.sign_count=Number(signCount);x.last_verified_at=new Date().toISOString();return{id:x.id,public_id:x.public_id,last_verified_at:x.last_verified_at,sign_count:x.sign_count};}
 
   async serviceOperationsHealth(){return {service_incidents_open:0,service_incidents_critical:0,service_first_response_overdue:0,service_resolution_overdue:0,routing_unavailable:0,portability_attention:0};}
+  async referralProgramPublicState(){return {enabled:false,currency:"EUR",reward_minor:1000,entry_reward_minor:1000,max_reward_minor:2000,qualification:"three_paid_monthly_subscriptions",qualifying_payments:3,payout_threshold_minor:2000,tiers:[{min:1,max:4,reward_minor:1000,label:"1 à 4 clients validés"},{min:5,max:9,reward_minor:1200,label:"5 à 9 clients validés"},{min:10,max:24,reward_minor:1500,label:"10 à 24 clients validés"},{min:25,max:null,reward_minor:2000,label:"25 clients validés et plus"}],milestone_bonuses:[{at:1,amount_minor:500},{at:5,amount_minor:2000},{at:10,amount_minor:5000}]};}
+  async referralProgramAdminState(){return {...await this.referralProgramPublicState(),summary:{claimed:0,qualified:0,rewarded:0,rejected:0,rewards_earned_minor:0,rewards_paid_minor:0,rewards_due_minor:0,payout_ready_ambassadors:0},rewards:[],top_ambassadors:[]};}
+  async updateReferralProgram(input={}){return {...await this.referralProgramAdminState(),enabled:input.enabled===true};}
+  async enqueueReferralMonthlyDigests(){return {queued:0,skipped:true};}
+  async platformAccountingOverview(){return {generated_at:new Date().toISOString(),timezone:"Europe/Paris",basis:"cash_and_operational",months:[],notes:["Mode simulateur : aucune écriture comptable réelle."]};}
 
   async systemSnapshot(){
     const last=this.calls[0],rows=this.baselines.filter(x=>x.scope==="global"&&x.tenant_id==null&&["all","calls"].includes(x.metric_key||"all")).sort((a,b)=>Date.parse(b.effective_from||b.created_at)-Date.parse(a.effective_from||a.created_at));
