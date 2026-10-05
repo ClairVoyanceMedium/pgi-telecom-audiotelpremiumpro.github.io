@@ -97,6 +97,7 @@ const files=[
   "assets/subscription-billing-ui.js",
   "assets/customer-admin.js",
   "assets/customer-profitability.js",
+  "assets/accounting-cockpit.js",
   "assets/customer-relations.js",
   "assets/customer-admin.css",
   "assets/tenant-control-detail.js",
