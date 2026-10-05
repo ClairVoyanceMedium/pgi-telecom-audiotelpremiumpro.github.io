@@ -1,4 +1,4 @@
-import {randomUUID} from "node:crypto";
+import {createHash,randomUUID} from "node:crypto";
 
 const FEC_FIELDS=[
   "JournalCode","JournalLib","EcritureNum","EcritureDate","CompteNum","CompteLib",
@@ -660,12 +660,12 @@ export async function setAccountingPeriodState(store,period,input={},actor={}){
       }
     }
     const hashRows=state==="closed"?await tx.unsafe(
-      "SELECT md5(COALESCE(string_agg(e.id::text||':'||COALESCE(e.entry_number,'')||':'||e.source_hash||':'||l.account_num||':'||l.debit_minor||':'||l.credit_minor,'|' ORDER BY e.entry_date,e.id,l.line_no),'')) AS hash"+
+      "SELECT COALESCE(string_agg(e.id::text||':'||COALESCE(e.entry_number,'')||':'||e.source_hash||':'||l.account_num||':'||l.debit_minor||':'||l.credit_minor,'|' ORDER BY e.entry_date,e.id,l.line_no),'') AS payload"+
       " FROM platform_accounting_entries e JOIN platform_accounting_lines l ON l.entry_id=e.id"+
       " WHERE e.entry_date>=($1||'-01')::date AND e.entry_date<(($1||'-01')::date+interval '1 month')",
       [key]
     ):null;
-    const closeHash=state==="closed"?String(hashRows?.[0]?.hash||""):null;
+    const closeHash=state==="closed"?createHash("sha256").update(String(hashRows?.[0]?.payload||""),"utf8").digest("hex"):null;
     const row=(await tx.unsafe(
       "INSERT INTO platform_accounting_periods(period_key,state,review_started_at,closed_at,closed_by,close_hash)"+
       " VALUES($1,$2,CASE WHEN $2='review' THEN now() ELSE NULL END,CASE WHEN $2='closed' THEN now() ELSE NULL END,CASE WHEN $2='closed' THEN $3 ELSE NULL END,$4)"+
@@ -721,21 +721,50 @@ export async function expertAccountingFec(store,params={}){
     " COALESCE(l.line_label,e.label) AS entry_label,l.debit_minor,l.credit_minor,l.lettering,l.lettering_date,e.validated_at,l.amount_currency_minor,l.currency"+
     " FROM platform_accounting_entries e JOIN platform_accounting_journals j ON j.journal_code=e.journal_code JOIN platform_accounting_lines l ON l.entry_id=e.id"+
     " WHERE e.status IN ('validated','reversal') AND e.entry_date>=$1::date AND e.entry_date<$2::date"+
-    " ORDER BY e.entry_number,l.line_no",
+    " ORDER BY e.validated_at,e.entry_number,l.line_no",
     [from,to]
   );
+
+  const entryNumbers=[];
+  let lastEntryNumber=null;
+  for(const row of rows){
+    const current=String(row.entry_number||"");
+    if(current!==lastEntryNumber){entryNumbers.push(current);lastEntryNumber=current;}
+  }
+  for(let i=0;i<entryNumbers.length;i++){
+    const expected=String(year)+String(i+1).padStart(10,"0");
+    if(entryNumbers[i]!==expected)throw problem(409,"ACCOUNTING_FEC_ENTRY_SEQUENCE_INVALID",{year,position:i+1,expected,actual:entryNumbers[i]});
+  }
+
   const body=[FEC_FIELDS.join("\t")];
   const defaultCurrency=String(settings.default_currency||"EUR");
-  for(const row of rows){
+  for(let index=0;index<rows.length;index++){
+    const row=rows[index];
+    const debit=Number(row.debit_minor||0),credit=Number(row.credit_minor||0);
+    const mandatory=[
+      row.journal_code,row.journal_label,row.entry_number,date8(row.entry_date),row.account_num,row.account_label,
+      row.piece_ref,date8(row.piece_date),row.entry_label,date8(row.validated_at)
+    ];
+    if(mandatory.some(value=>!String(value||"").trim())||
+       !/^[0-9]{3}/.test(String(row.account_num||""))||
+       !Number.isSafeInteger(debit)||debit<0||!Number.isSafeInteger(credit)||credit<0||
+       (debit>0)===(credit>0)){
+      throw problem(409,"ACCOUNTING_FEC_ROW_INVALID",{year,row:index+1,entry_number:row.entry_number||null,account_num:row.account_num||null});
+    }
     const foreign=String(row.currency)!==defaultCurrency;
+    if(foreign&&(!/^[A-Z]{3}$/.test(String(row.currency||""))||row.amount_currency_minor==null||!Number.isSafeInteger(Number(row.amount_currency_minor)))){
+      throw problem(409,"ACCOUNTING_FEC_FOREIGN_CURRENCY_INVALID",{year,row:index+1,entry_number:row.entry_number||null,currency:row.currency||null});
+    }
     body.push([
       row.journal_code,row.journal_label,row.entry_number,date8(row.entry_date),row.account_num,row.account_label,
       row.auxiliary_num||"",row.auxiliary_label||"",row.piece_ref,date8(row.piece_date),row.entry_label,
-      amountFec(row.debit_minor),amountFec(row.credit_minor),row.lettering||"",date8(row.lettering_date),date8(row.validated_at),
-      foreign&&row.amount_currency_minor!=null?amountFec(row.amount_currency_minor):"",foreign?row.currency:""
+      amountFec(debit),amountFec(credit),row.lettering||"",date8(row.lettering_date),date8(row.validated_at),
+      foreign?amountFec(row.amount_currency_minor):"",foreign?row.currency:""
     ].map(fecCell).join("\t"));
   }
   const closeDate=closeDateForYear(settings,year);
   const filename=String(settings.siren)+"FEC"+date8(closeDate)+".txt";
-  return {schema_version:"audiotel-fec-export/1",year,filename,content:body.join("\r\n")+"\r\n",row_count:rows.length,field_count:FEC_FIELDS.length,sha256_source:"server-generated-from-immutable-validated-ledger"};
+  const content=body.join("\r\n")+"\r\n";
+  const sha256=createHash("sha256").update(content,"utf8").digest("hex");
+  return {schema_version:"audiotel-fec-export/1",year,filename,content,row_count:rows.length,field_count:FEC_FIELDS.length,sha256,sha256_source:"fec-content"};
 }
