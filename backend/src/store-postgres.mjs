@@ -4654,21 +4654,14 @@ export class PostgresStore{
 
   async referralAmbassadorsAdminList(){
     const rows=await this.sql.unsafe(
-      "SELECT t.id AS tenant_id,t.public_id::text AS tenant_public_id,t.display_name,t.status,t.billing_email,t.country_code,t.created_at,"+
-      " c.code,c.status AS code_status,c.created_at AS code_created_at,"+
-      " (SELECT count(*)::int FROM customer_referral_events e WHERE e.referral_code_id=c.id AND e.event_type='visit') AS visits,"+
-      " (SELECT count(*)::int FROM customer_referral_events e WHERE e.referral_code_id=c.id AND e.event_type='prospect') AS prospects,"+
-      " (SELECT count(*)::int FROM customer_referrals r WHERE r.referrer_tenant_id=t.id) AS referrals_total,"+
-      " (SELECT count(*)::int FROM customer_referrals r WHERE r.referrer_tenant_id=t.id AND r.status='claimed') AS referrals_claimed,"+
-      " (SELECT count(*)::int FROM customer_referrals r WHERE r.referrer_tenant_id=t.id AND r.status='qualified') AS referrals_qualified,"+
-      " (SELECT count(*)::int FROM customer_referrals r WHERE r.referrer_tenant_id=t.id AND r.status='rewarded') AS referrals_rewarded,"+
-      " (SELECT count(*)::int FROM customer_referrals r WHERE r.referrer_tenant_id=t.id AND r.status='rejected') AS referrals_rejected,"+
-      " (SELECT COALESCE(sum(rw.amount_minor),0)::bigint FROM customer_referral_rewards rw WHERE rw.tenant_id=t.id AND rw.status='earned') AS earned_unpaid_minor,"+
-      " (SELECT COALESCE(sum(rw.amount_minor),0)::bigint FROM customer_referral_rewards rw WHERE rw.tenant_id=t.id AND rw.status='paid') AS paid_minor,"+
-      " (SELECT max(rw.paid_at) FROM customer_referral_rewards rw WHERE rw.tenant_id=t.id AND rw.status='paid') AS last_reward_paid_at,"+
-      " (SELECT COALESCE(sum(st.net_payout_ht),0)::float8 FROM tenant_settlements st WHERE st.tenant_id=t.id AND st.status='paid') AS sva_paid_ht,"+
-      " (SELECT COALESCE(sum(st.net_payout_ht),0)::float8 FROM tenant_settlements st WHERE st.tenant_id=t.id AND st.status='payable') AS sva_payable_ht"+
-      " FROM customer_referral_codes c JOIN tenants t ON t.id=c.tenant_id"+
+      "WITH ev AS (SELECT referral_code_id,count(*) FILTER (WHERE event_type='visit')::int AS visits,count(*) FILTER (WHERE event_type='prospect')::int AS prospects FROM customer_referral_events GROUP BY referral_code_id),"+
+      " rf AS (SELECT referrer_tenant_id,count(*)::int AS referrals_total,count(*) FILTER (WHERE status='claimed')::int AS referrals_claimed,count(*) FILTER (WHERE status='qualified')::int AS referrals_qualified,count(*) FILTER (WHERE status='rewarded')::int AS referrals_rewarded,count(*) FILTER (WHERE status='rejected')::int AS referrals_rejected FROM customer_referrals GROUP BY referrer_tenant_id),"+
+      " rw AS (SELECT tenant_id,COALESCE(sum(amount_minor) FILTER (WHERE status='earned'),0)::bigint AS earned_unpaid_minor,COALESCE(sum(amount_minor) FILTER (WHERE status='paid'),0)::bigint AS paid_minor,max(paid_at) FILTER (WHERE status='paid') AS last_reward_paid_at FROM customer_referral_rewards GROUP BY tenant_id),"+
+      " st AS (SELECT tenant_id,COALESCE(sum(net_payout_ht) FILTER (WHERE status='paid'),0)::float8 AS sva_paid_ht,COALESCE(sum(net_payout_ht) FILTER (WHERE status='payable'),0)::float8 AS sva_payable_ht FROM tenant_settlements GROUP BY tenant_id)"+
+      " SELECT t.id AS tenant_id,t.public_id::text AS tenant_public_id,t.display_name,t.status,t.billing_email,t.country_code,t.created_at,c.code,c.status AS code_status,c.created_at AS code_created_at,"+
+      " COALESCE(ev.visits,0)::int AS visits,COALESCE(ev.prospects,0)::int AS prospects,COALESCE(rf.referrals_total,0)::int AS referrals_total,COALESCE(rf.referrals_claimed,0)::int AS referrals_claimed,COALESCE(rf.referrals_qualified,0)::int AS referrals_qualified,COALESCE(rf.referrals_rewarded,0)::int AS referrals_rewarded,COALESCE(rf.referrals_rejected,0)::int AS referrals_rejected,"+
+      " COALESCE(rw.earned_unpaid_minor,0)::bigint AS earned_unpaid_minor,COALESCE(rw.paid_minor,0)::bigint AS paid_minor,rw.last_reward_paid_at,COALESCE(st.sva_paid_ht,0)::float8 AS sva_paid_ht,COALESCE(st.sva_payable_ht,0)::float8 AS sva_payable_ht"+
+      " FROM customer_referral_codes c JOIN tenants t ON t.id=c.tenant_id LEFT JOIN ev ON ev.referral_code_id=c.id LEFT JOIN rf ON rf.referrer_tenant_id=t.id LEFT JOIN rw ON rw.tenant_id=t.id LEFT JOIN st ON st.tenant_id=t.id"+
       " ORDER BY referrals_total DESC,visits DESC,c.created_at DESC LIMIT 250"
     );
     const total=(await this.sql.unsafe("SELECT count(*)::int AS total FROM customer_referral_codes"))[0]?.total||0;
@@ -4690,7 +4683,10 @@ export class PostgresStore{
       " (SELECT count(*)::int FROM customer_referral_events e WHERE e.referral_code_id=c.id AND e.event_type='visit') AS visits,"+
       " (SELECT count(*)::int FROM customer_referral_events e WHERE e.referral_code_id=c.id AND e.event_type='prospect') AS prospects,"+
       " (SELECT count(*)::int FROM customer_referrals r WHERE r.referrer_tenant_id=t.id) AS referrals_total,"+
+      " (SELECT count(*)::int FROM customer_referrals r WHERE r.referrer_tenant_id=t.id AND r.status='claimed') AS referrals_claimed,"+
+      " (SELECT count(*)::int FROM customer_referrals r WHERE r.referrer_tenant_id=t.id AND r.status='qualified') AS referrals_qualified,"+
       " (SELECT count(*)::int FROM customer_referrals r WHERE r.referrer_tenant_id=t.id AND r.status='rewarded') AS referrals_rewarded,"+
+      " (SELECT count(*)::int FROM customer_referrals r WHERE r.referrer_tenant_id=t.id AND r.status='rejected') AS referrals_rejected,"+
       " (SELECT COALESCE(sum(rw.amount_minor),0)::bigint FROM customer_referral_rewards rw WHERE rw.tenant_id=t.id AND rw.status='earned') AS earned_unpaid_minor,"+
       " (SELECT COALESCE(sum(rw.amount_minor),0)::bigint FROM customer_referral_rewards rw WHERE rw.tenant_id=t.id AND rw.status='paid') AS paid_minor,"+
       " (SELECT COALESCE(sum(st.net_payout_ht),0)::float8 FROM tenant_settlements st WHERE st.tenant_id=t.id AND st.status='paid') AS sva_paid_ht,"+
@@ -4723,7 +4719,7 @@ export class PostgresStore{
         " FROM tenant_number_assignments a JOIN sva_numbers n ON n.id=a.sva_number_id WHERE a.tenant_id=$1 ORDER BY a.created_at DESC,a.id DESC LIMIT 20",[id]
       )
     ]);
-    const ambassador={...a,tenant_id:undefined,dossier_reference:dossierReference(id,a.created_at),visits:Number(a.visits||0),prospects:Number(a.prospects||0),referrals_total:Number(a.referrals_total||0),referrals_rewarded:Number(a.referrals_rewarded||0),earned_unpaid_minor:Number(a.earned_unpaid_minor||0),paid_minor:Number(a.paid_minor||0),sva_paid_ht:Number(a.sva_paid_ht||0),sva_payable_ht:Number(a.sva_payable_ht||0)};
+    const ambassador={...a,tenant_id:undefined,dossier_reference:dossierReference(id,a.created_at),visits:Number(a.visits||0),prospects:Number(a.prospects||0),referrals_total:Number(a.referrals_total||0),referrals_claimed:Number(a.referrals_claimed||0),referrals_qualified:Number(a.referrals_qualified||0),referrals_rewarded:Number(a.referrals_rewarded||0),referrals_rejected:Number(a.referrals_rejected||0),earned_unpaid_minor:Number(a.earned_unpaid_minor||0),paid_minor:Number(a.paid_minor||0),sva_paid_ht:Number(a.sva_paid_ht||0),sva_payable_ht:Number(a.sva_payable_ht||0)};
     return {currency:"EUR",qualification_paid_invoices:REFERRAL_QUALIFICATION_PAID_INVOICES,ambassador,subscription:subscriptions[0]||null,numbers,settlements,referrals:referrals.map(x=>({...x,reward_minor:Number(x.reward_minor||0),reward_amount_minor:Number(x.reward_amount_minor||0),paid_invoice_count:Number(x.paid_invoice_count||0)}))};
   }
 
