@@ -345,3 +345,51 @@ export async function retrieveStripeCardCheckout(config,connectedAccount,session
     session_status:sessionStatus
   };
 }
+
+
+export async function retrieveStripeTransferRecipient(config,accountId){
+  const id=String(accountId||"").trim();
+  if(!/^acct_[A-Za-z0-9]+$/.test(id))throw error(400,"INVALID_CONNECT_ACCOUNT");
+  const account=await jsonRequest(config,"/v1/accounts/"+encodeURIComponent(id));
+  const capability=String(account?.capabilities?.transfers||"").trim().toLowerCase();
+  const payoutsEnabled=account?.payouts_enabled===true;
+  return {
+    id,
+    transfer_capability:capability||"inactive",
+    payouts_enabled:payoutsEnabled,
+    details_submitted:account?.details_submitted===true,
+    disabled_reason:String(account?.requirements?.disabled_reason||"").trim()||null,
+    transfer_ready:capability==="active"&&payoutsEnabled
+  };
+}
+
+export async function createStripeReferralTransfer(config,input={}){
+  const destination=String(input.connected_account_reference||"").trim();
+  const amount=Number(input.amount_minor);
+  const currency=String(input.currency||"EUR").trim().toLowerCase();
+  const rewardPublicId=String(input.reward_public_id||"").trim();
+  const payoutPublicId=String(input.payout_public_id||"").trim();
+  const idempotencyKey=String(input.idempotency_key||"").trim();
+  if(!/^acct_[A-Za-z0-9]+$/.test(destination))throw error(400,"INVALID_CONNECT_ACCOUNT");
+  if(!Number.isInteger(amount)||amount<=0||amount>100000000)throw error(400,"INVALID_REFERRAL_PAYOUT_AMOUNT");
+  if(!/^[a-z]{3}$/.test(currency))throw error(400,"INVALID_REFERRAL_PAYOUT_CURRENCY");
+  if(!/^[0-9a-f-]{36}$/i.test(rewardPublicId)||!/^[0-9a-f-]{36}$/i.test(payoutPublicId))throw error(400,"INVALID_REFERRAL_PAYOUT_REFERENCE");
+  if(!/^pgi-referral-reward:[0-9a-f-]{36}$/i.test(idempotencyKey))throw error(400,"INVALID_REFERRAL_PAYOUT_IDEMPOTENCY_KEY");
+  const transfer=await formRequest(config,"/v1/transfers",{
+    idempotencyKey,
+    fields:{
+      amount,
+      currency,
+      destination,
+      description:cleanText("Prime ambassadeur Audiotel Premium Pro "+rewardPublicId,180),
+      transfer_group:"pgi_referral_"+rewardPublicId.replace(/-/g,""),
+      metadata:{
+        pgi_referral_reward_id:rewardPublicId,
+        pgi_referral_payout_id:payoutPublicId,
+        pgi_product:"audiotel_premium_pro"
+      }
+    }
+  });
+  if(!/^tr_[A-Za-z0-9]+$/.test(String(transfer?.id||"")))throw error(502,"STRIPE_REFERRAL_TRANSFER_INVALID");
+  return transfer;
+}
