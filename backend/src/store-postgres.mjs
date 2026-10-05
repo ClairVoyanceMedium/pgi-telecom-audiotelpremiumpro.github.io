@@ -4850,6 +4850,28 @@ export class PostgresStore{
     });
   }
 
+  async referralPayoutAccountsNeedingRefresh(limit=25){
+    await this.ensureAutomaticReferralPayoutSchema();
+    const take=Math.max(1,Math.min(50,Number(limit)||25));
+    const rows=await this.sql.unsafe(
+      "SELECT DISTINCT ON (rw.tenant_id) rw.tenant_id,t.public_id::text AS tenant_public_id,a.provider_account_reference,a.payouts_enabled,a.details_submitted"+
+      " FROM customer_referral_rewards rw JOIN tenants t ON t.id=rw.tenant_id"+
+      " JOIN tenant_card_payment_accounts a ON a.tenant_id=rw.tenant_id"+
+      " WHERE rw.status='earned' AND rw.payout_state IN ('pending','blocked')"+
+      " AND a.provider='stripe' AND a.provider_account_reference IS NOT NULL"+
+      " AND (a.payouts_enabled IS DISTINCT FROM true OR a.details_submitted IS DISTINCT FROM true)"+
+      " ORDER BY rw.tenant_id,rw.earned_at ASC LIMIT $1",
+      [take]
+    );
+    return rows.map(row=>({
+      tenant_id:Number(row.tenant_id),
+      tenant_public_id:String(row.tenant_public_id||""),
+      provider_account_reference:String(row.provider_account_reference||""),
+      payouts_enabled:row.payouts_enabled===true,
+      details_submitted:row.details_submitted===true
+    }));
+  }
+
   async claimReferralRewardPayoutBatch(limit=25){
     await this.ensureAutomaticReferralPayoutSchema();
     const take=Math.max(1,Math.min(50,Number(limit)||25));
