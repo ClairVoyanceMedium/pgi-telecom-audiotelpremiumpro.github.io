@@ -137,13 +137,12 @@ CREATE TABLE IF NOT EXISTS business_accounting_ledger (
 );
 CREATE INDEX IF NOT EXISTS business_accounting_ledger_period_idx ON business_accounting_ledger(currency,occurred_at DESC,category);
 
-CREATE OR REPLACE FUNCTION pgi_prevent_business_accounting_ledger_mutation()
+CREATE FUNCTION pgi_prevent_business_accounting_ledger_mutation()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   RAISE EXCEPTION 'business accounting ledger is append-only';
 END;
 $$;
-DROP TRIGGER IF EXISTS business_accounting_ledger_no_mutation ON business_accounting_ledger;
 CREATE TRIGGER business_accounting_ledger_no_mutation
 BEFORE UPDATE OR DELETE ON business_accounting_ledger
 FOR EACH ROW EXECUTE FUNCTION pgi_prevent_business_accounting_ledger_mutation();
