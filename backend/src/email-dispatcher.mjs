@@ -3,7 +3,8 @@ import {emailHash,normalizeEmail,sendTransactionalEmail} from "./resend-email.mj
 const OUTBOX_TYPES=[
   "customer.self_registered","tenant.status","subscription.changed",
   "portability.requested","service.incident.created","service.incident.note","service.incident.changed",
-  "tenant.revenue_distribution.updated","consumer.withdrawal.received"
+  "tenant.revenue_distribution.updated","consumer.withdrawal.received",
+  "referral.claimed","referral.progress","referral.reward.earned","referral.monthly_digest"
 ];
 const TERMINAL_SEND_STATES=new Set(["accepted","sent","delivered","delayed","clicked","bounced","complained","suppressed"]);
 const EMAIL_RE=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -204,9 +205,31 @@ async function messagesForEvent(store,config,event){
   if(event.event_type==="tenant.revenue_distribution.updated"){
     if(customerEmail&&String(p.status||"")==="payable")return [msg("customer",customerEmail,customerName,"payout_available","billing",event,{...base,currency:p.currency||null})];
   }
+  if(event.event_type==="referral.claimed"){
+    if(!customerEmail)return [];
+    return [msg("customer",customerEmail,customerName,"referral_claimed","notifications",event,{...base,required_count:Number(p.required_count||3)})];
+  }
+  if(event.event_type==="referral.progress"){
+    if(!customerEmail)return [];
+    return [msg("customer",customerEmail,customerName,"referral_progress","notifications",event,{...base,paid_count:Number(p.paid_count||0),required_count:Number(p.required_count||3),remaining_count:Number(p.remaining_count||0)})];
+  }
+  if(event.event_type==="referral.reward.earned"){
+    if(!customerEmail)return [];
+    const amount=Number(p.amount_minor||0),baseAmount=Number(p.base_reward_minor||0),bonus=Number(p.milestone_bonus_minor||0),rank=Number(p.qualified_rank||0);
+    const template=Boolean(p.ambassador)&&rank>=25?"referral_ambassador":"referral_reward_earned";
+    return [msg("customer",customerEmail,customerName,template,"notifications",event,{...base,qualified_rank:rank,reward_display:formatMoneyMinor(amount,p.currency||"EUR"),base_reward_display:formatMoneyMinor(baseAmount,p.currency||"EUR"),bonus_display:formatMoneyMinor(bonus,p.currency||"EUR"),ambassador:Boolean(p.ambassador)})];
+  }
+  if(event.event_type==="referral.monthly_digest"){
+    if(!customerEmail)return [];
+    return [msg("customer",customerEmail,customerName,"referral_monthly_digest","notifications",event,{...base,month:String(p.month||""),claimed_month:Number(p.claimed_month||0),rewarded_month:Number(p.rewarded_month||0),reward_month_display:formatMoneyMinor(p.reward_month_minor,p.currency||"EUR"),cumulative_rewarded:Number(p.cumulative_rewarded||0),earned_total_display:formatMoneyMinor(p.earned_total_minor,p.currency||"EUR"),paid_total_display:formatMoneyMinor(p.paid_total_minor,p.currency||"EUR"),outstanding_display:formatMoneyMinor(p.outstanding_minor,p.currency||"EUR"),next_rank:Number(p.next_rank||0),next_reward_display:formatMoneyMinor(p.next_reward_minor,p.currency||"EUR"),ambassador:Boolean(p.ambassador)})];
+  }
   return [];
 }
 
+function formatMoneyMinor(value,currency="EUR"){
+  try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:String(currency||"EUR").toUpperCase()}).format((Number(value)||0)/100);}
+  catch{return ((Number(value)||0)/100).toFixed(2)+" "+String(currency||"EUR").toUpperCase();}
+}
 function msg(scope,to,name,templateKey,senderRole,event,data){
   const suffix=scope+"/"+templateKey;
   const idempotencyKey="outbox/"+event.id+"/"+suffix;
