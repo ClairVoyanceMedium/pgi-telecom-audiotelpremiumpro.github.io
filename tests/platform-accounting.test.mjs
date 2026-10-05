@@ -59,6 +59,10 @@ test("la vue sépare TTC, HT, dettes et créances au lieu de fabriquer un faux b
   assert.match(accounting,/bases fiscales/);
   assert.doesNotMatch(accounting,/bénéfice net/i);
   assert.match(accounting,/Exporter CSV/);
+  assert.match(accounting,/Imprimer/);
+  assert.match(accounting,/window\.print\(\)/);
+  assert.match(accounting,/@media print/);
+  assert.match(accounting,/referral_rewards_processing_count/);
 });
 
 test("le module Comptabilité est publié et contrôlé à chaque vérification",()=>{
