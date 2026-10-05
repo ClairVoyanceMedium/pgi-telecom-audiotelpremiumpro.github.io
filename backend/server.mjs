@@ -11,6 +11,7 @@ import {normalizeFreeSwitchCdr} from "./src/cdr-freeswitch.mjs";
 import {startWorkers} from "./src/workers.mjs";
 import {createPortabilityQueueHandlers} from "./src/portability-automation.mjs";
 import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability-automation.mjs";
+import {createReferralPayoutQueueHandlers,runReferralPayoutAutomation} from "./src/referral-payout-automation.mjs";
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData,scopeCustomerAnnualProgressData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
@@ -250,6 +251,12 @@ export function createBackend(options={}){
         authorizeCron(req,config);
         const result=typeof store.runDueBusinessLiveResets==="function"?await store.runDueBusinessLiveResets(250):{scanned:0,executed:0,failed:0,results:[]};
         return done(res,metrics,started,"business_live.reset_schedules",200,{ok:true,...result});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/internal/referral-payouts/run"){
+        authorizeCron(req,config);
+        const result=await runReferralPayoutAutomation({store,config,limit:8});
+        return done(res,metrics,started,"referral.payouts.run",result.failed>0?207:200,{ok:result.failed===0,...result});
       }
 
       if(method==="GET"&&pathname==="/api/v1/public/referral-program"){
@@ -2094,6 +2101,7 @@ export function createBackend(options={}){
   const queueHandlers={
     ...createPortabilityQueueHandlers({store,config}),
     ...createOutboundPortabilityQueueHandlers({store,config}),
+    ...createReferralPayoutQueueHandlers({store,config}),
     ...(options.queueHandlers||{})
   };
   const workers=config.processRole==="api"
