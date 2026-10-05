@@ -296,6 +296,39 @@ export function createBackend(options={}){
         return done(res,metrics,started,"public.withdrawal_status",200,{available:config.onlineWithdrawalReady===true&&schemaReady});
       }
 
+      if(method==="POST"&&pathname==="/api/v1/public/ambassador/apply"){
+        requireSameOriginBrowser(req);
+        enforceRegistrationRate(req,config,registrationBuckets);
+        const body=await readJson(req,config.bodyLimitBytes);
+        if(String(body.website||"").trim())return done(res,metrics,started,"public.ambassador_apply",202,{accepted:false});
+        const application=await store.ensureAmbassadorApplication({
+          name:body.name,email:body.email,phone:body.phone,note:body.note,country_code:body.country_code||"FR"
+        });
+        const eventId="ambassador-application/"+String(application.public_id);
+        try{
+          await sendTransactionalEmail(config,{
+            to:application.email,
+            name:application.display_name||application.email,
+            senderRole:"support",
+            templateKey:"ambassador_application_received",
+            data:{name:application.display_name||application.email},
+            idempotencyKey:eventId,
+            internalEventId:eventId
+          });
+        }catch(error){logSecurityEmailFailure("ambassador_application_received",error);}
+        try{
+          await syncHubSpotSupportMessage({
+            email:application.email,
+            message:["Demande ambassadeur Audiotel Premium Pro","Nom : "+String(application.display_name||""),body.phone?"Téléphone : "+String(body.phone):"",body.note?"Précision : "+String(body.note):""].filter(Boolean).join("\n"),
+            pagePath:"/parrainage-audiotel/",
+            pageTitle:"Demande ambassadeur Audiotel Premium Pro",
+            marketing_consent:false,
+            source:"ambassador_application"
+          });
+        }catch(error){logHubSpotSyncFailure("ambassador_application",error);}
+        return done(res,metrics,started,"public.ambassador_apply",202,{accepted:true,status:application.status,application_id:application.public_id,already_active:application.already_active===true});
+      }
+
       if(method==="POST"&&pathname==="/api/v1/public/contact"){
         requireSameOriginBrowser(req);
         if(!config.transactionalEmailEnabled||!config.resendApiKey)return done(res,metrics,started,"public.contact",503,{error:{code:"CONTACT_UNAVAILABLE"}});
@@ -1003,6 +1036,70 @@ export function createBackend(options={}){
           await store.failCustomerCardPaymentRequest(context.tenant_id,request.public_id,error?.code||"checkout_failed").catch(()=>{});
           throw error;
         }
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/ambassador/auth/password/forgot"){
+        if(config.authMode!=="session")return done(res,metrics,started,"ambassador.auth.password_forgot",404,{error:{code:"AUTH_DISABLED"}});
+        requireSameOriginBrowser(req);enforceRegistrationRate(req,config,registrationBuckets);
+        const body=await readJson(req,config.bodyLimitBytes),email=String(body.email||"").trim().toLowerCase();
+        const token=randomBytes(32).toString("base64url"),tokenHash=createHash("sha256").update(token).digest("hex");
+        const record={token_hash:tokenHash,requested_at:new Date().toISOString(),expires_at:new Date(Date.now()+30*60000).toISOString()};
+        const target=await store.beginCustomerPasswordReset(email,record);
+        if(target){
+          const actionUrl=config.publicBaseUrl+"/ambassadeur.html#password-reset="+encodeURIComponent(token);
+          try{
+            await sendTransactionalEmail(config,{to:target.email,name:target.display_name||target.email,senderRole:"support",templateKey:"password_reset",data:{name:target.display_name||target.email,locale:target.preferred_locale,action_url:actionUrl},idempotencyKey:"ambassador-password-reset/"+tokenHash,internalEventId:"ambassador-password-reset/"+tokenHash});
+          }catch(error){logSecurityEmailFailure("ambassador_password_reset",error);}
+        }
+        return done(res,metrics,started,"ambassador.auth.password_forgot",202,{ok:true,message:"PASSWORD_RESET_IF_ACCOUNT_EXISTS"});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/ambassador/dashboard"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        if(typeof store.customerReferralPayoutAccount==="function"){
+          const local=await store.customerReferralPayoutAccount(context.tenant_id);
+          if(local?.provider_account_reference){
+            try{
+              const remote=await retrieveStripeReferralRecipientAccount(config,local.provider_account_reference);
+              await store.syncCustomerReferralPayoutAccount(context.tenant_id,normalizeStripeReferralRecipientAccount(remote));
+            }catch(_error){}
+          }
+        }
+        return done(res,metrics,started,"ambassador.dashboard",200,await store.ambassadorDashboard(context.tenant_id));
+      }
+      if(method==="POST"&&pathname==="/api/v1/ambassador/referral/code"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        const profile=await store.ambassadorProfileForTenant(context.tenant_id);
+        if(!profile||profile.status!=="active"){const e=new Error("Ambassador profile required");e.status=403;e.code="AMBASSADOR_PROFILE_NOT_ACTIVE";throw e;}
+        if(!["owner","admin"].includes(context.customer_role)){const e=new Error("Owner or admin required");e.status=403;e.code="CUSTOMER_ADMIN_REQUIRED";throw e;}
+        const payload={tenant_id:context.tenant_id,action:"ensure_referral_code"};
+        const result=await store.idempotent(req.headers["idempotency-key"],"ambassador.referral.code",payload,()=>store.ensureCustomerReferralCode(context.tenant_id));
+        return done(res,metrics,started,"ambassador.referral_code",201,{...result.value,replayed:result.replayed});
+      }
+      if(method==="POST"&&pathname==="/api/v1/ambassador/payout-account"){
+        requireCustomerCsrf(req,customerActor,config);
+        if(!stripeConnectState(config).configured)return done(res,metrics,started,"ambassador.payout.connect",503,{error:{code:"STRIPE_CONNECT_NOT_READY"}});
+        const idempotencyKey=String(req.headers["idempotency-key"]||"").trim();
+        if(!idempotencyKey||idempotencyKey.length>200){const e=new Error("Idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
+        const context=await store.customerSessionContext(customerActor),profile=await store.ambassadorProfileForTenant(context.tenant_id);
+        if(!profile||profile.status!=="active"){const e=new Error("Ambassador profile required");e.status=403;e.code="AMBASSADOR_PROFILE_NOT_ACTIVE";throw e;}
+        if(!["owner","admin"].includes(context.customer_role)){const e=new Error("Owner or admin required");e.status=403;e.code="CUSTOMER_ADMIN_REQUIRED";throw e;}
+        const billing=await store.customerBillingPreparation(context.tenant_id);
+        let local=await store.customerReferralPayoutAccount(context.tenant_id);
+        if(!local){
+          const account=await createStripeReferralRecipientAccount(config,{
+            email:billing.tenant?.billing_email||context.email,
+            country_code:billing.tenant?.country_code||"FR",
+            idempotency_key:"ambassador-payout-account/"+String(billing.tenant?.id||context.tenant_id)
+          });
+          local=await store.upsertCustomerReferralPayoutAccount(context.tenant_id,{...normalizeStripeReferralRecipientAccount(account),metadata:{source:"ambassador_portal"}});
+        }else{
+          try{local=await store.syncCustomerReferralPayoutAccount(context.tenant_id,normalizeStripeReferralRecipientAccount(await retrieveStripeReferralRecipientAccount(config,local.provider_account_reference)))}catch(_error){}
+        }
+        const link=await createStripeReferralOnboardingLink(config,local.provider_account_reference,{idempotency_key:idempotencyKey});
+        return done(res,metrics,started,"ambassador.payout.connect",201,{account:{status:local.status,transfers_enabled:local.transfers_enabled===true,details_submitted:local.details_submitted===true,requirements_state:local.requirements_state||null},onboarding:link});
       }
 
       if(method==="GET"&&pathname==="/api/v1/customer/referral"){
@@ -1759,6 +1856,40 @@ export function createBackend(options={}){
         const payload={id:match.id,paid_reference:String(body.paid_reference||"").trim()};
         const result=await store.idempotent(req.headers["idempotency-key"],"platform.referral_reward.paid",payload,()=>store.settleCustomerReferralReward(match.id,payload.paid_reference,actor));
         return done(res,metrics,started,"platform.referral_reward_paid",200,{...result.value,replayed:result.replayed});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/platform/ambassadors"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.ambassadors",200,await store.ambassadorAdminState());
+      }
+      match=routeMatch(pathname,"/api/v1/platform/ambassadors/:id/status");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const status=String(body.status||"").trim().toLowerCase(),reason=String(body.reason||"").trim();
+        const payload={id:match.id,status,reason};
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.ambassador.status",payload,()=>store.setAmbassadorProfileStatus(match.id,status,actor,reason));
+        let access=null,referralCode=null;
+        if(status==="active"){
+          try{
+            const program=await store.referralProgramPublicState();
+            if(program.enabled===true)referralCode=await store.ensureCustomerReferralCode(result.value.tenant_id);
+          }catch(error){
+            if(String(error?.code||"")!=="REFERRAL_PROGRAM_DISABLED")throw error;
+          }
+          const email=String(result.value.billing_email||"").trim().toLowerCase();
+          const auth=email?await store.customerAuthLookup(email):null;
+          const existing=Array.isArray(auth?.memberships)&&auth.memberships.some(x=>String(x.public_id)===String(result.value.tenant_public_id));
+          if(existing){
+            access={invitation_created:false,email_sent:false,reason:"existing_user"};
+          }else if(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+            const token=randomBytes(32).toString("base64url"),tokenHash=createHash("sha256").update(token).digest("hex");
+            const invitation=await store.createCustomerPortalInvitation(result.value.tenant_public_id,{email,role:"owner",expires_in_hours:72},tokenHash);
+            const emailSent=await sendAmbassadorAccessInvitation(config,{...result.value,...invitation},token,"profile-active");
+            access={invitation_created:true,email_sent:emailSent};
+          }else access={invitation_created:false,email_sent:false,reason:"missing_email"};
+        }
+        return done(res,metrics,started,"platform.ambassador_status",200,{...result.value,customer_access:access,referral_code:referralCode?.code||null,replayed:result.replayed});
       }
 
       if(method==="GET"&&pathname==="/api/v1/platform/tenants"){
@@ -2875,6 +3006,28 @@ async function sendCustomerAccessInvitation(config,target,token,reason="manual")
     return true;
   }catch(error){
     logSecurityEmailFailure("customer_access_invitation",error);
+    return false;
+  }
+}
+async function sendAmbassadorAccessInvitation(config,target,token,reason="approval"){
+  const email=String(target?.billing_email||target?.email||"").trim().toLowerCase();
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return false;
+  const base=String(config.publicBaseUrl||"https://audiotel-premium-pro.com").replace(/\/+$/,"");
+  const actionUrl=base+"/ambassadeur.html?invite="+encodeURIComponent(String(token||""));
+  const eventId="ambassador-access-invitation/"+String(target?.public_id||target?.tenant_public_id||email)+"/"+String(reason||"approval");
+  try{
+    await sendTransactionalEmail(config,{
+      to:email,
+      name:String(target?.display_name||email),
+      senderRole:"support",
+      templateKey:"ambassador_access_invitation",
+      data:{name:String(target?.display_name||email),action_url:actionUrl,login_identifier:email},
+      idempotencyKey:eventId,
+      internalEventId:eventId
+    });
+    return true;
+  }catch(error){
+    logSecurityEmailFailure("ambassador_access_invitation",error);
     return false;
   }
 }

@@ -4783,6 +4783,143 @@ export class PostgresStore{
     return this.referralProgramAdminState();
   }
 
+  async ensureAmbassadorApplication(input={}){
+    const name=String(input.name||"").trim().replace(/\s+/g," ").slice(0,160);
+    const email=String(input.email||"").trim().toLowerCase().slice(0,320);
+    const phone=String(input.phone||"").trim().slice(0,40);
+    const note=String(input.note||"").trim().slice(0,1200);
+    const country=String(input.country_code||"FR").trim().toUpperCase();
+    if(name.length<2)throw problem(400,"AMBASSADOR_NAME_REQUIRED");
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw problem(400,"INVALID_CUSTOMER_EMAIL");
+    if(phone&&!/^[+0-9 ().\-]{6,40}$/.test(phone))throw problem(400,"INVALID_PHONE");
+    if(!/^[A-Z]{2}$/.test(country))throw problem(400,"INVALID_COUNTRY_CODE");
+    const slugBase=("ambassadeur-"+name).normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,48)||"ambassadeur";
+    return this.sql.begin(async tx=>{
+      await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",["ambassador:"+email]);
+      let tenant=(await tx.unsafe(
+        "SELECT id,public_id,display_name,status,country_code,billing_email,metadata,created_at FROM tenants"+
+        " WHERE tenant_type<>'internal' AND status<>'closed' AND lower(btrim(COALESCE(billing_email,'')))=$1"+
+        " ORDER BY CASE WHEN metadata->>'account_scope'='ambassador_only' THEN 0 ELSE 1 END,created_at DESC,id DESC LIMIT 1 FOR UPDATE",
+        [email]
+      ))[0]||null;
+      if(!tenant){
+        const market=(await tx.unsafe("SELECT default_locale,default_currency,timezone FROM operating_markets WHERE country_code=$1 LIMIT 1",[country]))[0]||{};
+        tenant=(await tx.unsafe(
+          "INSERT INTO tenants(slug,display_name,legal_name,tenant_type,status,country_code,billing_email,preferred_locale,default_currency,timezone,metadata)"+
+          " VALUES($1||'-'||substr(replace(gen_random_uuid()::text,'-',''),1,8),$2,$2,'customer','pending',$3,$4,$5,$6,$7,$8::jsonb)"+
+          " RETURNING id,public_id,display_name,status,country_code,billing_email,metadata,created_at",
+          [slugBase,name,country,email,market.default_locale||"fr-FR",market.default_currency||"EUR",market.timezone||"Europe/Paris",JSON.stringify({account_scope:"ambassador_only",source:"public_ambassador_form"})]
+        ))[0];
+        await tx.unsafe(
+          "INSERT INTO tenant_kyc_profiles(tenant_id,entity_type,registration_country,status,metadata) VALUES($1,'individual',$2,'pending',$3::jsonb) ON CONFLICT(tenant_id) DO NOTHING",
+          [tenant.id,country,JSON.stringify({source:"public_ambassador_form",account_type:"individual",display_name:name,phone:phone||null,service_intent:"ambassador"})]
+        );
+      }
+      const row=(await tx.unsafe(
+        "INSERT INTO customer_ambassador_profiles(tenant_id,status,application_source,contact_phone,application_note,requested_at,metadata)"+
+        " VALUES($1,'pending','public_ambassador_form',$2,$3,now(),$4::jsonb)"+
+        " ON CONFLICT(tenant_id) DO UPDATE SET contact_phone=EXCLUDED.contact_phone,application_note=EXCLUDED.application_note,"+
+        " requested_at=CASE WHEN customer_ambassador_profiles.status='active' THEN customer_ambassador_profiles.requested_at ELSE now() END,"+
+        " status=CASE WHEN customer_ambassador_profiles.status='active' THEN 'active' ELSE 'pending' END,"+
+        " status_reason=CASE WHEN customer_ambassador_profiles.status='active' THEN customer_ambassador_profiles.status_reason ELSE NULL END,"+
+        " metadata=(CASE WHEN jsonb_typeof(customer_ambassador_profiles.metadata)='object' THEN customer_ambassador_profiles.metadata ELSE '{}'::jsonb END)||EXCLUDED.metadata"+
+        " RETURNING id,public_id::text AS public_id,tenant_id,status,requested_at,created_at",
+        [tenant.id,phone||null,note||null,JSON.stringify({latest_source:"public_ambassador_form"})]
+      ))[0];
+      await tx.unsafe(
+        "UPDATE tenants SET display_name=CASE WHEN metadata->>'account_scope'='ambassador_only' THEN $2 ELSE display_name END,"+
+        " billing_email=COALESCE(NULLIF(billing_email,''),$3),updated_at=now() WHERE id=$1",
+        [tenant.id,name,email]
+      );
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'ambassador.application.submit','customer_ambassador_profile',$2,$3::jsonb)",
+        [tenant.id,String(row.id),JSON.stringify({source:"public_ambassador_form",profile_status:row.status})]
+      );
+      return {...row,tenant_public_id:String(tenant.public_id),display_name:name,email,country_code:country,already_active:row.status==="active"};
+    });
+  }
+
+  async ambassadorProfileForTenant(tenantId){
+    const id=Number(tenantId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    const row=(await this.sql.unsafe(
+      "SELECT p.public_id::text AS public_id,p.status,p.contact_phone,p.requested_at,p.approved_at,p.suspended_at,p.rejected_at,p.status_reason,p.created_at,p.updated_at,"+
+      " t.public_id::text AS tenant_public_id,t.display_name,t.billing_email,t.country_code,t.status AS tenant_status,t.metadata AS tenant_metadata"+
+      " FROM customer_ambassador_profiles p JOIN tenants t ON t.id=p.tenant_id WHERE p.tenant_id=$1 LIMIT 1",[id]
+    ))[0];
+    return row||null;
+  }
+
+  async ambassadorDashboard(tenantId){
+    const id=Number(tenantId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    const profile=await this.ambassadorProfileForTenant(id);
+    if(!profile)throw problem(403,"AMBASSADOR_PROFILE_REQUIRED");
+    if(profile.status!=="active")throw problem(403,"AMBASSADOR_PROFILE_NOT_ACTIVE");
+    const overview=await this.customerReferralOverview(id);
+    const rewards=await this.sql.unsafe(
+      "SELECT rw.public_id::text AS public_id,rw.amount_minor::bigint AS amount_minor,rw.currency,rw.status,rw.payout_state,rw.earned_at,rw.paid_at,rw.provider_transfer_reference,rw.paid_reference,"+
+      " rf.public_id::text AS referral_public_id,rf.claimed_at,rf.qualified_at,rf.rewarded_at"+
+      " FROM customer_referral_rewards rw JOIN customer_referrals rf ON rf.id=rw.referral_id"+
+      " WHERE rf.referrer_tenant_id=$1 ORDER BY rw.earned_at DESC,rw.id DESC LIMIT 100",[id]
+    );
+    const totals=(await this.sql.unsafe(
+      "SELECT COALESCE(sum(rw.amount_minor) FILTER(WHERE rw.status='earned'),0)::bigint AS earned_unpaid_minor,"+
+      " COALESCE(sum(rw.amount_minor) FILTER(WHERE rw.status='paid'),0)::bigint AS paid_minor,"+
+      " count(*) FILTER(WHERE rw.status='earned')::int AS earned_unpaid_count,count(*) FILTER(WHERE rw.status='paid')::int AS paid_count"+
+      " FROM customer_referral_rewards rw JOIN customer_referrals rf ON rf.id=rw.referral_id WHERE rf.referrer_tenant_id=$1",[id]
+    ))[0]||{};
+    const s=overview.summary||{},visits=Number(s.visits||0),prospects=Number(s.prospects||0),claimed=Number(s.claimed||0),rewarded=Number(s.rewarded||0);
+    return {
+      profile,
+      program:{enabled:overview.enabled,currency:overview.currency,qualification_paid_invoices:overview.qualification_paid_invoices,tiers:overview.tiers,milestones:overview.milestones,policy_version:overview.policy_version},
+      referral:{code:overview.code,eligible:overview.eligible,eligibility_reason:overview.eligibility_reason,next_reward:overview.next_reward,recent:overview.recent},
+      payout_account:overview.payout_account,
+      summary:{...s,earned_unpaid_minor:Number(totals.earned_unpaid_minor||0),paid_minor:Number(totals.paid_minor||0),earned_unpaid_count:Number(totals.earned_unpaid_count||0),paid_count:Number(totals.paid_count||0)},
+      conversion:{visit_to_prospect_percent:visits?Math.round(prospects*10000/visits)/100:0,prospect_to_claim_percent:prospects?Math.round(claimed*10000/prospects)/100:0,claim_to_reward_percent:claimed?Math.round(rewarded*10000/claimed)/100:0},
+      rewards:rewards.map(x=>({...x,amount_minor:Number(x.amount_minor||0)}))
+    };
+  }
+
+  async ambassadorAdminState(){
+    const rows=await this.sql.unsafe(
+      "SELECT p.public_id::text AS public_id,p.status,p.application_source,p.contact_phone,p.application_note,p.requested_at,p.approved_at,p.suspended_at,p.rejected_at,p.status_reason,p.created_at,p.updated_at,"+
+      " t.public_id::text AS tenant_public_id,t.display_name,t.billing_email,t.country_code,t.status AS tenant_status,t.metadata AS tenant_metadata,"+
+      " c.code,c.status AS code_status,COALESCE(rs.referrals,0)::int AS referrals,COALESCE(rs.rewarded,0)::int AS rewarded,COALESCE(rs.reward_minor,0)::bigint AS reward_minor"+
+      " FROM customer_ambassador_profiles p JOIN tenants t ON t.id=p.tenant_id LEFT JOIN customer_referral_codes c ON c.tenant_id=t.id"+
+      " LEFT JOIN LATERAL (SELECT count(*)::int AS referrals,count(*) FILTER(WHERE status='rewarded')::int AS rewarded,COALESCE(sum(reward_minor) FILTER(WHERE status='rewarded'),0)::bigint AS reward_minor FROM customer_referrals r WHERE r.referrer_tenant_id=t.id) rs ON true"+
+      " ORDER BY CASE p.status WHEN 'pending' THEN 0 WHEN 'active' THEN 1 WHEN 'suspended' THEN 2 ELSE 3 END,p.requested_at DESC,p.id DESC LIMIT 500"
+    );
+    return {data:rows.map(x=>({...x,reward_minor:Number(x.reward_minor||0)}))};
+  }
+
+  async setAmbassadorProfileStatus(publicId,status,actor={},reason=""){
+    publicId=String(publicId||"").trim();status=String(status||"").trim().toLowerCase();reason=String(reason||"").trim().slice(0,500);
+    if(!/^[0-9a-f-]{36}$/i.test(publicId))throw problem(400,"INVALID_AMBASSADOR_ID");
+    if(!["active","suspended","rejected"].includes(status))throw problem(400,"INVALID_AMBASSADOR_STATUS");
+    const actorId=numericActor(actor);
+    return this.sql.begin(async tx=>{
+      const row=(await tx.unsafe(
+        "SELECT p.id,p.public_id::text AS public_id,p.tenant_id,p.status,t.public_id::text AS tenant_public_id,t.display_name,t.billing_email,t.country_code,t.status AS tenant_status,t.metadata AS tenant_metadata"+
+        " FROM customer_ambassador_profiles p JOIN tenants t ON t.id=p.tenant_id WHERE p.public_id=$1::uuid FOR UPDATE OF p,t",[publicId]
+      ))[0];
+      if(!row)throw problem(404,"AMBASSADOR_PROFILE_NOT_FOUND");
+      const previous=row.status;
+      await tx.unsafe(
+        "UPDATE customer_ambassador_profiles SET status=$2,status_reason=$3,approved_at=CASE WHEN $2='active' THEN COALESCE(approved_at,now()) ELSE approved_at END,"+
+        " approved_by=CASE WHEN $2='active' THEN $4 ELSE approved_by END,suspended_at=CASE WHEN $2='suspended' THEN now() ELSE suspended_at END,"+
+        " rejected_at=CASE WHEN $2='rejected' THEN now() ELSE rejected_at END WHERE id=$1",
+        [row.id,status,reason||null,actorId]
+      );
+      const ambassadorOnly=String(row.tenant_metadata?.account_scope||"")==="ambassador_only";
+      if(status==="active"&&row.tenant_status!=="active")await tx.unsafe("UPDATE tenants SET status='active',updated_at=now() WHERE id=$1",[row.tenant_id]);
+      if(status==="suspended"&&ambassadorOnly&&row.tenant_status==="active")await tx.unsafe("UPDATE tenants SET status='suspended',updated_at=now() WHERE id=$1",[row.tenant_id]);
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,$3,'customer_ambassador_profile',$4,$5::jsonb)",
+        [row.tenant_id,actorId,"ambassador.status."+status,String(row.id),JSON.stringify({previous_status:previous,status,reason,ambassador_only:ambassadorOnly})]
+      );
+      return {...row,status,previous_status:previous,changed:previous!==status,ambassador_only:ambassadorOnly};
+    });
+  }
+
   async customerReferralOverview(tenantId){
     const id=Number(tenantId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     const program=await this.referralProgramPublicState();

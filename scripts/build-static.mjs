@@ -13,6 +13,7 @@ fs.mkdirSync(path.join(dist,"assets"),{recursive:true});
 const files=[
   "index.html",
   "client.html",
+  "ambassadeur.html",
   "paiement-cb-result.html",
   "site/index.html",
   "site/site.css",
@@ -42,6 +43,9 @@ const files=[
   "assets/client-google.js",
   "assets/client-portal-api.js",
   "assets/client-portal.js",
+  "assets/ambassador-api.js",
+  "assets/ambassador-portal.js",
+  "assets/ambassador-portal.css",
   "assets/client-billing.js",
   "assets/withdrawal.js",
   "assets/withdrawal.css",

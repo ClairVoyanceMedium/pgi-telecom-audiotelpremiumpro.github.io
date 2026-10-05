@@ -609,7 +609,7 @@ test("new complementary products are public, indexable and commercially explicit
   assert.match(tracking,/data-referral-example/);
   assert.match(referralLanding,/id="ambassador-request-form"/);
   assert.match(tracking,/bindAmbassadorRequest/);
-  assert.match(tracking,/\/api\/v1\/public\/contact/);
+  assert.match(tracking,/\/api\/v1\/public\/ambassador\/apply/);
   assert.match(tracking,/const quickTab=link\.closest\("\.revenue-quick-tab"\)/);
   assert.match(tracking,/quickTab\.hidden=false/);
   assert.match(tracking,/Intl\.NumberFormat\("fr-FR"/);
