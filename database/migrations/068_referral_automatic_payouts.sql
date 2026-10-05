@@ -20,7 +20,6 @@ CREATE TABLE IF NOT EXISTS customer_referral_payout_accounts (
 CREATE INDEX IF NOT EXISTS customer_referral_payout_accounts_status_idx
   ON customer_referral_payout_accounts(status,transfers_enabled,updated_at DESC);
 
-DROP TRIGGER IF EXISTS customer_referral_payout_accounts_touch_updated ON customer_referral_payout_accounts;
 CREATE TRIGGER customer_referral_payout_accounts_touch_updated
 BEFORE UPDATE ON customer_referral_payout_accounts
 FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
