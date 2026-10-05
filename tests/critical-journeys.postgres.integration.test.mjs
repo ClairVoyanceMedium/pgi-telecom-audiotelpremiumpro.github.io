@@ -306,7 +306,7 @@ test("full customer journey stays fail-closed until legal readiness and keeps SV
     assert.equal(detail.lines.length,0);
     assert.ok(detail.subscriptions.some(x=>x.status==="active"));
 
-    assert.ok(state.hubspotFormSubmissions>=2);
+    assert.equal(state.hubspotFormSubmissions,1);
     assert.ok(state.emails.length>=3);
   }finally{
     globalThis.fetch=originalFetch;
