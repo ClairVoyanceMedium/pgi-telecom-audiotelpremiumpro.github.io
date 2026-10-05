@@ -15,6 +15,10 @@
     {
       "path": "/api/v1/internal/business-live/reset-schedules/run",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/v1/internal/referral-payouts/run",
+      "schedule": "*/10 * * * *"
     }
   ]
 }
