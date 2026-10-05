@@ -341,7 +341,7 @@ export function buildTransactionalMessage(config,templateKey,data={}){
         safeDetail("Référence dossier / identifiant client",data.dossier_ref),
         safeDetail("Identifiant de connexion",data.login_identifier),
         "Après activation, vous pourrez vous connecter avec votre adresse email ou votre référence dossier.",
-        "Pour votre sécurité, aucun mot de passe temporaire n’est envoyé par email. Le bouton ci-dessous contient un accès d’activation unique et vous permet de choisir votre mot de passe personnel."
+        "Pour votre sécurité, aucun secret de connexion n’est transmis par email. Le bouton ci-dessous contient un accès d’activation unique et vous permet de choisir votre mot de passe personnel."
       ].filter(Boolean),
       cta:actionUrl?{label:"Activer mon espace et choisir mon mot de passe",url:actionUrl}:null,
       foot:"Le lien d’activation est temporaire et à usage unique. Votre référence dossier reste stable. Vous pourrez modifier votre mot de passe à tout moment depuis les réglages de sécurité de votre espace client."
