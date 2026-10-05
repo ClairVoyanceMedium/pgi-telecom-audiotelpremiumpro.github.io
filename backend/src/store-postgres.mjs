@@ -21,6 +21,46 @@ const core=require("../../assets/core.js");
 
 const CONSUMPTION_RECEIPT_SCHEMA="audiotel-consumption-receipt/1";
 const CONSUMPTION_METRIC_KEYS=["calls","minutes","revenue","payout","quality"];
+
+const REFERRAL_PROGRAM_VERSION="ambassador-2026-10-05-v1";
+const REFERRAL_PAID_MONTHS_REQUIRED=3;
+const REFERRAL_TIERS=Object.freeze([
+  Object.freeze({min:1,max:4,reward_minor:1000}),
+  Object.freeze({min:5,max:9,reward_minor:1200}),
+  Object.freeze({min:10,max:24,reward_minor:1500}),
+  Object.freeze({min:25,max:null,reward_minor:2000})
+]);
+const REFERRAL_MILESTONE_BONUSES=Object.freeze([
+  Object.freeze({rank:1,bonus_minor:500}),
+  Object.freeze({rank:5,bonus_minor:2000}),
+  Object.freeze({rank:10,bonus_minor:5000})
+]);
+function referralProgramConfiguration(){
+  return {
+    program_version:REFERRAL_PROGRAM_VERSION,
+    locked:true,
+    currency:"EUR",
+    reward_minor:1000,
+    qualification:"three_paid_monthly_invoices",
+    qualification_payments_required:REFERRAL_PAID_MONTHS_REQUIRED,
+    tiers:REFERRAL_TIERS.map(x=>({...x})),
+    milestone_bonuses:REFERRAL_MILESTONE_BONUSES.map(x=>({...x}))
+  };
+}
+function referralRewardForRank(value){
+  const rank=Math.max(1,Math.trunc(Number(value)||1));
+  const tier=REFERRAL_TIERS.find(x=>rank>=x.min&&(x.max==null||rank<=x.max))||REFERRAL_TIERS[REFERRAL_TIERS.length-1];
+  const bonus=REFERRAL_MILESTONE_BONUSES.find(x=>x.rank===rank)?.bonus_minor||0;
+  const nextTier=REFERRAL_TIERS.find(x=>x.min>rank)||null;
+  return {
+    rank,
+    base_reward_minor:tier.reward_minor,
+    milestone_bonus_minor:bonus,
+    total_reward_minor:tier.reward_minor+bonus,
+    next_tier_min:nextTier?.min||null,
+    next_tier_reward_minor:nextTier?.reward_minor||tier.reward_minor
+  };
+}
 const DOSSIER_MULTIPLIER=104729n;
 const DOSSIER_OFFSET=32416190071n;
 function dossierReference(id,createdAt){
@@ -2483,27 +2523,67 @@ export class PostgresStore{
           "UPDATE tenant_admin_alerts SET state='resolved',resolved_at=now(),updated_at=now() WHERE tenant_id=$1 AND subscription_id=$2 AND alert_type='subscription_unpaid' AND state<>'resolved'",
           [tenant.id,subscriptionId]
         );
+        const paidInvoices=(await tx.unsafe(
+          "SELECT count(DISTINCT COALESCE(NULLIF(normalized_details->>'provider_invoice_reference',''),provider_event_id))::int AS paid_count"+
+          " FROM subscription_billing_events WHERE tenant_id=$1 AND event_type='invoice.paid'",
+          [tenant.id]
+        ))[0]||{paid_count:0};
+        const paidCount=Number(paidInvoices.paid_count||0);
         const referral=(await tx.unsafe(
-          "SELECT id,referrer_tenant_id,reward_minor,reward_currency FROM customer_referrals WHERE referred_tenant_id=$1 AND status='claimed' LIMIT 1 FOR UPDATE",
+          "SELECT id,referrer_tenant_id,reward_currency FROM customer_referrals WHERE referred_tenant_id=$1 AND status='claimed' LIMIT 1 FOR UPDATE",
           [tenant.id]
         ))[0]||null;
-        if(referral&&Number(referral.reward_minor)>0){
-          await tx.unsafe(
-            "UPDATE customer_referrals SET status='rewarded',qualified_at=COALESCE(qualified_at,$2::timestamptz),rewarded_at=COALESCE(rewarded_at,$2::timestamptz),qualification_subscription_id=$3 WHERE id=$1",
-            [referral.id,eventTime,subscriptionId]
+        if(referral&&paidCount>=REFERRAL_PAID_MONTHS_REQUIRED){
+          await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",["referral-rank:"+String(referral.referrer_tenant_id)]);
+          const previous=(await tx.unsafe(
+            "SELECT count(*)::int AS count FROM customer_referrals WHERE referrer_tenant_id=$1 AND status='rewarded' AND id<>$2",
+            [referral.referrer_tenant_id,referral.id]
+          ))[0]||{count:0};
+          const reward=referralRewardForRank(Number(previous.count||0)+1);
+          const currency="EUR";
+          const updated=await tx.unsafe(
+            "UPDATE customer_referrals SET status='rewarded',reward_minor=$2,reward_currency=$3,qualified_at=COALESCE(qualified_at,$4::timestamptz),"+
+            " rewarded_at=COALESCE(rewarded_at,$4::timestamptz),qualification_subscription_id=$5,"+
+            " metadata=COALESCE(metadata,'{}'::jsonb)||$6::jsonb WHERE id=$1 AND status='claimed' RETURNING id",
+            [referral.id,reward.total_reward_minor,currency,eventTime,subscriptionId,JSON.stringify({
+              program_version:REFERRAL_PROGRAM_VERSION,
+              qualification:"three_paid_monthly_invoices",
+              qualified_payments:paidCount,
+              rank:reward.rank,
+              base_reward_minor:reward.base_reward_minor,
+              milestone_bonus_minor:reward.milestone_bonus_minor
+            })]
           );
-          await tx.unsafe(
-            "INSERT INTO customer_referral_rewards(referral_id,tenant_id,amount_minor,currency,status,metadata) VALUES($1,$2,$3,$4,'earned',$5::jsonb) ON CONFLICT(referral_id) DO NOTHING",
-            [referral.id,referral.referrer_tenant_id,Number(referral.reward_minor),referral.reward_currency,JSON.stringify({qualification:"paid_active_subscription",subscription_id:subscriptionId})]
-          );
-          await tx.unsafe(
-            "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'referral.reward.earned','customer_referral',$2,$3::jsonb)",
-            [referral.referrer_tenant_id,String(referral.id),JSON.stringify({referred_tenant_id:Number(tenant.id),subscription_id:subscriptionId,amount_minor:Number(referral.reward_minor),currency:referral.reward_currency})]
-          );
-          await tx.unsafe(
-            "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'referral.reward.earned','customer_referral',$2,$3::jsonb)",
-            [referral.referrer_tenant_id,String(referral.id),JSON.stringify({referral_id:Number(referral.id),amount_minor:Number(referral.reward_minor),currency:referral.reward_currency})]
-          );
+          if(updated.length){
+            const rewardMetadata={
+              program_version:REFERRAL_PROGRAM_VERSION,
+              qualification:"three_paid_monthly_invoices",
+              qualified_payments:paidCount,
+              subscription_id:subscriptionId,
+              rank:reward.rank,
+              base_reward_minor:reward.base_reward_minor,
+              milestone_bonus_minor:reward.milestone_bonus_minor,
+              next_tier_min:reward.next_tier_min,
+              next_tier_reward_minor:reward.next_tier_reward_minor
+            };
+            await tx.unsafe(
+              "INSERT INTO customer_referral_rewards(referral_id,tenant_id,amount_minor,currency,status,metadata) VALUES($1,$2,$3,$4,'earned',$5::jsonb) ON CONFLICT(referral_id) DO NOTHING",
+              [referral.id,referral.referrer_tenant_id,reward.total_reward_minor,currency,JSON.stringify(rewardMetadata)]
+            );
+            await tx.unsafe(
+              "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'referral.reward.earned','customer_referral',$2,$3::jsonb)",
+              [referral.referrer_tenant_id,String(referral.id),JSON.stringify({
+                referred_tenant_id:Number(tenant.id),subscription_id:subscriptionId,amount_minor:reward.total_reward_minor,currency,...rewardMetadata
+              })]
+            );
+            await tx.unsafe(
+              "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'referral.reward.earned','customer_referral',$2,$3::jsonb)",
+              [referral.referrer_tenant_id,String(referral.id),JSON.stringify({
+                referral_id:Number(referral.id),amount_minor:reward.total_reward_minor,currency,...rewardMetadata
+              })]
+            );
+          }
+        }
         }
       }
       return {duplicate:false,subscription_id:subscriptionId,tenant_id:Number(tenant.id),status};
@@ -4569,17 +4649,14 @@ export class PostgresStore{
   }
 
   async referralProgramPublicState(){
+    const fixed=referralProgramConfiguration();
     try{
       const row=(await this.sql.unsafe(
-        "SELECT enabled,configuration FROM platform_feature_flags WHERE feature_key='customer_referral' LIMIT 1"
+        "SELECT enabled FROM platform_feature_flags WHERE feature_key='customer_referral' LIMIT 1"
       ))[0]||null;
-      const cfg=row?.configuration&&typeof row.configuration==="object"?row.configuration:{};
-      const rewardMinor=Math.max(0,Math.trunc(Number(cfg.reward_minor)||0)),currency=String(cfg.currency||"EUR").toUpperCase();
-      return {enabled:row?.enabled===true&&rewardMinor>0,reward_minor:rewardMinor,currency:/^[A-Z]{3}$/.test(currency)?currency:"EUR",qualification:"paid_active_subscription"};
+      return {enabled:row?.enabled===true,...fixed};
     }catch(error){
-      if(String(error?.code||"")==="42P01"){
-        return {enabled:false,reward_minor:0,currency:"EUR",qualification:"paid_active_subscription"};
-      }
+      if(String(error?.code||"")==="42P01")return {enabled:false,...fixed};
       throw error;
     }
   }
@@ -4591,7 +4668,7 @@ export class PostgresStore{
         "SELECT status,count(*)::int AS count,COALESCE(sum(reward_minor),0)::bigint AS reward_minor FROM customer_referrals GROUP BY status ORDER BY status"
       ),
       this.sql.unsafe(
-        "SELECT rw.id,rw.public_id::text AS public_id,rw.amount_minor::bigint AS amount_minor,rw.currency,rw.status,rw.earned_at,rw.paid_at,rw.paid_reference,"+
+        "SELECT rw.id,rw.public_id::text AS public_id,rw.amount_minor::bigint AS amount_minor,rw.currency,rw.status,rw.earned_at,rw.paid_at,rw.paid_reference,rw.metadata,"+
         " rt.display_name AS referrer_name,dt.display_name AS referred_name,rf.public_id::text AS referral_public_id"+
         " FROM customer_referral_rewards rw JOIN customer_referrals rf ON rf.id=rw.referral_id"+
         " JOIN tenants rt ON rt.id=rf.referrer_tenant_id JOIN tenants dt ON dt.id=rf.referred_tenant_id"+
@@ -4599,24 +4676,25 @@ export class PostgresStore{
       )
     ]);
     const summary={claimed:0,qualified:0,rewarded:0,rejected:0,reward_minor:0};
-    for(const row of counts){const key=String(row.status||"");if(Object.prototype.hasOwnProperty.call(summary,key))summary[key]=Number(row.count||0);summary.reward_minor+=Number(row.reward_minor||0);}
-    return {...program,summary,rewards:rewards.map(x=>({...x,amount_minor:Number(x.amount_minor||0)}))};
+    for(const row of counts){
+      const key=String(row.status||"");
+      if(Object.prototype.hasOwnProperty.call(summary,key))summary[key]=Number(row.count||0);
+      summary.reward_minor+=Number(row.reward_minor||0);
+    }
+    const next=referralRewardForRank(Number(summary.rewarded||0)+1);
+    return {...program,summary,next_reward:next,rewards:rewards.map(x=>({...x,amount_minor:Number(x.amount_minor||0)}))};
   }
 
   async updateReferralProgram(input={},actor={}){
-    const enabled=input.enabled===true,rewardMinor=Math.trunc(Number(input.reward_minor)),currency=String(input.currency||"EUR").trim().toUpperCase();
-    if(!Number.isInteger(rewardMinor)||rewardMinor<0||rewardMinor>1000000)throw problem(400,"INVALID_REFERRAL_REWARD");
-    if(enabled&&rewardMinor<=0)throw problem(400,"REFERRAL_REWARD_REQUIRED");
-    if(currency!=="EUR")throw problem(400,"REFERRAL_CURRENCY_UNSUPPORTED");
-    const actorId=numericActor(actor);
+    const enabled=input.enabled===true,actorId=numericActor(actor),configuration=referralProgramConfiguration();
     await this.sql.unsafe(
       "INSERT INTO platform_feature_flags(feature_key,enabled,configuration,updated_by) VALUES('customer_referral',$1,$2::jsonb,$3)"+
       " ON CONFLICT(feature_key) DO UPDATE SET enabled=EXCLUDED.enabled,configuration=EXCLUDED.configuration,updated_by=EXCLUDED.updated_by,updated_at=now()",
-      [enabled,JSON.stringify({reward_minor:rewardMinor,currency,qualification:"paid_active_subscription"}),actorId]
+      [enabled,JSON.stringify(configuration),actorId]
     );
     await this.sql.unsafe(
       "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES(NULL,$1,'referral.program.update','platform_feature_flag','customer_referral',$2::jsonb)",
-      [actorId,JSON.stringify({enabled,reward_minor:rewardMinor,currency,qualification:"paid_active_subscription"})]
+      [actorId,JSON.stringify({enabled,...configuration})]
     );
     return this.referralProgramAdminState();
   }
@@ -4624,7 +4702,7 @@ export class PostgresStore{
   async customerReferralOverview(tenantId){
     const id=Number(tenantId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     const program=await this.referralProgramPublicState();
-    if(!program.enabled)return {...program,code:null,eligible:false,eligibility_reason:"program_disabled",summary:{claimed:0,rewarded:0,reward_minor:0},recent:[]};
+    if(!program.enabled)return {...program,code:null,eligible:false,eligibility_reason:"program_disabled",summary:{claimed:0,pending:0,rewarded:0,reward_minor:0},next_reward:referralRewardForRank(1),recent:[]};
     const [tenantRows,codeRows,summaryRows,recent]=await Promise.all([
       this.sql.unsafe(
         "SELECT t.status,EXISTS(SELECT 1 FROM tenant_subscriptions s WHERE s.tenant_id=t.id AND s.status='active' AND s.current_period_end>now() AND (s.last_payment_status IS NULL OR s.last_payment_status IN ('paid','succeeded','success'))) AS paid_active FROM tenants t WHERE t.id=$1 AND t.tenant_type<>'internal' LIMIT 1",
@@ -4632,18 +4710,35 @@ export class PostgresStore{
       ),
       this.sql.unsafe("SELECT code,status,created_at FROM customer_referral_codes WHERE tenant_id=$1 LIMIT 1",[id]),
       this.sql.unsafe(
-        "SELECT count(*)::int AS claimed,count(*) FILTER(WHERE status='rewarded')::int AS rewarded,COALESCE(sum(reward_minor) FILTER(WHERE status='rewarded'),0)::bigint AS reward_minor FROM customer_referrals WHERE referrer_tenant_id=$1",
+        "SELECT count(*)::int AS claimed,count(*) FILTER(WHERE status='claimed')::int AS pending,count(*) FILTER(WHERE status='rewarded')::int AS rewarded,"+
+        " COALESCE(sum(reward_minor) FILTER(WHERE status='rewarded'),0)::bigint AS reward_minor FROM customer_referrals WHERE referrer_tenant_id=$1",
         [id]
       ),
       this.sql.unsafe(
-        "SELECT public_id::text AS public_id,status,reward_minor::bigint AS reward_minor,reward_currency,claimed_at,qualified_at,rewarded_at,rejected_at FROM customer_referrals WHERE referrer_tenant_id=$1 ORDER BY claimed_at DESC,id DESC LIMIT 20",
-        [id]
+        "SELECT r.public_id::text AS public_id,r.status,r.reward_minor::bigint AS reward_minor,r.reward_currency,r.claimed_at,r.qualified_at,r.rewarded_at,r.rejected_at,"+
+        " LEAST($2::int,(SELECT count(DISTINCT COALESCE(NULLIF(e.normalized_details->>'provider_invoice_reference',''),e.provider_event_id)) FROM subscription_billing_events e WHERE e.tenant_id=r.referred_tenant_id AND e.event_type='invoice.paid'))::int AS qualified_payments"+
+        " FROM customer_referrals r WHERE r.referrer_tenant_id=$1 ORDER BY r.claimed_at DESC,r.id DESC LIMIT 20",
+        [id,REFERRAL_PAID_MONTHS_REQUIRED]
       )
     ]);
     const tenant=tenantRows[0]||null;if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
     const code=codeRows[0]||null,summary=summaryRows[0]||{};
     const eligible=tenant.status==="active"&&tenant.paid_active===true;
-    return {...program,code:code?.status==="active"?code.code:null,eligible,eligibility_reason:eligible?null:(tenant.status!=="active"?"tenant_not_active":"subscription_not_paid"),summary:{claimed:Number(summary.claimed||0),rewarded:Number(summary.rewarded||0),reward_minor:Number(summary.reward_minor||0)},recent:recent.map(x=>({...x,reward_minor:Number(x.reward_minor||0)}))};
+    const normalizedSummary={
+      claimed:Number(summary.claimed||0),
+      pending:Number(summary.pending||0),
+      rewarded:Number(summary.rewarded||0),
+      reward_minor:Number(summary.reward_minor||0)
+    };
+    return {
+      ...program,
+      code:code?.status==="active"?code.code:null,
+      eligible,
+      eligibility_reason:eligible?null:(tenant.status!=="active"?"tenant_not_active":"subscription_not_paid"),
+      summary:normalizedSummary,
+      next_reward:referralRewardForRank(normalizedSummary.rewarded+1),
+      recent:recent.map(x=>({...x,reward_minor:Number(x.reward_minor||0),qualified_payments:Number(x.qualified_payments||0)}))
+    };
   }
 
   async ensureCustomerReferralCode(tenantId){
@@ -4663,7 +4758,7 @@ export class PostgresStore{
       " ON CONFLICT(tenant_id) DO UPDATE SET status='active',disabled_at=NULL RETURNING code,status,created_at",
       [id,code]
     ))[0];
-    return {enabled:true,code:row.code,status:row.status,created_at:row.created_at,reward_minor:program.reward_minor,currency:program.currency};
+    return {enabled:true,code:row.code,status:row.status,created_at:row.created_at,...program,next_reward:referralRewardForRank(1)};
   }
 
   async claimCustomerReferral(tenantId,codeInput,source="unknown"){
@@ -4671,10 +4766,8 @@ export class PostgresStore{
     if(!Number.isInteger(referred)||referred<=0)throw problem(400,"INVALID_TENANT_ID");
     if(!/^[A-Z0-9]{8,24}$/.test(code))throw problem(400,"INVALID_REFERRAL_CODE");
     return this.sql.begin(async tx=>{
-      const flag=(await tx.unsafe("SELECT enabled,configuration FROM platform_feature_flags WHERE feature_key='customer_referral' LIMIT 1 FOR UPDATE"))[0]||null;
-      const cfg=flag?.configuration&&typeof flag.configuration==="object"?flag.configuration:{};
-      const rewardMinor=Math.trunc(Number(cfg.reward_minor)||0),currency=String(cfg.currency||"EUR").toUpperCase();
-      if(flag?.enabled!==true||rewardMinor<=0)throw problem(409,"REFERRAL_PROGRAM_DISABLED");
+      const flag=(await tx.unsafe("SELECT enabled FROM platform_feature_flags WHERE feature_key='customer_referral' LIMIT 1 FOR UPDATE"))[0]||null;
+      if(flag?.enabled!==true)throw problem(409,"REFERRAL_PROGRAM_DISABLED");
       const refCode=(await tx.unsafe(
         "SELECT c.id,c.tenant_id,t.status AS tenant_status,EXISTS(SELECT 1 FROM tenant_subscriptions s WHERE s.tenant_id=c.tenant_id AND s.status='active' AND s.current_period_end>now() AND (s.last_payment_status IS NULL OR s.last_payment_status IN ('paid','succeeded','success'))) AS paid_active"+
         " FROM customer_referral_codes c JOIN tenants t ON t.id=c.tenant_id WHERE c.code=$1 AND c.status='active' LIMIT 1",
@@ -4692,16 +4785,21 @@ export class PostgresStore{
         if(Number(existing.referral_code_id)!==Number(refCode.id))throw problem(409,"REFERRAL_ALREADY_CLAIMED");
         return {accepted:true,replayed:true,status:existing.status,reward_minor:Number(existing.reward_minor),currency:existing.reward_currency};
       }
+      const metadata={source:String(source||"unknown").slice(0,80),program_version:REFERRAL_PROGRAM_VERSION,qualification:"three_paid_monthly_invoices",qualification_payments_required:REFERRAL_PAID_MONTHS_REQUIRED};
       const row=(await tx.unsafe(
         "INSERT INTO customer_referrals(referral_code_id,referrer_tenant_id,referred_tenant_id,status,reward_minor,reward_currency,metadata)"+
-        " VALUES($1,$2,$3,'claimed',$4,$5,$6::jsonb) RETURNING id,public_id::text AS public_id,status,reward_minor::bigint AS reward_minor,reward_currency,claimed_at",
-        [refCode.id,refCode.tenant_id,referred,rewardMinor,currency,JSON.stringify({source:String(source||"unknown").slice(0,80)})]
+        " VALUES($1,$2,$3,'claimed',0,'EUR',$4::jsonb) RETURNING id,public_id::text AS public_id,status,reward_minor::bigint AS reward_minor,reward_currency,claimed_at",
+        [refCode.id,refCode.tenant_id,referred,JSON.stringify(metadata)]
       ))[0];
       await tx.unsafe(
         "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'referral.claim','customer_referral',$2,$3::jsonb)",
-        [referred,String(row.id),JSON.stringify({referrer_tenant_id:Number(refCode.tenant_id),reward_minor:rewardMinor,currency,source:String(source||"unknown").slice(0,80)})]
+        [referred,String(row.id),JSON.stringify({referrer_tenant_id:Number(refCode.tenant_id),currency:"EUR",...metadata})]
       );
-      return {accepted:true,replayed:false,public_id:row.public_id,status:row.status,reward_minor:Number(row.reward_minor),currency:row.reward_currency,claimed_at:row.claimed_at};
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'referral.claimed','customer_referral',$2,$3::jsonb)",
+        [refCode.tenant_id,String(row.id),JSON.stringify({referral_id:Number(row.id),qualification_payments_required:REFERRAL_PAID_MONTHS_REQUIRED,program_version:REFERRAL_PROGRAM_VERSION})]
+      );
+      return {accepted:true,replayed:false,public_id:row.public_id,status:row.status,reward_minor:0,currency:"EUR",claimed_at:row.claimed_at,qualification_payments_required:REFERRAL_PAID_MONTHS_REQUIRED};
     });
   }
 
@@ -4709,23 +4807,29 @@ export class PostgresStore{
     const id=Number(rewardId),reference=String(paidReference||"").trim().slice(0,180),actorId=numericActor(actor);
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_REFERRAL_REWARD");
     if(reference.length<3)throw problem(400,"REFERRAL_PAYMENT_REFERENCE_REQUIRED");
-    const existing=(await this.sql.unsafe(
-      "SELECT id,public_id::text AS public_id,tenant_id,amount_minor::bigint AS amount_minor,currency,status,earned_at,paid_at,paid_reference FROM customer_referral_rewards WHERE id=$1 LIMIT 1",
-      [id]
-    ))[0];
-    if(!existing)throw problem(404,"REFERRAL_REWARD_NOT_FOUND");
-    if(existing.status==="paid")return {...existing,amount_minor:Number(existing.amount_minor),already_paid:true};
-    if(existing.status!=="earned")throw problem(409,"REFERRAL_REWARD_NOT_PAYABLE");
-    const row=(await this.sql.unsafe(
-      "UPDATE customer_referral_rewards SET status='paid',paid_at=now(),paid_reference=$2 WHERE id=$1 AND status='earned' RETURNING id,public_id::text AS public_id,tenant_id,amount_minor::bigint AS amount_minor,currency,status,earned_at,paid_at,paid_reference",
-      [id,reference]
-    ))[0];
-    if(!row)throw problem(409,"REFERRAL_REWARD_STATE_CHANGED");
-    await this.sql.unsafe(
-      "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'referral.reward.paid','customer_referral_reward',$3,$4::jsonb)",
-      [row.tenant_id,actorId,String(row.id),JSON.stringify({amount_minor:Number(row.amount_minor),currency:row.currency,paid_reference:row.paid_reference})]
-    );
-    return {...row,amount_minor:Number(row.amount_minor),already_paid:false};
+    return this.sql.begin(async tx=>{
+      const existing=(await tx.unsafe(
+        "SELECT id,public_id::text AS public_id,tenant_id,amount_minor::bigint AS amount_minor,currency,status,earned_at,paid_at,paid_reference,metadata FROM customer_referral_rewards WHERE id=$1 LIMIT 1 FOR UPDATE",
+        [id]
+      ))[0];
+      if(!existing)throw problem(404,"REFERRAL_REWARD_NOT_FOUND");
+      if(existing.status==="paid")return {...existing,amount_minor:Number(existing.amount_minor),already_paid:true};
+      if(existing.status!=="earned")throw problem(409,"REFERRAL_REWARD_NOT_PAYABLE");
+      const row=(await tx.unsafe(
+        "UPDATE customer_referral_rewards SET status='paid',paid_at=now(),paid_reference=$2 WHERE id=$1 AND status='earned' RETURNING id,public_id::text AS public_id,tenant_id,amount_minor::bigint AS amount_minor,currency,status,earned_at,paid_at,paid_reference,metadata",
+        [id,reference]
+      ))[0];
+      if(!row)throw problem(409,"REFERRAL_REWARD_STATE_CHANGED");
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'referral.reward.paid','customer_referral_reward',$3,$4::jsonb)",
+        [row.tenant_id,actorId,String(row.id),JSON.stringify({amount_minor:Number(row.amount_minor),currency:row.currency,paid_reference:row.paid_reference})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'referral.reward.paid','customer_referral_reward',$2,$3::jsonb)",
+        [row.tenant_id,String(row.id),JSON.stringify({reward_id:Number(row.id),amount_minor:Number(row.amount_minor),currency:row.currency,paid_reference:row.paid_reference,metadata:row.metadata||{}})]
+      );
+      return {...row,amount_minor:Number(row.amount_minor),already_paid:false};
+    });
   }
 
   async customerPortabilityRequests(tenantId){
@@ -6881,6 +6985,2968 @@ export class PostgresStore{
       summary:{...summary,top5_margin_collected_ht:top5Collected,top5_concentration_percent:concentration},
       ranking:rankingRows,
       trend:trendRows
+    };
+  }
+
+  async platformAccounting(params={}){
+    const from=new Date(params.from||new Date(Date.now()-30*86400000).toISOString());
+    const to=new Date(params.to||new Date().toISOString());
+    if(!Number.isFinite(from.getTime())||!Number.isFinite(to.getTime())||to<from)throw problem(400,"INVALID_ACCOUNTING_RANGE");
+    if(to.getTime()-from.getTime()>1830*86400000)throw problem(400,"ACCOUNTING_RANGE_TOO_LARGE");
+    const currency=String(params.currency||"EUR").trim().toUpperCase();
+    if(!/^[A-Z]{3}$/.test(currency))throw problem(400,"INVALID_CURRENCY");
+    const market=String(params.market||"").trim().toUpperCase();
+    if(market&&!/^[A-Z]{2}$/.test(market))throw problem(400,"INVALID_MARKET");
+    let marketId=null;
+    if(market){
+      const row=(await this.readSql.unsafe("SELECT id FROM operating_markets WHERE country_code=$1 LIMIT 1",[market]))[0]||null;
+      if(!row)throw problem(404,"MARKET_NOT_FOUND");
+      marketId=Number(row.id);
+    }
+    const fromIso=from.toISOString(),toIso=to.toISOString();
+    const paidRatio="CASE WHEN cs.confirmed_amount_ht>0 THEN LEAST(1::numeric,GREATEST(0::numeric,cs.paid_amount_ht/cs.confirmed_amount_ht)) WHEN cs.status='paid' THEN 1::numeric ELSE 0::numeric END";
+    const [subscriptions,priority,cardFees,svaCash,svaPayouts,svaAccrual,referralPaid,referralEarned,liabilityRows]=await Promise.all([
+      this.readSql.unsafe(
+        "SELECT date_trunc('month',x.event_time) AS bucket,count(*)::int AS count,COALESCE(sum(x.amount_minor),0)::bigint AS amount_minor FROM ("+
+        " SELECT DISTINCT ON (COALESCE(NULLIF(e.normalized_details->>'provider_invoice_reference',''),e.provider_event_id)) e.event_time,"+
+        " COALESCE(CASE WHEN COALESCE(e.normalized_details->>'provider_price_amount_minor','') ~ '^[0-9]+
+    publicId=String(publicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    const percent=input.platform_fee_percent==null||input.platform_fee_percent===""?null:Number(input.platform_fee_percent);
+    const bps=input.platform_fee_bps==null||input.platform_fee_bps===""?(percent==null?null:Math.round(percent*100)):Number(input.platform_fee_bps);
+    const perMinute=input.platform_fee_ht_per_min==null||input.platform_fee_ht_per_min===""?0:Number(input.platform_fee_ht_per_min);
+    const delay=Number(input.payout_delay_days??0);
+    const marketId=input.market_id==null||input.market_id===""?null:Number(input.market_id);
+    const svaNumberId=input.sva_number_id==null||input.sva_number_id===""?null:Number(input.sva_number_id);
+    const effectiveFrom=input.effective_from?new Date(input.effective_from):new Date();
+    if(!Number.isInteger(bps)||bps<0||bps>10000)throw problem(400,"INVALID_PLATFORM_FEE");
+    if(!Number.isFinite(perMinute)||perMinute<0||perMinute>10000)throw problem(400,"INVALID_PLATFORM_FEE");
+    if(bps===0&&perMinute===0)throw problem(400,"PGI_MARGIN_REQUIRED");
+    if(!Number.isInteger(delay)||delay<0||delay>365)throw problem(400,"INVALID_PAYOUT_DELAY");
+    if(marketId!=null&&(!Number.isInteger(marketId)||marketId<=0))throw problem(400,"INVALID_MARKET_ID");
+    if(svaNumberId!=null&&(!Number.isInteger(svaNumberId)||svaNumberId<=0))throw problem(400,"INVALID_SVA_NUMBER_ID");
+    if(!Number.isFinite(effectiveFrom.getTime()))throw problem(400,"INVALID_EFFECTIVE_FROM");
+    const actorId=numericActor(actor);
+    const result=await this.sql.begin(async tx=>{
+      const tenant=(await tx.unsafe("SELECT id,tenant_type FROM tenants WHERE public_id=$1::uuid FOR UPDATE",[publicId]))[0];
+      if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+      if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+      if(marketId!=null){
+        const market=(await tx.unsafe("SELECT id FROM operating_markets WHERE id=$1 LIMIT 1",[marketId]))[0];
+        if(!market)throw problem(404,"MARKET_NOT_FOUND");
+      }
+      if(svaNumberId!=null){
+        const number=(await tx.unsafe("SELECT id,tenant_id,market_id FROM sva_numbers WHERE id=$1 LIMIT 1",[svaNumberId]))[0];
+        if(!number||Number(number.tenant_id)!==Number(tenant.id))throw problem(409,"PAYOUT_TERMS_NUMBER_TENANT_MISMATCH");
+        if(marketId!=null&&Number(number.market_id)!==marketId)throw problem(409,"PAYOUT_TERMS_MARKET_MISMATCH");
+      }
+      await tx.unsafe(
+        "UPDATE tenant_payout_terms SET status='ended',effective_to=$4::timestamptz WHERE tenant_id=$1"+
+        " AND COALESCE(market_id,0)=COALESCE($2::bigint,0) AND COALESCE(sva_number_id,0)=COALESCE($3::bigint,0)"+
+        " AND status='active' AND effective_to IS NULL",
+        [tenant.id,marketId,svaNumberId,effectiveFrom.toISOString()]
+      );
+      const row=(await tx.unsafe(
+        "INSERT INTO tenant_payout_terms(tenant_id,market_id,sva_number_id,collection_model,platform_fee_bps,platform_fee_ht_per_min,payout_delay_days,effective_from,created_by)"+
+        " VALUES($1,$2,$3,'pgi_collects',$4,$5,$6,$7,$8) RETURNING id,tenant_id,market_id,sva_number_id,collection_model,platform_fee_bps,platform_fee_ht_per_min::float8,payout_delay_days,status,effective_from,effective_to,created_at",
+        [tenant.id,marketId,svaNumberId,bps,perMinute,delay,effectiveFrom.toISOString(),actorId]
+      ))[0];
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'tenant.payout_terms.create','tenant_payout_terms',$3,$4::jsonb)",
+        [tenant.id,actorId,String(row.id),JSON.stringify({collection_model:"pgi_collects",platform_fee_bps:bps,platform_fee_ht_per_min:perMinute,payout_delay_days:delay,market_id:marketId,sva_number_id:svaNumberId})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,market_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,$2,'tenant.payout_terms.changed','tenant_payout_terms',$3,$4::jsonb)",
+        [tenant.id,marketId,String(row.id),JSON.stringify({platform_fee_bps:bps,platform_fee_ht_per_min:perMinute,payout_delay_days:delay})]
+      );
+      const pending=await tx.unsafe(
+        "SELECT DISTINCT upstream_settlement_id FROM tenant_revenue_distributions WHERE tenant_id=$1 AND status IN ('blocked_terms','blocked_compliance','reconciled','payable') ORDER BY upstream_settlement_id",
+        [tenant.id]
+      );
+      for(const p of pending)await rebuildTenantRevenueDistributions(tx,Number(p.upstream_settlement_id),actorId);
+      return row;
+    });
+    this.eventBus.publish("tenant.payout_terms.changed",{tenant_public_id:publicId,id:Number(result.id)});
+    return result;
+  }
+
+  async tenantControlDetail(publicId){
+    publicId=String(publicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    const base=await this.readSql.unsafe(
+      "SELECT t.id,t.public_id,t.slug,t.display_name,t.legal_name,t.tenant_type,t.status,t.country_code,t.billing_email,"+
+      " t.preferred_locale,t.default_currency,t.timezone,t.home_region,t.capacity_tier,t.created_at,t.updated_at,"+
+      " COALESCE(k.status,'not_started') AS kyc_status,k.registration_country,k.registration_number,"+
+      " k.legal_representative_verified,k.bank_account_verified,k.reviewed_at,k.expires_at"+
+      " FROM tenants t LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id WHERE t.public_id=$1::uuid",
+      [publicId]
+    );
+    const tenant=base[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+    if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+    const id=Number(tenant.id);
+    const [subs,lines,portability,destinations,experts,alerts,settlements,payoutTerms,controls,audit,activity,serviceIncidents,operationalAlerts,users,invitations,linePerformance]=await Promise.all([
+      this.readSql.unsafe(
+        "SELECT s.id,s.status,s.billing_currency,s.starts_at,s.current_period_start,s.current_period_end,s.ends_at,"+
+        " s.billing_provider,s.provider_customer_reference,s.provider_subscription_reference,s.cancel_at_period_end,s.last_payment_status,s.last_event_at,"+
+        " p.plan_key,p.display_name AS plan_name,v.amount_minor,v.currency AS price_currency"+
+        " FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id"+
+        " LEFT JOIN service_plan_price_versions v ON v.id=s.price_version_id WHERE s.tenant_id=$1 ORDER BY s.created_at DESC,s.id DESC LIMIT 10",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT a.id,sn.id AS sva_number_id,sn.display_number,sn.e164,sn.currency,sn.number_type,sn.service_rate_ttc_per_min::float8,m.country_code AS market,a.tariff_code,a.assignment_type,a.status,a.kyc_status,"+
+        " c.name AS regulatory_assignor,a.valid_from,a.valid_to,pgi_tenant_has_premium_call_access($1,m.id,now()) AS premium_call_access"+
+        " FROM tenant_number_assignments a JOIN sva_numbers sn ON sn.id=a.sva_number_id LEFT JOIN operating_markets m ON m.id=sn.market_id"+
+        " LEFT JOIN carriers c ON c.id=a.regulatory_assignor_carrier_id WHERE a.tenant_id=$1 ORDER BY a.created_at DESC,a.id DESC LIMIT 100",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT p.id,p.country_code,p.requested_e164,p.display_number,p.service_family,p.current_operator_name,p.current_operator_reference,p.account_holder_name,p.desired_port_date,p.status,p.ownership_status,p.operator_portability_reference,p.scheduled_at,p.completed_at,p.rejection_reason,"+
+        " p.target_carrier_id,c.name AS target_carrier,p.tariff_code,p.service_rate_ttc_per_min::float8,p.currency,p.tariff_verification_status,p.tariff_verified_at,"+
+        " p.rio_last4,p.rio_validation_status,p.rio_validated_at,p.source_contract_transfer_mode,p.source_contract_liability_acknowledged,"+
+        " p.automation_state,p.automation_last_error,p.automation_last_sync_at,p.operator_status,p.created_at,p.updated_at"+
+        " FROM tenant_portability_requests p LEFT JOIN carriers c ON c.id=p.target_carrier_id WHERE p.tenant_id=$1 ORDER BY p.created_at DESC,p.id DESC LIMIT 50",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT d.id,d.label,d.destination_type,d.destination_uri,d.priority,d.status,d.failover_enabled,d.max_concurrent_calls,d.active_calls,d.last_assigned_at,d.sva_number_id,sn.display_number,sn.e164"+
+        " FROM tenant_call_destinations d LEFT JOIN sva_numbers sn ON sn.id=d.sva_number_id WHERE d.tenant_id=$1 ORDER BY d.priority,d.id LIMIT 100",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,code,display_name,destination_uri,status,active_calls,last_assigned_at,enabled,compensation_type,compensation_rate::float8"+
+        " FROM experts WHERE tenant_id=$1 ORDER BY display_name,id LIMIT 100",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,alert_type,severity,state,title,message,due_at,first_detected_at,last_detected_at,acknowledged_at,resolved_at"+
+        " FROM tenant_admin_alerts WHERE tenant_id=$1 ORDER BY id DESC LIMIT 50",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT s.id,m.country_code AS market,s.currency,s.period_start,s.period_end,s.upstream_payout_ht::float8,s.platform_fee_ht::float8,s.net_payout_ht::float8,"+
+        " s.unallocated_amount_ht::float8,s.held_amount_ht::float8,s.collection_model,s.status,s.payment_due_date,s.paid_at,s.statement_reference"+
+        " FROM tenant_revenue_distributions s LEFT JOIN operating_markets m ON m.id=s.market_id"+
+        " WHERE s.tenant_id=$1 ORDER BY s.period_end DESC,s.id DESC LIMIT 24",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT pt.id,pt.market_id,m.country_code AS market,pt.sva_number_id,sn.display_number,pt.collection_model,pt.platform_fee_bps,"+
+        " pt.platform_fee_ht_per_min::float8,pt.payout_delay_days,pt.status,pt.effective_from,pt.effective_to,pt.created_at"+
+        " FROM tenant_payout_terms pt LEFT JOIN operating_markets m ON m.id=pt.market_id LEFT JOIN sva_numbers sn ON sn.id=pt.sva_number_id"+
+        " WHERE pt.tenant_id=$1 ORDER BY (pt.status='active') DESC,pt.effective_from DESC,pt.id DESC LIMIT 50",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,assignment_id,action,previous_status,new_status,reason,occurred_at,details FROM tenant_control_events"+
+        " WHERE tenant_id=$1 ORDER BY occurred_at DESC,id DESC LIMIT 50",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,action,entity_type,entity_id,occurred_at,details FROM audit_log WHERE tenant_id=$1 ORDER BY occurred_at DESC,id DESC LIMIT 50",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT count(*)::int AS calls_30d,count(*) FILTER (WHERE call_status='connected')::int AS connected_30d,"+
+        " COALESCE(sum(billable_seconds),0)::float8 AS billable_seconds_30d,COALESCE(sum(retail_service_amount_ttc),0)::float8 AS revenue_ttc_30d,"+
+        " COALESCE(sum(estimated_margin_ht),0)::float8 AS margin_ht_30d,max(started_at) AS last_call_at"+
+        " FROM calls WHERE tenant_id=$1 AND started_at>=now()-interval '30 days'",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,public_id,category,severity,status,source,title,description,assigned_team,first_response_due_at,target_resolution_at,first_responded_at,last_customer_update_at,last_pgi_update_at,resolved_at,created_at,updated_at"+
+        " FROM tenant_service_incidents WHERE tenant_id=$1 ORDER BY (status IN ('resolved','closed')) ASC,updated_at DESC,id DESC LIMIT 30",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,incident_id,alert_type,severity,state,title,message,due_at,customer_visible,last_detected_at"+
+        " FROM tenant_operational_alerts WHERE tenant_id=$1 AND state<>'resolved' ORDER BY last_detected_at DESC,id DESC LIMIT 50",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT p.id,p.email,p.display_name,p.status,p.preferred_locale,p.timezone,p.email_verified,p.last_authenticated_at,p.created_at,p.updated_at,"+
+        " m.role,m.status AS membership_status,p.metadata->>'first_name' AS first_name,p.metadata->>'last_name' AS last_name,p.metadata->>'phone' AS phone,p.metadata->>'signup_source' AS signup_source,p.metadata->>'service_intent' AS service_intent,p.metadata->>'account_type' AS account_type"+
+        " FROM customer_tenant_memberships m JOIN customer_principals p ON p.id=m.customer_principal_id WHERE m.tenant_id=$1 ORDER BY (m.role='owner') DESC,p.created_at,p.id LIMIT 100",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,email,role,status,expires_at,accepted_at,created_at FROM customer_tenant_invitations WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 100",[id]
+      ),
+      this.readSql.unsafe(
+        "WITH latest_assignment AS ("+
+        " SELECT DISTINCT ON (a.sva_number_id) a.id AS assignment_id,a.sva_number_id,a.status AS assignment_status,a.kyc_status,a.tariff_code,a.valid_from,a.valid_to"+
+        " FROM tenant_number_assignments a WHERE a.tenant_id=$1 ORDER BY a.sva_number_id,(a.status='active') DESC,a.id DESC"+
+        "), call_roll AS ("+
+        " SELECT c.sva_number_id,count(*)::bigint AS calls_30d,count(*) FILTER(WHERE c.call_status='connected')::bigint AS connected_30d,"+
+        " COALESCE(sum(c.billable_seconds),0)::float8 AS billable_seconds_30d,COALESCE(sum(c.retail_service_amount_ttc),0)::float8 AS revenue_ttc_30d,"+
+        " COALESCE(sum(c.expected_payout_ht),0)::float8 AS upstream_expected_ht_30d,COALESCE(sum(c.confirmed_payout_ht),0)::float8 AS upstream_confirmed_ht_30d,"+
+        " COALESCE(sum(c.paid_payout_ht),0)::float8 AS upstream_paid_ht_30d,"+
+        " COALESCE(sum(CASE WHEN pt.id IS NULL THEN 0 ELSE LEAST(COALESCE(c.expected_payout_ht,0),COALESCE(c.expected_payout_ht,0)*pt.platform_fee_bps/10000.0+pt.platform_fee_ht_per_min*(COALESCE(c.billable_seconds,0)/60.0)) END),0)::float8 AS platform_fee_estimated_ht_30d,"+
+        " COALESCE(sum(CASE WHEN pt.id IS NULL THEN 0 ELSE GREATEST(0,COALESCE(c.expected_payout_ht,0)-LEAST(COALESCE(c.expected_payout_ht,0),COALESCE(c.expected_payout_ht,0)*pt.platform_fee_bps/10000.0+pt.platform_fee_ht_per_min*(COALESCE(c.billable_seconds,0)/60.0))) END),0)::float8 AS client_net_estimated_ht_30d,"+
+        " count(pt.id)::bigint AS payout_term_matches,max(c.started_at) AS last_call_at"+
+        " FROM calls c LEFT JOIN LATERAL ("+
+        " SELECT p.id,p.platform_fee_bps,p.platform_fee_ht_per_min::float8 FROM tenant_payout_terms p"+
+        " WHERE p.tenant_id=$1 AND p.status='active' AND p.effective_from<=c.started_at"+
+        " AND (p.effective_to IS NULL OR p.effective_to>c.started_at) AND (p.market_id IS NULL OR p.market_id=c.market_id) AND (p.sva_number_id IS NULL OR p.sva_number_id=c.sva_number_id)"+
+        " ORDER BY (p.sva_number_id IS NOT NULL) DESC,(p.market_id IS NOT NULL) DESC,p.effective_from DESC,p.id DESC LIMIT 1"+
+        " ) pt ON TRUE"+
+        " WHERE c.tenant_id=$1 AND c.started_at>=now()-interval '30 days' GROUP BY c.sva_number_id"+
+        "), live AS ("+
+        " SELECT sva_number_id,count(*)::bigint AS active_calls,"+
+        " COALESCE(sum(upstream_payout_rate_ht_per_min)/60.0,0)::float8 AS upstream_rate_ht_per_second,"+
+        " COALESCE(sum(net_client_rate_ht_per_min)/60.0,0)::float8 AS client_rate_ht_per_second"+
+        " FROM live_call_financial_sessions WHERE tenant_id=$1 AND status='active' AND billable_started_at>now()-interval '24 hours' GROUP BY sva_number_id"+
+        ") SELECT la.assignment_id,sn.id AS sva_number_id,sn.display_number,sn.e164,sn.currency,sn.number_type,sn.service_rate_ttc_per_min::float8,"+
+        " la.assignment_status,la.kyc_status,la.tariff_code,la.valid_from,la.valid_to,"+
+        " COALESCE(cr.calls_30d,0)::bigint AS calls_30d,COALESCE(cr.connected_30d,0)::bigint AS connected_30d,COALESCE(cr.billable_seconds_30d,0)::float8 AS billable_seconds_30d,"+
+        " COALESCE(cr.revenue_ttc_30d,0)::float8 AS revenue_ttc_30d,COALESCE(cr.upstream_expected_ht_30d,0)::float8 AS upstream_expected_ht_30d,"+
+        " COALESCE(cr.upstream_confirmed_ht_30d,0)::float8 AS upstream_confirmed_ht_30d,COALESCE(cr.upstream_paid_ht_30d,0)::float8 AS upstream_paid_ht_30d,"+
+        " COALESCE(cr.platform_fee_estimated_ht_30d,0)::float8 AS platform_fee_estimated_ht_30d,COALESCE(cr.client_net_estimated_ht_30d,0)::float8 AS client_net_estimated_ht_30d,"+
+        " COALESCE(cr.payout_term_matches,0)::bigint AS payout_term_matches,cr.last_call_at,"+
+        " COALESCE(l.active_calls,0)::bigint AS active_calls,COALESCE(l.upstream_rate_ht_per_second,0)::float8 AS upstream_rate_ht_per_second,COALESCE(l.client_rate_ht_per_second,0)::float8 AS client_rate_ht_per_second,"+
+        " (SELECT count(*)::int FROM tenant_call_destinations d WHERE d.tenant_id=$1 AND (d.sva_number_id IS NULL OR d.sva_number_id=sn.id) AND d.status='active') AS active_routes,"+
+        " (SELECT count(*)::int FROM tenant_service_incidents i WHERE i.tenant_id=$1 AND (i.sva_number_id IS NULL OR i.sva_number_id=sn.id) AND i.status NOT IN ('resolved','closed')) AS open_incidents"+
+        " FROM latest_assignment la JOIN sva_numbers sn ON sn.id=la.sva_number_id LEFT JOIN call_roll cr ON cr.sva_number_id=sn.id LEFT JOIN live l ON l.sva_number_id=sn.id"+
+        " ORDER BY (la.assignment_status='active') DESC,COALESCE(cr.calls_30d,0) DESC,sn.display_number LIMIT 100",
+        [id]
+      )
+    ]);
+    const access=await this.readSql.unsafe("SELECT pgi_tenant_has_premium_call_access($1,NULL,now()) AS allowed",[id]);
+    return {
+      tenant:{...tenant,dossier_ref:dossierReference(id,tenant.created_at),premium_call_access:Boolean(access[0]?.allowed)},
+      subscriptions:subs,lines,portability,destinations,experts,alerts,settlements,payout_terms:payoutTerms,controls,audit,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,users,invitations,line_performance:linePerformance,
+      activity:activity[0]||{calls_30d:0,connected_30d:0,billable_seconds_30d:0,revenue_ttc_30d:0,margin_ht_30d:0,last_call_at:null}
+    };
+  }
+
+  async tenantInternalNotes(publicId){
+    publicId=String(publicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    const tenant=(await this.readSql.unsafe("SELECT id,tenant_type FROM tenants WHERE public_id=$1::uuid",[publicId]))[0];
+    if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+    if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+    const rows=await this.readSql.unsafe(
+      "SELECT n.id,n.body,n.created_at,u.display_name AS author_name FROM tenant_internal_notes n"+
+      " LEFT JOIN app_users u ON u.id=n.author_user_id WHERE n.tenant_id=$1 AND n.archived_at IS NULL ORDER BY n.created_at DESC,n.id DESC LIMIT 100",
+      [tenant.id]
+    );
+    return {data:rows};
+  }
+
+  async createTenantInternalNote(publicId,input={},actor={}){
+    publicId=String(publicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    const body=String(input.body||"").trim();
+    if(!body||body.length>2000)throw problem(400,"INVALID_INTERNAL_NOTE");
+    const actorId=numericActor(actor);
+    const row=await this.sql.begin(async tx=>{
+      const tenant=(await tx.unsafe("SELECT id,tenant_type FROM tenants WHERE public_id=$1::uuid FOR SHARE",[publicId]))[0];
+      if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+      if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+      const note=(await tx.unsafe(
+        "INSERT INTO tenant_internal_notes(tenant_id,body,author_user_id) VALUES($1,$2,$3) RETURNING id,tenant_id,body,created_at",
+        [tenant.id,body,actorId]
+      ))[0];
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'tenant.internal_note.create','tenant_internal_note',$3,$4::jsonb)",
+        [tenant.id,actorId,String(note.id),JSON.stringify({private:true,body_logged:false})]
+      );
+      return note;
+    });
+    this.eventBus.publish("tenant.internal_note.changed",{tenant_public_id:publicId,note_id:Number(row.id),action:"created"});
+    return row;
+  }
+
+  async archiveTenantInternalNote(id,actor={}){
+    id=Number(id);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_INTERNAL_NOTE_ID");
+    const actorId=numericActor(actor);
+    const result=await this.sql.begin(async tx=>{
+      const note=(await tx.unsafe(
+        "SELECT n.id,n.tenant_id,n.archived_at,t.public_id,t.tenant_type FROM tenant_internal_notes n JOIN tenants t ON t.id=n.tenant_id WHERE n.id=$1 FOR UPDATE OF n",
+        [id]
+      ))[0];
+      if(!note)throw problem(404,"INTERNAL_NOTE_NOT_FOUND");
+      if(note.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+      if(note.archived_at)return {id:note.id,tenant_public_id:note.public_id,archived_at:note.archived_at,changed:false};
+      const updated=(await tx.unsafe(
+        "UPDATE tenant_internal_notes SET archived_at=now(),archived_by=$2 WHERE id=$1 RETURNING id,archived_at",
+        [id,actorId]
+      ))[0];
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'tenant.internal_note.archive','tenant_internal_note',$3,$4::jsonb)",
+        [note.tenant_id,actorId,String(id),JSON.stringify({private:true,body_logged:false})]
+      );
+      return {...updated,tenant_public_id:note.public_id,changed:true};
+    });
+    if(result.changed)this.eventBus.publish("tenant.internal_note.changed",{tenant_public_id:result.tenant_public_id,note_id:id,action:"archived"});
+    return result;
+  }
+
+  async tenantAdminExport(publicId,actor={}){
+    const detail=await this.tenantControlDetail(publicId);
+    const t=detail.tenant||{};
+    const safe={
+      schema_version:"audiotel-customer-admin-export/1",
+      generated_at:new Date().toISOString(),
+      tenant:{
+        public_id:t.public_id,display_name:t.display_name,legal_name:t.legal_name,status:t.status,country_code:t.country_code,
+        billing_email:t.billing_email,preferred_locale:t.preferred_locale,default_currency:t.default_currency,timezone:t.timezone,
+        created_at:t.created_at,updated_at:t.updated_at,kyc_status:t.kyc_status,registration_country:t.registration_country,
+        registration_number:t.registration_number,legal_representative_verified:t.legal_representative_verified,bank_account_verified:t.bank_account_verified
+      },
+      users:(detail.users||[]).map(u=>({
+        id:u.id,email:u.email,display_name:u.display_name,status:u.status,role:u.role,membership_status:u.membership_status,
+        email_verified:u.email_verified,phone:u.phone||null,preferred_locale:u.preferred_locale,timezone:u.timezone,
+        signup_source:u.signup_source||null,created_at:u.created_at,last_authenticated_at:u.last_authenticated_at
+      })),
+      invitations:(detail.invitations||[]).map(i=>({id:i.id,email:i.email,role:i.role,status:i.status,created_at:i.created_at,expires_at:i.expires_at,accepted_at:i.accepted_at})),
+      subscriptions:(detail.subscriptions||[]).map(s=>({id:s.id,status:s.status,plan_name:s.plan_name,billing_currency:s.billing_currency,current_period_start:s.current_period_start,current_period_end:s.current_period_end,last_payment_status:s.last_payment_status})),
+      lines:(detail.lines||[]).map(l=>({id:l.id,display_number:l.display_number,e164:l.e164,market:l.market,status:l.status,kyc_status:l.kyc_status,regulatory_assignor:l.regulatory_assignor})),
+      portability:(detail.portability||[]).map(p=>({id:p.id,country_code:p.country_code,requested_e164:p.requested_e164,status:p.status,current_operator_name:p.current_operator_name,desired_port_date:p.desired_port_date,created_at:p.created_at,completed_at:p.completed_at})),
+      settlements:(detail.settlements||[]).map(s=>({id:s.id,market:s.market,currency:s.currency,period_start:s.period_start,period_end:s.period_end,net_payout_ht:s.net_payout_ht,status:s.status,payment_due_date:s.payment_due_date,paid_at:s.paid_at})),
+      activity:detail.activity||{}
+    };
+    const actorId=numericActor(actor);
+    await this.sql.unsafe(
+      "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'tenant.admin_export','tenant',$3,$4::jsonb)",
+      [Number(t.id),actorId,String(t.id),JSON.stringify({format:"csv",schema_version:safe.schema_version,scope:"customer_360"})]
+    );
+    this.eventBus.publish("tenant.admin_export",{tenant_public_id:publicId,actor_user_id:actorId});
+    return safe;
+  }
+
+  async operationalPolicyEvaluation(input={}){
+    const intent=String(input.intent||"").trim().toLowerCase();
+    const assignmentId=input.assignment_id==null||input.assignment_id===""?null:Number(input.assignment_id);
+    const tenantPublicId=optionalText(input.tenant_public_id,80);
+    const portabilityId=input.portability_request_id==null||input.portability_request_id===""?null:Number(input.portability_request_id);
+    const targetConnectionId=input.target_connection_id==null||input.target_connection_id===""?null:Number(input.target_connection_id);
+    let context=null;
+    if(Number.isInteger(assignmentId)&&assignmentId>0){
+      context=(await this.readSql.unsafe(
+        "SELECT t.id AS tenant_id,t.public_id::text AS tenant_public_id,t.display_name,t.status AS tenant_status,t.tenant_type,"+
+        " a.id AS assignment_id,a.status AS assignment_status,a.sva_number_id,sn.market_id"+
+        " FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.id=$1",
+        [assignmentId]
+      ))[0]||null;
+    }else if(tenantPublicId&&/^[0-9a-f-]{36}$/i.test(tenantPublicId)){
+      context=(await this.readSql.unsafe(
+        "SELECT t.id AS tenant_id,t.public_id::text AS tenant_public_id,t.display_name,t.status AS tenant_status,t.tenant_type,NULL::bigint AS assignment_id,NULL::text AS assignment_status,NULL::bigint AS sva_number_id,NULL::bigint AS market_id"+
+        " FROM tenants t WHERE t.public_id=$1::uuid",
+        [tenantPublicId]
+      ))[0]||null;
+    }
+    if(intent!=="carrier_switch"&&!context)throw problem(404,"POLICY_CONTEXT_NOT_FOUND");
+    const tenantId=context?.tenant_id||null,svaNumberId=context?.sva_number_id||null,marketId=context?.market_id||null;
+
+    const factsRows=await this.readSql.unsafe(
+      "SELECT"+
+      " CASE WHEN $1::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM tenants WHERE id=$1 AND status='active') END AS tenant_active,"+
+      " CASE WHEN $1::bigint IS NULL THEN NULL ELSE pgi_tenant_has_premium_call_access($1,$3,now()) END AS subscription_active,"+
+      " CASE WHEN $1::bigint IS NULL THEN NULL ELSE pgi_tenant_has_payout_terms($1,$3,$2,now()) END AS payout_terms_ready,"+
+      " CASE WHEN $1::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM tenant_kyc_profiles WHERE tenant_id=$1 AND status='verified') END AS kyc_verified,"+
+      " CASE WHEN $2::bigint IS NULL THEN NULL ELSE pgi_sva_regulatory_ready($1,$2) END AS regulatory_ready,"+
+      " CASE WHEN $2::bigint IS NULL THEN NULL ELSE pgi_arcep_2026_number_ready($1,$2) END AS arcep_2026_ready,"+
+      " CASE WHEN $2::bigint IS NULL THEN NULL ELSE pgi_sva_ecosystem_ready($1,$2) END AS ecosystem_ready,"+
+      " CASE WHEN $4::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM tenant_number_assignments WHERE id=$4) END AS assignment_exists,"+
+      " CASE WHEN $1::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM tenant_call_destinations d WHERE d.tenant_id=$1 AND ($2::bigint IS NULL OR d.sva_number_id IS NULL OR d.sva_number_id=$2) AND d.status='active' AND d.active_calls<d.max_concurrent_calls) END AS destination_ready,"+
+      " CASE WHEN $5::bigint IS NULL THEN EXISTS(SELECT 1 FROM tenant_portability_requests p WHERE p.tenant_id=$1 AND p.status IN ('scheduled','ported')) ELSE EXISTS(SELECT 1 FROM tenant_portability_requests p WHERE p.tenant_id=$1 AND p.id=$5 AND p.status IN ('scheduled','ported')) END AS portability_dossier_ready,"+
+      " EXISTS(SELECT 1 FROM carrier_adapters ca JOIN carrier_connections cc ON cc.carrier_id=ca.carrier_id WHERE ca.enabled AND cc.purpose='api' AND cc.state IN ('ready','active')) AS operator_adapter_connected,"+
+      " CASE WHEN $6::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM carrier_connections cc WHERE cc.id=$6 AND cc.state IN ('ready','active','standby')) END AS target_carrier_ready,"+
+      " EXISTS(SELECT 1 FROM logical_carrier_routes r WHERE r.route_key='sva-primary' AND r.active_carrier_id IS NOT NULL AND r.active_connection_id IS NOT NULL) AS rollback_ready,"+
+      " CASE WHEN $1::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM tenant_revenue_distributions d WHERE d.tenant_id=$1 AND d.status IN ('reconciled','payable','paid')) END AS settlement_reconciled",
+      [tenantId,svaNumberId,marketId,assignmentId,portabilityId,targetConnectionId]
+    );
+    const facts={...(factsRows[0]||{}),payment_provider_connected:false};
+    const result=evaluateOperationalPolicy(intent,facts);
+    return {...result,context:context?{tenant_public_id:context.tenant_public_id,tenant:context.display_name,assignment_id:context.assignment_id,assignment_status:context.assignment_status}:null};
+  }
+
+  async digitalTwinSimulation(input={}){
+    const scenario=String(input.scenario||"").trim().toLowerCase();
+    const params=input.parameters&&typeof input.parameters==="object"&&!Array.isArray(input.parameters)?input.parameters:{};
+    const [platform,service,route,queue,capacityRows]=await Promise.all([
+      this.wholesaleOverview(),
+      this.serviceOperationsHealth(),
+      this.carrierRouting(),
+      this.workQueueHealth(),
+      this.readSql.unsafe(
+        "SELECT"+
+        " COALESCE(sum(max_concurrent_calls) FILTER(WHERE status='active'),0)::int AS destination_capacity,"+
+        " COALESCE(sum(active_calls) FILTER(WHERE status='active'),0)::int AS current_concurrent"+
+        " FROM tenant_call_destinations"
+      )
+    ]);
+    const s=platform.summary||{},r=platform.regulatory_trust?.summary||{},scale=platform.scale||{},cap=capacityRows[0]||{};
+    const baseline={
+      active_assignments:Number(s.assignments_active||0),
+      active_subscriptions:Number(s.external_subscriptions_active||0),
+      ready_numbers:Number(r.numbers_ready||0),
+      total_numbers:Number(r.numbers_total||0),
+      regulatory_blocking:Number(r.review_blocking||0),
+      service_incidents_critical:Number(service.service_incidents_critical||0),
+      route_standby_ready:Boolean(route?.standby_carrier_id||route?.standby_carrier),
+      destination_capacity:Number(cap.destination_capacity||0),
+      current_concurrent:Number(cap.current_concurrent||0),
+      regions_ready:Number(scale.regions_ready||0),
+      regions_total:Number(scale.regions_total||0),
+      dr_targets:Number(scale.dr_targets_total||0),
+      read_replica_enabled:Boolean(scale.read_replica_enabled),
+      queue_pending:Number(queue.pending||0),
+      queue_dead_lettered:Number(queue.dead_lettered||0),
+      bucket_capacity:Number(scale.bucket_capacity||4096)
+    };
+    return simulateDigitalTwin(scenario,baseline,params);
+  }
+
+  async performanceResilienceLab(){
+    const [queue,dbRows,tableRows,drTargets,drills,runs,syntheticRows]=await Promise.all([
+      this.workQueueHealth(),
+      this.readSql.unsafe(
+        "SELECT current_database() AS database_name,pg_database_size(current_database())::bigint AS database_bytes,"+
+        " current_setting('max_connections')::int AS max_connections,"+
+        " (SELECT count(*)::int FROM pg_stat_activity WHERE datname=current_database()) AS connections_total,"+
+        " (SELECT count(*)::int FROM pg_stat_activity WHERE datname=current_database() AND state='active') AS connections_active,"+
+        " (SELECT count(*)::int FROM pg_stat_activity WHERE datname=current_database() AND state='idle in transaction') AS connections_idle_in_transaction"
+      ),
+      this.readSql.unsafe(
+        "SELECT relname,n_live_tup::bigint AS live_rows,n_dead_tup::bigint AS dead_rows,seq_scan::bigint,idx_scan::bigint,"+
+        " CASE WHEN n_live_tup>0 THEN round((n_dead_tup::numeric/n_live_tup::numeric)*100,2)::float8 ELSE 0::float8 END AS dead_row_percent"+
+        " FROM pg_stat_user_tables WHERE schemaname='public' ORDER BY n_live_tup DESC,relname LIMIT 20"
+      ),
+      this.readSql.unsafe(
+        "SELECT component_key,region_key,rpo_seconds,rto_seconds,replication_mode,criticality,enabled,updated_at"+
+        " FROM disaster_recovery_targets WHERE enabled ORDER BY criticality,component_key,region_key"
+      ),
+      this.readSql.unsafe(
+        "SELECT id,drill_type,source_region,target_region,started_at,completed_at,status,observed_rpo_seconds,observed_rto_seconds,evidence_ref"+
+        " FROM disaster_recovery_drills ORDER BY started_at DESC,id DESC LIMIT 20"
+      ),
+      this.readSql.unsafe(
+        "SELECT id,run_type,scenario,target,status,started_at,completed_at,requests_total,errors_total,error_rate::float8,p50_ms::float8,p95_ms::float8,p99_ms::float8,requests_per_second::float8,virtual_users,thresholds,evidence_ref"+
+        " FROM performance_lab_runs ORDER BY completed_at DESC,id DESC LIMIT 30"
+      ),
+      this.readSql.unsafe(
+        "SELECT count(*)::int AS checks_24h,count(*) FILTER(WHERE success)::int AS successes_24h,"+
+        " COALESCE(avg(latency_ms),0)::float8 AS avg_latency_ms,COALESCE(max(latency_ms),0)::float8 AS max_latency_ms,"+
+        " max(checked_at) AS last_checked_at,max(checked_at) FILTER(WHERE NOT success) AS last_failure_at"+
+        " FROM synthetic_probe_results WHERE checked_at>=now()-interval '24 hours'"
+      )
+    ]);
+    const db=dbRows[0]||{},syn=syntheticRows[0]||{};
+    const maxConnections=Number(db.max_connections||0),connections=Number(db.connections_total||0);
+    const dbHeadroom=maxConnections>0?Math.max(0,(maxConnections-connections)/maxConnections*100):0;
+    const recentLoad=runs.find(x=>["load","stress","spike","soak"].includes(x.run_type))||null;
+    const recentPassedLoad=runs.find(x=>["load","stress","spike","soak"].includes(x.run_type)&&x.status==="passed")||null;
+    const latestRestore=drills.find(x=>x.drill_type==="restore")||null;
+    const syntheticSuccess=Number(syn.checks_24h)>0?Number(syn.successes_24h)/Number(syn.checks_24h)*100:null;
+    const tableAttention=tableRows.filter(x=>Number(x.live_rows)>1000&&((Number(x.idx_scan)===0&&Number(x.seq_scan)>20)||Number(x.dead_row_percent)>20));
+    const evidenceFresh=recentPassedLoad&&Date.now()-Date.parse(recentPassedLoad.completed_at)<=30*86400000;
+    const restoreFresh=latestRestore?.status==="passed"&&Date.now()-Date.parse(latestRestore.completed_at)<=30*86400000;
+    const blockers=[];
+    if(!recentPassedLoad)blockers.push({code:"LOAD_PROOF_MISSING",label:"Aucun test de charge réussi n’est encore enregistré."});
+    else if(!evidenceFresh)blockers.push({code:"LOAD_PROOF_STALE",label:"Le dernier test de charge réussi date de plus de 30 jours."});
+    if(dbHeadroom<30)blockers.push({code:"DB_CONNECTION_HEADROOM_LOW",label:"La réserve de connexions PostgreSQL est inférieure à 30 %."});
+    if(Number(queue.dead_lettered||0)>0)blockers.push({code:"DEAD_LETTERS_PRESENT",label:"La file contient des dead letters."});
+    if(Number(queue.oldest_pending_seconds||0)>120)blockers.push({code:"QUEUE_BACKLOG_OLD",label:"Le plus ancien travail en attente dépasse 120 secondes."});
+    if(!latestRestore)blockers.push({code:"RESTORE_DRILL_MISSING",label:"Aucun exercice de restauration PostgreSQL n’est enregistré."});
+    else if(!restoreFresh)blockers.push({code:"RESTORE_DRILL_STALE",label:"Le dernier restore drill réussi date de plus de 30 jours."});
+    const syntheticFresh=Boolean(syn.last_checked_at&&Date.now()-Date.parse(syn.last_checked_at)<=24*3600000);
+    if(!syntheticFresh)blockers.push({code:"SYNTHETIC_PROOF_MISSING",label:"Aucune sonde synthétique récente n’est enregistrée sur les dernières 24 h."});
+    else if(syntheticSuccess!=null&&syntheticSuccess<99)blockers.push({code:"SYNTHETIC_AVAILABILITY_LOW",label:"Le taux de succès synthétique sur 24 h est inférieur à 99 %."});
+    if(tableAttention.length)blockers.push({code:"POSTGRES_TABLE_ATTENTION",label:tableAttention.length+" table(s) nécessitent une revue d’index ou de vacuum."});
+    return {
+      schema_version:"audiotel-performance-resilience-lab/1",
+      generated_at:new Date().toISOString(),
+      capacity_proof:recentPassedLoad?(evidenceFresh?"fresh":"stale"):"unproven",
+      preproduction_gate:{ready:blockers.length===0,blockers},
+      database:{
+        name:db.database_name||null,size_bytes:Number(db.database_bytes||0),max_connections:maxConnections,
+        connections_total:connections,connections_active:Number(db.connections_active||0),
+        connections_idle_in_transaction:Number(db.connections_idle_in_transaction||0),
+        connection_headroom_percent:Number(dbHeadroom.toFixed(1)),
+        pool_max:Number(this.config.databasePoolMax||0),read_pool_max:Number(this.config.databaseReadPoolMax||0),
+        tables:tableRows,attention:tableAttention
+      },
+      queue,
+      synthetic:{
+        checks_24h:Number(syn.checks_24h||0),successes_24h:Number(syn.successes_24h||0),
+        success_percent:syntheticSuccess==null?null:Number(syntheticSuccess.toFixed(2)),
+        avg_latency_ms:Number(syn.avg_latency_ms||0),max_latency_ms:Number(syn.max_latency_ms||0),
+        last_checked_at:syn.last_checked_at||null,last_failure_at:syn.last_failure_at||null
+      },
+      load:{latest:recentLoad,latest_passed:recentPassedLoad,runs},
+      disaster_recovery:{targets:drTargets,latest_restore:latestRestore,drills},
+      rate_limits:{
+        global_per_minute:Number(this.config.rateLimitPerMinute||0),
+        heavy_read_per_minute:Number(this.config.heavyReadRateLimitPerMinute||0),
+        write_per_minute:Number(this.config.writeRateLimitPerMinute||0)
+      },
+      claims:{capacity_guaranteed:false,external_connections_active:false}
+    };
+  }
+
+  async recordPerformanceLabRun(input={},actor={}){
+    const runType=String(input.run_type||"").trim().toLowerCase();
+    if(!["load","stress","spike","soak","synthetic","chaos","restore"].includes(runType))throw problem(400,"INVALID_PERFORMANCE_RUN_TYPE");
+    const scenario=String(input.scenario||"").trim().slice(0,120);
+    if(scenario.length<2)throw problem(400,"INVALID_PERFORMANCE_SCENARIO");
+    const status=String(input.status||"").trim().toLowerCase();
+    if(!["passed","failed","aborted","informational"].includes(status))throw problem(400,"INVALID_PERFORMANCE_STATUS");
+    const started=new Date(String(input.started_at||"")),completed=new Date(String(input.completed_at||""));
+    if(!Number.isFinite(started.getTime())||!Number.isFinite(completed.getTime())||completed<started)throw problem(400,"INVALID_PERFORMANCE_WINDOW");
+    const nonNegative=(v,name)=>{const n=Number(v??0);if(!Number.isFinite(n)||n<0)throw problem(400,name);return n;};
+    const requests=Math.trunc(nonNegative(input.requests_total,"INVALID_PERFORMANCE_REQUESTS"));
+    const errors=Math.trunc(nonNegative(input.errors_total,"INVALID_PERFORMANCE_ERRORS"));
+    const errorRate=nonNegative(input.error_rate,"INVALID_PERFORMANCE_ERROR_RATE");
+    if(errorRate>1||errors>requests&&requests>0)throw problem(400,"INVALID_PERFORMANCE_ERROR_RATE");
+    const metric=name=>input[name]==null?null:nonNegative(input[name],"INVALID_PERFORMANCE_METRIC");
+    let target=input.target==null?null:String(input.target).trim().slice(0,240);
+    if(target){try{const u=new URL(target);target=u.origin+u.pathname;}catch{target=target.replace(/[?#].*$/,"");}}
+    const thresholds=input.thresholds&&typeof input.thresholds==="object"&&!Array.isArray(input.thresholds)?input.thresholds:{};
+    const details=input.details&&typeof input.details==="object"&&!Array.isArray(input.details)?input.details:{};
+    if(JSON.stringify(thresholds).length>8000||JSON.stringify(details).length>16000)throw problem(400,"PERFORMANCE_DETAILS_TOO_LARGE");
+    const actorId=numericActor(actor);
+    const rows=await this.sql.unsafe(
+      "INSERT INTO performance_lab_runs(run_type,scenario,target,status,started_at,completed_at,requests_total,errors_total,error_rate,p50_ms,p95_ms,p99_ms,requests_per_second,virtual_users,thresholds,details,evidence_ref,created_by)"+
+      " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17,$18)"+
+      " RETURNING id,run_type,scenario,target,status,started_at,completed_at,requests_total,errors_total,error_rate::float8,p50_ms::float8,p95_ms::float8,p99_ms::float8,requests_per_second::float8,virtual_users,evidence_ref,created_at",
+      [runType,scenario,target,status,started.toISOString(),completed.toISOString(),requests,errors,errorRate,metric("p50_ms"),metric("p95_ms"),metric("p99_ms"),metric("requests_per_second"),input.virtual_users==null?null:Math.max(0,Math.trunc(Number(input.virtual_users)||0)),JSON.stringify(thresholds),JSON.stringify(details),input.evidence_ref?String(input.evidence_ref).slice(0,500):null,actorId]
+    );
+    await this.sql.unsafe(
+      "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'performance_lab.run.record','performance_lab_run',$2,$3::jsonb)",
+      [actorId,String(rows[0].id),JSON.stringify({run_type:runType,scenario,status,requests_total:requests,error_rate:errorRate})]
+    );
+    return rows[0];
+  }
+
+  async recordSyntheticProbe(input={}){
+    const key=String(input.probe_key||"").trim().toLowerCase();
+    if(!/^[a-z0-9_.-]{2,80}$/.test(key))throw problem(400,"INVALID_SYNTHETIC_PROBE_KEY");
+    const success=input.success===true;
+    const latency=Number(input.latency_ms);
+    if(!Number.isFinite(latency)||latency<0||latency>600000)throw problem(400,"INVALID_SYNTHETIC_LATENCY");
+    const status=input.http_status==null?null:Number(input.http_status);
+    if(status!=null&&(!Number.isInteger(status)||status<100||status>599))throw problem(400,"INVALID_SYNTHETIC_HTTP_STATUS");
+    const details=input.details&&typeof input.details==="object"&&!Array.isArray(input.details)?input.details:{};
+    if(JSON.stringify(details).length>8000)throw problem(400,"SYNTHETIC_DETAILS_TOO_LARGE");
+    const rows=await this.sql.unsafe(
+      "INSERT INTO synthetic_probe_results(probe_key,success,latency_ms,http_status,release_id,error_code,details) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)"+
+      " RETURNING id,probe_key,checked_at,success,latency_ms::float8,http_status,release_id,error_code",
+      [key,success,latency,status,input.release_id?String(input.release_id).slice(0,80):null,input.error_code?String(input.error_code).slice(0,120):null,JSON.stringify(details)]
+    );
+    return rows[0];
+  }
+
+  async controlTowerOverview(){
+    const [platform,service,route,queue,capacityRows,portabilityRows,shadowRows,riskRows,lastRows,changeRows]=await Promise.all([
+      this.wholesaleOverview(),
+      this.serviceOperationsHealth(),
+      this.carrierRouting(),
+      this.workQueueHealth(),
+      this.readSql.unsafe("SELECT COALESCE(sum(max_concurrent_calls) FILTER(WHERE status='active'),0)::int AS capacity,COALESCE(sum(active_calls) FILTER(WHERE status='active'),0)::int AS in_use FROM tenant_call_destinations"),
+      this.readSql.unsafe("SELECT count(*) FILTER(WHERE status NOT IN ('ported','rejected','cancelled'))::int AS open,count(*) FILTER(WHERE automation_state IN ('action_required','failed'))::int AS attention FROM tenant_portability_requests"),
+      this.readSql.unsafe(
+        "SELECT currency,COALESCE(sum(expected_payout_ht),0)::float8 AS expected_payout_ht,COALESCE(sum(confirmed_payout_ht),0)::float8 AS confirmed_payout_ht,COALESCE(sum(paid_payout_ht),0)::float8 AS paid_payout_ht,"+
+        " COALESCE(sum(abs(reconciliation_variance_ht)),0)::float8 AS reconciliation_variance_ht,COALESCE(sum(calls_total) FILTER(WHERE confirmed_payout_ht>0),0)::bigint AS confirmed_calls,"+
+        " COALESCE(sum(calls_total) FILTER(WHERE abs(reconciliation_variance_ht)>0.01),0)::bigint AS variance_calls"+
+        " FROM metric_rollups_daily_v2 WHERE bucket_date>=current_date-29 GROUP BY currency ORDER BY currency"
+      ),
+      this.readSql.unsafe(
+        "SELECT COALESCE(sum(calls_total),0)::float8 AS calls_7d,COALESCE(sum(calls_failed),0)::float8 AS failed_7d,COALESCE(sum(expected_payout_ht),0)::float8 AS expected_7d,"+
+        " COALESCE(sum(abs(reconciliation_variance_ht)),0)::float8 AS variance_7d,COALESCE(sum(calls_total) FILTER(WHERE bucket_start>=now()-interval '1 hour'),0)::float8 AS calls_last_hour,"+
+        " COALESCE(sum(calls_total),0)::float8/168.0 AS avg_hourly_7d FROM platform_rollups_hourly_sharded WHERE bucket_start>=now()-interval '7 days'"
+      ),
+      this.readSql.unsafe("SELECT max(ended_at) AS last_ended_at FROM calls"),
+      this.readSql.unsafe(
+        "SELECT cr.id,cr.public_id::text AS public_id,cr.change_type,cr.entity_type,cr.entity_id,cr.risk_level,cr.status,cr.request_reason,cr.requested_at,cr.expires_at,cr.approved_at,"+
+        " requester.display_name AS requested_by_name,approver.display_name AS approved_by_name,cr.requested_by,cr.approved_by"+
+        " FROM platform_change_requests cr JOIN app_users requester ON requester.id=cr.requested_by LEFT JOIN app_users approver ON approver.id=cr.approved_by"+
+        " WHERE cr.status IN ('pending','approved') AND cr.expires_at>now() ORDER BY cr.requested_at DESC,cr.id DESC LIMIT 20"
+      )
+    ]);
+    const s=platform.summary||{},reg=platform.regulatory_trust?.summary||{},scale=platform.scale||{},cap=capacityRows[0]||{},port=portabilityRows[0]||{};
+    const cdrLag=lastRows[0]?.last_ended_at?Math.max(0,(Date.now()-Date.parse(lastRows[0].last_ended_at))/1000):0;
+    const shadowBilling=assessShadowBilling(shadowRows);
+    const risk=assessOperationalRisk({...riskRows[0],service_critical:service.service_incidents_critical,regulatory_blocking:reg.review_blocking,queue_dead_lettered:queue.dead_lettered});
+    const slo=assessOperationalSlo({cdr_lag_seconds:cdrLag,queue_oldest_seconds:queue.oldest_pending_seconds,queue_dead_lettered:queue.dead_lettered,service_critical:service.service_incidents_critical,resolution_overdue:service.service_resolution_overdue,regions_total:scale.regions_total,regions_ready:scale.regions_ready});
+    const pendingApprovals=changeRows.filter(x=>x.status==="pending").length;
+    const ratios=[
+      Number(s.tenants_total||0)>0?Number(s.tenants_active||0)/Number(s.tenants_total||1):1,
+      Number(s.assignments_total||0)>0?Number(reg.numbers_ready||0)/Number(s.assignments_total||1):1,
+      Number(s.assignments_total||0)>0?Number(s.subscription_access_enabled||0)/Number(s.assignments_total||1):1,
+      Number(scale.regions_total||0)>0?Number(scale.regions_ready||0)/Number(scale.regions_total||1):1
+    ];
+    const readinessScore=Math.round(100*ratios.reduce((a,b)=>a+Math.max(0,Math.min(1,b)),0)/ratios.length);
+    const priorities=[];
+    const push=(severity,code,title,detail)=>priorities.push({severity,code,title,detail});
+    if(Number(reg.review_blocking||0)>0)push("critical","REGULATORY_BLOCKING","Conformité bloquante",reg.review_blocking+" contrôle(s) réglementaire(s) critique(s) à traiter.");
+    if(Number(service.service_incidents_critical||0)>0)push("critical","SERVICE_CRITICAL","Incidents critiques",service.service_incidents_critical+" incident(s) de service critique(s) ouvert(s).");
+    if(Number(service.routing_unavailable||0)>0)push("critical","ROUTING_UNAVAILABLE","Routage indisponible",service.routing_unavailable+" alerte(s) de routage sans destination disponible.");
+    if(Number(queue.dead_lettered||0)>0)push("critical","DEAD_LETTERS","Travaux en échec",queue.dead_lettered+" tâche(s) en dead-letter à examiner.");
+    if(risk.level==="critical"||risk.level==="high")push(risk.level==="critical"?"critical":"warning","RISK_ENGINE","Risk Engine",risk.score+"/100 : "+risk.signals.length+" signal(s) agrégé(s).");
+    if(slo.state==="critical"||slo.state==="burning")push(slo.state==="critical"?"critical":"warning","SLO_BURN","SLO opérationnels",slo.score+" % des objectifs instantanés respectés.");
+    if(shadowBilling.status==="critical")push("critical","SHADOW_BILLING_VARIANCE","Écart shadow billing","Un écart de rapprochement supérieur au seuil interne est détecté.");
+    if(pendingApprovals>0)push("warning","FOUR_EYES_PENDING","Validations 4 yeux",pendingApprovals+" changement(s) critique(s) attendent un second administrateur.");
+    if(Number(port.attention||0)>0)push("warning","PORTABILITY_ATTENTION","Portabilités à traiter",port.attention+" dossier(s) de portabilité demandent une action.");
+    if(Number(s.subscription_unpaid_alerts||0)>0)push("warning","UNPAID_SUBSCRIPTIONS","Abonnements impayés",s.subscription_unpaid_alerts+" alerte(s) d’impayé ouverte(s).");
+    if(!priorities.length)push("info","NO_CRITICAL_ATTENTION","Aucune urgence critique","Les contrôles internes ne remontent aucun blocage critique.");
+    const critical=priorities.filter(x=>x.severity==="critical").length,warning=priorities.filter(x=>x.severity==="warning").length;
+    return {
+      schema_version:"audiotel-control-tower/2",
+      generated_at:new Date().toISOString(),
+      status:critical?"critical":(warning?"attention":"healthy"),
+      readiness_score:readinessScore,
+      kpis:{
+        customers_active:Number(s.tenants_active||0),customers_total:Number(s.tenants_total||0),
+        assignments_active:Number(s.assignments_active||0),numbers_ready:Number(reg.numbers_ready||0),
+        subscription_blocked:Number(s.subscription_access_blocked||0),regulatory_blocking:Number(reg.review_blocking||0),
+        service_critical:Number(service.service_incidents_critical||0),portability_attention:Number(port.attention||0),
+        queue_dead_lettered:Number(queue.dead_lettered||0),destination_capacity:Number(cap.capacity||0),concurrent_in_use:Number(cap.in_use||0),
+        regions_ready:Number(scale.regions_ready||0),regions_total:Number(scale.regions_total||0),
+        risk_score:risk.score,slo_score:slo.score,approvals_pending:pendingApprovals,shadow_billing_status:shadowBilling.status
+      },
+      priorities:priorities.slice(0,16),
+      assurance:{risk,slo,shadow_billing:shadowBilling,change_requests:changeRows,dual_control_required:true},
+      carrier_route:route,queue,service_operations:service,regulatory:reg,scale,
+      capabilities:{
+        policy_intents:["activate_number","port_in","payout_customer","carrier_switch","customer_access"],
+        digital_twin_scenarios:["carrier_outage","traffic_spike","mass_portability","regulatory_expiry","billing_failure","region_failure","database_failure","worker_backlog","settlement_mismatch","hyperscale_growth"],
+        external_connections_active:false,dual_control:true,shadow_billing:true,risk_engine:true,slo_snapshot:true
+      }
+    };
+  }
+
+  async wholesaleOverview(){
+    const [summaryRows,tenants,numbers,settlements,payments,markets,currencyTotals,scaleRows,regulatorySummary,regulatoryNumbers,platformRegulatoryControls,regulatoryReviewAlerts]=await Promise.all([
+      this.readSql.unsafe(
+        "SELECT"+
+        " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal') AS tenants_total,"+
+        " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal' AND status='active') AS tenants_active,"+
+        " (SELECT count(*)::int FROM tenant_kyc_profiles k JOIN tenants t ON t.id=k.tenant_id WHERE t.tenant_type<>'internal' AND k.status='verified') AS kyc_verified,"+
+        " (SELECT count(*)::int FROM tenant_kyc_profiles k JOIN tenants t ON t.id=k.tenant_id WHERE t.tenant_type<>'internal' AND k.status='pending') AS kyc_pending,"+
+        " (SELECT count(*)::int FROM operating_markets) AS markets_total,"+
+        " (SELECT count(*)::int FROM operating_markets WHERE status='active') AS markets_active,"+
+        " (SELECT count(*)::int FROM tenant_market_profiles p JOIN tenants t ON t.id=p.tenant_id WHERE t.tenant_type<>'internal' AND p.status='active') AS tenant_markets_active,"+
+        " (SELECT count(*)::int FROM sva_numbers) AS inventory_total,"+
+        " (SELECT count(*)::int FROM sva_numbers WHERE tenant_id IS NULL AND status IN ('pending','active')) AS inventory_unassigned,"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal') AS assignments_total,"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.status='active') AS assignments_active,"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.regulatory_assignor_carrier_id IS NOT NULL) AS assignments_with_assignor,"+
+        " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND subscription_status='active' AND current_period_end>now()) AS external_subscriptions_active,"+
+        " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND premium_call_access) AS subscription_access_enabled,"+
+        " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND NOT premium_call_access) AS subscription_access_blocked,"+
+        " (SELECT count(*)::int FROM tenant_admin_alerts a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.alert_type='subscription_unpaid' AND a.state<>'resolved') AS subscription_unpaid_alerts,"+
+        " COALESCE((SELECT v.amount_minor::int FROM service_plan_price_versions v JOIN service_plans p ON p.id=v.service_plan_id"+
+        " WHERE p.plan_key='external-sva-access' AND v.market_id IS NULL AND v.currency='EUR' AND v.effective_from<=now()"+
+        " AND (v.effective_to IS NULL OR v.effective_to>now()) ORDER BY v.effective_from DESC LIMIT 1),0) AS subscription_price_minor,"+
+        " 'EUR'::text AS subscription_price_currency,true AS internal_billing_exempt"
+      ),
+      this.readSql.unsafe(
+        "SELECT t.id,t.slug,t.display_name,t.tenant_type,t.status,t.country_code,t.preferred_locale,t.default_currency,t.timezone,"+
+        " COALESCE(k.status,'not_started') AS kyc_status,"+
+        " count(DISTINCT a.id)::int AS number_assignments,"+
+        " count(DISTINCT e.id)::int AS experts,"+
+        " count(DISTINCT tmp.market_id)::int AS markets"+
+        " FROM tenants t LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id"+
+        " LEFT JOIN tenant_number_assignments a ON a.tenant_id=t.id"+
+        " LEFT JOIN experts e ON e.tenant_id=t.id"+
+        " LEFT JOIN tenant_market_profiles tmp ON tmp.tenant_id=t.id"+
+        " WHERE t.tenant_type<>'internal'"+
+        " GROUP BY t.id,k.status ORDER BY t.created_at DESC LIMIT 50"
+      ),
+      this.readSql.unsafe(
+        "SELECT a.id,t.display_name AS tenant,sn.display_number,sn.e164,sn.currency,sn.number_type,"+
+        " m.country_code AS market,a.tariff_code,a.assignment_type,a.status,a.kyc_status,"+
+        " c.name AS regulatory_assignor,a.upstream_assignment_reference,a.valid_from,a.valid_to"+
+        " FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id"+
+        " JOIN sva_numbers sn ON sn.id=a.sva_number_id"+
+        " LEFT JOIN operating_markets m ON m.id=sn.market_id"+
+        " LEFT JOIN carriers c ON c.id=a.regulatory_assignor_carrier_id"+
+        " WHERE t.tenant_type<>'internal' ORDER BY a.created_at DESC LIMIT 50"
+      ),
+      this.readSql.unsafe(
+        "SELECT s.id,t.display_name AS tenant,m.country_code AS market,s.currency,s.period_start,s.period_end,s.upstream_payout_ht::float8,"+
+        " s.platform_fee_ht::float8,s.net_payout_ht::float8,s.status,s.payment_due_date,s.paid_at"+
+        " FROM tenant_revenue_distributions s JOIN tenants t ON t.id=s.tenant_id"+
+        " LEFT JOIN operating_markets m ON m.id=s.market_id"+
+        " WHERE t.tenant_type<>'internal' ORDER BY s.period_end DESC,s.id DESC LIMIT 50"
+      ),
+      this.readSql.unsafe(
+        "SELECT p.id,p.profile_name,p.regulatory_role,p.provider_name,p.funds_flow_mode,p.status,p.valid_from,p.valid_to,"+
+        " COALESCE(json_agg(json_build_object('market',m.country_code,'status',pm.status)) FILTER (WHERE m.id IS NOT NULL),'[]'::json) AS markets"+
+        " FROM payment_compliance_profiles p"+
+        " LEFT JOIN payment_compliance_market_profiles pm ON pm.payment_compliance_profile_id=p.id"+
+        " LEFT JOIN operating_markets m ON m.id=pm.market_id"+
+        " GROUP BY p.id ORDER BY p.created_at DESC LIMIT 20"
+      ),
+      this.readSql.unsafe(
+        "SELECT m.id,m.country_code,m.display_name,m.status,m.default_currency,m.default_locale,m.timezone,m.regulator_name,m.numbering_authority,m.data_region,"+
+        " count(DISTINCT tmp.tenant_id)::int AS tenants,"+
+        " count(DISTINCT sn.id)::int AS numbers"+
+        " FROM operating_markets m"+
+        " LEFT JOIN tenant_market_profiles tmp ON tmp.market_id=m.id AND tmp.status<>'closed'"+
+        " LEFT JOIN sva_numbers sn ON sn.market_id=m.id"+
+        " GROUP BY m.id ORDER BY CASE WHEN m.status='active' THEN 0 ELSE 1 END,m.country_code"
+      ),
+      this.readSql.unsafe(
+        "SELECT s.currency,"+
+        " COALESCE(sum(s.upstream_payout_ht),0)::float8 AS upstream_payout,"+
+        " COALESCE(sum(s.platform_fee_ht),0)::float8 AS platform_fee,"+
+        " COALESCE(sum(s.net_payout_ht),0)::float8 AS net_payout"+
+        " FROM tenant_revenue_distributions s JOIN tenants t ON t.id=s.tenant_id"+
+        " WHERE t.tenant_type<>'internal' GROUP BY s.currency ORDER BY s.currency"
+      ),
+      this.readSql.unsafe(
+        "SELECT"+
+        " (SELECT count(*)::int FROM data_clusters) AS clusters_total,"+
+        " (SELECT count(*)::int FROM data_clusters WHERE state='ready') AS clusters_ready,"+
+        " (SELECT count(*)::int FROM routing_buckets WHERE state='active') AS routing_buckets_active,"+
+        " (SELECT count(*)::bigint FROM tenant_data_placement WHERE state='active') AS placements_active,"+
+        " (SELECT count(*)::int FROM pg_inherits WHERE inhparent='call_facts'::regclass) AS call_fact_partitions,"+
+        " (SELECT count(*)::int FROM platform_regions) AS regions_total,"+
+        " (SELECT count(*)::int FROM platform_regions WHERE status IN ('ready','active')) AS regions_ready,"+
+        " (SELECT count(*)::int FROM disaster_recovery_targets WHERE enabled) AS dr_targets_total,"+
+        " (SELECT count(*)::int FROM disaster_recovery_drills WHERE status='passed') AS dr_drills_passed"
+      ),
+      this.readSql.unsafe(
+        "SELECT"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal') AS numbers_total,"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AND pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id) AND pgi_sva_ecosystem_ready(a.tenant_id,a.sva_number_id)) AS numbers_ready,"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id)) AS arcep_2026_ready,"+
+        " (SELECT count(*)::int FROM sva_regulatory_evidence_events) AS evidence_events,"+
+        " (SELECT count(*)::int FROM sva_arcep_2026_evidence_events) AS arcep_2026_evidence_events,"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND pgi_sva_ecosystem_ready(a.tenant_id,a.sva_number_id)) AS sva_ecosystem_ready,"+
+        " (SELECT count(*)::int FROM sva_ecosystem_evidence_events) AS sva_ecosystem_evidence_events,"+
+        " (SELECT count(*)::int FROM sva_abuse_cases WHERE status NOT IN ('resolved','closed')) AS abuse_open,"+
+        " (SELECT count(*)::int FROM sva_abuse_cases WHERE status NOT IN ('resolved','closed') AND severity='critical') AS abuse_critical,"+
+        " (SELECT count(*)::int FROM platform_regulatory_controls WHERE status='verified' AND (valid_until IS NULL OR valid_until>now())) AS platform_controls_verified,"+
+        " (SELECT count(*)::int FROM platform_regulatory_controls WHERE status IN ('failed','expired')) AS platform_controls_attention,"+
+        " (SELECT count(*)::int FROM regulatory_review_alerts WHERE state<>'resolved') AS review_attention_total,"+
+        " (SELECT count(*)::int FROM regulatory_review_alerts WHERE state<>'resolved' AND severity='critical') AS review_blocking,"+
+        " (SELECT count(*)::int FROM regulatory_review_alerts WHERE state<>'resolved' AND severity<>'critical' AND due_at IS NOT NULL AND due_at<=now()+interval '24 hours') AS review_today,"+
+        " (SELECT count(*)::int FROM regulatory_review_alerts WHERE state<>'resolved' AND severity<>'critical' AND (due_at IS NULL OR due_at>now()+interval '24 hours')) AS review_soon"
+      ),
+      this.readSql.unsafe(
+        "SELECT a.id AS assignment_id,t.display_name AS tenant,sn.id AS sva_number_id,sn.display_number,sn.e164,m.country_code AS market,a.status AS assignment_status,"+
+        " p.regulatory_role,p.service_name,p.provider_name,p.signaletic_model,p.numbering_rights_status,p.editor_identity_status,p.rsva_status,"+
+        " p.tariff_transparency_status,p.mgit_status,p.complaint_process_status,p.fraud_monitoring_status,p.last_reviewed_at,p.next_review_at,"+
+        " ap.exclusive_stable_assignee_status,ap.single_service_status,ap.portability_offered_status,ap.tariff_ceiling_status,ap.no_temporary_contact_use_status,ap.public_body_eligibility_status,ap.caller_id_block_status,ap.parental_control_classification_status,ap.next_review_at AS arcep_2026_next_review_at,"+
+        " pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AS regulatory_ready,pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id) AS arcep_2026_ready,pgi_sva_ecosystem_ready(a.tenant_id,a.sva_number_id) AS sva_ecosystem_ready,"+
+        " (pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AND pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id) AND pgi_sva_ecosystem_ready(a.tenant_id,a.sva_number_id)) AS activation_ready,"+
+        " (SELECT e.event_hash FROM sva_regulatory_evidence_events e WHERE e.tenant_id=a.tenant_id AND e.sva_number_id=a.sva_number_id ORDER BY e.id DESC LIMIT 1) AS evidence_chain_head,"+
+        " (SELECT e.event_hash FROM sva_arcep_2026_evidence_events e WHERE e.tenant_id=a.tenant_id AND e.sva_number_id=a.sva_number_id ORDER BY e.id DESC LIMIT 1) AS arcep_2026_chain_head"+
+        " FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id"+
+        " LEFT JOIN operating_markets m ON m.id=sn.market_id LEFT JOIN sva_regulatory_profiles p ON p.tenant_id=a.tenant_id AND p.sva_number_id=a.sva_number_id"+
+        " LEFT JOIN sva_arcep_2026_profiles ap ON ap.tenant_id=a.tenant_id AND ap.sva_number_id=a.sva_number_id"+
+        " WHERE t.tenant_type<>'internal' ORDER BY a.created_at DESC LIMIT 100"
+      ),
+      this.readSql.unsafe(
+        "SELECT c.id,m.country_code AS market,c.control_key,c.status,c.evidence_reference,c.evidence_sha256,c.verified_at,c.valid_until,c.updated_at"+
+        " FROM platform_regulatory_controls c LEFT JOIN operating_markets m ON m.id=c.market_id"+
+        " ORDER BY COALESCE(m.country_code,'ZZ'),c.control_key"
+      ),
+      this.readSql.unsafe(
+        "SELECT r.id,r.framework,r.alert_kind,r.severity,r.state,r.title,r.message,r.due_at,r.first_detected_at,r.last_detected_at,"+
+        " CASE WHEN r.severity='critical' THEN 'blocking' WHEN r.due_at IS NOT NULL AND r.due_at<=now()+interval '24 hours' THEN 'today' ELSE 'soon' END AS attention_bucket,"+
+        " t.display_name AS tenant,sn.display_number,sn.e164,m.country_code AS market"+
+        " FROM regulatory_review_alerts r LEFT JOIN tenants t ON t.id=r.tenant_id LEFT JOIN sva_numbers sn ON sn.id=r.sva_number_id"+
+        " LEFT JOIN platform_regulatory_controls pc ON pc.id=r.platform_control_id LEFT JOIN operating_markets m ON m.id=COALESCE(sn.market_id,pc.market_id)"+
+        " WHERE r.state<>'resolved' ORDER BY CASE r.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,r.due_at NULLS LAST,r.id DESC LIMIT 30"
+      )
+    ]);
+    const singleCurrency=currencyTotals.length===1?currencyTotals[0]:null;
+    const summary={
+      ...summaryRows[0],
+      settlement_currency_count:currencyTotals.length,
+      settlement_currency:singleCurrency?.currency||null,
+      upstream_payout_ht:singleCurrency?.upstream_payout||0,
+      platform_fee_ht:singleCurrency?.platform_fee||0,
+      net_payout_ht:singleCurrency?.net_payout||0,
+      payment_compliance_active:payments.some(x=>x.status==="active")
+    };
+    return {
+      foundation_version:"1.16",
+      summary,
+      tenants,
+      numbers,
+      settlements,
+      payment_profiles:payments,
+      markets,
+      settlement_totals_by_currency:currencyTotals,
+      scale:{
+        ...(scaleRows[0]||{}),
+        bucket_capacity:4096,
+        read_replica_enabled:this.readSql!==this.sql,
+        process_role:this.config.processRole||"all"
+      },
+      regulatory_trust:{
+        summary:regulatorySummary[0]||{numbers_total:0,numbers_ready:0,arcep_2026_ready:0,evidence_events:0,sva_ecosystem_ready:0,sva_ecosystem_evidence_events:0,arcep_2026_evidence_events:0,abuse_open:0,abuse_critical:0,platform_controls_verified:0,platform_controls_attention:0,review_attention_total:0,review_blocking:0,review_today:0,review_soon:0},
+        numbers:regulatoryNumbers,
+        platform_controls:platformRegulatoryControls,
+        review_alerts:regulatoryReviewAlerts
+      }
+    };
+  }
+
+  async serviceOperationsHealth(){
+    const rows=await this.readSql.unsafe(
+      "SELECT"+
+      " count(*) FILTER(WHERE status NOT IN ('resolved','closed'))::int AS service_incidents_open,"+
+      " count(*) FILTER(WHERE status NOT IN ('resolved','closed') AND severity='critical')::int AS service_incidents_critical,"+
+      " count(*) FILTER(WHERE status NOT IN ('resolved','closed') AND first_responded_at IS NULL AND first_response_due_at<now())::int AS service_first_response_overdue,"+
+      " count(*) FILTER(WHERE status NOT IN ('resolved','closed') AND target_resolution_at<now())::int AS service_resolution_overdue,"+
+      " (SELECT count(*)::int FROM tenant_operational_alerts WHERE state<>'resolved' AND alert_type='routing_unavailable') AS routing_unavailable,"+
+      " (SELECT count(*)::int FROM tenant_operational_alerts WHERE state<>'resolved' AND alert_type='portability_attention') AS portability_attention,"+
+      " (SELECT count(*)::int FROM regulatory_review_alerts WHERE state<>'resolved') AS regulatory_attention,"+
+      " (SELECT count(*)::int FROM regulatory_review_alerts WHERE state<>'resolved' AND severity='critical') AS regulatory_blocking"+
+      " FROM tenant_service_incidents"
+    );
+    return rows[0]||{service_incidents_open:0,service_incidents_critical:0,service_first_response_overdue:0,service_resolution_overdue:0,routing_unavailable:0,portability_attention:0,regulatory_attention:0,regulatory_blocking:0};
+  }
+
+  async systemSnapshot(){
+    const [counts,last,route,queue,resilienceRows,serviceHealth]=await Promise.all([
+      this.sql.unsafe(
+        "WITH b AS (SELECT COALESCE((SELECT effective_from FROM metric_baselines WHERE scope='global' AND tenant_id IS NULL AND metric_key IN ('all','calls') ORDER BY effective_from DESC,id DESC LIMIT 1),'-infinity'::timestamptz) AS from_ts)"+
+        " SELECT count(*) FILTER(WHERE calls.started_at>=b.from_ts)::int AS calls_total,(SELECT count(*)::int FROM experts WHERE enabled AND status='available') AS experts_available,"+
+        " (SELECT count(*)::int FROM outbox_events WHERE published_at IS NULL) AS outbox_pending FROM calls CROSS JOIN b"
+      ),
+      this.sql.unsafe("SELECT ended_at FROM calls ORDER BY ended_at DESC LIMIT 1"),
+      this.carrierRouting(),
+      this.workQueueHealth(),
+      this.readSql.unsafe(
+        "SELECT"+
+        " (SELECT count(*)::int FROM platform_regions) AS regions_total,"+
+        " (SELECT count(*)::int FROM platform_regions WHERE status IN ('ready','active')) AS regions_ready,"+
+        " (SELECT count(*)::int FROM disaster_recovery_targets WHERE enabled) AS dr_targets_total"
+      ),
+      this.serviceOperationsHealth()
+    ]);
+    return {
+      mode:this.config.mode,store:"postgres",
+      calls_total:counts[0].calls_total,experts_available:counts[0].experts_available,
+      cdr_lag_seconds:last[0]?Math.max(0,(Date.now()-Date.parse(last[0].ended_at))/1000):0,
+      outbox_pending:counts[0].outbox_pending,event_subscribers:this.eventBus.size,carrier_route:route,
+      work_queue:queue,
+      resilience:resilienceRows[0]||{regions_total:0,regions_ready:0,dr_targets_total:0},
+      service_operations:serviceHealth
+    };
+  }
+
+  async metrics(){
+    const [calls,outbox,serviceHealth]=await Promise.all([
+      this.sql.unsafe("SELECT count(*)::int AS calls_total,count(*) FILTER(WHERE call_status='connected')::int AS calls_connected FROM calls"),
+      this.sql.unsafe("SELECT count(*)::int AS outbox_pending FROM outbox_events WHERE published_at IS NULL"),
+      this.serviceOperationsHealth()
+    ]);
+    return {...calls[0],...outbox[0],...serviceHealth,event_subscribers:this.eventBus.size};
+  }
+}
+
+async function writeExperienceRollup(tx,callId){
+  await tx.unsafe(
+    "INSERT INTO experience_rollups_hourly_sharded("+
+    " bucket_start,market_id,rollup_shard,calls_total,calls_connected,calls_abandoned,wait_seconds_sum,"+
+    " wait_connected_seconds_sum,wait_abandoned_seconds_sum,answered_le_20s,abandoned_le_10s,ivr_seconds_sum,ivr_samples,"+
+    " queue_seconds_sum,queue_samples,wait_le_10s,wait_10_20s,wait_20_30s,wait_30_60s,wait_60_120s,wait_gt_120s)"+
+    " SELECT date_trunc('hour',c.started_at),c.market_id,(c.tenant_bucket%64)::smallint,1,"+
+    " (c.call_status='connected')::int,(c.call_status='abandoned')::int,c.wait_seconds,"+
+    " CASE WHEN c.call_status='connected' THEN c.wait_seconds ELSE 0 END,"+
+    " CASE WHEN c.call_status='abandoned' THEN c.wait_seconds ELSE 0 END,"+
+    " (c.call_status='connected' AND c.wait_seconds<=20)::int,(c.call_status='abandoned' AND c.wait_seconds<=10)::int,"+
+    " CASE WHEN c.queued_at IS NOT NULL AND c.ivr_started_at IS NOT NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (c.queued_at-c.ivr_started_at)))::bigint ELSE 0 END,"+
+    " (c.queued_at IS NOT NULL AND c.ivr_started_at IS NOT NULL)::int,"+
+    " CASE WHEN c.queued_at IS NOT NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (COALESCE(c.bridged_at,c.ended_at)-c.queued_at)))::bigint ELSE 0 END,"+
+    " (c.queued_at IS NOT NULL)::int,(c.wait_seconds<=10)::int,(c.wait_seconds>10 AND c.wait_seconds<=20)::int,"+
+    " (c.wait_seconds>20 AND c.wait_seconds<=30)::int,(c.wait_seconds>30 AND c.wait_seconds<=60)::int,"+
+    " (c.wait_seconds>60 AND c.wait_seconds<=120)::int,(c.wait_seconds>120)::int"+
+    " FROM calls c WHERE c.id=$1 AND c.market_id IS NOT NULL"+
+    " ON CONFLICT(bucket_start,market_id,rollup_shard) DO UPDATE SET"+
+    " calls_total=experience_rollups_hourly_sharded.calls_total+1,"+
+    " calls_connected=experience_rollups_hourly_sharded.calls_connected+EXCLUDED.calls_connected,"+
+    " calls_abandoned=experience_rollups_hourly_sharded.calls_abandoned+EXCLUDED.calls_abandoned,"+
+    " wait_seconds_sum=experience_rollups_hourly_sharded.wait_seconds_sum+EXCLUDED.wait_seconds_sum,"+
+    " wait_connected_seconds_sum=experience_rollups_hourly_sharded.wait_connected_seconds_sum+EXCLUDED.wait_connected_seconds_sum,"+
+    " wait_abandoned_seconds_sum=experience_rollups_hourly_sharded.wait_abandoned_seconds_sum+EXCLUDED.wait_abandoned_seconds_sum,"+
+    " answered_le_20s=experience_rollups_hourly_sharded.answered_le_20s+EXCLUDED.answered_le_20s,"+
+    " abandoned_le_10s=experience_rollups_hourly_sharded.abandoned_le_10s+EXCLUDED.abandoned_le_10s,"+
+    " ivr_seconds_sum=experience_rollups_hourly_sharded.ivr_seconds_sum+EXCLUDED.ivr_seconds_sum,"+
+    " ivr_samples=experience_rollups_hourly_sharded.ivr_samples+EXCLUDED.ivr_samples,"+
+    " queue_seconds_sum=experience_rollups_hourly_sharded.queue_seconds_sum+EXCLUDED.queue_seconds_sum,"+
+    " queue_samples=experience_rollups_hourly_sharded.queue_samples+EXCLUDED.queue_samples,"+
+    " wait_le_10s=experience_rollups_hourly_sharded.wait_le_10s+EXCLUDED.wait_le_10s,"+
+    " wait_10_20s=experience_rollups_hourly_sharded.wait_10_20s+EXCLUDED.wait_10_20s,"+
+    " wait_20_30s=experience_rollups_hourly_sharded.wait_20_30s+EXCLUDED.wait_20_30s,"+
+    " wait_30_60s=experience_rollups_hourly_sharded.wait_30_60s+EXCLUDED.wait_30_60s,"+
+    " wait_60_120s=experience_rollups_hourly_sharded.wait_60_120s+EXCLUDED.wait_60_120s,"+
+    " wait_gt_120s=experience_rollups_hourly_sharded.wait_gt_120s+EXCLUDED.wait_gt_120s,updated_at=now()",
+    [callId]
+  );
+}
+
+async function writeTenantDailyRollup(tx,callId){
+  await tx.unsafe(
+    "INSERT INTO metric_rollups_daily_v2("+
+    " tenant_bucket,bucket_date,tenant_id,market_id,currency,calls_total,calls_connected,calls_abandoned,calls_failed,"+
+    " conversation_seconds,billable_seconds,payout_eligible_seconds,generated_revenue_ttc,expected_payout_ht,confirmed_payout_ht,"+
+    " paid_payout_ht,expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,source_generation)"+
+    " SELECT f.tenant_bucket,f.started_at::date,f.tenant_id,f.market_id,f.currency,1,"+
+    " (f.call_status='connected')::int,(f.call_status='abandoned')::int,(f.call_status NOT IN ('connected','abandoned'))::int,"+
+    " f.conversation_seconds,f.billable_seconds,f.payout_eligible_seconds,f.retail_service_amount_ttc,f.expected_payout_ht,"+
+    " f.confirmed_payout_ht,f.paid_payout_ht,f.expert_cost_ht,f.technical_cost_ht,f.estimated_margin_ht,f.reconciliation_variance_ht,1"+
+    " FROM call_facts f WHERE f.call_id=$1 AND f.tenant_id IS NOT NULL AND f.market_id IS NOT NULL"+
+    " ON CONFLICT(tenant_bucket,bucket_date,tenant_id,market_id,currency) DO UPDATE SET"+
+    " calls_total=metric_rollups_daily_v2.calls_total+1,"+
+    " calls_connected=metric_rollups_daily_v2.calls_connected+EXCLUDED.calls_connected,"+
+    " calls_abandoned=metric_rollups_daily_v2.calls_abandoned+EXCLUDED.calls_abandoned,"+
+    " calls_failed=metric_rollups_daily_v2.calls_failed+EXCLUDED.calls_failed,"+
+    " conversation_seconds=metric_rollups_daily_v2.conversation_seconds+EXCLUDED.conversation_seconds,"+
+    " billable_seconds=metric_rollups_daily_v2.billable_seconds+EXCLUDED.billable_seconds,"+
+    " payout_eligible_seconds=metric_rollups_daily_v2.payout_eligible_seconds+EXCLUDED.payout_eligible_seconds,"+
+    " generated_revenue_ttc=metric_rollups_daily_v2.generated_revenue_ttc+EXCLUDED.generated_revenue_ttc,"+
+    " expected_payout_ht=metric_rollups_daily_v2.expected_payout_ht+EXCLUDED.expected_payout_ht,"+
+    " confirmed_payout_ht=metric_rollups_daily_v2.confirmed_payout_ht+EXCLUDED.confirmed_payout_ht,"+
+    " paid_payout_ht=metric_rollups_daily_v2.paid_payout_ht+EXCLUDED.paid_payout_ht,"+
+    " expert_cost_ht=metric_rollups_daily_v2.expert_cost_ht+EXCLUDED.expert_cost_ht,"+
+    " technical_cost_ht=metric_rollups_daily_v2.technical_cost_ht+EXCLUDED.technical_cost_ht,"+
+    " estimated_margin_ht=metric_rollups_daily_v2.estimated_margin_ht+EXCLUDED.estimated_margin_ht,"+
+    " reconciliation_variance_ht=metric_rollups_daily_v2.reconciliation_variance_ht+EXCLUDED.reconciliation_variance_ht,"+
+    " source_generation=metric_rollups_daily_v2.source_generation+1,updated_at=now()",
+    [callId]
+  );
+}
+
+async function writeVoiceCarrierHealthRollup(tx,callId){
+  await tx.unsafe(
+    "INSERT INTO voice_carrier_health_hourly_sharded("+
+    " bucket_start,market_id,carrier_role,carrier_id,rollup_shard,calls_total,calls_connected,calls_failed,pdd_samples,pdd_ms_sum,high_pdd_calls,"+
+    " quality_samples,network_affected_calls,low_mos_calls,mos_sum,packet_loss_sum,jitter_ms_sum,latency_ms_sum,rtt_ms_sum,"+
+    " sip_4xx_calls,sip_5xx_calls,caller_hangups,callee_hangups,network_hangups)"+
+    " SELECT date_trunc('hour',c.started_at),c.market_id,r.carrier_role,r.carrier_id,(c.tenant_bucket%64)::smallint,1,"+
+    " (c.call_status='connected')::int,(c.call_status NOT IN ('connected','abandoned'))::int,"+
+    " (c.post_dial_delay_ms IS NOT NULL)::int,COALESCE(c.post_dial_delay_ms,0),(COALESCE(c.post_dial_delay_ms,0)>8000)::int,"+
+    " (q.call_id IS NOT NULL)::int,"+
+    " (q.call_id IS NOT NULL AND (COALESCE(q.rtp_packet_loss_percent,0)>=5 OR COALESCE(q.jitter_ms,0)>5 OR COALESCE(q.latency_ms,0)>150))::int,"+
+    " (q.call_id IS NOT NULL AND q.mos IS NOT NULL AND q.mos<3.5)::int,"+
+    " COALESCE(q.mos,0),COALESCE(q.rtp_packet_loss_percent,0),COALESCE(q.jitter_ms,0),COALESCE(q.latency_ms,0),COALESCE(q.rtt_ms,0),"+
+    " (c.sip_final_code BETWEEN 400 AND 499)::int,(c.sip_final_code BETWEEN 500 AND 599)::int,"+
+    " (c.hangup_party='caller')::int,(c.hangup_party='callee')::int,(c.hangup_party='network')::int"+
+    " FROM calls c LEFT JOIN call_quality q ON q.call_id=c.id"+
+    " CROSS JOIN LATERAL (VALUES ('origin'::text,c.origin_carrier_id),('host'::text,c.host_carrier_id)) AS r(carrier_role,carrier_id)"+
+    " WHERE c.id=$1 AND c.market_id IS NOT NULL AND r.carrier_id IS NOT NULL"+
+    " ON CONFLICT(bucket_start,market_id,carrier_role,carrier_id,rollup_shard) DO UPDATE SET"+
+    " calls_total=voice_carrier_health_hourly_sharded.calls_total+1,"+
+    " calls_connected=voice_carrier_health_hourly_sharded.calls_connected+EXCLUDED.calls_connected,"+
+    " calls_failed=voice_carrier_health_hourly_sharded.calls_failed+EXCLUDED.calls_failed,"+
+    " pdd_samples=voice_carrier_health_hourly_sharded.pdd_samples+EXCLUDED.pdd_samples,"+
+    " pdd_ms_sum=voice_carrier_health_hourly_sharded.pdd_ms_sum+EXCLUDED.pdd_ms_sum,"+
+    " high_pdd_calls=voice_carrier_health_hourly_sharded.high_pdd_calls+EXCLUDED.high_pdd_calls,"+
+    " quality_samples=voice_carrier_health_hourly_sharded.quality_samples+EXCLUDED.quality_samples,"+
+    " network_affected_calls=voice_carrier_health_hourly_sharded.network_affected_calls+EXCLUDED.network_affected_calls,"+
+    " low_mos_calls=voice_carrier_health_hourly_sharded.low_mos_calls+EXCLUDED.low_mos_calls,"+
+    " mos_sum=voice_carrier_health_hourly_sharded.mos_sum+EXCLUDED.mos_sum,"+
+    " packet_loss_sum=voice_carrier_health_hourly_sharded.packet_loss_sum+EXCLUDED.packet_loss_sum,"+
+    " jitter_ms_sum=voice_carrier_health_hourly_sharded.jitter_ms_sum+EXCLUDED.jitter_ms_sum,"+
+    " latency_ms_sum=voice_carrier_health_hourly_sharded.latency_ms_sum+EXCLUDED.latency_ms_sum,"+
+    " rtt_ms_sum=voice_carrier_health_hourly_sharded.rtt_ms_sum+EXCLUDED.rtt_ms_sum,"+
+    " sip_4xx_calls=voice_carrier_health_hourly_sharded.sip_4xx_calls+EXCLUDED.sip_4xx_calls,"+
+    " sip_5xx_calls=voice_carrier_health_hourly_sharded.sip_5xx_calls+EXCLUDED.sip_5xx_calls,"+
+    " caller_hangups=voice_carrier_health_hourly_sharded.caller_hangups+EXCLUDED.caller_hangups,"+
+    " callee_hangups=voice_carrier_health_hourly_sharded.callee_hangups+EXCLUDED.callee_hangups,"+
+    " network_hangups=voice_carrier_health_hourly_sharded.network_hangups+EXCLUDED.network_hangups,updated_at=now()",
+    [callId]
+  );
+}
+
+async function writeTenantVoiceDailyRollup(tx,callId){
+  await tx.unsafe(
+    "INSERT INTO tenant_voice_daily_sharded("+
+    " tenant_bucket,bucket_date,tenant_id,market_id,calls_total,calls_connected,pdd_samples,pdd_ms_sum,high_pdd_calls,"+
+    " quality_samples,network_affected_calls,low_mos_calls,mos_sum,packet_loss_sum,jitter_ms_sum,latency_ms_sum,rtt_ms_sum,"+
+    " sip_5xx_calls,caller_hangups,callee_hangups,network_hangups)"+
+    " SELECT c.tenant_bucket,c.started_at::date,c.tenant_id,c.market_id,1,(c.call_status='connected')::int,"+
+    " (c.post_dial_delay_ms IS NOT NULL)::int,COALESCE(c.post_dial_delay_ms,0),(COALESCE(c.post_dial_delay_ms,0)>8000)::int,"+
+    " (q.call_id IS NOT NULL)::int,"+
+    " (q.call_id IS NOT NULL AND (COALESCE(q.rtp_packet_loss_percent,0)>=5 OR COALESCE(q.jitter_ms,0)>5 OR COALESCE(q.latency_ms,0)>150))::int,"+
+    " (q.call_id IS NOT NULL AND q.mos IS NOT NULL AND q.mos<3.5)::int,COALESCE(q.mos,0),COALESCE(q.rtp_packet_loss_percent,0),"+
+    " COALESCE(q.jitter_ms,0),COALESCE(q.latency_ms,0),COALESCE(q.rtt_ms,0),(c.sip_final_code BETWEEN 500 AND 599)::int,"+
+    " (c.hangup_party='caller')::int,(c.hangup_party='callee')::int,(c.hangup_party='network')::int"+
+    " FROM calls c LEFT JOIN call_quality q ON q.call_id=c.id WHERE c.id=$1 AND c.tenant_id IS NOT NULL AND c.market_id IS NOT NULL"+
+    " ON CONFLICT(tenant_bucket,bucket_date,tenant_id,market_id) DO UPDATE SET"+
+    " calls_total=tenant_voice_daily_sharded.calls_total+1,"+
+    " calls_connected=tenant_voice_daily_sharded.calls_connected+EXCLUDED.calls_connected,"+
+    " pdd_samples=tenant_voice_daily_sharded.pdd_samples+EXCLUDED.pdd_samples,pdd_ms_sum=tenant_voice_daily_sharded.pdd_ms_sum+EXCLUDED.pdd_ms_sum,"+
+    " high_pdd_calls=tenant_voice_daily_sharded.high_pdd_calls+EXCLUDED.high_pdd_calls,"+
+    " quality_samples=tenant_voice_daily_sharded.quality_samples+EXCLUDED.quality_samples,"+
+    " network_affected_calls=tenant_voice_daily_sharded.network_affected_calls+EXCLUDED.network_affected_calls,"+
+    " low_mos_calls=tenant_voice_daily_sharded.low_mos_calls+EXCLUDED.low_mos_calls,"+
+    " mos_sum=tenant_voice_daily_sharded.mos_sum+EXCLUDED.mos_sum,packet_loss_sum=tenant_voice_daily_sharded.packet_loss_sum+EXCLUDED.packet_loss_sum,"+
+    " jitter_ms_sum=tenant_voice_daily_sharded.jitter_ms_sum+EXCLUDED.jitter_ms_sum,latency_ms_sum=tenant_voice_daily_sharded.latency_ms_sum+EXCLUDED.latency_ms_sum,"+
+    " rtt_ms_sum=tenant_voice_daily_sharded.rtt_ms_sum+EXCLUDED.rtt_ms_sum,sip_5xx_calls=tenant_voice_daily_sharded.sip_5xx_calls+EXCLUDED.sip_5xx_calls,"+
+    " caller_hangups=tenant_voice_daily_sharded.caller_hangups+EXCLUDED.caller_hangups,callee_hangups=tenant_voice_daily_sharded.callee_hangups+EXCLUDED.callee_hangups,"+
+    " network_hangups=tenant_voice_daily_sharded.network_hangups+EXCLUDED.network_hangups,updated_at=now()",
+    [callId]
+  );
+}
+
+async function writeSipCodeRollup(tx,callId){
+  await tx.unsafe(
+    "INSERT INTO voice_sip_code_hourly_sharded(bucket_start,market_id,host_carrier_id,sip_final_code,rollup_shard,calls_total)"+
+    " SELECT date_trunc('hour',started_at),market_id,host_carrier_id,sip_final_code,(tenant_bucket%64)::smallint,1"+
+    " FROM calls WHERE id=$1 AND market_id IS NOT NULL AND host_carrier_id IS NOT NULL AND sip_final_code BETWEEN 100 AND 699"+
+    " ON CONFLICT(bucket_start,market_id,host_carrier_id,sip_final_code,rollup_shard) DO UPDATE SET"+
+    " calls_total=voice_sip_code_hourly_sharded.calls_total+1,updated_at=now()",
+    [callId]
+  );
+}
+
+async function writeQualityRollup(tx,callId){
+  await tx.unsafe(
+    "INSERT INTO quality_rollups_hourly_sharded("+
+    " bucket_start,market_id,rollup_shard,quality_samples,mos_sum,packet_loss_sum,jitter_ms_sum,latency_ms_sum,dtmf_errors,affected_samples,low_mos_samples)"+
+    " SELECT date_trunc('hour',c.started_at),c.market_id,(c.tenant_bucket%64)::smallint,1,"+
+    " COALESCE(q.mos,0),COALESCE(q.rtp_packet_loss_percent,0),COALESCE(q.jitter_ms,0),COALESCE(q.latency_ms,0),COALESCE(q.dtmf_errors,0),"+
+    " (COALESCE(q.rtp_packet_loss_percent,0)>=5 OR COALESCE(q.jitter_ms,0)>5 OR COALESCE(q.latency_ms,0)>150)::int,"+
+    " (q.mos IS NOT NULL AND q.mos<3.5)::int"+
+    " FROM calls c JOIN call_quality q ON q.call_id=c.id"+
+    " WHERE c.id=$1 AND c.market_id IS NOT NULL"+
+    " ON CONFLICT(bucket_start,market_id,rollup_shard) DO UPDATE SET"+
+    " quality_samples=quality_rollups_hourly_sharded.quality_samples+1,"+
+    " mos_sum=quality_rollups_hourly_sharded.mos_sum+EXCLUDED.mos_sum,"+
+    " packet_loss_sum=quality_rollups_hourly_sharded.packet_loss_sum+EXCLUDED.packet_loss_sum,"+
+    " jitter_ms_sum=quality_rollups_hourly_sharded.jitter_ms_sum+EXCLUDED.jitter_ms_sum,"+
+    " latency_ms_sum=quality_rollups_hourly_sharded.latency_ms_sum+EXCLUDED.latency_ms_sum,"+
+    " dtmf_errors=quality_rollups_hourly_sharded.dtmf_errors+EXCLUDED.dtmf_errors,"+
+    " affected_samples=quality_rollups_hourly_sharded.affected_samples+EXCLUDED.affected_samples,"+
+    " low_mos_samples=quality_rollups_hourly_sharded.low_mos_samples+EXCLUDED.low_mos_samples,updated_at=now()",
+    [callId]
+  );
+}
+
+async function writeDashboardDimensionRollups(tx,callId){
+  const common=
+    " INSERT INTO dashboard_dimension_rollups_daily("+
+    " bucket_date,market_id,currency,dimension_type,dimension_key,dimension_label,calls_total,calls_connected,"+
+    " conversation_seconds,billable_seconds,generated_revenue_ttc,expected_payout_ht,estimated_margin_ht) ";
+  const conflict=
+    " ON CONFLICT(bucket_date,market_id,currency,dimension_type,dimension_key) DO UPDATE SET"+
+    " dimension_label=EXCLUDED.dimension_label,"+
+    " calls_total=dashboard_dimension_rollups_daily.calls_total+EXCLUDED.calls_total,"+
+    " calls_connected=dashboard_dimension_rollups_daily.calls_connected+EXCLUDED.calls_connected,"+
+    " conversation_seconds=dashboard_dimension_rollups_daily.conversation_seconds+EXCLUDED.conversation_seconds,"+
+    " billable_seconds=dashboard_dimension_rollups_daily.billable_seconds+EXCLUDED.billable_seconds,"+
+    " generated_revenue_ttc=dashboard_dimension_rollups_daily.generated_revenue_ttc+EXCLUDED.generated_revenue_ttc,"+
+    " expected_payout_ht=dashboard_dimension_rollups_daily.expected_payout_ht+EXCLUDED.expected_payout_ht,"+
+    " estimated_margin_ht=dashboard_dimension_rollups_daily.estimated_margin_ht+EXCLUDED.estimated_margin_ht,updated_at=now()";
+
+  await tx.unsafe(
+    common+
+    " SELECT f.started_at::date,f.market_id,f.currency,'expert',COALESCE(f.expert_id::text,'unassigned'),"+
+    " COALESCE(e.display_name,'Non affecté'),1,(f.call_status='connected')::int,f.conversation_seconds,f.billable_seconds,"+
+    " f.retail_service_amount_ttc,f.expected_payout_ht,f.estimated_margin_ht"+
+    " FROM call_facts f LEFT JOIN experts e ON e.id=f.expert_id WHERE f.call_id=$1 AND f.market_id IS NOT NULL"+
+    conflict,[callId]
+  );
+  await tx.unsafe(
+    common+
+    " SELECT f.started_at::date,f.market_id,f.currency,'carrier',COALESCE(f.origin_carrier_id::text,'unknown'),"+
+    " COALESCE(c.name,'Inconnu'),1,(f.call_status='connected')::int,f.conversation_seconds,f.billable_seconds,"+
+    " f.retail_service_amount_ttc,f.expected_payout_ht,f.estimated_margin_ht"+
+    " FROM call_facts f LEFT JOIN carriers c ON c.id=f.origin_carrier_id WHERE f.call_id=$1 AND f.market_id IS NOT NULL"+
+    conflict,[callId]
+  );
+  await tx.unsafe(
+    common+
+    " SELECT f.started_at::date,f.market_id,f.currency,'duration',"+
+    " CASE WHEN f.call_status<>'connected' THEN 'not_connected' WHEN f.conversation_seconds<60 THEN 'lt_1m'"+
+    " WHEN f.conversation_seconds<300 THEN '1_5m' WHEN f.conversation_seconds<600 THEN '5_10m'"+
+    " WHEN f.conversation_seconds<1200 THEN '10_20m' WHEN f.conversation_seconds<1800 THEN '20_30m' ELSE 'gte_30m' END,"+
+    " CASE WHEN f.call_status<>'connected' THEN 'Non aboutis' WHEN f.conversation_seconds<60 THEN '< 1 min'"+
+    " WHEN f.conversation_seconds<300 THEN '1–5 min' WHEN f.conversation_seconds<600 THEN '5–10 min'"+
+    " WHEN f.conversation_seconds<1200 THEN '10–20 min' WHEN f.conversation_seconds<1800 THEN '20–30 min' ELSE '30 min +' END,"+
+    " 1,(f.call_status='connected')::int,f.conversation_seconds,f.billable_seconds,"+
+    " f.retail_service_amount_ttc,f.expected_payout_ht,f.estimated_margin_ht"+
+    " FROM call_facts f WHERE f.call_id=$1 AND f.market_id IS NOT NULL"+
+    conflict,[callId]
+  );
+}
+
+async function writeHourlyRollup(tx,callId){
+  await tx.unsafe(
+    "INSERT INTO platform_rollups_hourly_sharded("+
+    " bucket_start,market_id,currency,rollup_shard,calls_total,calls_connected,calls_abandoned,calls_failed,"+
+    " conversation_seconds,billable_seconds,payout_eligible_seconds,generated_revenue_ttc,expected_payout_ht,"+
+    " confirmed_payout_ht,paid_payout_ht,expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht)"+
+    " SELECT date_trunc('hour',f.started_at),f.market_id,f.currency,(f.tenant_bucket%64)::smallint,1,"+
+    " (f.call_status='connected')::int,(f.call_status='abandoned')::int,"+
+    " (f.call_status NOT IN ('connected','abandoned'))::int,f.conversation_seconds,f.billable_seconds,"+
+    " f.payout_eligible_seconds,f.retail_service_amount_ttc,f.expected_payout_ht,f.confirmed_payout_ht,f.paid_payout_ht,"+
+    " f.expert_cost_ht,f.technical_cost_ht,f.estimated_margin_ht,f.reconciliation_variance_ht"+
+    " FROM call_facts f WHERE f.call_id=$1 AND f.market_id IS NOT NULL"+
+    " ON CONFLICT(bucket_start,market_id,currency,rollup_shard) DO UPDATE SET"+
+    " calls_total=platform_rollups_hourly_sharded.calls_total+EXCLUDED.calls_total,"+
+    " calls_connected=platform_rollups_hourly_sharded.calls_connected+EXCLUDED.calls_connected,"+
+    " calls_abandoned=platform_rollups_hourly_sharded.calls_abandoned+EXCLUDED.calls_abandoned,"+
+    " calls_failed=platform_rollups_hourly_sharded.calls_failed+EXCLUDED.calls_failed,"+
+    " conversation_seconds=platform_rollups_hourly_sharded.conversation_seconds+EXCLUDED.conversation_seconds,"+
+    " billable_seconds=platform_rollups_hourly_sharded.billable_seconds+EXCLUDED.billable_seconds,"+
+    " payout_eligible_seconds=platform_rollups_hourly_sharded.payout_eligible_seconds+EXCLUDED.payout_eligible_seconds,"+
+    " generated_revenue_ttc=platform_rollups_hourly_sharded.generated_revenue_ttc+EXCLUDED.generated_revenue_ttc,"+
+    " expected_payout_ht=platform_rollups_hourly_sharded.expected_payout_ht+EXCLUDED.expected_payout_ht,"+
+    " confirmed_payout_ht=platform_rollups_hourly_sharded.confirmed_payout_ht+EXCLUDED.confirmed_payout_ht,"+
+    " paid_payout_ht=platform_rollups_hourly_sharded.paid_payout_ht+EXCLUDED.paid_payout_ht,"+
+    " expert_cost_ht=platform_rollups_hourly_sharded.expert_cost_ht+EXCLUDED.expert_cost_ht,"+
+    " technical_cost_ht=platform_rollups_hourly_sharded.technical_cost_ht+EXCLUDED.technical_cost_ht,"+
+    " estimated_margin_ht=platform_rollups_hourly_sharded.estimated_margin_ht+EXCLUDED.estimated_margin_ht,"+
+    " reconciliation_variance_ht=platform_rollups_hourly_sharded.reconciliation_variance_ht+EXCLUDED.reconciliation_variance_ht,"+
+    " updated_at=now()",
+    [callId]
+  );
+}
+
+async function refreshHourlyRollupsForCalls(tx,matchJson){
+  await tx.unsafe(
+    "WITH input AS ("+
+    " SELECT * FROM jsonb_to_recordset($1::jsonb) AS x(call_id bigint,tenant_bucket smallint,amount numeric)"+
+    "), affected AS ("+
+    " SELECT DISTINCT date_trunc('hour',f.started_at) AS bucket_start,f.market_id,f.currency,"+
+    " (f.tenant_bucket%64)::smallint AS rollup_shard"+
+    " FROM call_facts f JOIN input i ON i.call_id=f.call_id AND i.tenant_bucket=f.tenant_bucket"+
+    " WHERE f.market_id IS NOT NULL"+
+    "), aggregated AS ("+
+    " SELECT a.bucket_start,a.market_id,a.currency,a.rollup_shard,"+
+    " count(*)::bigint AS calls_total,"+
+    " count(*) FILTER(WHERE f.call_status='connected')::bigint AS calls_connected,"+
+    " count(*) FILTER(WHERE f.call_status='abandoned')::bigint AS calls_abandoned,"+
+    " count(*) FILTER(WHERE f.call_status NOT IN ('connected','abandoned'))::bigint AS calls_failed,"+
+    " COALESCE(sum(f.conversation_seconds),0)::bigint AS conversation_seconds,"+
+    " COALESCE(sum(f.billable_seconds),0)::bigint AS billable_seconds,"+
+    " COALESCE(sum(f.payout_eligible_seconds),0)::bigint AS payout_eligible_seconds,"+
+    " COALESCE(sum(f.retail_service_amount_ttc),0) AS generated_revenue_ttc,"+
+    " COALESCE(sum(f.expected_payout_ht),0) AS expected_payout_ht,"+
+    " COALESCE(sum(f.confirmed_payout_ht),0) AS confirmed_payout_ht,"+
+    " COALESCE(sum(f.paid_payout_ht),0) AS paid_payout_ht,"+
+    " COALESCE(sum(f.expert_cost_ht),0) AS expert_cost_ht,"+
+    " COALESCE(sum(f.technical_cost_ht),0) AS technical_cost_ht,"+
+    " COALESCE(sum(f.estimated_margin_ht),0) AS estimated_margin_ht,"+
+    " COALESCE(sum(f.reconciliation_variance_ht),0) AS reconciliation_variance_ht"+
+    " FROM affected a JOIN call_facts f ON f.market_id=a.market_id AND f.currency=a.currency"+
+    " AND (f.tenant_bucket%64)::smallint=a.rollup_shard"+
+    " AND f.started_at>=a.bucket_start AND f.started_at<a.bucket_start+interval '1 hour'"+
+    " GROUP BY a.bucket_start,a.market_id,a.currency,a.rollup_shard"+
+    ") INSERT INTO platform_rollups_hourly_sharded("+
+    " bucket_start,market_id,currency,rollup_shard,calls_total,calls_connected,calls_abandoned,calls_failed,"+
+    " conversation_seconds,billable_seconds,payout_eligible_seconds,generated_revenue_ttc,expected_payout_ht,"+
+    " confirmed_payout_ht,paid_payout_ht,expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,updated_at)"+
+    " SELECT bucket_start,market_id,currency,rollup_shard,calls_total,calls_connected,calls_abandoned,calls_failed,"+
+    " conversation_seconds,billable_seconds,payout_eligible_seconds,generated_revenue_ttc,expected_payout_ht,"+
+    " confirmed_payout_ht,paid_payout_ht,expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,now()"+
+    " FROM aggregated"+
+    " ON CONFLICT(bucket_start,market_id,currency,rollup_shard) DO UPDATE SET"+
+    " calls_total=EXCLUDED.calls_total,calls_connected=EXCLUDED.calls_connected,"+
+    " calls_abandoned=EXCLUDED.calls_abandoned,calls_failed=EXCLUDED.calls_failed,"+
+    " conversation_seconds=EXCLUDED.conversation_seconds,billable_seconds=EXCLUDED.billable_seconds,"+
+    " payout_eligible_seconds=EXCLUDED.payout_eligible_seconds,generated_revenue_ttc=EXCLUDED.generated_revenue_ttc,"+
+    " expected_payout_ht=EXCLUDED.expected_payout_ht,confirmed_payout_ht=EXCLUDED.confirmed_payout_ht,"+
+    " paid_payout_ht=EXCLUDED.paid_payout_ht,expert_cost_ht=EXCLUDED.expert_cost_ht,"+
+    " technical_cost_ht=EXCLUDED.technical_cost_ht,estimated_margin_ht=EXCLUDED.estimated_margin_ht,"+
+    " reconciliation_variance_ht=EXCLUDED.reconciliation_variance_ht,updated_at=now()",
+    [matchJson]
+  );
+}
+
+async function ledger(tx,callId,tenantId,marketId,currency,type,amount,envelope){
+  await tx.unsafe(
+    "INSERT INTO financial_ledger(tenant_id,market_id,call_id,event_type,amount_ht,currency,source_reference,metadata)"+
+    " VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)",
+    [tenantId||null,marketId||null,callId,type,amount,String(currency||"EUR"),envelope.source_event_id,JSON.stringify({source:envelope.source})]
+  );
+}
+async function routeWith(sql,key){
+  const rows=await sql.unsafe(
+    "SELECT r.route_key,r.generation,r.updated_at,a.name AS active_carrier,s.name AS standby_carrier,"+
+    " ac.state AS active_connection_state,sc.state AS standby_connection_state"+
+    " FROM logical_carrier_routes r LEFT JOIN carriers a ON a.id=r.active_carrier_id"+
+    " LEFT JOIN carriers s ON s.id=r.standby_carrier_id LEFT JOIN carrier_connections ac ON ac.id=r.active_connection_id"+
+    " LEFT JOIN carrier_connections sc ON sc.id=r.standby_connection_id WHERE r.route_key=$1",
+    [key]
+  );
+  return rows[0];
+}
+async function rebuildTenantRevenueDistributions(tx,settlementId,actorId){
+  const rows=await tx.unsafe(
+    "SELECT scm.call_id,scm.carrier_amount_ht::float8 AS upstream_amount_ht,c.tenant_id,c.market_id,c.currency,c.sva_number_id,"+
+    " c.billable_seconds,c.started_at,t.tenant_type,k.status AS kyc_status,k.bank_account_verified,"+
+    " cs.status AS upstream_status,cs.period_start,cs.period_end,cs.paid_at AS upstream_paid_at,cs.statement_reference,"+
+    " pt.id AS payout_terms_id,pt.platform_fee_bps,pt.platform_fee_ht_per_min::float8,pt.payout_delay_days,"+
+    " pc.id AS payment_compliance_profile_id"+
+    " FROM settlement_call_matches scm JOIN calls c ON c.id=scm.call_id"+
+    " JOIN carrier_settlements cs ON cs.id=scm.settlement_id JOIN tenants t ON t.id=c.tenant_id"+
+    " LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=c.tenant_id"+
+    " LEFT JOIN LATERAL ("+
+    "  SELECT x.id,x.platform_fee_bps,x.platform_fee_ht_per_min,x.payout_delay_days FROM tenant_payout_terms x"+
+    "  WHERE x.tenant_id=c.tenant_id AND x.status='active' AND x.effective_from<=c.started_at"+
+    "   AND (x.effective_to IS NULL OR x.effective_to>c.started_at)"+
+    "   AND (x.market_id IS NULL OR x.market_id=c.market_id)"+
+    "   AND (x.sva_number_id IS NULL OR x.sva_number_id=c.sva_number_id)"+
+    "  ORDER BY (x.sva_number_id IS NOT NULL) DESC,(x.market_id IS NOT NULL) DESC,x.effective_from DESC,x.id DESC LIMIT 1"+
+    " ) pt ON true"+
+    " LEFT JOIN LATERAL ("+
+    "  SELECT p.id FROM payment_compliance_profiles p"+
+    "  JOIN payment_compliance_market_profiles pm ON pm.payment_compliance_profile_id=p.id"+
+    "  WHERE p.status='active' AND p.funds_flow_mode IN ('platform_managed','psp_managed')"+
+    "   AND pm.market_id=c.market_id AND pm.status='active'"+
+    "   AND (p.valid_from IS NULL OR p.valid_from<=CURRENT_DATE) AND (p.valid_to IS NULL OR p.valid_to>=CURRENT_DATE)"+
+    "  ORDER BY CASE p.funds_flow_mode WHEN 'platform_managed' THEN 0 ELSE 1 END,p.id LIMIT 1"+
+    " ) pc ON true"+
+    " WHERE scm.settlement_id=$1 AND t.tenant_type<>'internal' ORDER BY c.tenant_id,c.market_id,c.currency,scm.call_id",
+    [settlementId]
+  );
+  const groups=new Map();
+  for(const row of rows){
+    const key=String(row.tenant_id)+":"+String(row.market_id||0)+":"+String(row.currency||"EUR");
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push(row);
+  }
+  const results=[];
+  for(const groupRows of groups.values()){
+    const first=groupRows[0],calculated=groupRows.map(row=>{
+      const terms=row.payout_terms_id==null?null:{
+        id:Number(row.payout_terms_id),
+        platform_fee_bps:Number(row.platform_fee_bps||0),
+        platform_fee_ht_per_min:Number(row.platform_fee_ht_per_min||0)
+      };
+      return {
+        call_id:Number(row.call_id),
+        payout_delay_days:Number(row.payout_delay_days||0),
+        ...computeTenantCallDistribution(row.upstream_amount_ht,row.billable_seconds,terms)
+      };
+    });
+    const totals=summarizeTenantDistribution(calculated);
+    const complianceId=first.payment_compliance_profile_id==null?null:Number(first.payment_compliance_profile_id);
+    const upstreamPaid=String(first.upstream_status)==="paid";
+    const kycOk=String(first.kyc_status)==="verified"&&Boolean(first.bank_account_verified);
+    let status="reconciled",held=totals.net_payout_ht;
+    if(totals.unallocated_amount_ht>0){status="blocked_terms";held=0;}
+    else if(upstreamPaid&&complianceId&&kycOk){status="payable";held=0;}
+    else if(upstreamPaid){status="blocked_compliance";held=totals.net_payout_ht;}
+    let due=null;
+    if(upstreamPaid&&first.upstream_paid_at){
+      const d=new Date(first.upstream_paid_at);
+      if(Number.isFinite(d.getTime())){d.setUTCDate(d.getUTCDate()+totals.max_payout_delay_days);due=d.toISOString().slice(0,10);}
+    }
+    let dist=(await tx.unsafe(
+      "INSERT INTO tenant_revenue_distributions(tenant_id,upstream_settlement_id,market_id,currency,period_start,period_end,collection_model,"+
+      " upstream_payout_ht,platform_fee_ht,net_payout_ht,unallocated_amount_ht,held_amount_ht,payment_compliance_profile_id,status,payment_due_date,statement_reference)"+
+      " VALUES($1,$2,$3,$4,$5,$6,'pgi_collects',$7,$8,$9,$10,$11,$12,$13,$14,$15)"+
+      " ON CONFLICT (upstream_settlement_id,tenant_id,(COALESCE(market_id,0)),currency) DO UPDATE SET"+
+      " upstream_payout_ht=EXCLUDED.upstream_payout_ht,platform_fee_ht=EXCLUDED.platform_fee_ht,net_payout_ht=EXCLUDED.net_payout_ht,"+
+      " unallocated_amount_ht=EXCLUDED.unallocated_amount_ht,held_amount_ht=EXCLUDED.held_amount_ht,"+
+      " payment_compliance_profile_id=EXCLUDED.payment_compliance_profile_id,status=EXCLUDED.status,payment_due_date=EXCLUDED.payment_due_date,"+
+      " statement_reference=EXCLUDED.statement_reference,updated_at=now()"+
+      " WHERE tenant_revenue_distributions.status<>'paid' RETURNING *",
+      [first.tenant_id,settlementId,first.market_id,first.currency,first.period_start,first.period_end,
+       totals.upstream_payout_ht,totals.platform_fee_ht,totals.net_payout_ht,totals.unallocated_amount_ht,held,complianceId,status,due,first.statement_reference]
+    ))[0];
+    if(!dist){
+      dist=(await tx.unsafe(
+        "SELECT * FROM tenant_revenue_distributions WHERE upstream_settlement_id=$1 AND tenant_id=$2 AND COALESCE(market_id,0)=COALESCE($3::bigint,0) AND currency=$4 LIMIT 1",
+        [settlementId,first.tenant_id,first.market_id,first.currency]
+      ))[0];
+    }
+    if(String(dist.status)!=="paid"){
+      for(const item of calculated){
+        await tx.unsafe(
+          "INSERT INTO tenant_revenue_distribution_calls(tenant_distribution_id,call_id,payout_terms_id,upstream_amount_ht,platform_fee_ht,net_payout_ht,unallocated_amount_ht)"+
+          " VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (tenant_distribution_id,call_id) DO UPDATE SET"+
+          " payout_terms_id=EXCLUDED.payout_terms_id,upstream_amount_ht=EXCLUDED.upstream_amount_ht,platform_fee_ht=EXCLUDED.platform_fee_ht,"+
+          " net_payout_ht=EXCLUDED.net_payout_ht,unallocated_amount_ht=EXCLUDED.unallocated_amount_ht",
+          [dist.id,item.call_id,item.payout_terms_id,item.upstream_amount_ht,item.platform_fee_ht,item.net_payout_ht,item.unallocated_amount_ht]
+        );
+      }
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'tenant.revenue_distribution','tenant_revenue_distribution',$3,$4::jsonb)",
+        [first.tenant_id,actorId,String(dist.id),JSON.stringify({upstream_settlement_id:settlementId,status,upstream_payout_ht:totals.upstream_payout_ht,platform_fee_ht:totals.platform_fee_ht,net_payout_ht:totals.net_payout_ht,collection_model:"pgi_collects"})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,market_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,$2,'tenant.revenue_distribution.updated','tenant_revenue_distribution',$3,$4::jsonb)",
+        [first.tenant_id,first.market_id,String(dist.id),JSON.stringify({status,upstream_settlement_id:settlementId,platform_fee_ht:totals.platform_fee_ht,net_payout_ht:totals.net_payout_ht})]
+      );
+    }
+    results.push(dist);
+  }
+  return results;
+}
+function roundFinanceNumber(value){
+  return Math.round((Number(value)+Number.EPSILON)*1e6)/1e6;
+}
+function numberFields(row,keys){
+  const out={...row};
+  for(const key of keys)if(out[key]!=null)out[key]=Number(out[key]);
+  return out;
+}
+function numericActor(actor){
+  const n=Number(actor?.sub);
+  return Number.isInteger(n)&&n>0?n:null;
+}
+function nullableNumber(v){
+  if(v==null||v==="")return null;
+  const n=Number(v);return Number.isFinite(n)?n:null;
+}
+function clampInt(v,fallback,min,max){
+  const n=v==null||v===""?fallback:Number(v);
+  if(!Number.isInteger(n))return fallback;
+  return Math.max(min,Math.min(max,n));
+}
+function encodeNumericCursor(value){
+  return Buffer.from(String(value)).toString("base64url");
+}
+function decodeNumericCursor(value){
+  if(!value)return null;
+  try{
+    const n=Number(Buffer.from(String(value),"base64url").toString("utf8"));
+    return Number.isInteger(n)&&n>0?n:null;
+  }catch{return null;}
+}
+function encodeCursor(x){return Buffer.from(JSON.stringify(x)).toString("base64url");}
+function decodeCursor(v){
+  if(!v)return null;
+  try{
+    const x=JSON.parse(Buffer.from(String(v),"base64url").toString("utf8"));
+    if(!x.started_at||!Number.isInteger(Number(x.id)))return null;
+    return {started_at:x.started_at,id:Number(x.id)};
+  }catch{return null;}
+}
+function validateEnvelope(x){
+  if(!x||typeof x!=="object"||Array.isArray(x))throw problem(400,"INVALID_CDR_ENVELOPE");
+  const source=String(x.source||"").trim();
+  const eventId=String(x.source_event_id||"").trim();
+  if(!source||!eventId||!x.payload)throw problem(400,"CDR_ENVELOPE_FIELDS_MISSING");
+  if(source.length>64||eventId.length>160)throw problem(400,"CDR_ENVELOPE_FIELD_INVALID");
+  if(typeof x.payload!=="object"||Array.isArray(x.payload))throw problem(400,"INVALID_CDR_PAYLOAD");
+  if(x.event_time!=null&&!Number.isFinite(Date.parse(String(x.event_time))))throw problem(400,"INVALID_CDR_EVENT_TIME");
+  x.source=source;
+  x.source_event_id=eventId;
+  if(x.event_time!=null)x.event_time=new Date(String(x.event_time)).toISOString();
+}
+function normalizePortabilityNumber(value,countryCode){
+  let raw=String(value||"").trim().replace(/[\s().-]/g,"");
+  if(String(countryCode||"").toUpperCase()==="FR"&&/^0\d{9}$/.test(raw))raw="+33"+raw.slice(1);
+  if(/^00\d{8,15}$/.test(raw))raw="+"+raw.slice(2);
+  if(!/^\+[1-9]\d{7,14}$/.test(raw))throw problem(400,"INVALID_PORTABILITY_NUMBER");
+  return raw;
+}
+function optionalText(value,max){
+  const valueText=String(value==null?"":value).trim();
+  return valueText?valueText.slice(0,max):null;
+}
+function staffLoginName(value){
+  const name=String(value||"").trim();
+  if(name.length<3||name.length>120||!/^[A-Za-z0-9._@+-]+$/.test(name))throw problem(400,"INVALID_STAFF_LOGIN");
+  return name;
+}
+function staffRole(value){
+  const role=String(value||"readonly").trim().toLowerCase();
+  if(!["admin","finance","readonly"].includes(role))throw problem(400,"INVALID_STAFF_ROLE");
+  return role;
+}
+function dateOnlyValue(value,field){
+  const valueText=String(value||"").trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(valueText)||!Number.isFinite(Date.parse(valueText+"T00:00:00Z")))throw problem(400,"INVALID_"+String(field||"DATE").toUpperCase());
+  return valueText;
+}
+
+async function serviceIncidentOutbox(tx,tenantId,eventType,incidentId,publicId,payload={}){
+  const safe={
+    incident_public_id:String(publicId||""),
+    ...payload
+  };
+  await tx.unsafe(
+    "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,$2,'tenant_service_incident',$3,$4::jsonb)",
+    [Number(tenantId),String(eventType),String(incidentId),JSON.stringify(safe)]
+  );
+}
+function serviceIncidentSla(severity){
+  const map={critical:{response:60,resolution:120},high:{response:60,resolution:240},normal:{response:120,resolution:1440},low:{response:240,resolution:2880}};
+  return map[String(severity||"normal")]||map.normal;
+}
+function serviceIncidentDeadlines(severity,start){
+  const sla=serviceIncidentSla(severity);return {response:addServiceBusinessMinutes(start,sla.response),resolution:addServiceBusinessMinutes(start,sla.resolution)};
+}
+function addServiceBusinessMinutes(start,minutes){
+  let cursor=new Date(start),remaining=Math.max(1,Number(minutes)||1),guard=0;cursor.setUTCSeconds(0,0);if(cursor.getTime()<new Date(start).getTime())cursor=new Date(cursor.getTime()+60000);
+  while(remaining>0&&guard<25000){if(isServiceBusinessMinute(cursor))remaining--;cursor=new Date(cursor.getTime()+60000);guard++;}
+  if(remaining>0)throw problem(500,"SERVICE_SLA_CALCULATION_FAILED");return cursor.toISOString();
+}
+function isServiceBusinessMinute(date){
+  const parts=new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Paris",weekday:"short",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(date),map=Object.fromEntries(parts.map(p=>[p.type,p.value]));
+  if(!["Mon","Tue","Wed","Thu","Fri"].includes(map.weekday))return false;const minute=Number(map.hour)*60+Number(map.minute);return minute>=510&&minute<1140;
+}
+async function tenantDiagnosticSnapshot(tx,tenantId,svaNumberId=null){
+  const [activity,destinations,portability]=await Promise.all([
+    tx.unsafe(
+      "SELECT count(*) FILTER(WHERE started_at>=now()-interval '1 hour')::int AS calls_1h,"+
+      " count(*) FILTER(WHERE started_at>=now()-interval '1 hour' AND call_status='connected')::int AS connected_1h,"+
+      " max(started_at) AS last_call_at FROM calls WHERE tenant_id=$1 AND ($2::bigint IS NULL OR sva_number_id=$2)",
+      [tenantId,svaNumberId]
+    ),
+    tx.unsafe(
+      "SELECT count(*)::int AS total,count(*) FILTER(WHERE status='active')::int AS active,"+
+      " count(*) FILTER(WHERE status='active' AND (max_concurrent_calls IS NULL OR active_calls<max_concurrent_calls))::int AS available"+
+      " FROM tenant_call_destinations WHERE tenant_id=$1 AND ($2::bigint IS NULL OR sva_number_id=$2 OR sva_number_id IS NULL)",
+      [tenantId,svaNumberId]
+    ),
+    tx.unsafe(
+      "SELECT status,automation_state,operator_status,updated_at FROM tenant_portability_requests"+
+      " WHERE tenant_id=$1 AND status NOT IN ('ported','cancelled','rejected') ORDER BY updated_at DESC LIMIT 1",
+      [tenantId]
+    )
+  ]);
+  return {
+    captured_at:new Date().toISOString(),
+    activity:activity[0]||{calls_1h:0,connected_1h:0,last_call_at:null},
+    destinations:destinations[0]||{total:0,active:0,available:0},
+    portability:portability[0]||null
+  };
+}
+function problem(status,code,message=code){
+  const e=new Error(message);e.status=status;e.code=code;return e;
+}
+
+async function appendChangeApprovalEvent(tx,changeRequestId,eventType,actorId,details={}){
+  const prevRows=await tx.unsafe("SELECT event_sha256 FROM platform_change_approval_events WHERE change_request_id=$1 ORDER BY id DESC LIMIT 1",[Number(changeRequestId)]);
+  const previous=prevRows[0]?.event_sha256||null;
+  const createdAt=new Date().toISOString();
+  const safeDetails=details&&typeof details==="object"&&!Array.isArray(details)?details:{};
+  const material=JSON.stringify({change_request_id:Number(changeRequestId),event_type:String(eventType),actor_id:actorId==null?null:Number(actorId),details:safeDetails,previous_sha256:previous,created_at:createdAt});
+  const hash=createHash("sha256").update(material).digest("hex");
+  const rows=await tx.unsafe(
+    "INSERT INTO platform_change_approval_events(change_request_id,event_type,actor_id,details,previous_sha256,event_sha256,created_at) VALUES($1,$2,$3,$4::jsonb,$5,$6,$7::timestamptz) RETURNING id,event_sha256,created_at",
+    [Number(changeRequestId),String(eventType),actorId==null?null:Number(actorId),JSON.stringify(safeDetails),previous,hash,createdAt]
+  );
+  return rows[0];
+}
+ THEN (e.normalized_details->>'provider_price_amount_minor')::bigint END,v.amount_minor,0)::bigint AS amount_minor,"+
+        " COALESCE(NULLIF(upper(e.normalized_details->>'provider_price_currency'),''),v.currency,'EUR') AS currency,"+
+        " COALESCE(NULLIF(e.normalized_details->>'provider_invoice_reference',''),e.provider_event_id) AS invoice_key"+
+        " FROM subscription_billing_events e LEFT JOIN service_plan_price_versions v ON v.id=CASE WHEN COALESCE(e.normalized_details->>'price_version_id','') ~ '^[0-9]+
+    publicId=String(publicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    const percent=input.platform_fee_percent==null||input.platform_fee_percent===""?null:Number(input.platform_fee_percent);
+    const bps=input.platform_fee_bps==null||input.platform_fee_bps===""?(percent==null?null:Math.round(percent*100)):Number(input.platform_fee_bps);
+    const perMinute=input.platform_fee_ht_per_min==null||input.platform_fee_ht_per_min===""?0:Number(input.platform_fee_ht_per_min);
+    const delay=Number(input.payout_delay_days??0);
+    const marketId=input.market_id==null||input.market_id===""?null:Number(input.market_id);
+    const svaNumberId=input.sva_number_id==null||input.sva_number_id===""?null:Number(input.sva_number_id);
+    const effectiveFrom=input.effective_from?new Date(input.effective_from):new Date();
+    if(!Number.isInteger(bps)||bps<0||bps>10000)throw problem(400,"INVALID_PLATFORM_FEE");
+    if(!Number.isFinite(perMinute)||perMinute<0||perMinute>10000)throw problem(400,"INVALID_PLATFORM_FEE");
+    if(bps===0&&perMinute===0)throw problem(400,"PGI_MARGIN_REQUIRED");
+    if(!Number.isInteger(delay)||delay<0||delay>365)throw problem(400,"INVALID_PAYOUT_DELAY");
+    if(marketId!=null&&(!Number.isInteger(marketId)||marketId<=0))throw problem(400,"INVALID_MARKET_ID");
+    if(svaNumberId!=null&&(!Number.isInteger(svaNumberId)||svaNumberId<=0))throw problem(400,"INVALID_SVA_NUMBER_ID");
+    if(!Number.isFinite(effectiveFrom.getTime()))throw problem(400,"INVALID_EFFECTIVE_FROM");
+    const actorId=numericActor(actor);
+    const result=await this.sql.begin(async tx=>{
+      const tenant=(await tx.unsafe("SELECT id,tenant_type FROM tenants WHERE public_id=$1::uuid FOR UPDATE",[publicId]))[0];
+      if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+      if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+      if(marketId!=null){
+        const market=(await tx.unsafe("SELECT id FROM operating_markets WHERE id=$1 LIMIT 1",[marketId]))[0];
+        if(!market)throw problem(404,"MARKET_NOT_FOUND");
+      }
+      if(svaNumberId!=null){
+        const number=(await tx.unsafe("SELECT id,tenant_id,market_id FROM sva_numbers WHERE id=$1 LIMIT 1",[svaNumberId]))[0];
+        if(!number||Number(number.tenant_id)!==Number(tenant.id))throw problem(409,"PAYOUT_TERMS_NUMBER_TENANT_MISMATCH");
+        if(marketId!=null&&Number(number.market_id)!==marketId)throw problem(409,"PAYOUT_TERMS_MARKET_MISMATCH");
+      }
+      await tx.unsafe(
+        "UPDATE tenant_payout_terms SET status='ended',effective_to=$4::timestamptz WHERE tenant_id=$1"+
+        " AND COALESCE(market_id,0)=COALESCE($2::bigint,0) AND COALESCE(sva_number_id,0)=COALESCE($3::bigint,0)"+
+        " AND status='active' AND effective_to IS NULL",
+        [tenant.id,marketId,svaNumberId,effectiveFrom.toISOString()]
+      );
+      const row=(await tx.unsafe(
+        "INSERT INTO tenant_payout_terms(tenant_id,market_id,sva_number_id,collection_model,platform_fee_bps,platform_fee_ht_per_min,payout_delay_days,effective_from,created_by)"+
+        " VALUES($1,$2,$3,'pgi_collects',$4,$5,$6,$7,$8) RETURNING id,tenant_id,market_id,sva_number_id,collection_model,platform_fee_bps,platform_fee_ht_per_min::float8,payout_delay_days,status,effective_from,effective_to,created_at",
+        [tenant.id,marketId,svaNumberId,bps,perMinute,delay,effectiveFrom.toISOString(),actorId]
+      ))[0];
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'tenant.payout_terms.create','tenant_payout_terms',$3,$4::jsonb)",
+        [tenant.id,actorId,String(row.id),JSON.stringify({collection_model:"pgi_collects",platform_fee_bps:bps,platform_fee_ht_per_min:perMinute,payout_delay_days:delay,market_id:marketId,sva_number_id:svaNumberId})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,market_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,$2,'tenant.payout_terms.changed','tenant_payout_terms',$3,$4::jsonb)",
+        [tenant.id,marketId,String(row.id),JSON.stringify({platform_fee_bps:bps,platform_fee_ht_per_min:perMinute,payout_delay_days:delay})]
+      );
+      const pending=await tx.unsafe(
+        "SELECT DISTINCT upstream_settlement_id FROM tenant_revenue_distributions WHERE tenant_id=$1 AND status IN ('blocked_terms','blocked_compliance','reconciled','payable') ORDER BY upstream_settlement_id",
+        [tenant.id]
+      );
+      for(const p of pending)await rebuildTenantRevenueDistributions(tx,Number(p.upstream_settlement_id),actorId);
+      return row;
+    });
+    this.eventBus.publish("tenant.payout_terms.changed",{tenant_public_id:publicId,id:Number(result.id)});
+    return result;
+  }
+
+  async tenantControlDetail(publicId){
+    publicId=String(publicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    const base=await this.readSql.unsafe(
+      "SELECT t.id,t.public_id,t.slug,t.display_name,t.legal_name,t.tenant_type,t.status,t.country_code,t.billing_email,"+
+      " t.preferred_locale,t.default_currency,t.timezone,t.home_region,t.capacity_tier,t.created_at,t.updated_at,"+
+      " COALESCE(k.status,'not_started') AS kyc_status,k.registration_country,k.registration_number,"+
+      " k.legal_representative_verified,k.bank_account_verified,k.reviewed_at,k.expires_at"+
+      " FROM tenants t LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id WHERE t.public_id=$1::uuid",
+      [publicId]
+    );
+    const tenant=base[0];if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+    if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+    const id=Number(tenant.id);
+    const [subs,lines,portability,destinations,experts,alerts,settlements,payoutTerms,controls,audit,activity,serviceIncidents,operationalAlerts,users,invitations,linePerformance]=await Promise.all([
+      this.readSql.unsafe(
+        "SELECT s.id,s.status,s.billing_currency,s.starts_at,s.current_period_start,s.current_period_end,s.ends_at,"+
+        " s.billing_provider,s.provider_customer_reference,s.provider_subscription_reference,s.cancel_at_period_end,s.last_payment_status,s.last_event_at,"+
+        " p.plan_key,p.display_name AS plan_name,v.amount_minor,v.currency AS price_currency"+
+        " FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id"+
+        " LEFT JOIN service_plan_price_versions v ON v.id=s.price_version_id WHERE s.tenant_id=$1 ORDER BY s.created_at DESC,s.id DESC LIMIT 10",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT a.id,sn.id AS sva_number_id,sn.display_number,sn.e164,sn.currency,sn.number_type,sn.service_rate_ttc_per_min::float8,m.country_code AS market,a.tariff_code,a.assignment_type,a.status,a.kyc_status,"+
+        " c.name AS regulatory_assignor,a.valid_from,a.valid_to,pgi_tenant_has_premium_call_access($1,m.id,now()) AS premium_call_access"+
+        " FROM tenant_number_assignments a JOIN sva_numbers sn ON sn.id=a.sva_number_id LEFT JOIN operating_markets m ON m.id=sn.market_id"+
+        " LEFT JOIN carriers c ON c.id=a.regulatory_assignor_carrier_id WHERE a.tenant_id=$1 ORDER BY a.created_at DESC,a.id DESC LIMIT 100",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT p.id,p.country_code,p.requested_e164,p.display_number,p.service_family,p.current_operator_name,p.current_operator_reference,p.account_holder_name,p.desired_port_date,p.status,p.ownership_status,p.operator_portability_reference,p.scheduled_at,p.completed_at,p.rejection_reason,"+
+        " p.target_carrier_id,c.name AS target_carrier,p.tariff_code,p.service_rate_ttc_per_min::float8,p.currency,p.tariff_verification_status,p.tariff_verified_at,"+
+        " p.rio_last4,p.rio_validation_status,p.rio_validated_at,p.source_contract_transfer_mode,p.source_contract_liability_acknowledged,"+
+        " p.automation_state,p.automation_last_error,p.automation_last_sync_at,p.operator_status,p.created_at,p.updated_at"+
+        " FROM tenant_portability_requests p LEFT JOIN carriers c ON c.id=p.target_carrier_id WHERE p.tenant_id=$1 ORDER BY p.created_at DESC,p.id DESC LIMIT 50",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT d.id,d.label,d.destination_type,d.destination_uri,d.priority,d.status,d.failover_enabled,d.max_concurrent_calls,d.active_calls,d.last_assigned_at,d.sva_number_id,sn.display_number,sn.e164"+
+        " FROM tenant_call_destinations d LEFT JOIN sva_numbers sn ON sn.id=d.sva_number_id WHERE d.tenant_id=$1 ORDER BY d.priority,d.id LIMIT 100",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,code,display_name,destination_uri,status,active_calls,last_assigned_at,enabled,compensation_type,compensation_rate::float8"+
+        " FROM experts WHERE tenant_id=$1 ORDER BY display_name,id LIMIT 100",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,alert_type,severity,state,title,message,due_at,first_detected_at,last_detected_at,acknowledged_at,resolved_at"+
+        " FROM tenant_admin_alerts WHERE tenant_id=$1 ORDER BY id DESC LIMIT 50",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT s.id,m.country_code AS market,s.currency,s.period_start,s.period_end,s.upstream_payout_ht::float8,s.platform_fee_ht::float8,s.net_payout_ht::float8,"+
+        " s.unallocated_amount_ht::float8,s.held_amount_ht::float8,s.collection_model,s.status,s.payment_due_date,s.paid_at,s.statement_reference"+
+        " FROM tenant_revenue_distributions s LEFT JOIN operating_markets m ON m.id=s.market_id"+
+        " WHERE s.tenant_id=$1 ORDER BY s.period_end DESC,s.id DESC LIMIT 24",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT pt.id,pt.market_id,m.country_code AS market,pt.sva_number_id,sn.display_number,pt.collection_model,pt.platform_fee_bps,"+
+        " pt.platform_fee_ht_per_min::float8,pt.payout_delay_days,pt.status,pt.effective_from,pt.effective_to,pt.created_at"+
+        " FROM tenant_payout_terms pt LEFT JOIN operating_markets m ON m.id=pt.market_id LEFT JOIN sva_numbers sn ON sn.id=pt.sva_number_id"+
+        " WHERE pt.tenant_id=$1 ORDER BY (pt.status='active') DESC,pt.effective_from DESC,pt.id DESC LIMIT 50",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,assignment_id,action,previous_status,new_status,reason,occurred_at,details FROM tenant_control_events"+
+        " WHERE tenant_id=$1 ORDER BY occurred_at DESC,id DESC LIMIT 50",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,action,entity_type,entity_id,occurred_at,details FROM audit_log WHERE tenant_id=$1 ORDER BY occurred_at DESC,id DESC LIMIT 50",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT count(*)::int AS calls_30d,count(*) FILTER (WHERE call_status='connected')::int AS connected_30d,"+
+        " COALESCE(sum(billable_seconds),0)::float8 AS billable_seconds_30d,COALESCE(sum(retail_service_amount_ttc),0)::float8 AS revenue_ttc_30d,"+
+        " COALESCE(sum(estimated_margin_ht),0)::float8 AS margin_ht_30d,max(started_at) AS last_call_at"+
+        " FROM calls WHERE tenant_id=$1 AND started_at>=now()-interval '30 days'",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,public_id,category,severity,status,source,title,description,assigned_team,first_response_due_at,target_resolution_at,first_responded_at,last_customer_update_at,last_pgi_update_at,resolved_at,created_at,updated_at"+
+        " FROM tenant_service_incidents WHERE tenant_id=$1 ORDER BY (status IN ('resolved','closed')) ASC,updated_at DESC,id DESC LIMIT 30",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,incident_id,alert_type,severity,state,title,message,due_at,customer_visible,last_detected_at"+
+        " FROM tenant_operational_alerts WHERE tenant_id=$1 AND state<>'resolved' ORDER BY last_detected_at DESC,id DESC LIMIT 50",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT p.id,p.email,p.display_name,p.status,p.preferred_locale,p.timezone,p.email_verified,p.last_authenticated_at,p.created_at,p.updated_at,"+
+        " m.role,m.status AS membership_status,p.metadata->>'first_name' AS first_name,p.metadata->>'last_name' AS last_name,p.metadata->>'phone' AS phone,p.metadata->>'signup_source' AS signup_source,p.metadata->>'service_intent' AS service_intent,p.metadata->>'account_type' AS account_type"+
+        " FROM customer_tenant_memberships m JOIN customer_principals p ON p.id=m.customer_principal_id WHERE m.tenant_id=$1 ORDER BY (m.role='owner') DESC,p.created_at,p.id LIMIT 100",[id]
+      ),
+      this.readSql.unsafe(
+        "SELECT id,email,role,status,expires_at,accepted_at,created_at FROM customer_tenant_invitations WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 100",[id]
+      ),
+      this.readSql.unsafe(
+        "WITH latest_assignment AS ("+
+        " SELECT DISTINCT ON (a.sva_number_id) a.id AS assignment_id,a.sva_number_id,a.status AS assignment_status,a.kyc_status,a.tariff_code,a.valid_from,a.valid_to"+
+        " FROM tenant_number_assignments a WHERE a.tenant_id=$1 ORDER BY a.sva_number_id,(a.status='active') DESC,a.id DESC"+
+        "), call_roll AS ("+
+        " SELECT c.sva_number_id,count(*)::bigint AS calls_30d,count(*) FILTER(WHERE c.call_status='connected')::bigint AS connected_30d,"+
+        " COALESCE(sum(c.billable_seconds),0)::float8 AS billable_seconds_30d,COALESCE(sum(c.retail_service_amount_ttc),0)::float8 AS revenue_ttc_30d,"+
+        " COALESCE(sum(c.expected_payout_ht),0)::float8 AS upstream_expected_ht_30d,COALESCE(sum(c.confirmed_payout_ht),0)::float8 AS upstream_confirmed_ht_30d,"+
+        " COALESCE(sum(c.paid_payout_ht),0)::float8 AS upstream_paid_ht_30d,"+
+        " COALESCE(sum(CASE WHEN pt.id IS NULL THEN 0 ELSE LEAST(COALESCE(c.expected_payout_ht,0),COALESCE(c.expected_payout_ht,0)*pt.platform_fee_bps/10000.0+pt.platform_fee_ht_per_min*(COALESCE(c.billable_seconds,0)/60.0)) END),0)::float8 AS platform_fee_estimated_ht_30d,"+
+        " COALESCE(sum(CASE WHEN pt.id IS NULL THEN 0 ELSE GREATEST(0,COALESCE(c.expected_payout_ht,0)-LEAST(COALESCE(c.expected_payout_ht,0),COALESCE(c.expected_payout_ht,0)*pt.platform_fee_bps/10000.0+pt.platform_fee_ht_per_min*(COALESCE(c.billable_seconds,0)/60.0))) END),0)::float8 AS client_net_estimated_ht_30d,"+
+        " count(pt.id)::bigint AS payout_term_matches,max(c.started_at) AS last_call_at"+
+        " FROM calls c LEFT JOIN LATERAL ("+
+        " SELECT p.id,p.platform_fee_bps,p.platform_fee_ht_per_min::float8 FROM tenant_payout_terms p"+
+        " WHERE p.tenant_id=$1 AND p.status='active' AND p.effective_from<=c.started_at"+
+        " AND (p.effective_to IS NULL OR p.effective_to>c.started_at) AND (p.market_id IS NULL OR p.market_id=c.market_id) AND (p.sva_number_id IS NULL OR p.sva_number_id=c.sva_number_id)"+
+        " ORDER BY (p.sva_number_id IS NOT NULL) DESC,(p.market_id IS NOT NULL) DESC,p.effective_from DESC,p.id DESC LIMIT 1"+
+        " ) pt ON TRUE"+
+        " WHERE c.tenant_id=$1 AND c.started_at>=now()-interval '30 days' GROUP BY c.sva_number_id"+
+        "), live AS ("+
+        " SELECT sva_number_id,count(*)::bigint AS active_calls,"+
+        " COALESCE(sum(upstream_payout_rate_ht_per_min)/60.0,0)::float8 AS upstream_rate_ht_per_second,"+
+        " COALESCE(sum(net_client_rate_ht_per_min)/60.0,0)::float8 AS client_rate_ht_per_second"+
+        " FROM live_call_financial_sessions WHERE tenant_id=$1 AND status='active' AND billable_started_at>now()-interval '24 hours' GROUP BY sva_number_id"+
+        ") SELECT la.assignment_id,sn.id AS sva_number_id,sn.display_number,sn.e164,sn.currency,sn.number_type,sn.service_rate_ttc_per_min::float8,"+
+        " la.assignment_status,la.kyc_status,la.tariff_code,la.valid_from,la.valid_to,"+
+        " COALESCE(cr.calls_30d,0)::bigint AS calls_30d,COALESCE(cr.connected_30d,0)::bigint AS connected_30d,COALESCE(cr.billable_seconds_30d,0)::float8 AS billable_seconds_30d,"+
+        " COALESCE(cr.revenue_ttc_30d,0)::float8 AS revenue_ttc_30d,COALESCE(cr.upstream_expected_ht_30d,0)::float8 AS upstream_expected_ht_30d,"+
+        " COALESCE(cr.upstream_confirmed_ht_30d,0)::float8 AS upstream_confirmed_ht_30d,COALESCE(cr.upstream_paid_ht_30d,0)::float8 AS upstream_paid_ht_30d,"+
+        " COALESCE(cr.platform_fee_estimated_ht_30d,0)::float8 AS platform_fee_estimated_ht_30d,COALESCE(cr.client_net_estimated_ht_30d,0)::float8 AS client_net_estimated_ht_30d,"+
+        " COALESCE(cr.payout_term_matches,0)::bigint AS payout_term_matches,cr.last_call_at,"+
+        " COALESCE(l.active_calls,0)::bigint AS active_calls,COALESCE(l.upstream_rate_ht_per_second,0)::float8 AS upstream_rate_ht_per_second,COALESCE(l.client_rate_ht_per_second,0)::float8 AS client_rate_ht_per_second,"+
+        " (SELECT count(*)::int FROM tenant_call_destinations d WHERE d.tenant_id=$1 AND (d.sva_number_id IS NULL OR d.sva_number_id=sn.id) AND d.status='active') AS active_routes,"+
+        " (SELECT count(*)::int FROM tenant_service_incidents i WHERE i.tenant_id=$1 AND (i.sva_number_id IS NULL OR i.sva_number_id=sn.id) AND i.status NOT IN ('resolved','closed')) AS open_incidents"+
+        " FROM latest_assignment la JOIN sva_numbers sn ON sn.id=la.sva_number_id LEFT JOIN call_roll cr ON cr.sva_number_id=sn.id LEFT JOIN live l ON l.sva_number_id=sn.id"+
+        " ORDER BY (la.assignment_status='active') DESC,COALESCE(cr.calls_30d,0) DESC,sn.display_number LIMIT 100",
+        [id]
+      )
+    ]);
+    const access=await this.readSql.unsafe("SELECT pgi_tenant_has_premium_call_access($1,NULL,now()) AS allowed",[id]);
+    return {
+      tenant:{...tenant,dossier_ref:dossierReference(id,tenant.created_at),premium_call_access:Boolean(access[0]?.allowed)},
+      subscriptions:subs,lines,portability,destinations,experts,alerts,settlements,payout_terms:payoutTerms,controls,audit,service_incidents:serviceIncidents,operational_alerts:operationalAlerts,users,invitations,line_performance:linePerformance,
+      activity:activity[0]||{calls_30d:0,connected_30d:0,billable_seconds_30d:0,revenue_ttc_30d:0,margin_ht_30d:0,last_call_at:null}
+    };
+  }
+
+  async tenantInternalNotes(publicId){
+    publicId=String(publicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    const tenant=(await this.readSql.unsafe("SELECT id,tenant_type FROM tenants WHERE public_id=$1::uuid",[publicId]))[0];
+    if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+    if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+    const rows=await this.readSql.unsafe(
+      "SELECT n.id,n.body,n.created_at,u.display_name AS author_name FROM tenant_internal_notes n"+
+      " LEFT JOIN app_users u ON u.id=n.author_user_id WHERE n.tenant_id=$1 AND n.archived_at IS NULL ORDER BY n.created_at DESC,n.id DESC LIMIT 100",
+      [tenant.id]
+    );
+    return {data:rows};
+  }
+
+  async createTenantInternalNote(publicId,input={},actor={}){
+    publicId=String(publicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_TENANT_PUBLIC_ID");
+    const body=String(input.body||"").trim();
+    if(!body||body.length>2000)throw problem(400,"INVALID_INTERNAL_NOTE");
+    const actorId=numericActor(actor);
+    const row=await this.sql.begin(async tx=>{
+      const tenant=(await tx.unsafe("SELECT id,tenant_type FROM tenants WHERE public_id=$1::uuid FOR SHARE",[publicId]))[0];
+      if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
+      if(tenant.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+      const note=(await tx.unsafe(
+        "INSERT INTO tenant_internal_notes(tenant_id,body,author_user_id) VALUES($1,$2,$3) RETURNING id,tenant_id,body,created_at",
+        [tenant.id,body,actorId]
+      ))[0];
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'tenant.internal_note.create','tenant_internal_note',$3,$4::jsonb)",
+        [tenant.id,actorId,String(note.id),JSON.stringify({private:true,body_logged:false})]
+      );
+      return note;
+    });
+    this.eventBus.publish("tenant.internal_note.changed",{tenant_public_id:publicId,note_id:Number(row.id),action:"created"});
+    return row;
+  }
+
+  async archiveTenantInternalNote(id,actor={}){
+    id=Number(id);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_INTERNAL_NOTE_ID");
+    const actorId=numericActor(actor);
+    const result=await this.sql.begin(async tx=>{
+      const note=(await tx.unsafe(
+        "SELECT n.id,n.tenant_id,n.archived_at,t.public_id,t.tenant_type FROM tenant_internal_notes n JOIN tenants t ON t.id=n.tenant_id WHERE n.id=$1 FOR UPDATE OF n",
+        [id]
+      ))[0];
+      if(!note)throw problem(404,"INTERNAL_NOTE_NOT_FOUND");
+      if(note.tenant_type==="internal")throw problem(409,"INTERNAL_TENANT_PROTECTED");
+      if(note.archived_at)return {id:note.id,tenant_public_id:note.public_id,archived_at:note.archived_at,changed:false};
+      const updated=(await tx.unsafe(
+        "UPDATE tenant_internal_notes SET archived_at=now(),archived_by=$2 WHERE id=$1 RETURNING id,archived_at",
+        [id,actorId]
+      ))[0];
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'tenant.internal_note.archive','tenant_internal_note',$3,$4::jsonb)",
+        [note.tenant_id,actorId,String(id),JSON.stringify({private:true,body_logged:false})]
+      );
+      return {...updated,tenant_public_id:note.public_id,changed:true};
+    });
+    if(result.changed)this.eventBus.publish("tenant.internal_note.changed",{tenant_public_id:result.tenant_public_id,note_id:id,action:"archived"});
+    return result;
+  }
+
+  async tenantAdminExport(publicId,actor={}){
+    const detail=await this.tenantControlDetail(publicId);
+    const t=detail.tenant||{};
+    const safe={
+      schema_version:"audiotel-customer-admin-export/1",
+      generated_at:new Date().toISOString(),
+      tenant:{
+        public_id:t.public_id,display_name:t.display_name,legal_name:t.legal_name,status:t.status,country_code:t.country_code,
+        billing_email:t.billing_email,preferred_locale:t.preferred_locale,default_currency:t.default_currency,timezone:t.timezone,
+        created_at:t.created_at,updated_at:t.updated_at,kyc_status:t.kyc_status,registration_country:t.registration_country,
+        registration_number:t.registration_number,legal_representative_verified:t.legal_representative_verified,bank_account_verified:t.bank_account_verified
+      },
+      users:(detail.users||[]).map(u=>({
+        id:u.id,email:u.email,display_name:u.display_name,status:u.status,role:u.role,membership_status:u.membership_status,
+        email_verified:u.email_verified,phone:u.phone||null,preferred_locale:u.preferred_locale,timezone:u.timezone,
+        signup_source:u.signup_source||null,created_at:u.created_at,last_authenticated_at:u.last_authenticated_at
+      })),
+      invitations:(detail.invitations||[]).map(i=>({id:i.id,email:i.email,role:i.role,status:i.status,created_at:i.created_at,expires_at:i.expires_at,accepted_at:i.accepted_at})),
+      subscriptions:(detail.subscriptions||[]).map(s=>({id:s.id,status:s.status,plan_name:s.plan_name,billing_currency:s.billing_currency,current_period_start:s.current_period_start,current_period_end:s.current_period_end,last_payment_status:s.last_payment_status})),
+      lines:(detail.lines||[]).map(l=>({id:l.id,display_number:l.display_number,e164:l.e164,market:l.market,status:l.status,kyc_status:l.kyc_status,regulatory_assignor:l.regulatory_assignor})),
+      portability:(detail.portability||[]).map(p=>({id:p.id,country_code:p.country_code,requested_e164:p.requested_e164,status:p.status,current_operator_name:p.current_operator_name,desired_port_date:p.desired_port_date,created_at:p.created_at,completed_at:p.completed_at})),
+      settlements:(detail.settlements||[]).map(s=>({id:s.id,market:s.market,currency:s.currency,period_start:s.period_start,period_end:s.period_end,net_payout_ht:s.net_payout_ht,status:s.status,payment_due_date:s.payment_due_date,paid_at:s.paid_at})),
+      activity:detail.activity||{}
+    };
+    const actorId=numericActor(actor);
+    await this.sql.unsafe(
+      "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'tenant.admin_export','tenant',$3,$4::jsonb)",
+      [Number(t.id),actorId,String(t.id),JSON.stringify({format:"csv",schema_version:safe.schema_version,scope:"customer_360"})]
+    );
+    this.eventBus.publish("tenant.admin_export",{tenant_public_id:publicId,actor_user_id:actorId});
+    return safe;
+  }
+
+  async operationalPolicyEvaluation(input={}){
+    const intent=String(input.intent||"").trim().toLowerCase();
+    const assignmentId=input.assignment_id==null||input.assignment_id===""?null:Number(input.assignment_id);
+    const tenantPublicId=optionalText(input.tenant_public_id,80);
+    const portabilityId=input.portability_request_id==null||input.portability_request_id===""?null:Number(input.portability_request_id);
+    const targetConnectionId=input.target_connection_id==null||input.target_connection_id===""?null:Number(input.target_connection_id);
+    let context=null;
+    if(Number.isInteger(assignmentId)&&assignmentId>0){
+      context=(await this.readSql.unsafe(
+        "SELECT t.id AS tenant_id,t.public_id::text AS tenant_public_id,t.display_name,t.status AS tenant_status,t.tenant_type,"+
+        " a.id AS assignment_id,a.status AS assignment_status,a.sva_number_id,sn.market_id"+
+        " FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id WHERE a.id=$1",
+        [assignmentId]
+      ))[0]||null;
+    }else if(tenantPublicId&&/^[0-9a-f-]{36}$/i.test(tenantPublicId)){
+      context=(await this.readSql.unsafe(
+        "SELECT t.id AS tenant_id,t.public_id::text AS tenant_public_id,t.display_name,t.status AS tenant_status,t.tenant_type,NULL::bigint AS assignment_id,NULL::text AS assignment_status,NULL::bigint AS sva_number_id,NULL::bigint AS market_id"+
+        " FROM tenants t WHERE t.public_id=$1::uuid",
+        [tenantPublicId]
+      ))[0]||null;
+    }
+    if(intent!=="carrier_switch"&&!context)throw problem(404,"POLICY_CONTEXT_NOT_FOUND");
+    const tenantId=context?.tenant_id||null,svaNumberId=context?.sva_number_id||null,marketId=context?.market_id||null;
+
+    const factsRows=await this.readSql.unsafe(
+      "SELECT"+
+      " CASE WHEN $1::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM tenants WHERE id=$1 AND status='active') END AS tenant_active,"+
+      " CASE WHEN $1::bigint IS NULL THEN NULL ELSE pgi_tenant_has_premium_call_access($1,$3,now()) END AS subscription_active,"+
+      " CASE WHEN $1::bigint IS NULL THEN NULL ELSE pgi_tenant_has_payout_terms($1,$3,$2,now()) END AS payout_terms_ready,"+
+      " CASE WHEN $1::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM tenant_kyc_profiles WHERE tenant_id=$1 AND status='verified') END AS kyc_verified,"+
+      " CASE WHEN $2::bigint IS NULL THEN NULL ELSE pgi_sva_regulatory_ready($1,$2) END AS regulatory_ready,"+
+      " CASE WHEN $2::bigint IS NULL THEN NULL ELSE pgi_arcep_2026_number_ready($1,$2) END AS arcep_2026_ready,"+
+      " CASE WHEN $2::bigint IS NULL THEN NULL ELSE pgi_sva_ecosystem_ready($1,$2) END AS ecosystem_ready,"+
+      " CASE WHEN $4::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM tenant_number_assignments WHERE id=$4) END AS assignment_exists,"+
+      " CASE WHEN $1::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM tenant_call_destinations d WHERE d.tenant_id=$1 AND ($2::bigint IS NULL OR d.sva_number_id IS NULL OR d.sva_number_id=$2) AND d.status='active' AND d.active_calls<d.max_concurrent_calls) END AS destination_ready,"+
+      " CASE WHEN $5::bigint IS NULL THEN EXISTS(SELECT 1 FROM tenant_portability_requests p WHERE p.tenant_id=$1 AND p.status IN ('scheduled','ported')) ELSE EXISTS(SELECT 1 FROM tenant_portability_requests p WHERE p.tenant_id=$1 AND p.id=$5 AND p.status IN ('scheduled','ported')) END AS portability_dossier_ready,"+
+      " EXISTS(SELECT 1 FROM carrier_adapters ca JOIN carrier_connections cc ON cc.carrier_id=ca.carrier_id WHERE ca.enabled AND cc.purpose='api' AND cc.state IN ('ready','active')) AS operator_adapter_connected,"+
+      " CASE WHEN $6::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM carrier_connections cc WHERE cc.id=$6 AND cc.state IN ('ready','active','standby')) END AS target_carrier_ready,"+
+      " EXISTS(SELECT 1 FROM logical_carrier_routes r WHERE r.route_key='sva-primary' AND r.active_carrier_id IS NOT NULL AND r.active_connection_id IS NOT NULL) AS rollback_ready,"+
+      " CASE WHEN $1::bigint IS NULL THEN NULL ELSE EXISTS(SELECT 1 FROM tenant_revenue_distributions d WHERE d.tenant_id=$1 AND d.status IN ('reconciled','payable','paid')) END AS settlement_reconciled",
+      [tenantId,svaNumberId,marketId,assignmentId,portabilityId,targetConnectionId]
+    );
+    const facts={...(factsRows[0]||{}),payment_provider_connected:false};
+    const result=evaluateOperationalPolicy(intent,facts);
+    return {...result,context:context?{tenant_public_id:context.tenant_public_id,tenant:context.display_name,assignment_id:context.assignment_id,assignment_status:context.assignment_status}:null};
+  }
+
+  async digitalTwinSimulation(input={}){
+    const scenario=String(input.scenario||"").trim().toLowerCase();
+    const params=input.parameters&&typeof input.parameters==="object"&&!Array.isArray(input.parameters)?input.parameters:{};
+    const [platform,service,route,queue,capacityRows]=await Promise.all([
+      this.wholesaleOverview(),
+      this.serviceOperationsHealth(),
+      this.carrierRouting(),
+      this.workQueueHealth(),
+      this.readSql.unsafe(
+        "SELECT"+
+        " COALESCE(sum(max_concurrent_calls) FILTER(WHERE status='active'),0)::int AS destination_capacity,"+
+        " COALESCE(sum(active_calls) FILTER(WHERE status='active'),0)::int AS current_concurrent"+
+        " FROM tenant_call_destinations"
+      )
+    ]);
+    const s=platform.summary||{},r=platform.regulatory_trust?.summary||{},scale=platform.scale||{},cap=capacityRows[0]||{};
+    const baseline={
+      active_assignments:Number(s.assignments_active||0),
+      active_subscriptions:Number(s.external_subscriptions_active||0),
+      ready_numbers:Number(r.numbers_ready||0),
+      total_numbers:Number(r.numbers_total||0),
+      regulatory_blocking:Number(r.review_blocking||0),
+      service_incidents_critical:Number(service.service_incidents_critical||0),
+      route_standby_ready:Boolean(route?.standby_carrier_id||route?.standby_carrier),
+      destination_capacity:Number(cap.destination_capacity||0),
+      current_concurrent:Number(cap.current_concurrent||0),
+      regions_ready:Number(scale.regions_ready||0),
+      regions_total:Number(scale.regions_total||0),
+      dr_targets:Number(scale.dr_targets_total||0),
+      read_replica_enabled:Boolean(scale.read_replica_enabled),
+      queue_pending:Number(queue.pending||0),
+      queue_dead_lettered:Number(queue.dead_lettered||0),
+      bucket_capacity:Number(scale.bucket_capacity||4096)
+    };
+    return simulateDigitalTwin(scenario,baseline,params);
+  }
+
+  async performanceResilienceLab(){
+    const [queue,dbRows,tableRows,drTargets,drills,runs,syntheticRows]=await Promise.all([
+      this.workQueueHealth(),
+      this.readSql.unsafe(
+        "SELECT current_database() AS database_name,pg_database_size(current_database())::bigint AS database_bytes,"+
+        " current_setting('max_connections')::int AS max_connections,"+
+        " (SELECT count(*)::int FROM pg_stat_activity WHERE datname=current_database()) AS connections_total,"+
+        " (SELECT count(*)::int FROM pg_stat_activity WHERE datname=current_database() AND state='active') AS connections_active,"+
+        " (SELECT count(*)::int FROM pg_stat_activity WHERE datname=current_database() AND state='idle in transaction') AS connections_idle_in_transaction"
+      ),
+      this.readSql.unsafe(
+        "SELECT relname,n_live_tup::bigint AS live_rows,n_dead_tup::bigint AS dead_rows,seq_scan::bigint,idx_scan::bigint,"+
+        " CASE WHEN n_live_tup>0 THEN round((n_dead_tup::numeric/n_live_tup::numeric)*100,2)::float8 ELSE 0::float8 END AS dead_row_percent"+
+        " FROM pg_stat_user_tables WHERE schemaname='public' ORDER BY n_live_tup DESC,relname LIMIT 20"
+      ),
+      this.readSql.unsafe(
+        "SELECT component_key,region_key,rpo_seconds,rto_seconds,replication_mode,criticality,enabled,updated_at"+
+        " FROM disaster_recovery_targets WHERE enabled ORDER BY criticality,component_key,region_key"
+      ),
+      this.readSql.unsafe(
+        "SELECT id,drill_type,source_region,target_region,started_at,completed_at,status,observed_rpo_seconds,observed_rto_seconds,evidence_ref"+
+        " FROM disaster_recovery_drills ORDER BY started_at DESC,id DESC LIMIT 20"
+      ),
+      this.readSql.unsafe(
+        "SELECT id,run_type,scenario,target,status,started_at,completed_at,requests_total,errors_total,error_rate::float8,p50_ms::float8,p95_ms::float8,p99_ms::float8,requests_per_second::float8,virtual_users,thresholds,evidence_ref"+
+        " FROM performance_lab_runs ORDER BY completed_at DESC,id DESC LIMIT 30"
+      ),
+      this.readSql.unsafe(
+        "SELECT count(*)::int AS checks_24h,count(*) FILTER(WHERE success)::int AS successes_24h,"+
+        " COALESCE(avg(latency_ms),0)::float8 AS avg_latency_ms,COALESCE(max(latency_ms),0)::float8 AS max_latency_ms,"+
+        " max(checked_at) AS last_checked_at,max(checked_at) FILTER(WHERE NOT success) AS last_failure_at"+
+        " FROM synthetic_probe_results WHERE checked_at>=now()-interval '24 hours'"
+      )
+    ]);
+    const db=dbRows[0]||{},syn=syntheticRows[0]||{};
+    const maxConnections=Number(db.max_connections||0),connections=Number(db.connections_total||0);
+    const dbHeadroom=maxConnections>0?Math.max(0,(maxConnections-connections)/maxConnections*100):0;
+    const recentLoad=runs.find(x=>["load","stress","spike","soak"].includes(x.run_type))||null;
+    const recentPassedLoad=runs.find(x=>["load","stress","spike","soak"].includes(x.run_type)&&x.status==="passed")||null;
+    const latestRestore=drills.find(x=>x.drill_type==="restore")||null;
+    const syntheticSuccess=Number(syn.checks_24h)>0?Number(syn.successes_24h)/Number(syn.checks_24h)*100:null;
+    const tableAttention=tableRows.filter(x=>Number(x.live_rows)>1000&&((Number(x.idx_scan)===0&&Number(x.seq_scan)>20)||Number(x.dead_row_percent)>20));
+    const evidenceFresh=recentPassedLoad&&Date.now()-Date.parse(recentPassedLoad.completed_at)<=30*86400000;
+    const restoreFresh=latestRestore?.status==="passed"&&Date.now()-Date.parse(latestRestore.completed_at)<=30*86400000;
+    const blockers=[];
+    if(!recentPassedLoad)blockers.push({code:"LOAD_PROOF_MISSING",label:"Aucun test de charge réussi n’est encore enregistré."});
+    else if(!evidenceFresh)blockers.push({code:"LOAD_PROOF_STALE",label:"Le dernier test de charge réussi date de plus de 30 jours."});
+    if(dbHeadroom<30)blockers.push({code:"DB_CONNECTION_HEADROOM_LOW",label:"La réserve de connexions PostgreSQL est inférieure à 30 %."});
+    if(Number(queue.dead_lettered||0)>0)blockers.push({code:"DEAD_LETTERS_PRESENT",label:"La file contient des dead letters."});
+    if(Number(queue.oldest_pending_seconds||0)>120)blockers.push({code:"QUEUE_BACKLOG_OLD",label:"Le plus ancien travail en attente dépasse 120 secondes."});
+    if(!latestRestore)blockers.push({code:"RESTORE_DRILL_MISSING",label:"Aucun exercice de restauration PostgreSQL n’est enregistré."});
+    else if(!restoreFresh)blockers.push({code:"RESTORE_DRILL_STALE",label:"Le dernier restore drill réussi date de plus de 30 jours."});
+    const syntheticFresh=Boolean(syn.last_checked_at&&Date.now()-Date.parse(syn.last_checked_at)<=24*3600000);
+    if(!syntheticFresh)blockers.push({code:"SYNTHETIC_PROOF_MISSING",label:"Aucune sonde synthétique récente n’est enregistrée sur les dernières 24 h."});
+    else if(syntheticSuccess!=null&&syntheticSuccess<99)blockers.push({code:"SYNTHETIC_AVAILABILITY_LOW",label:"Le taux de succès synthétique sur 24 h est inférieur à 99 %."});
+    if(tableAttention.length)blockers.push({code:"POSTGRES_TABLE_ATTENTION",label:tableAttention.length+" table(s) nécessitent une revue d’index ou de vacuum."});
+    return {
+      schema_version:"audiotel-performance-resilience-lab/1",
+      generated_at:new Date().toISOString(),
+      capacity_proof:recentPassedLoad?(evidenceFresh?"fresh":"stale"):"unproven",
+      preproduction_gate:{ready:blockers.length===0,blockers},
+      database:{
+        name:db.database_name||null,size_bytes:Number(db.database_bytes||0),max_connections:maxConnections,
+        connections_total:connections,connections_active:Number(db.connections_active||0),
+        connections_idle_in_transaction:Number(db.connections_idle_in_transaction||0),
+        connection_headroom_percent:Number(dbHeadroom.toFixed(1)),
+        pool_max:Number(this.config.databasePoolMax||0),read_pool_max:Number(this.config.databaseReadPoolMax||0),
+        tables:tableRows,attention:tableAttention
+      },
+      queue,
+      synthetic:{
+        checks_24h:Number(syn.checks_24h||0),successes_24h:Number(syn.successes_24h||0),
+        success_percent:syntheticSuccess==null?null:Number(syntheticSuccess.toFixed(2)),
+        avg_latency_ms:Number(syn.avg_latency_ms||0),max_latency_ms:Number(syn.max_latency_ms||0),
+        last_checked_at:syn.last_checked_at||null,last_failure_at:syn.last_failure_at||null
+      },
+      load:{latest:recentLoad,latest_passed:recentPassedLoad,runs},
+      disaster_recovery:{targets:drTargets,latest_restore:latestRestore,drills},
+      rate_limits:{
+        global_per_minute:Number(this.config.rateLimitPerMinute||0),
+        heavy_read_per_minute:Number(this.config.heavyReadRateLimitPerMinute||0),
+        write_per_minute:Number(this.config.writeRateLimitPerMinute||0)
+      },
+      claims:{capacity_guaranteed:false,external_connections_active:false}
+    };
+  }
+
+  async recordPerformanceLabRun(input={},actor={}){
+    const runType=String(input.run_type||"").trim().toLowerCase();
+    if(!["load","stress","spike","soak","synthetic","chaos","restore"].includes(runType))throw problem(400,"INVALID_PERFORMANCE_RUN_TYPE");
+    const scenario=String(input.scenario||"").trim().slice(0,120);
+    if(scenario.length<2)throw problem(400,"INVALID_PERFORMANCE_SCENARIO");
+    const status=String(input.status||"").trim().toLowerCase();
+    if(!["passed","failed","aborted","informational"].includes(status))throw problem(400,"INVALID_PERFORMANCE_STATUS");
+    const started=new Date(String(input.started_at||"")),completed=new Date(String(input.completed_at||""));
+    if(!Number.isFinite(started.getTime())||!Number.isFinite(completed.getTime())||completed<started)throw problem(400,"INVALID_PERFORMANCE_WINDOW");
+    const nonNegative=(v,name)=>{const n=Number(v??0);if(!Number.isFinite(n)||n<0)throw problem(400,name);return n;};
+    const requests=Math.trunc(nonNegative(input.requests_total,"INVALID_PERFORMANCE_REQUESTS"));
+    const errors=Math.trunc(nonNegative(input.errors_total,"INVALID_PERFORMANCE_ERRORS"));
+    const errorRate=nonNegative(input.error_rate,"INVALID_PERFORMANCE_ERROR_RATE");
+    if(errorRate>1||errors>requests&&requests>0)throw problem(400,"INVALID_PERFORMANCE_ERROR_RATE");
+    const metric=name=>input[name]==null?null:nonNegative(input[name],"INVALID_PERFORMANCE_METRIC");
+    let target=input.target==null?null:String(input.target).trim().slice(0,240);
+    if(target){try{const u=new URL(target);target=u.origin+u.pathname;}catch{target=target.replace(/[?#].*$/,"");}}
+    const thresholds=input.thresholds&&typeof input.thresholds==="object"&&!Array.isArray(input.thresholds)?input.thresholds:{};
+    const details=input.details&&typeof input.details==="object"&&!Array.isArray(input.details)?input.details:{};
+    if(JSON.stringify(thresholds).length>8000||JSON.stringify(details).length>16000)throw problem(400,"PERFORMANCE_DETAILS_TOO_LARGE");
+    const actorId=numericActor(actor);
+    const rows=await this.sql.unsafe(
+      "INSERT INTO performance_lab_runs(run_type,scenario,target,status,started_at,completed_at,requests_total,errors_total,error_rate,p50_ms,p95_ms,p99_ms,requests_per_second,virtual_users,thresholds,details,evidence_ref,created_by)"+
+      " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17,$18)"+
+      " RETURNING id,run_type,scenario,target,status,started_at,completed_at,requests_total,errors_total,error_rate::float8,p50_ms::float8,p95_ms::float8,p99_ms::float8,requests_per_second::float8,virtual_users,evidence_ref,created_at",
+      [runType,scenario,target,status,started.toISOString(),completed.toISOString(),requests,errors,errorRate,metric("p50_ms"),metric("p95_ms"),metric("p99_ms"),metric("requests_per_second"),input.virtual_users==null?null:Math.max(0,Math.trunc(Number(input.virtual_users)||0)),JSON.stringify(thresholds),JSON.stringify(details),input.evidence_ref?String(input.evidence_ref).slice(0,500):null,actorId]
+    );
+    await this.sql.unsafe(
+      "INSERT INTO audit_log(user_id,action,entity_type,entity_id,details) VALUES($1,'performance_lab.run.record','performance_lab_run',$2,$3::jsonb)",
+      [actorId,String(rows[0].id),JSON.stringify({run_type:runType,scenario,status,requests_total:requests,error_rate:errorRate})]
+    );
+    return rows[0];
+  }
+
+  async recordSyntheticProbe(input={}){
+    const key=String(input.probe_key||"").trim().toLowerCase();
+    if(!/^[a-z0-9_.-]{2,80}$/.test(key))throw problem(400,"INVALID_SYNTHETIC_PROBE_KEY");
+    const success=input.success===true;
+    const latency=Number(input.latency_ms);
+    if(!Number.isFinite(latency)||latency<0||latency>600000)throw problem(400,"INVALID_SYNTHETIC_LATENCY");
+    const status=input.http_status==null?null:Number(input.http_status);
+    if(status!=null&&(!Number.isInteger(status)||status<100||status>599))throw problem(400,"INVALID_SYNTHETIC_HTTP_STATUS");
+    const details=input.details&&typeof input.details==="object"&&!Array.isArray(input.details)?input.details:{};
+    if(JSON.stringify(details).length>8000)throw problem(400,"SYNTHETIC_DETAILS_TOO_LARGE");
+    const rows=await this.sql.unsafe(
+      "INSERT INTO synthetic_probe_results(probe_key,success,latency_ms,http_status,release_id,error_code,details) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)"+
+      " RETURNING id,probe_key,checked_at,success,latency_ms::float8,http_status,release_id,error_code",
+      [key,success,latency,status,input.release_id?String(input.release_id).slice(0,80):null,input.error_code?String(input.error_code).slice(0,120):null,JSON.stringify(details)]
+    );
+    return rows[0];
+  }
+
+  async controlTowerOverview(){
+    const [platform,service,route,queue,capacityRows,portabilityRows,shadowRows,riskRows,lastRows,changeRows]=await Promise.all([
+      this.wholesaleOverview(),
+      this.serviceOperationsHealth(),
+      this.carrierRouting(),
+      this.workQueueHealth(),
+      this.readSql.unsafe("SELECT COALESCE(sum(max_concurrent_calls) FILTER(WHERE status='active'),0)::int AS capacity,COALESCE(sum(active_calls) FILTER(WHERE status='active'),0)::int AS in_use FROM tenant_call_destinations"),
+      this.readSql.unsafe("SELECT count(*) FILTER(WHERE status NOT IN ('ported','rejected','cancelled'))::int AS open,count(*) FILTER(WHERE automation_state IN ('action_required','failed'))::int AS attention FROM tenant_portability_requests"),
+      this.readSql.unsafe(
+        "SELECT currency,COALESCE(sum(expected_payout_ht),0)::float8 AS expected_payout_ht,COALESCE(sum(confirmed_payout_ht),0)::float8 AS confirmed_payout_ht,COALESCE(sum(paid_payout_ht),0)::float8 AS paid_payout_ht,"+
+        " COALESCE(sum(abs(reconciliation_variance_ht)),0)::float8 AS reconciliation_variance_ht,COALESCE(sum(calls_total) FILTER(WHERE confirmed_payout_ht>0),0)::bigint AS confirmed_calls,"+
+        " COALESCE(sum(calls_total) FILTER(WHERE abs(reconciliation_variance_ht)>0.01),0)::bigint AS variance_calls"+
+        " FROM metric_rollups_daily_v2 WHERE bucket_date>=current_date-29 GROUP BY currency ORDER BY currency"
+      ),
+      this.readSql.unsafe(
+        "SELECT COALESCE(sum(calls_total),0)::float8 AS calls_7d,COALESCE(sum(calls_failed),0)::float8 AS failed_7d,COALESCE(sum(expected_payout_ht),0)::float8 AS expected_7d,"+
+        " COALESCE(sum(abs(reconciliation_variance_ht)),0)::float8 AS variance_7d,COALESCE(sum(calls_total) FILTER(WHERE bucket_start>=now()-interval '1 hour'),0)::float8 AS calls_last_hour,"+
+        " COALESCE(sum(calls_total),0)::float8/168.0 AS avg_hourly_7d FROM platform_rollups_hourly_sharded WHERE bucket_start>=now()-interval '7 days'"
+      ),
+      this.readSql.unsafe("SELECT max(ended_at) AS last_ended_at FROM calls"),
+      this.readSql.unsafe(
+        "SELECT cr.id,cr.public_id::text AS public_id,cr.change_type,cr.entity_type,cr.entity_id,cr.risk_level,cr.status,cr.request_reason,cr.requested_at,cr.expires_at,cr.approved_at,"+
+        " requester.display_name AS requested_by_name,approver.display_name AS approved_by_name,cr.requested_by,cr.approved_by"+
+        " FROM platform_change_requests cr JOIN app_users requester ON requester.id=cr.requested_by LEFT JOIN app_users approver ON approver.id=cr.approved_by"+
+        " WHERE cr.status IN ('pending','approved') AND cr.expires_at>now() ORDER BY cr.requested_at DESC,cr.id DESC LIMIT 20"
+      )
+    ]);
+    const s=platform.summary||{},reg=platform.regulatory_trust?.summary||{},scale=platform.scale||{},cap=capacityRows[0]||{},port=portabilityRows[0]||{};
+    const cdrLag=lastRows[0]?.last_ended_at?Math.max(0,(Date.now()-Date.parse(lastRows[0].last_ended_at))/1000):0;
+    const shadowBilling=assessShadowBilling(shadowRows);
+    const risk=assessOperationalRisk({...riskRows[0],service_critical:service.service_incidents_critical,regulatory_blocking:reg.review_blocking,queue_dead_lettered:queue.dead_lettered});
+    const slo=assessOperationalSlo({cdr_lag_seconds:cdrLag,queue_oldest_seconds:queue.oldest_pending_seconds,queue_dead_lettered:queue.dead_lettered,service_critical:service.service_incidents_critical,resolution_overdue:service.service_resolution_overdue,regions_total:scale.regions_total,regions_ready:scale.regions_ready});
+    const pendingApprovals=changeRows.filter(x=>x.status==="pending").length;
+    const ratios=[
+      Number(s.tenants_total||0)>0?Number(s.tenants_active||0)/Number(s.tenants_total||1):1,
+      Number(s.assignments_total||0)>0?Number(reg.numbers_ready||0)/Number(s.assignments_total||1):1,
+      Number(s.assignments_total||0)>0?Number(s.subscription_access_enabled||0)/Number(s.assignments_total||1):1,
+      Number(scale.regions_total||0)>0?Number(scale.regions_ready||0)/Number(scale.regions_total||1):1
+    ];
+    const readinessScore=Math.round(100*ratios.reduce((a,b)=>a+Math.max(0,Math.min(1,b)),0)/ratios.length);
+    const priorities=[];
+    const push=(severity,code,title,detail)=>priorities.push({severity,code,title,detail});
+    if(Number(reg.review_blocking||0)>0)push("critical","REGULATORY_BLOCKING","Conformité bloquante",reg.review_blocking+" contrôle(s) réglementaire(s) critique(s) à traiter.");
+    if(Number(service.service_incidents_critical||0)>0)push("critical","SERVICE_CRITICAL","Incidents critiques",service.service_incidents_critical+" incident(s) de service critique(s) ouvert(s).");
+    if(Number(service.routing_unavailable||0)>0)push("critical","ROUTING_UNAVAILABLE","Routage indisponible",service.routing_unavailable+" alerte(s) de routage sans destination disponible.");
+    if(Number(queue.dead_lettered||0)>0)push("critical","DEAD_LETTERS","Travaux en échec",queue.dead_lettered+" tâche(s) en dead-letter à examiner.");
+    if(risk.level==="critical"||risk.level==="high")push(risk.level==="critical"?"critical":"warning","RISK_ENGINE","Risk Engine",risk.score+"/100 : "+risk.signals.length+" signal(s) agrégé(s).");
+    if(slo.state==="critical"||slo.state==="burning")push(slo.state==="critical"?"critical":"warning","SLO_BURN","SLO opérationnels",slo.score+" % des objectifs instantanés respectés.");
+    if(shadowBilling.status==="critical")push("critical","SHADOW_BILLING_VARIANCE","Écart shadow billing","Un écart de rapprochement supérieur au seuil interne est détecté.");
+    if(pendingApprovals>0)push("warning","FOUR_EYES_PENDING","Validations 4 yeux",pendingApprovals+" changement(s) critique(s) attendent un second administrateur.");
+    if(Number(port.attention||0)>0)push("warning","PORTABILITY_ATTENTION","Portabilités à traiter",port.attention+" dossier(s) de portabilité demandent une action.");
+    if(Number(s.subscription_unpaid_alerts||0)>0)push("warning","UNPAID_SUBSCRIPTIONS","Abonnements impayés",s.subscription_unpaid_alerts+" alerte(s) d’impayé ouverte(s).");
+    if(!priorities.length)push("info","NO_CRITICAL_ATTENTION","Aucune urgence critique","Les contrôles internes ne remontent aucun blocage critique.");
+    const critical=priorities.filter(x=>x.severity==="critical").length,warning=priorities.filter(x=>x.severity==="warning").length;
+    return {
+      schema_version:"audiotel-control-tower/2",
+      generated_at:new Date().toISOString(),
+      status:critical?"critical":(warning?"attention":"healthy"),
+      readiness_score:readinessScore,
+      kpis:{
+        customers_active:Number(s.tenants_active||0),customers_total:Number(s.tenants_total||0),
+        assignments_active:Number(s.assignments_active||0),numbers_ready:Number(reg.numbers_ready||0),
+        subscription_blocked:Number(s.subscription_access_blocked||0),regulatory_blocking:Number(reg.review_blocking||0),
+        service_critical:Number(service.service_incidents_critical||0),portability_attention:Number(port.attention||0),
+        queue_dead_lettered:Number(queue.dead_lettered||0),destination_capacity:Number(cap.capacity||0),concurrent_in_use:Number(cap.in_use||0),
+        regions_ready:Number(scale.regions_ready||0),regions_total:Number(scale.regions_total||0),
+        risk_score:risk.score,slo_score:slo.score,approvals_pending:pendingApprovals,shadow_billing_status:shadowBilling.status
+      },
+      priorities:priorities.slice(0,16),
+      assurance:{risk,slo,shadow_billing:shadowBilling,change_requests:changeRows,dual_control_required:true},
+      carrier_route:route,queue,service_operations:service,regulatory:reg,scale,
+      capabilities:{
+        policy_intents:["activate_number","port_in","payout_customer","carrier_switch","customer_access"],
+        digital_twin_scenarios:["carrier_outage","traffic_spike","mass_portability","regulatory_expiry","billing_failure","region_failure","database_failure","worker_backlog","settlement_mismatch","hyperscale_growth"],
+        external_connections_active:false,dual_control:true,shadow_billing:true,risk_engine:true,slo_snapshot:true
+      }
+    };
+  }
+
+  async wholesaleOverview(){
+    const [summaryRows,tenants,numbers,settlements,payments,markets,currencyTotals,scaleRows,regulatorySummary,regulatoryNumbers,platformRegulatoryControls,regulatoryReviewAlerts]=await Promise.all([
+      this.readSql.unsafe(
+        "SELECT"+
+        " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal') AS tenants_total,"+
+        " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal' AND status='active') AS tenants_active,"+
+        " (SELECT count(*)::int FROM tenant_kyc_profiles k JOIN tenants t ON t.id=k.tenant_id WHERE t.tenant_type<>'internal' AND k.status='verified') AS kyc_verified,"+
+        " (SELECT count(*)::int FROM tenant_kyc_profiles k JOIN tenants t ON t.id=k.tenant_id WHERE t.tenant_type<>'internal' AND k.status='pending') AS kyc_pending,"+
+        " (SELECT count(*)::int FROM operating_markets) AS markets_total,"+
+        " (SELECT count(*)::int FROM operating_markets WHERE status='active') AS markets_active,"+
+        " (SELECT count(*)::int FROM tenant_market_profiles p JOIN tenants t ON t.id=p.tenant_id WHERE t.tenant_type<>'internal' AND p.status='active') AS tenant_markets_active,"+
+        " (SELECT count(*)::int FROM sva_numbers) AS inventory_total,"+
+        " (SELECT count(*)::int FROM sva_numbers WHERE tenant_id IS NULL AND status IN ('pending','active')) AS inventory_unassigned,"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal') AS assignments_total,"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.status='active') AS assignments_active,"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.regulatory_assignor_carrier_id IS NOT NULL) AS assignments_with_assignor,"+
+        " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND subscription_status='active' AND current_period_end>now()) AS external_subscriptions_active,"+
+        " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND premium_call_access) AS subscription_access_enabled,"+
+        " (SELECT count(*)::int FROM tenant_subscription_access WHERE tenant_type<>'internal' AND NOT premium_call_access) AS subscription_access_blocked,"+
+        " (SELECT count(*)::int FROM tenant_admin_alerts a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND a.alert_type='subscription_unpaid' AND a.state<>'resolved') AS subscription_unpaid_alerts,"+
+        " COALESCE((SELECT v.amount_minor::int FROM service_plan_price_versions v JOIN service_plans p ON p.id=v.service_plan_id"+
+        " WHERE p.plan_key='external-sva-access' AND v.market_id IS NULL AND v.currency='EUR' AND v.effective_from<=now()"+
+        " AND (v.effective_to IS NULL OR v.effective_to>now()) ORDER BY v.effective_from DESC LIMIT 1),0) AS subscription_price_minor,"+
+        " 'EUR'::text AS subscription_price_currency,true AS internal_billing_exempt"
+      ),
+      this.readSql.unsafe(
+        "SELECT t.id,t.slug,t.display_name,t.tenant_type,t.status,t.country_code,t.preferred_locale,t.default_currency,t.timezone,"+
+        " COALESCE(k.status,'not_started') AS kyc_status,"+
+        " count(DISTINCT a.id)::int AS number_assignments,"+
+        " count(DISTINCT e.id)::int AS experts,"+
+        " count(DISTINCT tmp.market_id)::int AS markets"+
+        " FROM tenants t LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id"+
+        " LEFT JOIN tenant_number_assignments a ON a.tenant_id=t.id"+
+        " LEFT JOIN experts e ON e.tenant_id=t.id"+
+        " LEFT JOIN tenant_market_profiles tmp ON tmp.tenant_id=t.id"+
+        " WHERE t.tenant_type<>'internal'"+
+        " GROUP BY t.id,k.status ORDER BY t.created_at DESC LIMIT 50"
+      ),
+      this.readSql.unsafe(
+        "SELECT a.id,t.display_name AS tenant,sn.display_number,sn.e164,sn.currency,sn.number_type,"+
+        " m.country_code AS market,a.tariff_code,a.assignment_type,a.status,a.kyc_status,"+
+        " c.name AS regulatory_assignor,a.upstream_assignment_reference,a.valid_from,a.valid_to"+
+        " FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id"+
+        " JOIN sva_numbers sn ON sn.id=a.sva_number_id"+
+        " LEFT JOIN operating_markets m ON m.id=sn.market_id"+
+        " LEFT JOIN carriers c ON c.id=a.regulatory_assignor_carrier_id"+
+        " WHERE t.tenant_type<>'internal' ORDER BY a.created_at DESC LIMIT 50"
+      ),
+      this.readSql.unsafe(
+        "SELECT s.id,t.display_name AS tenant,m.country_code AS market,s.currency,s.period_start,s.period_end,s.upstream_payout_ht::float8,"+
+        " s.platform_fee_ht::float8,s.net_payout_ht::float8,s.status,s.payment_due_date,s.paid_at"+
+        " FROM tenant_revenue_distributions s JOIN tenants t ON t.id=s.tenant_id"+
+        " LEFT JOIN operating_markets m ON m.id=s.market_id"+
+        " WHERE t.tenant_type<>'internal' ORDER BY s.period_end DESC,s.id DESC LIMIT 50"
+      ),
+      this.readSql.unsafe(
+        "SELECT p.id,p.profile_name,p.regulatory_role,p.provider_name,p.funds_flow_mode,p.status,p.valid_from,p.valid_to,"+
+        " COALESCE(json_agg(json_build_object('market',m.country_code,'status',pm.status)) FILTER (WHERE m.id IS NOT NULL),'[]'::json) AS markets"+
+        " FROM payment_compliance_profiles p"+
+        " LEFT JOIN payment_compliance_market_profiles pm ON pm.payment_compliance_profile_id=p.id"+
+        " LEFT JOIN operating_markets m ON m.id=pm.market_id"+
+        " GROUP BY p.id ORDER BY p.created_at DESC LIMIT 20"
+      ),
+      this.readSql.unsafe(
+        "SELECT m.id,m.country_code,m.display_name,m.status,m.default_currency,m.default_locale,m.timezone,m.regulator_name,m.numbering_authority,m.data_region,"+
+        " count(DISTINCT tmp.tenant_id)::int AS tenants,"+
+        " count(DISTINCT sn.id)::int AS numbers"+
+        " FROM operating_markets m"+
+        " LEFT JOIN tenant_market_profiles tmp ON tmp.market_id=m.id AND tmp.status<>'closed'"+
+        " LEFT JOIN sva_numbers sn ON sn.market_id=m.id"+
+        " GROUP BY m.id ORDER BY CASE WHEN m.status='active' THEN 0 ELSE 1 END,m.country_code"
+      ),
+      this.readSql.unsafe(
+        "SELECT s.currency,"+
+        " COALESCE(sum(s.upstream_payout_ht),0)::float8 AS upstream_payout,"+
+        " COALESCE(sum(s.platform_fee_ht),0)::float8 AS platform_fee,"+
+        " COALESCE(sum(s.net_payout_ht),0)::float8 AS net_payout"+
+        " FROM tenant_revenue_distributions s JOIN tenants t ON t.id=s.tenant_id"+
+        " WHERE t.tenant_type<>'internal' GROUP BY s.currency ORDER BY s.currency"
+      ),
+      this.readSql.unsafe(
+        "SELECT"+
+        " (SELECT count(*)::int FROM data_clusters) AS clusters_total,"+
+        " (SELECT count(*)::int FROM data_clusters WHERE state='ready') AS clusters_ready,"+
+        " (SELECT count(*)::int FROM routing_buckets WHERE state='active') AS routing_buckets_active,"+
+        " (SELECT count(*)::bigint FROM tenant_data_placement WHERE state='active') AS placements_active,"+
+        " (SELECT count(*)::int FROM pg_inherits WHERE inhparent='call_facts'::regclass) AS call_fact_partitions,"+
+        " (SELECT count(*)::int FROM platform_regions) AS regions_total,"+
+        " (SELECT count(*)::int FROM platform_regions WHERE status IN ('ready','active')) AS regions_ready,"+
+        " (SELECT count(*)::int FROM disaster_recovery_targets WHERE enabled) AS dr_targets_total,"+
+        " (SELECT count(*)::int FROM disaster_recovery_drills WHERE status='passed') AS dr_drills_passed"
+      ),
+      this.readSql.unsafe(
+        "SELECT"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal') AS numbers_total,"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AND pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id) AND pgi_sva_ecosystem_ready(a.tenant_id,a.sva_number_id)) AS numbers_ready,"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id)) AS arcep_2026_ready,"+
+        " (SELECT count(*)::int FROM sva_regulatory_evidence_events) AS evidence_events,"+
+        " (SELECT count(*)::int FROM sva_arcep_2026_evidence_events) AS arcep_2026_evidence_events,"+
+        " (SELECT count(*)::int FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id WHERE t.tenant_type<>'internal' AND pgi_sva_ecosystem_ready(a.tenant_id,a.sva_number_id)) AS sva_ecosystem_ready,"+
+        " (SELECT count(*)::int FROM sva_ecosystem_evidence_events) AS sva_ecosystem_evidence_events,"+
+        " (SELECT count(*)::int FROM sva_abuse_cases WHERE status NOT IN ('resolved','closed')) AS abuse_open,"+
+        " (SELECT count(*)::int FROM sva_abuse_cases WHERE status NOT IN ('resolved','closed') AND severity='critical') AS abuse_critical,"+
+        " (SELECT count(*)::int FROM platform_regulatory_controls WHERE status='verified' AND (valid_until IS NULL OR valid_until>now())) AS platform_controls_verified,"+
+        " (SELECT count(*)::int FROM platform_regulatory_controls WHERE status IN ('failed','expired')) AS platform_controls_attention,"+
+        " (SELECT count(*)::int FROM regulatory_review_alerts WHERE state<>'resolved') AS review_attention_total,"+
+        " (SELECT count(*)::int FROM regulatory_review_alerts WHERE state<>'resolved' AND severity='critical') AS review_blocking,"+
+        " (SELECT count(*)::int FROM regulatory_review_alerts WHERE state<>'resolved' AND severity<>'critical' AND due_at IS NOT NULL AND due_at<=now()+interval '24 hours') AS review_today,"+
+        " (SELECT count(*)::int FROM regulatory_review_alerts WHERE state<>'resolved' AND severity<>'critical' AND (due_at IS NULL OR due_at>now()+interval '24 hours')) AS review_soon"
+      ),
+      this.readSql.unsafe(
+        "SELECT a.id AS assignment_id,t.display_name AS tenant,sn.id AS sva_number_id,sn.display_number,sn.e164,m.country_code AS market,a.status AS assignment_status,"+
+        " p.regulatory_role,p.service_name,p.provider_name,p.signaletic_model,p.numbering_rights_status,p.editor_identity_status,p.rsva_status,"+
+        " p.tariff_transparency_status,p.mgit_status,p.complaint_process_status,p.fraud_monitoring_status,p.last_reviewed_at,p.next_review_at,"+
+        " ap.exclusive_stable_assignee_status,ap.single_service_status,ap.portability_offered_status,ap.tariff_ceiling_status,ap.no_temporary_contact_use_status,ap.public_body_eligibility_status,ap.caller_id_block_status,ap.parental_control_classification_status,ap.next_review_at AS arcep_2026_next_review_at,"+
+        " pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AS regulatory_ready,pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id) AS arcep_2026_ready,pgi_sva_ecosystem_ready(a.tenant_id,a.sva_number_id) AS sva_ecosystem_ready,"+
+        " (pgi_sva_regulatory_ready(a.tenant_id,a.sva_number_id) AND pgi_arcep_2026_number_ready(a.tenant_id,a.sva_number_id) AND pgi_sva_ecosystem_ready(a.tenant_id,a.sva_number_id)) AS activation_ready,"+
+        " (SELECT e.event_hash FROM sva_regulatory_evidence_events e WHERE e.tenant_id=a.tenant_id AND e.sva_number_id=a.sva_number_id ORDER BY e.id DESC LIMIT 1) AS evidence_chain_head,"+
+        " (SELECT e.event_hash FROM sva_arcep_2026_evidence_events e WHERE e.tenant_id=a.tenant_id AND e.sva_number_id=a.sva_number_id ORDER BY e.id DESC LIMIT 1) AS arcep_2026_chain_head"+
+        " FROM tenant_number_assignments a JOIN tenants t ON t.id=a.tenant_id JOIN sva_numbers sn ON sn.id=a.sva_number_id"+
+        " LEFT JOIN operating_markets m ON m.id=sn.market_id LEFT JOIN sva_regulatory_profiles p ON p.tenant_id=a.tenant_id AND p.sva_number_id=a.sva_number_id"+
+        " LEFT JOIN sva_arcep_2026_profiles ap ON ap.tenant_id=a.tenant_id AND ap.sva_number_id=a.sva_number_id"+
+        " WHERE t.tenant_type<>'internal' ORDER BY a.created_at DESC LIMIT 100"
+      ),
+      this.readSql.unsafe(
+        "SELECT c.id,m.country_code AS market,c.control_key,c.status,c.evidence_reference,c.evidence_sha256,c.verified_at,c.valid_until,c.updated_at"+
+        " FROM platform_regulatory_controls c LEFT JOIN operating_markets m ON m.id=c.market_id"+
+        " ORDER BY COALESCE(m.country_code,'ZZ'),c.control_key"
+      ),
+      this.readSql.unsafe(
+        "SELECT r.id,r.framework,r.alert_kind,r.severity,r.state,r.title,r.message,r.due_at,r.first_detected_at,r.last_detected_at,"+
+        " CASE WHEN r.severity='critical' THEN 'blocking' WHEN r.due_at IS NOT NULL AND r.due_at<=now()+interval '24 hours' THEN 'today' ELSE 'soon' END AS attention_bucket,"+
+        " t.display_name AS tenant,sn.display_number,sn.e164,m.country_code AS market"+
+        " FROM regulatory_review_alerts r LEFT JOIN tenants t ON t.id=r.tenant_id LEFT JOIN sva_numbers sn ON sn.id=r.sva_number_id"+
+        " LEFT JOIN platform_regulatory_controls pc ON pc.id=r.platform_control_id LEFT JOIN operating_markets m ON m.id=COALESCE(sn.market_id,pc.market_id)"+
+        " WHERE r.state<>'resolved' ORDER BY CASE r.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,r.due_at NULLS LAST,r.id DESC LIMIT 30"
+      )
+    ]);
+    const singleCurrency=currencyTotals.length===1?currencyTotals[0]:null;
+    const summary={
+      ...summaryRows[0],
+      settlement_currency_count:currencyTotals.length,
+      settlement_currency:singleCurrency?.currency||null,
+      upstream_payout_ht:singleCurrency?.upstream_payout||0,
+      platform_fee_ht:singleCurrency?.platform_fee||0,
+      net_payout_ht:singleCurrency?.net_payout||0,
+      payment_compliance_active:payments.some(x=>x.status==="active")
+    };
+    return {
+      foundation_version:"1.16",
+      summary,
+      tenants,
+      numbers,
+      settlements,
+      payment_profiles:payments,
+      markets,
+      settlement_totals_by_currency:currencyTotals,
+      scale:{
+        ...(scaleRows[0]||{}),
+        bucket_capacity:4096,
+        read_replica_enabled:this.readSql!==this.sql,
+        process_role:this.config.processRole||"all"
+      },
+      regulatory_trust:{
+        summary:regulatorySummary[0]||{numbers_total:0,numbers_ready:0,arcep_2026_ready:0,evidence_events:0,sva_ecosystem_ready:0,sva_ecosystem_evidence_events:0,arcep_2026_evidence_events:0,abuse_open:0,abuse_critical:0,platform_controls_verified:0,platform_controls_attention:0,review_attention_total:0,review_blocking:0,review_today:0,review_soon:0},
+        numbers:regulatoryNumbers,
+        platform_controls:platformRegulatoryControls,
+        review_alerts:regulatoryReviewAlerts
+      }
+    };
+  }
+
+  async serviceOperationsHealth(){
+    const rows=await this.readSql.unsafe(
+      "SELECT"+
+      " count(*) FILTER(WHERE status NOT IN ('resolved','closed'))::int AS service_incidents_open,"+
+      " count(*) FILTER(WHERE status NOT IN ('resolved','closed') AND severity='critical')::int AS service_incidents_critical,"+
+      " count(*) FILTER(WHERE status NOT IN ('resolved','closed') AND first_responded_at IS NULL AND first_response_due_at<now())::int AS service_first_response_overdue,"+
+      " count(*) FILTER(WHERE status NOT IN ('resolved','closed') AND target_resolution_at<now())::int AS service_resolution_overdue,"+
+      " (SELECT count(*)::int FROM tenant_operational_alerts WHERE state<>'resolved' AND alert_type='routing_unavailable') AS routing_unavailable,"+
+      " (SELECT count(*)::int FROM tenant_operational_alerts WHERE state<>'resolved' AND alert_type='portability_attention') AS portability_attention,"+
+      " (SELECT count(*)::int FROM regulatory_review_alerts WHERE state<>'resolved') AS regulatory_attention,"+
+      " (SELECT count(*)::int FROM regulatory_review_alerts WHERE state<>'resolved' AND severity='critical') AS regulatory_blocking"+
+      " FROM tenant_service_incidents"
+    );
+    return rows[0]||{service_incidents_open:0,service_incidents_critical:0,service_first_response_overdue:0,service_resolution_overdue:0,routing_unavailable:0,portability_attention:0,regulatory_attention:0,regulatory_blocking:0};
+  }
+
+  async systemSnapshot(){
+    const [counts,last,route,queue,resilienceRows,serviceHealth]=await Promise.all([
+      this.sql.unsafe(
+        "WITH b AS (SELECT COALESCE((SELECT effective_from FROM metric_baselines WHERE scope='global' AND tenant_id IS NULL AND metric_key IN ('all','calls') ORDER BY effective_from DESC,id DESC LIMIT 1),'-infinity'::timestamptz) AS from_ts)"+
+        " SELECT count(*) FILTER(WHERE calls.started_at>=b.from_ts)::int AS calls_total,(SELECT count(*)::int FROM experts WHERE enabled AND status='available') AS experts_available,"+
+        " (SELECT count(*)::int FROM outbox_events WHERE published_at IS NULL) AS outbox_pending FROM calls CROSS JOIN b"
+      ),
+      this.sql.unsafe("SELECT ended_at FROM calls ORDER BY ended_at DESC LIMIT 1"),
+      this.carrierRouting(),
+      this.workQueueHealth(),
+      this.readSql.unsafe(
+        "SELECT"+
+        " (SELECT count(*)::int FROM platform_regions) AS regions_total,"+
+        " (SELECT count(*)::int FROM platform_regions WHERE status IN ('ready','active')) AS regions_ready,"+
+        " (SELECT count(*)::int FROM disaster_recovery_targets WHERE enabled) AS dr_targets_total"
+      ),
+      this.serviceOperationsHealth()
+    ]);
+    return {
+      mode:this.config.mode,store:"postgres",
+      calls_total:counts[0].calls_total,experts_available:counts[0].experts_available,
+      cdr_lag_seconds:last[0]?Math.max(0,(Date.now()-Date.parse(last[0].ended_at))/1000):0,
+      outbox_pending:counts[0].outbox_pending,event_subscribers:this.eventBus.size,carrier_route:route,
+      work_queue:queue,
+      resilience:resilienceRows[0]||{regions_total:0,regions_ready:0,dr_targets_total:0},
+      service_operations:serviceHealth
+    };
+  }
+
+  async metrics(){
+    const [calls,outbox,serviceHealth]=await Promise.all([
+      this.sql.unsafe("SELECT count(*)::int AS calls_total,count(*) FILTER(WHERE call_status='connected')::int AS calls_connected FROM calls"),
+      this.sql.unsafe("SELECT count(*)::int AS outbox_pending FROM outbox_events WHERE published_at IS NULL"),
+      this.serviceOperationsHealth()
+    ]);
+    return {...calls[0],...outbox[0],...serviceHealth,event_subscribers:this.eventBus.size};
+  }
+}
+
+async function writeExperienceRollup(tx,callId){
+  await tx.unsafe(
+    "INSERT INTO experience_rollups_hourly_sharded("+
+    " bucket_start,market_id,rollup_shard,calls_total,calls_connected,calls_abandoned,wait_seconds_sum,"+
+    " wait_connected_seconds_sum,wait_abandoned_seconds_sum,answered_le_20s,abandoned_le_10s,ivr_seconds_sum,ivr_samples,"+
+    " queue_seconds_sum,queue_samples,wait_le_10s,wait_10_20s,wait_20_30s,wait_30_60s,wait_60_120s,wait_gt_120s)"+
+    " SELECT date_trunc('hour',c.started_at),c.market_id,(c.tenant_bucket%64)::smallint,1,"+
+    " (c.call_status='connected')::int,(c.call_status='abandoned')::int,c.wait_seconds,"+
+    " CASE WHEN c.call_status='connected' THEN c.wait_seconds ELSE 0 END,"+
+    " CASE WHEN c.call_status='abandoned' THEN c.wait_seconds ELSE 0 END,"+
+    " (c.call_status='connected' AND c.wait_seconds<=20)::int,(c.call_status='abandoned' AND c.wait_seconds<=10)::int,"+
+    " CASE WHEN c.queued_at IS NOT NULL AND c.ivr_started_at IS NOT NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (c.queued_at-c.ivr_started_at)))::bigint ELSE 0 END,"+
+    " (c.queued_at IS NOT NULL AND c.ivr_started_at IS NOT NULL)::int,"+
+    " CASE WHEN c.queued_at IS NOT NULL THEN GREATEST(0,EXTRACT(EPOCH FROM (COALESCE(c.bridged_at,c.ended_at)-c.queued_at)))::bigint ELSE 0 END,"+
+    " (c.queued_at IS NOT NULL)::int,(c.wait_seconds<=10)::int,(c.wait_seconds>10 AND c.wait_seconds<=20)::int,"+
+    " (c.wait_seconds>20 AND c.wait_seconds<=30)::int,(c.wait_seconds>30 AND c.wait_seconds<=60)::int,"+
+    " (c.wait_seconds>60 AND c.wait_seconds<=120)::int,(c.wait_seconds>120)::int"+
+    " FROM calls c WHERE c.id=$1 AND c.market_id IS NOT NULL"+
+    " ON CONFLICT(bucket_start,market_id,rollup_shard) DO UPDATE SET"+
+    " calls_total=experience_rollups_hourly_sharded.calls_total+1,"+
+    " calls_connected=experience_rollups_hourly_sharded.calls_connected+EXCLUDED.calls_connected,"+
+    " calls_abandoned=experience_rollups_hourly_sharded.calls_abandoned+EXCLUDED.calls_abandoned,"+
+    " wait_seconds_sum=experience_rollups_hourly_sharded.wait_seconds_sum+EXCLUDED.wait_seconds_sum,"+
+    " wait_connected_seconds_sum=experience_rollups_hourly_sharded.wait_connected_seconds_sum+EXCLUDED.wait_connected_seconds_sum,"+
+    " wait_abandoned_seconds_sum=experience_rollups_hourly_sharded.wait_abandoned_seconds_sum+EXCLUDED.wait_abandoned_seconds_sum,"+
+    " answered_le_20s=experience_rollups_hourly_sharded.answered_le_20s+EXCLUDED.answered_le_20s,"+
+    " abandoned_le_10s=experience_rollups_hourly_sharded.abandoned_le_10s+EXCLUDED.abandoned_le_10s,"+
+    " ivr_seconds_sum=experience_rollups_hourly_sharded.ivr_seconds_sum+EXCLUDED.ivr_seconds_sum,"+
+    " ivr_samples=experience_rollups_hourly_sharded.ivr_samples+EXCLUDED.ivr_samples,"+
+    " queue_seconds_sum=experience_rollups_hourly_sharded.queue_seconds_sum+EXCLUDED.queue_seconds_sum,"+
+    " queue_samples=experience_rollups_hourly_sharded.queue_samples+EXCLUDED.queue_samples,"+
+    " wait_le_10s=experience_rollups_hourly_sharded.wait_le_10s+EXCLUDED.wait_le_10s,"+
+    " wait_10_20s=experience_rollups_hourly_sharded.wait_10_20s+EXCLUDED.wait_10_20s,"+
+    " wait_20_30s=experience_rollups_hourly_sharded.wait_20_30s+EXCLUDED.wait_20_30s,"+
+    " wait_30_60s=experience_rollups_hourly_sharded.wait_30_60s+EXCLUDED.wait_30_60s,"+
+    " wait_60_120s=experience_rollups_hourly_sharded.wait_60_120s+EXCLUDED.wait_60_120s,"+
+    " wait_gt_120s=experience_rollups_hourly_sharded.wait_gt_120s+EXCLUDED.wait_gt_120s,updated_at=now()",
+    [callId]
+  );
+}
+
+async function writeTenantDailyRollup(tx,callId){
+  await tx.unsafe(
+    "INSERT INTO metric_rollups_daily_v2("+
+    " tenant_bucket,bucket_date,tenant_id,market_id,currency,calls_total,calls_connected,calls_abandoned,calls_failed,"+
+    " conversation_seconds,billable_seconds,payout_eligible_seconds,generated_revenue_ttc,expected_payout_ht,confirmed_payout_ht,"+
+    " paid_payout_ht,expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,source_generation)"+
+    " SELECT f.tenant_bucket,f.started_at::date,f.tenant_id,f.market_id,f.currency,1,"+
+    " (f.call_status='connected')::int,(f.call_status='abandoned')::int,(f.call_status NOT IN ('connected','abandoned'))::int,"+
+    " f.conversation_seconds,f.billable_seconds,f.payout_eligible_seconds,f.retail_service_amount_ttc,f.expected_payout_ht,"+
+    " f.confirmed_payout_ht,f.paid_payout_ht,f.expert_cost_ht,f.technical_cost_ht,f.estimated_margin_ht,f.reconciliation_variance_ht,1"+
+    " FROM call_facts f WHERE f.call_id=$1 AND f.tenant_id IS NOT NULL AND f.market_id IS NOT NULL"+
+    " ON CONFLICT(tenant_bucket,bucket_date,tenant_id,market_id,currency) DO UPDATE SET"+
+    " calls_total=metric_rollups_daily_v2.calls_total+1,"+
+    " calls_connected=metric_rollups_daily_v2.calls_connected+EXCLUDED.calls_connected,"+
+    " calls_abandoned=metric_rollups_daily_v2.calls_abandoned+EXCLUDED.calls_abandoned,"+
+    " calls_failed=metric_rollups_daily_v2.calls_failed+EXCLUDED.calls_failed,"+
+    " conversation_seconds=metric_rollups_daily_v2.conversation_seconds+EXCLUDED.conversation_seconds,"+
+    " billable_seconds=metric_rollups_daily_v2.billable_seconds+EXCLUDED.billable_seconds,"+
+    " payout_eligible_seconds=metric_rollups_daily_v2.payout_eligible_seconds+EXCLUDED.payout_eligible_seconds,"+
+    " generated_revenue_ttc=metric_rollups_daily_v2.generated_revenue_ttc+EXCLUDED.generated_revenue_ttc,"+
+    " expected_payout_ht=metric_rollups_daily_v2.expected_payout_ht+EXCLUDED.expected_payout_ht,"+
+    " confirmed_payout_ht=metric_rollups_daily_v2.confirmed_payout_ht+EXCLUDED.confirmed_payout_ht,"+
+    " paid_payout_ht=metric_rollups_daily_v2.paid_payout_ht+EXCLUDED.paid_payout_ht,"+
+    " expert_cost_ht=metric_rollups_daily_v2.expert_cost_ht+EXCLUDED.expert_cost_ht,"+
+    " technical_cost_ht=metric_rollups_daily_v2.technical_cost_ht+EXCLUDED.technical_cost_ht,"+
+    " estimated_margin_ht=metric_rollups_daily_v2.estimated_margin_ht+EXCLUDED.estimated_margin_ht,"+
+    " reconciliation_variance_ht=metric_rollups_daily_v2.reconciliation_variance_ht+EXCLUDED.reconciliation_variance_ht,"+
+    " source_generation=metric_rollups_daily_v2.source_generation+1,updated_at=now()",
+    [callId]
+  );
+}
+
+async function writeVoiceCarrierHealthRollup(tx,callId){
+  await tx.unsafe(
+    "INSERT INTO voice_carrier_health_hourly_sharded("+
+    " bucket_start,market_id,carrier_role,carrier_id,rollup_shard,calls_total,calls_connected,calls_failed,pdd_samples,pdd_ms_sum,high_pdd_calls,"+
+    " quality_samples,network_affected_calls,low_mos_calls,mos_sum,packet_loss_sum,jitter_ms_sum,latency_ms_sum,rtt_ms_sum,"+
+    " sip_4xx_calls,sip_5xx_calls,caller_hangups,callee_hangups,network_hangups)"+
+    " SELECT date_trunc('hour',c.started_at),c.market_id,r.carrier_role,r.carrier_id,(c.tenant_bucket%64)::smallint,1,"+
+    " (c.call_status='connected')::int,(c.call_status NOT IN ('connected','abandoned'))::int,"+
+    " (c.post_dial_delay_ms IS NOT NULL)::int,COALESCE(c.post_dial_delay_ms,0),(COALESCE(c.post_dial_delay_ms,0)>8000)::int,"+
+    " (q.call_id IS NOT NULL)::int,"+
+    " (q.call_id IS NOT NULL AND (COALESCE(q.rtp_packet_loss_percent,0)>=5 OR COALESCE(q.jitter_ms,0)>5 OR COALESCE(q.latency_ms,0)>150))::int,"+
+    " (q.call_id IS NOT NULL AND q.mos IS NOT NULL AND q.mos<3.5)::int,"+
+    " COALESCE(q.mos,0),COALESCE(q.rtp_packet_loss_percent,0),COALESCE(q.jitter_ms,0),COALESCE(q.latency_ms,0),COALESCE(q.rtt_ms,0),"+
+    " (c.sip_final_code BETWEEN 400 AND 499)::int,(c.sip_final_code BETWEEN 500 AND 599)::int,"+
+    " (c.hangup_party='caller')::int,(c.hangup_party='callee')::int,(c.hangup_party='network')::int"+
+    " FROM calls c LEFT JOIN call_quality q ON q.call_id=c.id"+
+    " CROSS JOIN LATERAL (VALUES ('origin'::text,c.origin_carrier_id),('host'::text,c.host_carrier_id)) AS r(carrier_role,carrier_id)"+
+    " WHERE c.id=$1 AND c.market_id IS NOT NULL AND r.carrier_id IS NOT NULL"+
+    " ON CONFLICT(bucket_start,market_id,carrier_role,carrier_id,rollup_shard) DO UPDATE SET"+
+    " calls_total=voice_carrier_health_hourly_sharded.calls_total+1,"+
+    " calls_connected=voice_carrier_health_hourly_sharded.calls_connected+EXCLUDED.calls_connected,"+
+    " calls_failed=voice_carrier_health_hourly_sharded.calls_failed+EXCLUDED.calls_failed,"+
+    " pdd_samples=voice_carrier_health_hourly_sharded.pdd_samples+EXCLUDED.pdd_samples,"+
+    " pdd_ms_sum=voice_carrier_health_hourly_sharded.pdd_ms_sum+EXCLUDED.pdd_ms_sum,"+
+    " high_pdd_calls=voice_carrier_health_hourly_sharded.high_pdd_calls+EXCLUDED.high_pdd_calls,"+
+    " quality_samples=voice_carrier_health_hourly_sharded.quality_samples+EXCLUDED.quality_samples,"+
+    " network_affected_calls=voice_carrier_health_hourly_sharded.network_affected_calls+EXCLUDED.network_affected_calls,"+
+    " low_mos_calls=voice_carrier_health_hourly_sharded.low_mos_calls+EXCLUDED.low_mos_calls,"+
+    " mos_sum=voice_carrier_health_hourly_sharded.mos_sum+EXCLUDED.mos_sum,"+
+    " packet_loss_sum=voice_carrier_health_hourly_sharded.packet_loss_sum+EXCLUDED.packet_loss_sum,"+
+    " jitter_ms_sum=voice_carrier_health_hourly_sharded.jitter_ms_sum+EXCLUDED.jitter_ms_sum,"+
+    " latency_ms_sum=voice_carrier_health_hourly_sharded.latency_ms_sum+EXCLUDED.latency_ms_sum,"+
+    " rtt_ms_sum=voice_carrier_health_hourly_sharded.rtt_ms_sum+EXCLUDED.rtt_ms_sum,"+
+    " sip_4xx_calls=voice_carrier_health_hourly_sharded.sip_4xx_calls+EXCLUDED.sip_4xx_calls,"+
+    " sip_5xx_calls=voice_carrier_health_hourly_sharded.sip_5xx_calls+EXCLUDED.sip_5xx_calls,"+
+    " caller_hangups=voice_carrier_health_hourly_sharded.caller_hangups+EXCLUDED.caller_hangups,"+
+    " callee_hangups=voice_carrier_health_hourly_sharded.callee_hangups+EXCLUDED.callee_hangups,"+
+    " network_hangups=voice_carrier_health_hourly_sharded.network_hangups+EXCLUDED.network_hangups,updated_at=now()",
+    [callId]
+  );
+}
+
+async function writeTenantVoiceDailyRollup(tx,callId){
+  await tx.unsafe(
+    "INSERT INTO tenant_voice_daily_sharded("+
+    " tenant_bucket,bucket_date,tenant_id,market_id,calls_total,calls_connected,pdd_samples,pdd_ms_sum,high_pdd_calls,"+
+    " quality_samples,network_affected_calls,low_mos_calls,mos_sum,packet_loss_sum,jitter_ms_sum,latency_ms_sum,rtt_ms_sum,"+
+    " sip_5xx_calls,caller_hangups,callee_hangups,network_hangups)"+
+    " SELECT c.tenant_bucket,c.started_at::date,c.tenant_id,c.market_id,1,(c.call_status='connected')::int,"+
+    " (c.post_dial_delay_ms IS NOT NULL)::int,COALESCE(c.post_dial_delay_ms,0),(COALESCE(c.post_dial_delay_ms,0)>8000)::int,"+
+    " (q.call_id IS NOT NULL)::int,"+
+    " (q.call_id IS NOT NULL AND (COALESCE(q.rtp_packet_loss_percent,0)>=5 OR COALESCE(q.jitter_ms,0)>5 OR COALESCE(q.latency_ms,0)>150))::int,"+
+    " (q.call_id IS NOT NULL AND q.mos IS NOT NULL AND q.mos<3.5)::int,COALESCE(q.mos,0),COALESCE(q.rtp_packet_loss_percent,0),"+
+    " COALESCE(q.jitter_ms,0),COALESCE(q.latency_ms,0),COALESCE(q.rtt_ms,0),(c.sip_final_code BETWEEN 500 AND 599)::int,"+
+    " (c.hangup_party='caller')::int,(c.hangup_party='callee')::int,(c.hangup_party='network')::int"+
+    " FROM calls c LEFT JOIN call_quality q ON q.call_id=c.id WHERE c.id=$1 AND c.tenant_id IS NOT NULL AND c.market_id IS NOT NULL"+
+    " ON CONFLICT(tenant_bucket,bucket_date,tenant_id,market_id) DO UPDATE SET"+
+    " calls_total=tenant_voice_daily_sharded.calls_total+1,"+
+    " calls_connected=tenant_voice_daily_sharded.calls_connected+EXCLUDED.calls_connected,"+
+    " pdd_samples=tenant_voice_daily_sharded.pdd_samples+EXCLUDED.pdd_samples,pdd_ms_sum=tenant_voice_daily_sharded.pdd_ms_sum+EXCLUDED.pdd_ms_sum,"+
+    " high_pdd_calls=tenant_voice_daily_sharded.high_pdd_calls+EXCLUDED.high_pdd_calls,"+
+    " quality_samples=tenant_voice_daily_sharded.quality_samples+EXCLUDED.quality_samples,"+
+    " network_affected_calls=tenant_voice_daily_sharded.network_affected_calls+EXCLUDED.network_affected_calls,"+
+    " low_mos_calls=tenant_voice_daily_sharded.low_mos_calls+EXCLUDED.low_mos_calls,"+
+    " mos_sum=tenant_voice_daily_sharded.mos_sum+EXCLUDED.mos_sum,packet_loss_sum=tenant_voice_daily_sharded.packet_loss_sum+EXCLUDED.packet_loss_sum,"+
+    " jitter_ms_sum=tenant_voice_daily_sharded.jitter_ms_sum+EXCLUDED.jitter_ms_sum,latency_ms_sum=tenant_voice_daily_sharded.latency_ms_sum+EXCLUDED.latency_ms_sum,"+
+    " rtt_ms_sum=tenant_voice_daily_sharded.rtt_ms_sum+EXCLUDED.rtt_ms_sum,sip_5xx_calls=tenant_voice_daily_sharded.sip_5xx_calls+EXCLUDED.sip_5xx_calls,"+
+    " caller_hangups=tenant_voice_daily_sharded.caller_hangups+EXCLUDED.caller_hangups,callee_hangups=tenant_voice_daily_sharded.callee_hangups+EXCLUDED.callee_hangups,"+
+    " network_hangups=tenant_voice_daily_sharded.network_hangups+EXCLUDED.network_hangups,updated_at=now()",
+    [callId]
+  );
+}
+
+async function writeSipCodeRollup(tx,callId){
+  await tx.unsafe(
+    "INSERT INTO voice_sip_code_hourly_sharded(bucket_start,market_id,host_carrier_id,sip_final_code,rollup_shard,calls_total)"+
+    " SELECT date_trunc('hour',started_at),market_id,host_carrier_id,sip_final_code,(tenant_bucket%64)::smallint,1"+
+    " FROM calls WHERE id=$1 AND market_id IS NOT NULL AND host_carrier_id IS NOT NULL AND sip_final_code BETWEEN 100 AND 699"+
+    " ON CONFLICT(bucket_start,market_id,host_carrier_id,sip_final_code,rollup_shard) DO UPDATE SET"+
+    " calls_total=voice_sip_code_hourly_sharded.calls_total+1,updated_at=now()",
+    [callId]
+  );
+}
+
+async function writeQualityRollup(tx,callId){
+  await tx.unsafe(
+    "INSERT INTO quality_rollups_hourly_sharded("+
+    " bucket_start,market_id,rollup_shard,quality_samples,mos_sum,packet_loss_sum,jitter_ms_sum,latency_ms_sum,dtmf_errors,affected_samples,low_mos_samples)"+
+    " SELECT date_trunc('hour',c.started_at),c.market_id,(c.tenant_bucket%64)::smallint,1,"+
+    " COALESCE(q.mos,0),COALESCE(q.rtp_packet_loss_percent,0),COALESCE(q.jitter_ms,0),COALESCE(q.latency_ms,0),COALESCE(q.dtmf_errors,0),"+
+    " (COALESCE(q.rtp_packet_loss_percent,0)>=5 OR COALESCE(q.jitter_ms,0)>5 OR COALESCE(q.latency_ms,0)>150)::int,"+
+    " (q.mos IS NOT NULL AND q.mos<3.5)::int"+
+    " FROM calls c JOIN call_quality q ON q.call_id=c.id"+
+    " WHERE c.id=$1 AND c.market_id IS NOT NULL"+
+    " ON CONFLICT(bucket_start,market_id,rollup_shard) DO UPDATE SET"+
+    " quality_samples=quality_rollups_hourly_sharded.quality_samples+1,"+
+    " mos_sum=quality_rollups_hourly_sharded.mos_sum+EXCLUDED.mos_sum,"+
+    " packet_loss_sum=quality_rollups_hourly_sharded.packet_loss_sum+EXCLUDED.packet_loss_sum,"+
+    " jitter_ms_sum=quality_rollups_hourly_sharded.jitter_ms_sum+EXCLUDED.jitter_ms_sum,"+
+    " latency_ms_sum=quality_rollups_hourly_sharded.latency_ms_sum+EXCLUDED.latency_ms_sum,"+
+    " dtmf_errors=quality_rollups_hourly_sharded.dtmf_errors+EXCLUDED.dtmf_errors,"+
+    " affected_samples=quality_rollups_hourly_sharded.affected_samples+EXCLUDED.affected_samples,"+
+    " low_mos_samples=quality_rollups_hourly_sharded.low_mos_samples+EXCLUDED.low_mos_samples,updated_at=now()",
+    [callId]
+  );
+}
+
+async function writeDashboardDimensionRollups(tx,callId){
+  const common=
+    " INSERT INTO dashboard_dimension_rollups_daily("+
+    " bucket_date,market_id,currency,dimension_type,dimension_key,dimension_label,calls_total,calls_connected,"+
+    " conversation_seconds,billable_seconds,generated_revenue_ttc,expected_payout_ht,estimated_margin_ht) ";
+  const conflict=
+    " ON CONFLICT(bucket_date,market_id,currency,dimension_type,dimension_key) DO UPDATE SET"+
+    " dimension_label=EXCLUDED.dimension_label,"+
+    " calls_total=dashboard_dimension_rollups_daily.calls_total+EXCLUDED.calls_total,"+
+    " calls_connected=dashboard_dimension_rollups_daily.calls_connected+EXCLUDED.calls_connected,"+
+    " conversation_seconds=dashboard_dimension_rollups_daily.conversation_seconds+EXCLUDED.conversation_seconds,"+
+    " billable_seconds=dashboard_dimension_rollups_daily.billable_seconds+EXCLUDED.billable_seconds,"+
+    " generated_revenue_ttc=dashboard_dimension_rollups_daily.generated_revenue_ttc+EXCLUDED.generated_revenue_ttc,"+
+    " expected_payout_ht=dashboard_dimension_rollups_daily.expected_payout_ht+EXCLUDED.expected_payout_ht,"+
+    " estimated_margin_ht=dashboard_dimension_rollups_daily.estimated_margin_ht+EXCLUDED.estimated_margin_ht,updated_at=now()";
+
+  await tx.unsafe(
+    common+
+    " SELECT f.started_at::date,f.market_id,f.currency,'expert',COALESCE(f.expert_id::text,'unassigned'),"+
+    " COALESCE(e.display_name,'Non affecté'),1,(f.call_status='connected')::int,f.conversation_seconds,f.billable_seconds,"+
+    " f.retail_service_amount_ttc,f.expected_payout_ht,f.estimated_margin_ht"+
+    " FROM call_facts f LEFT JOIN experts e ON e.id=f.expert_id WHERE f.call_id=$1 AND f.market_id IS NOT NULL"+
+    conflict,[callId]
+  );
+  await tx.unsafe(
+    common+
+    " SELECT f.started_at::date,f.market_id,f.currency,'carrier',COALESCE(f.origin_carrier_id::text,'unknown'),"+
+    " COALESCE(c.name,'Inconnu'),1,(f.call_status='connected')::int,f.conversation_seconds,f.billable_seconds,"+
+    " f.retail_service_amount_ttc,f.expected_payout_ht,f.estimated_margin_ht"+
+    " FROM call_facts f LEFT JOIN carriers c ON c.id=f.origin_carrier_id WHERE f.call_id=$1 AND f.market_id IS NOT NULL"+
+    conflict,[callId]
+  );
+  await tx.unsafe(
+    common+
+    " SELECT f.started_at::date,f.market_id,f.currency,'duration',"+
+    " CASE WHEN f.call_status<>'connected' THEN 'not_connected' WHEN f.conversation_seconds<60 THEN 'lt_1m'"+
+    " WHEN f.conversation_seconds<300 THEN '1_5m' WHEN f.conversation_seconds<600 THEN '5_10m'"+
+    " WHEN f.conversation_seconds<1200 THEN '10_20m' WHEN f.conversation_seconds<1800 THEN '20_30m' ELSE 'gte_30m' END,"+
+    " CASE WHEN f.call_status<>'connected' THEN 'Non aboutis' WHEN f.conversation_seconds<60 THEN '< 1 min'"+
+    " WHEN f.conversation_seconds<300 THEN '1–5 min' WHEN f.conversation_seconds<600 THEN '5–10 min'"+
+    " WHEN f.conversation_seconds<1200 THEN '10–20 min' WHEN f.conversation_seconds<1800 THEN '20–30 min' ELSE '30 min +' END,"+
+    " 1,(f.call_status='connected')::int,f.conversation_seconds,f.billable_seconds,"+
+    " f.retail_service_amount_ttc,f.expected_payout_ht,f.estimated_margin_ht"+
+    " FROM call_facts f WHERE f.call_id=$1 AND f.market_id IS NOT NULL"+
+    conflict,[callId]
+  );
+}
+
+async function writeHourlyRollup(tx,callId){
+  await tx.unsafe(
+    "INSERT INTO platform_rollups_hourly_sharded("+
+    " bucket_start,market_id,currency,rollup_shard,calls_total,calls_connected,calls_abandoned,calls_failed,"+
+    " conversation_seconds,billable_seconds,payout_eligible_seconds,generated_revenue_ttc,expected_payout_ht,"+
+    " confirmed_payout_ht,paid_payout_ht,expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht)"+
+    " SELECT date_trunc('hour',f.started_at),f.market_id,f.currency,(f.tenant_bucket%64)::smallint,1,"+
+    " (f.call_status='connected')::int,(f.call_status='abandoned')::int,"+
+    " (f.call_status NOT IN ('connected','abandoned'))::int,f.conversation_seconds,f.billable_seconds,"+
+    " f.payout_eligible_seconds,f.retail_service_amount_ttc,f.expected_payout_ht,f.confirmed_payout_ht,f.paid_payout_ht,"+
+    " f.expert_cost_ht,f.technical_cost_ht,f.estimated_margin_ht,f.reconciliation_variance_ht"+
+    " FROM call_facts f WHERE f.call_id=$1 AND f.market_id IS NOT NULL"+
+    " ON CONFLICT(bucket_start,market_id,currency,rollup_shard) DO UPDATE SET"+
+    " calls_total=platform_rollups_hourly_sharded.calls_total+EXCLUDED.calls_total,"+
+    " calls_connected=platform_rollups_hourly_sharded.calls_connected+EXCLUDED.calls_connected,"+
+    " calls_abandoned=platform_rollups_hourly_sharded.calls_abandoned+EXCLUDED.calls_abandoned,"+
+    " calls_failed=platform_rollups_hourly_sharded.calls_failed+EXCLUDED.calls_failed,"+
+    " conversation_seconds=platform_rollups_hourly_sharded.conversation_seconds+EXCLUDED.conversation_seconds,"+
+    " billable_seconds=platform_rollups_hourly_sharded.billable_seconds+EXCLUDED.billable_seconds,"+
+    " payout_eligible_seconds=platform_rollups_hourly_sharded.payout_eligible_seconds+EXCLUDED.payout_eligible_seconds,"+
+    " generated_revenue_ttc=platform_rollups_hourly_sharded.generated_revenue_ttc+EXCLUDED.generated_revenue_ttc,"+
+    " expected_payout_ht=platform_rollups_hourly_sharded.expected_payout_ht+EXCLUDED.expected_payout_ht,"+
+    " confirmed_payout_ht=platform_rollups_hourly_sharded.confirmed_payout_ht+EXCLUDED.confirmed_payout_ht,"+
+    " paid_payout_ht=platform_rollups_hourly_sharded.paid_payout_ht+EXCLUDED.paid_payout_ht,"+
+    " expert_cost_ht=platform_rollups_hourly_sharded.expert_cost_ht+EXCLUDED.expert_cost_ht,"+
+    " technical_cost_ht=platform_rollups_hourly_sharded.technical_cost_ht+EXCLUDED.technical_cost_ht,"+
+    " estimated_margin_ht=platform_rollups_hourly_sharded.estimated_margin_ht+EXCLUDED.estimated_margin_ht,"+
+    " reconciliation_variance_ht=platform_rollups_hourly_sharded.reconciliation_variance_ht+EXCLUDED.reconciliation_variance_ht,"+
+    " updated_at=now()",
+    [callId]
+  );
+}
+
+async function refreshHourlyRollupsForCalls(tx,matchJson){
+  await tx.unsafe(
+    "WITH input AS ("+
+    " SELECT * FROM jsonb_to_recordset($1::jsonb) AS x(call_id bigint,tenant_bucket smallint,amount numeric)"+
+    "), affected AS ("+
+    " SELECT DISTINCT date_trunc('hour',f.started_at) AS bucket_start,f.market_id,f.currency,"+
+    " (f.tenant_bucket%64)::smallint AS rollup_shard"+
+    " FROM call_facts f JOIN input i ON i.call_id=f.call_id AND i.tenant_bucket=f.tenant_bucket"+
+    " WHERE f.market_id IS NOT NULL"+
+    "), aggregated AS ("+
+    " SELECT a.bucket_start,a.market_id,a.currency,a.rollup_shard,"+
+    " count(*)::bigint AS calls_total,"+
+    " count(*) FILTER(WHERE f.call_status='connected')::bigint AS calls_connected,"+
+    " count(*) FILTER(WHERE f.call_status='abandoned')::bigint AS calls_abandoned,"+
+    " count(*) FILTER(WHERE f.call_status NOT IN ('connected','abandoned'))::bigint AS calls_failed,"+
+    " COALESCE(sum(f.conversation_seconds),0)::bigint AS conversation_seconds,"+
+    " COALESCE(sum(f.billable_seconds),0)::bigint AS billable_seconds,"+
+    " COALESCE(sum(f.payout_eligible_seconds),0)::bigint AS payout_eligible_seconds,"+
+    " COALESCE(sum(f.retail_service_amount_ttc),0) AS generated_revenue_ttc,"+
+    " COALESCE(sum(f.expected_payout_ht),0) AS expected_payout_ht,"+
+    " COALESCE(sum(f.confirmed_payout_ht),0) AS confirmed_payout_ht,"+
+    " COALESCE(sum(f.paid_payout_ht),0) AS paid_payout_ht,"+
+    " COALESCE(sum(f.expert_cost_ht),0) AS expert_cost_ht,"+
+    " COALESCE(sum(f.technical_cost_ht),0) AS technical_cost_ht,"+
+    " COALESCE(sum(f.estimated_margin_ht),0) AS estimated_margin_ht,"+
+    " COALESCE(sum(f.reconciliation_variance_ht),0) AS reconciliation_variance_ht"+
+    " FROM affected a JOIN call_facts f ON f.market_id=a.market_id AND f.currency=a.currency"+
+    " AND (f.tenant_bucket%64)::smallint=a.rollup_shard"+
+    " AND f.started_at>=a.bucket_start AND f.started_at<a.bucket_start+interval '1 hour'"+
+    " GROUP BY a.bucket_start,a.market_id,a.currency,a.rollup_shard"+
+    ") INSERT INTO platform_rollups_hourly_sharded("+
+    " bucket_start,market_id,currency,rollup_shard,calls_total,calls_connected,calls_abandoned,calls_failed,"+
+    " conversation_seconds,billable_seconds,payout_eligible_seconds,generated_revenue_ttc,expected_payout_ht,"+
+    " confirmed_payout_ht,paid_payout_ht,expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,updated_at)"+
+    " SELECT bucket_start,market_id,currency,rollup_shard,calls_total,calls_connected,calls_abandoned,calls_failed,"+
+    " conversation_seconds,billable_seconds,payout_eligible_seconds,generated_revenue_ttc,expected_payout_ht,"+
+    " confirmed_payout_ht,paid_payout_ht,expert_cost_ht,technical_cost_ht,estimated_margin_ht,reconciliation_variance_ht,now()"+
+    " FROM aggregated"+
+    " ON CONFLICT(bucket_start,market_id,currency,rollup_shard) DO UPDATE SET"+
+    " calls_total=EXCLUDED.calls_total,calls_connected=EXCLUDED.calls_connected,"+
+    " calls_abandoned=EXCLUDED.calls_abandoned,calls_failed=EXCLUDED.calls_failed,"+
+    " conversation_seconds=EXCLUDED.conversation_seconds,billable_seconds=EXCLUDED.billable_seconds,"+
+    " payout_eligible_seconds=EXCLUDED.payout_eligible_seconds,generated_revenue_ttc=EXCLUDED.generated_revenue_ttc,"+
+    " expected_payout_ht=EXCLUDED.expected_payout_ht,confirmed_payout_ht=EXCLUDED.confirmed_payout_ht,"+
+    " paid_payout_ht=EXCLUDED.paid_payout_ht,expert_cost_ht=EXCLUDED.expert_cost_ht,"+
+    " technical_cost_ht=EXCLUDED.technical_cost_ht,estimated_margin_ht=EXCLUDED.estimated_margin_ht,"+
+    " reconciliation_variance_ht=EXCLUDED.reconciliation_variance_ht,updated_at=now()",
+    [matchJson]
+  );
+}
+
+async function ledger(tx,callId,tenantId,marketId,currency,type,amount,envelope){
+  await tx.unsafe(
+    "INSERT INTO financial_ledger(tenant_id,market_id,call_id,event_type,amount_ht,currency,source_reference,metadata)"+
+    " VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)",
+    [tenantId||null,marketId||null,callId,type,amount,String(currency||"EUR"),envelope.source_event_id,JSON.stringify({source:envelope.source})]
+  );
+}
+async function routeWith(sql,key){
+  const rows=await sql.unsafe(
+    "SELECT r.route_key,r.generation,r.updated_at,a.name AS active_carrier,s.name AS standby_carrier,"+
+    " ac.state AS active_connection_state,sc.state AS standby_connection_state"+
+    " FROM logical_carrier_routes r LEFT JOIN carriers a ON a.id=r.active_carrier_id"+
+    " LEFT JOIN carriers s ON s.id=r.standby_carrier_id LEFT JOIN carrier_connections ac ON ac.id=r.active_connection_id"+
+    " LEFT JOIN carrier_connections sc ON sc.id=r.standby_connection_id WHERE r.route_key=$1",
+    [key]
+  );
+  return rows[0];
+}
+async function rebuildTenantRevenueDistributions(tx,settlementId,actorId){
+  const rows=await tx.unsafe(
+    "SELECT scm.call_id,scm.carrier_amount_ht::float8 AS upstream_amount_ht,c.tenant_id,c.market_id,c.currency,c.sva_number_id,"+
+    " c.billable_seconds,c.started_at,t.tenant_type,k.status AS kyc_status,k.bank_account_verified,"+
+    " cs.status AS upstream_status,cs.period_start,cs.period_end,cs.paid_at AS upstream_paid_at,cs.statement_reference,"+
+    " pt.id AS payout_terms_id,pt.platform_fee_bps,pt.platform_fee_ht_per_min::float8,pt.payout_delay_days,"+
+    " pc.id AS payment_compliance_profile_id"+
+    " FROM settlement_call_matches scm JOIN calls c ON c.id=scm.call_id"+
+    " JOIN carrier_settlements cs ON cs.id=scm.settlement_id JOIN tenants t ON t.id=c.tenant_id"+
+    " LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=c.tenant_id"+
+    " LEFT JOIN LATERAL ("+
+    "  SELECT x.id,x.platform_fee_bps,x.platform_fee_ht_per_min,x.payout_delay_days FROM tenant_payout_terms x"+
+    "  WHERE x.tenant_id=c.tenant_id AND x.status='active' AND x.effective_from<=c.started_at"+
+    "   AND (x.effective_to IS NULL OR x.effective_to>c.started_at)"+
+    "   AND (x.market_id IS NULL OR x.market_id=c.market_id)"+
+    "   AND (x.sva_number_id IS NULL OR x.sva_number_id=c.sva_number_id)"+
+    "  ORDER BY (x.sva_number_id IS NOT NULL) DESC,(x.market_id IS NOT NULL) DESC,x.effective_from DESC,x.id DESC LIMIT 1"+
+    " ) pt ON true"+
+    " LEFT JOIN LATERAL ("+
+    "  SELECT p.id FROM payment_compliance_profiles p"+
+    "  JOIN payment_compliance_market_profiles pm ON pm.payment_compliance_profile_id=p.id"+
+    "  WHERE p.status='active' AND p.funds_flow_mode IN ('platform_managed','psp_managed')"+
+    "   AND pm.market_id=c.market_id AND pm.status='active'"+
+    "   AND (p.valid_from IS NULL OR p.valid_from<=CURRENT_DATE) AND (p.valid_to IS NULL OR p.valid_to>=CURRENT_DATE)"+
+    "  ORDER BY CASE p.funds_flow_mode WHEN 'platform_managed' THEN 0 ELSE 1 END,p.id LIMIT 1"+
+    " ) pc ON true"+
+    " WHERE scm.settlement_id=$1 AND t.tenant_type<>'internal' ORDER BY c.tenant_id,c.market_id,c.currency,scm.call_id",
+    [settlementId]
+  );
+  const groups=new Map();
+  for(const row of rows){
+    const key=String(row.tenant_id)+":"+String(row.market_id||0)+":"+String(row.currency||"EUR");
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push(row);
+  }
+  const results=[];
+  for(const groupRows of groups.values()){
+    const first=groupRows[0],calculated=groupRows.map(row=>{
+      const terms=row.payout_terms_id==null?null:{
+        id:Number(row.payout_terms_id),
+        platform_fee_bps:Number(row.platform_fee_bps||0),
+        platform_fee_ht_per_min:Number(row.platform_fee_ht_per_min||0)
+      };
+      return {
+        call_id:Number(row.call_id),
+        payout_delay_days:Number(row.payout_delay_days||0),
+        ...computeTenantCallDistribution(row.upstream_amount_ht,row.billable_seconds,terms)
+      };
+    });
+    const totals=summarizeTenantDistribution(calculated);
+    const complianceId=first.payment_compliance_profile_id==null?null:Number(first.payment_compliance_profile_id);
+    const upstreamPaid=String(first.upstream_status)==="paid";
+    const kycOk=String(first.kyc_status)==="verified"&&Boolean(first.bank_account_verified);
+    let status="reconciled",held=totals.net_payout_ht;
+    if(totals.unallocated_amount_ht>0){status="blocked_terms";held=0;}
+    else if(upstreamPaid&&complianceId&&kycOk){status="payable";held=0;}
+    else if(upstreamPaid){status="blocked_compliance";held=totals.net_payout_ht;}
+    let due=null;
+    if(upstreamPaid&&first.upstream_paid_at){
+      const d=new Date(first.upstream_paid_at);
+      if(Number.isFinite(d.getTime())){d.setUTCDate(d.getUTCDate()+totals.max_payout_delay_days);due=d.toISOString().slice(0,10);}
+    }
+    let dist=(await tx.unsafe(
+      "INSERT INTO tenant_revenue_distributions(tenant_id,upstream_settlement_id,market_id,currency,period_start,period_end,collection_model,"+
+      " upstream_payout_ht,platform_fee_ht,net_payout_ht,unallocated_amount_ht,held_amount_ht,payment_compliance_profile_id,status,payment_due_date,statement_reference)"+
+      " VALUES($1,$2,$3,$4,$5,$6,'pgi_collects',$7,$8,$9,$10,$11,$12,$13,$14,$15)"+
+      " ON CONFLICT (upstream_settlement_id,tenant_id,(COALESCE(market_id,0)),currency) DO UPDATE SET"+
+      " upstream_payout_ht=EXCLUDED.upstream_payout_ht,platform_fee_ht=EXCLUDED.platform_fee_ht,net_payout_ht=EXCLUDED.net_payout_ht,"+
+      " unallocated_amount_ht=EXCLUDED.unallocated_amount_ht,held_amount_ht=EXCLUDED.held_amount_ht,"+
+      " payment_compliance_profile_id=EXCLUDED.payment_compliance_profile_id,status=EXCLUDED.status,payment_due_date=EXCLUDED.payment_due_date,"+
+      " statement_reference=EXCLUDED.statement_reference,updated_at=now()"+
+      " WHERE tenant_revenue_distributions.status<>'paid' RETURNING *",
+      [first.tenant_id,settlementId,first.market_id,first.currency,first.period_start,first.period_end,
+       totals.upstream_payout_ht,totals.platform_fee_ht,totals.net_payout_ht,totals.unallocated_amount_ht,held,complianceId,status,due,first.statement_reference]
+    ))[0];
+    if(!dist){
+      dist=(await tx.unsafe(
+        "SELECT * FROM tenant_revenue_distributions WHERE upstream_settlement_id=$1 AND tenant_id=$2 AND COALESCE(market_id,0)=COALESCE($3::bigint,0) AND currency=$4 LIMIT 1",
+        [settlementId,first.tenant_id,first.market_id,first.currency]
+      ))[0];
+    }
+    if(String(dist.status)!=="paid"){
+      for(const item of calculated){
+        await tx.unsafe(
+          "INSERT INTO tenant_revenue_distribution_calls(tenant_distribution_id,call_id,payout_terms_id,upstream_amount_ht,platform_fee_ht,net_payout_ht,unallocated_amount_ht)"+
+          " VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (tenant_distribution_id,call_id) DO UPDATE SET"+
+          " payout_terms_id=EXCLUDED.payout_terms_id,upstream_amount_ht=EXCLUDED.upstream_amount_ht,platform_fee_ht=EXCLUDED.platform_fee_ht,"+
+          " net_payout_ht=EXCLUDED.net_payout_ht,unallocated_amount_ht=EXCLUDED.unallocated_amount_ht",
+          [dist.id,item.call_id,item.payout_terms_id,item.upstream_amount_ht,item.platform_fee_ht,item.net_payout_ht,item.unallocated_amount_ht]
+        );
+      }
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'tenant.revenue_distribution','tenant_revenue_distribution',$3,$4::jsonb)",
+        [first.tenant_id,actorId,String(dist.id),JSON.stringify({upstream_settlement_id:settlementId,status,upstream_payout_ht:totals.upstream_payout_ht,platform_fee_ht:totals.platform_fee_ht,net_payout_ht:totals.net_payout_ht,collection_model:"pgi_collects"})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,market_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,$2,'tenant.revenue_distribution.updated','tenant_revenue_distribution',$3,$4::jsonb)",
+        [first.tenant_id,first.market_id,String(dist.id),JSON.stringify({status,upstream_settlement_id:settlementId,platform_fee_ht:totals.platform_fee_ht,net_payout_ht:totals.net_payout_ht})]
+      );
+    }
+    results.push(dist);
+  }
+  return results;
+}
+function roundFinanceNumber(value){
+  return Math.round((Number(value)+Number.EPSILON)*1e6)/1e6;
+}
+function numberFields(row,keys){
+  const out={...row};
+  for(const key of keys)if(out[key]!=null)out[key]=Number(out[key]);
+  return out;
+}
+function numericActor(actor){
+  const n=Number(actor?.sub);
+  return Number.isInteger(n)&&n>0?n:null;
+}
+function nullableNumber(v){
+  if(v==null||v==="")return null;
+  const n=Number(v);return Number.isFinite(n)?n:null;
+}
+function clampInt(v,fallback,min,max){
+  const n=v==null||v===""?fallback:Number(v);
+  if(!Number.isInteger(n))return fallback;
+  return Math.max(min,Math.min(max,n));
+}
+function encodeNumericCursor(value){
+  return Buffer.from(String(value)).toString("base64url");
+}
+function decodeNumericCursor(value){
+  if(!value)return null;
+  try{
+    const n=Number(Buffer.from(String(value),"base64url").toString("utf8"));
+    return Number.isInteger(n)&&n>0?n:null;
+  }catch{return null;}
+}
+function encodeCursor(x){return Buffer.from(JSON.stringify(x)).toString("base64url");}
+function decodeCursor(v){
+  if(!v)return null;
+  try{
+    const x=JSON.parse(Buffer.from(String(v),"base64url").toString("utf8"));
+    if(!x.started_at||!Number.isInteger(Number(x.id)))return null;
+    return {started_at:x.started_at,id:Number(x.id)};
+  }catch{return null;}
+}
+function validateEnvelope(x){
+  if(!x||typeof x!=="object"||Array.isArray(x))throw problem(400,"INVALID_CDR_ENVELOPE");
+  const source=String(x.source||"").trim();
+  const eventId=String(x.source_event_id||"").trim();
+  if(!source||!eventId||!x.payload)throw problem(400,"CDR_ENVELOPE_FIELDS_MISSING");
+  if(source.length>64||eventId.length>160)throw problem(400,"CDR_ENVELOPE_FIELD_INVALID");
+  if(typeof x.payload!=="object"||Array.isArray(x.payload))throw problem(400,"INVALID_CDR_PAYLOAD");
+  if(x.event_time!=null&&!Number.isFinite(Date.parse(String(x.event_time))))throw problem(400,"INVALID_CDR_EVENT_TIME");
+  x.source=source;
+  x.source_event_id=eventId;
+  if(x.event_time!=null)x.event_time=new Date(String(x.event_time)).toISOString();
+}
+function normalizePortabilityNumber(value,countryCode){
+  let raw=String(value||"").trim().replace(/[\s().-]/g,"");
+  if(String(countryCode||"").toUpperCase()==="FR"&&/^0\d{9}$/.test(raw))raw="+33"+raw.slice(1);
+  if(/^00\d{8,15}$/.test(raw))raw="+"+raw.slice(2);
+  if(!/^\+[1-9]\d{7,14}$/.test(raw))throw problem(400,"INVALID_PORTABILITY_NUMBER");
+  return raw;
+}
+function optionalText(value,max){
+  const valueText=String(value==null?"":value).trim();
+  return valueText?valueText.slice(0,max):null;
+}
+function staffLoginName(value){
+  const name=String(value||"").trim();
+  if(name.length<3||name.length>120||!/^[A-Za-z0-9._@+-]+$/.test(name))throw problem(400,"INVALID_STAFF_LOGIN");
+  return name;
+}
+function staffRole(value){
+  const role=String(value||"readonly").trim().toLowerCase();
+  if(!["admin","finance","readonly"].includes(role))throw problem(400,"INVALID_STAFF_ROLE");
+  return role;
+}
+function dateOnlyValue(value,field){
+  const valueText=String(value||"").trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(valueText)||!Number.isFinite(Date.parse(valueText+"T00:00:00Z")))throw problem(400,"INVALID_"+String(field||"DATE").toUpperCase());
+  return valueText;
+}
+
+async function serviceIncidentOutbox(tx,tenantId,eventType,incidentId,publicId,payload={}){
+  const safe={
+    incident_public_id:String(publicId||""),
+    ...payload
+  };
+  await tx.unsafe(
+    "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,$2,'tenant_service_incident',$3,$4::jsonb)",
+    [Number(tenantId),String(eventType),String(incidentId),JSON.stringify(safe)]
+  );
+}
+function serviceIncidentSla(severity){
+  const map={critical:{response:60,resolution:120},high:{response:60,resolution:240},normal:{response:120,resolution:1440},low:{response:240,resolution:2880}};
+  return map[String(severity||"normal")]||map.normal;
+}
+function serviceIncidentDeadlines(severity,start){
+  const sla=serviceIncidentSla(severity);return {response:addServiceBusinessMinutes(start,sla.response),resolution:addServiceBusinessMinutes(start,sla.resolution)};
+}
+function addServiceBusinessMinutes(start,minutes){
+  let cursor=new Date(start),remaining=Math.max(1,Number(minutes)||1),guard=0;cursor.setUTCSeconds(0,0);if(cursor.getTime()<new Date(start).getTime())cursor=new Date(cursor.getTime()+60000);
+  while(remaining>0&&guard<25000){if(isServiceBusinessMinute(cursor))remaining--;cursor=new Date(cursor.getTime()+60000);guard++;}
+  if(remaining>0)throw problem(500,"SERVICE_SLA_CALCULATION_FAILED");return cursor.toISOString();
+}
+function isServiceBusinessMinute(date){
+  const parts=new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Paris",weekday:"short",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(date),map=Object.fromEntries(parts.map(p=>[p.type,p.value]));
+  if(!["Mon","Tue","Wed","Thu","Fri"].includes(map.weekday))return false;const minute=Number(map.hour)*60+Number(map.minute);return minute>=510&&minute<1140;
+}
+async function tenantDiagnosticSnapshot(tx,tenantId,svaNumberId=null){
+  const [activity,destinations,portability]=await Promise.all([
+    tx.unsafe(
+      "SELECT count(*) FILTER(WHERE started_at>=now()-interval '1 hour')::int AS calls_1h,"+
+      " count(*) FILTER(WHERE started_at>=now()-interval '1 hour' AND call_status='connected')::int AS connected_1h,"+
+      " max(started_at) AS last_call_at FROM calls WHERE tenant_id=$1 AND ($2::bigint IS NULL OR sva_number_id=$2)",
+      [tenantId,svaNumberId]
+    ),
+    tx.unsafe(
+      "SELECT count(*)::int AS total,count(*) FILTER(WHERE status='active')::int AS active,"+
+      " count(*) FILTER(WHERE status='active' AND (max_concurrent_calls IS NULL OR active_calls<max_concurrent_calls))::int AS available"+
+      " FROM tenant_call_destinations WHERE tenant_id=$1 AND ($2::bigint IS NULL OR sva_number_id=$2 OR sva_number_id IS NULL)",
+      [tenantId,svaNumberId]
+    ),
+    tx.unsafe(
+      "SELECT status,automation_state,operator_status,updated_at FROM tenant_portability_requests"+
+      " WHERE tenant_id=$1 AND status NOT IN ('ported','cancelled','rejected') ORDER BY updated_at DESC LIMIT 1",
+      [tenantId]
+    )
+  ]);
+  return {
+    captured_at:new Date().toISOString(),
+    activity:activity[0]||{calls_1h:0,connected_1h:0,last_call_at:null},
+    destinations:destinations[0]||{total:0,active:0,available:0},
+    portability:portability[0]||null
+  };
+}
+function problem(status,code,message=code){
+  const e=new Error(message);e.status=status;e.code=code;return e;
+}
+
+async function appendChangeApprovalEvent(tx,changeRequestId,eventType,actorId,details={}){
+  const prevRows=await tx.unsafe("SELECT event_sha256 FROM platform_change_approval_events WHERE change_request_id=$1 ORDER BY id DESC LIMIT 1",[Number(changeRequestId)]);
+  const previous=prevRows[0]?.event_sha256||null;
+  const createdAt=new Date().toISOString();
+  const safeDetails=details&&typeof details==="object"&&!Array.isArray(details)?details:{};
+  const material=JSON.stringify({change_request_id:Number(changeRequestId),event_type:String(eventType),actor_id:actorId==null?null:Number(actorId),details:safeDetails,previous_sha256:previous,created_at:createdAt});
+  const hash=createHash("sha256").update(material).digest("hex");
+  const rows=await tx.unsafe(
+    "INSERT INTO platform_change_approval_events(change_request_id,event_type,actor_id,details,previous_sha256,event_sha256,created_at) VALUES($1,$2,$3,$4::jsonb,$5,$6,$7::timestamptz) RETURNING id,event_sha256,created_at",
+    [Number(changeRequestId),String(eventType),actorId==null?null:Number(actorId),JSON.stringify(safeDetails),previous,hash,createdAt]
+  );
+  return rows[0];
+}
+ THEN (e.normalized_details->>'price_version_id')::bigint END"+
+        " WHERE e.event_type='invoice.paid' AND e.event_time>=$1::timestamptz AND e.event_time<=$2::timestamptz"+
+        " ORDER BY COALESCE(NULLIF(e.normalized_details->>'provider_invoice_reference',''),e.provider_event_id),e.event_time DESC,e.id DESC"+
+        ") x WHERE x.currency=$3 GROUP BY date_trunc('month',x.event_time) ORDER BY bucket",
+        [fromIso,toIso,currency]
+      ),
+      this.readSql.unsafe(
+        "SELECT date_trunc('month',(metadata->'priority_service'->>'paid_at')::timestamptz) AS bucket,count(*)::int AS count,"+
+        " COALESCE(sum((metadata->'priority_service'->>'amount_minor')::bigint),0)::bigint AS amount_minor"+
+        " FROM tenant_portability_requests WHERE metadata->'priority_service'->>'status'='paid'"+
+        " AND COALESCE(NULLIF(upper(metadata->'priority_service'->>'currency'),''),'EUR')=$3"+
+        " AND NULLIF(metadata->'priority_service'->>'paid_at','')::timestamptz>=$1::timestamptz"+
+        " AND NULLIF(metadata->'priority_service'->>'paid_at','')::timestamptz<=$2::timestamptz"+
+        " GROUP BY 1 ORDER BY 1",
+        [fromIso,toIso,currency]
+      ),
+      this.readSql.unsafe(
+        "SELECT date_trunc('month',paid_at) AS bucket,count(*)::int AS count,COALESCE(sum(application_fee_minor),0)::bigint AS amount_minor"+
+        " FROM tenant_card_payment_requests WHERE status='paid' AND currency=$3 AND paid_at>=$1::timestamptz AND paid_at<=$2::timestamptz GROUP BY 1 ORDER BY 1",
+        [fromIso,toIso,currency]
+      ),
+      this.readSql.unsafe(
+        "SELECT date_trunc('month',cs.paid_at) AS bucket,count(DISTINCT d.upstream_settlement_id)::int AS count,"+
+        " round(COALESCE(sum(d.upstream_payout_ht*("+paidRatio+")),0)*100)::bigint AS upstream_minor,"+
+        " round(COALESCE(sum(d.platform_fee_ht*("+paidRatio+")),0)*100)::bigint AS margin_minor"+
+        " FROM tenant_revenue_distributions d JOIN carrier_settlements cs ON cs.id=d.upstream_settlement_id"+
+        " WHERE d.currency=$3 AND cs.paid_at>=$1::timestamptz AND cs.paid_at<=$2::timestamptz AND ($4::bigint IS NULL OR d.market_id=$4)"+
+        " GROUP BY 1 ORDER BY 1",
+        [fromIso,toIso,currency,marketId]
+      ),
+      this.readSql.unsafe(
+        "SELECT date_trunc('month',d.paid_at) AS bucket,count(*)::int AS count,round(COALESCE(sum(d.net_payout_ht),0)*100)::bigint AS amount_minor"+
+        " FROM tenant_revenue_distributions d WHERE d.currency=$3 AND d.status='paid' AND d.paid_at>=$1::timestamptz AND d.paid_at<=$2::timestamptz"+
+        " AND ($4::bigint IS NULL OR d.market_id=$4) GROUP BY 1 ORDER BY 1",
+        [fromIso,toIso,currency,marketId]
+      ),
+      this.readSql.unsafe(
+        "SELECT date_trunc('month',d.period_end::timestamp) AS bucket,count(*)::int AS count,"+
+        " round(COALESCE(sum(d.upstream_payout_ht),0)*100)::bigint AS upstream_minor,round(COALESCE(sum(d.platform_fee_ht),0)*100)::bigint AS margin_minor,"+
+        " round(COALESCE(sum(d.net_payout_ht),0)*100)::bigint AS client_net_minor,round(COALESCE(sum(d.unallocated_amount_ht),0)*100)::bigint AS unallocated_minor"+
+        " FROM tenant_revenue_distributions d WHERE d.currency=$3 AND d.period_end>=$1::timestamptz::date AND d.period_end<=$2::timestamptz::date"+
+        " AND ($4::bigint IS NULL OR d.market_id=$4) GROUP BY 1 ORDER BY 1",
+        [fromIso,toIso,currency,marketId]
+      ),
+      this.readSql.unsafe(
+        "SELECT date_trunc('month',paid_at) AS bucket,count(*)::int AS count,COALESCE(sum(amount_minor),0)::bigint AS amount_minor"+
+        " FROM customer_referral_rewards WHERE status='paid' AND currency=$3 AND paid_at>=$1::timestamptz AND paid_at<=$2::timestamptz GROUP BY 1 ORDER BY 1",
+        [fromIso,toIso,currency]
+      ),
+      this.readSql.unsafe(
+        "SELECT date_trunc('month',earned_at) AS bucket,count(*)::int AS count,COALESCE(sum(amount_minor),0)::bigint AS amount_minor"+
+        " FROM customer_referral_rewards WHERE status IN ('earned','paid') AND currency=$3 AND earned_at>=$1::timestamptz AND earned_at<=$2::timestamptz GROUP BY 1 ORDER BY 1",
+        [fromIso,toIso,currency]
+      ),
+      this.readSql.unsafe(
+        "SELECT count(*)::int AS count,COALESCE(sum(amount_minor),0)::bigint AS amount_minor FROM customer_referral_rewards WHERE status='earned' AND currency=$1",
+        [currency]
+      )
+    ]);
+    const history=new Map();
+    const monthKey=value=>new Date(value).toISOString().slice(0,7);
+    const ensure=value=>{
+      const key=monthKey(value);
+      if(!history.has(key))history.set(key,{
+        month:key,
+        subscription_cash_ttc_minor:0,subscription_count:0,
+        portability_priority_cash_ttc_minor:0,portability_priority_count:0,
+        card_fee_cash_minor:0,card_payment_count:0,
+        sva_upstream_collected_ht_minor:0,sva_margin_collected_ht_minor:0,sva_settlement_count:0,
+        tenant_payouts_paid_ht_minor:0,tenant_payout_count:0,
+        referral_rewards_paid_minor:0,referral_rewards_paid_count:0,
+        referral_rewards_earned_minor:0,referral_rewards_earned_count:0,
+        sva_upstream_booked_ht_minor:0,sva_margin_booked_ht_minor:0,sva_client_net_booked_ht_minor:0,sva_unallocated_ht_minor:0
+      });
+      return history.get(key);
+    };
+    for(const row of subscriptions){const x=ensure(row.bucket);x.subscription_cash_ttc_minor=Number(row.amount_minor||0);x.subscription_count=Number(row.count||0);}
+    for(const row of priority){const x=ensure(row.bucket);x.portability_priority_cash_ttc_minor=Number(row.amount_minor||0);x.portability_priority_count=Number(row.count||0);}
+    for(const row of cardFees){const x=ensure(row.bucket);x.card_fee_cash_minor=Number(row.amount_minor||0);x.card_payment_count=Number(row.count||0);}
+    for(const row of svaCash){const x=ensure(row.bucket);x.sva_upstream_collected_ht_minor=Number(row.upstream_minor||0);x.sva_margin_collected_ht_minor=Number(row.margin_minor||0);x.sva_settlement_count=Number(row.count||0);}
+    for(const row of svaPayouts){const x=ensure(row.bucket);x.tenant_payouts_paid_ht_minor=Number(row.amount_minor||0);x.tenant_payout_count=Number(row.count||0);}
+    for(const row of referralPaid){const x=ensure(row.bucket);x.referral_rewards_paid_minor=Number(row.amount_minor||0);x.referral_rewards_paid_count=Number(row.count||0);}
+    for(const row of referralEarned){const x=ensure(row.bucket);x.referral_rewards_earned_minor=Number(row.amount_minor||0);x.referral_rewards_earned_count=Number(row.count||0);}
+    for(const row of svaAccrual){const x=ensure(row.bucket);x.sva_upstream_booked_ht_minor=Number(row.upstream_minor||0);x.sva_margin_booked_ht_minor=Number(row.margin_minor||0);x.sva_client_net_booked_ht_minor=Number(row.client_net_minor||0);x.sva_unallocated_ht_minor=Number(row.unallocated_minor||0);}
+    const monthly_history=[...history.values()].sort((a,b)=>a.month.localeCompare(b.month));
+    const sum=key=>monthly_history.reduce((n,row)=>n+Number(row[key]||0),0);
+    const unpaid=liabilityRows[0]||{};
+    return {
+      schema_version:"audiotel-platform-accounting/1",
+      generated_at:new Date().toISOString(),
+      range:{from:fromIso,to:toIso},
+      currency,
+      market:market||null,
+      basis:{
+        subscriptions:"invoice.paid, montant de prix fournisseur, TTC selon offre",
+        portability_priority:"paiement priorité confirmé, TTC",
+        card_fees:"commission applicative réellement payée, hors paiements remboursés ou contestés",
+        sva_cash:"ratio montant opérateur payé / montant confirmé, base HT",
+        tenant_payouts:"distribution client au statut payé, base HT",
+        referrals:"récompenses acquises et versements enregistrés"
+      },
+      integrity:{
+        statutory_ledger:false,
+        tax_conversion_invented:false,
+        mixed_tax_bases:true,
+        note:"Pilotage de gestion automatisé. Les bases TTC, HT et commissions restent séparées et ne sont jamais additionnées comme un résultat fiscal."
+      },
+      summary:{
+        subscription_cash_ttc_minor:sum("subscription_cash_ttc_minor"),
+        subscription_count:monthly_history.reduce((n,row)=>n+row.subscription_count,0),
+        portability_priority_cash_ttc_minor:sum("portability_priority_cash_ttc_minor"),
+        portability_priority_count:monthly_history.reduce((n,row)=>n+row.portability_priority_count,0),
+        card_fee_cash_minor:sum("card_fee_cash_minor"),
+        card_payment_count:monthly_history.reduce((n,row)=>n+row.card_payment_count,0),
+        sva_upstream_collected_ht_minor:sum("sva_upstream_collected_ht_minor"),
+        sva_margin_collected_ht_minor:sum("sva_margin_collected_ht_minor"),
+        tenant_payouts_paid_ht_minor:sum("tenant_payouts_paid_ht_minor"),
+        referral_rewards_paid_minor:sum("referral_rewards_paid_minor"),
+        referral_rewards_earned_minor:sum("referral_rewards_earned_minor"),
+        referral_rewards_unpaid_minor:Number(unpaid.amount_minor||0),
+        referral_rewards_unpaid_count:Number(unpaid.count||0),
+        sva_upstream_booked_ht_minor:sum("sva_upstream_booked_ht_minor"),
+        sva_margin_booked_ht_minor:sum("sva_margin_booked_ht_minor"),
+        sva_client_net_booked_ht_minor:sum("sva_client_net_booked_ht_minor"),
+        sva_unallocated_ht_minor:sum("sva_unallocated_ht_minor")
+      },
+      monthly_history
     };
   }
 
