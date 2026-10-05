@@ -28,6 +28,7 @@ const portability=fs.readFileSync("site/seo/portabilite-numero-sva.html","utf8")
 const priorityPortability=fs.readFileSync("site/seo/portabilite-prioritaire.html","utf8");
 const referralLanding=fs.readFileSync("site/seo/parrainage-audiotel.html","utf8");
 const clientReferral=fs.readFileSync("assets/client-referral.js","utf8");
+const clientReferralView=fs.readFileSync("assets/client-referral-view.js","utf8");
 const withoutSiret=fs.readFileSync("site/seo/audiotel-sans-siret.html","utf8");
 const businessLive=fs.readFileSync("site/seo/business-live-audiotel.html","utf8");
 const legalNotice=fs.readFileSync("site/seo/mentions-legales.html","utf8");
@@ -610,8 +611,8 @@ test("new complementary products are public, indexable and commercially explicit
   assert.match(tracking,/const quickTab=link\.closest\("\.revenue-quick-tab"\)/);
   assert.match(tracking,/quickTab\.hidden=false/);
   assert.match(tracking,/Intl\.NumberFormat\("fr-FR"/);
-  assert.match(clientReferral,/Mon espace ambassadeur/);
-  assert.match(clientReferral,/paid_invoice_count/);
+  assert.match(clientReferralView,/Mon espace ambassadeur/);
+  assert.match(clientReferralView,/paid_invoice_count/);
   assert.match(buildStatic,/"portabilite-prioritaire"/);
   assert.match(buildStatic,/"parrainage-audiotel"/);
   assert.match(sitemap,/portabilite-prioritaire/);
