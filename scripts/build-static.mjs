@@ -133,6 +133,10 @@ for(const file of files){
   fs.copyFileSync(src,dst);
 }
 
+// Compatibility alias for AI crawlers and answer engines that probe /ai.txt.
+// Keep a single source of truth by publishing the exact llms.txt content.
+fs.copyFileSync(path.join(dist,"llms.txt"),path.join(dist,"ai.txt"));
+
 // The customer-facing site owns the production root. Keep the staff cockpit on a
 // dedicated, non-indexed URL instead of exposing it as the homepage.
 fs.copyFileSync(path.join(root,"index.html"),path.join(dist,"cockpit.html"));
