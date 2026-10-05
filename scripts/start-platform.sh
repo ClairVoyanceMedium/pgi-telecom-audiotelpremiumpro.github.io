@@ -8,6 +8,7 @@ printf '%s' "$release" | grep -Eq '^[0-9a-f]{40}$' || {
 }
 
 export PGI_RELEASE_ID="$release"
+export PGI_VERSION="${PGI_VERSION:-$(node -p "require('./package.json').version")}"
 export PGI_RUNTIME_MODE=production
 export PGI_API_BASE_URL=/api/v1
 export PGI_BACKEND_MODE=production
