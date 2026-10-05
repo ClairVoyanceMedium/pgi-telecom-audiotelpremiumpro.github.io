@@ -84,6 +84,7 @@ test("le cockpit expose une comptabilité mensuelle automatisée sans mélanger 
   assert.match(index,/data-view="accounting"/);
   assert.match(index,/id="accounting-admin-root"/);
   assert.match(index,/assets\/accounting-admin\.js/);
+  assert.ok(buildStatic.includes('"assets/accounting-admin.js"'));
   assert.match(api,/\/platform\/accounting/);
   assert.match(server,/\/api\/v1\/platform\/accounting/);
   assert.match(store,/platformAccountingOverview/);
