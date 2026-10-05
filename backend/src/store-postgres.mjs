@@ -4634,7 +4634,7 @@ export class PostgresStore{
         "SELECT status,count(*)::int AS count,COALESCE(sum(reward_minor),0)::bigint AS reward_minor FROM customer_referrals GROUP BY status ORDER BY status"
       ),
       this.sql.unsafe(
-        "SELECT rw.id,rw.public_id::text AS public_id,rw.amount_minor::bigint AS amount_minor,rw.currency,rw.status,rw.earned_at,rw.paid_at,rw.paid_reference,"+
+        "SELECT rw.id,rw.public_id::text AS public_id,rw.amount_minor::bigint AS amount_minor,rw.currency,rw.status,rw.payout_status,rw.payout_provider,rw.provider_account_reference,rw.provider_transfer_reference,rw.payout_attempt_count,rw.payout_next_attempt_at,rw.payout_last_attempt_at,rw.payout_last_error_code,rw.payout_last_error_at,rw.earned_at,rw.paid_at,rw.paid_reference,"+
         " rt.display_name AS referrer_name,dt.display_name AS referred_name,rf.public_id::text AS referral_public_id,rf.metadata AS referral_metadata"+
         " FROM customer_referral_rewards rw JOIN customer_referrals rf ON rf.id=rw.referral_id"+
         " JOIN tenants rt ON rt.id=rf.referrer_tenant_id JOIN tenants dt ON dt.id=rf.referred_tenant_id"+
@@ -4648,14 +4648,16 @@ export class PostgresStore{
         " c.code,c.status AS code_status,c.created_at AS code_created_at,"+
         " COALESCE(ev.visits,0)::int AS visits,COALESCE(ev.prospects,0)::int AS prospects,"+
         " COALESCE(rs.referrals_count,0)::int AS referrals_count,COALESCE(rs.rewarded_count,0)::int AS rewarded_count,COALESCE(rs.reward_minor,0)::bigint AS reward_minor,"+
-        " COALESCE(rw.earned_unpaid_minor,0)::bigint AS earned_unpaid_minor,COALESCE(rw.paid_minor,0)::bigint AS paid_minor,"+
+        " COALESCE(rw.earned_unpaid_minor,0)::bigint AS earned_unpaid_minor,COALESCE(rw.paid_minor,0)::bigint AS paid_minor,COALESCE(rw.failed_count,0)::int AS payout_failed_count,COALESCE(rw.missing_count,0)::int AS payout_missing_count,"+
+        " ca.provider_account_reference AS payout_account_reference,COALESCE(ca.transfers_enabled,false) AS transfers_enabled,ca.recipient_requirements_state AS payout_requirements_state,ca.last_synced_at AS payout_last_synced_at,"+
         " COALESCE(sva.net_payout_ht,0)::numeric AS sva_net_payout_ht,COALESCE(sva.paid_ht,0)::numeric AS sva_paid_ht,COALESCE(sva.payable_ht,0)::numeric AS sva_payable_ht,COALESCE(sva.held_ht,0)::numeric AS sva_held_ht,"+
         " COALESCE(sva.paid_count,0)::int AS sva_paid_count,COALESCE(sva.payable_count,0)::int AS sva_payable_count,sva.last_paid_at,"+
         " (SELECT count(DISTINCT d2.currency)::int FROM tenant_revenue_distributions d2 WHERE d2.tenant_id=rt.id) AS sva_currency_count"+
         " FROM customer_referral_codes c JOIN tenants rt ON rt.id=c.tenant_id"+
         " LEFT JOIN LATERAL (SELECT count(*) FILTER(WHERE e.event_type='visit')::int AS visits,count(*) FILTER(WHERE e.event_type='prospect')::int AS prospects FROM customer_referral_events e WHERE e.referral_code_id=c.id) ev ON true"+
         " LEFT JOIN LATERAL (SELECT count(*)::int AS referrals_count,count(*) FILTER(WHERE r.status='rewarded')::int AS rewarded_count,COALESCE(sum(r.reward_minor) FILTER(WHERE r.status='rewarded'),0)::bigint AS reward_minor FROM customer_referrals r WHERE r.referrer_tenant_id=rt.id) rs ON true"+
-        " LEFT JOIN LATERAL (SELECT COALESCE(sum(x.amount_minor) FILTER(WHERE x.status='earned'),0)::bigint AS earned_unpaid_minor,COALESCE(sum(x.amount_minor) FILTER(WHERE x.status='paid'),0)::bigint AS paid_minor FROM customer_referral_rewards x JOIN customer_referrals r ON r.id=x.referral_id WHERE r.referrer_tenant_id=rt.id) rw ON true"+
+        " LEFT JOIN LATERAL (SELECT COALESCE(sum(x.amount_minor) FILTER(WHERE x.status='earned'),0)::bigint AS earned_unpaid_minor,COALESCE(sum(x.amount_minor) FILTER(WHERE x.status='paid'),0)::bigint AS paid_minor,count(*) FILTER(WHERE x.status='earned' AND x.payout_status='failed')::int AS failed_count,count(*) FILTER(WHERE x.status='earned' AND x.payout_status='missing_payout_details')::int AS missing_count FROM customer_referral_rewards x JOIN customer_referrals r ON r.id=x.referral_id WHERE r.referrer_tenant_id=rt.id) rw ON true"+
+        " LEFT JOIN tenant_card_payment_accounts ca ON ca.tenant_id=rt.id"+
         " LEFT JOIN LATERAL (SELECT COALESCE(sum(d.net_payout_ht),0)::numeric AS net_payout_ht,COALESCE(sum(d.net_payout_ht) FILTER(WHERE d.status='paid'),0)::numeric AS paid_ht,COALESCE(sum(d.net_payout_ht) FILTER(WHERE d.status='payable'),0)::numeric AS payable_ht,COALESCE(sum(d.held_amount_ht),0)::numeric AS held_ht,count(*) FILTER(WHERE d.status='paid')::int AS paid_count,count(*) FILTER(WHERE d.status='payable')::int AS payable_count,max(d.paid_at) AS last_paid_at FROM tenant_revenue_distributions d WHERE d.tenant_id=rt.id AND d.currency=COALESCE(rt.default_currency,'EUR')) sva ON true"+
         " WHERE rt.tenant_type<>'internal' ORDER BY c.created_at DESC,c.id DESC LIMIT 250"
       ),
@@ -4663,7 +4665,7 @@ export class PostgresStore{
         "SELECT rt.public_id::text AS referrer_public_id,r.public_id::text AS public_id,r.status,r.reward_minor::bigint AS reward_minor,r.reward_currency,r.claimed_at,r.qualified_at,r.rewarded_at,r.rejected_at,r.metadata,"+
         " dt.id AS _referred_id,dt.public_id::text AS referred_public_id,dt.display_name AS referred_name,dt.billing_email AS referred_billing_email,dt.status AS referred_status,dt.country_code AS referred_country_code,dt.created_at AS referred_created_at,"+
         " (SELECT count(DISTINCT be.normalized_details->>'provider_invoice_reference')::int FROM subscription_billing_events be WHERE be.tenant_id=r.referred_tenant_id AND be.event_type='invoice.paid' AND COALESCE(be.normalized_details->>'provider_invoice_reference','')<>'' AND COALESCE(be.normalized_details->>'last_payment_status','paid')='paid' AND be.event_time>=r.claimed_at) AS paid_invoice_count,"+
-        " rw.id AS reward_id,rw.public_id::text AS reward_public_id,rw.amount_minor::bigint AS reward_amount_minor,rw.currency AS reward_currency_paid,rw.status AS reward_status,rw.earned_at,rw.paid_at,rw.paid_reference"+
+        " rw.id AS reward_id,rw.public_id::text AS reward_public_id,rw.amount_minor::bigint AS reward_amount_minor,rw.currency AS reward_currency_paid,rw.status AS reward_status,rw.payout_status,rw.payout_provider,rw.provider_account_reference,rw.provider_transfer_reference,rw.payout_attempt_count,rw.payout_next_attempt_at,rw.payout_last_error_code,rw.earned_at,rw.paid_at,rw.paid_reference"+
         " FROM customer_referrals r JOIN tenants rt ON rt.id=r.referrer_tenant_id JOIN tenants dt ON dt.id=r.referred_tenant_id LEFT JOIN customer_referral_rewards rw ON rw.referral_id=r.id"+
         " ORDER BY r.claimed_at DESC,r.id DESC LIMIT 500"
       ),
@@ -4686,7 +4688,7 @@ export class PostgresStore{
         public_id:row.public_id,status:row.status,reward_minor:Number(row.reward_minor||0),reward_currency:row.reward_currency,claimed_at:row.claimed_at,qualified_at:row.qualified_at,rewarded_at:row.rewarded_at,rejected_at:row.rejected_at,metadata:row.metadata||{},
         paid_invoice_count:paidInvoiceCount,qualification_paid_invoices:required,progress_percent:Math.min(100,Math.round((paidInvoiceCount/required)*100)),
         referred:{public_id:row.referred_public_id,name:row.referred_name,email:row.referred_billing_email,status:row.referred_status,country_code:row.referred_country_code,dossier_ref:dossierReference(Number(row._referred_id),row.referred_created_at)},
-        reward:row.reward_id?{id:row.reward_id,public_id:row.reward_public_id,amount_minor:Number(row.reward_amount_minor||0),currency:row.reward_currency_paid,status:row.reward_status,earned_at:row.earned_at,paid_at:row.paid_at,paid_reference:row.paid_reference}:null
+        reward:row.reward_id?{id:row.reward_id,public_id:row.reward_public_id,amount_minor:Number(row.reward_amount_minor||0),currency:row.reward_currency_paid,status:row.reward_status,payout_status:row.payout_status,payout_provider:row.payout_provider,provider_account_reference:row.provider_account_reference,provider_transfer_reference:row.provider_transfer_reference,payout_attempt_count:Number(row.payout_attempt_count||0),payout_next_attempt_at:row.payout_next_attempt_at,payout_last_error_code:row.payout_last_error_code,earned_at:row.earned_at,paid_at:row.paid_at,paid_reference:row.paid_reference}:null
       };
       if(!referralsByReferrer.has(key))referralsByReferrer.set(key,[]);
       referralsByReferrer.get(key).push(item);
@@ -4701,7 +4703,8 @@ export class PostgresStore{
     const ambassadors=ambassadorRows.map(row=>({
       public_id:row.public_id,name:row.display_name,email:row.billing_email,status:row.tenant_status,country_code:row.country_code,currency:row.default_currency||program.currency||"EUR",dossier_ref:dossierReference(Number(row._tenant_id),row.tenant_created_at),
       code:row.code,code_status:row.code_status,code_created_at:row.code_created_at,
-      summary:{visits:Number(row.visits||0),prospects:Number(row.prospects||0),referrals:Number(row.referrals_count||0),rewarded:Number(row.rewarded_count||0),reward_minor:Number(row.reward_minor||0),earned_unpaid_minor:Number(row.earned_unpaid_minor||0),paid_minor:Number(row.paid_minor||0)},
+      summary:{visits:Number(row.visits||0),prospects:Number(row.prospects||0),referrals:Number(row.referrals_count||0),rewarded:Number(row.rewarded_count||0),reward_minor:Number(row.reward_minor||0),earned_unpaid_minor:Number(row.earned_unpaid_minor||0),paid_minor:Number(row.paid_minor||0),payout_failed_count:Number(row.payout_failed_count||0),payout_missing_count:Number(row.payout_missing_count||0)},
+      payout:{automatic:true,provider:"stripe",configured:Boolean(row.payout_account_reference),ready:row.transfers_enabled===true,provider_account_reference:row.payout_account_reference||null,transfers_enabled:row.transfers_enabled===true,requirements_state:row.payout_requirements_state||null,last_synced_at:row.payout_last_synced_at||null},
       sva:{currency:row.default_currency||"EUR",net_payout_ht:Number(row.sva_net_payout_ht||0),paid_ht:Number(row.sva_paid_ht||0),payable_ht:Number(row.sva_payable_ht||0),held_ht:Number(row.sva_held_ht||0),paid_count:Number(row.sva_paid_count||0),payable_count:Number(row.sva_payable_count||0),last_paid_at:row.last_paid_at,currency_count:Number(row.sva_currency_count||0),recent:svaByReferrer.get(String(row.public_id||""))||[]},
       referrals:referralsByReferrer.get(String(row.public_id||""))||[]
     }));
