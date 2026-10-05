@@ -52,8 +52,11 @@ const businessLiveScheduleSource=fs.readFileSync("backend/src/business-live-sche
 const vercelConfig=fs.readFileSync("vercel.json","utf8");
 const referralMigration=fs.readFileSync("database/migrations/065_customer_referral_program.sql","utf8");
 const referralRepairMigration=fs.readFileSync("database/migrations/066_repair_customer_referral_program.sql","utf8");
+const fixedReferralMigration=fs.readFileSync("database/migrations/067_fixed_progressive_referral_policy.sql","utf8");
+const referralPolicy=fs.readFileSync("backend/src/referral-policy.mjs","utf8");
 const clientReferral=fs.readFileSync("assets/client-referral.js","utf8");
 const referralAdmin=fs.readFileSync("assets/referral-admin.js","utf8");
+const accountingCockpit=fs.readFileSync("assets/accounting-cockpit.js","utf8");
 const vercelConfigData=JSON.parse(vercelConfig);
 const businessLiveCron=Array.isArray(vercelConfigData.crons)&&vercelConfigData.crons.some(item=>item&&item.path==="/api/v1/internal/business-live/reset-schedules/run"&&item.schedule==="* * * * *");
 const qualityRollupMigration=fs.readFileSync("database/migrations/017_quality_rollups.sql","utf8");
@@ -132,11 +135,15 @@ const wholesaleDoc=fs.readFileSync("docs/WHOLESALE-SVA.md","utf8");
 
 if(!/platform_feature_flags/.test(referralMigration)||!/customer_referral_rewards/.test(referralMigration))failures.push("referral schema must retain server feature flags and reward ledger");
 if(!/CREATE TABLE IF NOT EXISTS platform_feature_flags/i.test(referralRepairMigration)||!/CREATE TABLE IF NOT EXISTS customer_referral_rewards/i.test(referralRepairMigration)||!/ON CONFLICT\(feature_key\) DO NOTHING/i.test(referralRepairMigration))failures.push("referral schema repair must stay idempotent and fail-closed");
-if(!/42P01/.test(postgresStore)||!/enabled:false,reward_minor:0/.test(postgresStore))failures.push("public referral state must fail closed when referral schema is unavailable");
+if(!/2026-10-05-fixed-v1/.test(fixedReferralMigration)||!/qualification_paid_invoices',3/.test(fixedReferralMigration)||!/permanent_reward_minor',2000/.test(fixedReferralMigration))failures.push("referral migration must lock the fixed three-payment progressive policy");
+if(!/REFERRAL_QUALIFICATION_PAID_INVOICES=3/.test(referralPolicy)||!/from:25,to:null,reward_minor:2000/.test(referralPolicy)||!/ordinal:10,bonus_minor:5000/.test(referralPolicy))failures.push("referral policy must keep fixed tiers, permanent 25+ reward and milestones");
+if(!/42P01/.test(postgresStore)||!/return \{\.\.\.policy,enabled:false\}/.test(postgresStore))failures.push("public referral state must fail closed when referral schema is unavailable");
 if(!/\/api\/v1\/public\/referral-program/.test(backendServer)||!/\/api\/v1\/customer\/referral/.test(backendServer)||!/\/api\/v1\/platform\/referral-program/.test(backendServer))failures.push("referral public customer and admin APIs are required");
-if(!/paid_active_subscription/.test(postgresStore)||!/REFERRAL_SELF_CLAIM/.test(postgresStore)||!/REFERRAL_ALREADY_CLAIMED/.test(postgresStore))failures.push("referral rewards must remain payment-qualified and anti-abuse");
-if(!/pgi:portal-loaded/.test(clientReferral)||!/abonnement actif et payé/i.test(clientReferral))failures.push("customer referral UI must retain paid activation qualification");
-if(!/referral-admin\.js/.test(platformAdminTools)||!/updateReferralProgram/.test(referralAdmin)||!/settleReferralReward/.test(referralAdmin))failures.push("referral administration must remain lazy and auditable");
+if(!/count\(DISTINCT normalized_details->>'provider_invoice_reference'\)/.test(postgresStore)||!/REFERRAL_QUALIFICATION_PAID_INVOICES/.test(postgresStore)||!/REFERRAL_SELF_CLAIM/.test(postgresStore)||!/REFERRAL_ALREADY_CLAIMED/.test(postgresStore))failures.push("referral rewards must require three distinct paid invoices and retain anti-abuse");
+if(!/pgi:portal-loaded/.test(clientReferral)||!/3 factures mensuelles distinctes réellement payées/i.test(clientReferral)||!/paid_invoice_count/.test(clientReferral))failures.push("customer referral UI must expose the three-payment qualification progress");
+if(!/referral-admin\.js/.test(platformAdminTools)||!/updateReferralProgram/.test(referralAdmin)||!/settleReferralReward/.test(referralAdmin)||!/barème fixe/i.test(referralAdmin)||!/25e filleul/i.test(referralAdmin))failures.push("referral administration must remain fixed, lazy and auditable");
+if(!/\/api\/v1\/platform\/accounting/.test(backendServer)||!/async platformAccounting/.test(postgresStore)||!/tax_basis_separated:true/.test(postgresStore)||!/statutory_ledger:false/.test(postgresStore))failures.push("platform accounting must remain source-based and tax-basis separated");
+if(!/Abonnements encaissés TTC/.test(accountingCockpit)||!/Marge SVA encaissée HT/.test(accountingCockpit)||!/Créances opérateurs HT/.test(accountingCockpit))failures.push("accounting cockpit must preserve distinct cash, margin and receivable views");
 
 const requiredCompose=[
   "POSTGRES_PASSWORD",
