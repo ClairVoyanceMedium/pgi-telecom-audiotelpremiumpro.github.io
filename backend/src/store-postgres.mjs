@@ -3821,7 +3821,7 @@ export class PostgresStore{
       if(invitationHash){
         invitation=(await tx.unsafe(
           "SELECT i.id,i.tenant_id,i.email,i.role,i.status,i.expires_at,t.status AS tenant_status,t.preferred_locale,t.timezone,k.metadata AS lead_metadata"+
-          " FROM customer_tenant_invitations i JOIN tenants t ON t.id=i.tenant_id LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id WHERE i.token_hash=$1 FOR UPDATE",
+          " FROM customer_tenant_invitations i JOIN tenants t ON t.id=i.tenant_id LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id WHERE i.token_hash=$1 FOR UPDATE OF i,t",
           [String(invitationHash)]
         ))[0];
         if(!invitation)throw problem(404,"INVITATION_NOT_FOUND");
@@ -3849,13 +3849,13 @@ export class PostgresStore{
         if(principal&&!["active","pending"].includes(principal.status))throw problem(409,"CUSTOMER_ACCOUNT_DISABLED");
         if(!principal){
           principal=(await tx.unsafe(
-            "INSERT INTO customer_principals(email,display_name,status,preferred_locale,timezone,email_verified,metadata) VALUES($1,$2,'active',$3,$4,true,$5::jsonb) RETURNING id,email,display_name,status,session_version",
-            [identity.email,identity.display_name||identity.email,invitation?.preferred_locale||"fr-FR",invitation?.timezone||"Europe/Paris",JSON.stringify(leadMeta)]
+            "INSERT INTO customer_principals(email,display_name,status,preferred_locale,timezone,email_verified,metadata) VALUES($1,$2,'active',$3,$4,true,jsonb_build_object('first_name',$5::text,'last_name',$6::text,'phone',$7::text,'signup_source','public_opening_invitation','service_intent',$8::text,'account_type',$9::text,'authority_confirmed',true)) RETURNING id,email,display_name,status,session_version",
+            [identity.email,identity.display_name||identity.email,invitation?.preferred_locale||"fr-FR",invitation?.timezone||"Europe/Paris",leadMeta.first_name,leadMeta.last_name,leadMeta.phone,leadMeta.service_intent,leadMeta.account_type]
           ))[0];
         }else if(invitation){
           await tx.unsafe(
-            "UPDATE customer_principals SET email_verified=true,status='active',preferred_locale=$2,timezone=$3,metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||$4::jsonb,updated_at=now() WHERE id=$1::uuid",
-            [principal.id,invitation.preferred_locale||"fr-FR",invitation.timezone||"Europe/Paris",JSON.stringify(leadMeta)]
+            "UPDATE customer_principals SET email_verified=true,status='active',preferred_locale=$2,timezone=$3,metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||jsonb_build_object('first_name',$4::text,'last_name',$5::text,'phone',$6::text,'signup_source','public_opening_invitation','service_intent',$7::text,'account_type',$8::text,'authority_confirmed',true),updated_at=now() WHERE id=$1::uuid",
+            [principal.id,invitation.preferred_locale||"fr-FR",invitation.timezone||"Europe/Paris",leadMeta.first_name,leadMeta.last_name,leadMeta.phone,leadMeta.service_intent,leadMeta.account_type]
           );
         }else{
           await tx.unsafe("UPDATE customer_principals SET email_verified=true,updated_at=now() WHERE id=$1::uuid",[principal.id]);
@@ -3868,8 +3868,8 @@ export class PostgresStore{
       }
       if(invitation){
         await tx.unsafe(
-          "UPDATE customer_principals SET status='active',email_verified=true,preferred_locale=$2,timezone=$3,metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||$4::jsonb,updated_at=now() WHERE id=$1::uuid",
-          [principal.id,invitation.preferred_locale||"fr-FR",invitation.timezone||"Europe/Paris",JSON.stringify(leadMeta)]
+          "UPDATE customer_principals SET status='active',email_verified=true,preferred_locale=$2,timezone=$3,metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||jsonb_build_object('first_name',$4::text,'last_name',$5::text,'phone',$6::text,'signup_source','public_opening_invitation','service_intent',$7::text,'account_type',$8::text,'authority_confirmed',true),updated_at=now() WHERE id=$1::uuid",
+          [principal.id,invitation.preferred_locale||"fr-FR",invitation.timezone||"Europe/Paris",leadMeta.first_name,leadMeta.last_name,leadMeta.phone,leadMeta.service_intent,leadMeta.account_type]
         );
         await tx.unsafe("INSERT INTO customer_tenant_memberships(tenant_id,customer_principal_id,role,status) VALUES($1,$2::uuid,$3,'active') ON CONFLICT(tenant_id,customer_principal_id) DO UPDATE SET role=EXCLUDED.role,status='active',updated_at=now()",[invitation.tenant_id,principal.id,invitation.role]);
         await tx.unsafe(
@@ -4139,14 +4139,14 @@ export class PostgresStore{
         if(credential.length)throw problem(409,"CUSTOMER_ACCOUNT_EXISTS");
         if(principals[0].status!=="active"&&principals[0].status!=="pending")throw problem(409,"CUSTOMER_ACCOUNT_DISABLED");
         await tx.unsafe(
-          "UPDATE customer_principals SET display_name=$1,status='active',preferred_locale=$2,timezone=$3,metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||$4::jsonb,updated_at=now() WHERE id=$5::uuid",
-          [displayName,inv.preferred_locale||"fr-FR",inv.timezone||"Europe/Paris",JSON.stringify(principalMeta),principals[0].id]
+          "UPDATE customer_principals SET display_name=$1,status='active',preferred_locale=$2,timezone=$3,metadata=(CASE WHEN jsonb_typeof(metadata)='object' THEN metadata ELSE '{}'::jsonb END)||jsonb_build_object('first_name',$4::text,'last_name',$5::text,'phone',$6::text,'signup_source','public_opening_invitation','service_intent',$7::text,'account_type',$8::text,'authority_confirmed',true),updated_at=now() WHERE id=$9::uuid",
+          [displayName,inv.preferred_locale||"fr-FR",inv.timezone||"Europe/Paris",principalMeta.first_name,principalMeta.last_name,principalMeta.phone,principalMeta.service_intent,principalMeta.account_type,principals[0].id]
         );
       }else{
         principals=await tx.unsafe(
-          "INSERT INTO customer_principals(email,display_name,status,preferred_locale,timezone,email_verified,metadata) VALUES($1,$2,'active',$3,$4,false,$5::jsonb)"+
+          "INSERT INTO customer_principals(email,display_name,status,preferred_locale,timezone,email_verified,metadata) VALUES($1,$2,'active',$3,$4,false,jsonb_build_object('first_name',$5::text,'last_name',$6::text,'phone',$7::text,'signup_source','public_opening_invitation','service_intent',$8::text,'account_type',$9::text,'authority_confirmed',true))"+
           " RETURNING id,email,display_name,status,session_version",
-          [inv.email,displayName,inv.preferred_locale||"fr-FR",inv.timezone||"Europe/Paris",JSON.stringify(principalMeta)]
+          [inv.email,displayName,inv.preferred_locale||"fr-FR",inv.timezone||"Europe/Paris",principalMeta.first_name,principalMeta.last_name,principalMeta.phone,principalMeta.service_intent,principalMeta.account_type]
         );
       }
       const principal=principals[0];
