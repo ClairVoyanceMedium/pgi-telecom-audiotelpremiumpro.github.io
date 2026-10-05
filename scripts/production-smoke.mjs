@@ -14,7 +14,7 @@ async function fetchCheck(name,path,expected,tokens=[],jsonCheck=null){
 }
 await fetchCheck("site.home","/",200,["Commencer ma demande","/demande-ouverture/","client.html"]);
 await fetchCheck("site.application","/demande-ouverture/",200,["id=\"order-form\""]);
-await fetchCheck("site.application.logic","/site/site.js",200,["client.html?register=1","sessionStorage"]);
+await fetchCheck("site.application.logic","/site/site.js",200,["/api/v1/public/hubspot/lead","client.html?opening=","sessionStorage"]);
 await fetchCheck("site.client","/client.html",200,["id=\"customer-login-form\"","id=\"client-billing-start\"","id=\"portability-open\"","id=\"service-incident-open\""]);
 await fetchCheck("site.cockpit","/cockpit.html",200,["id=\"auth-form\"","ACCÈS PRODUCTION"]);
 await fetchCheck("site.terms","/conditions-abonnement/",200,["4,90 € TTC par mois","durée indéterminée","résiliation à tout moment","2026-09-26-b2b-b2c-v4"]);
@@ -25,6 +25,8 @@ await fetchCheck("site.cookies","/cookies-traceurs/",200,["Cookies et traceurs"]
 await fetchCheck("site.cancellation","/resilier-contrat/",200,["Résilier votre contrat","client.html?action=cancel-subscription","cesse de se renouveler"]);
 await fetchCheck("site.withdrawal","/retractation/",200,["14 jours","Fonctionnalité en ligne obligatoire","26 septembre 2026"]);
 await fetchCheck("withdrawal.status","/api/v1/public/withdrawal/status",200,[],b=>b&&b.available===true);
+await fetchCheck("referral.status","/api/v1/public/referral-program",200,[],b=>b&&typeof b.enabled==="boolean"&&Number.isFinite(Number(b.reward_minor))&&typeof b.currency==="string");
+await fetchCheck("site.sitemap","/sitemap.xml",200,["<loc>https://audiotel-premium-pro.com/</loc>","/parrainage-audiotel/","/portabilite-prioritaire/"]);
 await fetchCheck("api.health","/api/v1/health",200,[],b=>b&&b.status==="ok"&&b.mode==="production");
 await fetchCheck("auth.boundary","/api/v1/customer/auth/me",401,["AUTH_REQUIRED"]);
 await fetchCheck("billing.boundary","/api/v1/customer/billing/status",401,["AUTH_REQUIRED"]);
