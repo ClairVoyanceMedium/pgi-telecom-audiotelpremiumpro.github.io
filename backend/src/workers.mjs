@@ -2,6 +2,7 @@ import {randomUUID} from "node:crypto";
 import {evaluateAlerts} from "./alerts.mjs";
 import {drainTransactionalEmails,drainDunningTransactionalEmails} from "./email-dispatcher.mjs";
 import {retrieveStripeCardCheckout} from "./stripe-connect.mjs";
+import {drainReferralRewardPayouts} from "./referral-payouts.mjs";
 
 export function startWorkers({store,eventBus,config,queueHandlers={}}){
   let stopped=false;
@@ -10,8 +11,9 @@ export function startWorkers({store,eventBus,config,queueHandlers={}}){
   const stats={
     outboxRuns:0,outboxErrors:0,alertsRuns:0,alertsErrors:0,
     queueRuns:0,queueErrors:0,queueProcessed:0,queueDeadLetters:0,
-    lastOutboxSuccessAt:null,lastAlertsSuccessAt:null,lastQueueSuccessAt:null,
-    lastOutboxErrorAt:null,lastAlertsErrorAt:null,lastQueueErrorAt:null
+    referralPayoutRuns:0,referralPayoutErrors:0,referralPayoutPaid:0,referralPayoutDeferred:0,
+    lastOutboxSuccessAt:null,lastAlertsSuccessAt:null,lastQueueSuccessAt:null,lastReferralPayoutSuccessAt:null,
+    lastOutboxErrorAt:null,lastAlertsErrorAt:null,lastQueueErrorAt:null,lastReferralPayoutErrorAt:null
   };
 
   const runOutbox=async()=>{
@@ -86,6 +88,16 @@ export function startWorkers({store,eventBus,config,queueHandlers={}}){
               });
             }
           }catch(_error){}
+        }
+      }
+      if(config.stripeSecretKey&&typeof store.openReferralRewardPayoutBatch==="function"&&typeof store.confirmCustomerReferralRewardPayout==="function"){
+        stats.referralPayoutRuns++;
+        try{
+          const payout=await drainReferralRewardPayouts({store,config,limit:25});
+          stats.referralPayoutPaid+=Number(payout.paid||0);stats.referralPayoutDeferred+=Number(payout.deferred||0);
+          stats.lastReferralPayoutSuccessAt=new Date().toISOString();
+        }catch{
+          stats.referralPayoutErrors++;stats.lastReferralPayoutErrorAt=new Date().toISOString();
         }
       }
       stats.lastAlertsSuccessAt=new Date().toISOString();

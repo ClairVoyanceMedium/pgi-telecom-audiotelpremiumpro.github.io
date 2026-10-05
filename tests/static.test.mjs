@@ -8,6 +8,10 @@ const clientPortal=read("client.html");
 const clientPortalApi=read("assets/client-portal-api.js");
 const clientReferral=read("assets/client-referral.js");
 const referralAdmin=read("assets/referral-admin.js");
+const referralAdminView=read("assets/referral-admin-view.js");
+const referralPayouts=read("backend/src/referral-payouts.mjs");
+const workersSource=read("backend/src/workers.mjs");
+const stripeConnectSource=read("backend/src/stripe-connect.mjs");
 const clientPortalJs=read("assets/client-portal.js");
 const clientBilling=read("assets/client-billing.js");
 const customerEmailVerification=read("assets/customer-email-verification.js");
@@ -65,7 +69,11 @@ test("le parrainage client reste serveur, optionnel et conditionné au paiement 
   assert.match(clientReferral,/pgi:portal-loaded/);
   assert.match(platformAdmin,/referral-admin\.js/);
   assert.match(referralAdmin,/updateReferralProgram/);
-  assert.match(referralAdmin,/settleReferralReward/);
+  assert.doesNotMatch(referralAdminView,/data-referral-paid/);
+  assert.match(referralPayouts,/referral-reward:/);
+  assert.match(referralPayouts,/createStripeReferralTransfer/);
+  assert.match(workersSource,/drainReferralRewardPayouts/);
+  assert.match(stripeConnectSource,/createStripeReferralTransfer/);
   assert.ok(buildStatic.includes('"assets/client-referral.js"'));
   assert.doesNotMatch(sw,/client-referral\.js/);
 });
@@ -521,7 +529,7 @@ test("le produit garde son identité interne et le nom de cockpit installé",()=
 test("final brown cockpit theme and installed app label are authoritative",()=>{
   assert.match(css,/--bg:#2b1b15/);
   assert.match(css,/\.product-name\{color:#f7e5d6;font-size:clamp\(24px,2\.3vw,32px\)/);
-  assert.match(css,/@media \(max-width:820px\)[\s\S]*\.product-name\{max-width:min\(76vw,430px\);font-size:clamp\(18px,5\.0vw,22px\)/);
+  assert.match(css,/@media\s*\(max-width:820px\)[\s\S]*\.product-name\{max-width:min\(76vw,430px\);font-size:clamp\(18px,5\.0vw,22px\)/);
   assert.match(index,/apple-mobile-web-app-title" content="Cockpit \/ PGI Telecom • Audiotel Premium Pro"/);
   assert.match(manifest,/Audiotel Premium Pro/);
 });
