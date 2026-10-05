@@ -38,6 +38,20 @@
 - [ ] statut payé distinct du statut confirmé
 - [ ] seuils d'alerte configurés
 
+## Comptabilité expert-comptable
+
+- [ ] raison sociale comptable validée
+- [ ] SIREN validé
+- [ ] régime de TVA validé par le responsable comptable ou l’expert-comptable
+- [ ] date de clôture de l’exercice validée
+- [ ] comptes d’attente qualifiés
+- [ ] écritures équilibrées et validées
+- [ ] pièces justificatives disponibles
+- [ ] mouvements bancaires rapprochés
+- [ ] périodes mensuelles révisées et clôturées
+- [ ] balance et grand livre contrôlés
+- [ ] export FEC activé uniquement après levée de tous les contrôles
+
 ## Application
 
 - [ ] authentification
