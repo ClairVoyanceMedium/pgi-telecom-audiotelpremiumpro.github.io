@@ -65,7 +65,8 @@ test("le parrainage client reste serveur, optionnel et conditionné au paiement 
   assert.match(clientReferral,/pgi:portal-loaded/);
   assert.match(platformAdmin,/referral-admin\.js/);
   assert.match(referralAdmin,/updateReferralProgram/);
-  assert.match(referralAdmin,/settleReferralReward/);
+  assert.doesNotMatch(referralAdmin,/settleReferralReward/);
+  assert.match(read("assets/referral-admin-view.js"),/VERSEMENTS AUTOMATIQUES/);
   assert.ok(buildStatic.includes('"assets/client-referral.js"'));
   assert.doesNotMatch(sw,/client-referral\.js/);
 });
