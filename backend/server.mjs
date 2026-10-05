@@ -17,6 +17,7 @@ import {createStaticSiteHandler} from "./src/static-site.mjs";
 import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,createStripePortabilityPriorityCheckout,verifyStripeWebhook,normalizeStripePortabilityPriorityEvent,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
 import {STRIPE_CONNECT_APPLICATION_FEE_BPS,stripeConnectState,createStripeConnectedAccount,retrieveStripeConnectedAccount,normalizeStripeConnectedAccount,createStripeConnectOnboardingLink,createStripeCardCheckout,retrieveStripeCardCheckout,normalizeStripeConnectPaymentEvent,hashStripeEventPayload,createStripeReferralRecipientAccount,retrieveStripeReferralRecipientAccount,normalizeStripeReferralRecipientAccount,createStripeReferralOnboardingLink} from "./src/stripe-connect.mjs";
 import {runReferralAutomaticPayouts} from "./src/referral-payout-automation.mjs";
+import {expertAccountingSnapshot,refreshExpertAccountingLedger,updateExpertAccountingSettings,createExpertAccountingEntry,validateExpertAccountingEntry,reverseExpertAccountingEntry,setAccountingPeriodState,importAccountingBankTransactions,matchAccountingBankTransaction,expertAccountingFec} from "./src/accounting-expert.mjs";
 import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStripe,buildGa4RefundFromStripe,sendGa4Measurement} from "./src/ga4-measurement.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
@@ -266,6 +267,12 @@ export function createBackend(options={}){
         if(!config.externalBillingEnabled||provider.api_configured!==true)return done(res,metrics,started,"referral_payouts.run",503,{ok:false,error:{code:"REFERRAL_PAYOUT_PROVIDER_UNAVAILABLE"}});
         const result=await runReferralAutomaticPayouts({store,config,limit:50});
         return done(res,metrics,started,"referral_payouts.run",200,{ok:true,...result});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/internal/accounting/refresh"){
+        authorizeCron(req,config);
+        const result=await refreshExpertAccountingLedger(store,{sub:"system-accounting-cron"});
+        return done(res,metrics,started,"accounting_expert.auto_refresh",200,{ok:true,...result});
       }
 
       if(method==="GET"&&pathname==="/api/v1/public/referral-program"){
@@ -1653,6 +1660,75 @@ export function createBackend(options={}){
         requireRole(actor,["admin","finance","readonly"]);
         const params=Object.fromEntries(url.searchParams.entries());
         return done(res,metrics,started,"platform.accounting",200,await store.platformAccounting(params));
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/platform/accounting/expert"){
+        requireRole(actor,["admin","finance","readonly"]);
+        const params=Object.fromEntries(url.searchParams.entries());
+        return done(res,metrics,started,"platform.accounting_expert",200,await expertAccountingSnapshot(store,params));
+      }
+      if(method==="POST"&&pathname==="/api/v1/platform/accounting/expert/refresh"){
+        requireRole(actor,["admin","finance"]);requireCsrf(req,actor,config);
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.accounting_expert.refresh",{},()=>refreshExpertAccountingLedger(store,actor));
+        return done(res,metrics,started,"platform.accounting_expert_refresh",200,{...result.value,replayed:result.replayed});
+      }
+      if(method==="POST"&&pathname==="/api/v1/platform/accounting/expert/settings"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.accounting_expert.settings",body,()=>updateExpertAccountingSettings(store,body,actor));
+        return done(res,metrics,started,"platform.accounting_expert_settings",200,{...result.value,replayed:result.replayed});
+      }
+      if(method==="POST"&&pathname==="/api/v1/platform/accounting/expert/entries"){
+        requireRole(actor,["admin","finance"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.accounting_expert.entry_create",body,()=>createExpertAccountingEntry(store,body,actor));
+        return done(res,metrics,started,"platform.accounting_expert_entry_create",201,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/platform/accounting/expert/entries/:id/validate");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin","finance"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={id:match.id,...body};
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.accounting_expert.entry_validate",payload,()=>validateExpertAccountingEntry(store,match.id,body,actor));
+        return done(res,metrics,started,"platform.accounting_expert_entry_validate",200,{...result.value,replayed:result.replayed});
+      }
+
+      match=routeMatch(pathname,"/api/v1/platform/accounting/expert/entries/:id/reverse");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin","finance"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={id:match.id,...body};
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.accounting_expert.entry_reverse",payload,()=>reverseExpertAccountingEntry(store,match.id,body,actor));
+        return done(res,metrics,started,"platform.accounting_expert_entry_reverse",201,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/platform/accounting/expert/periods/:id");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin","finance"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={period:match.id,state:body.state};
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.accounting_expert.period_state",payload,()=>setAccountingPeriodState(store,match.id,body,actor));
+        return done(res,metrics,started,"platform.accounting_expert_period_state",200,{...result.value,replayed:result.replayed});
+      }
+      if(method==="POST"&&pathname==="/api/v1/platform/accounting/expert/bank/import"){
+        requireRole(actor,["admin","finance"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const batchHash=createHash("sha256").update(JSON.stringify(body)).digest("hex");
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.accounting_expert.bank_import",{batch_hash:batchHash},()=>importAccountingBankTransactions(store,body,actor));
+        return done(res,metrics,started,"platform.accounting_expert_bank_import",200,{...result.value,replayed:result.replayed});
+      }
+
+      match=routeMatch(pathname,"/api/v1/platform/accounting/expert/bank/:id/match");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin","finance"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={bank_transaction_id:match.id,entry_id:body.entry_id};
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.accounting_expert.bank_match",payload,()=>matchAccountingBankTransaction(store,match.id,body,actor));
+        return done(res,metrics,started,"platform.accounting_expert_bank_match",200,{...result.value,replayed:result.replayed});
+      }
+      if(method==="GET"&&pathname==="/api/v1/platform/accounting/expert/fec"){
+        requireRole(actor,["admin","finance","readonly"]);
+        const params=Object.fromEntries(url.searchParams.entries());
+        return done(res,metrics,started,"platform.accounting_expert_fec",200,await expertAccountingFec(store,params));
       }
 
       if(method==="GET"&&pathname==="/api/v1/platform/card-payments/summary"){

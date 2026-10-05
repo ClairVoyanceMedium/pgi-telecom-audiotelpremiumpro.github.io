@@ -526,3 +526,53 @@ Les transferts Resend vers la boîte interne utilisent l’expéditeur d’origi
 Les demandes de support ne créent jamais automatiquement un deal commercial. Un dossier APP existant peut être affiché comme contexte, mais le support reste porté par un ticket.
 
 Les objectifs de première réponse et de résolution des tickets internes sont calculés en minutes ouvrées Europe/Paris, du lundi au vendredi de 08:30 à 19:00. Les niveaux exposés au client sont formulés en termes d’impact plutôt qu’en priorité technique brute.
+
+
+## Dossier expert-comptable
+
+La comptabilité de gestion `GET /api/v1/platform/accounting` reste distincte du journal comptable. Elle ne devient jamais artificiellement un livre légal.
+
+### GET /platform/accounting/expert
+
+Rôles `admin`, `finance` ou `readonly`. Retourne le dossier de révision de l’exercice demandé : paramètres fiscaux, écritures, balance, grand livre, synthèse TVA, périodes, rapprochement bancaire, pièces référencées et état de préparation du FEC.
+
+Le paramètre `year` désigne l’année de clôture de l’exercice. Le moteur supporte une clôture autre que le 31 décembre.
+
+### POST /platform/accounting/expert/refresh
+
+Rôles `admin` ou `finance`, CSRF et idempotence. Prépare ou met à jour les écritures brouillon à partir des sources opérationnelles faisant foi : factures Stripe payées, portabilité prioritaire, commission PGI sur paiement CB, primes de parrainage et distributions SVA.
+
+Les écritures générées utilisent des comptes d’attente lorsque la qualification comptable ou fiscale n’est pas certaine. Aucun taux de TVA ni compte de produit définitif n’est supposé.
+
+### POST /platform/accounting/expert/settings
+
+Rôle `admin`, CSRF et idempotence. Configure l’identité comptable, le SIREN, la date de clôture, le régime de TVA et l’autorisation explicite du FEC. L’activation FEC est refusée si l’identité ou le régime TVA reste incomplet.
+
+### POST /platform/accounting/expert/entries
+
+Rôles `admin` ou `finance`, CSRF et idempotence. Crée une écriture manuelle équilibrée en brouillon.
+
+### POST /platform/accounting/expert/entries/:id/validate
+
+Rôles `admin` ou `finance`, CSRF et idempotence. Remplace les comptes de brouillon par les comptes définitifs, impose l’égalité débit/crédit, refuse tout compte d’attente, attribue un numéro continu par exercice et rend l’écriture immuable.
+
+### POST /platform/accounting/expert/entries/:id/reverse
+
+Rôles `admin` ou `finance`, CSRF et idempotence. Crée une contrepassation tracée. L’écriture d’origine n’est jamais modifiée ni supprimée.
+
+### POST /platform/accounting/expert/periods/:id
+
+Rôles `admin` ou `finance`, CSRF et idempotence. Gère les états `open`, `review` et `closed`. Une clôture est refusée en présence d’un brouillon, d’un compte d’attente validé, d’un déséquilibre ou d’un mouvement bancaire importé non rapproché. La clôture est atomique et produit une empreinte de contrôle.
+
+### POST /platform/accounting/expert/bank/import
+
+Rôles `admin` ou `finance`, CSRF et idempotence. Importe un lot de mouvements bancaires avec une clé externe stable pour éviter les doublons.
+
+### POST /platform/accounting/expert/bank/:id/match
+
+Rôles `admin` ou `finance`, CSRF et idempotence. Rapproche un mouvement bancaire avec une écriture validée uniquement lorsqu’une ligne de compte 512 porte exactement le même montant dans le sens débit ou crédit attendu.
+
+### GET /platform/accounting/expert/fec
+
+Rôles `admin`, `finance` ou `readonly`. Génère le FEC tabulé uniquement si tous les contrôles bloquants sont levés. Le fichier contient les 18 champs réglementaires dans l’ordre, se limite aux écritures validées ou de contrepassation et prend le nom `SIRENFECAAAAMMJJ.txt`.
+
