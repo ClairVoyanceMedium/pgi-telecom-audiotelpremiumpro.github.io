@@ -10,6 +10,7 @@ const cockpit=read("assets/accounting-cockpit.js");
 const expert=read("assets/accounting-expert.js");
 const build=read("scripts/build-static.mjs");
 const pkg=JSON.parse(read("package.json"));
+const vercel=JSON.parse(read("vercel.json"));
 
 test("la couche expert-comptable possède un journal en partie double durable et verrouillé",()=>{
   for(const object of [
@@ -106,6 +107,15 @@ test("le FEC reprend exactement les 18 champs réglementaires dans l ordre",()=>
     "DRAFT_ENTRIES","SUSPENSE_ACCOUNTS","UNBALANCED_ENTRIES","BANK_UNMATCHED",
     "PERIODS_NOT_CLOSED","NO_VALIDATED_ENTRIES"
   ])assert.ok(service.includes(blocker),blocker);
+});
+
+test("la préparation comptable s exécute automatiquement sans intervention humaine",()=>{
+  assert.match(server,/\/api\/v1\/internal\/accounting\/refresh/);
+  assert.match(server,/authorizeCron\(req,config\)/);
+  assert.match(server,/accounting_expert\.auto_refresh/);
+  const cron=vercel.crons.find(x=>x.path==="/api/v1/internal/accounting/refresh");
+  assert.ok(cron);
+  assert.equal(cron.schedule,"17 * * * *");
 });
 
 test("les routes expert-comptable sont privées, protégées et idempotentes",()=>{
