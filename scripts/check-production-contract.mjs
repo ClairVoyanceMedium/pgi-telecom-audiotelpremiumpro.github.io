@@ -60,6 +60,7 @@ const referralPolicy=fs.readFileSync("backend/src/referral-policy.mjs","utf8");
 const referralPayouts=fs.readFileSync("backend/src/referral-payouts.mjs","utf8");
 const stripeConnectSource=fs.readFileSync("backend/src/stripe-connect.mjs","utf8");
 const clientReferral=fs.readFileSync("assets/client-referral.js","utf8");
+const clientReferralPayout=fs.readFileSync("assets/client-referral-payout.js","utf8");
 const referralAdmin=fs.readFileSync("assets/referral-admin.js","utf8");
 const referralAdminView=fs.readFileSync("assets/referral-admin-view.js","utf8");
 const referralAdminCss=fs.readFileSync("assets/referral-admin.css","utf8");
@@ -156,7 +157,7 @@ if(!/pgi-referral-reward:/.test(referralPayouts)||!/completeReferralRewardPayout
 if(!/configuration\.recipient/.test(stripeConnectSource)||!/stripe_transfers/.test(stripeConnectSource)||!/\/v1\/transfers/.test(stripeConnectSource))failures.push("Stripe Connect must request recipient transfers and create provider transfers");
 if(!referralPayoutCron||!/\/api\/v1\/internal\/referral-payouts\/run/.test(backendServer)||!/authorizeCron\(req,config\)/.test(backendServer))failures.push("automatic referral payout cron must be scheduled and protected");
 if(!/referral\.reward\.earned/.test(emailDispatcher)||!/referral\.reward\.paid/.test(emailDispatcher)||!/referral_reward_earned/.test(resendEmailSource)||!/referral_reward_paid/.test(resendEmailSource))failures.push("referral reward lifecycle must send transactional email notifications");
-if(!/Finaliser mes versements Stripe/.test(clientReferral)||!/rewards_payable_minor/.test(postgresStore)||!/reward_payout_state/.test(postgresStore))failures.push("customer referral area must expose automatic payout readiness and status");
+if(!/client-referral-payout\.js/.test(clientReferral)||!/Finaliser mes versements Stripe/.test(clientReferralPayout)||!/VERSEMENTS/.test(clientReferralPayout)||!/rewards_payable_minor/.test(postgresStore)||!/reward_payout_state/.test(postgresStore))failures.push("customer referral area must expose automatic payout readiness and status");
 if(!/auth-remember/.test(indexSource)||!/remember:remember===true/.test(apiClient)||!/body\.remember===true/.test(backendServer)||!/adminRememberTtlSeconds/.test(backendConfig)||!/PGI_ADMIN_REMEMBER_TTL_SECONDS/.test(envExample)||!/PGI_ADMIN_REMEMBER_TTL_SECONDS/.test(compose))failures.push("admin remember-me must remain explicit, server-issued and configurable");
 if(!backendConfig.includes('version:env.PGI_VERSION||"'+packageVersion+'"')||!envExample.includes("PGI_VERSION="+packageVersion)||!compose.includes("${PGI_VERSION:-"+packageVersion+"}"))failures.push("application version fallbacks must stay aligned with package.json");
 if(!/\/api\/v1\/platform\/accounting/.test(backendServer)||!/async platformAccounting/.test(postgresStore)||!/tax_basis_separated:true/.test(postgresStore)||!/statutory_ledger:false/.test(postgresStore))failures.push("platform accounting must remain source-based and tax-basis separated");
