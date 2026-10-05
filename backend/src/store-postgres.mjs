@@ -4427,12 +4427,19 @@ export class PostgresStore{
   async syncCustomerCardPaymentAccount(tenantId,input={}){
     const id=Number(tenantId),ref=String(input.provider_account_reference||"").trim();
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    await this.ensureAutomaticReferralPayoutSchema();
     return this.withTenantContext(id,async tx=>{
       const rows=await tx.unsafe(
         "UPDATE tenant_card_payment_accounts SET status=$3,charges_enabled=$4,payouts_enabled=$5,details_submitted=$6,requirements_state=$7,last_synced_at=now() WHERE tenant_id=$1 AND provider_account_reference=$2 RETURNING id,tenant_id,provider,provider_account_reference,status,charges_enabled,payouts_enabled,details_submitted,application_fee_bps,requirements_state,last_synced_at,created_at,updated_at",
         [id,ref,String(input.status||"restricted"),input.charges_enabled===true,input.payouts_enabled===true,input.details_submitted===true,input.requirements_state||null]
       );
       if(!rows[0])throw problem(404,"CARD_PAYMENT_ACCOUNT_NOT_FOUND");
+      if(rows[0].payouts_enabled===true&&rows[0].details_submitted===true){
+        await tx.unsafe(
+          "UPDATE customer_referral_rewards SET payout_state='pending',payout_next_attempt_at=now(),payout_last_error=NULL WHERE tenant_id=$1 AND status='earned' AND payout_state='blocked'",
+          [id]
+        );
+      }
       return rows[0];
     });
   }
@@ -4440,11 +4447,19 @@ export class PostgresStore{
   async syncCardPaymentAccountByProviderReference(input={}){
     const ref=String(input.provider_account_reference||"").trim();
     if(!/^acct_[A-Za-z0-9]+$/.test(ref))throw problem(400,"INVALID_CONNECT_ACCOUNT");
+    await this.ensureAutomaticReferralPayoutSchema();
     const rows=await this.sql.unsafe(
       "UPDATE tenant_card_payment_accounts SET status=$2,charges_enabled=$3,payouts_enabled=$4,details_submitted=$5,requirements_state=$6,last_synced_at=now() WHERE provider_account_reference=$1 RETURNING id,tenant_id,provider,provider_account_reference,status,charges_enabled,payouts_enabled,details_submitted,application_fee_bps,requirements_state,last_synced_at,created_at,updated_at",
       [ref,String(input.status||"restricted"),input.charges_enabled===true,input.payouts_enabled===true,input.details_submitted===true,input.requirements_state||null]
     );
-    return rows[0]||null;
+    const row=rows[0]||null;
+    if(row?.payouts_enabled===true&&row?.details_submitted===true){
+      await this.sql.unsafe(
+        "UPDATE customer_referral_rewards SET payout_state='pending',payout_next_attempt_at=now(),payout_last_error=NULL WHERE tenant_id=$1 AND status='earned' AND payout_state='blocked'",
+        [row.tenant_id]
+      );
+    }
+    return row;
   }
 
   async createCustomerCardPaymentRequest(tenantId,principalId,input={}){
