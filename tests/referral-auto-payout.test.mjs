@@ -52,6 +52,10 @@ test("automatic payouts fail closed and retry without admin intervention",()=>{
   assert.match(automation,/INSUFFICIENT_FUNDS/);
   assert.match(automation,/failAutomaticReferralPayout/);
   assert.match(server,/\/api\/v1\/internal\/referral-payouts\/run/);
+  assert.match(store,/ensureReferralPayoutAutomationSchema/);
+  assert.match(store,/pgi_referral_payout_schema_v1/);
+  assert.match(store,/CREATE TABLE IF NOT EXISTS customer_referral_payout_accounts/);
+  assert.match(migration,/pg_trigger/);
   assert.ok(vercel.crons.some(x=>x.path==="/api/v1/internal/referral-payouts/run"&&x.schedule==="*/5 * * * *"));
 });
 
