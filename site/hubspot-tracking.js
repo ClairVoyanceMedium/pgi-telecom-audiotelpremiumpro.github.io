@@ -395,8 +395,17 @@ function referralProgramStatus(){
   return referralProgramPromise;
 }
 function referralProgramActive(result){
-  const data=result&&result.data,reward=Number(data&&data.reward_minor);
-  return Boolean(result&&result.ok&&data&&data.enabled===true&&Number.isFinite(reward)&&reward>0);
+  const data=result&&result.data;
+  return Boolean(result&&result.ok&&data&&data.enabled===true&&Array.isArray(data.tiers)&&data.tiers.length);
+}
+function referralRewardForOrdinal(data,ordinal){
+  const n=Math.max(1,Math.trunc(Number(ordinal)||1)),tiers=Array.isArray(data?.tiers)?data.tiers:[],milestones=Array.isArray(data?.milestones)?data.milestones:[];
+  const tier=tiers.find(x=>n>=Number(x.from||1)&&(x.to==null||n<=Number(x.to)))||tiers[tiers.length-1]||{reward_minor:Number(data?.reward_minor)||0};
+  const bonus=milestones.find(x=>Number(x.ordinal)===n);
+  return Math.max(0,Number(tier?.reward_minor)||0)+Math.max(0,Number(bonus?.bonus_minor)||0);
+}
+function referralCumulativeReward(data,count){
+  let total=0;for(let n=1;n<=Math.max(0,Math.trunc(Number(count)||0));n++)total+=referralRewardForOrdinal(data,n);return total;
 }
 function bindReferralAvailability(){
   const links=[...document.querySelectorAll('a[href="/parrainage-audiotel/"],a[href^="/parrainage-audiotel/?"]')];
@@ -420,7 +429,7 @@ function bindReferralLanding(){
   if(!status&&!main)return;
   const money=(minor,currency)=>{try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:currency||"EUR"}).format(Number(minor)/100)}catch(_e){return (Number(minor)/100).toFixed(2)+" "+(currency||"EUR")}};
   referralProgramStatus().then(result=>{
-    const {ok,data}=result,reward=Number(data&&data.reward_minor),currency=String(data&&data.currency||"EUR").toUpperCase();
+    const {data}=result,currency=String(data&&data.currency||"EUR").toUpperCase(),required=Math.max(1,Number(data&&data.qualification_paid_invoices)||3);
     if(!referralProgramActive(result)){
       status.textContent="Programme de parrainage actuellement fermé. Aucun nouveau parrainage ni nouvelle récompense ne peut être créé tant qu’il reste désactivé.";
       if(main)main.textContent="Programme actuellement fermé";
@@ -429,13 +438,22 @@ function bindReferralLanding(){
       document.querySelectorAll("[data-referral-example]").forEach(el=>{el.textContent="Indisponible"});
       return;
     }
-    const one=money(reward,currency);
-    status.textContent="Programme disponible : "+one+" par filleul qualifié selon les conditions en vigueur.";
-    if(main)main.textContent=one+" par filleul qualifié";
-    const copy=document.querySelector("[data-referral-reward-copy]");if(copy)copy.textContent="Récompense actuelle : "+one+" par filleul qualifié. Chaque nouveau filleul qui remplit les conditions du programme peut ajouter cette récompense à votre total.";
-    const note=document.querySelector("[data-referral-example-note]");if(note)note.textContent="Avec la récompense actuellement affichée de "+one+" par filleul qualifié, voici des exemples simples :";
-    document.querySelectorAll("[data-referral-example]").forEach(el=>{const n=Math.max(1,Math.min(20,Number(el.getAttribute("data-referral-example"))||1));el.textContent=money(reward*n,currency)});
-  }).catch(()=>{status.textContent="La disponibilité du programme ne peut pas être confirmée pour le moment. Consultez votre espace client avant tout partage."});
+    const tiers=Array.isArray(data.tiers)?data.tiers:[],milestones=Array.isArray(data.milestones)?data.milestones:[];
+    const first=referralRewardForOrdinal(data,1);
+    status.textContent="Programme disponible. Une récompense devient acquise après "+required+" factures mensuelles distinctes réellement payées par le filleul.";
+    if(main)main.textContent=money(first,currency)+" pour le 1er filleul qualifié, bonus inclus";
+    const copy=document.querySelector("[data-referral-reward-copy]");
+    if(copy)copy.textContent="Barème fixe : "+tiers.map(t=>(t.to==null?"à partir de "+t.from:t.from+" à "+t.to)+" filleuls, "+money(t.reward_minor,currency)+" par filleul").join(" ; ")+".";
+    const note=document.querySelector("[data-referral-example-note]");
+    if(note)note.textContent="Les exemples ci-dessous incluent automatiquement les bonus fixes du 1er, 5e et 10e filleul lorsqu’ils s’appliquent.";
+    document.querySelectorAll("[data-referral-example]").forEach(el=>{
+      const n=Math.max(1,Math.min(50,Number(el.getAttribute("data-referral-example"))||1));
+      el.textContent=money(referralCumulativeReward(data,n),currency);
+    });
+    const bonusCopy=document.querySelector("[data-referral-bonuses]");
+    if(bonusCopy)bonusCopy.textContent="Bonus fixes : "+milestones.map(x=>(x.ordinal===1?"1er":x.ordinal+"e")+" filleul +"+money(x.bonus_minor,currency)).join(" ; ")+".";
+    document.querySelectorAll("[data-referral-qualification]").forEach(el=>{el.textContent=String(required)});
+  }).catch(()=>{if(status)status.textContent="La disponibilité du programme ne peut pas être confirmée pour le moment. Consultez votre espace client avant tout partage."});
 }
 function boot(){
   bindReferralAvailability();
