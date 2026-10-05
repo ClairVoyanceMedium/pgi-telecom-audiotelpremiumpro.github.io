@@ -1282,6 +1282,20 @@ export class MemoryStore{
 
   async customerProfitability(params={}){void params;return {schema_version:"audiotel-customer-profitability/1",period:"365d",since:null,currency:"EUR",currencies:["EUR"],accounting_basis:"tenant_revenue_distributions.platform_fee_ht",cash_basis:"carrier paid amount / confirmed amount",excludes:["general_platform_overhead","unconnected_subscription_cash"],tenant:null,summary:{upstream_payout_ht:0,margin_booked_ht:0,margin_collected_ht:0,client_net_payout_ht:0,unallocated_amount_ht:0,customers_with_distribution:0,top5_margin_collected_ht:0,top5_concentration_percent:0},ranking:[],trend:[]};}
 
+  async ensureAmbassadorApplication(input={}){
+    const email=String(input.email||"").trim().toLowerCase(),name=String(input.name||"").trim();
+    if(!name||!email)throw problem(400,"AMBASSADOR_APPLICATION_INVALID");
+    return {public_id:randomUUID(),tenant_public_id:randomUUID(),status:"pending",display_name:name,email,country_code:"FR",already_active:false};
+  }
+  async ambassadorProfileForTenant(tenantId){return {public_id:"00000000-0000-4000-8000-000000000099",tenant_public_id:"00000000-0000-4000-8000-000000000001",status:"active",display_name:"Ambassadeur Démo",billing_email:"demo@example.test",country_code:"FR",tenant_status:"active",tenant_id:Number(tenantId)||1};}
+  async ambassadorDashboard(tenantId){
+    return {profile:await this.ambassadorProfileForTenant(tenantId),program:{enabled:false,currency:"EUR",qualification_paid_invoices:3,tiers:[],milestones:[],policy_version:"demo"},referral:{code:null,eligible:false,eligibility_reason:"program_disabled",next_reward:null,recent:[]},payout_account:null,summary:{visits:0,prospects:0,claimed:0,rewarded:0,reward_minor:0,earned_unpaid_minor:0,paid_minor:0,earned_unpaid_count:0,paid_count:0},conversion:{visit_to_prospect_percent:0,prospect_to_claim_percent:0,claim_to_reward_percent:0},rewards:[]};
+  }
+  async ambassadorAdminState(){return {data:[]};}
+  async setAmbassadorProfileStatus(publicId,status){return {public_id:String(publicId),tenant_public_id:"00000000-0000-4000-8000-000000000001",tenant_id:1,billing_email:"demo@example.test",display_name:"Ambassadeur Démo",status:String(status),previous_status:"pending",changed:true,ambassador_only:true};}
+  async referralProgramPublicState(){return {enabled:false,currency:"EUR",qualification_paid_invoices:3,reward_minor:1000,tiers:[],milestones:[],policy_version:"demo"};}
+  async ensureCustomerReferralCode(){throw problem(409,"REFERRAL_PROGRAM_DISABLED");}
+  async customerReferralPayoutAccount(){return null;}
   async recordCustomerReferralEvent(){return {accepted:false,recorded:false,replayed:false};}
   async platformAccounting(params={}){
     const month=/^\d{4}-(0[1-9]|1[0-2])$/.test(String(params.month||""))?String(params.month):new Date().toISOString().slice(0,7);
