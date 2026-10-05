@@ -107,6 +107,8 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.match(application,/id="order-form"/);
     assert.match(application,/src="\/site\/site\.js\?v=[a-z0-9._-]+"/i);
     assert.match(application,/Continuer vers l’espace sécurisé/);
+    assert.match(application,/Demander mon numéro/);
+    assert.doesNotMatch(application,/Demander mon numéro de numéro/);
     const privacy=seoPages[seoSlugs.indexOf("confidentialite")];
     const terms=seoPages[seoSlugs.indexOf("conditions-abonnement")];
     assert.match(privacy,/Données financières/);
