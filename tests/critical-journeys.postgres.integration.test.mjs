@@ -122,7 +122,7 @@ function mockProviders(originalFetch,state){
   };
 }
 
-test("full customer journey works without a real operator and remains fail-closed for SVA activation",{skip:!run},async()=>{
+test("full customer journey stays fail-closed until legal readiness and keeps SVA activation gated",{skip:!run},async()=>{
   const bus=new EventBus();
   const store=await PostgresStore.connect(storeConfig(),bus);
   // Isolate this end-to-end journey from e-mail outbox events produced by earlier integration suites.
@@ -198,6 +198,27 @@ test("full customer journey works without a real operator and remains fail-close
     assert.equal(portal.billing_offer.amount_minor,490);
     assert.equal(portal.billing_provider.checkout_available,true);
 
+    response=await fetch(base+"/api/v1/customer/billing/checkout-session",{
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json","Idempotency-Key":randomUUID(),
+        "X-CSRF-Token":customerCookies.get("__Host-pgi_customer_csrf"),
+        Cookie:cookieHeader(customerCookies)
+      },
+      body:JSON.stringify({
+        subscription_terms_accepted:true,privacy_notice_acknowledged:true,immediate_performance_requested:true,
+        legal_version:"2026-09-26-b2b-b2c-v4"
+      })
+    });
+    assert.equal(response.status,409);
+    const blockedCheckout=await response.json();
+    assert.equal(blockedCheckout.error.code,"COMMERCIAL_LEGAL_IDENTITY_NOT_READY");
+    assert.equal(blockedCheckout.commercial_readiness.legal_operator,false);
+    assert.equal(state.stripeCheckoutBody,null);
+
+    // Continue the billing leg with the legal-operator prerequisite explicitly simulated as ready.
+    // This preserves the production fail-closed guard while still exercising Stripe checkout and webhook ingestion.
+    cfg.legalOperatorConfigured=true;
     response=await fetch(base+"/api/v1/customer/billing/checkout-session",{
       method:"POST",
       headers:{
