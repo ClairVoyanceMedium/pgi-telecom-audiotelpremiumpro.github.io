@@ -156,7 +156,7 @@ test("full customer journey works without a real operator and remains fail-close
     assert.equal(payload.commercial_sync,true);
     assert.equal(state.contact.statut_commercial_pgi,"Dossier en préparation");
     assert.equal(state.deal.dealstage,"contractsent");
-    assert.ok(state.emails.some(x=>x.subject==="Nous avons bien reçu votre demande"));
+    assert.ok(state.emails.some(x=>x.subject==="Vos accès client Audiotel Premium Pro sont prêts"));
 
     response=await fetch(base+"/api/v1/customer/auth/register",{
       method:"POST",headers:{"Content-Type":"application/json"},
