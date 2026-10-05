@@ -30,6 +30,7 @@ const referralLanding=fs.readFileSync("site/seo/parrainage-audiotel.html","utf8"
 const clientReferral=fs.readFileSync("assets/client-referral.js","utf8");
 const withoutSiret=fs.readFileSync("site/seo/audiotel-sans-siret.html","utf8");
 const businessLive=fs.readFileSync("site/seo/business-live-audiotel.html","utf8");
+const legalNotice=fs.readFileSync("site/seo/mentions-legales.html","utf8");
 
 test("public site targets both individuals and professionals without overloading the homepage",()=>{
   assert.match(html,/Particulier ou professionnel/);
@@ -264,6 +265,15 @@ test("public funnels preserve legal customer qualification and non-promissory fi
   assert.doesNotMatch(comparator,/<title>[^<]*gain potentiel/i);
   assert.match(liveFinance,/ESTIMATION EN COURS/);
   assert.match(liveFinance,/reversements validés font foi/);
+});
+
+test("legal notice is indexable, discoverable and does not invent missing legal identity",()=>{
+  assert.match(legalNotice,/name="robots" content="index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1"/);
+  assert.match(legalNotice,/"@type":"WebPage"/);
+  assert.match(sitemap,/mentions-legales/);
+  assert.match(llms,/mentions-legales/);
+  assert.match(llmsFull,/### Mentions légales/);
+  assert.match(legalNotice,/À compléter avant ouverture commerciale/);
 });
 
 test("machine-readable discovery stays factual and public-only",()=>{
