@@ -23,7 +23,7 @@ function backendConfig(){
     mode:"production",processRole:"api",authMode:"session",host:"127.0.0.1",port:0,
     sessionSecret:"s".repeat(48),adminUsername:"admin",adminPasswordHash:hashPassword("admin-password-123456"),
     ingestToken:"",bodyLimitBytes:262144,rateLimitPerMinute:10000,heavyReadRateLimitPerMinute:10000,writeRateLimitPerMinute:10000,
-    authMaxFailures:8,authFailureWindowSeconds:900,sessionTtlSeconds:3600,
+    authMaxFailures:8,authFailureWindowSeconds:900,sessionTtlSeconds:3600,customerSelfRegistrationEnabled:true,
     serviceRateTtcPerMin:.8,payoutRateHtPerMin:.46,expertCostHtPerMin:.18,reconciliationToleranceHt:.01,
     version:"customer-journey-postgres-test",releaseId:"f".repeat(40),
     emailVerificationEnabled:true,emailVerificationPepper:"p".repeat(48),emailVerificationTtlMinutes:10,
@@ -155,7 +155,7 @@ test("full customer journey works without a real operator and remains fail-close
     assert.equal(payload.accepted,true);
     assert.equal(payload.commercial_sync,true);
     assert.equal(state.contact.statut_commercial_pgi,"Dossier en préparation");
-    assert.equal(state.deal.dealstage,"appointmentscheduled");
+    assert.equal(state.deal.dealstage,"contractsent");
     assert.ok(state.emails.some(x=>x.subject==="Nous avons bien reçu votre demande"));
 
     response=await fetch(base+"/api/v1/customer/auth/register",{
