@@ -38,7 +38,7 @@ function render(data){
     '<p class="pa-note"><strong>Règle de qualification :</strong> une récompense devient acquise uniquement après 3 factures mensuelles distinctes réellement payées par le filleul. La désactivation bloque les nouveaux parrainages, sans supprimer l’historique ni les récompenses déjà acquises.</p>'+
     '<div class="pa-list"><div class="pa-head"><div><p>BARÈME FIXE</p><h2>Prime par filleul qualifié</h2></div></div>'+tiersHtml(data)+'</div>'+
     '<div class="pa-list"><div class="pa-head"><div><p>BONUS FIXES</p><h2>Paliers ambassadeur</h2></div></div>'+milestonesHtml(data)+'</div>'+
-    '<p class="pa-note">Le barème ne peut pas être modifié client par client. À partir du 25e filleul qualifié, la prime reste fixée à 20,00 € par filleul. Aucun pourcentage du chiffre d’affaires SVA n’est versé au titre du parrainage.</p>'+
+    '<p class="pa-note">Barème fixe : 20,00 € par filleul dès le 25e, sans commission sur le chiffre d’affaires SVA.</p>'+
     '<div class="pa-list"><div class="pa-head"><div><p>RÉCOMPENSES ACQUISES</p><h2>Versements à suivre</h2></div></div>'+(rows||'<p class="pa-note">Aucune récompense acquise.</p>')+'</div>';
 }
 async function load(){
