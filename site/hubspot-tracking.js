@@ -60,6 +60,7 @@ function contentGroup(pathname=location.pathname){
   if(p==="/")return "Accueil";
   if(/tarif-numero-sva|comparateur-audiotel/.test(p))return "Tarifs et comparaison";
   if(/portabilite-numero-sva|changer-operateur-audiotel|portabilite-prioritaire/.test(p))return "Portabilité";
+  if(/ambassadeur-audiotel/.test(p))return "Ambassadeur";
   if(/parrainage-audiotel/.test(p))return "Parrainage";
   if(/paiement-cb-audiotel/.test(p))return "Paiement CB";
   if(/reversement-audiotel|business-live-audiotel/.test(p))return "Reversements";
@@ -251,7 +252,7 @@ function contentIdForLink(link){
     "/guide-audiotel-sva":"guide_sva","/portabilite-numero-sva":"portability","/changer-operateur-audiotel":"switch_operator","/reversement-audiotel":"payouts","/business-live-audiotel":"business_live",
     "/numero-sva":"numero_sva","/numero-surtaxe-08":"numero_surtaxe","/audiotel-sans-siret":"without_siret","/solutions-audiotel":"solutions","/tarif-numero-sva":"pricing",
     "/audiotel-voyance":"industry_voyance","/audiotel-coaching":"industry_coaching",
-    "/audiotel-professionnels":"industry_professionals","/audiotel-independants":"industry_independents","/paiement-cb-audiotel":"card_payment","/portabilite-prioritaire":"portability_priority","/parrainage-audiotel":"referral","/monetiser-ses-appels":"monetize_calls","/combien-rapporte-numero-surtaxe":"number_revenue","/":"home"
+    "/audiotel-professionnels":"industry_professionals","/audiotel-independants":"industry_independents","/paiement-cb-audiotel":"card_payment","/portabilite-prioritaire":"portability_priority","/parrainage-audiotel":"referral","/ambassadeur-audiotel":"ambassador","/monetiser-ses-appels":"monetize_calls","/combien-rapporte-numero-surtaxe":"number_revenue","/":"home"
   };
   return known[p]||"";
 }
