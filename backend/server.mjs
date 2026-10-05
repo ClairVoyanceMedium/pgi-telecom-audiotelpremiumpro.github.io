@@ -20,6 +20,7 @@ import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStrip
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
+import {runReferralRewardPayouts} from "./src/referral-payouts.mjs";
 import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail,syncHubSpotCustomerIncident,ensureHubSpotCardPaymentSchema,syncHubSpotCardPaymentState} from "./src/hubspot-crm.mjs";
 import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
 
@@ -250,6 +251,13 @@ export function createBackend(options={}){
         authorizeCron(req,config);
         const result=typeof store.runDueBusinessLiveResets==="function"?await store.runDueBusinessLiveResets(250):{scanned:0,executed:0,failed:0,results:[]};
         return done(res,metrics,started,"business_live.reset_schedules",200,{ok:true,...result});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/internal/referral-payouts/run"){
+        authorizeCron(req,config);
+        const payout=await runReferralRewardPayouts({store,config,limit:25});
+        const delivery=await drainTransactionalEmails({store,config,limit:100});
+        return done(res,metrics,started,"referral.payouts",200,{ok:true,payout,delivery});
       }
 
       if(method==="GET"&&pathname==="/api/v1/public/referral-program"){
