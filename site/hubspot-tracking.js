@@ -395,8 +395,8 @@ function referralProgramStatus(){
   return referralProgramPromise;
 }
 function referralProgramActive(result){
-  const data=result&&result.data,reward=Number(data&&data.reward_minor);
-  return Boolean(result&&result.ok&&data&&data.enabled===true&&Number.isFinite(reward)&&reward>0);
+  const data=result&&result.data,tiers=Array.isArray(data&&data.tiers)?data.tiers:[];
+  return Boolean(result&&result.ok&&data&&data.enabled===true&&(tiers.length>0||Number(data.reward_minor)>0));
 }
 function bindReferralAvailability(){
   const links=[...document.querySelectorAll('a[href="/parrainage-audiotel/"],a[href^="/parrainage-audiotel/?"]')];
@@ -419,23 +419,37 @@ function bindReferralLanding(){
   const status=document.querySelector("[data-referral-status]"),main=document.querySelector("[data-referral-reward-main]");
   if(!status&&!main)return;
   const money=(minor,currency)=>{try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:currency||"EUR"}).format(Number(minor)/100)}catch(_e){return (Number(minor)/100).toFixed(2)+" "+(currency||"EUR")}};
+  const fallbackTiers=[{min:1,max:4,reward_minor:1000},{min:5,max:9,reward_minor:1200},{min:10,max:24,reward_minor:1500},{min:25,max:null,reward_minor:2000}];
+  const fallbackBonuses=[{rank:1,bonus_minor:500},{rank:5,bonus_minor:2000},{rank:10,bonus_minor:5000}];
+  const normalizeProgram=data=>{
+    const tiers=Array.isArray(data?.tiers)&&data.tiers.length?data.tiers:fallbackTiers;
+    const bonuses=Array.isArray(data?.milestone_bonuses)&&data.milestone_bonuses.length?data.milestone_bonuses:fallbackBonuses;
+    return {tiers,bonuses,currency:String(data?.currency||"EUR").toUpperCase()};
+  };
+  const rewardAt=(rank,program)=>{
+    const tier=program.tiers.find(x=>rank>=Number(x.min||1)&&(x.max==null||rank<=Number(x.max)))||program.tiers[program.tiers.length-1];
+    const bonus=program.bonuses.find(x=>Number(x.rank)===rank);
+    return Number(tier?.reward_minor||0)+Number(bonus?.bonus_minor||0);
+  };
+  const cumulative=(count,program)=>{let total=0;for(let rank=1;rank<=count;rank++)total+=rewardAt(rank,program);return total};
   referralProgramStatus().then(result=>{
-    const {ok,data}=result,reward=Number(data&&data.reward_minor),currency=String(data&&data.currency||"EUR").toUpperCase();
-    if(!referralProgramActive(result)){
-      status.textContent="Programme de parrainage actuellement fermé. Aucun nouveau parrainage ni nouvelle récompense ne peut être créé tant qu’il reste désactivé.";
-      if(main)main.textContent="Programme actuellement fermé";
-      const copy=document.querySelector("[data-referral-reward-copy]");if(copy)copy.textContent="Aucune nouvelle récompense n’est proposée tant que le programme est désactivé. Les récompenses déjà acquises restent consultables dans votre espace client.";
-      const note=document.querySelector("[data-referral-example-note]");if(note)note.textContent="Les exemples de récompense seront affichés automatiquement dès la réactivation du programme.";
-      document.querySelectorAll("[data-referral-example]").forEach(el=>{el.textContent="Indisponible"});
-      return;
-    }
-    const one=money(reward,currency);
-    status.textContent="Programme disponible : "+one+" par filleul qualifié selon les conditions en vigueur.";
-    if(main)main.textContent=one+" par filleul qualifié";
-    const copy=document.querySelector("[data-referral-reward-copy]");if(copy)copy.textContent="Récompense actuelle : "+one+" par filleul qualifié. Chaque nouveau filleul qui remplit les conditions du programme peut ajouter cette récompense à votre total.";
-    const note=document.querySelector("[data-referral-example-note]");if(note)note.textContent="Avec la récompense actuellement affichée de "+one+" par filleul qualifié, voici des exemples simples :";
-    document.querySelectorAll("[data-referral-example]").forEach(el=>{const n=Math.max(1,Math.min(20,Number(el.getAttribute("data-referral-example"))||1));el.textContent=money(reward*n,currency)});
-  }).catch(()=>{status.textContent="La disponibilité du programme ne peut pas être confirmée pour le moment. Consultez votre espace client avant tout partage."});
+    const {data}=result,program=normalizeProgram(data);
+    const active=referralProgramActive(result);
+    if(status)status.textContent=active
+      ?"Programme Ambassadeur actif. Barème fixe et qualification après 3 mensualités réellement encaissées par filleul."
+      :"Programme Ambassadeur actuellement suspendu. Le barème reste affiché à titre contractuel, mais aucun nouveau parrainage ne peut être créé pendant la suspension.";
+    if(main)main.textContent="10 € à 20 € par filleul qualifié, plus bonus de palier";
+    const copy=document.querySelector("[data-referral-reward-copy]");
+    if(copy)copy.textContent="Barème fixe : 10 € du 1er au 4e filleul qualifié, 12 € du 5e au 9e, 15 € du 10e au 24e, puis 20 € à partir du 25e. Bonus : +5 € au 1er, +20 € au 5e et +50 € au 10e.";
+    const note=document.querySelector("[data-referral-example-note]");
+    if(note)note.textContent="Exemples cumulés avec le barème fixe, bonus de palier inclus :";
+    document.querySelectorAll("[data-referral-example]").forEach(el=>{
+      const n=Math.max(1,Math.min(100,Number(el.getAttribute("data-referral-example"))||1));
+      el.textContent=money(cumulative(n,program),program.currency);
+    });
+  }).catch(()=>{
+    if(status)status.textContent="Le statut d’activation ne peut pas être confirmé pour le moment. Le barème fixe reste consultable, mais vérifiez votre espace client avant tout nouveau partage.";
+  });
 }
 function boot(){
   bindReferralAvailability();
