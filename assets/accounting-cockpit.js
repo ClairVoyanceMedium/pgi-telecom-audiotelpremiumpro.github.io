@@ -30,14 +30,16 @@ function selectedCards(d){
     '<article class="acc-kpi"><span>Marge SVA comptabilisée HT</span><strong>'+esc(money(s.sva_margin_booked_ht,c))+'</strong><small>Montant commercial attribué à PGI sur les répartitions</small></article>'+
     '<article class="acc-kpi"><span>Reversements clients payés HT</span><strong>'+esc(money(s.client_payout_paid_ht,c))+'</strong><small>'+integer(s.client_payout_paid_count)+' règlement(s) client(s)</small></article>'+
     '<article class="acc-kpi"><span>Primes parrainage acquises</span><strong>'+esc(moneyMinor(s.referral_rewards_earned_minor,c))+'</strong><small>'+integer(s.referral_rewards_earned_count)+' récompense(s) qualifiée(s)</small></article>'+
-    '<article class="acc-kpi"><span>Primes parrainage versées</span><strong>'+esc(moneyMinor(s.referral_rewards_paid_minor,c))+'</strong><small>'+integer(s.referral_rewards_paid_count)+' versement(s) enregistré(s)</small></article>'+
+    '<article class="acc-kpi"><span>Primes parrainage versées</span><strong>'+esc(moneyMinor(s.referral_rewards_paid_minor,c))+'</strong><small>'+integer(s.referral_rewards_paid_count)+' versement(s) confirmé(s)</small></article>'+
   '</div>';
 }
 function balances(d){
   const b=d.current_balances||{},c=d.currency||"EUR";
   return '<section class="acc-section"><div class="acc-section-head"><div><p class="panel-kicker">À TRAITER</p><h3>Encours actuels</h3></div><span class="acc-status">Situation au '+esc(new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeStyle:"short"}).format(new Date(d.generated_at)))+'</span></div>'+
     '<div class="acc-balance-grid">'+
-      '<div class="acc-balance"><span>Primes parrainage à verser</span><strong>'+esc(moneyMinor(b.referral_rewards_payable_minor,c))+'</strong><small>'+integer(b.referral_rewards_payable_count)+' prime(s)</small></div>'+
+      '<div class="acc-balance"><span>Primes parrainage à verser automatiquement</span><strong>'+esc(moneyMinor(b.referral_rewards_payable_minor,c))+'</strong><small>'+integer(b.referral_rewards_payable_count)+' prime(s) encore dues</small></div>'+
+      '<div class="acc-balance"><span>Versements parrainage en cours</span><strong>'+esc(moneyMinor(b.referral_rewards_processing_minor,c))+'</strong><small>'+integer(b.referral_rewards_processing_count)+' transfert(s) Stripe en cours</small></div>'+
+      '<div class="acc-balance"><span>Parrainage bloqué côté bénéficiaire</span><strong>'+esc(moneyMinor(b.referral_rewards_blocked_minor,c))+'</strong><small>'+integer(b.referral_rewards_blocked_count)+' prime(s) restant dues</small></div>'+
       '<div class="acc-balance"><span>Reversements clients à payer HT</span><strong>'+esc(money(b.client_payout_payable_ht,c))+'</strong><small>'+integer(b.client_payout_payable_count)+' ligne(s)</small></div>'+
       '<div class="acc-balance"><span>Reversements clients bloqués HT</span><strong>'+esc(money(b.client_payout_blocked_ht,c))+'</strong><small>'+integer(b.client_payout_blocked_count)+' ligne(s) sous contrôle</small></div>'+
       '<div class="acc-balance"><span>Créances opérateurs HT</span><strong>'+esc(money(b.carrier_receivable_ht,c))+'</strong><small>'+integer(b.carrier_receivable_count)+' règlement(s) incomplet(s)</small></div>'+
