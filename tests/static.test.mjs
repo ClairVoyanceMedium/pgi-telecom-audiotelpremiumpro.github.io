@@ -8,6 +8,7 @@ const clientPortal=read("client.html");
 const clientPortalApi=read("assets/client-portal-api.js");
 const clientReferral=read("assets/client-referral.js");
 const referralAdmin=read("assets/referral-admin.js");
+const referralAdminView=read("assets/referral-admin-view.js");
 const clientPortalJs=read("assets/client-portal.js");
 const clientBilling=read("assets/client-billing.js");
 const customerEmailVerification=read("assets/customer-email-verification.js");
