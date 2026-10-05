@@ -68,6 +68,8 @@ test("le moteur produit balance, grand livre, TVA, banque et clôtures",()=>{
   assert.match(service,/ACCOUNTING_PERIOD_REOPEN_REASON_REQUIRED/);
   assert.match(service,/fiscalBounds/);
   assert.match(service,/fiscalYearForDate/);
+  assert.match(service,/createHash\("sha256"\)/);
+  assert.doesNotMatch(service,/md5\(/);
 });
 
 test("la validation est équilibrée, immuable et numérotée par exercice",()=>{
@@ -101,6 +103,12 @@ test("le FEC reprend exactement les 18 champs réglementaires dans l ordre",()=>
   }
   assert.match(service,/FEC_FIELDS\.join\("\\t"\)/);
   assert.match(service,/String\(settings\.siren\)\+"FEC"\+date8\(closeDate\)\+"\.txt"/);
+  assert.match(service,/ORDER BY e\.validated_at,e\.entry_number,l\.line_no/);
+  assert.match(service,/ACCOUNTING_FEC_ENTRY_SEQUENCE_INVALID/);
+  assert.match(service,/ACCOUNTING_FEC_ROW_INVALID/);
+  assert.match(service,/ACCOUNTING_FEC_FOREIGN_CURRENCY_INVALID/);
+  assert.match(service,/createHash\("sha256"\)\.update\(content,"utf8"\)\.digest\("hex"\)/);
+  assert.match(service,/sha256_source:"fec-content"/);
   assert.match(service,/field_count:FEC_FIELDS\.length/);
   for(const blocker of [
     "LEGAL_NAME_MISSING","SIREN_MISSING","VAT_REGIME_UNCONFIGURED","FEC_NOT_ENABLED",
