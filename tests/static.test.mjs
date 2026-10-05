@@ -67,6 +67,7 @@ test("le parrainage client reste serveur, optionnel et conditionné au paiement 
   assert.match(referralAdmin,/updateReferralProgram/);
   assert.match(referralAdmin,/settleReferralReward/);
   assert.ok(buildStatic.includes('"assets/client-referral.js"'));
+  assert.ok(buildStatic.includes('"assets/client-referral-payout.js"'));
   assert.doesNotMatch(sw,/client-referral\.js/);
 });
 
