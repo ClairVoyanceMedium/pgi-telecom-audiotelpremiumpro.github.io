@@ -294,7 +294,7 @@ test("full customer journey stays fail-closed until legal readiness and keeps SV
     assert.ok(subscriptionDeliveries.some(x=>x.template_key==="subscription_created"&&["accepted","sent","delivered","clicked"].includes(String(x.state))),
       "subscription_created delivery missing: "+JSON.stringify(subscriptionDeliveries));
     const emailSubjects=state.emails.map(x=>x.subject);
-    assert.ok(emailSubjects.includes("Votre demande d’ouverture a bien été reçue"),JSON.stringify(emailSubjects));
+    assert.ok(emailSubjects.includes("Votre compte Audiotel Premium Pro est activé"),JSON.stringify(emailSubjects));
     assert.ok(emailSubjects.includes("Abonnement Audiotel Premium Pro créé"),JSON.stringify(emailSubjects));
 
     const policy=await store.operationalPolicyEvaluation({intent:"activate_number",tenant_public_id:tenantPublicId});
