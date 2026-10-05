@@ -404,7 +404,13 @@ function bindReferralAvailability(){
   referralProgramStatus().then(result=>{
     if(referralProgramActive(result))return;
     links.forEach(link=>{
-      const block=link.closest(".revenue-quick-tab,.solution-hub-card");
+      const quickTab=link.closest(".revenue-quick-tab");
+      if(quickTab){
+        quickTab.hidden=false;
+        quickTab.removeAttribute("aria-hidden");
+        return;
+      }
+      const block=link.closest(".solution-hub-card");
       if(block)block.remove();else link.hidden=true;
     });
   }).catch(()=>{});
