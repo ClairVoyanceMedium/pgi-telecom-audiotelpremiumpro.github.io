@@ -463,6 +463,41 @@ export function buildTransactionalMessage(config,templateKey,data={}){
       paragraphs:["Un reversement issu du trafic SVA a franchi les contrôles nécessaires et est maintenant indiqué comme disponible dans votre espace client.","Le statut affiché dans votre espace reste la référence pour le suivi du règlement."],
       cta:{label:"Consulter mes reversements",url:portalUrl}
     },
+    referral_claimed:{
+      subject:"Un nouveau filleul est enregistré sur votre parrainage",
+      title:"Nouveau parrainage enregistré",
+      lead:greeting,
+      paragraphs:["Un nouveau filleul a utilisé votre lien de parrainage.","La récompense devient acquise après "+Number(data.required_count||3)+" mensualités Audiotel Premium Pro réellement encaissées. Vous pouvez suivre sa progression depuis votre espace client."],
+      cta:{label:"Suivre mes parrainages",url:portalUrl}
+    },
+    referral_progress:{
+      subject:"Votre filleul progresse vers sa validation",
+      title:"Progression du parrainage",
+      lead:greeting,
+      paragraphs:["Un paiement mensuel supplémentaire de votre filleul a été confirmé.",safeDetail("Mensualités encaissées",Number(data.paid_count||0)+" / "+Number(data.required_count||3)),Number(data.remaining_count||0)>0?"Il reste "+Number(data.remaining_count||0)+" mensualité(s) encaissée(s) avant validation de cette récompense.":"Les conditions de validation sont désormais remplies."].filter(Boolean),
+      cta:{label:"Voir ma progression",url:portalUrl}
+    },
+    referral_reward_earned:{
+      subject:"Votre récompense de parrainage est acquise",
+      title:"Récompense acquise",
+      lead:greeting,
+      paragraphs:[safeDetail("Filleul qualifié n°",data.qualified_rank),safeDetail("Prime de base",data.base_reward_display),Number(data.bonus_display?.replace(/[^0-9]/g,"")||0)>0?safeDetail("Bonus de palier",data.bonus_display):"",safeDetail("Récompense totale",data.reward_display),"La récompense est maintenant inscrite dans votre suivi. Son règlement reste traçable dans votre espace client."].filter(Boolean),
+      cta:{label:"Consulter mes récompenses",url:portalUrl}
+    },
+    referral_ambassador:{
+      subject:"Vous avez atteint le statut Ambassadeur Audiotel Premium Pro",
+      title:"Statut Ambassadeur atteint",
+      lead:greeting,
+      paragraphs:["Votre 25e filleul qualifié vient d’être validé.","À partir de maintenant, chaque nouveau filleul qualifié ouvre droit à une prime fixe de 20 € selon les règles du programme. Ce montant est permanent et n’est pas négocié au cas par cas.",safeDetail("Récompense de ce filleul",data.reward_display)],
+      cta:{label:"Voir mon espace Ambassadeur",url:portalUrl}
+    },
+    referral_monthly_digest:{
+      subject:"Votre bilan mensuel de parrainage Audiotel Premium Pro",
+      title:"Bilan mensuel de votre parrainage",
+      lead:greeting,
+      paragraphs:[safeDetail("Mois",data.month),safeDetail("Nouveaux parrainages",data.claimed_month),safeDetail("Filleuls validés ce mois",data.rewarded_month),safeDetail("Récompenses acquises ce mois",data.reward_month_display),safeDetail("Filleuls validés au total",data.cumulative_rewarded),safeDetail("Récompenses acquises au total",data.earned_total_display),safeDetail("Déjà réglé",data.paid_total_display),safeDetail("À régler",data.outstanding_display),data.ambassador?"Votre barème Ambassadeur reste fixé à 20 € par nouveau filleul qualifié.":safeDetail("Prochain rang",data.next_rank+" : "+data.next_reward_display)].filter(Boolean),
+      cta:{label:"Ouvrir mon suivi de parrainage",url:portalUrl}
+    },
     portability_received:{
       subject:"Votre demande de portabilité a été reçue",
       title:"Demande de portabilité enregistrée",
