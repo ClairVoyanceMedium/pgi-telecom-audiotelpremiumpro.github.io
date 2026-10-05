@@ -15,7 +15,7 @@ import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebA
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData,scopeCustomerAnnualProgressData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
 import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,createStripePortabilityPriorityCheckout,verifyStripeWebhook,normalizeStripePortabilityPriorityEvent,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
-import {STRIPE_CONNECT_APPLICATION_FEE_BPS,stripeConnectState,createStripeConnectedAccount,retrieveStripeConnectedAccount,normalizeStripeConnectedAccount,createStripeConnectOnboardingLink,createStripeCardCheckout,retrieveStripeCardCheckout,normalizeStripeConnectPaymentEvent,hashStripeEventPayload} from "./src/stripe-connect.mjs";
+import {STRIPE_CONNECT_APPLICATION_FEE_BPS,stripeConnectState,createStripeConnectedAccount,createStripeReferralRecipientAccount,retrieveStripeConnectedAccount,normalizeStripeConnectedAccount,stripeTransferCapabilityStatus,ensureStripeMerchantCapability,ensureStripeTransferCapability,createStripeConnectOnboardingLink,createStripeReferralTransfer,createStripeCardCheckout,retrieveStripeCardCheckout,normalizeStripeConnectPaymentEvent,hashStripeEventPayload} from "./src/stripe-connect.mjs";
 import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStripe,buildGa4RefundFromStripe,sendGa4Measurement} from "./src/ga4-measurement.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
@@ -250,6 +250,12 @@ export function createBackend(options={}){
         authorizeCron(req,config);
         const result=typeof store.runDueBusinessLiveResets==="function"?await store.runDueBusinessLiveResets(250):{scanned:0,executed:0,failed:0,results:[]};
         return done(res,metrics,started,"business_live.reset_schedules",200,{ok:true,...result});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/internal/referral-payouts/run"){
+        authorizeCron(req,config);
+        const result=await processAutomaticReferralPayouts({store,config,limit:25});
+        return done(res,metrics,started,"referral.auto_payouts",200,{ok:true,...result});
       }
 
       if(method==="GET"&&pathname==="/api/v1/public/referral-program"){
@@ -928,12 +934,14 @@ export function createBackend(options={}){
             application_fee_bps:STRIPE_CONNECT_APPLICATION_FEE_BPS,
             metadata:{source:"customer_card_payment_activation"}
           });
-        }else{
-          try{
-            const remote=await retrieveStripeConnectedAccount(config,local.provider_account_reference);
-            local=await store.syncCustomerCardPaymentAccount(context.tenant_id,normalizeStripeConnectedAccount(remote));
-          }catch(_error){}
         }
+        let remote=await retrieveStripeConnectedAccount(config,local.provider_account_reference);
+        remote=await ensureStripeMerchantCapability(config,local.provider_account_reference,{
+          account:remote,
+          idempotency_key:"connect-merchant/"+String(billing.tenant?.id||context.tenant_id)
+        });
+        remote=await retrieveStripeConnectedAccount(config,local.provider_account_reference);
+        local=await store.syncCustomerCardPaymentAccount(context.tenant_id,normalizeStripeConnectedAccount(remote));
         const link=await createStripeConnectOnboardingLink(config,local.provider_account_reference,{idempotency_key:idempotencyKey});
         let crm_sync=false;
         try{
@@ -2720,6 +2728,121 @@ async function syncHubSpotTenantLifecycle(store,tenantPublicId,commercialStatus,
 function logHubSpotSyncFailure(stage,error){
   process.stderr.write(JSON.stringify({level:"warn",event:"hubspot_crm_sync_failed",stage:String(stage||"lead"),code:String(error?.code||"HUBSPOT_SUBMISSION_FAILED"),status:Number(error?.status)||null})+"\\n");
 }
+async function processAutomaticReferralPayouts({store,config,limit=25}={}){
+  if(typeof store?.referralRewardsForAutomaticPayout!=="function"||typeof store?.recordReferralAutomaticPayoutState!=="function"){
+    return {scanned:0,paid:0,awaiting_verification:0,failed:0,skipped:"store_unavailable"};
+  }
+  const provider=stripeConnectState(config);
+  if(!provider.api_configured)return {scanned:0,paid:0,awaiting_verification:0,failed:0,skipped:"stripe_api_unavailable"};
+  const rewards=await store.referralRewardsForAutomaticPayout({limit});
+  let paid=0,awaiting=0,failed=0,accountsCreated=0;
+  const results=[];
+  for(const reward of rewards){
+    const attemptedAt=new Date().toISOString();
+    try{
+      let accountRef=String(reward.provider_account_reference||"").trim();
+      if(!accountRef){
+        const account=await createStripeReferralRecipientAccount(config,{
+          email:reward.billing_email,
+          country_code:reward.country_code||"FR",
+          idempotency_key:"referral-recipient/"+String(reward.tenant_public_id||reward.tenant_id)
+        });
+        const local=await store.upsertCustomerCardPaymentAccount(reward.tenant_id,{
+          ...normalizeStripeConnectedAccount(account),
+          application_fee_bps:STRIPE_CONNECT_APPLICATION_FEE_BPS,
+          metadata:{source:"referral_auto_payout_recipient"}
+        });
+        accountRef=String(local.provider_account_reference||account.id||"");
+        accountsCreated++;
+      }
+      let remote=await retrieveStripeConnectedAccount(config,accountRef);
+      remote=await ensureStripeTransferCapability(config,accountRef,{
+        account:remote,
+        idempotency_key:"referral-recipient-capability/"+String(reward.tenant_public_id||reward.tenant_id)
+      });
+      remote=await retrieveStripeConnectedAccount(config,accountRef);
+      const normalized=normalizeStripeConnectedAccount(remote);
+      await store.syncCustomerCardPaymentAccount(reward.tenant_id,normalized).catch(()=>null);
+      const capabilityStatus=stripeTransferCapabilityStatus(remote);
+      if(capabilityStatus!=="active"){
+        const previous=reward.metadata?.automatic_payout||{};
+        const previousNotice=Date.parse(String(previous.onboarding_notified_at||""));
+        const shouldNotify=!Number.isFinite(previousNotice)||Date.now()-previousNotice>=24*60*60*1000;
+        let notifiedAt=null;
+        if(shouldNotify&&config.transactionalEmailEnabled&&config.resendApiKey&&reward.billing_email){
+          const link=await createStripeConnectOnboardingLink(config,accountRef,{
+            idempotency_key:"referral-onboarding/"+String(reward.public_id)+"/"+new Date().toISOString().slice(0,10)
+          });
+          await sendTransactionalEmail(config,{
+            to:reward.billing_email,
+            name:reward.display_name||reward.billing_email,
+            senderRole:"notifications",
+            templateKey:"referral_payout_setup",
+            data:{name:reward.display_name||reward.billing_email,locale:reward.preferred_locale,action_url:link.url},
+            idempotencyKey:"referral-payout-setup/"+String(reward.public_id)+"/"+new Date().toISOString().slice(0,10),
+            internalEventId:"referral-payout-setup/"+String(reward.public_id)
+          });
+          notifiedAt=new Date().toISOString();
+        }
+        await store.recordReferralAutomaticPayoutState(reward.id,{
+          status:"awaiting_verification",
+          provider:"stripe",
+          provider_account_reference:accountRef,
+          capability_status:capabilityStatus||"pending",
+          last_attempt_at:attemptedAt,
+          ...(notifiedAt?{onboarding_notified_at:notifiedAt}:{})
+        });
+        awaiting++;
+        results.push({reward_public_id:reward.public_id,status:"awaiting_verification",capability_status:capabilityStatus||"pending"});
+        continue;
+      }
+      const transfer=await createStripeReferralTransfer(config,{
+        connected_account:accountRef,
+        amount_minor:reward.amount_minor,
+        currency:reward.currency,
+        reward_public_id:reward.public_id,
+        tenant_public_id:reward.tenant_public_id,
+        idempotency_key:"referral-reward/"+String(reward.public_id)
+      });
+      const settled=await store.settleCustomerReferralReward(reward.id,transfer.id,{});
+      await store.recordReferralAutomaticPayoutState(reward.id,{
+        status:"paid",
+        provider:"stripe",
+        provider_account_reference:accountRef,
+        provider_transfer_reference:transfer.id,
+        capability_status:"active",
+        transferred_at:settled.paid_at||new Date().toISOString(),
+        last_attempt_at:attemptedAt,
+        last_error:null
+      });
+      paid++;
+      results.push({reward_public_id:reward.public_id,status:"paid",provider_transfer_reference:transfer.id});
+      if(config.transactionalEmailEnabled&&config.resendApiKey&&reward.billing_email){
+        try{
+          const amount=new Intl.NumberFormat("fr-FR",{style:"currency",currency:String(reward.currency||"EUR")}).format(Number(reward.amount_minor||0)/100);
+          await sendTransactionalEmail(config,{
+            to:reward.billing_email,
+            name:reward.display_name||reward.billing_email,
+            senderRole:"notifications",
+            templateKey:"referral_payout_paid",
+            data:{name:reward.display_name||reward.billing_email,locale:reward.preferred_locale,amount,transfer_reference:transfer.id},
+            idempotencyKey:"referral-payout-paid/"+String(reward.public_id),
+            internalEventId:"referral-payout-paid/"+String(reward.public_id)
+          });
+        }catch(error){logSecurityEmailFailure("referral_payout_paid",error);}
+      }
+    }catch(error){
+      failed++;
+      const code=String(error?.code||"REFERRAL_AUTOMATIC_PAYOUT_FAILED").slice(0,120);
+      try{
+        await store.recordReferralAutomaticPayoutState(reward.id,{status:"retry_pending",last_attempt_at:attemptedAt,last_error:code});
+      }catch{}
+      results.push({reward_public_id:reward.public_id,status:"retry_pending",error:code});
+    }
+  }
+  return {scanned:rewards.length,paid,awaiting_verification:awaiting,failed,accounts_created:accountsCreated,results};
+}
+
 function logSecurityEmailFailure(template,error){
   process.stderr.write(JSON.stringify({level:"warn",event:"security_email_send_failed",template:String(template||"security"),code:String(error?.code||"EMAIL_SEND_FAILED")})+"\n");
 }
