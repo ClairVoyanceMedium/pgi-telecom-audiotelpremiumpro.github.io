@@ -15,7 +15,8 @@ import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebA
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData,scopeCustomerAnnualProgressData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
 import {stripeProviderReadiness,invalidateStripeProviderReadiness,createStripeCheckout,createStripePortalSession,createStripePortabilityPriorityCheckout,verifyStripeWebhook,normalizeStripePortabilityPriorityEvent,normalizeStripeBillingEvent,normalizeStripeRefundEvent} from "./src/stripe-billing.mjs";
-import {STRIPE_CONNECT_APPLICATION_FEE_BPS,stripeConnectState,createStripeConnectedAccount,retrieveStripeConnectedAccount,normalizeStripeConnectedAccount,createStripeConnectOnboardingLink,createStripeCardCheckout,retrieveStripeCardCheckout,normalizeStripeConnectPaymentEvent,hashStripeEventPayload} from "./src/stripe-connect.mjs";
+import {STRIPE_CONNECT_APPLICATION_FEE_BPS,stripeConnectState,createStripeConnectedAccount,retrieveStripeConnectedAccount,normalizeStripeConnectedAccount,createStripeConnectOnboardingLink,createStripeCardCheckout,retrieveStripeCardCheckout,normalizeStripeConnectPaymentEvent,hashStripeEventPayload,createStripeReferralRecipientAccount,retrieveStripeReferralRecipientAccount,normalizeStripeReferralRecipientAccount,createStripeReferralOnboardingLink} from "./src/stripe-connect.mjs";
+import {runReferralAutomaticPayouts} from "./src/referral-payout-automation.mjs";
 import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStripe,buildGa4RefundFromStripe,sendGa4Measurement} from "./src/ga4-measurement.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
@@ -123,7 +124,7 @@ export function createBackend(options={}){
         if(["account.updated","capability.updated"].includes(type)){
           const object=event?.data?.object||{};
           const accountId=[event.account,object.account,object.id].map(x=>String(x||"")).find(x=>/^acct_[A-Za-z0-9]+$/.test(x))||null;
-          let account_synced=false,crm_sync=false;
+          let account_synced=false,referral_payout_synced=false,crm_sync=false;
           if(accountId&&typeof store.syncCardPaymentAccountByProviderReference==="function"){
             try{
               const remote=await retrieveStripeConnectedAccount(config,accountId);
@@ -137,7 +138,14 @@ export function createBackend(options={}){
               }
             }catch(_error){}
           }
-          return done(res,metrics,started,"billing.stripe_connect_webhook",200,{received:true,type,account_synced,crm_sync});
+          if(accountId&&typeof store.syncReferralPayoutAccountByProviderReference==="function"){
+            try{
+              const remote=await retrieveStripeReferralRecipientAccount(config,accountId);
+              const synced=await store.syncReferralPayoutAccountByProviderReference(normalizeStripeReferralRecipientAccount(remote));
+              referral_payout_synced=Boolean(synced);
+            }catch(_error){}
+          }
+          return done(res,metrics,started,"billing.stripe_connect_webhook",200,{received:true,type,account_synced,referral_payout_synced,crm_sync});
         }
         const connectPayment=await normalizeStripeConnectPaymentEvent(config,event);
         if(connectPayment){
@@ -250,6 +258,14 @@ export function createBackend(options={}){
         authorizeCron(req,config);
         const result=typeof store.runDueBusinessLiveResets==="function"?await store.runDueBusinessLiveResets(250):{scanned:0,executed:0,failed:0,results:[]};
         return done(res,metrics,started,"business_live.reset_schedules",200,{ok:true,...result});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/internal/referral-payouts/run"){
+        authorizeCron(req,config);
+        const provider=stripeConnectState(config);
+        if(!config.externalBillingEnabled||provider.api_configured!==true)return done(res,metrics,started,"referral_payouts.run",503,{ok:false,error:{code:"REFERRAL_PAYOUT_PROVIDER_UNAVAILABLE"}});
+        const result=await runReferralAutomaticPayouts({store,config,limit:50});
+        return done(res,metrics,started,"referral_payouts.run",200,{ok:true,...result});
       }
 
       if(method==="GET"&&pathname==="/api/v1/public/referral-program"){
@@ -986,8 +1002,49 @@ export function createBackend(options={}){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
         requireCustomerPermission(context,"overview.read");
+        if(typeof store.customerReferralPayoutAccount==="function"){
+          const local=await store.customerReferralPayoutAccount(context.tenant_id);
+          if(local?.provider_account_reference){
+            try{
+              const remote=await retrieveStripeReferralRecipientAccount(config,local.provider_account_reference);
+              await store.syncCustomerReferralPayoutAccount(context.tenant_id,normalizeStripeReferralRecipientAccount(remote));
+            }catch(_error){}
+          }
+        }
         const overview=await store.customerReferralOverview(context.tenant_id);
         return done(res,metrics,started,"customer.referral",200,{...overview,can_manage:["owner","admin"].includes(context.customer_role)});
+      }
+
+      if(method==="POST"&&pathname==="/api/v1/customer/referral/payout-account"){
+        requireCustomerCsrf(req,customerActor,config);
+        if(!stripeConnectState(config).configured)return done(res,metrics,started,"customer.referral_payout.connect",503,{error:{code:"STRIPE_CONNECT_NOT_READY"}});
+        const idempotencyKey=String(req.headers["idempotency-key"]||"").trim();
+        if(!idempotencyKey||idempotencyKey.length>200){const e=new Error("Idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
+        const context=await store.customerSessionContext(customerActor);
+        if(!["owner","admin"].includes(context.customer_role)){const e=new Error("Owner or admin required");e.status=403;e.code="CUSTOMER_ADMIN_REQUIRED";throw e;}
+        const billing=await store.customerBillingPreparation(context.tenant_id);
+        let local=await store.customerReferralPayoutAccount(context.tenant_id);
+        if(!local){
+          const account=await createStripeReferralRecipientAccount(config,{
+            email:billing.tenant?.billing_email||context.email,
+            country_code:billing.tenant?.country_code||"FR",
+            idempotency_key:"referral-payout-account/"+String(billing.tenant?.id||context.tenant_id)
+          });
+          local=await store.upsertCustomerReferralPayoutAccount(context.tenant_id,{
+            ...normalizeStripeReferralRecipientAccount(account),
+            metadata:{source:"customer_referral_payout_activation"}
+          });
+        }else{
+          try{
+            const remote=await retrieveStripeReferralRecipientAccount(config,local.provider_account_reference);
+            local=await store.syncCustomerReferralPayoutAccount(context.tenant_id,normalizeStripeReferralRecipientAccount(remote));
+          }catch(_error){}
+        }
+        const link=await createStripeReferralOnboardingLink(config,local.provider_account_reference,{idempotency_key:idempotencyKey});
+        return done(res,metrics,started,"customer.referral_payout.connect",201,{
+          account:{status:local.status,transfers_enabled:local.transfers_enabled===true,payouts_enabled:local.payouts_enabled===true,details_submitted:local.details_submitted===true,requirements_state:local.requirements_state||null},
+          onboarding:link
+        });
       }
       if(method==="POST"&&pathname==="/api/v1/customer/referral/code"){
         requireCustomerCsrf(req,customerActor,config);
