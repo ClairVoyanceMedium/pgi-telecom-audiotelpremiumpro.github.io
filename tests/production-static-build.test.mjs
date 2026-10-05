@@ -58,8 +58,7 @@ test("production static build publishes marketing root and private cockpit",()=>
     for(const agent of ["Bingbot","OAI-SearchBot","Claude-SearchBot","PerplexityBot","Applebot"])assert.ok(robots.includes("User-agent: "+agent),agent+" missing from robots.txt");
     assert.match(robots,/Sitemap: https:\/\/audiotel-premium-pro\.com\/sitemap\.xml/);
     assert.match(sitemap,/<loc>https:\/\/audiotel-premium-pro\.com\/<\/loc>/);
-    for(const slug of seoSlugs.filter(x=>x!=="mentions-legales"))assert.match(sitemap,new RegExp("<loc>https:\\/\\/audiotel-premium-pro\\.com\\/"+slug+"\\/<\\/loc>"));
-    assert.doesNotMatch(sitemap,/mentions-legales/);
+    for(const slug of seoSlugs)assert.match(sitemap,new RegExp("<loc>https:\\/\\/audiotel-premium-pro\\.com\\/"+slug+"\\/<\\/loc>"));
     for(const forbidden of ["client.html","cockpit","backend/","docs/"])assert.ok(!sitemap.includes(forbidden));
     assert.doesNotMatch(sitemap,/<changefreq>|<priority>/);
     const reversementLastmod=execFileSync("git",["log","-1","--format=%cs","--","site/seo/reversement-audiotel.html"],{encoding:"utf8"}).trim();
@@ -73,6 +72,7 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.equal(indexNowKey,"fa0a7deb5d60bdf1260c8174ad8c71db");
     seoPages.forEach((page,index)=>{
       const slug=seoSlugs[index],legal=["mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","accord-traitement-donnees","cookies-traceurs","resilier-contrat","retractation"].includes(slug);
+      if(slug==="mentions-legales")assert.match(page,/name="robots" content="index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1"/);
       assert.match(page,new RegExp('rel="canonical" href="https:\\/\\/audiotel-premium-pro\\.com\\/'+slug+'\\/"'));
       if(!legal){assert.match(page,/"@type":"WebPage"/);if(["monetiser-ses-appels","combien-rapporte-numero-surtaxe"].includes(slug))assert.match(page,/"@type":"Article"/);else assert.match(page,/"@type":"Service"/);}
       assert.doesNotMatch(page,/__CANONICAL__|__BASE__|__LOGO__/);
