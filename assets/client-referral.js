@@ -26,25 +26,20 @@ function render(data){
   var codeBlock="";
   if(enabled&&code){
     var url=referralUrl(code);
-    codeBlock='<div class="cp-stack"><div class="cp-row"><div><strong>Votre code : '+esc(code)+'</strong><span>Votre prochain filleul qualifié peut vous rapporter '+esc(money(next&&next.total_minor||state.reward_minor,currency))+'.</span></div><span class="cp-chip ok">ACTIF</span></div><label class="cp-field"><span>Lien de parrainage</span><input id="client-referral-link" type="text" readonly value="'+esc(url)+'"></label><div class="cp-search-scopes"><button id="client-referral-copy" class="cp-ghost" type="button">Copier mon lien</button></div></div>';
+    codeBlock='<div class="cp-stack"><div class="cp-row"><div><strong>Votre code : '+esc(code)+'</strong><span>Prochaine prime: '+esc(money(next&&next.total_minor||state.reward_minor,currency))+'.</span></div><span class="cp-chip ok">ACTIF</span></div><label class="cp-field"><span>Lien de parrainage</span><input id="client-referral-link" type="text" readonly value="'+esc(url)+'"></label><div class="cp-search-scopes"><button id="client-referral-copy" class="cp-ghost" type="button">Copier mon lien</button></div></div>';
   }else if(enabled&&state.can_manage===true&&state.eligible===true){
     codeBlock='<div class="cp-search-scopes"><button id="client-referral-create" class="cp-primary" type="button">Créer mon lien de parrainage</button></div>';
   }else if(enabled){
-    codeBlock='<p class="cp-muted">Le lien sera disponible après activation de votre compte et confirmation de votre abonnement actif et payé.</p>';
+    codeBlock='<p class="cp-muted">Lien disponible après activation du compte et paiement de l’abonnement.</p>';
   }else{
-    codeBlock='<div class="cp-row"><div><strong>Programme actuellement fermé</strong><span>Aucun nouveau parrainage ne peut être créé tant que le programme reste désactivé. Votre historique et vos récompenses acquises sont conservés.</span></div><span class="cp-chip">FERMÉ</span></div>';
+    codeBlock='<div class="cp-row"><div><strong>Programme actuellement fermé</strong><span>Aucun nouveau parrainage ne peut être créé tant que le programme reste désactivé. Historique et primes acquises sont conservés.</span></div><span class="cp-chip">FERMÉ</span></div>';
   }
-  var pendingMinor=Number(summary.earned_unpaid_minor||0),paidMinor=Number(summary.paid_minor||0);
-  var payoutReady=payout&&payout.status==="active"&&payout.transfers_enabled===true&&payout.payouts_enabled===true;
-  var payoutBlock='<div class="cp-panel-head"><div><p class="cp-kicker">VERSEMENTS</p><h3>Mes primes automatiques</h3></div></div>'+
-    (payoutReady
-      ?'<div class="cp-row"><div><strong>Versements automatiques actifs</strong><span>'+esc(money(pendingMinor,currency))+' à verser · '+esc(money(paidMinor,currency))+' déjà versé. Chaque prime qualifiée est envoyée automatiquement.</span></div><span class="cp-chip ok">ACTIF</span></div>'
-      :'<div class="cp-row"><div><strong>Configurer mes versements</strong><span>Une validation unique est nécessaire pour recevoir vos primes. Vos coordonnées bancaires restent gérées par le prestataire de paiement sécurisé et ne sont jamais stockées par Audiotel Premium Pro.</span></div><span class="cp-chip">À FINALISER</span></div>'+(state.can_manage===true?'<div class="cp-search-scopes"><button id="client-referral-payout" class="cp-primary" type="button">Configurer mes versements</button></div>':''));
-  var scale=tiers.length?'<div class="cp-stack">'+tiers.map(function(t){return '<div class="cp-row"><div><strong>'+esc(tierLabel(t,currency))+'</strong><span>'+(t.to==null?'Ce montant reste fixe et non négociable à partir du 25e filleul qualifié.':'Prime automatique selon votre nombre total de filleuls qualifiés.')+'</span></div></div>';}).join("")+'</div>':"";
+  var payoutBlock=payout?.transfers_enabled&&payout?.payouts_enabled?'<div class="cp-row"><strong>Primes: versement automatique actif</strong><span class="cp-chip ok">ACTIF</span></div>':'<div class="cp-row"><strong>Versement sécurisé à configurer</strong></div><p class="cp-muted">Audiotel Premium Pro ne stocke aucune donnée bancaire.</p>'+(state.can_manage?'<button id="client-referral-payout" class="cp-primary" type="button">Configurer mes versements</button>':'');
+  var scale=tiers.length?'<div class="cp-stack">'+tiers.map(function(t){return '<div class="cp-row"><div><strong>'+esc(tierLabel(t,currency))+'</strong><span>'+(t.to==null?'Montant fixe dès le 25e filleul.':'Prime selon le nombre de filleuls qualifiés.')+'</span></div></div>';}).join("")+'</div>':"";
   var bonus=milestones.length?'<p class="cp-muted">Bonus fixes : '+milestones.map(function(x){return esc((x.ordinal===1?"1er":x.ordinal+"e")+" filleul +"+money(x.bonus_minor,currency));}).join(" · ")+'.</p>':"";
   box.innerHTML=
     '<div class="cp-panel-head"><div><p class="cp-kicker">PARRAINAGE</p><h2>Mon espace ambassadeur</h2></div><span>'+esc(String(summary.rewarded||0))+' qualifié(s)</span></div>'+
-    '<p class="cp-muted">Une récompense devient acquise après <strong>3 factures mensuelles distinctes réellement payées</strong> par le filleul. Le barème est fixe, automatique et ne porte jamais sur le chiffre d’affaires SVA.</p>'+
+    '<p class="cp-muted">Prime acquise après <strong>3 factures mensuelles distinctes payées</strong>. Barème fixe, sans commission SVA.</p>'+
     codeBlock+
     '<div class="cp-row"><div><strong>'+esc(String(summary.visits||0))+' visite(s) · '+esc(String(summary.prospects||0))+' demande(s)</strong><span>'+esc(String(summary.claimed||0))+' filleul(s) enregistré(s) · '+esc(String(summary.rewarded||0))+' qualifié(s) · '+esc(money(summary.reward_minor||0,currency))+' acquis.</span></div></div>'+
     payoutBlock+
@@ -65,18 +60,7 @@ async function createCode(){
   catch(e){var map={REFERRAL_PROGRAM_DISABLED:"Le programme de parrainage est actuellement désactivé.",REFERRAL_REFERRER_NOT_ELIGIBLE:"Le parrainage sera disponible après activation du compte et confirmation de votre abonnement actif et payé.",REFERRAL_CODE_UNAVAILABLE:"Le lien de parrainage est momentanément indisponible."};status(map[e&&e.code]||"Le lien de parrainage n'a pas pu être créé.",true);}
   finally{busy=false;if(b)b.disabled=false;}
 }
-async function configurePayout(){
-  if(busy)return;busy=true;status("Ouverture de la configuration sécurisée...");
-  var b=$("client-referral-payout");if(b)b.disabled=true;
-  try{
-    var result=await root.PGICustomerApi.configureReferralPayout(root.PGICustomerApi.newIdempotencyKey());
-    if(result&&result.onboarding&&result.onboarding.url){location.assign(result.onboarding.url);return;}
-    await refresh();status("Vos versements automatiques sont actifs.");
-  }catch(e){
-    var map={PAYOUT_PROVIDER_NOT_READY:"Le service de versement est momentanément indisponible.",STRIPE_CONNECT_NOT_CONFIGURED:"Le service de versement est momentanément indisponible.",INVALID_CONNECT_EMAIL:"Votre adresse email doit être vérifiée avant la configuration."};
-    status(map[e&&e.code]||"La configuration des versements n'a pas pu être ouverte.",true);
-  }finally{busy=false;if(b)b.disabled=false;}
-}
+async function configurePayout(){if(busy)return;busy=1;try{var r=await root.PGICustomerApi.configureReferralPayout(root.PGICustomerApi.newIdempotencyKey());if(r?.onboarding?.url)location.href=r.onboarding.url;else await refresh()}catch(_e){status("Versement indisponible.",1)}finally{busy=0}}
 async function copyLink(){
   var input=$("client-referral-link");if(!input)return;
   try{await navigator.clipboard.writeText(input.value);status("Lien copié.");}
