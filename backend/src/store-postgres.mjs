@@ -2523,16 +2523,19 @@ export class PostgresStore{
           "UPDATE tenant_admin_alerts SET state='resolved',resolved_at=now(),updated_at=now() WHERE tenant_id=$1 AND subscription_id=$2 AND alert_type='subscription_unpaid' AND state<>'resolved'",
           [tenant.id,subscriptionId]
         );
-        const paidInvoices=(await tx.unsafe(
-          "SELECT count(DISTINCT COALESCE(NULLIF(normalized_details->>'provider_invoice_reference',''),provider_event_id))::int AS paid_count"+
-          " FROM subscription_billing_events WHERE tenant_id=$1 AND event_type='invoice.paid'",
-          [tenant.id]
-        ))[0]||{paid_count:0};
-        const paidCount=Number(paidInvoices.paid_count||0);
         const referral=(await tx.unsafe(
-          "SELECT id,referrer_tenant_id,reward_currency FROM customer_referrals WHERE referred_tenant_id=$1 AND status='claimed' LIMIT 1 FOR UPDATE",
+          "SELECT id,referrer_tenant_id,reward_currency,claimed_at FROM customer_referrals WHERE referred_tenant_id=$1 AND status='claimed' LIMIT 1 FOR UPDATE",
           [tenant.id]
         ))[0]||null;
+        let paidCount=0;
+        if(referral){
+          const paidInvoices=(await tx.unsafe(
+            "SELECT count(DISTINCT COALESCE(NULLIF(normalized_details->>'provider_invoice_reference',''),provider_event_id))::int AS paid_count"+
+            " FROM subscription_billing_events WHERE tenant_id=$1 AND event_type='invoice.paid' AND event_time>=$2::timestamptz",
+            [tenant.id,referral.claimed_at]
+          ))[0]||{paid_count:0};
+          paidCount=Number(paidInvoices.paid_count||0);
+        }
         if(referral&&paidCount>=REFERRAL_PAID_MONTHS_REQUIRED){
           await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",["referral-rank:"+String(referral.referrer_tenant_id)]);
           const previous=(await tx.unsafe(
@@ -4714,7 +4717,7 @@ export class PostgresStore{
       ),
       this.sql.unsafe(
         "SELECT r.public_id::text AS public_id,r.status,r.reward_minor::bigint AS reward_minor,r.reward_currency,r.claimed_at,r.qualified_at,r.rewarded_at,r.rejected_at,"+
-        " LEAST($2::int,(SELECT count(DISTINCT COALESCE(NULLIF(e.normalized_details->>'provider_invoice_reference',''),e.provider_event_id)) FROM subscription_billing_events e WHERE e.tenant_id=r.referred_tenant_id AND e.event_type='invoice.paid'))::int AS qualified_payments"+
+        " LEAST($2::int,(SELECT count(DISTINCT COALESCE(NULLIF(e.normalized_details->>'provider_invoice_reference',''),e.provider_event_id)) FROM subscription_billing_events e WHERE e.tenant_id=r.referred_tenant_id AND e.event_type='invoice.paid' AND e.event_time>=r.claimed_at))::int AS qualified_payments"+
         " FROM customer_referrals r WHERE r.referrer_tenant_id=$1 ORDER BY r.claimed_at DESC,r.id DESC LIMIT 20",
         [id,REFERRAL_PAID_MONTHS_REQUIRED]
       )
