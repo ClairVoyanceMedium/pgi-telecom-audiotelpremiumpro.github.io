@@ -11,6 +11,7 @@ import {normalizeFreeSwitchCdr} from "./src/cdr-freeswitch.mjs";
 import {startWorkers} from "./src/workers.mjs";
 import {createPortabilityQueueHandlers} from "./src/portability-automation.mjs";
 import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability-automation.mjs";
+import {createReferralPayoutQueueHandlers} from "./src/referral-payout.mjs";
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData,scopeCustomerAnnualProgressData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
@@ -1610,7 +1611,7 @@ export function createBackend(options={}){
 
       if(method==="GET"&&pathname==="/api/v1/platform/referral-program"){
         requireRole(actor,["admin","finance","readonly"]);
-        return done(res,metrics,started,"platform.referral_program",200,await store.referralProgramAdminState());
+        return done(res,metrics,started,"platform.referral_program",200,{...(await store.referralProgramAdminState()),payout_automation_enabled:config.referralAutopayoutEnabled===true});
       }
       if(method==="POST"&&pathname==="/api/v1/platform/referral-program"){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
@@ -2094,6 +2095,7 @@ export function createBackend(options={}){
   const queueHandlers={
     ...createPortabilityQueueHandlers({store,config}),
     ...createOutboundPortabilityQueueHandlers({store,config}),
+    ...createReferralPayoutQueueHandlers({store,config}),
     ...(options.queueHandlers||{})
   };
   const workers=config.processRole==="api"
