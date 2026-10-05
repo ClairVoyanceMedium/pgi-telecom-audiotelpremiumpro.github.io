@@ -2,7 +2,7 @@ const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 const moneyMinor=(v,c="EUR")=>{try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:c,maximumFractionDigits:2}).format((Number(v)||0)/100)}catch{return ((Number(v)||0)/100).toFixed(2)+" "+c}};
 const money=(v,c="EUR")=>{try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:c,maximumFractionDigits:2}).format(Number(v)||0)}catch{return (Number(v)||0).toFixed(2)+" "+c}};
 const integer=v=>new Intl.NumberFormat("fr-FR").format(Number(v)||0);
-let root=null,current=null,month=new Date().toISOString().slice(0,7),currency="EUR",busy=false;
+let root=null,current=null,month=new Date().toISOString().slice(0,7),currency="EUR",busy=false,expertPromise=null;
 
 function apiBase(){const b=String(window.PGI_CONFIG?.apiBaseUrl||"").replace(/\/$/,"");if(!b)throw new Error("API_NOT_CONFIGURED");return b;}
 async function fetchAccounting(){
@@ -55,6 +55,10 @@ function policy(d){
     (notes.length?'<ul class="acc-note">'+notes.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul>':"")+
   '</section>';
 }
+function renderExpert(){
+  const host=root?.querySelector("[data-accounting-expert-root]");if(!host)return;
+  (expertPromise||(expertPromise=import("./accounting-expert.js"))).then(m=>m.mountExpertAccounting(host,{year:Number(month.slice(0,4))})).catch(e=>{host.innerHTML='<div class="acc-empty">Dossier expert-comptable indisponible : '+esc(e?.code||e?.message||"erreur")+'.</div>';});
+}
 function render(d){
   current=d;currency=d.currency||currency;month=d.month||month;
   const currencies=Array.isArray(d.currencies)&&d.currencies.length?d.currencies:[currency];
@@ -62,8 +66,9 @@ function render(d){
     '<div class="acc-head"><div><p class="panel-kicker">COMPTABILITÉ</p><h2>Pilotage comptable Audiotel Premium Pro</h2><p class="acc-note">Vue consolidée des encaissements, marges, reversements et primes, sans mélange artificiel des bases fiscales.</p></div>'+
     '<div class="acc-controls"><label>Mois<input type="month" data-acc-month value="'+esc(month)+'"></label><label>Devise<select data-acc-currency>'+currencies.map(x=>'<option value="'+esc(x)+'" '+(x===currency?"selected":"")+'>'+esc(x)+'</option>').join("")+'</select></label><button class="acc-btn" type="button" data-acc-refresh>Actualiser</button></div></div>'+
     selectedCards(d)+balances(d)+history(d)+policy(d)+
+    '<section class="acc-section"><div class="acc-section-head"><div><p class="panel-kicker">EXPERT-COMPTABLE</p><h3>Comptabilité générale et dossier de révision</h3></div></div><p class="acc-note">Cette couche est distincte du pilotage financier ci-dessus. Les flux sont préparés automatiquement en partie double, puis les comptes et traitements fiscaux sont validés avant qu’une écriture devienne immuable.</p><div data-accounting-expert-root></div></section>'+
   '</div>';
-  bind();
+  bind();renderExpert();
 }
 function csvCell(v){return '"'+String(v??"").replace(/"/g,'""')+'"';}
 function exportCsv(){
