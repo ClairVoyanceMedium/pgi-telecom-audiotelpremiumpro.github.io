@@ -4114,7 +4114,7 @@ export class PostgresStore{
       const invitations=await tx.unsafe(
         "SELECT i.id,i.tenant_id,i.email,i.role,i.status,i.expires_at,t.public_id,t.display_name AS tenant_name,t.status AS tenant_status,t.authorization_version,t.preferred_locale,t.timezone,k.metadata AS lead_metadata"+
         " FROM customer_tenant_invitations i JOIN tenants t ON t.id=i.tenant_id LEFT JOIN tenant_kyc_profiles k ON k.tenant_id=t.id"+
-        " WHERE i.token_hash=$1 FOR UPDATE",[String(tokenHash)]
+        " WHERE i.token_hash=$1 FOR UPDATE OF i,t",[String(tokenHash)]
       );
       const inv=invitations[0];if(!inv)throw problem(404,"INVITATION_NOT_FOUND");
       if(inv.status!=="pending")throw problem(409,"INVITATION_NOT_PENDING");
