@@ -272,7 +272,10 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/internal/business-live/reset-schedules/run"){
         authorizeCron(req,config);
         let referralSchema={ready:false,repaired:false};
-        try{referralSchema=await repairReferralSchemaIfNeeded(store);}
+        try{
+          referralSchema=await repairReferralSchemaIfNeeded(store);
+          console.log(JSON.stringify({level:"info",event:"referral_schema_repair",...referralSchema}));
+        }
         catch(error){console.error(JSON.stringify({level:"error",event:"referral_schema_repair_failed",code:String(error?.code||""),message:String(error?.message||"").slice(0,300)}));}
         const result=typeof store.runDueBusinessLiveResets==="function"?await store.runDueBusinessLiveResets(250):{scanned:0,executed:0,failed:0,results:[]};
         return done(res,metrics,started,"business_live.reset_schedules",200,{ok:true,referral_schema:referralSchema,...result});
