@@ -87,30 +87,61 @@ export function stripeConnectState(config){
 export async function createStripeConnectedAccount(config,input={}){
   const email=cleanEmail(input.email),country=cleanCountry(input.country_code);
   if(!email)throw error(400,"INVALID_CONNECT_EMAIL");
+  const merchant=input.mode!=="referral";
+  const configuration={
+    recipient:{capabilities:{stripe_balance:{stripe_transfers:{requested:true}}}}
+  };
+  if(merchant){
+    configuration.merchant={
+      capabilities:{card_payments:{requested:true}},
+      support:{url:baseUrl(config)}
+    };
+  }
   const body={
     contact_email:email,
     dashboard:"full",
     identity:{country},
-    defaults:{
+    configuration
+  };
+  if(merchant){
+    body.defaults={
       responsibilities:{fees_collector:"stripe",losses_collector:"stripe"},
       profile:{
         business_url:baseUrl(config),
         product_description:"Services de consultation et de télécommunication proposés via Audiotel Premium Pro"
       }
-    },
-    configuration:{
-      merchant:{
-        capabilities:{card_payments:{requested:true}},
-        support:{url:baseUrl(config)}
-      },
-      recipient:{
-        capabilities:{stripe_balance:{stripe_transfers:{requested:true}}}
-      }
-    }
-  };
+    };
+  }
   const account=await jsonRequest(config,"/v2/core/accounts",{method:"POST",body,idempotencyKey:input.idempotency_key,preview:true});
   if(!/^acct_[A-Za-z0-9]+$/.test(String(account?.id||"")))throw error(502,"STRIPE_CONNECT_ACCOUNT_INVALID");
   return account;
+}
+
+export async function ensureStripeConnectedAccountCapabilities(config,accountId,input={}){
+  if(!/^acct_[A-Za-z0-9]+$/.test(String(accountId||"")))throw error(400,"INVALID_CONNECT_ACCOUNT");
+  const configuration={};
+  if(input.recipient!==false){
+    configuration.recipient={capabilities:{stripe_balance:{stripe_transfers:{requested:true}}}};
+  }
+  if(input.merchant===true){
+    configuration.merchant={
+      capabilities:{card_payments:{requested:true}},
+      support:{url:baseUrl(config)}
+    };
+  }
+  const body={configuration,include:["configuration.merchant","configuration.recipient","requirements","defaults"]};
+  if(input.merchant===true){
+    body.defaults={
+      responsibilities:{fees_collector:"stripe",losses_collector:"stripe"},
+      profile:{
+        business_url:baseUrl(config),
+        product_description:"Services de consultation et de télécommunication proposés via Audiotel Premium Pro"
+      }
+    };
+  }
+  return jsonRequest(config,"/v2/core/accounts/"+encodeURIComponent(accountId),{
+    method:"POST",body,idempotencyKey:input.idempotency_key,preview:true
+  });
 }
 
 export async function retrieveStripeConnectedAccount(config,accountId){
