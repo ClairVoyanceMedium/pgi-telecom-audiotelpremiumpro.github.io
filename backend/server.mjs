@@ -2834,10 +2834,16 @@ async function processAutomaticReferralPayouts({store,config,limit=25}={}){
     }catch(error){
       failed++;
       const code=String(error?.code||"REFERRAL_AUTOMATIC_PAYOUT_FAILED").slice(0,120);
+      const setupBlocked=new Set([
+        "ACCOUNT_TOKEN_REQUIRED","ACCOUNTS_V2_ACCESS_BLOCKED","PLATFORM_REGISTRATION_REQUIRED",
+        "CROSS_BORDER_CONNECTED_ACCOUNT_CREATION_NOT_ALLOWED","ACCOUNT_CONFIGURATION_NOT_SUPPORTED",
+        "ACCOUNT_CAPABILITY_NOT_SUPPORTED","COUNTRY_UNSUPPORTED"
+      ]).has(code);
+      const failureStatus=setupBlocked?"setup_blocked":"retry_pending";
       try{
-        await store.recordReferralAutomaticPayoutState(reward.id,{status:"retry_pending",last_attempt_at:attemptedAt,last_error:code});
+        await store.recordReferralAutomaticPayoutState(reward.id,{status:failureStatus,last_attempt_at:attemptedAt,last_error:code});
       }catch{}
-      results.push({reward_public_id:reward.public_id,status:"retry_pending",error:code});
+      results.push({reward_public_id:reward.public_id,status:failureStatus,error:code});
     }
   }
   return {scanned:rewards.length,paid,awaiting_verification:awaiting,failed,accounts_created:accountsCreated,results};
