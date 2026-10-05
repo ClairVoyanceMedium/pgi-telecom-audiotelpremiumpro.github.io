@@ -807,7 +807,7 @@ export function createBackend(options={}){
         requireCustomerPermission(context,"finance.read");
         const billing=await store.customerBillingPreparation(context.tenant_id);
         const withdrawalReady=config.onlineWithdrawalReady===true&&typeof store.customerWithdrawalFeatureReady==="function"&&await store.customerWithdrawalFeatureReady();
-        return done(res,metrics,started,"customer.billing.status",200,{billing_provider:await billingProviderStatus(config),b2c_commercial_ready:config.b2cCommercialReady===true&&withdrawalReady,b2c_readiness:{legal_operator:config.legalOperatorConfigured===true,consumer_mediator:config.consumerMediatorConfigured===true,online_withdrawal:withdrawalReady},...billing});
+        return done(res,metrics,started,"customer.billing.status",200,{billing_provider:await billingProviderStatus(config),commercial_legal_ready:config.legalOperatorConfigured===true,b2c_commercial_ready:config.b2cCommercialReady===true&&withdrawalReady,b2c_readiness:{legal_operator:config.legalOperatorConfigured===true,consumer_mediator:config.consumerMediatorConfigured===true,online_withdrawal:withdrawalReady},...billing});
       }
       if(method==="POST"&&pathname==="/api/v1/customer/billing/checkout-session"){
         requireCustomerCsrf(req,customerActor,config);
@@ -820,12 +820,11 @@ export function createBackend(options={}){
         const context=await store.customerSessionContext(customerActor);
         requireCustomerPermission(context,"billing.manage");
         const billing=await store.customerBillingPreparation(context.tenant_id);
-        const provider=await billingProviderStatus(config);
-        const individual=String(billing.tenant?.customer_type||"business")==="individual";
-        const withdrawalReady=!individual||(config.onlineWithdrawalReady===true&&typeof store.customerWithdrawalFeatureReady==="function"&&await store.customerWithdrawalFeatureReady());
-        if(individual&&(config.b2cCommercialReady!==true||!withdrawalReady)){
-          return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:"B2C_COMMERCIAL_NOT_READY",message:"Consumer checkout is temporarily unavailable until mandatory B2C legal prerequisites and the online withdrawal function are operational."},billing_provider:provider,b2c_readiness:{legal_operator:config.legalOperatorConfigured===true,consumer_mediator:config.consumerMediatorConfigured===true,online_withdrawal:withdrawalReady}});
+        const commercialBlock=await customerCommercialReadinessBlock(config,store,billing);
+        if(commercialBlock){
+          return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:commercialBlock.code,message:commercialBlock.message},commercial_readiness:commercialBlock.readiness,b2c_readiness:commercialBlock.individual?commercialBlock.readiness:undefined});
         }
+        const provider=await billingProviderStatus(config);
         if(!billing.offer)return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:"NO_ACTIVE_BILLING_OFFER"},billing_provider:provider});
         if(["active","past_due"].includes(String(billing.subscription?.status||"")))return done(res,metrics,started,"customer.billing.checkout",409,{error:{code:"SUBSCRIPTION_ALREADY_EXISTS"},billing_provider:provider});
         if(!provider.checkout_available){const code=provider.connection_state==="account_activation_required"?"PAYMENT_ACCOUNT_NOT_READY":provider.connection_state==="account_status_unavailable"?"PAYMENT_PROVIDER_UNAVAILABLE":"PAYMENT_PROVIDER_NOT_CONNECTED";return done(res,metrics,started,"customer.billing.checkout",503,{error:{code},billing_provider:provider,checkout:{offer:billing.offer,prefill:billing.checkout_prefill,return_paths:billing.return_paths}});}
@@ -898,6 +897,8 @@ export function createBackend(options={}){
         const context=await store.customerSessionContext(customerActor);
         requireCustomerPermission(context,"billing.manage");
         const billing=await store.customerBillingPreparation(context.tenant_id);
+        const commercialBlock=await customerCommercialReadinessBlock(config,store,billing);
+        if(commercialBlock)return done(res,metrics,started,"customer.card_payments.connect",409,{error:{code:commercialBlock.code,message:commercialBlock.message},commercial_readiness:commercialBlock.readiness,b2c_readiness:commercialBlock.individual?commercialBlock.readiness:undefined});
         let local=await store.customerCardPaymentAccount(context.tenant_id);
         if(!local){
           const account=await createStripeConnectedAccount(config,{
@@ -931,6 +932,9 @@ export function createBackend(options={}){
         if(!idempotencyKey||idempotencyKey.length>200){const e=new Error("Idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
         const context=await store.customerSessionContext(customerActor);
         requireCustomerPermission(context,"billing.manage");
+        const billing=await store.customerBillingPreparation(context.tenant_id);
+        const commercialBlock=await customerCommercialReadinessBlock(config,store,billing);
+        if(commercialBlock)return done(res,metrics,started,"customer.card_payments.checkout",409,{error:{code:commercialBlock.code,message:commercialBlock.message},commercial_readiness:commercialBlock.readiness,b2c_readiness:commercialBlock.individual?commercialBlock.readiness:undefined});
         const body=await readJson(req,config.bodyLimitBytes);
         const account=await store.customerCardPaymentAccount(context.tenant_id);
         if(!account||account.status!=="active"||account.charges_enabled!==true)return done(res,metrics,started,"customer.card_payments.checkout",409,{error:{code:"CARD_PAYMENT_ACCOUNT_NOT_READY"},provider:stripeConnectState(config),account});
@@ -995,6 +999,9 @@ export function createBackend(options={}){
         requireCustomerCsrf(req,customerActor,config);
         if(!config.externalBillingEnabled)throw Object.assign(new Error("Payment provider unavailable"),{status:503,code:"PAYMENT_PROVIDER_UNAVAILABLE"});
         const context=await store.customerSessionContext(customerActor);
+        const billing=await store.customerBillingPreparation(context.tenant_id);
+        const commercialBlock=await customerCommercialReadinessBlock(config,store,billing);
+        if(commercialBlock)return done(res,metrics,started,"customer.portability.priority_checkout",409,{error:{code:commercialBlock.code,message:commercialBlock.message},commercial_readiness:commercialBlock.readiness,b2c_readiness:commercialBlock.individual?commercialBlock.readiness:undefined});
         const key=String(req.headers["idempotency-key"]||"");
         const payload={tenant_id:context.tenant_id,request_id:match.id,service:"portability_priority",amount_minor:990,currency:"EUR"};
         const result=await store.idempotent(key,"customer.portability.priority_checkout",payload,async()=>{
@@ -2112,6 +2119,33 @@ export function resolveTelephonyRoutingContext(url,config){
     const e=new Error("SVA number is required for production telephony routing");e.status=400;e.code="SVA_ROUTING_CONTEXT_REQUIRED";throw e;
   }
   return {svaNumber:svaNumber||null};
+}
+
+export async function customerCommercialReadinessBlock(config,store,billing){
+  const individual=String(billing?.tenant?.customer_type||"business")==="individual";
+  const withdrawalReady=!individual||(config?.onlineWithdrawalReady===true&&typeof store?.customerWithdrawalFeatureReady==="function"&&await store.customerWithdrawalFeatureReady());
+  const readiness=Object.freeze({
+    legal_operator:config?.legalOperatorConfigured===true,
+    consumer_mediator:config?.consumerMediatorConfigured===true,
+    online_withdrawal:withdrawalReady
+  });
+  if(config?.mode==="production"&&config?.legalOperatorConfigured!==true){
+    return Object.freeze({
+      code:"COMMERCIAL_LEGAL_IDENTITY_NOT_READY",
+      message:"Paid commercial flows are unavailable until the verified legal operator identity, registration, address and publication information are configured.",
+      individual,
+      readiness
+    });
+  }
+  if(individual&&(config?.b2cCommercialReady!==true||!withdrawalReady)){
+    return Object.freeze({
+      code:"B2C_COMMERCIAL_NOT_READY",
+      message:"Consumer paid flows are unavailable until the mandatory B2C legal prerequisites and the online withdrawal function are operational.",
+      individual,
+      readiness
+    });
+  }
+  return null;
 }
 
 export async function billingProviderStatus(config){
