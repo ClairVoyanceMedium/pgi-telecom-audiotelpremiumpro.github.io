@@ -30,7 +30,7 @@ function render(data){
   }else if(enabled&&state.can_manage===true&&state.eligible===true){
     codeBlock='<div class="cp-search-scopes"><button id="client-referral-create" class="cp-primary" type="button">Créer mon lien de parrainage</button></div>';
   }else if(enabled){
-    codeBlock='<p class="cp-muted">Le lien sera disponible après activation de votre compte et confirmation de votre abonnement actif et payé.</p>';
+    codeBlock='<p class="cp-muted">Le lien sera disponible après activation de votre profil ambassadeur. Il n’est pas nécessaire d’être client Audiotel Premium Pro pour parrainer.</p>';
   }else{
     codeBlock='<div class="cp-row"><div><strong>Programme actuellement fermé</strong><span>Aucun nouveau parrainage ne peut être créé tant que le programme reste désactivé. Votre historique et vos récompenses acquises sont conservés.</span></div><span class="cp-chip">FERMÉ</span></div>';
   }
@@ -56,7 +56,7 @@ async function createCode(){
   if(busy)return;busy=true;status("Création du lien sécurisé...");
   var b=$("client-referral-create");if(b)b.disabled=true;
   try{await root.PGICustomerApi.createReferralCode(root.PGICustomerApi.newIdempotencyKey());await refresh();status("Votre lien de parrainage est prêt.");}
-  catch(e){var map={REFERRAL_PROGRAM_DISABLED:"Le programme de parrainage est actuellement désactivé.",REFERRAL_REFERRER_NOT_ELIGIBLE:"Le parrainage sera disponible après activation du compte et confirmation de votre abonnement actif et payé.",REFERRAL_CODE_UNAVAILABLE:"Le lien de parrainage est momentanément indisponible."};status(map[e&&e.code]||"Le lien de parrainage n'a pas pu être créé.",true);}
+  catch(e){var map={REFERRAL_PROGRAM_DISABLED:"Le programme de parrainage est actuellement désactivé.",REFERRAL_REFERRER_NOT_ELIGIBLE:"Le parrainage sera disponible après activation de votre profil ambassadeur. Aucun abonnement Audiotel Premium Pro n’est requis pour parrainer.",REFERRAL_CODE_UNAVAILABLE:"Le lien de parrainage est momentanément indisponible."};status(map[e&&e.code]||"Le lien de parrainage n'a pas pu être créé.",true);}
   finally{busy=false;if(b)b.disabled=false;}
 }
 async function copyLink(){

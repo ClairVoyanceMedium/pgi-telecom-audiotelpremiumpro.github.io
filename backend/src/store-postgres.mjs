@@ -4788,7 +4788,7 @@ export class PostgresStore{
     const program=await this.referralProgramPublicState();
     const [tenantRows,codeRows,summaryRows,payoutAccountRows,recent]=await Promise.all([
       this.sql.unsafe(
-        "SELECT t.status,EXISTS(SELECT 1 FROM tenant_subscriptions s WHERE s.tenant_id=t.id AND s.status='active' AND s.current_period_end>now() AND (s.last_payment_status IS NULL OR s.last_payment_status IN ('paid','succeeded','success'))) AS paid_active FROM tenants t WHERE t.id=$1 AND t.tenant_type<>'internal' LIMIT 1",
+        "SELECT t.status FROM tenants t WHERE t.id=$1 AND t.tenant_type<>'internal' LIMIT 1",
         [id]
       ),
       this.sql.unsafe("SELECT code,status,created_at FROM customer_referral_codes WHERE tenant_id=$1 LIMIT 1",[id]),
@@ -4817,13 +4817,13 @@ export class PostgresStore{
     ]);
     const tenant=tenantRows[0]||null;if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
     const code=codeRows[0]||null,summary=summaryRows[0]||{},payoutAccount=payoutAccountRows[0]||null,rewarded=Number(summary.rewarded||0),next=referralRewardForOrdinal(rewarded+1);
-    const eligible=program.enabled===true&&tenant.status==="active"&&tenant.paid_active===true;
+    const eligible=program.enabled===true&&tenant.status==="active";
     return {
       ...program,
       code:program.enabled&&code?.status==="active"?code.code:null,
       eligible,
       can_manage:program.enabled===true,
-      eligibility_reason:eligible?null:(program.enabled!==true?"program_disabled":tenant.status!=="active"?"tenant_not_active":"subscription_not_paid"),
+      eligibility_reason:eligible?null:(program.enabled!==true?"program_disabled":"ambassador_profile_not_active"),
       next_reward:{...next},
       payout_account:payoutAccount?{provider:"stripe",status:payoutAccount.status,transfers_enabled:payoutAccount.transfers_enabled===true,details_submitted:payoutAccount.details_submitted===true,requirements_state:payoutAccount.requirements_state,last_synced_at:payoutAccount.last_synced_at}:null,
       summary:{visits:Number(summary.visits||0),prospects:Number(summary.prospects||0),claimed:Number(summary.claimed||0),rewarded,reward_minor:Number(summary.reward_minor||0)},
@@ -4835,11 +4835,11 @@ export class PostgresStore{
     const id=Number(tenantId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     const program=await this.referralProgramPublicState();if(!program.enabled)throw problem(409,"REFERRAL_PROGRAM_DISABLED");
     const tenant=(await this.sql.unsafe(
-      "SELECT id,public_id,status,EXISTS(SELECT 1 FROM tenant_subscriptions s WHERE s.tenant_id=$1 AND s.status='active' AND s.current_period_end>now() AND (s.last_payment_status IS NULL OR s.last_payment_status IN ('paid','succeeded','success'))) AS paid_active FROM tenants WHERE id=$1 AND tenant_type<>'internal' LIMIT 1",
+      "SELECT id,public_id,status FROM tenants WHERE id=$1 AND tenant_type<>'internal' LIMIT 1",
       [id]
     ))[0];
     if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
-    if(tenant.status!=="active"||tenant.paid_active!==true)throw problem(409,"REFERRAL_REFERRER_NOT_ELIGIBLE");
+    if(tenant.status!=="active")throw problem(409,"REFERRAL_REFERRER_NOT_ELIGIBLE");
     const secret=String(this.config.sessionSecret||this.config.callerHashKey||"");
     if(secret.length<32)throw problem(503,"REFERRAL_CODE_UNAVAILABLE");
     const code="PGI"+createHash("sha256").update("referral:"+String(tenant.public_id)+":"+secret).digest("hex").slice(0,12).toUpperCase();
@@ -4860,11 +4860,11 @@ export class PostgresStore{
       if(flag?.enabled!==true)throw problem(409,"REFERRAL_PROGRAM_DISABLED");
       const policy=referralPublicPolicy();
       const refCode=(await tx.unsafe(
-        "SELECT c.id,c.tenant_id,t.status AS tenant_status,EXISTS(SELECT 1 FROM tenant_subscriptions s WHERE s.tenant_id=c.tenant_id AND s.status='active' AND s.current_period_end>now() AND (s.last_payment_status IS NULL OR s.last_payment_status IN ('paid','succeeded','success'))) AS paid_active"+
+        "SELECT c.id,c.tenant_id,t.status AS tenant_status"+
         " FROM customer_referral_codes c JOIN tenants t ON t.id=c.tenant_id WHERE c.code=$1 AND c.status='active' LIMIT 1",
         [code]
       ))[0];
-      if(!refCode||refCode.tenant_status!=="active"||refCode.paid_active!==true)throw problem(404,"REFERRAL_CODE_NOT_FOUND");
+      if(!refCode||refCode.tenant_status!=="active")throw problem(404,"REFERRAL_CODE_NOT_FOUND");
       if(Number(refCode.tenant_id)===referred)throw problem(409,"REFERRAL_SELF_CLAIM");
       const target=(await tx.unsafe("SELECT id,status FROM tenants WHERE id=$1 AND tenant_type<>'internal' LIMIT 1 FOR UPDATE",[referred]))[0];
       if(!target)throw problem(404,"TENANT_NOT_FOUND");
