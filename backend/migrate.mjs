@@ -19,7 +19,10 @@ const sql=postgres(databaseUrl,{
 
 const migrationsDir=fileURLToPath(new URL("../database/migrations/",import.meta.url));
 
+let migrationLockHeld=false;
 try{
+  await sql.unsafe("SELECT pg_advisory_lock(hashtext($1))",["pgi_telecom_schema_migrations_v1"]);
+  migrationLockHeld=true;
   await sql.unsafe(
     "CREATE TABLE IF NOT EXISTS schema_migrations ("+
     "version text PRIMARY KEY,"+
@@ -99,5 +102,8 @@ try{
 
   console.log("Database migrations: OK");
 }finally{
+  if(migrationLockHeld){
+    try{await sql.unsafe("SELECT pg_advisory_unlock(hashtext($1))",["pgi_telecom_schema_migrations_v1"]);}catch{}
+  }
   await sql.end({timeout:5});
 }
