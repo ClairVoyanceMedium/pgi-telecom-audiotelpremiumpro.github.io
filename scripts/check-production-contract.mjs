@@ -63,6 +63,7 @@ const referralAdminCss=fs.readFileSync("assets/referral-admin.css","utf8");
 const accountingCockpit=fs.readFileSync("assets/accounting-cockpit.js","utf8");
 const vercelConfigData=JSON.parse(vercelConfig);
 const businessLiveCron=Array.isArray(vercelConfigData.crons)&&vercelConfigData.crons.some(item=>item&&item.path==="/api/v1/internal/business-live/reset-schedules/run"&&item.schedule==="* * * * *");
+const referralPayoutCron=Array.isArray(vercelConfigData.crons)&&vercelConfigData.crons.some(item=>item&&item.path==="/api/v1/internal/referral-payouts/run"&&item.schedule==="*/10 * * * *");
 const qualityRollupMigration=fs.readFileSync("database/migrations/017_quality_rollups.sql","utf8");
 const b2bDestinationMigration=fs.readFileSync("database/migrations/022_b2b_call_destinations.sql","utf8");
 const customerPortalMigration=fs.readFileSync("database/migrations/023_customer_portal.sql","utf8");
@@ -135,6 +136,7 @@ const publicOrderPage=fs.readFileSync("site/seo/demande-ouverture.html","utf8");
 const publicSiteScript=fs.readFileSync("site/site.js","utf8");
 const emailDispatcher=fs.readFileSync("backend/src/email-dispatcher.mjs","utf8");
 const stripeBillingSource=fs.readFileSync("backend/src/stripe-billing.mjs","utf8");
+const stripeConnectSource=fs.readFileSync("backend/src/stripe-connect.mjs","utf8");
 const wholesaleDoc=fs.readFileSync("docs/WHOLESALE-SVA.md","utf8");
 
 if(!/platform_feature_flags/.test(referralMigration)||!/customer_referral_rewards/.test(referralMigration))failures.push("referral schema must retain server feature flags and reward ledger");
@@ -145,12 +147,18 @@ if(!/42P01/.test(postgresStore)||!/return \{\.\.\.policy,enabled:false\}/.test(p
 if(!/\/api\/v1\/public\/referral-program/.test(backendServer)||!/\/api\/v1\/customer\/referral/.test(backendServer)||!/\/api\/v1\/platform\/referral-program/.test(backendServer))failures.push("referral public customer and admin APIs are required");
 if(!/count\(DISTINCT normalized_details->>'provider_invoice_reference'\)/.test(postgresStore)||!/REFERRAL_QUALIFICATION_PAID_INVOICES/.test(postgresStore)||!/REFERRAL_SELF_CLAIM/.test(postgresStore)||!/REFERRAL_ALREADY_CLAIMED/.test(postgresStore))failures.push("referral rewards must require three distinct paid invoices and retain anti-abuse");
 if(!/pgi:portal-loaded/.test(clientReferral)||!/3 factures mensuelles distinctes réellement payées/i.test(clientReferral)||!/paid_invoice_count/.test(clientReferral))failures.push("customer referral UI must expose the three-payment qualification progress");
-if(!/referral-admin\.js/.test(platformAdminTools)||!/updateReferralProgram/.test(referralAdmin)||!/settleReferralReward/.test(referralAdmin)||!/referral-admin-view\.js/.test(referralAdmin)||!/referral-admin\.css/.test(referralAdmin)||!/barème fixe/i.test(referralAdminView)||!/25e filleul/i.test(referralAdminView))failures.push("referral administration must remain fixed, lazy and auditable");
+if(!/referral-admin\.js/.test(platformAdminTools)||!/updateReferralProgram/.test(referralAdmin)||/settleReferralReward|data-referral-paid/.test(referralAdmin)||!/referral-admin-view\.js/.test(referralAdmin)||!/referral-admin\.css/.test(referralAdmin)||!/barème fixe/i.test(referralAdminView)||!/25e filleul/i.test(referralAdminView)||!/Versements automatiques/.test(referralAdminView))failures.push("referral administration must remain fixed, automatic, lazy and auditable");
 if(!/Fiches complètes par client/.test(referralAdminView)||!/Qualification abonnement/.test(referralAdminView)||!/Reversements SVA du client ambassadeur/.test(referralAdminView)||!/pa-ambassador/.test(referralAdminCss)||!/paid_invoice_count/.test(postgresStore)||!/svaByReferrer/.test(postgresStore)||!/tenant_revenue_distributions/.test(postgresStore))failures.push("referral administration must expose per-ambassador qualification, rewards and SVA payout evidence");
 if(!/auth-remember/.test(indexSource)||!/remember:remember===true/.test(apiClient)||!/body\.remember===true/.test(backendServer)||!/adminRememberTtlSeconds/.test(backendConfig)||!/PGI_ADMIN_REMEMBER_TTL_SECONDS/.test(envExample)||!/PGI_ADMIN_REMEMBER_TTL_SECONDS/.test(compose))failures.push("admin remember-me must remain explicit, server-issued and configurable");
 if(!backendConfig.includes('version:env.PGI_VERSION||"'+packageVersion+'"')||!envExample.includes("PGI_VERSION="+packageVersion)||!compose.includes("${PGI_VERSION:-"+packageVersion+"}"))failures.push("application version fallbacks must stay aligned with package.json");
 if(!/\/api\/v1\/platform\/accounting/.test(backendServer)||!/async platformAccounting/.test(postgresStore)||!/tax_basis_separated:true/.test(postgresStore)||!/statutory_ledger:false/.test(postgresStore))failures.push("platform accounting must remain source-based and tax-basis separated");
 if(!/Abonnements encaissés TTC/.test(accountingCockpit)||!/Marge SVA encaissée HT/.test(accountingCockpit)||!/Créances opérateurs HT/.test(accountingCockpit))failures.push("accounting cockpit must preserve distinct cash, margin and receivable views");
+if(!/data-acc-export/.test(accountingCockpit)||!/data-acc-print/.test(accountingCockpit)||!/function printAccounting/.test(accountingCockpit))failures.push("accounting cockpit must stay exportable and printable");
+if(!referralPayoutCron||!/\/api\/v1\/internal\/referral-payouts\/run/.test(backendServer)||!/processAutomaticReferralPayouts/.test(backendServer))failures.push("automatic referral payout cron and endpoint are required");
+if(!/createStripeReferralRecipientAccount/.test(stripeConnectSource)||!/ensureStripeTransferCapability/.test(stripeConnectSource)||!/createStripeReferralTransfer/.test(stripeConnectSource)||!/Idempotency-Key/.test(stripeConnectSource))failures.push("Stripe referral payout must use recipient capabilities and idempotent transfers");
+if(!/referralRewardsForAutomaticPayout/.test(postgresStore)||!/recordReferralAutomaticPayoutState/.test(postgresStore)||!/provider_transfer_reference/.test(backendServer))failures.push("automatic referral payout state must remain auditable in the reward ledger");
+if(!/referral_payout_setup/.test(resendEmailSource)||!/referral_payout_paid/.test(resendEmailSource)||!/stripeActionUrl/.test(resendEmailSource))failures.push("automatic referral payout must notify beneficiaries for onboarding and payment");
+if(!compose.includes("PGI_STRIPE_CONNECT_WEBHOOK_SECRET:")||!envExample.includes("PGI_STRIPE_CONNECT_WEBHOOK_SECRET="))failures.push("production contract must expose the Stripe Connect webhook secret");
 
 const requiredCompose=[
   "POSTGRES_PASSWORD",
