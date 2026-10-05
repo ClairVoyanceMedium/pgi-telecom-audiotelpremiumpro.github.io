@@ -2485,7 +2485,7 @@ export class PostgresStore{
           [tenant.id,subscriptionId]
         );
         const referral=(await tx.unsafe(
-          "SELECT id,referrer_tenant_id,reward_currency FROM customer_referrals WHERE referred_tenant_id=$1 AND status='claimed' LIMIT 1 FOR UPDATE",
+          "SELECT id,referrer_tenant_id,reward_currency,claimed_at FROM customer_referrals WHERE referred_tenant_id=$1 AND status='claimed' LIMIT 1 FOR UPDATE",
           [tenant.id]
         ))[0]||null;
         if(referral){
@@ -2493,8 +2493,9 @@ export class PostgresStore{
             "SELECT count(DISTINCT normalized_details->>'provider_invoice_reference')::int AS paid_invoices"+
             " FROM subscription_billing_events WHERE tenant_id=$1 AND event_type='invoice.paid'"+
             " AND COALESCE(normalized_details->>'provider_invoice_reference','')<>''"+
-            " AND COALESCE(normalized_details->>'last_payment_status','paid')='paid'",
-            [tenant.id]
+            " AND COALESCE(normalized_details->>'last_payment_status','paid')='paid'"+
+            " AND event_time>=$2::timestamptz",
+            [tenant.id,referral.claimed_at]
           );
           const paidInvoices=Number(invoiceRows[0]?.paid_invoices||0);
           if(paidInvoices>=REFERRAL_QUALIFICATION_PAID_INVOICES){
@@ -4652,7 +4653,8 @@ export class PostgresStore{
         " (SELECT count(DISTINCT be.normalized_details->>'provider_invoice_reference')::int FROM subscription_billing_events be"+
         " WHERE be.tenant_id=r.referred_tenant_id AND be.event_type='invoice.paid'"+
         " AND COALESCE(be.normalized_details->>'provider_invoice_reference','')<>''"+
-        " AND COALESCE(be.normalized_details->>'last_payment_status','paid')='paid') AS paid_invoice_count"+
+        " AND COALESCE(be.normalized_details->>'last_payment_status','paid')='paid'"+
+        " AND be.event_time>=r.claimed_at) AS paid_invoice_count"+
         " FROM customer_referrals r WHERE r.referrer_tenant_id=$1 ORDER BY r.claimed_at DESC,r.id DESC LIMIT 20",
         [id]
       )
