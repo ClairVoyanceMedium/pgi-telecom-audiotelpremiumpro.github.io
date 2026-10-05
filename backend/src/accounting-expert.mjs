@@ -269,10 +269,10 @@ export async function refreshExpertAccountingLedger(store,actor={}){
 async function fecBlockers(store,settings,year){
   const rows=await store.readSql.unsafe(
     "SELECT"+
-    " count(*) FILTER(WHERE e.status='draft')::int AS draft_entries,"+
-    " count(*) FILTER(WHERE e.status IN ('validated','reversal'))::int AS validated_entries,"+
+    " count(DISTINCT e.id) FILTER(WHERE e.status='draft')::int AS draft_entries,"+
+    " count(DISTINCT e.id) FILTER(WHERE e.status IN ('validated','reversal'))::int AS validated_entries,"+
     " count(*) FILTER(WHERE e.status IN ('validated','reversal') AND a.suspense)::int AS validated_suspense_lines,"+
-    " count(*) FILTER(WHERE e.status IN ('validated','reversal') AND NOT pgi_accounting_entry_balanced(e.id))::int AS unbalanced_entries"+
+    " count(DISTINCT e.id) FILTER(WHERE e.status IN ('validated','reversal') AND NOT pgi_accounting_entry_balanced(e.id))::int AS unbalanced_entries"+
     " FROM platform_accounting_entries e"+
     " LEFT JOIN platform_accounting_lines l ON l.entry_id=e.id"+
     " LEFT JOIN platform_accounting_accounts a ON a.account_num=l.account_num"+
@@ -317,7 +317,7 @@ export async function expertAccountingSnapshot(store,params={}){
   if(!store?.readSql?.unsafe)throw problem(503,"EXPERT_ACCOUNTING_REQUIRES_POSTGRES");
   const year=normalizeYear(params.year);
   const settings=await readSettings(store);
-  const [entries,trial,vat,periods,bank,documents]=await Promise.all([
+  const [entries,trial,ledger,accounts,journals,vat,periods,bank,documents]=await Promise.all([
     store.readSql.unsafe(
       "SELECT e.id,e.public_id,e.source_type,e.source_key,e.journal_code,e.entry_number,e.entry_date,e.piece_ref,e.piece_date,e.label,e.currency,e.status,e.expert_note,e.validated_at,e.created_at,"+
       " COALESCE(sum(l.debit_minor),0)::bigint AS debit_minor,COALESCE(sum(l.credit_minor),0)::bigint AS credit_minor,"+
@@ -333,6 +333,19 @@ export async function expertAccountingSnapshot(store,params={}){
       " WHERE e.status IN ('validated','reversal') AND e.entry_date>=$1::date AND e.entry_date<$2::date"+
       " GROUP BY l.account_num ORDER BY l.account_num",
       [year+"-01-01",(year+1)+"-01-01"]
+    ),
+    store.readSql.unsafe(
+      "SELECT e.id,e.entry_number,e.entry_date,e.validated_at,e.journal_code,j.label AS journal_label,e.piece_ref,e.piece_date,e.label AS entry_label,e.status,"+
+      " l.line_no,l.account_num,l.account_label,l.auxiliary_num,l.auxiliary_label,l.line_label,l.debit_minor,l.credit_minor,l.lettering,l.lettering_date,l.vat_code,l.currency,a.suspense"+
+      " FROM platform_accounting_entries e JOIN platform_accounting_journals j ON j.journal_code=e.journal_code JOIN platform_accounting_lines l ON l.entry_id=e.id JOIN platform_accounting_accounts a ON a.account_num=l.account_num"+
+      " WHERE e.entry_date>=$1::date AND e.entry_date<$2::date ORDER BY e.entry_date,e.id,l.line_no LIMIT 5000",
+      [year+"-01-01",(year+1)+"-01-01"]
+    ),
+    store.readSql.unsafe(
+      "SELECT account_num,label,account_class,active,suspense,expert_review_required FROM platform_accounting_accounts ORDER BY account_num"
+    ),
+    store.readSql.unsafe(
+      "SELECT journal_code,label,journal_type,active FROM platform_accounting_journals ORDER BY journal_code"
     ),
     store.readSql.unsafe(
       "SELECT COALESCE(l.vat_code,'UNCLASSIFIED') AS vat_code,sum(l.credit_minor-l.debit_minor)::bigint AS net_minor,count(*)::int AS line_count"+
@@ -354,7 +367,7 @@ export async function expertAccountingSnapshot(store,params={}){
   const fec=await fecBlockers(store,settings,year);
   return {
     schema_version:"audiotel-expert-accounting/1",generated_at:new Date().toISOString(),year,
-    settings,entries,trial_balance:trial,vat_summary:vat,periods,bank_reconciliation:bank,
+    settings,entries,trial_balance:trial,general_ledger:ledger,accounts,journals,vat_summary:vat,periods,bank_reconciliation:bank,
     documents:documents[0]||{document_count:0,hashed_count:0},
     fec_readiness:{ready:fec.blockers.length===0,blockers:fec.blockers,close_date:fec.close_date,counts:fec.counts,unmatched_bank:fec.unmatched_bank},
     accounting_policy:{
