@@ -180,7 +180,7 @@ test("production contract keeps automatic referral payouts durable and non-manua
   const automation=fs.readFileSync("backend/src/referral-payout-automation.mjs","utf8");
   const store=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
   const server=fs.readFileSync("backend/server.mjs","utf8");
-  const migration=fs.readFileSync("database/migrations/068_automatic_referral_reward_payouts.sql","utf8");
+  const migration=fs.readFileSync("database/migrations/069_automatic_referral_reward_payouts.sql","utf8");
   const admin=fs.readFileSync("assets/referral-admin.js","utf8");
   const view=fs.readFileSync("assets/referral-admin-view.js","utf8");
   const accounting=fs.readFileSync("assets/accounting-cockpit.js","utf8");
