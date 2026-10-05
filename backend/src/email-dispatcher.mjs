@@ -172,6 +172,14 @@ async function messagesForEvent(store,config,event){
     if(!customerEmail)return [];
     return [msg("customer",customerEmail,customerName,"referral_claimed","billing",event,{...base,qualification_payments_required:Number(p.qualification_payments_required||3)})];
   }
+  if(event.event_type==="referral.progress"){
+    if(!customerEmail)return [];
+    return [msg("customer",customerEmail,customerName,"referral_progress","billing",event,{
+      ...base,
+      qualified_payments:Number(p.qualified_payments||0),
+      qualification_payments_required:Number(p.qualification_payments_required||3)
+    })];
+  }
   if(event.event_type==="referral.reward.earned"){
     if(!customerEmail)return [];
     return [msg("customer",customerEmail,customerName,"referral_reward_earned","billing",event,{
