@@ -60,6 +60,22 @@ function closeDateForYear(settings,year){
   return d;
 }
 
+function fiscalBounds(settings,closeYear){
+  const close=closeDateForYear(settings,closeYear),previousClose=closeDateForYear(settings,closeYear-1);
+  if(!close||!previousClose)return null;
+  const from=new Date(previousClose.getTime()+86400000);
+  const toExclusive=new Date(close.getTime()+86400000);
+  return {from,toExclusive,close};
+}
+
+function fiscalYearForDate(settings,value){
+  const d=new Date(String(value).slice(0,10)+"T00:00:00Z");
+  if(!Number.isFinite(d.getTime()))throw problem(400,"INVALID_ACCOUNTING_DATE");
+  const year=d.getUTCFullYear(),close=closeDateForYear(settings,year);
+  if(!close)throw problem(409,"FISCAL_CLOSE_DATE_INVALID");
+  return d<=close?year:year+1;
+}
+
 function date8(value){
   const d=new Date(value);
   if(!Number.isFinite(d.getTime()))return "";
@@ -269,6 +285,9 @@ export async function refreshExpertAccountingLedger(store,actor={}){
 }
 
 async function fecBlockers(store,settings,year){
+  const bounds=fiscalBounds(settings||{},year);
+  const from=(bounds?.from||new Date(Date.UTC(year,0,1))).toISOString().slice(0,10);
+  const to=(bounds?.toExclusive||new Date(Date.UTC(year+1,0,1))).toISOString().slice(0,10);
   const rows=await store.readSql.unsafe(
     "SELECT"+
     " count(DISTINCT e.id) FILTER(WHERE e.status='draft')::int AS draft_entries,"+
@@ -279,7 +298,7 @@ async function fecBlockers(store,settings,year){
     " LEFT JOIN platform_accounting_lines l ON l.entry_id=e.id"+
     " LEFT JOIN platform_accounting_accounts a ON a.account_num=l.account_num"+
     " WHERE e.entry_date>=$1::date AND e.entry_date<$2::date",
-    [year+"-01-01",(year+1)+"-01-01"]
+    [from,to]
   );
   const counts=rows[0]||{};
   const periodRows=await store.readSql.unsafe(
@@ -288,7 +307,7 @@ async function fecBlockers(store,settings,year){
   );
   const bankRows=await store.readSql.unsafe(
     "SELECT count(*)::int AS unmatched FROM platform_bank_transactions WHERE booked_at>=$1::date AND booked_at<$2::date AND reconciliation_state='unmatched'",
-    [year+"-01-01",(year+1)+"-01-01"]
+    [from,to]
   );
   const blockers=[];
   if(!settings?.legal_name)blockers.push({code:"LEGAL_NAME_MISSING",label:"Raison sociale non renseignée"});
@@ -299,10 +318,17 @@ async function fecBlockers(store,settings,year){
   if(Number(counts.validated_suspense_lines||0)>0)blockers.push({code:"SUSPENSE_ACCOUNTS",label:Number(counts.validated_suspense_lines)+" ligne(s) validée(s) utilisent un compte d attente"});
   if(Number(counts.unbalanced_entries||0)>0)blockers.push({code:"UNBALANCED_ENTRIES",label:Number(counts.unbalanced_entries)+" écriture(s) non équilibrée(s)"});
   if(Number(bankRows[0]?.unmatched||0)>0)blockers.push({code:"BANK_UNMATCHED",label:Number(bankRows[0].unmatched)+" mouvement(s) bancaire(s) non rapproché(s)"});
-  const closeDate=closeDateForYear(settings||{},year);
+  const closeDate=bounds?.close||closeDateForYear(settings||{},year);
   if(!closeDate)blockers.push({code:"FISCAL_CLOSE_DATE_INVALID",label:"Date de clôture fiscale invalide"});
   const expectedPeriods=[];
-  for(let m=1;m<=Number(settings?.fiscal_year_close_month||12);m++)expectedPeriods.push(year+"-"+String(m).padStart(2,"0"));
+  if(bounds){
+    const cursor=new Date(Date.UTC(bounds.from.getUTCFullYear(),bounds.from.getUTCMonth(),1));
+    const last=new Date(Date.UTC(bounds.close.getUTCFullYear(),bounds.close.getUTCMonth(),1));
+    while(cursor<=last){
+      expectedPeriods.push(cursor.getUTCFullYear()+"-"+String(cursor.getUTCMonth()+1).padStart(2,"0"));
+      cursor.setUTCMonth(cursor.getUTCMonth()+1);
+    }
+  }
   const states=new Map(periodRows.map(x=>[String(x.period_key),String(x.state)]));
   const nowYear=new Date().getUTCFullYear();
   if(year<nowYear||year===nowYear&&new Date()>=closeDate){
@@ -319,6 +345,9 @@ export async function expertAccountingSnapshot(store,params={}){
   if(!store?.readSql?.unsafe)throw problem(503,"EXPERT_ACCOUNTING_REQUIRES_POSTGRES");
   const year=normalizeYear(params.year);
   const settings=await readSettings(store);
+  const fiscal=fiscalBounds(settings||{},year);
+  const from=(fiscal?.from||new Date(Date.UTC(year,0,1))).toISOString().slice(0,10);
+  const to=(fiscal?.toExclusive||new Date(Date.UTC(year+1,0,1))).toISOString().slice(0,10);
   const [entries,trial,ledger,accounts,journals,vat,periods,bank,documents]=await Promise.all([
     store.readSql.unsafe(
       "SELECT e.id,e.public_id,e.source_type,e.source_key,e.journal_code,e.entry_number,e.entry_date,e.piece_ref,e.piece_date,e.label,e.currency,e.status,e.expert_note,e.validated_at,e.created_at,"+
@@ -326,7 +355,7 @@ export async function expertAccountingSnapshot(store,params={}){
       " bool_or(COALESCE(a.suspense,false)) AS uses_suspense"+
       " FROM platform_accounting_entries e LEFT JOIN platform_accounting_lines l ON l.entry_id=e.id LEFT JOIN platform_accounting_accounts a ON a.account_num=l.account_num"+
       " WHERE e.entry_date>=$1::date AND e.entry_date<$2::date GROUP BY e.id ORDER BY e.entry_date DESC,e.id DESC LIMIT 250",
-      [year+"-01-01",(year+1)+"-01-01"]
+      [from,to]
     ),
     store.readSql.unsafe(
       "SELECT l.account_num,max(l.account_label) AS account_label,sum(l.debit_minor)::bigint AS debit_minor,sum(l.credit_minor)::bigint AS credit_minor,"+
@@ -334,14 +363,14 @@ export async function expertAccountingSnapshot(store,params={}){
       " FROM platform_accounting_lines l JOIN platform_accounting_entries e ON e.id=l.entry_id JOIN platform_accounting_accounts a ON a.account_num=l.account_num"+
       " WHERE e.status IN ('validated','reversal') AND e.entry_date>=$1::date AND e.entry_date<$2::date"+
       " GROUP BY l.account_num ORDER BY l.account_num",
-      [year+"-01-01",(year+1)+"-01-01"]
+      [from,to]
     ),
     store.readSql.unsafe(
       "SELECT e.id,e.entry_number,e.entry_date,e.validated_at,e.journal_code,j.label AS journal_label,e.piece_ref,e.piece_date,e.label AS entry_label,e.status,"+
       " l.line_no,l.account_num,l.account_label,l.auxiliary_num,l.auxiliary_label,l.line_label,l.debit_minor,l.credit_minor,l.lettering,l.lettering_date,l.vat_code,l.currency,a.suspense"+
       " FROM platform_accounting_entries e JOIN platform_accounting_journals j ON j.journal_code=e.journal_code JOIN platform_accounting_lines l ON l.entry_id=e.id JOIN platform_accounting_accounts a ON a.account_num=l.account_num"+
       " WHERE e.entry_date>=$1::date AND e.entry_date<$2::date ORDER BY e.entry_date,e.id,l.line_no LIMIT 5000",
-      [year+"-01-01",(year+1)+"-01-01"]
+      [from,to]
     ),
     store.readSql.unsafe(
       "SELECT account_num,label,account_class,active,suspense,expert_review_required FROM platform_accounting_accounts ORDER BY account_num"
@@ -354,13 +383,13 @@ export async function expertAccountingSnapshot(store,params={}){
       " FROM platform_accounting_lines l JOIN platform_accounting_entries e ON e.id=l.entry_id"+
       " WHERE e.status IN ('validated','reversal') AND l.account_num LIKE '445%' AND e.entry_date>=$1::date AND e.entry_date<$2::date"+
       " GROUP BY COALESCE(l.vat_code,'UNCLASSIFIED') ORDER BY 1",
-      [year+"-01-01",(year+1)+"-01-01"]
+      [from,to]
     ),
     store.readSql.unsafe("SELECT period_key,state,review_started_at,closed_at,close_hash FROM platform_accounting_periods WHERE period_key LIKE $1 ORDER BY period_key",[year+"-%"]),
     store.readSql.unsafe(
       "SELECT reconciliation_state,count(*)::int AS count,COALESCE(sum(abs(amount_minor)),0)::bigint AS amount_minor"+
       " FROM platform_bank_transactions WHERE booked_at>=$1::date AND booked_at<$2::date GROUP BY reconciliation_state ORDER BY reconciliation_state",
-      [year+"-01-01",(year+1)+"-01-01"]
+      [from,to]
     ),
     store.readSql.unsafe(
       "SELECT count(*)::int AS document_count,count(*) FILTER(WHERE sha256 IS NOT NULL)::int AS hashed_count FROM platform_accounting_documents"
@@ -369,6 +398,7 @@ export async function expertAccountingSnapshot(store,params={}){
   const fec=await fecBlockers(store,settings,year);
   return {
     schema_version:"audiotel-expert-accounting/1",generated_at:new Date().toISOString(),year,
+    fiscal_range:{from,to_exclusive:to,close_date:fiscal?.close?.toISOString().slice(0,10)||null},
     settings,entries,trial_balance:trial,general_ledger:ledger,accounts,journals,vat_summary:vat,periods,bank_reconciliation:bank,
     documents:documents[0]||{document_count:0,hashed_count:0},
     fec_readiness:{ready:fec.blockers.length===0,blockers:fec.blockers,close_date:fec.close_date,counts:fec.counts,unmatched_bank:fec.unmatched_bank},
@@ -438,8 +468,7 @@ export async function validateExpertAccountingEntry(store,id,input={},actor={}){
     const journalRow=(await tx.unsafe("SELECT journal_code FROM platform_accounting_journals WHERE journal_code=$1 AND active=true",[journal]))[0];
     if(!journalRow)throw problem(400,"INVALID_ACCOUNTING_JOURNAL");
     const accounts=await tx.unsafe(
-      "SELECT account_num,label,suspense,active FROM platform_accounting_accounts WHERE account_num=ANY($1::text[])",
-      [[...new Set(normalized.map(x=>x.account_num))]]
+      "SELECT account_num,label,suspense,active FROM platform_accounting_accounts WHERE active=true"
     );
     const byAccount=new Map(accounts.map(x=>[String(x.account_num),x]));
     for(const line of normalized){
@@ -456,14 +485,15 @@ export async function validateExpertAccountingEntry(store,id,input={},actor={}){
         [entryId,line.line_no,line.account_num,account.label,line.auxiliary_num,line.auxiliary_label,line.line_label||entry.label,line.debit_minor,line.credit_minor,entry.currency,line.vat_code]
       );
     }
-    const year=new Date(entry.entry_date).getUTCFullYear();
+    const accountingSettings=(await tx.unsafe("SELECT fiscal_year_close_month,fiscal_year_close_day FROM platform_accounting_settings WHERE id=1 FOR SHARE"))[0]||{};
+    const fiscalYear=fiscalYearForDate(accountingSettings,entry.entry_date);
     const seq=(await tx.unsafe(
       "INSERT INTO platform_accounting_sequences(fiscal_year,next_number) VALUES($1,2)"+
       " ON CONFLICT(fiscal_year) DO UPDATE SET next_number=platform_accounting_sequences.next_number+1"+
       " RETURNING next_number-1 AS assigned",
-      [year]
+      [fiscalYear]
     ))[0];
-    const entryNumber=String(year)+String(seq.assigned).padStart(10,"0");
+    const entryNumber=String(fiscalYear)+String(seq.assigned).padStart(10,"0");
     const updated=(await tx.unsafe(
       "UPDATE platform_accounting_entries SET journal_code=$2,entry_number=$3,status='validated',expert_note=$4,validated_at=now(),validated_by=$5,updated_at=now() WHERE id=$1"+
       " RETURNING id,public_id,journal_code,entry_number,entry_date,piece_ref,label,currency,status,validated_at",
@@ -497,7 +527,7 @@ export async function createExpertAccountingEntry(store,input={},actor={}){
     if(periodState?.state==="closed")throw problem(409,"ACCOUNTING_PERIOD_CLOSED");
     const journalRow=(await tx.unsafe("SELECT journal_code FROM platform_accounting_journals WHERE journal_code=$1 AND active=true",[journal]))[0];
     if(!journalRow)throw problem(400,"INVALID_ACCOUNTING_JOURNAL");
-    const accountRows=await tx.unsafe("SELECT account_num,label,active FROM platform_accounting_accounts WHERE account_num=ANY($1::text[])",[[...new Set(normalized.map(x=>x.account_num))]]);
+    const accountRows=await tx.unsafe("SELECT account_num,label,active FROM platform_accounting_accounts WHERE active=true");
     const byAccount=new Map(accountRows.map(x=>[String(x.account_num),x]));
     for(const line of normalized)if(!byAccount.get(line.account_num)?.active)throw problem(400,"ACCOUNTING_ACCOUNT_NOT_ACTIVE",{account_num:line.account_num});
     const sourceKey="manual:"+randomUUID();
@@ -534,13 +564,14 @@ export async function reverseExpertAccountingEntry(store,id,input={},actor={}){
     if(periodState?.state==="closed")throw problem(409,"ACCOUNTING_PERIOD_CLOSED");
     const lines=await tx.unsafe("SELECT * FROM platform_accounting_lines WHERE entry_id=$1 ORDER BY line_no",[entryId]);
     if(lines.length<2)throw problem(409,"ACCOUNTING_ENTRY_LINES_MISSING");
-    const year=Number(reversalDate.slice(0,4));
+    const accountingSettings=(await tx.unsafe("SELECT fiscal_year_close_month,fiscal_year_close_day FROM platform_accounting_settings WHERE id=1 FOR SHARE"))[0]||{};
+    const fiscalYear=fiscalYearForDate(accountingSettings,reversalDate);
     const seq=(await tx.unsafe(
       "INSERT INTO platform_accounting_sequences(fiscal_year,next_number) VALUES($1,2)"+
       " ON CONFLICT(fiscal_year) DO UPDATE SET next_number=platform_accounting_sequences.next_number+1 RETURNING next_number-1 AS assigned",
-      [year]
+      [fiscalYear]
     ))[0];
-    const entryNumber=String(year)+String(seq.assigned).padStart(10,"0");
+    const entryNumber=String(fiscalYear)+String(seq.assigned).padStart(10,"0");
     const sourceKey="reversal:"+entryId+":"+randomUUID();
     const reversed=(await tx.unsafe(
       "INSERT INTO platform_accounting_entries(source_type,source_key,source_hash,journal_code,entry_number,entry_date,piece_ref,piece_date,label,currency,status,expert_note,source_payload,validated_at,validated_by)"+
@@ -665,6 +696,9 @@ export async function importAccountingBankTransactions(store,input={},actor={}){
 export async function expertAccountingFec(store,params={}){
   const year=normalizeYear(params.year);
   const settings=await readSettings(store);
+  const bounds=fiscalBounds(settings||{},year);
+  const from=(bounds?.from||new Date(Date.UTC(year,0,1))).toISOString().slice(0,10);
+  const to=(bounds?.toExclusive||new Date(Date.UTC(year+1,0,1))).toISOString().slice(0,10);
   const readiness=await fecBlockers(store,settings,year);
   if(readiness.blockers.length)throw problem(409,"ACCOUNTING_FEC_NOT_READY",{year,blockers:readiness.blockers});
   const rows=await store.readSql.unsafe(
@@ -673,7 +707,7 @@ export async function expertAccountingFec(store,params={}){
     " FROM platform_accounting_entries e JOIN platform_accounting_journals j ON j.journal_code=e.journal_code JOIN platform_accounting_lines l ON l.entry_id=e.id"+
     " WHERE e.status IN ('validated','reversal') AND e.entry_date>=$1::date AND e.entry_date<$2::date"+
     " ORDER BY e.entry_number,l.line_no",
-    [year+"-01-01",(year+1)+"-01-01"]
+    [from,to]
   );
   const body=[FEC_FIELDS.join("\t")];
   const defaultCurrency=String(settings.default_currency||"EUR");
