@@ -266,6 +266,7 @@ export function buildTransactionalMessage(config,templateKey,data={}){
   const actionUrl=safeActionUrl(config,data.action_url);
   const invoiceUrl=safeExternalHttpsUrl(data.invoice_url,["stripe.com"]);
   const invoicePdfUrl=safeExternalHttpsUrl(data.invoice_pdf_url,["stripe.com"]);
+  const stripeActionUrl=safeExternalHttpsUrl(data.action_url,["stripe.com"]);
   const cases={
     email_verification:{
       subject:"Votre code de vérification Audiotel Premium Pro",
@@ -462,6 +463,29 @@ export function buildTransactionalMessage(config,templateKey,data={}){
       lead:greeting,
       paragraphs:["Un reversement issu du trafic SVA a franchi les contrôles nécessaires et est maintenant indiqué comme disponible dans votre espace client.","Le statut affiché dans votre espace reste la référence pour le suivi du règlement."],
       cta:{label:"Consulter mes reversements",url:portalUrl}
+    },
+    referral_payout_setup:{
+      subject:"Action requise pour recevoir automatiquement votre prime de parrainage",
+      title:"Finalisez votre compte de reversement",
+      lead:greeting,
+      paragraphs:[
+        "Votre prime de parrainage Audiotel Premium Pro est acquise et son règlement est automatisé.",
+        "Stripe doit toutefois vérifier les informations du bénéficiaire avant de pouvoir recevoir le virement. Cette vérification est imposée par le prestataire de paiement et ne peut pas être réalisée à votre place.",
+        "Une fois la vérification terminée, le versement est repris automatiquement sans intervention de PGI Telecom."
+      ],
+      cta:stripeActionUrl?{label:"Finaliser la vérification Stripe",url:stripeActionUrl}:null,
+      foot:"Le lien sécurisé est fourni par Stripe. Aucun mot de passe Audiotel Premium Pro ne vous sera demandé sur cette page."
+    },
+    referral_payout_paid:{
+      subject:"Votre prime de parrainage Audiotel Premium Pro a été versée",
+      title:"Prime de parrainage versée",
+      lead:greeting,
+      paragraphs:[
+        "Votre prime de parrainage a été transmise automatiquement à votre compte Stripe.",
+        safeDetail("Montant",data.amount),
+        safeDetail("Référence du virement",data.transfer_reference)
+      ].filter(Boolean),
+      cta:{label:"Consulter mon espace client",url:portalUrl}
     },
     portability_received:{
       subject:"Votre demande de portabilité a été reçue",
