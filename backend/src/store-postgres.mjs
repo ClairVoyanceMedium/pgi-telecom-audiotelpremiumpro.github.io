@@ -110,6 +110,65 @@ function consumptionDiff(stored,current){
   return out;
 }
 
+async function ensureReferralPayoutAutomationSchema(sql){
+  const ready=async()=>{
+    const rows=await sql.unsafe(
+      "SELECT to_regclass('public.customer_referral_payout_accounts') IS NOT NULL AS payout_accounts,"+
+      " (SELECT count(*)=8 FROM information_schema.columns WHERE table_schema='public' AND table_name='customer_referral_rewards'"+
+      " AND column_name=ANY(ARRAY['payout_state','payout_attempt_count','payout_last_attempt_at','payout_next_attempt_at','payout_last_error','payout_destination_reference','provider_transfer_reference','payout_completed_at'])) AS reward_columns"
+    );
+    return rows[0]?.payout_accounts===true&&rows[0]?.reward_columns===true;
+  };
+  if(await ready())return {repaired:false};
+  const lockKey="pgi_referral_payout_schema_v1";
+  await sql.unsafe("SELECT pg_advisory_lock(hashtext($1))",[lockKey]);
+  try{
+    if(await ready())return {repaired:false};
+    await sql.begin(async tx=>{
+      await tx.unsafe(
+        "CREATE TABLE IF NOT EXISTS customer_referral_payout_accounts ("+
+        "id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,"+
+        "tenant_id bigint NOT NULL UNIQUE REFERENCES tenants(id) ON DELETE CASCADE,"+
+        "provider text NOT NULL DEFAULT 'stripe' CHECK (provider IN ('stripe')),"+
+        "provider_account_reference text NOT NULL UNIQUE,"+
+        "status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','onboarding','restricted','active','disabled')),"+
+        "transfers_enabled boolean NOT NULL DEFAULT false,"+
+        "details_submitted boolean NOT NULL DEFAULT false,"+
+        "requirements_state text,metadata jsonb NOT NULL DEFAULT '{}'::jsonb,last_synced_at timestamptz,"+
+        "created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now())"
+      );
+      await tx.unsafe("CREATE INDEX IF NOT EXISTS customer_referral_payout_accounts_status_idx ON customer_referral_payout_accounts(status,transfers_enabled,updated_at DESC)");
+      await tx.unsafe(
+        "DO $ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='customer_referral_payout_accounts_touch_updated'"+
+        " AND tgrelid='customer_referral_payout_accounts'::regclass AND NOT tgisinternal) THEN "+
+        "CREATE TRIGGER customer_referral_payout_accounts_touch_updated BEFORE UPDATE ON customer_referral_payout_accounts "+
+        "FOR EACH ROW EXECUTE FUNCTION touch_updated_at(); END IF; END $"
+      );
+      await tx.unsafe(
+        "ALTER TABLE customer_referral_rewards"+
+        " ADD COLUMN IF NOT EXISTS payout_state text NOT NULL DEFAULT 'pending' CHECK (payout_state IN ('pending','processing','waiting_account','retry','transferred','manual','cancelled')),"+
+        " ADD COLUMN IF NOT EXISTS payout_attempt_count integer NOT NULL DEFAULT 0 CHECK (payout_attempt_count >= 0),"+
+        " ADD COLUMN IF NOT EXISTS payout_last_attempt_at timestamptz,"+
+        " ADD COLUMN IF NOT EXISTS payout_next_attempt_at timestamptz,"+
+        " ADD COLUMN IF NOT EXISTS payout_last_error text,"+
+        " ADD COLUMN IF NOT EXISTS payout_destination_reference text,"+
+        " ADD COLUMN IF NOT EXISTS provider_transfer_reference text,"+
+        " ADD COLUMN IF NOT EXISTS payout_completed_at timestamptz"
+      );
+      await tx.unsafe(
+        "UPDATE customer_referral_rewards SET payout_state=CASE WHEN status='paid' THEN 'manual' WHEN status='cancelled' THEN 'cancelled' ELSE payout_state END,"+
+        " payout_completed_at=CASE WHEN status='paid' THEN COALESCE(payout_completed_at,paid_at) ELSE payout_completed_at END"+
+        " WHERE (status='paid' AND payout_state<>'manual') OR (status='cancelled' AND payout_state<>'cancelled')"
+      );
+      await tx.unsafe("CREATE UNIQUE INDEX IF NOT EXISTS customer_referral_rewards_transfer_ref_uidx ON customer_referral_rewards(provider_transfer_reference) WHERE provider_transfer_reference IS NOT NULL");
+      await tx.unsafe("CREATE INDEX IF NOT EXISTS customer_referral_rewards_auto_payout_due_idx ON customer_referral_rewards(status,payout_state,payout_next_attempt_at,earned_at,id) WHERE status='earned'");
+    });
+    return {repaired:true};
+  }finally{
+    try{await sql.unsafe("SELECT pg_advisory_unlock(hashtext($1))",[lockKey]);}catch{}
+  }
+}
+
 export class PostgresStore{
   constructor(sql,config,eventBus,readSql=null){
     this.sql=sql;
@@ -131,6 +190,7 @@ export class PostgresStore{
     });
     const sql=makeClient(config.databaseUrl,config.databasePoolMax);
     await sql.unsafe("select 1 as ok");
+    await ensureReferralPayoutAutomationSchema(sql);
     let readSql=sql;
     if(config.databaseReadUrl){
       readSql=makeClient(config.databaseReadUrl,config.databaseReadPoolMax);
