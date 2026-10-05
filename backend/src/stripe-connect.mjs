@@ -184,6 +184,43 @@ export function normalizeStripeReferralPayoutCapability(account={}){
   };
 }
 
+function referralTransferGroup(rewardPublicId){
+  const rewardId=cleanText(rewardPublicId,80);
+  if(!rewardId)throw error(400,"INVALID_REFERRAL_REWARD");
+  return "referral_reward_"+rewardId.replace(/[^A-Za-z0-9_-]/g,"").slice(0,120);
+}
+
+export async function findStripeReferralTransfer(config,input={}){
+  const destination=String(input.destination_account||"").trim();
+  if(!/^acct_[A-Za-z0-9]+$/.test(destination))throw error(400,"INVALID_CONNECT_ACCOUNT");
+  const amount=Math.trunc(Number(input.amount_minor));
+  if(!Number.isInteger(amount)||amount<1||amount>100000000)throw error(400,"INVALID_REFERRAL_PAYOUT_AMOUNT");
+  const currency=String(input.currency||"EUR").trim().toLowerCase();
+  if(!/^[a-z]{3}$/.test(currency))throw error(400,"INVALID_REFERRAL_PAYOUT_CURRENCY");
+  const rewardId=cleanText(input.reward_public_id,80);
+  const transferGroup=referralTransferGroup(rewardId);
+  const query=new URLSearchParams({destination,transfer_group:transferGroup,limit:"10"});
+  const list=await jsonRequest(config,"/v1/transfers?"+query.toString());
+  const transfer=(Array.isArray(list?.data)?list.data:[]).find(x=>
+    String(x?.destination||"")===destination
+    &&Number(x?.amount)===amount
+    &&String(x?.currency||"").toLowerCase()===currency
+    &&String(x?.metadata?.pgi_referral_reward||"")===rewardId
+    &&x?.reversed!==true
+  );
+  if(!transfer)return null;
+  if(!/^tr_[A-Za-z0-9]+$/.test(String(transfer.id||"")))throw error(502,"STRIPE_REFERRAL_TRANSFER_INVALID");
+  return {
+    provider:"stripe",
+    transfer_reference:String(transfer.id),
+    destination_account:destination,
+    amount_minor:Number(transfer.amount),
+    currency:String(transfer.currency||currency).toUpperCase(),
+    created_at:Number(transfer.created)>0?new Date(Number(transfer.created)*1000).toISOString():null,
+    reconciled:true
+  };
+}
+
 export async function createStripeReferralTransfer(config,input={}){
   const destination=String(input.destination_account||"").trim();
   if(!/^acct_[A-Za-z0-9]+$/.test(destination))throw error(400,"INVALID_CONNECT_ACCOUNT");
@@ -198,7 +235,7 @@ export async function createStripeReferralTransfer(config,input={}){
     currency,
     destination,
     description:"Prime parrainage Audiotel Premium Pro",
-    transfer_group:"referral_reward_"+rewardId.replace(/[^A-Za-z0-9_-]/g,"").slice(0,120),
+    transfer_group:referralTransferGroup(rewardId),
     metadata:{
       pgi_referral_reward:rewardId,
       pgi_tenant_public_id:cleanText(input.tenant_public_id,80)
