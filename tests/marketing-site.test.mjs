@@ -599,7 +599,9 @@ test("new complementary products are public, indexable and commercially explicit
   assert.match(priorityPortability,/traitement administratif prioritaire/i);
   assert.match(referralLanding,/Vos recommandations peuvent vous rapporter/i);
   assert.match(referralLanding,/Une récompense par filleul qualifié/i);
-  assert.match(referralLanding,/récompenses qui peuvent s’additionner/i);
+  assert.match(referralLanding,/barème progressif fixe/i);
+  assert.match(referralLanding,/3 factures mensuelles distinctes réellement payées/i);
+  assert.match(referralLanding,/25e/i);
   assert.match(referralLanding,/Voir ma récompense et mon lien/i);
   assert.match(referralLanding,/Aucune démarche compliquée/i);
   assert.doesNotMatch(referralLanding,/site\/referral-landing\.js/);
@@ -608,7 +610,8 @@ test("new complementary products are public, indexable and commercially explicit
   assert.match(tracking,/const quickTab=link\.closest\("\.revenue-quick-tab"\)/);
   assert.match(tracking,/quickTab\.hidden=false/);
   assert.match(tracking,/Intl\.NumberFormat\("fr-FR"/);
-  assert.match(clientReferral,/Recommander et cumuler mes récompenses/);
+  assert.match(clientReferral,/Mon espace ambassadeur/);
+  assert.match(clientReferral,/paid_invoice_count/);
   assert.match(buildStatic,/"portabilite-prioritaire"/);
   assert.match(buildStatic,/"parrainage-audiotel"/);
   assert.match(sitemap,/portabilite-prioritaire/);
