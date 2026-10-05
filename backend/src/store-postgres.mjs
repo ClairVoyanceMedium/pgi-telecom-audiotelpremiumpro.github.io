@@ -4969,6 +4969,7 @@ export class PostgresStore{
     if(!existing)throw problem(404,"REFERRAL_REWARD_NOT_FOUND");
     if(existing.status==="paid")return {...existing,amount_minor:Number(existing.amount_minor),already_paid:true};
     if(existing.status!=="earned")throw problem(409,"REFERRAL_REWARD_NOT_PAYABLE");
+    if(existing.payout_state==="processing")throw problem(409,"REFERRAL_PAYOUT_IN_PROGRESS");
     const row=(await this.sql.unsafe(
       "UPDATE customer_referral_rewards SET status='paid',paid_at=now(),paid_reference=$2,payout_state='manual',payout_completed_at=now(),payout_next_attempt_at=NULL,payout_last_error=NULL WHERE id=$1 AND status='earned' RETURNING id,public_id::text AS public_id,tenant_id,amount_minor::bigint AS amount_minor,currency,status,earned_at,paid_at,paid_reference,payout_state",
       [id,reference]
