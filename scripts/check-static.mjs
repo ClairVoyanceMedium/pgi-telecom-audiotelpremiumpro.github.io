@@ -10,6 +10,7 @@ const required = [
   "site/site.js",
   "sitemap.xml",
   "assets/styles.css",
+  "assets/accounting-cockpit.css",
   "assets/client-portal.css",
   "assets/client-admin-theme.css",
   "assets/client-config.js",
@@ -71,6 +72,7 @@ const required = [
   "assets/call-tools.js",
   "assets/call-list.js",
   "assets/metric-reset.js",
+  "assets/accounting-cockpit.js",
   "assets/app.js",
   "assets/audiotel-brand-icon-v33.png",
   "assets/audiotel-brand-logo-v33.png",
@@ -94,7 +96,7 @@ const app = fs.readFileSync(path.join(root, "assets/app.js"), "utf8");
 const frontRuntime = [
   "index.html","client.html","assets/client-admin-theme.css","assets/config.js","assets/core.js","assets/api-client.js","assets/client-portal-api.js","assets/client-portal.js","assets/client-billing.js","assets/client-analytics-plus.js","assets/client-account-proof.js","assets/client-experience-command-center.js","assets/client-portability.js","assets/client-service-center.js","assets/client-relations.js","assets/client-voice-studio.js","assets/client-search.js","assets/client-premium.js","assets/client-access-visibility.js","assets/client-mobile.js","assets/client-team-access.js","assets/client-premium-plus.js","assets/passkey-client.js","assets/premium-plus-core.js","assets/premium-plus.js","assets/client-intelligence.js",
   "assets/data-client.js","assets/demo-data.js","assets/command-palette-loader.js","assets/command-palette.js",
-  "assets/workspace.js","assets/cockpit-pro.js","assets/performance-radar.js","assets/voice-intelligence.js","assets/subscription-billing-ui.js","assets/customer-admin.js","assets/customer-relations.js","assets/customer-admin.css","assets/tenant-control-detail.js","assets/tenant-consumption-check.js","assets/customer-360-detail.js","assets/customer-internal-notes.js","assets/tenant-control-utils.js","assets/tenant-portability-admin.js","assets/tenant-service-admin.js","assets/tenant-payout-admin.js","assets/platform-admin-tools.js","assets/platform-regulatory-tools.js","assets/control-tower.js","assets/control-tower-assurance.js","assets/launch-readiness.js","assets/performance-resilience-lab.js","assets/sva-compliance-center.js","assets/call-tools.js","assets/call-list.js","assets/metric-reset.js","assets/app.js","service-worker.js"
+  "assets/workspace.js","assets/cockpit-pro.js","assets/performance-radar.js","assets/voice-intelligence.js","assets/subscription-billing-ui.js","assets/customer-admin.js","assets/customer-relations.js","assets/customer-admin.css","assets/tenant-control-detail.js","assets/tenant-consumption-check.js","assets/customer-360-detail.js","assets/customer-internal-notes.js","assets/tenant-control-utils.js","assets/tenant-portability-admin.js","assets/tenant-service-admin.js","assets/tenant-payout-admin.js","assets/platform-admin-tools.js","assets/platform-regulatory-tools.js","assets/control-tower.js","assets/control-tower-assurance.js","assets/launch-readiness.js","assets/performance-resilience-lab.js","assets/sva-compliance-center.js","assets/call-tools.js","assets/call-list.js","assets/metric-reset.js","assets/accounting-cockpit.js","assets/app.js","service-worker.js"
 ].map(file=>fs.readFileSync(path.join(root,file),"utf8")).join("\n");
 
 const failures = [];
@@ -126,6 +128,10 @@ if (/http:\/\//i.test(frontRuntime)) failures.push("Référence HTTP non chiffr�
 if (/localhost|127\.0\.0\.1/i.test(frontRuntime)) failures.push("Endpoint local détecté dans le front");
 if (!app.includes("baseline")) failures.push("Logique de baseline absente");
 if (!app.includes("expected") || !app.includes("confirmed")) failures.push("Réconciliation financière absente");
+if (!index.includes('data-view="accounting"') || !index.includes('class="admin-bottom-dock"')) failures.push("Accès Comptabilité ou barre de gestion basse absent");
+if (!app.includes('case "accounting"') || !app.includes('accounting-cockpit.js')) failures.push("Vue Comptabilité non branchée");
+const accountingCockpit=fs.readFileSync(path.join(root,"assets/accounting-cockpit.js"),"utf8");
+if (!/Aucune conversion HT\/TTC n’est inventée/.test(accountingCockpit) || !/Exporter CSV/.test(accountingCockpit)) failures.push("Garde-fous Comptabilité absents");
 
 if (failures.length) {
   failures.forEach(x => console.error("FAIL:", x));
