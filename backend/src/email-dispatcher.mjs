@@ -3,7 +3,7 @@ import {emailHash,normalizeEmail,sendTransactionalEmail} from "./resend-email.mj
 const OUTBOX_TYPES=[
   "customer.self_registered","tenant.status","subscription.changed",
   "portability.requested","service.incident.created","service.incident.note","service.incident.changed",
-  "tenant.revenue_distribution.updated","consumer.withdrawal.received"
+  "tenant.revenue_distribution.updated","consumer.withdrawal.received","referral.reward.earned"
 ];
 const TERMINAL_SEND_STATES=new Set(["accepted","sent","delivered","delayed","clicked","bounced","complained","suppressed"]);
 const EMAIL_RE=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -167,6 +167,18 @@ async function messagesForEvent(store,config,event){
     if(type==="customer.subscription.deleted"||p.status==="cancelled"||p.status==="ended")return [msg("customer",customerEmail,customerName,"subscription_cancelled","billing",event,base)];
     if(p.status==="suspended")return [msg("customer",customerEmail,customerName,"subscription_suspended","billing",event,base)];
     return [];
+  }
+  if(event.event_type==="referral.reward.earned"){
+    if(!customerEmail)return [];
+    return [msg("customer",customerEmail,customerName,"referral_reward_earned","billing",event,{
+      ...base,
+      amount_minor:Number(p.amount_minor||0),
+      currency:String(p.currency||"EUR"),
+      referral_ordinal:Number(p.referral_ordinal||0),
+      base_reward_minor:Number(p.base_reward_minor||0),
+      milestone_bonus_minor:Number(p.milestone_bonus_minor||0),
+      qualification_paid_months:Number(p.qualification_paid_months||3)
+    })];
   }
   if(event.event_type==="portability.requested"){
     return [
