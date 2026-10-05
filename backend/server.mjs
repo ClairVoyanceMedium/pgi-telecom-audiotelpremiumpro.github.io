@@ -1598,7 +1598,7 @@ export function createBackend(options={}){
       if(method==="POST"&&pathname==="/api/v1/platform/referral-program"){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
         const body=await readJson(req,config.bodyLimitBytes);
-        const payload={enabled:body.enabled===true,reward_minor:Math.trunc(Number(body.reward_minor)),currency:String(body.currency||"EUR").toUpperCase()};
+        const payload={enabled:body.enabled===true};
         const result=await store.idempotent(req.headers["idempotency-key"],"platform.referral_program.update",payload,()=>store.updateReferralProgram(payload,actor));
         return done(res,metrics,started,"platform.referral_program_update",200,{...result.value,replayed:result.replayed});
       }
