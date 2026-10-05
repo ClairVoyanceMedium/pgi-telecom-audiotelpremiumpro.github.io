@@ -36,7 +36,7 @@ export function startWorkers({store,eventBus,config,queueHandlers={}}){
 
   function referralRetryAt(attempt){
     const n=Math.max(1,Math.trunc(Number(attempt)||1));
-    const seconds=Math.min(86400,Math.max(60,60*Math.pow(2,Math.min(8,n-1))));
+    const seconds=Math.min(3600,Math.max(60,60*Math.pow(2,Math.min(6,n-1))));
     return new Date(Date.now()+seconds*1000).toISOString();
   }
   function referralMissingDetailsRetryAt(){
