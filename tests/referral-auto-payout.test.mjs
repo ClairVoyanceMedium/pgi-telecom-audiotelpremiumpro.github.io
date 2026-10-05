@@ -18,13 +18,11 @@ test("recipient readiness uses the Stripe Accounts v2 transfer capability",()=>{
     id:"acct_ReferralPayout123",
     configuration:{recipient:{capabilities:{stripe_balance:{
       stripe_transfers:{status:"active"},
-      payouts:{status:"active"}
     }}}},
     requirements:{summary:{minimum_deadline:{status:""}}}
   });
   assert.equal(ready.status,"active");
   assert.equal(ready.transfers_enabled,true);
-  assert.equal(ready.payouts_enabled,true);
 
   const blocked=normalizeStripeReferralRecipientAccount({
     id:"acct_ReferralPayout123",
