@@ -1612,6 +1612,15 @@ export function createBackend(options={}){
         requireRole(actor,["admin","finance","readonly"]);
         return done(res,metrics,started,"platform.referral_program",200,await store.referralProgramAdminState());
       }
+      if(method==="GET"&&pathname==="/api/v1/platform/referral-program/ambassadors"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.referral_ambassadors",200,await store.referralAmbassadorsAdminList());
+      }
+      match=routeMatch(pathname,"/api/v1/platform/referral-program/ambassadors/:id");
+      if(method==="GET"&&match){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.referral_ambassador",200,await store.referralAmbassadorAdminDetail(match.id));
+      }
       if(method==="POST"&&pathname==="/api/v1/platform/referral-program"){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
         const body=await readJson(req,config.bodyLimitBytes);
