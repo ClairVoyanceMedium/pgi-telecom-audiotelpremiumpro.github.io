@@ -1042,7 +1042,7 @@ export function createBackend(options={}){
         }
         const link=await createStripeReferralOnboardingLink(config,local.provider_account_reference,{idempotency_key:idempotencyKey});
         return done(res,metrics,started,"customer.referral_payout.connect",201,{
-          account:{status:local.status,transfers_enabled:local.transfers_enabled===true,payouts_enabled:local.payouts_enabled===true,details_submitted:local.details_submitted===true,requirements_state:local.requirements_state||null},
+          account:{status:local.status,transfers_enabled:local.transfers_enabled===true,details_submitted:local.details_submitted===true,requirements_state:local.requirements_state||null},
           onboarding:link
         });
       }
