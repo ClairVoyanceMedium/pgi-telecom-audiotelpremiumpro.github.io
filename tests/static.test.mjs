@@ -669,8 +669,8 @@ test("les petits écrans conservent toutes les fonctions admin et client",()=>{
   assert.match(workspace,/pgi_mobile_full_v2/);
   assert.match(workspace,/v===null\|\|v==="1"/);
   assert.match(app,/mobileOverviewExpanded:true/);
-  for(const view of ["overview","calls","finance","wholesale"])assert.match(index,new RegExp('mobile-nav[\\s\\S]*data-view="'+view+'"'));
-  for(const view of ["experts","carriers","system","settings"])assert.match(index,new RegExp('mobile-sheet-grid[\\s\\S]*data-view="'+view+'"'));
+  for(const view of ["overview","calls","accounting","wholesale"])assert.match(index,new RegExp('mobile-nav[\\s\\S]*data-view="'+view+'"'));
+  for(const view of ["finance","experts","carriers","system","settings"])assert.match(index,new RegExp('mobile-sheet-grid[\\s\\S]*data-view="'+view+'"'));
   for(const token of ["data-control-tower","data-sva-compliance","data-platform-admin"])assert.ok(index.includes(token),"missing mobile admin access "+token);
 
   assert.match(clientPortalJs,/import\("\.\/client-mobile\.js"\)/);
