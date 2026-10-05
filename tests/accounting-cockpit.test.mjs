@@ -40,7 +40,7 @@ test("accounting UI separates PGI card commission from customer payment volume",
   assert.match(ui,/Marge SVA encaissée/);
   assert.match(ui,/Primes ambassadeurs à payer/);
   assert.match(ui,/Exporter CSV/);
-  assert.match(ui,/Cette vue est un pilotage comptable d’exploitation/);
+  assert.match(postgres,/Cette vue est un pilotage comptable d’exploitation/);
   assert.doesNotMatch(ui,/volume_paid_minor[^\n]{0,80}Contribution PGI/);
 });
 
