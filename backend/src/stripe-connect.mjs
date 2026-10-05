@@ -102,6 +102,13 @@ export async function createStripeConnectedAccount(config,input={}){
       merchant:{
         capabilities:{card_payments:{requested:true}},
         support:{url:baseUrl(config)}
+      },
+      recipient:{
+        capabilities:{
+          stripe_balance:{
+            stripe_transfers:{requested:true}
+          }
+        }
       }
     }
   };
@@ -112,24 +119,87 @@ export async function createStripeConnectedAccount(config,input={}){
 
 export async function retrieveStripeConnectedAccount(config,accountId){
   if(!/^acct_[A-Za-z0-9]+$/.test(String(accountId||"")))throw error(400,"INVALID_CONNECT_ACCOUNT");
-  const query="?include%5B%5D=configuration.merchant&include%5B%5D=requirements&include%5B%5D=defaults";
+  const query="?include%5B%5D=configuration.merchant&include%5B%5D=configuration.recipient&include%5B%5D=requirements&include%5B%5D=defaults";
   return jsonRequest(config,"/v2/core/accounts/"+encodeURIComponent(accountId)+query,{preview:true});
+}
+
+export async function ensureStripeTransferRecipient(config,accountId,input={}){
+  if(!/^acct_[A-Za-z0-9]+$/.test(String(accountId||"")))throw error(400,"INVALID_CONNECT_ACCOUNT");
+  const body={
+    configuration:{
+      recipient:{
+        capabilities:{
+          stripe_balance:{
+            stripe_transfers:{requested:true}
+          }
+        }
+      }
+    }
+  };
+  return jsonRequest(config,"/v2/core/accounts/"+encodeURIComponent(accountId),{
+    method:"POST",
+    body,
+    idempotencyKey:input.idempotency_key||("referral-recipient/"+String(accountId)),
+    preview:true
+  });
 }
 
 export function normalizeStripeConnectedAccount(account={}){
   const card=account?.configuration?.merchant?.capabilities?.card_payments||{};
+  const recipientBalance=account?.configuration?.recipient?.capabilities?.stripe_balance||{};
+  const transfer=recipientBalance?.stripe_transfers||{};
+  const payout=recipientBalance?.payouts||{};
   const requirements=account?.requirements||{};
   const cardStatus=String(card?.status||"").toLowerCase();
+  const transferStatus=String(transfer?.status||"").toLowerCase();
+  const payoutStatus=String(payout?.status||"").toLowerCase();
   const deadline=String(requirements?.summary?.minimum_deadline?.status||"").toLowerCase();
   const chargesEnabled=cardStatus==="active";
+  const transfersEnabled=transferStatus==="active";
+  const payoutsEnabled=payoutStatus==="active"||transfersEnabled;
   const detailsSubmitted=!["currently_due","past_due","eventually_due"].includes(deadline)&&deadline!=="requirements_past_due";
   return {
     provider_account_reference:String(account?.id||""),
     charges_enabled:chargesEnabled,
-    payouts_enabled:chargesEnabled,
+    payouts_enabled:payoutsEnabled,
+    transfers_enabled:transfersEnabled,
+    transfers_requested:transfer?.requested===true||transferStatus.length>0,
     details_submitted:detailsSubmitted,
     requirements_state:deadline||cardStatus||"unknown",
+    transfer_requirements_state:transferStatus||deadline||"not_requested",
     status:chargesEnabled?"active":detailsSubmitted?"restricted":"onboarding"
+  };
+}
+
+export async function createStripeReferralTransfer(config,input={}){
+  const accountId=String(input.connected_account||"");
+  const amount=Math.trunc(Number(input.amount_minor));
+  const currency=String(input.currency||"EUR").trim().toLowerCase();
+  const rewardId=cleanText(input.reward_public_id,80);
+  if(!/^acct_[A-Za-z0-9]+$/.test(accountId))throw error(400,"INVALID_CONNECT_ACCOUNT");
+  if(!Number.isInteger(amount)||amount<=0||amount>100000000)throw error(400,"INVALID_REFERRAL_REWARD_AMOUNT");
+  if(!/^[a-z]{3}$/.test(currency))throw error(400,"INVALID_REFERRAL_REWARD_CURRENCY");
+  if(!rewardId)throw error(400,"INVALID_REFERRAL_REWARD");
+  const transfer=await formRequest(config,"/v1/transfers",{
+    fields:{
+      amount,
+      currency,
+      destination:accountId,
+      description:"Prime parrainage Audiotel Premium Pro",
+      transfer_group:"pgi_referral_"+rewardId.replace(/[^A-Za-z0-9]/g,"").slice(0,60),
+      metadata:{
+        pgi_referral_reward:rewardId,
+        pgi_tenant_public_id:cleanText(input.tenant_public_id,80)
+      }
+    },
+    idempotencyKey:"referral-reward/"+rewardId
+  });
+  if(!/^tr_[A-Za-z0-9]+$/.test(String(transfer?.id||"")))throw error(502,"STRIPE_TRANSFER_INVALID");
+  return {
+    transfer_reference:String(transfer.id),
+    destination_reference:String(transfer.destination||accountId),
+    amount_minor:Number(transfer.amount||amount),
+    currency:String(transfer.currency||currency).toUpperCase()
   };
 }
 
