@@ -29,7 +29,7 @@ test("production config accepts Vercel Git commit SHA",()=>{
   assert.equal(config.publicBaseUrl,"https://audiotel-premium-pro.com");
 });
 
-test("Vercel container applies serialized checksum migrations before exposing the API",()=>{
+test("Vercel container keeps generic migrations out of cold start",()=>{
   const docker=fs.readFileSync("Dockerfile.vercel","utf8");
   const start=fs.readFileSync("scripts/start-vercel.sh","utf8");
   assert.ok(docker.includes('CMD ["sh","scripts/start-vercel.sh"]'));
@@ -43,11 +43,7 @@ test("Vercel container applies serialized checksum migrations before exposing th
   assert.match(start,/DATABASE_URL/);
   assert.match(start,/build-static\.mjs/);
   assert.doesNotMatch(start,/bootstrap-database\.mjs/);
-  assert.match(start,/backend\/migrate\.mjs/);
-  const migration=fs.readFileSync("backend/migrate.mjs","utf8");
-  assert.match(migration,/pg_advisory_lock/);
-  assert.match(migration,/schema_migrations/);
-  assert.match(migration,/checksum/);
+  assert.doesNotMatch(start,/backend\/migrate\.mjs/);
   assert.doesNotMatch(docker,/DATABASE_PUBLIC_URL/);
   const build=fs.readFileSync("scripts/build-static.mjs","utf8");
   const server=fs.readFileSync("backend/server.mjs","utf8");
