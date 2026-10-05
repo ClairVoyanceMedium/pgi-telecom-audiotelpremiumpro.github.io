@@ -2,6 +2,7 @@ import fs from "node:fs";
 import {loadConfig} from "../backend/src/config.mjs";
 
 const failures=[];
+const packageVersion=JSON.parse(fs.readFileSync("package.json","utf8")).version;
 const compose=fs.readFileSync("infra/docker-compose.production.yml","utf8");
 const runtime=fs.readFileSync("assets/config.production.example.js","utf8");
 const envExample=fs.readFileSync("infra/production.env.example.txt","utf8");
@@ -147,6 +148,7 @@ if(!/pgi:portal-loaded/.test(clientReferral)||!/3 factures mensuelles distinctes
 if(!/referral-admin\.js/.test(platformAdminTools)||!/updateReferralProgram/.test(referralAdmin)||!/settleReferralReward/.test(referralAdmin)||!/referral-admin-view\.js/.test(referralAdmin)||!/referral-admin\.css/.test(referralAdmin)||!/barème fixe/i.test(referralAdminView)||!/25e filleul/i.test(referralAdminView))failures.push("referral administration must remain fixed, lazy and auditable");
 if(!/Fiches complètes par client/.test(referralAdminView)||!/Qualification abonnement/.test(referralAdminView)||!/Reversements SVA du client ambassadeur/.test(referralAdminView)||!/pa-ambassador/.test(referralAdminCss)||!/paid_invoice_count/.test(postgresStore)||!/svaByReferrer/.test(postgresStore)||!/tenant_revenue_distributions/.test(postgresStore))failures.push("referral administration must expose per-ambassador qualification, rewards and SVA payout evidence");
 if(!/auth-remember/.test(indexSource)||!/remember:remember===true/.test(apiClient)||!/body\.remember===true/.test(backendServer)||!/adminRememberTtlSeconds/.test(backendConfig)||!/PGI_ADMIN_REMEMBER_TTL_SECONDS/.test(envExample)||!/PGI_ADMIN_REMEMBER_TTL_SECONDS/.test(compose))failures.push("admin remember-me must remain explicit, server-issued and configurable");
+if(!backendConfig.includes('version:env.PGI_VERSION||"'+packageVersion+'"')||!envExample.includes("PGI_VERSION="+packageVersion)||!compose.includes("${PGI_VERSION:-"+packageVersion+"}"))failures.push("application version fallbacks must stay aligned with package.json");
 if(!/\/api\/v1\/platform\/accounting/.test(backendServer)||!/async platformAccounting/.test(postgresStore)||!/tax_basis_separated:true/.test(postgresStore)||!/statutory_ledger:false/.test(postgresStore))failures.push("platform accounting must remain source-based and tax-basis separated");
 if(!/Abonnements encaissés TTC/.test(accountingCockpit)||!/Marge SVA encaissée HT/.test(accountingCockpit)||!/Créances opérateurs HT/.test(accountingCockpit))failures.push("accounting cockpit must preserve distinct cash, margin and receivable views");
 
