@@ -395,8 +395,8 @@ function referralProgramStatus(){
   return referralProgramPromise;
 }
 function referralProgramActive(result){
-  const data=result&&result.data,reward=Number(data&&data.reward_minor);
-  return Boolean(result&&result.ok&&data&&data.enabled===true&&Number.isFinite(reward)&&reward>0);
+  const data=result&&result.data,schedule=Array.isArray(data&&data.schedule)?data.schedule:[];
+  return Boolean(result&&result.ok&&data&&data.enabled===true&&schedule.length>0&&Number(data.qualification_paid_months||0)>=1);
 }
 function bindReferralAvailability(){
   const links=[...document.querySelectorAll('a[href="/parrainage-audiotel/"],a[href^="/parrainage-audiotel/?"]')];
@@ -420,21 +420,23 @@ function bindReferralLanding(){
   if(!status&&!main)return;
   const money=(minor,currency)=>{try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:currency||"EUR"}).format(Number(minor)/100)}catch(_e){return (Number(minor)/100).toFixed(2)+" "+(currency||"EUR")}};
   referralProgramStatus().then(result=>{
-    const {ok,data}=result,reward=Number(data&&data.reward_minor),currency=String(data&&data.currency||"EUR").toUpperCase();
+    const {data}=result,currency=String(data&&data.currency||"EUR").toUpperCase(),schedule=Array.isArray(data&&data.schedule)?data.schedule:[],milestones=Array.isArray(data&&data.milestones)?data.milestones:[],need=Number(data&&data.qualification_paid_months||3);
     if(!referralProgramActive(result)){
       status.textContent="Programme de parrainage actuellement fermé. Aucun nouveau parrainage ni nouvelle récompense ne peut être créé tant qu’il reste désactivé.";
       if(main)main.textContent="Programme actuellement fermé";
       const copy=document.querySelector("[data-referral-reward-copy]");if(copy)copy.textContent="Aucune nouvelle récompense n’est proposée tant que le programme est désactivé. Les récompenses déjà acquises restent consultables dans votre espace client.";
-      const note=document.querySelector("[data-referral-example-note]");if(note)note.textContent="Les exemples de récompense seront affichés automatiquement dès la réactivation du programme.";
+      const note=document.querySelector("[data-referral-example-note]");if(note)note.textContent="Les exemples seront réactivés automatiquement avec le programme.";
       document.querySelectorAll("[data-referral-example]").forEach(el=>{el.textContent="Indisponible"});
       return;
     }
-    const one=money(reward,currency);
-    status.textContent="Programme disponible : "+one+" par filleul qualifié selon les conditions en vigueur.";
-    if(main)main.textContent=one+" par filleul qualifié";
-    const copy=document.querySelector("[data-referral-reward-copy]");if(copy)copy.textContent="Récompense actuelle : "+one+" par filleul qualifié. Chaque nouveau filleul qui remplit les conditions du programme peut ajouter cette récompense à votre total.";
-    const note=document.querySelector("[data-referral-example-note]");if(note)note.textContent="Avec la récompense actuellement affichée de "+one+" par filleul qualifié, voici des exemples simples :";
-    document.querySelectorAll("[data-referral-example]").forEach(el=>{const n=Math.max(1,Math.min(20,Number(el.getAttribute("data-referral-example"))||1));el.textContent=money(reward*n,currency)});
+    const rewardAt=n=>{const tier=schedule.find(x=>n>=Number(x.from||1)&&(x.to==null||n<=Number(x.to)))||schedule[schedule.length-1];const bonus=milestones.find(x=>Number(x.ordinal)===n);return Number(tier&&tier.reward_minor||0)+Number(bonus&&bonus.bonus_minor||0)};
+    const cumulative=n=>{let total=0;for(let i=1;i<=n;i++)total+=rewardAt(i);return total};
+    const min=Math.min(...schedule.map(x=>Number(x.reward_minor)||0)),max=Math.max(...schedule.map(x=>Number(x.reward_minor)||0));
+    status.textContent="Programme disponible. Un filleul devient qualifié après "+need+" mensualités distinctes réellement encaissées. Barème fixe : "+money(min,currency)+" à "+money(max,currency)+" par filleul, avec bonus aux paliers prévus.";
+    if(main)main.textContent="De "+money(min,currency)+" à "+money(max,currency)+" par filleul qualifié";
+    const copy=document.querySelector("[data-referral-reward-copy]");if(copy)copy.textContent="Le barème est fixe : 10 € pour les filleuls qualifiés n°1 à 4, 12 € du n°5 au n°9, 15 € du n°10 au n°24, puis 20 € à partir du n°25. Les bonus de palier sont ajoutés automatiquement.";
+    const note=document.querySelector("[data-referral-example-note]");if(note)note.textContent="Exemples cumulés avec le barème fixe et les bonus de palier, après qualification de chaque filleul :";
+    document.querySelectorAll("[data-referral-example]").forEach(el=>{const n=Math.max(1,Math.min(100,Number(el.getAttribute("data-referral-example"))||1));el.textContent=money(cumulative(n),currency)+" cumulés"});
   }).catch(()=>{status.textContent="La disponibilité du programme ne peut pas être confirmée pour le moment. Consultez votre espace client avant tout partage."});
 }
 function boot(){
