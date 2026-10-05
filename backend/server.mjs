@@ -257,6 +257,17 @@ export function createBackend(options={}){
         return done(res,metrics,started,"public.referral_program",200,program);
       }
 
+      if(method==="POST"&&pathname==="/api/v1/public/referral-visit"){
+        requireSameOriginBrowser(req);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const code=String(body.code||"").trim().toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,24);
+        const visitorKey=String(body.visitor_key||"").trim().slice(0,128);
+        if(!/^[A-Z0-9]{8,24}$/.test(code)||!/^[A-Za-z0-9._-]{12,128}$/.test(visitorKey))return done(res,metrics,started,"public.referral_visit",202,{accepted:false});
+        const visitorHash=createHash("sha256").update(code+"|"+visitorKey).digest("hex");
+        const result=typeof store.recordCustomerReferralVisit==="function"?await store.recordCustomerReferralVisit(code,visitorHash):{accepted:false};
+        return done(res,metrics,started,"public.referral_visit",202,{accepted:result?.accepted===true});
+      }
+
       if(method==="GET"&&pathname==="/api/v1/public/withdrawal/status"){
         const schemaReady=typeof store.customerWithdrawalFeatureReady==="function"&&await store.customerWithdrawalFeatureReady();
         return done(res,metrics,started,"public.withdrawal_status",200,{available:config.onlineWithdrawalReady===true&&schemaReady});
@@ -405,10 +416,14 @@ export function createBackend(options={}){
 
       if(method==="POST"&&pathname==="/api/v1/customer/auth/register"){
         if(config.authMode!=="session")return done(res,metrics,started,"customer.auth.register",404,{error:{code:"AUTH_DISABLED"}});
-        if(!config.customerSelfRegistrationEnabled)return done(res,metrics,started,"customer.auth.register",403,{error:{code:"CUSTOMER_INVITATION_REQUIRED",message:"L’accès client est réservé aux clients déjà enregistrés ou invités par PGI Telecom."}});
         requireSameOriginBrowser(req);
         enforceRegistrationRate(req,config,registrationBuckets);
         const body=await readJson(req,config.bodyLimitBytes);
+        const ambassadorRegistration=String(body.service_intent||"").trim().toLowerCase()==="ambassador";
+        if(!config.customerSelfRegistrationEnabled){
+          const referralState=ambassadorRegistration&&typeof store.referralProgramPublicState==="function"?await store.referralProgramPublicState():null;
+          if(!ambassadorRegistration||referralState?.enabled!==true)return done(res,metrics,started,"customer.auth.register",403,{error:{code:"CUSTOMER_INVITATION_REQUIRED",message:"L’accès client est réservé aux clients déjà enregistrés ou invités par PGI Telecom. L’inscription autonome reste possible uniquement pour le programme Ambassadeur lorsqu’il est ouvert."}});
+        }
         const password=String(body.password||"");
         if(password.length<12||password.length>256){const e=new Error("Invalid password");e.status=400;e.code="INVALID_NEW_PASSWORD";throw e;}
         if(String(body.website||"").trim()){const e=new Error("Invalid registration");e.status=400;e.code="REGISTRATION_REJECTED";throw e;}
@@ -1575,6 +1590,12 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.customer_profitability",200,await store.customerProfitability(params));
       }
 
+      if(method==="GET"&&pathname==="/api/v1/platform/accounting"){
+        requireRole(actor,["admin","finance","readonly"]);
+        const params=Object.fromEntries(url.searchParams.entries());
+        return done(res,metrics,started,"platform.accounting",200,await store.platformAccounting(params));
+      }
+
       if(method==="GET"&&pathname==="/api/v1/platform/card-payments/summary"){
         requireRole(actor,["admin","finance","readonly"]);
         return done(res,metrics,started,"platform.card_payments.summary",200,{provider:stripeConnectState(config),...(await store.platformCardPaymentSummary())});
@@ -1592,7 +1613,7 @@ export function createBackend(options={}){
       if(method==="POST"&&pathname==="/api/v1/platform/referral-program"){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
         const body=await readJson(req,config.bodyLimitBytes);
-        const payload={enabled:body.enabled===true,reward_minor:Math.trunc(Number(body.reward_minor)),currency:String(body.currency||"EUR").toUpperCase()};
+        const payload={enabled:body.enabled===true};
         const result=await store.idempotent(req.headers["idempotency-key"],"platform.referral_program.update",payload,()=>store.updateReferralProgram(payload,actor));
         return done(res,metrics,started,"platform.referral_program_update",200,{...result.value,replayed:result.replayed});
       }

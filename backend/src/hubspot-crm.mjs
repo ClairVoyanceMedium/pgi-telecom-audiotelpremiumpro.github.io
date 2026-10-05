@@ -35,7 +35,8 @@ let hubSpotCardPaymentSchemaPromise=null;
 const INTENT_LABELS=Object.freeze({
   new_number:{hubspot:"Nouveau numéro",label:"Nouveau numéro Audiotel"},
   portability:{hubspot:"Portabilité d’un numéro existant",label:"Portabilité d’un numéro existant"},
-  advice:{hubspot:"Informations commerciales",label:"Informations et conseil"}
+  advice:{hubspot:"Informations commerciales",label:"Informations et conseil"},
+  ambassador:{hubspot:"Informations commerciales",label:"Programme Ambassadeur Audiotel Premium Pro"}
 });
 
 function clean(value,max=255){

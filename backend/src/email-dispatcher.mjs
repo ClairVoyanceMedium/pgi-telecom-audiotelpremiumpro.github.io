@@ -3,7 +3,8 @@ import {emailHash,normalizeEmail,sendTransactionalEmail} from "./resend-email.mj
 const OUTBOX_TYPES=[
   "customer.self_registered","tenant.status","subscription.changed",
   "portability.requested","service.incident.created","service.incident.note","service.incident.changed",
-  "tenant.revenue_distribution.updated","consumer.withdrawal.received"
+  "tenant.revenue_distribution.updated","consumer.withdrawal.received",
+  "referral.claim.created","referral.payment.progress","referral.reward.earned"
 ];
 const TERMINAL_SEND_STATES=new Set(["accepted","sent","delivered","delayed","clicked","bounced","complained","suppressed"]);
 const EMAIL_RE=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -167,6 +168,18 @@ async function messagesForEvent(store,config,event){
     if(type==="customer.subscription.deleted"||p.status==="cancelled"||p.status==="ended")return [msg("customer",customerEmail,customerName,"subscription_cancelled","billing",event,base)];
     if(p.status==="suspended")return [msg("customer",customerEmail,customerName,"subscription_suspended","billing",event,base)];
     return [];
+  }
+  if(event.event_type==="referral.claim.created"){
+    if(!customerEmail)return [];
+    return [msg("customer",customerEmail,customerName,"referral_claimed","notifications",event,{...base,required_paid_invoices:Number(p.required_paid_invoices||3)})];
+  }
+  if(event.event_type==="referral.payment.progress"){
+    if(!customerEmail)return [];
+    return [msg("customer",customerEmail,customerName,"referral_progress","notifications",event,{...base,paid_invoices:Number(p.paid_invoices||0),required_paid_invoices:Number(p.required_paid_invoices||3)})];
+  }
+  if(event.event_type==="referral.reward.earned"){
+    if(!customerEmail)return [];
+    return [msg("customer",customerEmail,customerName,"referral_reward_earned","notifications",event,{...base,reward_ordinal:Number(p.reward_ordinal||0),base_reward_minor:Number(p.base_reward_minor||0),bonus_minor:Number(p.bonus_minor||0),amount_minor:Number(p.amount_minor||0),currency:String(p.currency||"EUR"),payout_threshold_minor:Number(p.payout_threshold_minor||2000)})];
   }
   if(event.event_type==="portability.requested"){
     return [

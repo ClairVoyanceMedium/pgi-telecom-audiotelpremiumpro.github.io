@@ -395,8 +395,8 @@ function referralProgramStatus(){
   return referralProgramPromise;
 }
 function referralProgramActive(result){
-  const data=result&&result.data,reward=Number(data&&data.reward_minor);
-  return Boolean(result&&result.ok&&data&&data.enabled===true&&Number.isFinite(reward)&&reward>0);
+  const data=result&&result.data,tiers=Array.isArray(data&&data.tiers)?data.tiers:[];
+  return Boolean(result&&result.ok&&data&&data.enabled===true&&tiers.length>0);
 }
 function bindReferralAvailability(){
   const links=[...document.querySelectorAll('a[href="/parrainage-audiotel/"],a[href^="/parrainage-audiotel/?"]')];
@@ -405,11 +405,7 @@ function bindReferralAvailability(){
     if(referralProgramActive(result))return;
     links.forEach(link=>{
       const quickTab=link.closest(".revenue-quick-tab");
-      if(quickTab){
-        quickTab.hidden=false;
-        quickTab.removeAttribute("aria-hidden");
-        return;
-      }
+      if(quickTab){quickTab.hidden=false;quickTab.removeAttribute("aria-hidden");return;}
       const block=link.closest(".solution-hub-card");
       if(block)block.remove();else link.hidden=true;
     });
@@ -420,22 +416,23 @@ function bindReferralLanding(){
   if(!status&&!main)return;
   const money=(minor,currency)=>{try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:currency||"EUR"}).format(Number(minor)/100)}catch(_e){return (Number(minor)/100).toFixed(2)+" "+(currency||"EUR")}};
   referralProgramStatus().then(result=>{
-    const {ok,data}=result,reward=Number(data&&data.reward_minor),currency=String(data&&data.currency||"EUR").toUpperCase();
+    const {data}=result,currency=String(data&&data.currency||"EUR").toUpperCase(),tiers=Array.isArray(data&&data.tiers)?data.tiers:[],bonuses=data&&data.bonuses||{};
     if(!referralProgramActive(result)){
-      status.textContent="Programme de parrainage actuellement fermé. Aucun nouveau parrainage ni nouvelle récompense ne peut être créé tant qu’il reste désactivé.";
+      if(status)status.textContent="Programme Ambassadeur actuellement fermé aux nouveaux parrainages. Les récompenses déjà acquises restent consultables dans votre espace.";
       if(main)main.textContent="Programme actuellement fermé";
-      const copy=document.querySelector("[data-referral-reward-copy]");if(copy)copy.textContent="Aucune nouvelle récompense n’est proposée tant que le programme est désactivé. Les récompenses déjà acquises restent consultables dans votre espace client.";
-      const note=document.querySelector("[data-referral-example-note]");if(note)note.textContent="Les exemples de récompense seront affichés automatiquement dès la réactivation du programme.";
+      const copy=document.querySelector("[data-referral-reward-copy]");if(copy)copy.textContent="Les nouveaux parrainages sont momentanément fermés. Votre historique et vos récompenses déjà acquises restent disponibles.";
+      const note=document.querySelector("[data-referral-example-note]");if(note)note.textContent="Les simulations seront réactivées automatiquement avec le programme.";
       document.querySelectorAll("[data-referral-example]").forEach(el=>{el.textContent="Indisponible"});
       return;
     }
-    const one=money(reward,currency);
-    status.textContent="Programme disponible : "+one+" par filleul qualifié selon les conditions en vigueur.";
-    if(main)main.textContent=one+" par filleul qualifié";
-    const copy=document.querySelector("[data-referral-reward-copy]");if(copy)copy.textContent="Récompense actuelle : "+one+" par filleul qualifié. Chaque nouveau filleul qui remplit les conditions du programme peut ajouter cette récompense à votre total.";
-    const note=document.querySelector("[data-referral-example-note]");if(note)note.textContent="Avec la récompense actuellement affichée de "+one+" par filleul qualifié, voici des exemples simples :";
-    document.querySelectorAll("[data-referral-example]").forEach(el=>{const n=Math.max(1,Math.min(20,Number(el.getAttribute("data-referral-example"))||1));el.textContent=money(reward*n,currency)});
-  }).catch(()=>{status.textContent="La disponibilité du programme ne peut pas être confirmée pour le moment. Consultez votre espace client avant tout partage."});
+    const amountFor=n=>{const tier=tiers.find(t=>n>=Number(t.from||1)&&(t.to==null||n<=Number(t.to)))||tiers[tiers.length-1];return Number(tier?.reward_minor||0)+Number(bonuses[String(n)]||0)};
+    const cumulative=n=>{let total=0;for(let i=1;i<=n;i++)total+=amountFor(i);return total};
+    if(status)status.textContent="Programme ouvert : 10 € de base du 1er au 4e filleul, 12 € du 5e au 9e, 15 € du 10e au 24e, puis 20 € à partir du 25e. Bonus automatiques aux 1er, 5e et 10e filleuls.";
+    if(main)main.textContent="Jusqu’à 20 € de base par filleul qualifié, avec bonus automatiques";
+    const copy=document.querySelector("[data-referral-reward-copy]");if(copy)copy.textContent="Le barème progresse automatiquement selon votre nombre de filleuls qualifiés. À partir du 25e, la base reste fixée à 20 € par nouveau filleul.";
+    const note=document.querySelector("[data-referral-example-note]");if(note)note.textContent="Exemples cumulés avec le barème fixe et les bonus automatiques :";
+    document.querySelectorAll("[data-referral-example]").forEach(el=>{const n=Math.max(1,Math.min(100,Number(el.getAttribute("data-referral-example"))||1));el.textContent=money(cumulative(n),currency)});
+  }).catch(()=>{if(status)status.textContent="La disponibilité du programme ne peut pas être confirmée pour le moment. Consultez votre espace avant tout partage."});
 }
 function boot(){
   bindReferralAvailability();
