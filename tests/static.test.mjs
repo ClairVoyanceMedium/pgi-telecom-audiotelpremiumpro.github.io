@@ -7,6 +7,7 @@ const index=read("index.html");
 const clientPortal=read("client.html");
 const clientPortalApi=read("assets/client-portal-api.js");
 const clientReferral=read("assets/client-referral.js");
+const clientReferralView=read("assets/client-referral-view.js");
 const referralAdmin=read("assets/referral-admin.js");
 const clientPortalJs=read("assets/client-portal.js");
 const clientBilling=read("assets/client-billing.js");
@@ -64,14 +65,15 @@ test("le parrainage client reste serveur, optionnel et conditionné au paiement 
   assert.match(clientPortalApi,/activateReferralPayouts/);
   assert.match(clientReferral,/abonnement actif et payé/i);
   assert.match(clientReferral,/pgi:portal-loaded/);
-  assert.match(clientReferral,/versements automatiques/i);
-  assert.match(clientReferral,/ne stocke pas votre IBAN/i);
+  assert.match(clientReferralView,/versements automatiques/i);
+  assert.match(clientReferralView,/ne stocke pas votre IBAN/i);
   assert.match(platformAdmin,/referral-admin\.js/);
   assert.match(referralAdmin,/updateReferralProgram/);
   assert.doesNotMatch(referralAdmin,/settleReferralReward/);
   assert.doesNotMatch(referralAdminView,/data-referral-paid/);
   assert.match(referralAdminView,/VERSEMENTS AUTOMATIQUES/);
   assert.ok(buildStatic.includes('"assets/client-referral.js"'));
+  assert.ok(buildStatic.includes('"assets/client-referral-view.js"'));
   assert.doesNotMatch(sw,/client-referral\.js/);
 });
 
