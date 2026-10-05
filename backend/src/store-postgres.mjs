@@ -4420,7 +4420,14 @@ export class PostgresStore{
         " RETURNING id,tenant_id,provider,provider_account_reference,status,charges_enabled,payouts_enabled,transfers_enabled,details_submitted,application_fee_bps,requirements_state,recipient_requirements_state,last_synced_at,created_at,updated_at",
         [id,ref,String(input.status||"pending"),input.charges_enabled===true,input.payouts_enabled===true,input.transfers_enabled===true,input.details_submitted===true,fee,input.requirements_state||null,input.recipient_requirements_state||null,JSON.stringify(input.metadata&&typeof input.metadata==="object"?input.metadata:{})]
       );
-      return rows[0];
+      const row=rows[0];
+      if(row?.transfers_enabled===true){
+        await tx.unsafe(
+          "UPDATE customer_referral_rewards SET payout_status='queued',payout_next_attempt_at=now(),payout_last_error_code=NULL,payout_last_error_at=NULL,updated_at=now() WHERE tenant_id=$1 AND status='earned' AND payout_status='missing_payout_details'",
+          [id]
+        );
+      }
+      return row;
     });
   }
 
@@ -4433,6 +4440,12 @@ export class PostgresStore{
         [id,ref,String(input.status||"restricted"),input.charges_enabled===true,input.payouts_enabled===true,input.transfers_enabled===true,input.details_submitted===true,input.requirements_state||null,input.recipient_requirements_state||null]
       );
       if(!rows[0])throw problem(404,"CARD_PAYMENT_ACCOUNT_NOT_FOUND");
+      if(rows[0].transfers_enabled===true){
+        await tx.unsafe(
+          "UPDATE customer_referral_rewards SET payout_status='queued',payout_next_attempt_at=now(),payout_last_error_code=NULL,payout_last_error_at=NULL,updated_at=now() WHERE tenant_id=$1 AND status='earned' AND payout_status='missing_payout_details'",
+          [id]
+        );
+      }
       return rows[0];
     });
   }
@@ -4444,7 +4457,14 @@ export class PostgresStore{
       "UPDATE tenant_card_payment_accounts SET status=$2,charges_enabled=$3,payouts_enabled=$4,transfers_enabled=$5,details_submitted=$6,requirements_state=$7,recipient_requirements_state=$8,last_synced_at=now() WHERE provider_account_reference=$1 RETURNING id,tenant_id,provider,provider_account_reference,status,charges_enabled,payouts_enabled,transfers_enabled,details_submitted,application_fee_bps,requirements_state,recipient_requirements_state,last_synced_at,created_at,updated_at",
       [ref,String(input.status||"restricted"),input.charges_enabled===true,input.payouts_enabled===true,input.transfers_enabled===true,input.details_submitted===true,input.requirements_state||null,input.recipient_requirements_state||null]
     );
-    return rows[0]||null;
+    const row=rows[0]||null;
+    if(row?.transfers_enabled===true){
+      await this.sql.unsafe(
+        "UPDATE customer_referral_rewards SET payout_status='queued',payout_next_attempt_at=now(),payout_last_error_code=NULL,payout_last_error_at=NULL,updated_at=now() WHERE tenant_id=$1 AND status='earned' AND payout_status='missing_payout_details'",
+        [Number(row.tenant_id)]
+      );
+    }
+    return row;
   }
 
   async createCustomerCardPaymentRequest(tenantId,principalId,input={}){
