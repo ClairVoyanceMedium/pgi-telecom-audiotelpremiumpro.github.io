@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import {customerCommercialReadinessBlock} from "../backend/server.mjs";
 
 const read=p=>fs.readFileSync(p,"utf8");
 const legalSlugs=["mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","accord-traitement-donnees","cookies-traceurs","resilier-contrat","retractation"];
@@ -110,6 +111,33 @@ test("consumer paid checkout stays fail-closed until B2C prerequisites are genui
   assert.match(billing,/Dossier particulier en attente/);
   assert.match(withdrawal,/n’accepte une déclaration que lorsque son enregistrement durable/);
   assert.match(withdrawal,/souscription payante des comptes particuliers reste bloquée côté serveur/);
+});
+
+test("all production paid flows fail closed until the verified legal operator identity is complete",async()=>{
+  const store={customerWithdrawalFeatureReady:async()=>true};
+  const business={tenant:{customer_type:"business"}};
+  const individual={tenant:{customer_type:"individual"}};
+  const base={mode:"production",legalOperatorConfigured:false,consumerMediatorConfigured:false,b2cCommercialReady:false,onlineWithdrawalReady:true};
+
+  let block=await customerCommercialReadinessBlock(base,store,business);
+  assert.equal(block.code,"COMMERCIAL_LEGAL_IDENTITY_NOT_READY");
+  assert.equal(block.readiness.legal_operator,false);
+
+  block=await customerCommercialReadinessBlock({...base,legalOperatorConfigured:true},store,business);
+  assert.equal(block,null);
+
+  block=await customerCommercialReadinessBlock({...base,legalOperatorConfigured:true},store,individual);
+  assert.equal(block.code,"B2C_COMMERCIAL_NOT_READY");
+
+  block=await customerCommercialReadinessBlock({...base,legalOperatorConfigured:true,consumerMediatorConfigured:true,b2cCommercialReady:true},store,individual);
+  assert.equal(block,null);
+
+  const config=read("backend/src/config.mjs");
+  for(const key of ["PGI_LEGAL_OPERATOR_NAME","PGI_LEGAL_OPERATOR_STATUS","PGI_LEGAL_OPERATOR_ADDRESS","PGI_LEGAL_OPERATOR_REGISTRATION","PGI_PUBLICATION_DIRECTOR","PGI_CONSUMER_MEDIATOR_NAME","PGI_CONSUMER_MEDIATOR_CONTACT","PGI_CONSUMER_MEDIATOR_URL"])assert.ok(config.includes(key),key+" missing");
+  const server=read("backend/server.mjs");
+  assert.equal((server.match(/customerCommercialReadinessBlock\(config,store,billing\)/g)||[]).length,4);
+  assert.match(server,/COMMERCIAL_LEGAL_IDENTITY_NOT_READY/);
+  assert.match(server,/commercial_legal_ready/);
 });
 
 test("online consumer withdrawal is direct, explicit, durable and acknowledged",()=>{
