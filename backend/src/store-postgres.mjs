@@ -19,6 +19,35 @@ import {createRequire} from "node:module";
 const require=createRequire(import.meta.url);
 const core=require("../../assets/core.js");
 
+const REFERRAL_RULE_VERSION="2026-10-fixed-ambassador-1";
+const REFERRAL_QUALIFYING_PAID_MONTHS=3;
+const REFERRAL_REWARD_TIERS=Object.freeze([
+  Object.freeze({from:1,to:4,reward_minor:1000}),
+  Object.freeze({from:5,to:9,reward_minor:1200}),
+  Object.freeze({from:10,to:24,reward_minor:1500}),
+  Object.freeze({from:25,to:null,reward_minor:2000})
+]);
+const REFERRAL_MILESTONE_BONUSES=Object.freeze({1:500,5:2000,10:5000});
+function referralRewardForOrdinal(value){
+  const ordinal=Math.max(1,Math.trunc(Number(value)||1));
+  const tier=REFERRAL_REWARD_TIERS.find(x=>ordinal>=x.from&&(x.to==null||ordinal<=x.to))||REFERRAL_REWARD_TIERS[REFERRAL_REWARD_TIERS.length-1];
+  const baseMinor=Number(tier.reward_minor),bonusMinor=Number(REFERRAL_MILESTONE_BONUSES[ordinal]||0);
+  return {ordinal,base_minor:baseMinor,bonus_minor:bonusMinor,total_minor:baseMinor+bonusMinor,currency:"EUR"};
+}
+function referralProgramFixedState(enabled=false){
+  return {
+    enabled:enabled===true,
+    reward_minor:1000,
+    currency:"EUR",
+    qualification:"three_paid_monthly_subscriptions",
+    qualification_paid_months:REFERRAL_QUALIFYING_PAID_MONTHS,
+    reward_rule_version:REFERRAL_RULE_VERSION,
+    schedule:REFERRAL_REWARD_TIERS.map(x=>({...x})),
+    milestones:Object.entries(REFERRAL_MILESTONE_BONUSES).map(([ordinal,bonus_minor])=>({ordinal:Number(ordinal),bonus_minor:Number(bonus_minor)})),
+    permanent_from:25,
+    permanent_reward_minor:2000
+  };
+}
 const CONSUMPTION_RECEIPT_SCHEMA="audiotel-consumption-receipt/1";
 const CONSUMPTION_METRIC_KEYS=["calls","minutes","revenue","payout","quality"];
 const DOSSIER_MULTIPLIER=104729n;
@@ -4571,52 +4600,81 @@ export class PostgresStore{
   async referralProgramPublicState(){
     try{
       const row=(await this.sql.unsafe(
-        "SELECT enabled,configuration FROM platform_feature_flags WHERE feature_key='customer_referral' LIMIT 1"
+        "SELECT enabled FROM platform_feature_flags WHERE feature_key='customer_referral' LIMIT 1"
       ))[0]||null;
-      const cfg=row?.configuration&&typeof row.configuration==="object"?row.configuration:{};
-      const rewardMinor=Math.max(0,Math.trunc(Number(cfg.reward_minor)||0)),currency=String(cfg.currency||"EUR").toUpperCase();
-      return {enabled:row?.enabled===true&&rewardMinor>0,reward_minor:rewardMinor,currency:/^[A-Z]{3}$/.test(currency)?currency:"EUR",qualification:"paid_active_subscription"};
+      return referralProgramFixedState(row?.enabled===true);
     }catch(error){
-      if(String(error?.code||"")==="42P01"){
-        return {enabled:false,reward_minor:0,currency:"EUR",qualification:"paid_active_subscription"};
-      }
+      if(String(error?.code||"")==="42P01")return referralProgramFixedState(false);
       throw error;
     }
   }
 
   async referralProgramAdminState(){
     const program=await this.referralProgramPublicState();
-    const [counts,rewards]=await Promise.all([
+    const [counts,rewards,referrals]=await Promise.all([
       this.sql.unsafe(
         "SELECT status,count(*)::int AS count,COALESCE(sum(reward_minor),0)::bigint AS reward_minor FROM customer_referrals GROUP BY status ORDER BY status"
       ),
       this.sql.unsafe(
-        "SELECT rw.id,rw.public_id::text AS public_id,rw.amount_minor::bigint AS amount_minor,rw.currency,rw.status,rw.earned_at,rw.paid_at,rw.paid_reference,"+
+        "SELECT rw.id,rw.public_id::text AS public_id,rw.amount_minor::bigint AS amount_minor,rw.currency,rw.status,rw.earned_at,rw.paid_at,rw.paid_reference,rw.metadata,"+
         " rt.display_name AS referrer_name,dt.display_name AS referred_name,rf.public_id::text AS referral_public_id"+
         " FROM customer_referral_rewards rw JOIN customer_referrals rf ON rf.id=rw.referral_id"+
         " JOIN tenants rt ON rt.id=rf.referrer_tenant_id JOIN tenants dt ON dt.id=rf.referred_tenant_id"+
-        " ORDER BY CASE rw.status WHEN 'earned' THEN 0 WHEN 'paid' THEN 1 ELSE 2 END,rw.earned_at DESC,rw.id DESC LIMIT 50"
+        " ORDER BY CASE rw.status WHEN 'earned' THEN 0 WHEN 'paid' THEN 1 ELSE 2 END,rw.earned_at DESC,rw.id DESC LIMIT 100"
+      ),
+      this.sql.unsafe(
+        "SELECT rf.id,rf.public_id::text AS public_id,rf.status,rf.reward_minor::bigint AS reward_minor,rf.reward_currency,rf.claimed_at,rf.qualified_at,rf.rewarded_at,rf.rejected_at,rf.metadata,"+
+        " rt.display_name AS referrer_name,dt.display_name AS referred_name,"+
+        " LEAST($1::int,(SELECT count(DISTINCT COALESCE(NULLIF(be.normalized_details->>'provider_invoice_reference',''),be.provider_event_id))::int FROM subscription_billing_events be"+
+        " WHERE be.tenant_id=rf.referred_tenant_id AND be.event_type='invoice.paid'"+
+        " AND COALESCE(be.normalized_details->>'provider_invoice_amount_paid_minor','') ~ '^[0-9]+$'"+
+        " AND (be.normalized_details->>'provider_invoice_amount_paid_minor')::bigint>0"+
+        " AND COALESCE(be.normalized_details->>'provider_invoice_currency','EUR')='EUR'"+
+        " AND COALESCE(be.normalized_details->>'provider_invoice_billing_reason','') IN ('subscription_create','subscription_cycle'))) AS paid_months"+
+        " FROM customer_referrals rf JOIN tenants rt ON rt.id=rf.referrer_tenant_id JOIN tenants dt ON dt.id=rf.referred_tenant_id"+
+        " ORDER BY CASE rf.status WHEN 'claimed' THEN 0 WHEN 'qualified' THEN 1 WHEN 'rewarded' THEN 2 ELSE 3 END,rf.claimed_at DESC,rf.id DESC LIMIT 100",
+        [REFERRAL_QUALIFYING_PAID_MONTHS]
       )
     ]);
-    const summary={claimed:0,qualified:0,rewarded:0,rejected:0,reward_minor:0};
-    for(const row of counts){const key=String(row.status||"");if(Object.prototype.hasOwnProperty.call(summary,key))summary[key]=Number(row.count||0);summary.reward_minor+=Number(row.reward_minor||0);}
-    return {...program,summary,rewards:rewards.map(x=>({...x,amount_minor:Number(x.amount_minor||0)}))};
+    const summary={claimed:0,qualified:0,rewarded:0,rejected:0,reward_minor:0,payable_minor:0,paid_minor:0};
+    for(const row of counts){
+      const key=String(row.status||"");
+      if(Object.prototype.hasOwnProperty.call(summary,key))summary[key]=Number(row.count||0);
+      summary.reward_minor+=Number(row.reward_minor||0);
+    }
+    for(const row of rewards){
+      if(row.status==="earned")summary.payable_minor+=Number(row.amount_minor||0);
+      if(row.status==="paid")summary.paid_minor+=Number(row.amount_minor||0);
+    }
+    return {
+      ...program,
+      summary,
+      referrals:referrals.map(x=>({...x,reward_minor:Number(x.reward_minor||0),paid_months:Number(x.paid_months||0)})),
+      rewards:rewards.map(x=>({...x,amount_minor:Number(x.amount_minor||0)}))
+    };
   }
 
   async updateReferralProgram(input={},actor={}){
-    const enabled=input.enabled===true,rewardMinor=Math.trunc(Number(input.reward_minor)),currency=String(input.currency||"EUR").trim().toUpperCase();
-    if(!Number.isInteger(rewardMinor)||rewardMinor<0||rewardMinor>1000000)throw problem(400,"INVALID_REFERRAL_REWARD");
-    if(enabled&&rewardMinor<=0)throw problem(400,"REFERRAL_REWARD_REQUIRED");
-    if(currency!=="EUR")throw problem(400,"REFERRAL_CURRENCY_UNSUPPORTED");
-    const actorId=numericActor(actor);
+    const enabled=input.enabled===true,actorId=numericActor(actor);
+    const fixed=referralProgramFixedState(enabled);
+    const configuration={
+      currency:"EUR",
+      qualification:fixed.qualification,
+      qualification_paid_months:fixed.qualification_paid_months,
+      reward_rule_version:fixed.reward_rule_version,
+      schedule:fixed.schedule,
+      milestones:fixed.milestones,
+      permanent_from:fixed.permanent_from,
+      permanent_reward_minor:fixed.permanent_reward_minor
+    };
     await this.sql.unsafe(
       "INSERT INTO platform_feature_flags(feature_key,enabled,configuration,updated_by) VALUES('customer_referral',$1,$2::jsonb,$3)"+
       " ON CONFLICT(feature_key) DO UPDATE SET enabled=EXCLUDED.enabled,configuration=EXCLUDED.configuration,updated_by=EXCLUDED.updated_by,updated_at=now()",
-      [enabled,JSON.stringify({reward_minor:rewardMinor,currency,qualification:"paid_active_subscription"}),actorId]
+      [enabled,JSON.stringify(configuration),actorId]
     );
     await this.sql.unsafe(
       "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES(NULL,$1,'referral.program.update','platform_feature_flag','customer_referral',$2::jsonb)",
-      [actorId,JSON.stringify({enabled,reward_minor:rewardMinor,currency,qualification:"paid_active_subscription"})]
+      [actorId,JSON.stringify({enabled,...configuration})]
     );
     return this.referralProgramAdminState();
   }
@@ -4624,7 +4682,7 @@ export class PostgresStore{
   async customerReferralOverview(tenantId){
     const id=Number(tenantId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     const program=await this.referralProgramPublicState();
-    if(!program.enabled)return {...program,code:null,eligible:false,eligibility_reason:"program_disabled",summary:{claimed:0,rewarded:0,reward_minor:0},recent:[]};
+    if(!program.enabled)return {...program,code:null,eligible:false,eligibility_reason:"program_disabled",next_reward:referralRewardForOrdinal(1),summary:{claimed:0,rewarded:0,reward_minor:0},recent:[]};
     const [tenantRows,codeRows,summaryRows,recent]=await Promise.all([
       this.sql.unsafe(
         "SELECT t.status,EXISTS(SELECT 1 FROM tenant_subscriptions s WHERE s.tenant_id=t.id AND s.status='active' AND s.current_period_end>now() AND (s.last_payment_status IS NULL OR s.last_payment_status IN ('paid','succeeded','success'))) AS paid_active FROM tenants t WHERE t.id=$1 AND t.tenant_type<>'internal' LIMIT 1",
@@ -4636,14 +4694,29 @@ export class PostgresStore{
         [id]
       ),
       this.sql.unsafe(
-        "SELECT public_id::text AS public_id,status,reward_minor::bigint AS reward_minor,reward_currency,claimed_at,qualified_at,rewarded_at,rejected_at FROM customer_referrals WHERE referrer_tenant_id=$1 ORDER BY claimed_at DESC,id DESC LIMIT 20",
-        [id]
+        "SELECT rf.public_id::text AS public_id,rf.status,rf.reward_minor::bigint AS reward_minor,rf.reward_currency,rf.claimed_at,rf.qualified_at,rf.rewarded_at,rf.rejected_at,rf.metadata,dt.display_name AS referred_name,"+
+        " LEAST($2::int,(SELECT count(DISTINCT COALESCE(NULLIF(be.normalized_details->>'provider_invoice_reference',''),be.provider_event_id))::int FROM subscription_billing_events be"+
+        " WHERE be.tenant_id=rf.referred_tenant_id AND be.event_type='invoice.paid'"+
+        " AND COALESCE(be.normalized_details->>'provider_invoice_amount_paid_minor','') ~ '^[0-9]+$'"+
+        " AND (be.normalized_details->>'provider_invoice_amount_paid_minor')::bigint>0"+
+        " AND COALESCE(be.normalized_details->>'provider_invoice_currency','EUR')='EUR'"+
+        " AND COALESCE(be.normalized_details->>'provider_invoice_billing_reason','') IN ('subscription_create','subscription_cycle'))) AS paid_months"+
+        " FROM customer_referrals rf JOIN tenants dt ON dt.id=rf.referred_tenant_id WHERE rf.referrer_tenant_id=$1 ORDER BY rf.claimed_at DESC,rf.id DESC LIMIT 30",
+        [id,REFERRAL_QUALIFYING_PAID_MONTHS]
       )
     ]);
     const tenant=tenantRows[0]||null;if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
-    const code=codeRows[0]||null,summary=summaryRows[0]||{};
+    const code=codeRows[0]||null,summary=summaryRows[0]||{},rewarded=Number(summary.rewarded||0);
     const eligible=tenant.status==="active"&&tenant.paid_active===true;
-    return {...program,code:code?.status==="active"?code.code:null,eligible,eligibility_reason:eligible?null:(tenant.status!=="active"?"tenant_not_active":"subscription_not_paid"),summary:{claimed:Number(summary.claimed||0),rewarded:Number(summary.rewarded||0),reward_minor:Number(summary.reward_minor||0)},recent:recent.map(x=>({...x,reward_minor:Number(x.reward_minor||0)}))};
+    return {
+      ...program,
+      code:code?.status==="active"?code.code:null,
+      eligible,
+      eligibility_reason:eligible?null:(tenant.status!=="active"?"tenant_not_active":"subscription_not_paid"),
+      next_reward:referralRewardForOrdinal(rewarded+1),
+      summary:{claimed:Number(summary.claimed||0),rewarded,reward_minor:Number(summary.reward_minor||0)},
+      recent:recent.map(x=>({...x,reward_minor:Number(x.reward_minor||0),paid_months:Number(x.paid_months||0)}))
+    };
   }
 
   async ensureCustomerReferralCode(tenantId){
