@@ -4598,8 +4598,13 @@ export class PostgresStore{
 
   async referralProgramAdminState(){
     const program=await this.referralProgramPublicState();
-    const [counts,rewards,leaders]=await Promise.all([
+    const [counts,rewardTotals,rewards,leaders]=await Promise.all([
       this.readSql.unsafe("SELECT status,count(*)::int AS count FROM customer_referrals GROUP BY status ORDER BY status"),
+      this.readSql.unsafe(
+        "SELECT COALESCE(sum(amount_minor) FILTER(WHERE status<>'cancelled'),0)::bigint AS earned_minor,"+
+        " COALESCE(sum(amount_minor) FILTER(WHERE status='paid'),0)::bigint AS paid_minor,"+
+        " COALESCE(sum(amount_minor) FILTER(WHERE status='earned'),0)::bigint AS due_minor FROM customer_referral_rewards"
+      ),
       this.readSql.unsafe(
         "SELECT rw.id,rw.public_id::text AS public_id,rw.amount_minor::bigint AS amount_minor,rw.currency,rw.status,rw.earned_at,rw.paid_at,rw.paid_reference,"+
         " rt.display_name AS referrer_name,rt.id AS referrer_tenant_id,rf.public_id::text AS referral_public_id,rf.qualified_sequence,rf.base_reward_minor::bigint AS base_reward_minor,"+
@@ -4621,9 +4626,10 @@ export class PostgresStore{
     const summary={claimed:0,qualified:0,rewarded:0,rejected:0,rewards_earned_minor:0,rewards_paid_minor:0,rewards_due_minor:0,payout_ready_ambassadors:0};
     for(const row of counts){const key=String(row.status||"");if(Object.prototype.hasOwnProperty.call(summary,key))summary[key]=Number(row.count||0);}
     const rewardRows=rewards.map(x=>({...x,amount_minor:Number(x.amount_minor||0),base_reward_minor:Number(x.base_reward_minor||0),milestone_bonus_minor:Number(x.milestone_bonus_minor||0),qualified_sequence:x.qualified_sequence==null?null:Number(x.qualified_sequence)}));
-    summary.rewards_earned_minor=rewardRows.filter(x=>x.status!=="cancelled").reduce((a,x)=>a+x.amount_minor,0);
-    summary.rewards_paid_minor=rewardRows.filter(x=>x.status==="paid").reduce((a,x)=>a+x.amount_minor,0);
-    summary.rewards_due_minor=rewardRows.filter(x=>x.status==="earned").reduce((a,x)=>a+x.amount_minor,0);
+    const totals=rewardTotals[0]||{};
+    summary.rewards_earned_minor=Number(totals.earned_minor||0);
+    summary.rewards_paid_minor=Number(totals.paid_minor||0);
+    summary.rewards_due_minor=Number(totals.due_minor||0);
     const top_ambassadors=leaders.map(x=>{
       const qualified=Number(x.qualified_count||0),next=ambassadorRewardForSequence(qualified+1),balance=Number(x.balance_minor||0);
       if(balance>=AMBASSADOR_PAYOUT_THRESHOLD_MINOR)summary.payout_ready_ambassadors++;
@@ -4772,7 +4778,7 @@ export class PostgresStore{
 
   async platformAccountingOverview(input={}){
     const months=Math.max(1,Math.min(24,Math.trunc(Number(input.months)||12)));
-    const [carrier,distribution,subscription,priority,cardPaid,cardRefund,referralEarned,referralPaid,referralActivity]=await Promise.all([
+    const [carrier,distribution,subscription,priority,cardPaid,cardRefund,referralEarned,referralPaid,referralClaims,referralQualified]=await Promise.all([
       this.readSql.unsafe("SELECT to_char(date_trunc('month',paid_at AT TIME ZONE 'Europe/Paris'),'YYYY-MM') AS month,'EUR'::text AS currency,COALESCE(sum(paid_amount_ht),0)::float8 AS carrier_cash_in_ht,count(*)::int AS settlements_paid FROM carrier_settlements WHERE paid_at IS NOT NULL AND paid_at>=date_trunc('month',now())-(($1::int-1)*interval '1 month') GROUP BY 1 ORDER BY 1",[months]),
       this.readSql.unsafe("SELECT to_char(date_trunc('month',cs.paid_at AT TIME ZONE 'Europe/Paris'),'YYYY-MM') AS month,d.currency,COALESCE(sum(d.platform_fee_ht),0)::float8 AS sva_margin_ht,COALESCE(sum(d.net_payout_ht),0)::float8 AS client_net_liability_ht,COALESCE(sum(d.upstream_payout_ht),0)::float8 AS distributed_upstream_ht FROM tenant_revenue_distributions d JOIN carrier_settlements cs ON cs.id=d.upstream_settlement_id WHERE cs.paid_at IS NOT NULL AND cs.paid_at>=date_trunc('month',now())-(($1::int-1)*interval '1 month') GROUP BY 1,d.currency ORDER BY 1,d.currency",[months]),
       this.readSql.unsafe("SELECT to_char(date_trunc('month',e.event_time AT TIME ZONE 'Europe/Paris'),'YYYY-MM') AS month,COALESCE(NULLIF(e.normalized_details->>'provider_invoice_currency',''),NULLIF(e.normalized_details->>'provider_price_currency',''),'EUR') AS currency,COALESCE(sum(CASE WHEN COALESCE(e.normalized_details->>'provider_invoice_amount_paid_minor','') ~ '^[0-9]+$' THEN (e.normalized_details->>'provider_invoice_amount_paid_minor')::bigint WHEN COALESCE(e.normalized_details->>'provider_invoice_billing_reason','')='subscription_create' THEN 0 WHEN COALESCE(e.normalized_details->>'provider_price_amount_minor','') ~ '^[0-9]+$' THEN (e.normalized_details->>'provider_price_amount_minor')::bigint ELSE 0 END),0)::bigint AS subscription_cash_minor,count(DISTINCT e.normalized_details->>'provider_invoice_reference')::int AS payments FROM subscription_billing_events e WHERE e.event_type='invoice.paid' AND e.event_time>=date_trunc('month',now())-(($1::int-1)*interval '1 month') GROUP BY 1,2 ORDER BY 1,2",[months]),
@@ -4781,7 +4787,8 @@ export class PostgresStore{
       this.readSql.unsafe("SELECT to_char(date_trunc('month',refunded_at AT TIME ZONE 'Europe/Paris'),'YYYY-MM') AS month,currency,COALESCE(sum(application_fee_minor),0)::bigint AS card_commission_refund_minor,count(*)::int AS refunds FROM tenant_card_payment_requests WHERE refunded_at IS NOT NULL AND refunded_at>=date_trunc('month',now())-(($1::int-1)*interval '1 month') GROUP BY 1,currency ORDER BY 1,currency",[months]),
       this.readSql.unsafe("SELECT to_char(date_trunc('month',earned_at AT TIME ZONE 'Europe/Paris'),'YYYY-MM') AS month,currency,COALESCE(sum(amount_minor),0)::bigint AS referral_earned_minor,count(*)::int AS rewards FROM customer_referral_rewards WHERE earned_at>=date_trunc('month',now())-(($1::int-1)*interval '1 month') AND status<>'cancelled' GROUP BY 1,currency ORDER BY 1,currency",[months]),
       this.readSql.unsafe("SELECT to_char(date_trunc('month',paid_at AT TIME ZONE 'Europe/Paris'),'YYYY-MM') AS month,currency,COALESCE(sum(amount_minor),0)::bigint AS referral_paid_minor,count(*)::int AS rewards_paid FROM customer_referral_rewards WHERE paid_at IS NOT NULL AND paid_at>=date_trunc('month',now())-(($1::int-1)*interval '1 month') GROUP BY 1,currency ORDER BY 1,currency",[months]),
-      this.readSql.unsafe("SELECT to_char(date_trunc('month',claimed_at AT TIME ZONE 'Europe/Paris'),'YYYY-MM') AS month,count(*)::int AS referrals_claimed,count(*) FILTER(WHERE status='rewarded')::int AS referrals_qualified FROM customer_referrals WHERE claimed_at>=date_trunc('month',now())-(($1::int-1)*interval '1 month') GROUP BY 1 ORDER BY 1",[months])
+      this.readSql.unsafe("SELECT to_char(date_trunc('month',claimed_at AT TIME ZONE 'Europe/Paris'),'YYYY-MM') AS month,count(*)::int AS referrals_claimed FROM customer_referrals WHERE claimed_at>=date_trunc('month',now())-(($1::int-1)*interval '1 month') GROUP BY 1 ORDER BY 1",[months]),
+      this.readSql.unsafe("SELECT to_char(date_trunc('month',rewarded_at AT TIME ZONE 'Europe/Paris'),'YYYY-MM') AS month,count(*)::int AS referrals_qualified FROM customer_referrals WHERE status='rewarded' AND rewarded_at IS NOT NULL AND rewarded_at>=date_trunc('month',now())-(($1::int-1)*interval '1 month') GROUP BY 1 ORDER BY 1",[months])
     ]);
     const map=new Map();
     const row=(month,currency="EUR")=>{const key=String(month)+"|"+String(currency||"EUR"),existing=map.get(key);if(existing)return existing;const x={month:String(month),currency:String(currency||"EUR"),carrier_cash_in_ht:0,sva_margin_ht:0,client_net_liability_ht:0,distributed_upstream_ht:0,subscription_cash_minor:0,portability_priority_cash_minor:0,card_commission_cash_minor:0,card_commission_refund_minor:0,referral_earned_minor:0,referral_paid_minor:0,settlements_paid:0,subscription_payments:0,portability_priority_payments:0,card_payments:0,card_refunds:0,referral_rewards:0,referral_rewards_paid:0,referrals_claimed:0,referrals_qualified:0};map.set(key,x);return x;};
@@ -4793,7 +4800,8 @@ export class PostgresStore{
     for(const x of cardRefund)Object.assign(row(x.month,x.currency),{card_commission_refund_minor:Number(x.card_commission_refund_minor||0),card_refunds:Number(x.refunds||0)});
     for(const x of referralEarned)Object.assign(row(x.month,x.currency),{referral_earned_minor:Number(x.referral_earned_minor||0),referral_rewards:Number(x.rewards||0)});
     for(const x of referralPaid)Object.assign(row(x.month,x.currency),{referral_paid_minor:Number(x.referral_paid_minor||0),referral_rewards_paid:Number(x.rewards_paid||0)});
-    for(const x of referralActivity){const target=row(x.month,"EUR");target.referrals_claimed=Number(x.referrals_claimed||0);target.referrals_qualified=Number(x.referrals_qualified||0);}
+    for(const x of referralClaims){row(x.month,"EUR").referrals_claimed=Number(x.referrals_claimed||0);}
+    for(const x of referralQualified){row(x.month,"EUR").referrals_qualified=Number(x.referrals_qualified||0);}
     return {generated_at:new Date().toISOString(),timezone:"Europe/Paris",basis:"cash_and_operational",months:[...map.values()].sort((a,b)=>a.month===b.month?a.currency.localeCompare(b.currency):a.month.localeCompare(b.month)),notes:["Les encaissements opérateur SVA et la marge SVA sont exprimés hors taxes selon les écritures opérateur.","Les abonnements et la portabilité prioritaire sont suivis en centimes de la devise de facturation, montants encaissés par le prestataire.","La commission carte bancaire correspond à la commission Audiotel Premium Pro enregistrée, nette des remboursements identifiés.","Les montants HT et TTC ne sont jamais additionnés artificiellement. Les frais du prestataire de paiement ne sont pas inventés lorsqu’ils ne sont pas présents dans les écritures."]};
   }
 
