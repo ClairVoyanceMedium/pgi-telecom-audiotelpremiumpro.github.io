@@ -181,7 +181,7 @@ CREATE TABLE IF NOT EXISTS platform_accounting_documents (
   UNIQUE(source_type,source_reference,document_kind)
 );
 
-CREATE OR REPLACE FUNCTION pgi_accounting_entry_balanced(p_entry_id bigint)
+CREATE FUNCTION pgi_accounting_entry_balanced(p_entry_id bigint)
 RETURNS boolean
 LANGUAGE sql
 STABLE
@@ -192,7 +192,7 @@ AS $$
   WHERE entry_id=p_entry_id
 $$;
 
-CREATE OR REPLACE FUNCTION pgi_accounting_require_balanced()
+CREATE FUNCTION pgi_accounting_require_balanced()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
@@ -208,13 +208,12 @@ BEGIN
 END
 $$;
 
-DROP TRIGGER IF EXISTS platform_accounting_lines_balanced_ck ON platform_accounting_lines;
 CREATE CONSTRAINT TRIGGER platform_accounting_lines_balanced_ck
 AFTER INSERT OR UPDATE OR DELETE ON platform_accounting_lines
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION pgi_accounting_require_balanced();
 
-CREATE OR REPLACE FUNCTION pgi_accounting_protect_validated()
+CREATE FUNCTION pgi_accounting_protect_validated()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
@@ -237,17 +236,15 @@ BEGIN
 END
 $$;
 
-DROP TRIGGER IF EXISTS platform_accounting_entries_immutable_trg ON platform_accounting_entries;
 CREATE TRIGGER platform_accounting_entries_immutable_trg
 BEFORE UPDATE OR DELETE ON platform_accounting_entries
 FOR EACH ROW EXECUTE FUNCTION pgi_accounting_protect_validated();
 
-DROP TRIGGER IF EXISTS platform_accounting_lines_immutable_trg ON platform_accounting_lines;
 CREATE TRIGGER platform_accounting_lines_immutable_trg
 BEFORE UPDATE OR DELETE ON platform_accounting_lines
 FOR EACH ROW EXECUTE FUNCTION pgi_accounting_protect_validated();
 
-CREATE OR REPLACE FUNCTION pgi_accounting_guard_closed_period()
+CREATE FUNCTION pgi_accounting_guard_closed_period()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $
@@ -265,7 +262,6 @@ BEGIN
 END
 $;
 
-DROP TRIGGER IF EXISTS platform_accounting_entries_closed_period_trg ON platform_accounting_entries;
 CREATE TRIGGER platform_accounting_entries_closed_period_trg
 BEFORE INSERT OR UPDATE OF entry_date,status ON platform_accounting_entries
 FOR EACH ROW EXECUTE FUNCTION pgi_accounting_guard_closed_period();
