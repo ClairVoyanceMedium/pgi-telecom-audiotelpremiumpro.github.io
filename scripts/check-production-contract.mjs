@@ -56,6 +56,7 @@ const fixedReferralMigration=fs.readFileSync("database/migrations/067_fixed_prog
 const referralPolicy=fs.readFileSync("backend/src/referral-policy.mjs","utf8");
 const clientReferral=fs.readFileSync("assets/client-referral.js","utf8");
 const referralAdmin=fs.readFileSync("assets/referral-admin.js","utf8");
+const referralAmbassadorAdmin=fs.readFileSync("assets/referral-ambassador-admin.js","utf8");
 const accountingCockpit=fs.readFileSync("assets/accounting-cockpit.js","utf8");
 const vercelConfigData=JSON.parse(vercelConfig);
 const businessLiveCron=Array.isArray(vercelConfigData.crons)&&vercelConfigData.crons.some(item=>item&&item.path==="/api/v1/internal/business-live/reset-schedules/run"&&item.schedule==="* * * * *");
@@ -142,6 +143,8 @@ if(!/\/api\/v1\/public\/referral-program/.test(backendServer)||!/\/api\/v1\/cust
 if(!/count\(DISTINCT normalized_details->>'provider_invoice_reference'\)/.test(postgresStore)||!/REFERRAL_QUALIFICATION_PAID_INVOICES/.test(postgresStore)||!/REFERRAL_SELF_CLAIM/.test(postgresStore)||!/REFERRAL_ALREADY_CLAIMED/.test(postgresStore))failures.push("referral rewards must require three distinct paid invoices and retain anti-abuse");
 if(!/pgi:portal-loaded/.test(clientReferral)||!/3 factures mensuelles distinctes réellement payées/i.test(clientReferral)||!/paid_invoice_count/.test(clientReferral))failures.push("customer referral UI must expose the three-payment qualification progress");
 if(!/referral-admin\.js/.test(platformAdminTools)||!/updateReferralProgram/.test(referralAdmin)||!/settleReferralReward/.test(referralAdmin)||!/barème fixe/i.test(referralAdmin)||!/25e filleul/i.test(referralAdmin))failures.push("referral administration must remain fixed, lazy and auditable");
+if(!/auth-remember/.test(indexSource)||!/remember_me/.test(apiClient)||!/adminRememberTtlSeconds/.test(backendServer))failures.push("admin authentication must retain explicit secure remember-me sessions");
+if(!/referral-program\/ambassadors/.test(backendServer)||!/referralAmbassadorsAdminList/.test(postgresStore)||!/referralAmbassadorAdminDetail/.test(postgresStore)||!/Reversements SVA/.test(referralAmbassadorAdmin)||!/paid_invoice_count/.test(referralAmbassadorAdmin))failures.push("admin referral cockpit must retain per-ambassador referral and payout drill-down");
 if(!/\/api\/v1\/platform\/accounting/.test(backendServer)||!/async platformAccounting/.test(postgresStore)||!/tax_basis_separated:true/.test(postgresStore)||!/statutory_ledger:false/.test(postgresStore))failures.push("platform accounting must remain source-based and tax-basis separated");
 if(!/Abonnements encaissés TTC/.test(accountingCockpit)||!/Marge SVA encaissée HT/.test(accountingCockpit)||!/Créances opérateurs HT/.test(accountingCockpit))failures.push("accounting cockpit must preserve distinct cash, margin and receivable views");
 
