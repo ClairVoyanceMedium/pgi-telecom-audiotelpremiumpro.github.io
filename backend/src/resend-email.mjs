@@ -266,6 +266,9 @@ export function buildTransactionalMessage(config,templateKey,data={}){
   const actionUrl=safeActionUrl(config,data.action_url);
   const invoiceUrl=safeExternalHttpsUrl(data.invoice_url,["stripe.com"]);
   const invoicePdfUrl=safeExternalHttpsUrl(data.invoice_pdf_url,["stripe.com"]);
+  const referralCurrency=/^[A-Z]{3}$/.test(String(data.currency||"").toUpperCase())?String(data.currency).toUpperCase():"EUR";
+  const referralMinor=Number(data.amount_minor);
+  const referralAmount=Number.isFinite(referralMinor)?new Intl.NumberFormat(normalizeLocale(data.locale)||"fr",{style:"currency",currency:referralCurrency}).format(Math.max(0,referralMinor)/100):null;
   const cases={
     email_verification:{
       subject:"Votre code de vérification Audiotel Premium Pro",
@@ -455,6 +458,26 @@ export function buildTransactionalMessage(config,templateKey,data={}){
         safeDetail("Reçue le",data.submitted_at)
       ].filter(Boolean),
       foot:"Vérifier le contrat, l’état d’exécution et les suites de remboursement ou de facturation proportionnelle éventuellement applicables."
+    },
+    referral_reward_earned:{
+      subject:"Votre prime de parrainage est acquise",
+      title:"Prime de parrainage acquise",
+      lead:greeting,
+      paragraphs:[
+        "Votre filleul a atteint le seuil de "+Math.max(1,Number(data.qualification_paid_invoices||3))+" factures mensuelles distinctes réellement payées. Votre prime"+(referralAmount?" de "+referralAmount:"")+" est maintenant acquise.",
+        "Le versement est déclenché automatiquement via Stripe Connect. Si Stripe a besoin d’informations complémentaires pour recevoir les fonds, votre espace client vous permettra de finaliser ces informations."
+      ],
+      cta:{label:"Consulter mon parrainage",url:portalUrl}
+    },
+    referral_reward_paid:{
+      subject:"Votre prime de parrainage a été versée",
+      title:"Prime de parrainage versée",
+      lead:greeting,
+      paragraphs:[
+        "Votre prime de parrainage"+(referralAmount?" de "+referralAmount:"")+" a été versée automatiquement sur votre solde Stripe Connect.",
+        safeDetail("Référence du versement",data.provider_transfer_reference)
+      ].filter(Boolean),
+      cta:{label:"Consulter mon parrainage",url:portalUrl}
     },
     payout_available:{
       subject:"Votre reversement Audiotel Premium Pro est disponible",
