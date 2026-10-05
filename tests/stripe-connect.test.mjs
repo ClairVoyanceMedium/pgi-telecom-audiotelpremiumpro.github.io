@@ -6,7 +6,8 @@ import {
   normalizeStripeConnectedAccount,
   normalizeStripeConnectPaymentEvent,
   stripeConnectState,
-  createStripeConnectedAccount
+  createStripeConnectedAccount,
+  createStripeReferralTransfer
 } from "../backend/src/stripe-connect.mjs";
 
 const requestId="11111111-1111-4111-8111-111111111111";
@@ -134,4 +135,14 @@ test("Stripe Connect fails closed until the dedicated webhook secret is configur
   assert.equal(withoutWebhook.api_configured,true);
   assert.equal(withoutWebhook.webhook_configured,false);
   assert.equal(withoutWebhook.configured,false);
+});
+
+test("referral rewards use an idempotent platform-to-connected-account Transfer",async()=>{
+  const original=globalThis.fetch;let captured=null;
+  globalThis.fetch=async(url,init)=>{captured={url:String(url),init};return {ok:true,json:async()=>({id:"tr_Referral123",amount:1500,currency:"eur",destination:accountId})}};
+  try{
+    const transfer=await createStripeReferralTransfer({stripeSecretKey:"sk_test_"+"x".repeat(24),stripeApiVersion:"2026-08-26.dahlia"},{destination_account:accountId,amount_minor:1500,currency:"EUR",reward_public_id:"11111111-1111-4111-8111-111111111111",tenant_public_id:"22222222-2222-4222-8222-222222222222",idempotency_key:"referral-reward:11111111-1111-4111-8111-111111111111"});
+    assert.equal(transfer.provider_transfer_reference,"tr_Referral123");assert.match(captured.url,/\/v1\/transfers$/);assert.equal(captured.init.headers["Idempotency-Key"],"referral-reward:11111111-1111-4111-8111-111111111111");
+    const form=new URLSearchParams(captured.init.body);assert.equal(form.get("amount"),"1500");assert.equal(form.get("currency"),"eur");assert.equal(form.get("destination"),accountId);assert.equal(form.get("metadata[pgi_referral_reward]"),"11111111-1111-4111-8111-111111111111");
+  }finally{globalThis.fetch=original;}
 });
