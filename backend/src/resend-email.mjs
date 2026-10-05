@@ -456,6 +456,19 @@ export function buildTransactionalMessage(config,templateKey,data={}){
       ].filter(Boolean),
       foot:"Vérifier le contrat, l’état d’exécution et les suites de remboursement ou de facturation proportionnelle éventuellement applicables."
     },
+    referral_reward_earned:{
+      subject:"Votre récompense de parrainage Audiotel Premium Pro est acquise",
+      title:"Récompense de parrainage acquise",
+      lead:greeting,
+      paragraphs:[
+        "Votre filleul a atteint les "+Number(data.qualification_paid_months||3)+" mensualités d’abonnement distinctes réellement encaissées. La récompense correspondante est maintenant acquise.",
+        safeDetail("Rang du filleul qualifié",data.referral_ordinal?("n° "+Number(data.referral_ordinal)):""),
+        safeDetail("Montant acquis",((Number(data.amount_minor)||0)/100).toFixed(2).replace(".",",")+" €"),
+        Number(data.milestone_bonus_minor||0)>0?safeDetail("Bonus de palier inclus",((Number(data.milestone_bonus_minor)||0)/100).toFixed(2).replace(".",",")+" €"):""
+      ].filter(Boolean),
+      cta:{label:"Consulter mon parrainage",url:portalUrl},
+      foot:"Votre espace client conserve le suivi de vos filleuls et de vos récompenses. Le barème est fixe et appliqué automatiquement."
+    },
     payout_available:{
       subject:"Votre reversement Audiotel Premium Pro est disponible",
       title:"Reversement disponible",
