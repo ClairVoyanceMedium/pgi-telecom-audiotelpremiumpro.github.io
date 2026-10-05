@@ -4724,7 +4724,7 @@ export class PostgresStore{
   async customerReferralOverview(tenantId){
     const id=Number(tenantId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     const program=await this.referralProgramPublicState();
-    const [tenantRows,codeRows,summaryRows,recent]=await Promise.all([
+    const [tenantRows,codeRows,summaryRows,recent,rewardRows,payoutAccountRows]=await Promise.all([
       this.sql.unsafe(
         "SELECT t.status,EXISTS(SELECT 1 FROM tenant_subscriptions s WHERE s.tenant_id=t.id AND s.status='active' AND s.current_period_end>now() AND (s.last_payment_status IS NULL OR s.last_payment_status IN ('paid','succeeded','success'))) AS paid_active FROM tenants t WHERE t.id=$1 AND t.tenant_type<>'internal' LIMIT 1",
         [id]
@@ -4740,18 +4740,34 @@ export class PostgresStore{
       ),
       this.sql.unsafe(
         "SELECT r.public_id::text AS public_id,r.status,r.reward_minor::bigint AS reward_minor,r.reward_currency,r.claimed_at,r.qualified_at,r.rewarded_at,r.rejected_at,r.metadata,r.referred_tenant_id,"+
+        " rw.status AS reward_status,rw.payout_status,rw.amount_minor::bigint AS payout_amount_minor,rw.paid_at,rw.payout_next_attempt_at,rw.payout_last_error_code,"+
         " (SELECT count(DISTINCT be.normalized_details->>'provider_invoice_reference')::int FROM subscription_billing_events be"+
         " WHERE be.tenant_id=r.referred_tenant_id AND be.event_type='invoice.paid'"+
         " AND COALESCE(be.normalized_details->>'provider_invoice_reference','')<>''"+
         " AND COALESCE(be.normalized_details->>'last_payment_status','paid')='paid'"+
         " AND be.event_time>=r.claimed_at) AS paid_invoice_count"+
-        " FROM customer_referrals r WHERE r.referrer_tenant_id=$1 ORDER BY r.claimed_at DESC,r.id DESC LIMIT 20",
+        " FROM customer_referrals r LEFT JOIN customer_referral_rewards rw ON rw.referral_id=r.id"+
+        " WHERE r.referrer_tenant_id=$1 ORDER BY r.claimed_at DESC,r.id DESC LIMIT 20",
+        [id]
+      ),
+      this.sql.unsafe(
+        "SELECT count(*) FILTER(WHERE status='earned')::int AS payable_count,COALESCE(sum(amount_minor) FILTER(WHERE status='earned'),0)::bigint AS payable_minor,"+
+        " count(*) FILTER(WHERE status='paid')::int AS paid_count,COALESCE(sum(amount_minor) FILTER(WHERE status='paid'),0)::bigint AS paid_minor,"+
+        " count(*) FILTER(WHERE status='earned' AND payout_status='failed')::int AS failed_count,"+
+        " count(*) FILTER(WHERE status='earned' AND payout_status='missing_payout_details')::int AS missing_details_count"+
+        " FROM customer_referral_rewards WHERE tenant_id=$1",
+        [id]
+      ),
+      this.sql.unsafe(
+        "SELECT provider_account_reference,transfers_enabled,details_submitted,recipient_requirements_state,last_synced_at FROM tenant_card_payment_accounts WHERE tenant_id=$1 LIMIT 1",
         [id]
       )
     ]);
     const tenant=tenantRows[0]||null;if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
-    const code=codeRows[0]||null,summary=summaryRows[0]||{},rewarded=Number(summary.rewarded||0),next=referralRewardForOrdinal(rewarded+1);
+    const code=codeRows[0]||null,summary=summaryRows[0]||{},rewards=rewardRows[0]||{},account=payoutAccountRows[0]||null,rewarded=Number(summary.rewarded||0),next=referralRewardForOrdinal(rewarded+1);
     const eligible=program.enabled===true&&tenant.status==="active"&&tenant.paid_active===true;
+    const payoutReady=account?.transfers_enabled===true;
+    const payableMinor=Number(rewards.payable_minor||0),payableCount=Number(rewards.payable_count||0);
     return {
       ...program,
       code:program.enabled&&code?.status==="active"?code.code:null,
@@ -4759,8 +4775,16 @@ export class PostgresStore{
       can_manage:program.enabled===true,
       eligibility_reason:eligible?null:(program.enabled!==true?"program_disabled":tenant.status!=="active"?"tenant_not_active":"subscription_not_paid"),
       next_reward:{...next},
-      summary:{visits:Number(summary.visits||0),prospects:Number(summary.prospects||0),claimed:Number(summary.claimed||0),rewarded,reward_minor:Number(summary.reward_minor||0)},
-      recent:recent.map(x=>({...x,reward_minor:Number(x.reward_minor||0),paid_invoice_count:Number(x.paid_invoice_count||0)}))
+      summary:{
+        visits:Number(summary.visits||0),prospects:Number(summary.prospects||0),claimed:Number(summary.claimed||0),rewarded,reward_minor:Number(summary.reward_minor||0),
+        payable_minor:payableMinor,payable_count:payableCount,paid_minor:Number(rewards.paid_minor||0),paid_count:Number(rewards.paid_count||0)
+      },
+      payout:{
+        automatic:true,provider:"stripe",configured:Boolean(account?.provider_account_reference),ready:payoutReady,needs_action:payableCount>0&&!payoutReady,
+        transfers_enabled:payoutReady,details_submitted:account?.details_submitted===true,requirements_state:account?.recipient_requirements_state||null,last_synced_at:account?.last_synced_at||null,
+        failed_count:Number(rewards.failed_count||0),missing_details_count:Number(rewards.missing_details_count||0),payable_minor:payableMinor,payable_count:payableCount,paid_minor:Number(rewards.paid_minor||0),paid_count:Number(rewards.paid_count||0)
+      },
+      recent:recent.map(x=>({...x,reward_minor:Number(x.reward_minor||0),payout_amount_minor:Number(x.payout_amount_minor||0),paid_invoice_count:Number(x.paid_invoice_count||0)}))
     };
   }
 
