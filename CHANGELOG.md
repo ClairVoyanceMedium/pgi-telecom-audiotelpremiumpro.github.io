@@ -1,3 +1,14 @@
+## 1.32.0 : Parrainage et comptabilité automatisés : 2026-10-05
+
+- versement automatique des primes de parrainage acquises avec file durable et reprise sur erreur ;
+- prévention renforcée des doubles versements par idempotence et réconciliation Stripe avant tout nouveau transfert ;
+- prime conservée comme dette tant qu’aucun transfert réel n’est confirmé ;
+- suivi détaillé des versements automatiques dans le cockpit administrateur ;
+- comptabilité du cockpit imprimable en PDF et toujours exportable en CSV ;
+- exécution compatible avec les workers persistants et avec les tâches planifiées Vercel ;
+- Accounts v2 aligné sur la version Stripe 2026-09-30.endive ;
+- version applicative portée à 1.32.0.
+
 ## 1.31.0 : Tarif plateforme 4,90 € TTC : 2026-10-04
 
 - abonnement plateforme courant porté à 4,90 € TTC par mois après le mois en cours offert ;
