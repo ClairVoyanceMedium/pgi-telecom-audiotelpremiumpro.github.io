@@ -241,9 +241,10 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/internal/email/dispatch"){
         authorizeEmailCron(req,config);
         if(typeof store.scanUnpaidSubscriptions==="function")await store.scanUnpaidSubscriptions(500);
+        const ambassador=typeof store.enqueueReferralMonthlyDigests==="function"?await store.enqueueReferralMonthlyDigests():{queued:0,skipped:true};
         const delivery=await drainTransactionalEmails({store,config,limit:100});
         const dunning=await drainDunningTransactionalEmails({store,config,limit:100});
-        return done(res,metrics,started,"email.dispatch",200,{ok:true,delivery,dunning});
+        return done(res,metrics,started,"email.dispatch",200,{ok:true,ambassador,delivery,dunning});
       }
 
       if(method==="GET"&&pathname==="/api/v1/internal/business-live/reset-schedules/run"){
@@ -1592,9 +1593,15 @@ export function createBackend(options={}){
       if(method==="POST"&&pathname==="/api/v1/platform/referral-program"){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
         const body=await readJson(req,config.bodyLimitBytes);
-        const payload={enabled:body.enabled===true,reward_minor:Math.trunc(Number(body.reward_minor)),currency:String(body.currency||"EUR").toUpperCase()};
+        const payload={enabled:body.enabled===true};
         const result=await store.idempotent(req.headers["idempotency-key"],"platform.referral_program.update",payload,()=>store.updateReferralProgram(payload,actor));
         return done(res,metrics,started,"platform.referral_program_update",200,{...result.value,replayed:result.replayed});
+      }
+      if(method==="GET"&&pathname==="/api/v1/platform/accounting"){
+        requireRole(actor,["admin","finance","readonly"]);
+        const months=Math.max(1,Math.min(24,Math.trunc(Number(url.searchParams.get("months"))||12)));
+        const data=typeof store.platformAccountingOverview==="function"?await store.platformAccountingOverview({months}):{generated_at:new Date().toISOString(),timezone:"Europe/Paris",basis:"cash_and_operational",months:[],notes:[]};
+        return done(res,metrics,started,"platform.accounting",200,data);
       }
       match=routeMatch(pathname,"/api/v1/platform/referral-rewards/:id/paid");
       if(method==="POST"&&match){
