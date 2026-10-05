@@ -1282,6 +1282,7 @@ export class MemoryStore{
 
   async customerProfitability(params={}){void params;return {schema_version:"audiotel-customer-profitability/1",period:"365d",since:null,currency:"EUR",currencies:["EUR"],accounting_basis:"tenant_revenue_distributions.platform_fee_ht",cash_basis:"carrier paid amount / confirmed amount",excludes:["general_platform_overhead","unconnected_subscription_cash"],tenant:null,summary:{upstream_payout_ht:0,margin_booked_ht:0,margin_collected_ht:0,client_net_payout_ht:0,unallocated_amount_ht:0,customers_with_distribution:0,top5_margin_collected_ht:0,top5_concentration_percent:0},ranking:[],trend:[]};}
 
+  async recordCustomerReferralEvent(){return {accepted:false,recorded:false,replayed:false};}
   async platformAccounting(params={}){
     const month=/^\d{4}-(0[1-9]|1[0-2])$/.test(String(params.month||""))?String(params.month):new Date().toISOString().slice(0,7);
     const currency=/^[A-Z]{3}$/.test(String(params.currency||"EUR").toUpperCase())?String(params.currency||"EUR").toUpperCase():"EUR";
