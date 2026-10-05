@@ -317,6 +317,30 @@ export function buildTransactionalMessage(config,templateKey,data={}){
       paragraphs:["Une nouvelle clé d’accès a été enregistrée pour votre compte.","Si vous n’êtes pas à l’origine de cette action, modifiez votre mot de passe et contactez immédiatement l’assistance."],
       cta:{label:"Consulter mon espace",url:portalUrl}
     },
+    ambassador_application_received:{
+      subject:"Votre demande ambassadeur Audiotel Premium Pro est enregistrée",
+      title:"Demande ambassadeur reçue",
+      lead:greeting,
+      paragraphs:[
+        "Votre demande pour devenir ambassadeur Audiotel Premium Pro a bien été enregistrée.",
+        "Cette demande est distincte d’un abonnement Audiotel Premium Pro et ne commande aucun numéro surtaxé.",
+        "Après validation de votre profil, vous recevrez un lien sécurisé pour activer votre espace ambassadeur et choisir votre mot de passe."
+      ],
+      cta:{label:"Consulter le programme ambassadeur",url:homeUrl+"/parrainage-audiotel/"}
+    },
+    ambassador_access_invitation:{
+      subject:"Votre espace ambassadeur Audiotel Premium Pro est prêt",
+      title:"Activez votre espace ambassadeur",
+      lead:greeting,
+      paragraphs:[
+        "Votre profil ambassadeur a été validé.",
+        safeDetail("Identifiant de connexion",data.login_identifier),
+        "Vous pouvez suivre vos recommandations, la progression de vos filleuls, vos primes acquises et vos versements depuis un espace dédié.",
+        "Aucun abonnement Audiotel Premium Pro n’est nécessaire pour utiliser cet espace."
+      ].filter(Boolean),
+      cta:actionUrl?{label:"Activer mon espace ambassadeur",url:actionUrl}:null,
+      foot:"Le lien d’activation est temporaire et à usage unique. Vous choisissez vous-même votre mot de passe."
+    },
     lead_received:{
       subject:"Nous avons bien reçu votre demande",
       title:"Demande reçue",
