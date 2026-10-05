@@ -17,6 +17,10 @@ test("ambassador transactional emails distinguish claim, earned reward and recor
   const claimed=buildTransactionalMessage(config,"referral_claimed",{name:"Client Test",qualification_payments_required:3});
   assert.match(claimed.subject,/lien Ambassadeur/i);
   assert.match(claimed.text,/3 mensualités/i);
+  const progress=buildTransactionalMessage(config,"referral_progress",{name:"Client Test",qualified_payments:2,qualification_payments_required:3});
+  assert.match(progress.subject,/Progression de votre filleul/i);
+  assert.match(progress.text,/2 sur 3 mensualités/i);
+  assert.match(progress.text,/ne confirme pas encore un versement/i);
   const earned=buildTransactionalMessage(config,"referral_reward_earned",{name:"Client Test",amount_minor:6500,base_reward_minor:1500,milestone_bonus_minor:5000,currency:"EUR",rank:10,qualified_payments:3,next_tier_min:25,next_tier_reward_minor:2000});
   assert.match(earned.subject,/récompense Ambassadeur/i);
   assert.match(earned.text,/Rang du filleul qualifié : 10/i);
@@ -39,7 +43,7 @@ test("all production service templates render both plain text and html",()=>{
     "email_verification","password_reset","password_changed","email_change_confirmation","email_changed","email_change_notice_old","passkey_added",
     "lead_received","registration_received","customer_access_invitation","registration_internal","account_activated","account_suspended",
     "subscription_created","payment_succeeded","payment_recovered","payment_failed","payment_action_required",
-    "payment_reminder","subscription_suspended","subscription_cancelled","payout_available","referral_claimed","referral_reward_earned","referral_reward_paid","portability_received","portability_internal",
+    "payment_reminder","subscription_suspended","subscription_cancelled","payout_available","referral_claimed","referral_progress","referral_reward_earned","referral_reward_paid","portability_received","portability_internal",
     "support_received","support_opened","support_internal","support_customer_reply","support_response","support_resolved"
   ];
   for(const key of keys){
