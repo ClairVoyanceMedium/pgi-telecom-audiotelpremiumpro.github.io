@@ -8,6 +8,8 @@ const clientPortal=read("client.html");
 const clientPortalApi=read("assets/client-portal-api.js");
 const clientReferral=read("assets/client-referral.js");
 const referralAdmin=read("assets/referral-admin.js");
+const accountingAdmin=read("assets/accounting-admin.js");
+const ambassadorMigration=read("database/migrations/067_ambassador_accounting.sql");
 const clientPortalJs=read("assets/client-portal.js");
 const clientBilling=read("assets/client-billing.js");
 const customerEmailVerification=read("assets/customer-email-verification.js");
@@ -57,17 +59,41 @@ const sw=read("service-worker.js");
 const manifest=read("manifest.webmanifest");
 const buildStatic=read("scripts/build-static.mjs");
 
-test("le parrainage client reste serveur, optionnel et conditionné au paiement réel",()=>{
+test("le programme Ambassadeur reste serveur, fixe et conditionné à trois paiements réels",()=>{
+  const store=read("backend/src/store-postgres.mjs"),server=read("backend/server.mjs");
   assert.match(clientPortal,/id="client-referral-mount"/);
   assert.match(clientPortal,/client-referral\.js/);
   assert.match(clientPortalApi,/\/customer\/referral/);
-  assert.match(clientReferral,/abonnement actif et payé/i);
+  assert.match(clientReferral,/trois mensualités réellement encaissées/i);
+  assert.match(clientReferral,/20 € par client validé/i);
   assert.match(clientReferral,/pgi:portal-loaded/);
   assert.match(platformAdmin,/referral-admin\.js/);
-  assert.match(referralAdmin,/updateReferralProgram/);
-  assert.match(referralAdmin,/settleReferralReward/);
+  assert.match(referralAdmin,/Barème verrouillé et non négociable/);
+  assert.doesNotMatch(referralAdmin,/id="pa-referral-reward"/);
+  assert.match(store,/AMBASSADOR_QUALIFYING_PAYMENTS=3/);
+  assert.match(store,/AMBASSADOR_PAYOUT_THRESHOLD_MINOR=2000/);
+  assert.match(store,/min:25,max:null,reward_minor:2000/);
+  assert.match(ambassadorMigration,/fixed_non_negotiable/);
+  assert.match(server,/\/api\/v1\/platform\/referral-program/);
   assert.ok(buildStatic.includes('"assets/client-referral.js"'));
   assert.doesNotMatch(sw,/client-referral\.js/);
+});
+
+test("le cockpit expose une comptabilité mensuelle automatisée sans mélanger HT et TTC",()=>{
+  const server=read("backend/server.mjs"),store=read("backend/src/store-postgres.mjs");
+  assert.match(index,/data-view="accounting"/);
+  assert.match(index,/id="accounting-admin-root"/);
+  assert.match(index,/assets\/accounting-admin\.js/);
+  assert.ok(buildStatic.includes('"assets/accounting-admin.js"'));
+  assert.match(api,/\/platform\/accounting/);
+  assert.match(server,/\/api\/v1\/platform\/accounting/);
+  assert.match(store,/platformAccountingOverview/);
+  assert.match(accountingAdmin,/Exporter CSV/);
+  assert.match(accountingAdmin,/Encaissement opérateur SVA HT/);
+  assert.match(accountingAdmin,/Récompenses Ambassadeur acquises/);
+  assert.match(accountingAdmin,/Commission CB nette suivie/);
+  assert.match(accountingAdmin,/Net clients SVA à reverser HT/);
+  assert.doesNotMatch(accountingAdmin,/total.*HT.*TTC/i);
 });
 
 test("public contact and opening forms keep marketing consent optional explicit and versioned",()=>{

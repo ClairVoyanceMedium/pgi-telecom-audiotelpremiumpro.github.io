@@ -419,23 +419,25 @@ function bindReferralLanding(){
   const status=document.querySelector("[data-referral-status]"),main=document.querySelector("[data-referral-reward-main]");
   if(!status&&!main)return;
   const money=(minor,currency)=>{try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:currency||"EUR"}).format(Number(minor)/100)}catch(_e){return (Number(minor)/100).toFixed(2)+" "+(currency||"EUR")}};
+  const tierFor=(tiers,n)=>tiers.find(x=>n>=Number(x.min||1)&&(x.max==null||n<=Number(x.max)))||tiers[tiers.length-1]||null;
   referralProgramStatus().then(result=>{
-    const {ok,data}=result,reward=Number(data&&data.reward_minor),currency=String(data&&data.currency||"EUR").toUpperCase();
+    const {data}=result,currency=String(data&&data.currency||"EUR").toUpperCase(),tiers=Array.isArray(data&&data.tiers)?data.tiers:[];
     if(!referralProgramActive(result)){
-      status.textContent="Programme de parrainage actuellement fermé. Aucun nouveau parrainage ni nouvelle récompense ne peut être créé tant qu’il reste désactivé.";
-      if(main)main.textContent="Programme actuellement fermé";
-      const copy=document.querySelector("[data-referral-reward-copy]");if(copy)copy.textContent="Aucune nouvelle récompense n’est proposée tant que le programme est désactivé. Les récompenses déjà acquises restent consultables dans votre espace client.";
-      const note=document.querySelector("[data-referral-example-note]");if(note)note.textContent="Les exemples de récompense seront affichés automatiquement dès la réactivation du programme.";
-      document.querySelectorAll("[data-referral-example]").forEach(el=>{el.textContent="Indisponible"});
+      status.textContent="Programme Ambassadeur actuellement fermé aux nouvelles recommandations. Les récompenses déjà acquises et votre historique restent consultables dans votre espace client.";
+      if(main)main.textContent="Programme actuellement fermé aux nouvelles recommandations";
       return;
     }
-    const one=money(reward,currency);
-    status.textContent="Programme disponible : "+one+" par filleul qualifié selon les conditions en vigueur.";
-    if(main)main.textContent=one+" par filleul qualifié";
-    const copy=document.querySelector("[data-referral-reward-copy]");if(copy)copy.textContent="Récompense actuelle : "+one+" par filleul qualifié. Chaque nouveau filleul qui remplit les conditions du programme peut ajouter cette récompense à votre total.";
-    const note=document.querySelector("[data-referral-example-note]");if(note)note.textContent="Avec la récompense actuellement affichée de "+one+" par filleul qualifié, voici des exemples simples :";
-    document.querySelectorAll("[data-referral-example]").forEach(el=>{const n=Math.max(1,Math.min(20,Number(el.getAttribute("data-referral-example"))||1));el.textContent=money(reward*n,currency)});
-  }).catch(()=>{status.textContent="La disponibilité du programme ne peut pas être confirmée pour le moment. Consultez votre espace client avant tout partage."});
+    const max=tiers[tiers.length-1],maxReward=Number(max&&max.reward_minor||data.max_reward_minor||2000);
+    status.textContent="Programme Ambassadeur actif : barème fixe de 10 € à "+money(maxReward,currency)+" par client validé, avec validation après trois mensualités réellement encaissées.";
+    if(main)main.textContent=money(maxReward,currency)+" par nouveau client validé à partir du 25e";
+    document.querySelectorAll("[data-referral-example]").forEach(el=>{
+      const n=Math.max(1,Number(el.getAttribute("data-referral-example"))||1),tier=tierFor(tiers,n);
+      if(n===1)el.textContent=money(Number(tier?.reward_minor||1000)+500,currency)+" au total";
+      else if(n===5)el.textContent=money(Number(tier?.reward_minor||1200)+2000,currency)+" pour cette validation";
+      else if(n===10)el.textContent=money(Number(tier?.reward_minor||1500)+5000,currency)+" pour cette validation";
+      else if(n>=25)el.textContent=money(Number(tier?.reward_minor||2000),currency)+" par nouveau client validé";
+    });
+  }).catch(()=>{status.textContent="La disponibilité du programme ne peut pas être confirmée pour le moment. Votre espace client reste la source de référence."});
 }
 function boot(){
   bindReferralAvailability();

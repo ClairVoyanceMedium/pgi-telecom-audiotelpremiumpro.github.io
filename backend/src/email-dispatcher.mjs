@@ -3,7 +3,8 @@ import {emailHash,normalizeEmail,sendTransactionalEmail} from "./resend-email.mj
 const OUTBOX_TYPES=[
   "customer.self_registered","tenant.status","subscription.changed",
   "portability.requested","service.incident.created","service.incident.note","service.incident.changed",
-  "tenant.revenue_distribution.updated","consumer.withdrawal.received"
+  "tenant.revenue_distribution.updated","consumer.withdrawal.received",
+  "referral.ambassador_started","referral.claimed","referral.reward.earned","referral.reward.paid","referral.monthly_summary"
 ];
 const TERMINAL_SEND_STATES=new Set(["accepted","sent","delivered","delayed","clicked","bounced","complained","suppressed"]);
 const EMAIL_RE=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -203,6 +204,21 @@ async function messagesForEvent(store,config,event){
   }
   if(event.event_type==="tenant.revenue_distribution.updated"){
     if(customerEmail&&String(p.status||"")==="payable")return [msg("customer",customerEmail,customerName,"payout_available","billing",event,{...base,currency:p.currency||null})];
+  }
+  if(event.event_type==="referral.ambassador_started"){
+    if(customerEmail)return [msg("customer",customerEmail,customerName,"ambassador_started","notifications",event,{...base,qualifying_payments:p.qualifying_payments,payout_threshold_minor:p.payout_threshold_minor})];
+  }
+  if(event.event_type==="referral.claimed"){
+    if(customerEmail)return [msg("customer",customerEmail,customerName,"referral_claimed","notifications",event,{...base,qualifying_payments:p.qualifying_payments})];
+  }
+  if(event.event_type==="referral.reward.earned"){
+    if(customerEmail)return [msg("customer",customerEmail,customerName,"referral_reward_earned","billing",event,{...base,qualified_sequence:p.qualified_sequence,base_reward_minor:p.base_reward_minor,milestone_bonus_minor:p.milestone_bonus_minor,amount_minor:p.amount_minor,currency:p.currency,payout_threshold_minor:p.payout_threshold_minor,tier_label:p.tier_label})];
+  }
+  if(event.event_type==="referral.reward.paid"){
+    if(customerEmail)return [msg("customer",customerEmail,customerName,"referral_reward_paid","billing",event,{...base,rewards_paid:p.rewards_paid,amount_minor:p.amount_minor,currency:p.currency,paid_reference:p.paid_reference})];
+  }
+  if(event.event_type==="referral.monthly_summary"){
+    if(customerEmail)return [msg("customer",customerEmail,customerName,"referral_monthly_summary","notifications",event,{...base,month_key:p.month_key,qualified_count:p.qualified_count,earned_minor:p.earned_minor,balance_minor:p.balance_minor,total_qualified:p.total_qualified,payout_threshold_minor:p.payout_threshold_minor,currency:"EUR"})];
   }
   return [];
 }

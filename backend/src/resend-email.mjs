@@ -463,6 +463,69 @@ export function buildTransactionalMessage(config,templateKey,data={}){
       paragraphs:["Un reversement issu du trafic SVA a franchi les contrôles nécessaires et est maintenant indiqué comme disponible dans votre espace client.","Le statut affiché dans votre espace reste la référence pour le suivi du règlement."],
       cta:{label:"Consulter mes reversements",url:portalUrl}
     },
+    ambassador_started:{
+      subject:"Votre espace Ambassadeur Audiotel Premium Pro est actif",
+      title:"Votre programme Ambassadeur est prêt",
+      lead:greeting,
+      paragraphs:[
+        "Votre lien personnel de recommandation est maintenant disponible dans votre espace client.",
+        "Barème fixe : 10 € du 1er au 4e client validé, 12 € du 5e au 9e, 15 € du 10e au 24e, puis 20 € par client validé à partir du 25e.",
+        "Bonus automatiques : 5 € au 1er client validé, 20 € au 5e et 50 € au 10e.",
+        "Un filleul devient validé après trois mensualités réellement encaissées. Le versement de vos récompenses devient éligible à partir de 20 € de solde acquis."
+      ],
+      cta:{label:"Voir mon espace Ambassadeur",url:portalUrl}
+    },
+    referral_claimed:{
+      subject:"Une nouvelle recommandation a été enregistrée",
+      title:"Votre recommandation est bien suivie",
+      lead:greeting,
+      paragraphs:[
+        "Une nouvelle recommandation vient d’être rattachée à votre lien Ambassadeur.",
+        "Elle reste en validation jusqu’à trois mensualités réellement encaissées. Vous n’avez aucune démarche supplémentaire à effectuer.",
+        "Vous pouvez suivre son avancement directement depuis votre espace client."
+      ],
+      cta:{label:"Suivre mes recommandations",url:portalUrl}
+    },
+    referral_reward_earned:{
+      subject:"Une nouvelle récompense Ambassadeur est acquise",
+      title:"Récompense acquise",
+      lead:greeting,
+      paragraphs:[
+        safeDetail("Client validé numéro",data.qualified_sequence),
+        safeDetail("Récompense de base",formatMoneyMinor(data.base_reward_minor,data.currency)),
+        Number(data.milestone_bonus_minor||0)>0?safeDetail("Bonus de palier",formatMoneyMinor(data.milestone_bonus_minor,data.currency)):"",
+        safeDetail("Total acquis pour cette validation",formatMoneyMinor(data.amount_minor,data.currency)),
+        "À partir du 25e client validé, le barème reste fixé à 20 € par nouveau client validé."
+      ].filter(Boolean),
+      cta:{label:"Voir mes récompenses",url:portalUrl},
+      foot:"Le seuil de versement du programme est de "+formatMoneyMinor(data.payout_threshold_minor||2000,data.currency||"EUR")+"."
+    },
+    referral_reward_paid:{
+      subject:"Votre versement Ambassadeur a été enregistré",
+      title:"Versement enregistré",
+      lead:greeting,
+      paragraphs:[
+        safeDetail("Montant",formatMoneyMinor(data.amount_minor,data.currency)),
+        safeDetail("Récompenses regroupées",data.rewards_paid),
+        safeDetail("Référence",data.paid_reference)
+      ].filter(Boolean),
+      cta:{label:"Consulter mon historique",url:portalUrl}
+    },
+    referral_monthly_summary:{
+      subject:"Votre bilan Ambassadeur Audiotel Premium Pro",
+      title:"Bilan mensuel Ambassadeur",
+      lead:greeting,
+      paragraphs:[
+        safeDetail("Mois",data.month_key),
+        safeDetail("Clients validés ce mois",data.qualified_count),
+        safeDetail("Récompenses acquises ce mois",formatMoneyMinor(data.earned_minor,data.currency)),
+        safeDetail("Total de clients validés",data.total_qualified),
+        safeDetail("Solde acquis en attente de versement",formatMoneyMinor(data.balance_minor,data.currency)),
+        "Votre progression et votre barème sont calculés automatiquement. À partir du 25e client validé, chaque nouveau client validé rapporte 20 €."
+      ],
+      cta:{label:"Ouvrir mon espace Ambassadeur",url:portalUrl},
+      foot:"Ce bilan est envoyé une fois par mois uniquement aux clients ayant utilisé le programme Ambassadeur."
+    },
     portability_received:{
       subject:"Votre demande de portabilité a été reçue",
       title:"Demande de portabilité enregistrée",
@@ -776,6 +839,10 @@ function localizeTransactionalModel(key,model,locale,name){
     out.secondaryCta={...out.secondaryCta,label:labels[lang]||out.secondaryCta.label};
   }
   return out;
+}
+function formatMoneyMinor(value,currency="EUR"){
+  const amount=(Number(value)||0)/100;
+  try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:String(currency||"EUR").toUpperCase()}).format(amount);}catch{return amount.toFixed(2)+" "+String(currency||"EUR").toUpperCase();}
 }
 function safeDetail(label,value){
   const v=cleanText(value||"",200);
