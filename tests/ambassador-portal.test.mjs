@@ -52,7 +52,7 @@ test("dedicated ambassador portal exposes tracking, rewards, payout and security
   assert.match(api,/\/ambassador\/dashboard/);
   assert.match(api,/\/ambassador\/referral\/code/);
   assert.match(api,/\/ambassador\/payout-account/);
-  assert.match(app,/3 paiements/);
+  assert.match(app,/factures mensuelles distinctes réellement payées/);
   assert.match(app,/exportCsv/);
   assert.match(app,/connectPayout/);
   assert.match(css,/amb-kpis/);
@@ -67,7 +67,8 @@ test("ambassador dashboard remains referral-only and does not expose client Audi
 test("cockpit can approve suspend and reject ambassador applications",()=>{
   assert.match(admin,/ambassadorProfiles/);
   assert.match(admin,/updateAmbassadorStatus/);
-  assert.match(adminView,/CANDIDATURES AMBASSADEURS/);
+  assert.match(adminView,/CANDIDATURES/);
+  assert.match(adminView,/Ambassadeurs non-clients/);
   assert.match(adminView,/Valider l’accès/);
   assert.match(adminView,/Suspendre/);
   assert.match(adminView,/Refuser/);
