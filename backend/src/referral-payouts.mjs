@@ -1,4 +1,4 @@
-import {createStripeReferralTransfer} from "./stripe-connect.mjs";
+import {createStripeReferralTransfer,retrieveStripeConnectedAccount,normalizeStripeConnectedAccount} from "./stripe-connect.mjs";
 
 function cleanCode(value){
   return String(value||"REFERRAL_PAYOUT_FAILED").trim().toUpperCase().replace(/[^A-Z0-9_]+/g,"_").slice(0,120)||"REFERRAL_PAYOUT_FAILED";
@@ -18,12 +18,25 @@ export async function runReferralRewardPayouts({store,config,limit=25,transfer=c
   if(!store||typeof store.claimReferralRewardPayoutBatch!=="function")return {enabled:false,reason:"store_unavailable",claimed:0,paid:0,blocked:0,retry:0};
   if(!liveReady(config))return {enabled:false,reason:"stripe_live_not_ready",claimed:0,paid:0,blocked:0,retry:0};
   const take=Math.max(1,Math.min(50,Number(limit)||25));
+  let accounts_refreshed=0,account_refresh_failed=0;
+  if(typeof store.referralPayoutAccountsNeedingRefresh==="function"&&typeof store.syncCustomerCardPaymentAccount==="function"){
+    const accounts=await store.referralPayoutAccountsNeedingRefresh(take);
+    for(const account of accounts){
+      try{
+        const remote=await retrieveStripeConnectedAccount(config,account.provider_account_reference);
+        await store.syncCustomerCardPaymentAccount(account.tenant_id,normalizeStripeConnectedAccount(remote));
+        accounts_refreshed++;
+      }catch{account_refresh_failed++}
+    }
+  }
   const claim=await store.claimReferralRewardPayoutBatch(take);
   const items=Array.isArray(claim)?claim:Array.isArray(claim?.items)?claim.items:[];
   const result={
     enabled:true,
     claimed:items.length,
     account_blocked:Number(claim?.account_blocked||0),
+    accounts_refreshed,
+    account_refresh_failed,
     paid:0,
     blocked:0,
     retry:0,
