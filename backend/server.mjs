@@ -1,6 +1,5 @@
 import http from "node:http";
-import fs from "node:fs";
-import {pathToFileURL,fileURLToPath} from "node:url";
+import {pathToFileURL} from "node:url";
 import {randomUUID,randomBytes,createHash,createHmac} from "node:crypto";
 import {verifyGoogleIdToken} from "./src/google-id.mjs";
 import {loadConfig} from "./src/config.mjs";
@@ -23,28 +22,6 @@ import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
 import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail,syncHubSpotCustomerIncident,ensureHubSpotCardPaymentSchema,syncHubSpotCardPaymentState} from "./src/hubspot-crm.mjs";
 import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
-
-const referralSchemaRepairFile=fileURLToPath(new URL("../database/migrations/066_repair_customer_referral_program.sql",import.meta.url));
-
-async function repairReferralSchemaIfNeeded(store){
-  if(!store?.sql||typeof store.sql.begin!=="function")return {ready:false,repaired:false,unsupported:true};
-  return store.sql.begin(async tx=>{
-    await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",["pgi_referral_schema_repair_v1"]);
-    const inspect=async()=>((await tx.unsafe(
-      "SELECT to_regclass('public.platform_feature_flags')::text AS feature_flags,"+
-      "to_regclass('public.customer_referral_codes')::text AS referral_codes,"+
-      "to_regclass('public.customer_referrals')::text AS referrals,"+
-      "to_regclass('public.customer_referral_rewards')::text AS rewards"
-    ))[0]||{});
-    const before=await inspect();
-    const complete=value=>Boolean(value.feature_flags&&value.referral_codes&&value.referrals&&value.rewards);
-    if(complete(before))return {ready:true,repaired:false};
-    await tx.unsafe(fs.readFileSync(referralSchemaRepairFile,"utf8"));
-    const after=await inspect();
-    if(!complete(after))throw new Error("REFERRAL_SCHEMA_REPAIR_INCOMPLETE");
-    return {ready:true,repaired:true};
-  });
-}
 
 export async function createDefaultBackend(){
   const config=loadConfig();
@@ -271,14 +248,8 @@ export function createBackend(options={}){
 
       if(method==="GET"&&pathname==="/api/v1/internal/business-live/reset-schedules/run"){
         authorizeCron(req,config);
-        let referralSchema={ready:false,repaired:false};
-        try{
-          referralSchema=await repairReferralSchemaIfNeeded(store);
-          console.log(JSON.stringify({level:"info",event:"referral_schema_repair",...referralSchema}));
-        }
-        catch(error){console.error(JSON.stringify({level:"error",event:"referral_schema_repair_failed",code:String(error?.code||""),message:String(error?.message||"").slice(0,300)}));}
         const result=typeof store.runDueBusinessLiveResets==="function"?await store.runDueBusinessLiveResets(250):{scanned:0,executed:0,failed:0,results:[]};
-        return done(res,metrics,started,"business_live.reset_schedules",200,{ok:true,referral_schema:referralSchema,...result});
+        return done(res,metrics,started,"business_live.reset_schedules",200,{ok:true,...result});
       }
 
       if(method==="GET"&&pathname==="/api/v1/public/referral-program"){
