@@ -1261,6 +1261,7 @@ state.activeView=name;
 qsa(".view").forEach(function(v){v.classList.toggle("active",v.id==="view-"+name);});
 qsa("[data-view]").forEach(function(b){b.classList.toggle("active",b.getAttribute("data-view")===name);});
 setText("view-title",titles[name]||"Audiotel Premium Pro");
+var toolbar=document.querySelector(".toolbar");if(toolbar)toolbar.hidden=name==="accounting";
 saveUiPreferences();
 if(!(options&&options.noRender))render();
 if(!(options&&options.noScroll))window.scrollTo({top:0,behavior:"smooth"});
