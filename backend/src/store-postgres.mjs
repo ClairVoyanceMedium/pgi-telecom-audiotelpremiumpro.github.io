@@ -4866,7 +4866,7 @@ export class PostgresStore{
         " FROM candidates c WHERE rw.id=c.id"+
         " RETURNING rw.id,rw.public_id,rw.referral_id,rw.tenant_id,rw.amount_minor,rw.currency,rw.payout_attempt_count"+
         ")"+
-        " SELECT cl.id,cl.public_id::text AS public_id,cl.amount_minor::bigint AS amount_minor,cl.currency,cl.payout_attempt_count,"+
+        " SELECT cl.id,cl.public_id::text AS public_id,rf.referrer_tenant_id AS tenant_id,cl.amount_minor::bigint AS amount_minor,cl.currency,cl.payout_attempt_count,"+
         " t.public_id::text AS tenant_public_id,t.display_name AS tenant_name,t.billing_email,"+
         " a.provider_account_reference,a.transfers_enabled,a.recipient_requirements_state"+
         " FROM claimed cl JOIN customer_referrals rf ON rf.id=cl.referral_id"+
