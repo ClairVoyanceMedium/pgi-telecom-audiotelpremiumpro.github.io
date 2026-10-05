@@ -125,18 +125,24 @@ export async function retrieveStripeConnectedAccount(config,accountId){
 
 export function normalizeStripeConnectedAccount(account={}){
   const card=account?.configuration?.merchant?.capabilities?.card_payments||{};
+  const recipientBalance=account?.configuration?.recipient?.capabilities?.stripe_balance||{};
+  const transfers=recipientBalance?.stripe_transfers||{};
+  const recipientPayouts=recipientBalance?.payouts||{};
   const requirements=account?.requirements||{};
   const cardStatus=String(card?.status||"").toLowerCase();
+  const transferStatus=String(transfers?.status||"").toLowerCase();
+  const payoutStatus=String(recipientPayouts?.status||"").toLowerCase();
   const deadline=String(requirements?.summary?.minimum_deadline?.status||"").toLowerCase();
   const chargesEnabled=cardStatus==="active";
+  const payoutsEnabled=transferStatus==="active"&&(payoutStatus===""||payoutStatus==="active");
   const detailsSubmitted=!["currently_due","past_due","eventually_due"].includes(deadline)&&deadline!=="requirements_past_due";
   return {
     provider_account_reference:String(account?.id||""),
     charges_enabled:chargesEnabled,
-    payouts_enabled:chargesEnabled,
+    payouts_enabled:payoutsEnabled,
     details_submitted:detailsSubmitted,
-    requirements_state:deadline||cardStatus||"unknown",
-    status:chargesEnabled?"active":detailsSubmitted?"restricted":"onboarding"
+    requirements_state:deadline||transferStatus||payoutStatus||cardStatus||"unknown",
+    status:(chargesEnabled||payoutsEnabled)?"active":detailsSubmitted?"restricted":"onboarding"
   };
 }
 
