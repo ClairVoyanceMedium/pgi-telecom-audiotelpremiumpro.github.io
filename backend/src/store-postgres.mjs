@@ -2536,6 +2536,19 @@ export class PostgresStore{
           ))[0]||{paid_count:0};
           paidCount=Number(paidInvoices.paid_count||0);
         }
+        if(referral&&paidCount>0&&paidCount<REFERRAL_PAID_MONTHS_REQUIRED){
+          await tx.unsafe(
+            "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload)"+
+            " SELECT $1,'referral.progress','customer_referral',$2,$3::jsonb"+
+            " WHERE NOT EXISTS(SELECT 1 FROM outbox_events WHERE tenant_id=$1 AND event_type='referral.progress' AND aggregate_type='customer_referral' AND aggregate_id=$2 AND payload->>'qualified_payments'=$4)",
+            [referral.referrer_tenant_id,String(referral.id),JSON.stringify({
+              referral_id:Number(referral.id),
+              qualified_payments:paidCount,
+              qualification_payments_required:REFERRAL_PAID_MONTHS_REQUIRED,
+              program_version:REFERRAL_PROGRAM_VERSION
+            }),String(paidCount)]
+          );
+        }
         if(referral&&paidCount>=REFERRAL_PAID_MONTHS_REQUIRED){
           await tx.unsafe("SELECT pg_advisory_xact_lock(hashtext($1))",["referral-rank:"+String(referral.referrer_tenant_id)]);
           const previous=(await tx.unsafe(
