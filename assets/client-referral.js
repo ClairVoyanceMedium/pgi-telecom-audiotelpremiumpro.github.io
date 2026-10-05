@@ -40,7 +40,7 @@ function render(data){
     '<div class="cp-panel-head"><div><p class="cp-kicker">PARRAINAGE</p><h2>Mon espace ambassadeur</h2></div><span>'+esc(String(summary.rewarded||0))+' qualifié(s)</span></div>'+
     '<p class="cp-muted">Une récompense devient acquise après <strong>'+esc(String(required))+' factures mensuelles distinctes réellement payées</strong> par le filleul. Le barème est fixe, automatique et ne porte jamais sur le chiffre d’affaires SVA.</p>'+
     codeBlock+
-    '<div class="cp-row"><div><strong>'+esc(String(summary.claimed||0))+' parrainage(s) enregistré(s)</strong><span>'+esc(money(summary.reward_minor||0,currency))+' de récompenses acquises au total.</span></div></div>'+
+    '<div class="cp-row"><div><strong>'+esc(String(summary.visits||0))+' visite(s) · '+esc(String(summary.prospects||0))+' demande(s)</strong><span>'+esc(String(summary.claimed||0))+' filleul(s) enregistré(s) · '+esc(String(summary.rewarded||0))+' qualifié(s) · '+esc(money(summary.reward_minor||0,currency))+' acquis.</span></div></div>'+
     '<div class="cp-panel-head"><div><p class="cp-kicker">BARÈME FIXE</p><h3>Prime par filleul qualifié</h3></div></div>'+scale+bonus+
     '<div class="cp-panel-head"><div><p class="cp-kicker">SUIVI</p><h3>Progression de mes filleuls</h3></div></div>'+renderRecent(recent,currency,required)+
     '<p id="client-referral-status" class="cp-form-message" aria-live="polite"></p>';
