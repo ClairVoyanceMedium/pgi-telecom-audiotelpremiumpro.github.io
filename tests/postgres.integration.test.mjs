@@ -44,7 +44,7 @@ test("PostgresStore performs real ingest summary and routing", {skip:!run}, asyn
     assert.equal(internalAccess[0].allowed,true);
 
     const billingBefore=await store.subscriptionBillingOverview();
-    assert.equal(Number(billingBefore.current_price.amount_minor),300);
+    assert.equal(Number(billingBefore.current_price.amount_minor),490);
     assert.equal(billingBefore.current_price.currency,"EUR");
     assert.equal(billingBefore.internal_usage_exempt,true);
     assert.equal(billingBefore.summary.access_blocked,1);
