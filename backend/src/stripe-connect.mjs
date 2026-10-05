@@ -133,6 +133,106 @@ export function normalizeStripeConnectedAccount(account={}){
   };
 }
 
+export async function createStripeReferralRecipientAccount(config,input={}){
+  const email=cleanEmail(input.email),country=cleanCountry(input.country_code);
+  if(!email)throw error(400,"INVALID_REFERRAL_PAYOUT_EMAIL");
+  const body={
+    contact_email:email,
+    dashboard:"express",
+    identity:{country},
+    defaults:{
+      responsibilities:{fees_collector:"application",losses_collector:"application"}
+    },
+    configuration:{
+      recipient:{
+        capabilities:{
+          stripe_balance:{stripe_transfers:{requested:true}}
+        }
+      }
+    }
+  };
+  const account=await jsonRequest(config,"/v2/core/accounts",{method:"POST",body,idempotencyKey:input.idempotency_key,preview:true});
+  if(!/^acct_[A-Za-z0-9]+$/.test(String(account?.id||"")))throw error(502,"STRIPE_REFERRAL_PAYOUT_ACCOUNT_INVALID");
+  return account;
+}
+
+export async function retrieveStripeReferralRecipientAccount(config,accountId){
+  if(!/^acct_[A-Za-z0-9]+$/.test(String(accountId||"")))throw error(400,"INVALID_REFERRAL_PAYOUT_ACCOUNT");
+  const query="?include%5B%5D=configuration.recipient&include%5B%5D=requirements&include%5B%5D=defaults";
+  return jsonRequest(config,"/v2/core/accounts/"+encodeURIComponent(accountId)+query,{preview:true});
+}
+
+export function normalizeStripeReferralRecipientAccount(account={}){
+  const balance=account?.configuration?.recipient?.capabilities?.stripe_balance||{};
+  const transferStatus=String(balance?.stripe_transfers?.status||"").toLowerCase();
+  const payoutStatus=String(balance?.payouts?.status||"").toLowerCase();
+  const requirements=account?.requirements||{};
+  const deadline=String(requirements?.summary?.minimum_deadline?.status||"").toLowerCase();
+  const transfersEnabled=transferStatus==="active";
+  const payoutsEnabled=payoutStatus==="active"||transfersEnabled;
+  const detailsSubmitted=!["currently_due","past_due","eventually_due"].includes(deadline)&&deadline!=="requirements_past_due";
+  return {
+    provider_account_reference:String(account?.id||""),
+    transfers_enabled:transfersEnabled,
+    payouts_enabled:payoutsEnabled,
+    details_submitted:detailsSubmitted,
+    requirements_state:deadline||transferStatus||"unknown",
+    status:transfersEnabled?"active":detailsSubmitted?"restricted":"onboarding"
+  };
+}
+
+export async function createStripeReferralOnboardingLink(config,accountId,input={}){
+  if(!/^acct_[A-Za-z0-9]+$/.test(String(accountId||"")))throw error(400,"INVALID_REFERRAL_PAYOUT_ACCOUNT");
+  const base=baseUrl(config);
+  const body={
+    account:String(accountId),
+    use_case:{
+      type:"account_onboarding",
+      account_onboarding:{
+        return_url:base+"/client.html?referral_payout=return",
+        refresh_url:base+"/client.html?referral_payout=refresh",
+        collection_options:{fields:"eventually_due"}
+      }
+    }
+  };
+  const link=await jsonRequest(config,"/v2/core/account_links",{method:"POST",body,idempotencyKey:input.idempotency_key,preview:true});
+  if(!/^https:\/\//i.test(String(link?.url||"")))throw error(502,"STRIPE_REFERRAL_PAYOUT_LINK_INVALID");
+  return {url:link.url,expires_at:link.expires_at||null};
+}
+
+export async function createStripeReferralTransfer(config,input={}){
+  const destination=String(input.destination_account||"").trim();
+  if(!/^acct_[A-Za-z0-9]+$/.test(destination))throw error(400,"INVALID_REFERRAL_PAYOUT_DESTINATION");
+  const amount=Math.trunc(Number(input.amount_minor));
+  if(!Number.isInteger(amount)||amount<=0||amount>100000000)throw error(400,"INVALID_REFERRAL_PAYOUT_AMOUNT");
+  const currency=String(input.currency||"EUR").trim().toLowerCase();
+  if(!/^[a-z]{3}$/.test(currency))throw error(400,"INVALID_REFERRAL_PAYOUT_CURRENCY");
+  const rewardPublicId=String(input.reward_public_id||"").trim();
+  if(!/^[0-9a-f-]{36}$/i.test(rewardPublicId))throw error(400,"INVALID_REFERRAL_REWARD_REFERENCE");
+  const fields={
+    amount,
+    currency,
+    destination,
+    description:"Prime parrainage Audiotel Premium Pro",
+    transfer_group:"REFERRAL_"+rewardPublicId.replace(/-/g,"").slice(0,24).toUpperCase(),
+    metadata:{
+      pgi_referral_reward:rewardPublicId,
+      pgi_tenant_public_id:String(input.tenant_public_id||"").slice(0,80),
+      pgi_payout_type:"customer_referral_reward"
+    }
+  };
+  const transfer=await formRequest(config,"/v1/transfers",{fields,idempotencyKey:input.idempotency_key});
+  if(!/^tr_[A-Za-z0-9]+$/.test(String(transfer?.id||"")))throw error(502,"STRIPE_REFERRAL_TRANSFER_INVALID");
+  return {
+    provider_transfer_reference:String(transfer.id),
+    amount_minor:Number(transfer.amount),
+    currency:String(transfer.currency||currency).toUpperCase(),
+    destination_account:String(typeof transfer.destination==="string"?transfer.destination:transfer.destination?.id||destination),
+    created_at:transfer.created?new Date(Number(transfer.created)*1000).toISOString():new Date().toISOString(),
+    livemode:transfer.livemode===true
+  };
+}
+
 export async function createStripeConnectOnboardingLink(config,accountId,input={}){
   if(!/^acct_[A-Za-z0-9]+$/.test(String(accountId||"")))throw error(400,"INVALID_CONNECT_ACCOUNT");
   const base=baseUrl(config);
