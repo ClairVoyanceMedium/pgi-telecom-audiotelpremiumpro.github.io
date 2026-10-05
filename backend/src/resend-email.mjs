@@ -480,6 +480,18 @@ export function buildTransactionalMessage(config,templateKey,data={}){
       cta:{label:"Suivre mes filleuls",url:portalUrl},
       foot:"Aucune récompense n’est comptabilisée avant la qualification complète du filleul."
     },
+    referral_progress:{
+      subject:"Progression de votre filleul Ambassadeur Audiotel Premium Pro",
+      title:"Votre filleul progresse vers la qualification",
+      lead:greeting,
+      paragraphs:[
+        "Une nouvelle mensualité d’abonnement de votre filleul a été réellement encaissée.",
+        "Progression actuelle : "+Number(data.qualified_payments||0)+" sur "+Number(data.qualification_payments_required||3)+" mensualités requises.",
+        "La récompense deviendra acquise uniquement lorsque les trois mensualités requises auront été encaissées."
+      ],
+      cta:{label:"Suivre mes filleuls",url:portalUrl},
+      foot:"Cet email correspond à une progression réelle de votre parrainage. Il ne confirme pas encore un versement de récompense."
+    },
     referral_reward_earned:{
       subject:"Votre récompense Ambassadeur Audiotel Premium Pro est acquise",
       title:"Récompense Ambassadeur acquise",
