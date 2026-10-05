@@ -7200,7 +7200,12 @@ export class PostgresStore{
         [fromIso,toIso,currency]
       ),
       this.readSql.unsafe(
-        "SELECT count(*)::int AS count,COALESCE(sum(amount_minor),0)::bigint AS amount_minor FROM customer_referral_rewards WHERE currency=$1 AND status='earned'",
+        "SELECT count(*)::int AS count,COALESCE(sum(amount_minor),0)::bigint AS amount_minor,"+
+        " count(*) FILTER(WHERE payout_status='queued')::int AS queued_count,"+
+        " count(*) FILTER(WHERE payout_status='processing')::int AS processing_count,"+
+        " count(*) FILTER(WHERE payout_status='missing_payout_details')::int AS missing_details_count,"+
+        " count(*) FILTER(WHERE payout_status='failed')::int AS failed_count"+
+        " FROM customer_referral_rewards WHERE currency=$1 AND status='earned'",
         [currency]
       ),
       this.readSql.unsafe(
@@ -7264,6 +7269,10 @@ export class PostgresStore{
       current_balances:{
         referral_rewards_payable_minor:Number(currentReferralRow.amount_minor||0),
         referral_rewards_payable_count:Number(currentReferralRow.count||0),
+        referral_rewards_queued_count:Number(currentReferralRow.queued_count||0),
+        referral_rewards_processing_count:Number(currentReferralRow.processing_count||0),
+        referral_rewards_missing_details_count:Number(currentReferralRow.missing_details_count||0),
+        referral_rewards_failed_count:Number(currentReferralRow.failed_count||0),
         client_payout_payable_ht:Number(currentClientRow.payable_ht||0),
         client_payout_payable_count:Number(currentClientRow.payable_count||0),
         client_payout_blocked_ht:Number(currentClientRow.blocked_ht||0),
