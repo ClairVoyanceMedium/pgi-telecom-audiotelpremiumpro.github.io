@@ -3,13 +3,13 @@
 var RUNTIME=window.PGI_CONFIG||{mode:"demo",apiBaseUrl:"",features:{}};
 var CONFIG={serviceRate:.8,payoutRate:.46,expertCostPerMin:.18,fixedCostPerCall:.03};
 var state={period:"today",custom:null,baseline:null,resets:[],callFilters:{search:"",expert:"",carrier:"",status:""},diagnostics:{errors:0,lastRenderMs:0,apiStatus:"not_configured"},live:{calls:0,available:0,queue:0},authUser:null,eventSource:null,syncTimer:null,syncInFlight:false,pendingSync:false,pendingSyncMode:"dashboard",scheduledSyncMode:"dashboard",hiddenAt:null,lastSyncAt:null,activeView:"overview",system:null,route:null,wholesale:null,serverSummary:null,previousSummary:null,serverAnalytics:null,serverReconciliation:null,cdrSampleTruncated:false,market:null,marketCurrency:"EUR",mobileOverviewExpanded:true};
-var titles={overview:"Cockpit",calls:"Appels",finance:"Finance",experts:"Intervenants",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Supervision",settings:"Paramètres"};var experts=["Accueil","Service commercial","Support client","Service technique","Prise de rendez-vous","Comptabilité"];
+var titles={overview:"Cockpit",calls:"Appels",finance:"Finance",accounting:"Comptabilité",experts:"Intervenants",carriers:"Opérateurs",wholesale:"Plateforme SVA",system:"Supervision",settings:"Paramètres"};var experts=["Accueil","Service commercial","Support client","Service technique","Prise de rendez-vous","Comptabilité"];
 var carriers=["Orange","SFR","Bouygues","Free"];
 var number089="0890 80 24 24";
 var callToolsPromise=null;
 function callTools(){return callToolsPromise||(callToolsPromise=import("./call-tools.js"));}
-var cockpitProPromise=null,cockpitProPayload=null;
-function renderCockpitPro(payload){cockpitProPayload=payload;if(window.PGICockpitPro)return window.PGICockpitPro.render(payload);if(!cockpitProPromise)cockpitProPromise=import("./cockpit-pro.js").then(function(){if(window.PGICockpitPro)window.PGICockpitPro.render(cockpitProPayload);}).catch(function(){});}
+var cockpitProPromise=null,cockpitProPayload=null;var accountingViewPromise=null;
+function renderCockpitPro(payload){cockpitProPayload=payload;if(window.PGICockpitPro)return window.PGICockpitPro.render(payload);if(!cockpitProPromise)cockpitProPromise=import("./cockpit-pro.js").then(function(){if(window.PGICockpitPro)window.PGICockpitPro.render(cockpitProPayload);}).catch(function(){});}function renderAccountingView(force){if(!accountingViewPromise)accountingViewPromise=import("./accounting-view.js");return accountingViewPromise.then(function(m){return force?m.refreshAccounting():m.renderAccounting();}).catch(function(){var s=$("accounting-status");if(s)s.textContent="Comptabilité indisponible.";});}
 function $(id){return document.getElementById(id);}
 function qsa(sel){return Array.prototype.slice.call(document.querySelectorAll(sel));}
 function money(v){return moneyIn(v,state.marketCurrency||"EUR","fr-FR");}
@@ -1187,6 +1187,9 @@ renderKPIs(rows);
 renderFinanceAnalytics(rows);
 renderRecon(rows);
 break;
+case "accounting":
+renderAccountingView(false);
+break;
 case "experts":
 renderExpertSummary(rows);
 renderExperts(rows);
@@ -1273,7 +1276,7 @@ refreshData();
 function executeCommand(id){
 if(id&&id.indexOf("view-")===0)return switchView(id.slice(5));
 if(id&&id.indexOf("period-")===0)return setPeriod(id.slice(7));
-if(id==="refresh")return refreshData({forceMeta:true});
+if(id==="refresh")return state.activeView==="accounting"?renderAccountingView(true):refreshData({forceMeta:true});
 if(id==="priority"||id==="analysis"){
 switchView("overview");
 return id==="analysis"?toggleMobileOverview():setTimeout(function(){var b=$("priority-action-btn");if(b)b.focus();},250);
@@ -1292,7 +1295,7 @@ var f=$("date-from").value,t=$("date-to").value;if(!f||!t)return;
 var fd=new Date(f+"T00:00:00"),td=new Date(t+"T00:00:00");if(td<fd){var tmp=fd;fd=td;td=tmp;}
 state.period="custom";state.custom={from:fd,to:td};qsa(".period").forEach(function(x){x.classList.remove("active");});saveUiPreferences();refreshData();
 });
-$("refresh-btn").addEventListener("click",function(){refreshData({forceMeta:true});});
+$("refresh-btn").addEventListener("click",function(){if(state.activeView==="accounting")renderAccountingView(true);else refreshData({forceMeta:true});});
 window.addEventListener("pgi:command",function(e){executeCommand(e&&e.detail?e.detail.id:null);});
 var mobileOverviewToggle=$("mobile-overview-toggle");
 if(mobileOverviewToggle)mobileOverviewToggle.addEventListener("click",toggleMobileOverview);
