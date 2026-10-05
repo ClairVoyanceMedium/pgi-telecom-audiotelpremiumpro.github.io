@@ -522,7 +522,7 @@ test("le produit garde son identité interne et le nom de cockpit installé",()=
 test("final brown cockpit theme and installed app label are authoritative",()=>{
   assert.match(css,/--bg:#2b1b15/);
   assert.match(css,/\.product-name\{color:#f7e5d6;font-size:clamp\(24px,2\.3vw,32px\)/);
-  assert.match(css,/@media \(max-width:820px\)[\s\S]*\.product-name\{max-width:min\(76vw,430px\);font-size:clamp\(18px,5\.0vw,22px\)/);
+  assert.match(css,/@media\s*\(max-width:820px\)[\s\S]*\.product-name\{max-width:min\(76vw,430px\);font-size:clamp\(18px,5\.0vw,22px\)/);
   assert.match(index,/apple-mobile-web-app-title" content="Cockpit \/ PGI Telecom • Audiotel Premium Pro"/);
   assert.match(manifest,/Audiotel Premium Pro/);
 });
