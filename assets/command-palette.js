@@ -10,7 +10,7 @@ var commands=[
 ["view-wholesale","Navigation","Ouvrir Plateforme SVA","Clients, numéros, KYC","sva wholesale clients numeros kyc"],
 ["view-system","Navigation","Ouvrir Supervision","NOC, API, CDR, résilience","systeme noc api supervision erreurs"],
 ["view-settings","Navigation","Ouvrir Paramètres","Configuration et audit","reglages parametres config"],
-["platform-admin","Administration","Administrer la plateforme","Tarif abonnement, opérateur, bascule et rollback","client sva tarif abonnement operateur carrier switch rollback"],
+["platform-admin","Administration","Administrer la plateforme","Tarif, opérateur, parrainage et comptabilité","client sva tarif abonnement operateur parrainage ambassadeur comptabilite tresorerie csv"],
 ["control-tower","Pilotage","Ouvrir Control Tower","Policy Engine, Digital Twin et priorités","control tower policy simulation digital twin risque capacité"],
 ["sva-compliance","Conformité","Ouvrir SVA Compliance Center","AF2M 2026, RSVA, DGCCRF, CNIL, 33700","sva af2m rsva apnf dgccrf cnil 33700 conformite"],
 ["period-today","Période","Afficher aujourd’hui","Période : aujourd’hui","jour today"],

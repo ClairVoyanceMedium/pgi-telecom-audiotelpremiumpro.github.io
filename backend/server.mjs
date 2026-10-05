@@ -241,9 +241,10 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/internal/email/dispatch"){
         authorizeEmailCron(req,config);
         if(typeof store.scanUnpaidSubscriptions==="function")await store.scanUnpaidSubscriptions(500);
+        const referral_digest=typeof store.queueReferralMonthlyDigests==="function"?await store.queueReferralMonthlyDigests():{enabled:false,queued:0,month:null};
         const delivery=await drainTransactionalEmails({store,config,limit:100});
         const dunning=await drainDunningTransactionalEmails({store,config,limit:100});
-        return done(res,metrics,started,"email.dispatch",200,{ok:true,delivery,dunning});
+        return done(res,metrics,started,"email.dispatch",200,{ok:true,referral_digest,delivery,dunning});
       }
 
       if(method==="GET"&&pathname==="/api/v1/internal/business-live/reset-schedules/run"){
@@ -1580,6 +1581,12 @@ export function createBackend(options={}){
         return done(res,metrics,started,"platform.card_payments.summary",200,{provider:stripeConnectState(config),...(await store.platformCardPaymentSummary())});
       }
 
+      if(method==="GET"&&pathname==="/api/v1/platform/accounting"){
+        requireRole(actor,["admin","finance","readonly"]);
+        const params=Object.fromEntries(url.searchParams.entries());
+        return done(res,metrics,started,"platform.accounting",200,await store.platformAccountingOverview(params));
+      }
+
       if(method==="GET"&&pathname==="/api/v1/platform/tenants/summary"){
         requireRole(actor,["admin","finance","readonly"]);
         return done(res,metrics,started,"platform.tenant_summary",200,await store.customerAdminSummary());
@@ -1592,7 +1599,7 @@ export function createBackend(options={}){
       if(method==="POST"&&pathname==="/api/v1/platform/referral-program"){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
         const body=await readJson(req,config.bodyLimitBytes);
-        const payload={enabled:body.enabled===true,reward_minor:Math.trunc(Number(body.reward_minor)),currency:String(body.currency||"EUR").toUpperCase()};
+        const payload={enabled:body.enabled===true};
         const result=await store.idempotent(req.headers["idempotency-key"],"platform.referral_program.update",payload,()=>store.updateReferralProgram(payload,actor));
         return done(res,metrics,started,"platform.referral_program_update",200,{...result.value,replayed:result.replayed});
       }
