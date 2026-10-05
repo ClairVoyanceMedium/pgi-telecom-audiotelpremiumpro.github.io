@@ -1280,6 +1280,11 @@ export class MemoryStore{
   async confirmCustomerRelationAction(){throw problem(409,"CUSTOMER_PORTAL_DEMO_ONLY");}
   async completeRelationExternalAction(){throw problem(409,"CUSTOMER_RELATIONS_DEMO_ONLY");}
 
+  async platformAccounting(params={}){
+    const from=params.from||new Date(Date.now()-30*86400000).toISOString(),to=params.to||new Date().toISOString();
+    return {schema_version:"audiotel-platform-accounting/1",generated_at:new Date().toISOString(),range:{from,to},currency:"EUR",summary:{tracked_cash_in_minor:0,tracked_cash_out_minor:0,tracked_cash_balance_minor:0,operating_contribution_minor:0,operator_receivable_ht_minor:0,client_payable_ht_minor:0,referral_payable_minor:0,subscription_failed_count:0,card_dispute_count:0},revenue:{subscriptions:{collected_minor:0,paid_count:0,failed_count:0,action_required_count:0,basis:"TTC"},portability_priority:{collected_minor:0,paid_count:0,basis:"TTC"},card_fees:{collected_minor:0,net_collected_minor:0,payments_count:0,volume_paid_minor:0,refund_count:0,dispute_count:0,basis:"COMMISSION"},sva:{upstream_collected_ht_minor:0,margin_booked_ht_minor:0,margin_collected_ht_minor:0,operator_receivable_ht_minor:0,basis:"HT"}},outflows:{clients:{paid_ht_minor:0,payable_ht_minor:0,scheduled_ht_minor:0,held_ht_minor:0,basis:"HT"},referrals:{earned_minor:0,paid_minor:0,payable_minor:0,earned_count:0,paid_count:0,basis:"PRIME"}},monthly:[],ledger:[],integrity:{ledger_limit:0,ledger_truncated:false,authoritative_sources:[],notes:["Mode mémoire : aucune écriture comptable réelle."]}};
+  }
+
   async customerProfitability(params={}){void params;return {schema_version:"audiotel-customer-profitability/1",period:"365d",since:null,currency:"EUR",currencies:["EUR"],accounting_basis:"tenant_revenue_distributions.platform_fee_ht",cash_basis:"carrier paid amount / confirmed amount",excludes:["general_platform_overhead","unconnected_subscription_cash"],tenant:null,summary:{upstream_payout_ht:0,margin_booked_ht:0,margin_collected_ht:0,client_net_payout_ht:0,unallocated_amount_ht:0,customers_with_distribution:0,top5_margin_collected_ht:0,top5_concentration_percent:0},ranking:[],trend:[]};}
 
   async customerAdminSummary(){
