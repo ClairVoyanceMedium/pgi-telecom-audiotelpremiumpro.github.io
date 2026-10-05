@@ -24,8 +24,7 @@ test -n "$PGI_DATABASE_URL" || {
   exit 1
 }
 
-# The migration runner is idempotent and checksum-verified. It runs before the API
-# so a deployment cannot expose code that depends on a schema not yet present.
+# Neon schema evolution is performed outside the generic cold-start migration runner.
+# Application-owned repair guards may self-heal narrowly scoped additive schema.
 node scripts/build-static.mjs
-node backend/migrate.mjs
 exec node backend/server.mjs
