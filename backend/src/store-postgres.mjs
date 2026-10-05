@@ -4569,12 +4569,19 @@ export class PostgresStore{
   }
 
   async referralProgramPublicState(){
-    const row=(await this.sql.unsafe(
-      "SELECT enabled,configuration FROM platform_feature_flags WHERE feature_key='customer_referral' LIMIT 1"
-    ))[0]||null;
-    const cfg=row?.configuration&&typeof row.configuration==="object"?row.configuration:{};
-    const rewardMinor=Math.max(0,Math.trunc(Number(cfg.reward_minor)||0)),currency=String(cfg.currency||"EUR").toUpperCase();
-    return {enabled:row?.enabled===true&&rewardMinor>0,reward_minor:rewardMinor,currency:/^[A-Z]{3}$/.test(currency)?currency:"EUR",qualification:"paid_active_subscription"};
+    try{
+      const row=(await this.sql.unsafe(
+        "SELECT enabled,configuration FROM platform_feature_flags WHERE feature_key='customer_referral' LIMIT 1"
+      ))[0]||null;
+      const cfg=row?.configuration&&typeof row.configuration==="object"?row.configuration:{};
+      const rewardMinor=Math.max(0,Math.trunc(Number(cfg.reward_minor)||0)),currency=String(cfg.currency||"EUR").toUpperCase();
+      return {enabled:row?.enabled===true&&rewardMinor>0,reward_minor:rewardMinor,currency:/^[A-Z]{3}$/.test(currency)?currency:"EUR",qualification:"paid_active_subscription"};
+    }catch(error){
+      if(String(error?.code||"")==="42P01"){
+        return {enabled:false,reward_minor:0,currency:"EUR",qualification:"paid_active_subscription"};
+      }
+      throw error;
+    }
   }
 
   async referralProgramAdminState(){
