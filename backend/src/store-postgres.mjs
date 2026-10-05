@@ -4651,6 +4651,82 @@ export class PostgresStore{
     return {...program,summary,rewards:rewards.map(x=>({...x,amount_minor:Number(x.amount_minor||0)}))};
   }
 
+
+  async referralAmbassadorsAdminList(){
+    const rows=await this.sql.unsafe(
+      "SELECT t.id AS tenant_id,t.public_id::text AS tenant_public_id,t.display_name,t.status,t.billing_email,t.country_code,t.created_at,"+
+      " c.code,c.status AS code_status,c.created_at AS code_created_at,"+
+      " (SELECT count(*)::int FROM customer_referral_events e WHERE e.referral_code_id=c.id AND e.event_type='visit') AS visits,"+
+      " (SELECT count(*)::int FROM customer_referral_events e WHERE e.referral_code_id=c.id AND e.event_type='prospect') AS prospects,"+
+      " (SELECT count(*)::int FROM customer_referrals r WHERE r.referrer_tenant_id=t.id) AS referrals_total,"+
+      " (SELECT count(*)::int FROM customer_referrals r WHERE r.referrer_tenant_id=t.id AND r.status='claimed') AS referrals_claimed,"+
+      " (SELECT count(*)::int FROM customer_referrals r WHERE r.referrer_tenant_id=t.id AND r.status='qualified') AS referrals_qualified,"+
+      " (SELECT count(*)::int FROM customer_referrals r WHERE r.referrer_tenant_id=t.id AND r.status='rewarded') AS referrals_rewarded,"+
+      " (SELECT count(*)::int FROM customer_referrals r WHERE r.referrer_tenant_id=t.id AND r.status='rejected') AS referrals_rejected,"+
+      " (SELECT COALESCE(sum(rw.amount_minor),0)::bigint FROM customer_referral_rewards rw WHERE rw.tenant_id=t.id AND rw.status='earned') AS earned_unpaid_minor,"+
+      " (SELECT COALESCE(sum(rw.amount_minor),0)::bigint FROM customer_referral_rewards rw WHERE rw.tenant_id=t.id AND rw.status='paid') AS paid_minor,"+
+      " (SELECT max(rw.paid_at) FROM customer_referral_rewards rw WHERE rw.tenant_id=t.id AND rw.status='paid') AS last_reward_paid_at,"+
+      " (SELECT COALESCE(sum(st.net_payout_ht),0)::float8 FROM tenant_settlements st WHERE st.tenant_id=t.id AND st.status='paid') AS sva_paid_ht,"+
+      " (SELECT COALESCE(sum(st.net_payout_ht),0)::float8 FROM tenant_settlements st WHERE st.tenant_id=t.id AND st.status='payable') AS sva_payable_ht"+
+      " FROM customer_referral_codes c JOIN tenants t ON t.id=c.tenant_id"+
+      " ORDER BY referrals_total DESC,visits DESC,c.created_at DESC LIMIT 250"
+    );
+    const total=(await this.sql.unsafe("SELECT count(*)::int AS total FROM customer_referral_codes"))[0]?.total||0;
+    return {currency:"EUR",qualification_paid_invoices:REFERRAL_QUALIFICATION_PAID_INVOICES,total:Number(total),data:rows.map(x=>{
+      const tenantId=Number(x.tenant_id);
+      return {...x,tenant_id:undefined,dossier_reference:dossierReference(tenantId,x.created_at),
+        visits:Number(x.visits||0),prospects:Number(x.prospects||0),referrals_total:Number(x.referrals_total||0),referrals_claimed:Number(x.referrals_claimed||0),
+        referrals_qualified:Number(x.referrals_qualified||0),referrals_rewarded:Number(x.referrals_rewarded||0),referrals_rejected:Number(x.referrals_rejected||0),
+        earned_unpaid_minor:Number(x.earned_unpaid_minor||0),paid_minor:Number(x.paid_minor||0),sva_paid_ht:Number(x.sva_paid_ht||0),sva_payable_ht:Number(x.sva_payable_ht||0)};
+    })};
+  }
+
+  async referralAmbassadorAdminDetail(referrerPublicId){
+    const publicId=String(referrerPublicId||"").trim();
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(publicId))throw problem(400,"INVALID_REFERRAL_AMBASSADOR_ID");
+    const rows=await this.sql.unsafe(
+      "SELECT t.id AS tenant_id,t.public_id::text AS tenant_public_id,t.display_name,t.legal_name,t.status,t.billing_email,t.country_code,t.created_at,t.updated_at,"+
+      " c.code,c.status AS code_status,c.created_at AS code_created_at,"+
+      " (SELECT count(*)::int FROM customer_referral_events e WHERE e.referral_code_id=c.id AND e.event_type='visit') AS visits,"+
+      " (SELECT count(*)::int FROM customer_referral_events e WHERE e.referral_code_id=c.id AND e.event_type='prospect') AS prospects,"+
+      " (SELECT count(*)::int FROM customer_referrals r WHERE r.referrer_tenant_id=t.id) AS referrals_total,"+
+      " (SELECT count(*)::int FROM customer_referrals r WHERE r.referrer_tenant_id=t.id AND r.status='rewarded') AS referrals_rewarded,"+
+      " (SELECT COALESCE(sum(rw.amount_minor),0)::bigint FROM customer_referral_rewards rw WHERE rw.tenant_id=t.id AND rw.status='earned') AS earned_unpaid_minor,"+
+      " (SELECT COALESCE(sum(rw.amount_minor),0)::bigint FROM customer_referral_rewards rw WHERE rw.tenant_id=t.id AND rw.status='paid') AS paid_minor,"+
+      " (SELECT COALESCE(sum(st.net_payout_ht),0)::float8 FROM tenant_settlements st WHERE st.tenant_id=t.id AND st.status='paid') AS sva_paid_ht,"+
+      " (SELECT COALESCE(sum(st.net_payout_ht),0)::float8 FROM tenant_settlements st WHERE st.tenant_id=t.id AND st.status='payable') AS sva_payable_ht"+
+      " FROM customer_referral_codes c JOIN tenants t ON t.id=c.tenant_id WHERE t.public_id=$1::uuid LIMIT 1",
+      [publicId]
+    );
+    const a=rows[0];if(!a)throw problem(404,"REFERRAL_AMBASSADOR_NOT_FOUND");
+    const id=Number(a.tenant_id);
+    const [referrals,settlements,subscriptions,numbers]=await Promise.all([
+      this.sql.unsafe(
+        "SELECT r.public_id::text AS referral_public_id,r.status,r.reward_minor::bigint AS reward_minor,r.reward_currency AS claim_reward_currency,r.claimed_at,r.qualified_at,r.rewarded_at,r.rejected_at,r.rejection_reason,"+
+        " dt.public_id::text AS referred_public_id,dt.display_name AS referred_name,dt.status AS referred_status,dt.billing_email AS referred_billing_email,dt.created_at AS referred_created_at,"+
+        " (SELECT count(DISTINCT be.normalized_details->>'provider_invoice_reference')::int FROM subscription_billing_events be WHERE be.tenant_id=r.referred_tenant_id AND be.event_type='invoice.paid' AND COALESCE(be.normalized_details->>'provider_invoice_reference','')<>'' AND COALESCE(be.normalized_details->>'last_payment_status','paid')='paid' AND be.event_time>=r.claimed_at) AS paid_invoice_count,"+
+        " rw.public_id::text AS reward_public_id,rw.amount_minor::bigint AS reward_amount_minor,rw.currency AS reward_currency,rw.status AS reward_status,rw.earned_at,rw.paid_at,rw.paid_reference"+
+        " FROM customer_referrals r JOIN tenants dt ON dt.id=r.referred_tenant_id LEFT JOIN customer_referral_rewards rw ON rw.referral_id=r.id"+
+        " WHERE r.referrer_tenant_id=$1 ORDER BY r.claimed_at DESC,r.id DESC LIMIT 200",
+        [id]
+      ),
+      this.sql.unsafe(
+        "SELECT period_start,period_end,gross_service_amount_ht::float8 AS gross_service_amount_ht,platform_fee_ht::float8 AS platform_fee_ht,net_payout_ht::float8 AS net_payout_ht,status,payment_due_date,paid_at,statement_reference"+
+        " FROM tenant_settlements WHERE tenant_id=$1 ORDER BY period_end DESC,id DESC LIMIT 36",[id]
+      ),
+      this.sql.unsafe(
+        "SELECT s.status,s.billing_currency,s.starts_at,s.current_period_start,s.current_period_end,s.ends_at,s.cancel_at_period_end,s.last_payment_status,s.last_event_at,p.plan_key,p.display_name AS plan_name"+
+        " FROM tenant_subscriptions s JOIN service_plans p ON p.id=s.service_plan_id WHERE s.tenant_id=$1 ORDER BY COALESCE(s.current_period_end,s.starts_at) DESC,s.id DESC LIMIT 1",[id]
+      ),
+      this.sql.unsafe(
+        "SELECT n.e164,n.display_number,n.status AS number_status,a.status AS assignment_status,a.tariff_code,a.valid_from,a.valid_to"+
+        " FROM tenant_number_assignments a JOIN sva_numbers n ON n.id=a.sva_number_id WHERE a.tenant_id=$1 ORDER BY a.created_at DESC,a.id DESC LIMIT 20",[id]
+      )
+    ]);
+    const ambassador={...a,tenant_id:undefined,dossier_reference:dossierReference(id,a.created_at),visits:Number(a.visits||0),prospects:Number(a.prospects||0),referrals_total:Number(a.referrals_total||0),referrals_rewarded:Number(a.referrals_rewarded||0),earned_unpaid_minor:Number(a.earned_unpaid_minor||0),paid_minor:Number(a.paid_minor||0),sva_paid_ht:Number(a.sva_paid_ht||0),sva_payable_ht:Number(a.sva_payable_ht||0)};
+    return {currency:"EUR",qualification_paid_invoices:REFERRAL_QUALIFICATION_PAID_INVOICES,ambassador,subscription:subscriptions[0]||null,numbers,settlements,referrals:referrals.map(x=>({...x,reward_minor:Number(x.reward_minor||0),reward_amount_minor:Number(x.reward_amount_minor||0),paid_invoice_count:Number(x.paid_invoice_count||0)}))};
+  }
+
   async updateReferralProgram(input={},actor={}){
     const enabled=input.enabled===true,actorId=numericActor(actor),configuration=referralPublicPolicy();
     await this.sql.unsafe(
