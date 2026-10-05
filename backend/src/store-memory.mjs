@@ -1282,6 +1282,13 @@ export class MemoryStore{
 
   async customerProfitability(params={}){void params;return {schema_version:"audiotel-customer-profitability/1",period:"365d",since:null,currency:"EUR",currencies:["EUR"],accounting_basis:"tenant_revenue_distributions.platform_fee_ht",cash_basis:"carrier paid amount / confirmed amount",excludes:["general_platform_overhead","unconnected_subscription_cash"],tenant:null,summary:{upstream_payout_ht:0,margin_booked_ht:0,margin_collected_ht:0,client_net_payout_ht:0,unallocated_amount_ht:0,customers_with_distribution:0,top5_margin_collected_ht:0,top5_concentration_percent:0},ranking:[],trend:[]};}
 
+  async platformAccounting(params={}){
+    const month=/^\d{4}-(0[1-9]|1[0-2])$/.test(String(params.month||""))?String(params.month):new Date().toISOString().slice(0,7);
+    const currency=/^[A-Z]{3}$/.test(String(params.currency||"EUR").toUpperCase())?String(params.currency||"EUR").toUpperCase():"EUR";
+    const zero={month,currency,subscriptions_collected_ttc_minor:0,subscriptions_paid_invoices:0,portability_priority_collected_ttc_minor:0,portability_priority_sales:0,card_payment_volume_minor:0,card_payment_pgi_fee_minor:0,card_payment_count:0,card_payment_refunded_fee_minor:0,card_payment_refund_count:0,sva_margin_booked_ht:0,sva_margin_collected_ht:0,sva_upstream_payout_ht:0,client_payout_paid_ht:0,client_payout_paid_count:0,referral_rewards_earned_minor:0,referral_rewards_earned_count:0,referral_rewards_paid_minor:0,referral_rewards_paid_count:0};
+    return {schema_version:"audiotel-platform-accounting/1",generated_at:new Date().toISOString(),month,range:{from:month+"-01T00:00:00.000Z",to_exclusive:null},currency,currencies:[currency],selected:zero,current_balances:{referral_rewards_payable_minor:0,referral_rewards_payable_count:0,client_payout_payable_ht:0,client_payout_payable_count:0,client_payout_blocked_ht:0,client_payout_blocked_count:0,carrier_receivable_ht:0,carrier_receivable_count:0},monthly_history:[zero],accounting_policy:{authoritative_sources:[],tax_basis_separated:true,no_fx_conversion:true,statutory_ledger:false,notes:["Mode démonstration : aucune donnée comptable réelle."]}};
+  }
+
   async customerAdminSummary(){
     return {tenants_total:0,tenants_active:0,tenants_new_24h:0,tenants_new_7d:0,latest_tenant_created_at:null,kyc_pending:0,subscription_unpaid_alerts:0,subscription_access_blocked:0,assignments_active:0,service_incidents_open:0,service_incidents_critical:0,service_sla_attention:0,routing_attention:0,portability_attention:0};
   }
