@@ -19,6 +19,7 @@ export function loadConfig(env=process.env){
   const stripePortalConfigurationId=String(env.PGI_STRIPE_PORTAL_CONFIGURATION_ID||"").trim();
   const stripePriceLookupKey=String(env.PGI_STRIPE_PRICE_LOOKUP_KEY||"pgi_audiotel_premium_pro_monthly_eur_490").trim();
   const stripeLiveMode=booleanValue(env.PGI_STRIPE_LIVE_MODE,false,"PGI_STRIPE_LIVE_MODE");
+  const referralAutopayoutEnabled=booleanValue(env.PGI_REFERRAL_AUTOPAYOUT_ENABLED,false,"PGI_REFERRAL_AUTOPAYOUT_ENABLED");
   const ga4MeasurementEnabled=booleanValue(env.PGI_GA4_MEASUREMENT_ENABLED,false,"PGI_GA4_MEASUREMENT_ENABLED");
   const ga4MeasurementId=String(env.PGI_GA4_MEASUREMENT_ID||"G-SZY50J75N7").trim();
   const ga4ApiSecret=String(env.PGI_GA4_API_SECRET||"").trim();
@@ -95,6 +96,11 @@ export function loadConfig(env=process.env){
   if(stripePortalConfigurationId&&!/^bpc_[A-Za-z0-9]+$/.test(stripePortalConfigurationId))throw new Error("PGI_STRIPE_PORTAL_CONFIGURATION_ID invalid");
   if(!/^[A-Za-z0-9_\-]{3,200}$/.test(stripePriceLookupKey))throw new Error("PGI_STRIPE_PRICE_LOOKUP_KEY invalid");
   if(stripeSecretKey&&stripeLiveMode!==stripeSecretKey.startsWith("sk_live_"))throw new Error("PGI_STRIPE_LIVE_MODE must match the Stripe secret key mode");
+  if(referralAutopayoutEnabled){
+    if(!stripeSecretKey)throw new Error("PGI_REFERRAL_AUTOPAYOUT_ENABLED requires PGI_STRIPE_SECRET_KEY");
+    if(!stripeConnectWebhookSecret)throw new Error("PGI_REFERRAL_AUTOPAYOUT_ENABLED requires PGI_STRIPE_CONNECT_WEBHOOK_SECRET");
+    if(mode==="production"&&!stripeLiveMode)throw new Error("production referral autopayout requires live Stripe mode");
+  }
   if(ga4MeasurementId&&!/^G-[A-Z0-9]{6,20}$/.test(ga4MeasurementId))throw new Error("PGI_GA4_MEASUREMENT_ID invalid");
   if(ga4MeasurementEnabled&&ga4ApiSecret.length<16)throw new Error("PGI_GA4_MEASUREMENT_ENABLED requires PGI_GA4_API_SECRET");
   if(emailVerificationEnabled){
@@ -129,7 +135,7 @@ export function loadConfig(env=process.env){
 
   return Object.freeze({
     mode,authMode,host,port,releaseId,staticDir,trustProxy,protectMachineEndpoints,googleClientId,customerSelfRegistrationEnabled,webauthnRpId,webauthnOrigin,
-    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,stripeSecretKey,stripeWebhookSecret,stripeConnectWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,ga4MeasurementEnabled,ga4MeasurementId,ga4ApiSecret,b2cCommercialRequested,b2cCommercialReady,legalOperatorConfigured,legalOperatorName,legalOperatorStatus,legalOperatorAddress,legalOperatorRegistration,publicationDirector,consumerMediatorConfigured,consumerMediatorName,consumerMediatorContact,consumerMediatorUrl,onlineWithdrawalReady,emailVerificationEnabled,transactionalEmailEnabled,resendApiKey,resendReceivingApiKey,resendWebhookSecret,transactionalDomain,transactionalReplyTo,internalNotificationEmail,cronSecret,emailVerificationPepper,transactionalFromEmail,transactionalFromName,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
+    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,stripeSecretKey,stripeWebhookSecret,stripeConnectWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,referralAutopayoutEnabled,ga4MeasurementEnabled,ga4MeasurementId,ga4ApiSecret,b2cCommercialRequested,b2cCommercialReady,legalOperatorConfigured,legalOperatorName,legalOperatorStatus,legalOperatorAddress,legalOperatorRegistration,publicationDirector,consumerMediatorConfigured,consumerMediatorName,consumerMediatorContact,consumerMediatorUrl,onlineWithdrawalReady,emailVerificationEnabled,transactionalEmailEnabled,resendApiKey,resendReceivingApiKey,resendWebhookSecret,transactionalDomain,transactionalReplyTo,internalNotificationEmail,cronSecret,emailVerificationPepper,transactionalFromEmail,transactionalFromName,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),
     adminRememberTtlSeconds:integer(env.PGI_ADMIN_REMEMBER_TTL_SECONDS,2592000,86400,7776000,"PGI_ADMIN_REMEMBER_TTL_SECONDS"),
@@ -167,7 +173,7 @@ export function loadConfig(env=process.env){
     expertCostHtPerMin:number(env.PGI_EXPERT_COST_HT_PER_MIN,0.18,0,100,"PGI_EXPERT_COST_HT_PER_MIN"),
     technicalCostHtPerCall:number(env.PGI_TECHNICAL_COST_HT_PER_CALL,0,0,100,"PGI_TECHNICAL_COST_HT_PER_CALL"),
     reconciliationToleranceHt:number(env.PGI_RECONCILIATION_TOLERANCE_HT,0.01,0,100,"PGI_RECONCILIATION_TOLERANCE_HT"),
-    version:env.PGI_VERSION||"1.31.0"
+    version:env.PGI_VERSION||"1.32.0"
   });
 }
 

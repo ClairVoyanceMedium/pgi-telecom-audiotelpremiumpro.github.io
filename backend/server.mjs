@@ -11,6 +11,7 @@ import {normalizeFreeSwitchCdr} from "./src/cdr-freeswitch.mjs";
 import {startWorkers} from "./src/workers.mjs";
 import {createPortabilityQueueHandlers} from "./src/portability-automation.mjs";
 import {createOutboundPortabilityQueueHandlers} from "./src/outbound-portability-automation.mjs";
+import {createReferralPayoutQueueHandlers} from "./src/referral-payout.mjs";
 import {webauthnConfigured,publicPasskeyOptions,verifyWebAuthnState,validateWebAuthnRegistration,verifyWebAuthnAssertion} from "./src/webauthn.mjs";
 import {customerPermissions,hasCustomerPermission,requireCustomerPermission,scopeCustomerPortalData,scopeCustomerAnnualProgressData} from "./src/customer-access.mjs";
 import {createStaticSiteHandler} from "./src/static-site.mjs";
@@ -998,6 +999,42 @@ export function createBackend(options={}){
         return done(res,metrics,started,"customer.referral_code",201,{...result.value,replayed:result.replayed});
       }
 
+      if(method==="POST"&&pathname==="/api/v1/customer/referral/payout-onboarding"){
+        requireCustomerCsrf(req,customerActor,config);
+        if(!stripeConnectState(config).configured)return done(res,metrics,started,"customer.referral_payout.onboarding",503,{error:{code:"STRIPE_CONNECT_NOT_READY"}});
+        const idempotencyKey=String(req.headers["idempotency-key"]||"").trim();
+        if(!idempotencyKey||idempotencyKey.length>200){const e=new Error("Idempotency key required");e.status=400;e.code="IDEMPOTENCY_KEY_REQUIRED";throw e;}
+        const context=await store.customerSessionContext(customerActor);
+        if(!["owner","admin"].includes(context.customer_role)){const e=new Error("Owner or admin required");e.status=403;e.code="CUSTOMER_ADMIN_REQUIRED";throw e;}
+        requireCustomerPermission(context,"billing.manage");
+        const billing=await store.customerBillingPreparation(context.tenant_id);
+        const commercialBlock=await customerCommercialReadinessBlock(config,store,billing);
+        if(commercialBlock)return done(res,metrics,started,"customer.referral_payout.onboarding",409,{error:{code:commercialBlock.code,message:commercialBlock.message},commercial_readiness:commercialBlock.readiness,b2c_readiness:commercialBlock.individual?commercialBlock.readiness:undefined});
+        let local=await store.customerCardPaymentAccount(context.tenant_id);
+        if(!local){
+          const account=await createStripeConnectedAccount(config,{
+            email:billing.tenant?.billing_email||context.email,
+            country_code:billing.tenant?.country_code||"FR",
+            idempotency_key:"connect-account/"+String(billing.tenant?.id||context.tenant_id)
+          });
+          local=await store.upsertCustomerCardPaymentAccount(context.tenant_id,{
+            ...normalizeStripeConnectedAccount(account),
+            application_fee_bps:STRIPE_CONNECT_APPLICATION_FEE_BPS,
+            metadata:{source:"referral_payout_onboarding",unified_connect_account:true}
+          });
+        }else{
+          try{
+            const remote=await retrieveStripeConnectedAccount(config,local.provider_account_reference);
+            local=await store.syncCustomerCardPaymentAccount(context.tenant_id,normalizeStripeConnectedAccount(remote));
+          }catch(_error){}
+        }
+        const link=await createStripeConnectOnboardingLink(config,local.provider_account_reference,{idempotency_key:"referral-payout/"+idempotencyKey});
+        return done(res,metrics,started,"customer.referral_payout.onboarding",201,{
+          onboarding:link,
+          payout_setup:{configured:true,payouts_enabled:local.payouts_enabled===true,details_submitted:local.details_submitted===true,status:local.status}
+        });
+      }
+
       if(method==="GET"&&pathname==="/api/v1/customer/portability"){
         requireActor(customerActor);
         const context=await store.customerSessionContext(customerActor);
@@ -1610,7 +1647,7 @@ export function createBackend(options={}){
 
       if(method==="GET"&&pathname==="/api/v1/platform/referral-program"){
         requireRole(actor,["admin","finance","readonly"]);
-        return done(res,metrics,started,"platform.referral_program",200,await store.referralProgramAdminState());
+        return done(res,metrics,started,"platform.referral_program",200,{...(await store.referralProgramAdminState()),payout_automation_enabled:config.referralAutopayoutEnabled===true});
       }
       if(method==="POST"&&pathname==="/api/v1/platform/referral-program"){
         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
@@ -2094,6 +2131,7 @@ export function createBackend(options={}){
   const queueHandlers={
     ...createPortabilityQueueHandlers({store,config}),
     ...createOutboundPortabilityQueueHandlers({store,config}),
+    ...createReferralPayoutQueueHandlers({store,config}),
     ...(options.queueHandlers||{})
   };
   const workers=config.processRole==="api"

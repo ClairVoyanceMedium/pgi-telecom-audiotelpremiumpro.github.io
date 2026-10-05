@@ -34,7 +34,8 @@ test("la comptabilité consolide uniquement des sources financières faisant foi
     "tenant_card_payment_requests",
     "tenant_revenue_distributions",
     "carrier_settlements",
-    "customer_referral_rewards"
+    "customer_referral_rewards",
+    "customer_referral_payouts"
   ])assert.ok(store.includes(source),source);
   assert.match(store,/provider_invoice_amount_paid_minor/);
   assert.match(store,/application_fee_minor/);

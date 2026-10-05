@@ -2,7 +2,7 @@ name: pgi-telecom-production
 
 services:
   api:
-    image: pgi-telecom-api:${PGI_VERSION:-1.31.0}
+    image: pgi-telecom-api:${PGI_VERSION:-1.32.0}
     build:
       context: ..
       dockerfile: backend/Dockerfile
@@ -13,7 +13,7 @@ services:
       PGI_BACKEND_HOST: 0.0.0.0
       PGI_BACKEND_PORT: 8080
       PGI_PROCESS_ROLE: ${PGI_PROCESS_ROLE:-all}
-      PGI_VERSION: ${PGI_VERSION:-1.31.0}
+      PGI_VERSION: ${PGI_VERSION:-1.32.0}
       PGI_RELEASE_ID: ${PGI_RELEASE_ID}
       PGI_DATABASE_URL: postgresql://${POSTGRES_USER:-pgi_telecom}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pgi_telecom}
       PGI_DATABASE_READ_URL: ${PGI_DATABASE_READ_URL:-}
@@ -48,7 +48,9 @@ services:
       PGI_PUBLIC_BASE_URL: ${PGI_PUBLIC_BASE_URL:-}
       PGI_STRIPE_SECRET_KEY: ${PGI_STRIPE_SECRET_KEY:-}
       PGI_STRIPE_WEBHOOK_SECRET: ${PGI_STRIPE_WEBHOOK_SECRET:-}
+      PGI_STRIPE_CONNECT_WEBHOOK_SECRET: ${PGI_STRIPE_CONNECT_WEBHOOK_SECRET:-}
       PGI_STRIPE_LIVE_MODE: ${PGI_STRIPE_LIVE_MODE:-false}
+      PGI_REFERRAL_AUTOPAYOUT_ENABLED: ${PGI_REFERRAL_AUTOPAYOUT_ENABLED:-false}
       PGI_STRIPE_API_VERSION: ${PGI_STRIPE_API_VERSION:-2026-08-26.dahlia}
       PGI_STRIPE_PRICE_LOOKUP_KEY: ${PGI_STRIPE_PRICE_LOOKUP_KEY:-pgi_audiotel_premium_pro_monthly_eur_490}
       PGI_STRIPE_PORTAL_CONFIGURATION_ID: ${PGI_STRIPE_PORTAL_CONFIGURATION_ID:-}
@@ -84,7 +86,7 @@ services:
 
 
   migrate:
-    image: pgi-telecom-api:${PGI_VERSION:-1.31.0}
+    image: pgi-telecom-api:${PGI_VERSION:-1.32.0}
     build:
       context: ..
       dockerfile: backend/Dockerfile

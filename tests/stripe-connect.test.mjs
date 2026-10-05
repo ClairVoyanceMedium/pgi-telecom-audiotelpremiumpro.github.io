@@ -28,11 +28,15 @@ test("Stripe Connect state exposes the fixed PGI fee and webhook readiness",()=>
 test("v2 connected-account capability is the readiness source of truth",()=>{
   const ready=normalizeStripeConnectedAccount({
     id:accountId,
-    configuration:{merchant:{capabilities:{card_payments:{status:"active"}}}},
+    configuration:{
+      merchant:{capabilities:{card_payments:{status:"active"}}},
+      recipient:{capabilities:{stripe_balance:{stripe_transfers:{status:"active"},payouts:{status:"active"}}}}
+    },
     requirements:{summary:{minimum_deadline:{status:""}}}
   });
   assert.equal(ready.status,"active");
   assert.equal(ready.charges_enabled,true);
+  assert.equal(ready.payouts_enabled,true);
 
   const restricted=normalizeStripeConnectedAccount({
     id:accountId,
@@ -125,6 +129,7 @@ test("connected accounts are created with Accounts v2 merchant configuration",as
     assert.equal(body.defaults.responsibilities.fees_collector,"stripe");
     assert.equal(body.defaults.responsibilities.losses_collector,"stripe");
     assert.equal(body.configuration.merchant.capabilities.card_payments.requested,true);
+    assert.equal(body.configuration.recipient.capabilities.stripe_balance.stripe_transfers.requested,true);
   }finally{globalThis.fetch=original;}
 });
 

@@ -102,6 +102,13 @@ export async function createStripeConnectedAccount(config,input={}){
       merchant:{
         capabilities:{card_payments:{requested:true}},
         support:{url:baseUrl(config)}
+      },
+      recipient:{
+        capabilities:{
+          stripe_balance:{
+            stripe_transfers:{requested:true}
+          }
+        }
       }
     }
   };
@@ -112,24 +119,30 @@ export async function createStripeConnectedAccount(config,input={}){
 
 export async function retrieveStripeConnectedAccount(config,accountId){
   if(!/^acct_[A-Za-z0-9]+$/.test(String(accountId||"")))throw error(400,"INVALID_CONNECT_ACCOUNT");
-  const query="?include%5B%5D=configuration.merchant&include%5B%5D=requirements&include%5B%5D=defaults";
+  const query="?include%5B%5D=configuration.merchant&include%5B%5D=configuration.recipient&include%5B%5D=requirements&include%5B%5D=defaults";
   return jsonRequest(config,"/v2/core/accounts/"+encodeURIComponent(accountId)+query,{preview:true});
 }
 
 export function normalizeStripeConnectedAccount(account={}){
   const card=account?.configuration?.merchant?.capabilities?.card_payments||{};
+  const recipientBalance=account?.configuration?.recipient?.capabilities?.stripe_balance||{};
+  const transfers=recipientBalance?.stripe_transfers||{};
+  const recipientPayouts=recipientBalance?.payouts||{};
   const requirements=account?.requirements||{};
   const cardStatus=String(card?.status||"").toLowerCase();
+  const transferStatus=String(transfers?.status||"").toLowerCase();
+  const payoutStatus=String(recipientPayouts?.status||"").toLowerCase();
   const deadline=String(requirements?.summary?.minimum_deadline?.status||"").toLowerCase();
   const chargesEnabled=cardStatus==="active";
+  const payoutsEnabled=transferStatus==="active"&&(payoutStatus===""||payoutStatus==="active");
   const detailsSubmitted=!["currently_due","past_due","eventually_due"].includes(deadline)&&deadline!=="requirements_past_due";
   return {
     provider_account_reference:String(account?.id||""),
     charges_enabled:chargesEnabled,
-    payouts_enabled:chargesEnabled,
+    payouts_enabled:payoutsEnabled,
     details_submitted:detailsSubmitted,
-    requirements_state:deadline||cardStatus||"unknown",
-    status:chargesEnabled?"active":detailsSubmitted?"restricted":"onboarding"
+    requirements_state:deadline||transferStatus||payoutStatus||cardStatus||"unknown",
+    status:(chargesEnabled||payoutsEnabled)?"active":detailsSubmitted?"restricted":"onboarding"
   };
 }
 
@@ -344,4 +357,52 @@ export async function retrieveStripeCardCheckout(config,connectedAccount,session
     payment_status:paymentStatus,
     session_status:sessionStatus
   };
+}
+
+
+export async function retrieveStripeTransferRecipient(config,accountId){
+  const id=String(accountId||"").trim();
+  if(!/^acct_[A-Za-z0-9]+$/.test(id))throw error(400,"INVALID_CONNECT_ACCOUNT");
+  const account=await jsonRequest(config,"/v1/accounts/"+encodeURIComponent(id));
+  const capability=String(account?.capabilities?.transfers||"").trim().toLowerCase();
+  const payoutsEnabled=account?.payouts_enabled===true;
+  return {
+    id,
+    transfer_capability:capability||"inactive",
+    payouts_enabled:payoutsEnabled,
+    details_submitted:account?.details_submitted===true,
+    disabled_reason:String(account?.requirements?.disabled_reason||"").trim()||null,
+    transfer_ready:capability==="active"&&payoutsEnabled
+  };
+}
+
+export async function createStripeReferralTransfer(config,input={}){
+  const destination=String(input.connected_account_reference||"").trim();
+  const amount=Number(input.amount_minor);
+  const currency=String(input.currency||"EUR").trim().toLowerCase();
+  const rewardPublicId=String(input.reward_public_id||"").trim();
+  const payoutPublicId=String(input.payout_public_id||"").trim();
+  const idempotencyKey=String(input.idempotency_key||"").trim();
+  if(!/^acct_[A-Za-z0-9]+$/.test(destination))throw error(400,"INVALID_CONNECT_ACCOUNT");
+  if(!Number.isInteger(amount)||amount<=0||amount>100000000)throw error(400,"INVALID_REFERRAL_PAYOUT_AMOUNT");
+  if(!/^[a-z]{3}$/.test(currency))throw error(400,"INVALID_REFERRAL_PAYOUT_CURRENCY");
+  if(!/^[0-9a-f-]{36}$/i.test(rewardPublicId)||!/^[0-9a-f-]{36}$/i.test(payoutPublicId))throw error(400,"INVALID_REFERRAL_PAYOUT_REFERENCE");
+  if(!/^pgi-referral-reward:[0-9a-f-]{36}$/i.test(idempotencyKey))throw error(400,"INVALID_REFERRAL_PAYOUT_IDEMPOTENCY_KEY");
+  const transfer=await formRequest(config,"/v1/transfers",{
+    idempotencyKey,
+    fields:{
+      amount,
+      currency,
+      destination,
+      description:cleanText("Prime ambassadeur Audiotel Premium Pro "+rewardPublicId,180),
+      transfer_group:"pgi_referral_"+rewardPublicId.replace(/-/g,""),
+      metadata:{
+        pgi_referral_reward_id:rewardPublicId,
+        pgi_referral_payout_id:payoutPublicId,
+        pgi_product:"audiotel_premium_pro"
+      }
+    }
+  });
+  if(!/^tr_[A-Za-z0-9]+$/.test(String(transfer?.id||"")))throw error(502,"STRIPE_REFERRAL_TRANSFER_INVALID");
+  return transfer;
 }
