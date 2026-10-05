@@ -1,7 +1,7 @@
 import {randomUUID} from "node:crypto";
 import {evaluateAlerts} from "./alerts.mjs";
 import {drainTransactionalEmails,drainDunningTransactionalEmails} from "./email-dispatcher.mjs";
-import {retrieveStripeCardCheckout} from "./stripe-connect.mjs";
+import {retrieveStripeCardCheckout,retrieveStripeConnectedAccount,ensureStripeTransferRecipient,normalizeStripeConnectedAccount,createStripeReferralTransfer} from "./stripe-connect.mjs";
 
 export function startWorkers({store,eventBus,config,queueHandlers={}}){
   let stopped=false;
@@ -10,8 +10,9 @@ export function startWorkers({store,eventBus,config,queueHandlers={}}){
   const stats={
     outboxRuns:0,outboxErrors:0,alertsRuns:0,alertsErrors:0,
     queueRuns:0,queueErrors:0,queueProcessed:0,queueDeadLetters:0,
-    lastOutboxSuccessAt:null,lastAlertsSuccessAt:null,lastQueueSuccessAt:null,
-    lastOutboxErrorAt:null,lastAlertsErrorAt:null,lastQueueErrorAt:null
+    referralPayoutRuns:0,referralPayoutPaid:0,referralPayoutDeferred:0,referralPayoutErrors:0,
+    lastOutboxSuccessAt:null,lastAlertsSuccessAt:null,lastQueueSuccessAt:null,lastReferralPayoutSuccessAt:null,
+    lastOutboxErrorAt:null,lastAlertsErrorAt:null,lastQueueErrorAt:null,lastReferralPayoutErrorAt:null
   };
 
   const runOutbox=async()=>{
@@ -86,6 +87,69 @@ export function startWorkers({store,eventBus,config,queueHandlers={}}){
               });
             }
           }catch(_error){}
+        }
+      }
+      if(config.stripeSecretKey&&typeof store.claimReferralRewardPayoutBatch==="function"){
+        stats.referralPayoutRuns++;
+        const rewards=await store.claimReferralRewardPayoutBatch(25);
+        for(const reward of rewards){
+          try{
+            const destination=String(reward.provider_account_reference||"");
+            if(!/^acct_[A-Za-z0-9]+$/.test(destination)){
+              await store.deferReferralRewardPayout(reward.id,{
+                state:"action_required",
+                error_code:"REFERRAL_PAYOUT_ACCOUNT_REQUIRED",
+                delay_seconds:21600
+              });
+              stats.referralPayoutDeferred++;
+              continue;
+            }
+            let remote=await retrieveStripeConnectedAccount(config,destination);
+            let normalized=normalizeStripeConnectedAccount(remote);
+            if(normalized.transfers_requested!==true){
+              remote=await ensureStripeTransferRecipient(config,destination,{idempotency_key:"referral-recipient/"+destination});
+              normalized=normalizeStripeConnectedAccount(remote);
+            }
+            if(typeof store.syncCustomerCardPaymentAccount==="function"){
+              await store.syncCustomerCardPaymentAccount(reward.tenant_id,normalized);
+            }
+            if(normalized.transfers_enabled!==true){
+              await store.deferReferralRewardPayout(reward.id,{
+                state:"action_required",
+                error_code:"REFERRAL_PAYOUT_STRIPE_ONBOARDING_REQUIRED",
+                destination_reference:destination,
+                delay_seconds:21600
+              });
+              stats.referralPayoutDeferred++;
+              continue;
+            }
+            const transfer=await createStripeReferralTransfer(config,{
+              connected_account:destination,
+              tenant_public_id:reward.tenant_public_id,
+              reward_public_id:reward.public_id,
+              amount_minor:reward.amount_minor,
+              currency:reward.currency
+            });
+            await store.completeReferralRewardPayout(reward.id,transfer);
+            stats.referralPayoutPaid++;
+            stats.lastReferralPayoutSuccessAt=new Date().toISOString();
+          }catch(error){
+            const code=String(error?.code||"REFERRAL_PAYOUT_FAILED").toUpperCase().slice(0,120);
+            const actionRequired=Number(error?.status)===422&&/(ACCOUNT|CAPABILITY|REQUIRE|IDENTITY|ONBOARD|RECIPIENT|PAYOUT)/.test(code);
+            const attempt=Math.max(1,Number(reward.payout_attempt_count||1));
+            const delay=actionRequired?21600:Math.min(21600,Math.max(900,900*Math.pow(2,Math.min(4,attempt-1))));
+            try{
+              await store.deferReferralRewardPayout(reward.id,{
+                state:actionRequired?"action_required":"retry",
+                error_code:code,
+                destination_reference:reward.provider_account_reference||null,
+                delay_seconds:delay
+              });
+              stats.referralPayoutDeferred++;
+            }catch(_deferError){}
+            stats.referralPayoutErrors++;
+            stats.lastReferralPayoutErrorAt=new Date().toISOString();
+          }
         }
       }
       stats.lastAlertsSuccessAt=new Date().toISOString();
