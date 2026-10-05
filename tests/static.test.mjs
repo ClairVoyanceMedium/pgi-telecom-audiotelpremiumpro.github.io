@@ -61,7 +61,8 @@ test("le parrainage client reste serveur, optionnel et conditionné au paiement 
   assert.match(clientPortal,/id="client-referral-mount"/);
   assert.match(clientPortal,/client-referral\.js/);
   assert.match(clientPortalApi,/\/customer\/referral/);
-  assert.match(clientReferral,/profil ambassadeur/i);\n  assert.match(clientReferral,/Aucun abonnement Audiotel Premium Pro n’est requis pour parrainer/i);
+  assert.match(clientReferral,/profil ambassadeur/i);
+  assert.match(clientReferral,/Aucun abonnement Audiotel Premium Pro n’est requis pour parrainer/i);
   assert.match(clientReferral,/pgi:portal-loaded/);
   assert.match(platformAdmin,/referral-admin\.js/);
   assert.match(referralAdmin,/updateReferralProgram/);
