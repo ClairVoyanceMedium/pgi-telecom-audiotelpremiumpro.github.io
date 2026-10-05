@@ -2036,6 +2036,22 @@ export function createBackend(options={}){
       const status=Number(error?.status)||500;
       res.pgiRoute=res.pgiRoute||"error";
       bump(metrics.byStatus,status);
+      if(status>=500&&config.mode==="production"){
+        process.stderr.write(JSON.stringify({
+          level:"error",
+          event:"http_request_failed",
+          request_id:requestId,
+          trace_id:trace.traceId||null,
+          route:String(res.pgiRoute||"error"),
+          code:String(error?.code||"INTERNAL_ERROR").slice(0,120),
+          name:String(error?.name||"Error").slice(0,80),
+          table:error?.table?String(error.table).slice(0,120):null,
+          column:error?.column?String(error.column).slice(0,120):null,
+          constraint:error?.constraint?String(error.constraint).slice(0,160):null,
+          schema:error?.schema?String(error.schema).slice(0,120):null,
+          routine:error?.routine?String(error.routine).slice(0,120):null
+        })+"\n");
+      }
       problemJson(res,error,requestId);
     }
   });
