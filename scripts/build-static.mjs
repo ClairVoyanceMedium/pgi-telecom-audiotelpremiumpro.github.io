@@ -201,6 +201,7 @@ const searchHints={
   "portabilite-numero-sva":"portabilité portage transfert conserver garder numéro changer opérateur",
   "portabilite-prioritaire":"portabilité prioritaire priorité accélérer dossier 9,90 traitement rapide file",
   "parrainage-audiotel":"parrainage parrain filleul recommandation code lien prime récompense",
+  "mentions-legales":"mentions légales éditeur hébergeur propriété intellectuelle contact juridique",
   "changer-operateur-audiotel":"changer opérateur concurrent transfert portabilité conserver numéro",
   "monetiser-ses-appels":"monétiser appels clients revenus numéro surtaxé",
   "combien-rapporte-numero-surtaxe":"combien rapporte numéro surtaxé revenus gains reversement",
@@ -304,9 +305,7 @@ if(publicBaseUrl){
   );
   const urls=[
     {loc:publicBaseUrl+"/",sourcePath:"site/index.html"},
-    ...seoPages
-      .filter(slug=>slug!=="mentions-legales")
-      .map(slug=>({loc:publicBaseUrl+"/"+slug+"/",sourcePath:"site/seo/"+slug+".html"}))
+    ...seoPages.map(slug=>({loc:publicBaseUrl+"/"+slug+"/",sourcePath:"site/seo/"+slug+".html"}))
   ];
   fs.writeFileSync(
     path.join(dist,"sitemap.xml"),
