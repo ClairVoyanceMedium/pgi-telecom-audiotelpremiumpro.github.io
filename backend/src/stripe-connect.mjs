@@ -102,6 +102,9 @@ export async function createStripeConnectedAccount(config,input={}){
       merchant:{
         capabilities:{card_payments:{requested:true}},
         support:{url:baseUrl(config)}
+      },
+      recipient:{
+        capabilities:{stripe_balance:{stripe_transfers:{requested:true}}}
       }
     }
   };
@@ -112,14 +115,16 @@ export async function createStripeConnectedAccount(config,input={}){
 
 export async function retrieveStripeConnectedAccount(config,accountId){
   if(!/^acct_[A-Za-z0-9]+$/.test(String(accountId||"")))throw error(400,"INVALID_CONNECT_ACCOUNT");
-  const query="?include%5B%5D=configuration.merchant&include%5B%5D=requirements&include%5B%5D=defaults";
+  const query="?include%5B%5D=configuration.merchant&include%5B%5D=configuration.recipient&include%5B%5D=requirements&include%5B%5D=defaults";
   return jsonRequest(config,"/v2/core/accounts/"+encodeURIComponent(accountId)+query,{preview:true});
 }
 
 export function normalizeStripeConnectedAccount(account={}){
   const card=account?.configuration?.merchant?.capabilities?.card_payments||{};
+  const transfers=account?.configuration?.recipient?.capabilities?.stripe_balance?.stripe_transfers||{};
   const requirements=account?.requirements||{};
   const cardStatus=String(card?.status||"").toLowerCase();
+  const transferStatus=String(transfers?.status||"").toLowerCase();
   const deadline=String(requirements?.summary?.minimum_deadline?.status||"").toLowerCase();
   const chargesEnabled=cardStatus==="active";
   const detailsSubmitted=!["currently_due","past_due","eventually_due"].includes(deadline)&&deadline!=="requirements_past_due";
@@ -127,8 +132,10 @@ export function normalizeStripeConnectedAccount(account={}){
     provider_account_reference:String(account?.id||""),
     charges_enabled:chargesEnabled,
     payouts_enabled:chargesEnabled,
+    transfers_enabled:transferStatus==="active",
     details_submitted:detailsSubmitted,
-    requirements_state:deadline||cardStatus||"unknown",
+    requirements_state:deadline||cardStatus||transferStatus||"unknown",
+    recipient_requirements_state:deadline||transferStatus||"unknown",
     status:chargesEnabled?"active":detailsSubmitted?"restricted":"onboarding"
   };
 }
@@ -136,13 +143,14 @@ export function normalizeStripeConnectedAccount(account={}){
 export async function createStripeConnectOnboardingLink(config,accountId,input={}){
   if(!/^acct_[A-Za-z0-9]+$/.test(String(accountId||"")))throw error(400,"INVALID_CONNECT_ACCOUNT");
   const base=baseUrl(config);
+  const flow=input.flow==="referral"?"referral_connect":"card_connect";
   const body={
     account:String(accountId),
     use_case:{
       type:"account_onboarding",
       account_onboarding:{
-        return_url:base+"/client.html?card_connect=return",
-        refresh_url:base+"/client.html?card_connect=refresh",
+        return_url:base+"/client.html?"+flow+"=return",
+        refresh_url:base+"/client.html?"+flow+"=refresh",
         collection_options:{fields:"eventually_due"}
       }
     }
@@ -150,6 +158,40 @@ export async function createStripeConnectOnboardingLink(config,accountId,input={
   const link=await jsonRequest(config,"/v2/core/account_links",{method:"POST",body,idempotencyKey:input.idempotency_key,preview:true});
   if(!/^https:\/\//i.test(String(link?.url||"")))throw error(502,"STRIPE_CONNECT_LINK_INVALID");
   return {url:link.url,expires_at:link.expires_at||null};
+}
+
+export async function createStripeReferralTransfer(config,input={}){
+  const accountId=String(input.connected_account||"").trim();
+  if(!/^acct_[A-Za-z0-9]+$/.test(accountId))throw error(400,"INVALID_CONNECT_ACCOUNT");
+  const amount=Math.trunc(Number(input.amount_minor));
+  if(!Number.isInteger(amount)||amount<=0||amount>100000000)throw error(400,"INVALID_REFERRAL_TRANSFER_AMOUNT");
+  const currency=String(input.currency||"EUR").trim().toLowerCase();
+  if(!/^[a-z]{3}$/.test(currency))throw error(400,"INVALID_REFERRAL_TRANSFER_CURRENCY");
+  const rewardId=cleanText(input.reward_public_id,64);
+  if(!/^[0-9a-f-]{36}$/i.test(rewardId))throw error(400,"INVALID_REFERRAL_REWARD_ID");
+  const fields={
+    amount,
+    currency,
+    destination:accountId,
+    description:"Prime ambassadeur Audiotel Premium Pro",
+    transfer_group:"PGI_REFERRAL_"+rewardId.replace(/-/g,"").slice(0,24).toUpperCase(),
+    metadata:{
+      pgi_referral_reward:rewardId,
+      pgi_tenant_public_id:cleanText(input.tenant_public_id,64)
+    }
+  };
+  const transfer=await formRequest(config,"/v1/transfers",{
+    fields,
+    idempotencyKey:String(input.idempotency_key||"referral-reward/"+rewardId)
+  });
+  if(!/^tr_[A-Za-z0-9]+$/.test(String(transfer?.id||"")))throw error(502,"STRIPE_REFERRAL_TRANSFER_INVALID");
+  return {
+    provider_transfer_reference:String(transfer.id),
+    provider_account_reference:accountId,
+    amount_minor:Number(transfer.amount||amount),
+    currency:String(transfer.currency||currency).toUpperCase(),
+    created_at:transfer.created?new Date(Number(transfer.created)*1000).toISOString():new Date().toISOString()
+  };
 }
 
 export function calculateApplicationFee(amountMinor,bps=STRIPE_CONNECT_APPLICATION_FEE_BPS){
