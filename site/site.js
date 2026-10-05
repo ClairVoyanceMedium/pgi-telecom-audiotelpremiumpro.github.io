@@ -38,13 +38,14 @@ render();
 })();
 
 ;(()=>{
-const KEY="pgi_public_order_intent_v1",DRAFT_KEY="pgi_public_order_draft_v1",MAX_AGE=3600000;
+const KEY="pgi_public_order_intent_v1",DRAFT_KEY="pgi_public_order_draft_v1",REF_VISIT_KEY="pgi_referral_visit_v1",MAX_AGE=3600000;
 const form=document.getElementById("order-form");
 if(!form)return;
 const typeInputs=[...form.querySelectorAll('input[name="order_account_type"]')];
 const companyWrap=document.getElementById("order-company-wrap");
 const company=document.getElementById("order-company");
 const value=id=>String(document.getElementById(id)?.value||"").trim();
+function referralVisitToken(){try{let v=sessionStorage.getItem(REF_VISIT_KEY)||"";if(/^[0-9a-f-]{36}$/i.test(v))return v;v=crypto.randomUUID();sessionStorage.setItem(REF_VISIT_KEY,v);return v}catch(_e){return""}}
 function selectedType(){return form.querySelector('input[name="order_account_type"]:checked')?.value||""}
 function syncType(){
   const type=selectedType(),business=type==="business";
@@ -52,7 +53,7 @@ function syncType(){
   if(company){company.disabled=!business;if(!business)company.value=""}
 }
 function snapshot(){const type=selectedType();
-  return {version:1,created_at:Date.now(),account_type:type,first_name:value("order-first-name").slice(0,80),last_name:value("order-last-name").slice(0,80),company_name:type==="business"?value("order-company").slice(0,200):"",email:value("order-email").slice(0,320),phone:value("order-phone").slice(0,40),service_intent:value("order-service-intent"),country_code:"FR",preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"Europe/Paris"),processing_consent:!!document.getElementById("order-processing-consent")?.checked,marketing_consent:!!document.getElementById("order-marketing-consent")?.checked,marketing_consent_version:"2026-10-01-v1",referral_code:value("order-referral-code").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,24),website:value("order-website")};
+  return {version:1,created_at:Date.now(),account_type:type,first_name:value("order-first-name").slice(0,80),last_name:value("order-last-name").slice(0,80),company_name:type==="business"?value("order-company").slice(0,200):"",email:value("order-email").slice(0,320),phone:value("order-phone").slice(0,40),service_intent:value("order-service-intent"),country_code:"FR",preferred_locale:(navigator.languages&&navigator.languages[0])||navigator.language||"fr-FR",timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||"Europe/Paris"),processing_consent:!!document.getElementById("order-processing-consent")?.checked,marketing_consent:!!document.getElementById("order-marketing-consent")?.checked,marketing_consent_version:"2026-10-01-v1",referral_code:value("order-referral-code").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,24),referral_visit_id:value("order-referral-code").length>=8?referralVisitToken():"",website:value("order-website")};
 }
 function saveDraft(){try{sessionStorage.setItem(DRAFT_KEY,JSON.stringify(snapshot()))}catch(_e){}}
 function hydrateDraft(){
@@ -84,10 +85,12 @@ async function applyReferralProgram(){
     if(!r.ok||data.enabled!==true){wrap.hidden=true;input.disabled=true;input.value="";return;}
     wrap.hidden=false;input.disabled=false;
     const q=new URLSearchParams(location.search),requested=String(q.get("parrain")||q.get("ref")||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,24);
-    if(requested.length>=8)input.value=requested;
-    if(help&&Number(data.reward_minor)>0){
-      try{help.textContent="Code vérifié côté serveur. Le parrain reçoit "+new Intl.NumberFormat("fr-FR",{style:"currency",currency:data.currency||"EUR"}).format(Number(data.reward_minor)/100)+" uniquement après activation réelle et abonnement payé du filleul.";}catch(_e){}
+    if(requested.length>=8){
+      input.value=requested;
+      const token=referralVisitToken();
+      if(token)fetch("/api/v1/public/referral-event",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",keepalive:true,body:JSON.stringify({event_type:"visit",referral_code:requested,visitor_token:token,page_path:location.pathname})}).catch(()=>{});
     }
+    if(help)help.textContent="Code vérifié côté serveur. La prime du parrain est acquise après "+(Number(data.qualification_paid_invoices)||3)+" factures mensuelles distinctes réellement payées.";
   }catch(_e){wrap.hidden=true;input.disabled=true;input.value="";}
 }
 hydrateDraft();applyRequestedProfile();applyRequestedIntent();applyReferralProgram();
