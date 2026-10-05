@@ -257,6 +257,17 @@ export function createBackend(options={}){
         return done(res,metrics,started,"public.referral_program",200,program);
       }
 
+      if(method==="POST"&&pathname==="/api/v1/public/referral-event"){
+        requireSameOriginBrowser(req);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const eventType=String(body.event_type||"").trim().toLowerCase();
+        if(eventType!=="visit"){const e=new Error("Invalid public referral event");e.status=400;e.code="INVALID_REFERRAL_EVENT";throw e;}
+        const result=typeof store.recordCustomerReferralEvent==="function"
+          ?await store.recordCustomerReferralEvent(body.referral_code,eventType,body.visitor_token,{source:"public_referral_link",page_path:String(body.page_path||"").slice(0,240)})
+          :{accepted:false,recorded:false,replayed:false};
+        return done(res,metrics,started,"public.referral_event",202,result);
+      }
+
       if(method==="GET"&&pathname==="/api/v1/public/withdrawal/status"){
         const schemaReady=typeof store.customerWithdrawalFeatureReady==="function"&&await store.customerWithdrawalFeatureReady();
         return done(res,metrics,started,"public.withdrawal_status",200,{available:config.onlineWithdrawalReady===true&&schemaReady});
@@ -294,7 +305,7 @@ export function createBackend(options={}){
         if(body.processing_consent!==true){const e=new Error("Processing consent required");e.status=400;e.code="HUBSPOT_PROCESSING_CONSENT_REQUIRED";throw e;}
         const pageUri=String(body.page_uri||"").trim()||(config.publicBaseUrl?config.publicBaseUrl+"/demande-ouverture/":"https://audiotel-premium-pro.com/demande-ouverture/");
         const hutk=String(parseCookies(req.headers.cookie||"").hubspotutk||"").trim();
-        let formResult=null,commercialResult=null,dossier=null,customerAccess=null;
+        let formResult=null,commercialResult=null,dossier=null,customerAccess=null,referralFunnel=null;
         if(typeof store.ensureLeadTenant==="function"){
           try{
             dossier=await store.ensureLeadTenant({
@@ -316,6 +327,10 @@ export function createBackend(options={}){
           });
         }catch(error){logHubSpotSyncFailure("public_lead_commercial",error);}
         const accepted=Boolean(dossier||formResult?.ok||commercialResult?.synced);
+        if(accepted&&body.referral_code&&body.referral_visit_id&&typeof store.recordCustomerReferralEvent==="function"){
+          try{referralFunnel=await store.recordCustomerReferralEvent(body.referral_code,"prospect",body.referral_visit_id,{source:"public_opening_form",page_path:"/demande-ouverture/"});}
+          catch(error){process.stderr.write(JSON.stringify({level:"warn",event:"referral_prospect_tracking_failed",code:String(error?.code||"REFERRAL_TRACKING_FAILED")})+"\n");}
+        }
         if(dossier){
           try{customerAccess=await ensureCustomerPortalAccess(store,config,dossier.public_id,"opening-auto");}
           catch(error){logSecurityEmailFailure("opening_access",error);}
@@ -338,7 +353,8 @@ export function createBackend(options={}){
           dossier_created:Boolean(dossier?.created),
           client_portal_invited:Boolean(customerAccess?.invitation_created||customerAccess?.reason==="pending_invitation"),
           access_email_sent:Boolean(customerAccess?.email_sent),
-          referral:dossier?.referral||null
+          referral:dossier?.referral||null,
+          referral_funnel:referralFunnel
         });
       }
 
