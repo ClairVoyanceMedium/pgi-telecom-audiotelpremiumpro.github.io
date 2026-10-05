@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS customer_referral_payout_accounts (
 CREATE INDEX IF NOT EXISTS customer_referral_payout_accounts_status_idx
   ON customer_referral_payout_accounts(status,transfers_enabled,updated_at DESC);
 
-DO $
+DO $pgi$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_trigger
@@ -32,7 +32,7 @@ BEGIN
     BEFORE UPDATE ON customer_referral_payout_accounts
     FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
   END IF;
-END $;
+END $pgi$;
 
 ALTER TABLE customer_referral_rewards
   ADD COLUMN IF NOT EXISTS payout_state text NOT NULL DEFAULT 'pending'
