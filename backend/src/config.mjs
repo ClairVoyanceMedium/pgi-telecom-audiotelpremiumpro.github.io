@@ -23,14 +23,21 @@ export function loadConfig(env=process.env){
   const ga4MeasurementId=String(env.PGI_GA4_MEASUREMENT_ID||"G-SZY50J75N7").trim();
   const ga4ApiSecret=String(env.PGI_GA4_API_SECRET||"").trim();
   const b2cCommercialRequested=booleanValue(env.PGI_B2C_COMMERCIAL_READY,false,"PGI_B2C_COMMERCIAL_READY");
-  const legalOperatorConfigured=String(env.PGI_LEGAL_OPERATOR_NAME||"").trim().length>=2;
+  const legalOperatorName=String(env.PGI_LEGAL_OPERATOR_NAME||"").trim();
+  const legalOperatorStatus=String(env.PGI_LEGAL_OPERATOR_STATUS||"").trim();
+  const legalOperatorAddress=String(env.PGI_LEGAL_OPERATOR_ADDRESS||"").trim();
+  const legalOperatorRegistration=String(env.PGI_LEGAL_OPERATOR_REGISTRATION||"").trim();
+  const publicationDirector=String(env.PGI_PUBLICATION_DIRECTOR||"").trim();
+  const legalOperatorConfigured=[legalOperatorName,legalOperatorStatus,legalOperatorAddress,legalOperatorRegistration,publicationDirector].every(value=>value.length>=2);
   const consumerMediatorName=String(env.PGI_CONSUMER_MEDIATOR_NAME||"").trim();
+  const consumerMediatorContact=String(env.PGI_CONSUMER_MEDIATOR_CONTACT||"").trim();
   const consumerMediatorUrl=String(env.PGI_CONSUMER_MEDIATOR_URL||"").trim();
   let consumerMediatorConfigured=false;
-  if(consumerMediatorName&&consumerMediatorUrl){
+  if(consumerMediatorName||consumerMediatorContact||consumerMediatorUrl){
+    if(!consumerMediatorName||!consumerMediatorContact||!consumerMediatorUrl)throw new Error("consumer mediator requires PGI_CONSUMER_MEDIATOR_NAME, PGI_CONSUMER_MEDIATOR_CONTACT and PGI_CONSUMER_MEDIATOR_URL");
     let mediatorUrl;try{mediatorUrl=new URL(consumerMediatorUrl);}catch{throw new Error("PGI_CONSUMER_MEDIATOR_URL invalid");}
     if(mediatorUrl.protocol!=="https:"||mediatorUrl.username||mediatorUrl.password)throw new Error("PGI_CONSUMER_MEDIATOR_URL must be HTTPS");
-    consumerMediatorConfigured=consumerMediatorName.length>=2;
+    consumerMediatorConfigured=consumerMediatorName.length>=2&&consumerMediatorContact.length>=2;
   }
   const emailVerificationEnabled=booleanValue(env.PGI_EMAIL_VERIFICATION_ENABLED,false,"PGI_EMAIL_VERIFICATION_ENABLED");
   const transactionalEmailEnabled=booleanValue(env.PGI_TRANSACTIONAL_EMAIL_ENABLED,false,"PGI_TRANSACTIONAL_EMAIL_ENABLED");
@@ -122,7 +129,7 @@ export function loadConfig(env=process.env){
 
   return Object.freeze({
     mode,authMode,host,port,releaseId,staticDir,trustProxy,protectMachineEndpoints,googleClientId,customerSelfRegistrationEnabled,webauthnRpId,webauthnOrigin,
-    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,stripeSecretKey,stripeWebhookSecret,stripeConnectWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,ga4MeasurementEnabled,ga4MeasurementId,ga4ApiSecret,b2cCommercialRequested,b2cCommercialReady,legalOperatorConfigured,consumerMediatorConfigured,onlineWithdrawalReady,emailVerificationEnabled,transactionalEmailEnabled,resendApiKey,resendReceivingApiKey,resendWebhookSecret,transactionalDomain,transactionalReplyTo,internalNotificationEmail,cronSecret,emailVerificationPepper,transactionalFromEmail,transactionalFromName,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
+    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,stripeSecretKey,stripeWebhookSecret,stripeConnectWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,ga4MeasurementEnabled,ga4MeasurementId,ga4ApiSecret,b2cCommercialRequested,b2cCommercialReady,legalOperatorConfigured,legalOperatorName,legalOperatorStatus,legalOperatorAddress,legalOperatorRegistration,publicationDirector,consumerMediatorConfigured,consumerMediatorName,consumerMediatorContact,consumerMediatorUrl,onlineWithdrawalReady,emailVerificationEnabled,transactionalEmailEnabled,resendApiKey,resendReceivingApiKey,resendWebhookSecret,transactionalDomain,transactionalReplyTo,internalNotificationEmail,cronSecret,emailVerificationPepper,transactionalFromEmail,transactionalFromName,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),
     customerRememberTtlSeconds:integer(env.PGI_CUSTOMER_REMEMBER_TTL_SECONDS,2592000,86400,7776000,"PGI_CUSTOMER_REMEMBER_TTL_SECONDS"),
