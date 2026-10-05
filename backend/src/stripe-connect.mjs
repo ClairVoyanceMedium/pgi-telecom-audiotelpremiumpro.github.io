@@ -160,6 +160,26 @@ export function calculateApplicationFee(amountMinor,bps=STRIPE_CONNECT_APPLICATI
   return Math.min(amount,Math.max(0,Math.round(amount*rate/10000)));
 }
 
+export async function createStripeReferralTransfer(config,input={}){
+  const destination=String(input.destination_account||"").trim();
+  if(!/^acct_[A-Za-z0-9]+$/.test(destination))throw error(400,"INVALID_REFERRAL_TRANSFER_DESTINATION");
+  const amount=Math.trunc(Number(input.amount_minor));
+  if(!Number.isInteger(amount)||amount<=0||amount>100000000)throw error(400,"INVALID_REFERRAL_TRANSFER_AMOUNT");
+  const currency=String(input.currency||"EUR").trim().toLowerCase();
+  if(!/^[a-z]{3}$/.test(currency))throw error(400,"INVALID_REFERRAL_TRANSFER_CURRENCY");
+  const rewardPublicId=String(input.reward_public_id||"").trim();
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rewardPublicId))throw error(400,"INVALID_REFERRAL_REWARD_PUBLIC_ID");
+  const fields={
+    amount,currency,destination,
+    description:cleanText(input.description||"Prime ambassadeur Audiotel Premium Pro",180),
+    metadata:{pgi_referral_reward:rewardPublicId,pgi_tenant_public_id:cleanText(input.tenant_public_id,80)}
+  };
+  const transfer=await formRequest(config,"/v1/transfers",{fields,idempotencyKey:input.idempotency_key});
+  const id=String(transfer?.id||"");
+  if(!/^tr_[A-Za-z0-9]+$/.test(id))throw error(502,"STRIPE_REFERRAL_TRANSFER_INVALID");
+  return {provider:"stripe_connect",provider_transfer_reference:id,destination_account:String(transfer?.destination||destination),amount_minor:Number(transfer?.amount??amount),currency:String(transfer?.currency||currency).toUpperCase()};
+}
+
 export async function createStripeCardCheckout(config,input={}){
   const accountId=String(input.connected_account||"");
   if(!/^acct_[A-Za-z0-9]+$/.test(accountId))throw error(400,"INVALID_CONNECT_ACCOUNT");
