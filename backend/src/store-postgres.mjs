@@ -2520,7 +2520,7 @@ export class PostgresStore{
             );
             await tx.unsafe(
               "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'referral.reward.earned','customer_referral',$2,$3::jsonb)",
-              [referral.referrer_tenant_id,String(referral.id),JSON.stringify({referral_id:Number(referral.id),amount_minor:reward.total_minor,currency:reward.currency,qualification_ordinal:ordinal,paid_invoice_count:paidInvoices})]
+              [referral.referrer_tenant_id,String(referral.id),JSON.stringify({referral_id:Number(referral.id),amount_minor:reward.total_minor,currency:reward.currency,qualification_ordinal:ordinal,paid_invoice_count:paidInvoices,qualification_paid_invoices:policy.qualification_paid_invoices})]
             );
           }
         }
@@ -4627,7 +4627,31 @@ export class PostgresStore{
     }
   }
 
+  async ensureAutomaticReferralPayoutSchema(){
+    if(this._automaticReferralPayoutSchemaReady)return this._automaticReferralPayoutSchemaReady;
+    this._automaticReferralPayoutSchemaReady=(async()=>{
+      await this.sql.unsafe("ALTER TABLE customer_referral_rewards ADD COLUMN IF NOT EXISTS payout_state text NOT NULL DEFAULT 'pending' CHECK (payout_state IN ('pending','processing','blocked','paid','cancelled'))");
+      await this.sql.unsafe("ALTER TABLE customer_referral_rewards ADD COLUMN IF NOT EXISTS payout_provider text");
+      await this.sql.unsafe("ALTER TABLE customer_referral_rewards ADD COLUMN IF NOT EXISTS provider_destination_reference text");
+      await this.sql.unsafe("ALTER TABLE customer_referral_rewards ADD COLUMN IF NOT EXISTS provider_transfer_reference text");
+      await this.sql.unsafe("ALTER TABLE customer_referral_rewards ADD COLUMN IF NOT EXISTS payout_attempts integer NOT NULL DEFAULT 0 CHECK (payout_attempts >= 0)");
+      await this.sql.unsafe("ALTER TABLE customer_referral_rewards ADD COLUMN IF NOT EXISTS payout_processing_started_at timestamptz");
+      await this.sql.unsafe("ALTER TABLE customer_referral_rewards ADD COLUMN IF NOT EXISTS payout_next_attempt_at timestamptz");
+      await this.sql.unsafe("ALTER TABLE customer_referral_rewards ADD COLUMN IF NOT EXISTS payout_last_error text");
+      await this.sql.unsafe(
+        "UPDATE customer_referral_rewards SET payout_state=CASE WHEN status='paid' THEN 'paid' WHEN status='cancelled' THEN 'cancelled' ELSE COALESCE(NULLIF(payout_state,''),'pending') END"+
+        " WHERE (status='paid' AND payout_state<>'paid') OR (status='cancelled' AND payout_state<>'cancelled') OR payout_state IS NULL OR payout_state=''"
+      );
+      await this.sql.unsafe("CREATE UNIQUE INDEX IF NOT EXISTS customer_referral_rewards_provider_transfer_uidx ON customer_referral_rewards(provider_transfer_reference) WHERE provider_transfer_reference IS NOT NULL");
+      await this.sql.unsafe("CREATE INDEX IF NOT EXISTS customer_referral_rewards_auto_payout_queue_idx ON customer_referral_rewards(payout_state,payout_next_attempt_at,earned_at,id) WHERE status='earned'");
+      return true;
+    })();
+    try{return await this._automaticReferralPayoutSchemaReady}
+    catch(error){this._automaticReferralPayoutSchemaReady=null;throw error}
+  }
+
   async referralProgramAdminState(){
+    await this.ensureAutomaticReferralPayoutSchema();
     const program=await this.referralProgramPublicState();
     const [counts,rewards,funnelRows,ambassadorRows,referralRows,svaRows]=await Promise.all([
       this.sql.unsafe(
@@ -4635,6 +4659,7 @@ export class PostgresStore{
       ),
       this.sql.unsafe(
         "SELECT rw.id,rw.public_id::text AS public_id,rw.amount_minor::bigint AS amount_minor,rw.currency,rw.status,rw.earned_at,rw.paid_at,rw.paid_reference,"+
+        " rw.payout_state,rw.payout_provider,rw.provider_destination_reference,rw.provider_transfer_reference,rw.payout_attempts,rw.payout_processing_started_at,rw.payout_next_attempt_at,rw.payout_last_error,"+
         " rt.display_name AS referrer_name,dt.display_name AS referred_name,rf.public_id::text AS referral_public_id,rf.metadata AS referral_metadata"+
         " FROM customer_referral_rewards rw JOIN customer_referrals rf ON rf.id=rw.referral_id"+
         " JOIN tenants rt ON rt.id=rf.referrer_tenant_id JOIN tenants dt ON dt.id=rf.referred_tenant_id"+
@@ -4663,7 +4688,8 @@ export class PostgresStore{
         "SELECT rt.public_id::text AS referrer_public_id,r.public_id::text AS public_id,r.status,r.reward_minor::bigint AS reward_minor,r.reward_currency,r.claimed_at,r.qualified_at,r.rewarded_at,r.rejected_at,r.metadata,"+
         " dt.id AS _referred_id,dt.public_id::text AS referred_public_id,dt.display_name AS referred_name,dt.billing_email AS referred_billing_email,dt.status AS referred_status,dt.country_code AS referred_country_code,dt.created_at AS referred_created_at,"+
         " (SELECT count(DISTINCT be.normalized_details->>'provider_invoice_reference')::int FROM subscription_billing_events be WHERE be.tenant_id=r.referred_tenant_id AND be.event_type='invoice.paid' AND COALESCE(be.normalized_details->>'provider_invoice_reference','')<>'' AND COALESCE(be.normalized_details->>'last_payment_status','paid')='paid' AND be.event_time>=r.claimed_at) AS paid_invoice_count,"+
-        " rw.id AS reward_id,rw.public_id::text AS reward_public_id,rw.amount_minor::bigint AS reward_amount_minor,rw.currency AS reward_currency_paid,rw.status AS reward_status,rw.earned_at,rw.paid_at,rw.paid_reference"+
+        " rw.id AS reward_id,rw.public_id::text AS reward_public_id,rw.amount_minor::bigint AS reward_amount_minor,rw.currency AS reward_currency_paid,rw.status AS reward_status,rw.earned_at,rw.paid_at,rw.paid_reference,"+
+        " rw.payout_state,rw.payout_provider,rw.provider_destination_reference,rw.provider_transfer_reference,rw.payout_attempts,rw.payout_processing_started_at,rw.payout_next_attempt_at,rw.payout_last_error"+
         " FROM customer_referrals r JOIN tenants rt ON rt.id=r.referrer_tenant_id JOIN tenants dt ON dt.id=r.referred_tenant_id LEFT JOIN customer_referral_rewards rw ON rw.referral_id=r.id"+
         " ORDER BY r.claimed_at DESC,r.id DESC LIMIT 500"
       ),
@@ -4686,7 +4712,7 @@ export class PostgresStore{
         public_id:row.public_id,status:row.status,reward_minor:Number(row.reward_minor||0),reward_currency:row.reward_currency,claimed_at:row.claimed_at,qualified_at:row.qualified_at,rewarded_at:row.rewarded_at,rejected_at:row.rejected_at,metadata:row.metadata||{},
         paid_invoice_count:paidInvoiceCount,qualification_paid_invoices:required,progress_percent:Math.min(100,Math.round((paidInvoiceCount/required)*100)),
         referred:{public_id:row.referred_public_id,name:row.referred_name,email:row.referred_billing_email,status:row.referred_status,country_code:row.referred_country_code,dossier_ref:dossierReference(Number(row._referred_id),row.referred_created_at)},
-        reward:row.reward_id?{id:row.reward_id,public_id:row.reward_public_id,amount_minor:Number(row.reward_amount_minor||0),currency:row.reward_currency_paid,status:row.reward_status,earned_at:row.earned_at,paid_at:row.paid_at,paid_reference:row.paid_reference}:null
+        reward:row.reward_id?{id:row.reward_id,public_id:row.reward_public_id,amount_minor:Number(row.reward_amount_minor||0),currency:row.reward_currency_paid,status:row.reward_status,earned_at:row.earned_at,paid_at:row.paid_at,paid_reference:row.paid_reference,payout_state:row.payout_state,payout_provider:row.payout_provider,provider_destination_reference:row.provider_destination_reference,provider_transfer_reference:row.provider_transfer_reference,payout_attempts:Number(row.payout_attempts||0),payout_processing_started_at:row.payout_processing_started_at,payout_next_attempt_at:row.payout_next_attempt_at,payout_last_error:row.payout_last_error}:null
       };
       if(!referralsByReferrer.has(key))referralsByReferrer.set(key,[]);
       referralsByReferrer.get(key).push(item);
@@ -4824,27 +4850,147 @@ export class PostgresStore{
     });
   }
 
+  async claimReferralRewardPayoutBatch(limit=25){
+    await this.ensureAutomaticReferralPayoutSchema();
+    const take=Math.max(1,Math.min(50,Number(limit)||25));
+    return this.sql.begin(async tx=>{
+      await tx.unsafe(
+        "UPDATE customer_referral_rewards SET payout_state='pending',payout_processing_started_at=NULL,payout_next_attempt_at=now(),"+
+        " payout_last_error=COALESCE(payout_last_error,'PROCESSING_LEASE_EXPIRED')"+
+        " WHERE status='earned' AND payout_state='processing' AND payout_processing_started_at<now()-interval '15 minutes'"
+      );
+      const candidates=await tx.unsafe(
+        "SELECT rw.id,rw.public_id::text AS public_id,rw.tenant_id,rw.amount_minor::bigint AS amount_minor,rw.currency,rw.payout_attempts,"+
+        " t.public_id::text AS tenant_public_id,a.provider_account_reference,a.payouts_enabled,a.details_submitted"+
+        " FROM customer_referral_rewards rw JOIN tenants t ON t.id=rw.tenant_id"+
+        " LEFT JOIN tenant_card_payment_accounts a ON a.tenant_id=rw.tenant_id"+
+        " WHERE rw.status='earned' AND rw.payout_state IN ('pending','blocked')"+
+        " AND (rw.payout_next_attempt_at IS NULL OR rw.payout_next_attempt_at<=now())"+
+        " ORDER BY rw.earned_at ASC,rw.id ASC FOR UPDATE OF rw SKIP LOCKED LIMIT $1",
+        [take]
+      );
+      const items=[];let accountBlocked=0;
+      for(const row of candidates){
+        const destination=String(row.provider_account_reference||"");
+        const ready=/^acct_[A-Za-z0-9]+$/.test(destination)&&row.payouts_enabled===true&&row.details_submitted===true;
+        if(!ready){
+          accountBlocked++;
+          await tx.unsafe(
+            "UPDATE customer_referral_rewards SET payout_state='blocked',payout_provider='stripe',provider_destination_reference=$2,"+
+            " payout_processing_started_at=NULL,payout_next_attempt_at=now()+interval '6 hours',payout_last_error='REFERRAL_PAYOUT_ACCOUNT_NOT_READY' WHERE id=$1 AND status='earned'",
+            [row.id,destination||null]
+          );
+          continue;
+        }
+        const claimed=(await tx.unsafe(
+          "UPDATE customer_referral_rewards SET payout_state='processing',payout_provider='stripe',provider_destination_reference=$2,"+
+          " payout_attempts=payout_attempts+1,payout_processing_started_at=now(),payout_next_attempt_at=NULL,payout_last_error=NULL"+
+          " WHERE id=$1 AND status='earned' RETURNING id,public_id::text AS public_id,tenant_id,amount_minor::bigint AS amount_minor,currency,payout_attempts,provider_destination_reference",
+          [row.id,destination]
+        ))[0];
+        if(claimed)items.push({...claimed,tenant_public_id:row.tenant_public_id,amount_minor:Number(claimed.amount_minor||0),payout_attempts:Number(claimed.payout_attempts||0)});
+      }
+      return {items,account_blocked:accountBlocked};
+    });
+  }
+
+  async completeReferralRewardPayout(rewardId,input={}){
+    await this.ensureAutomaticReferralPayoutSchema();
+    const id=Number(rewardId),provider=String(input.provider||"stripe").trim().toLowerCase().slice(0,40);
+    const transferReference=String(input.provider_transfer_reference||"").trim().slice(0,180);
+    const destination=String(input.provider_destination_reference||"").trim().slice(0,180);
+    const paidAt=input.paid_at&&Number.isFinite(Date.parse(input.paid_at))?new Date(input.paid_at).toISOString():new Date().toISOString();
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_REFERRAL_REWARD");
+    if(!/^tr_[A-Za-z0-9]+$/.test(transferReference))throw problem(400,"INVALID_REFERRAL_TRANSFER_REFERENCE");
+    return this.sql.begin(async tx=>{
+      const existing=(await tx.unsafe(
+        "SELECT id,public_id::text AS public_id,tenant_id,amount_minor::bigint AS amount_minor,currency,status,earned_at,paid_at,paid_reference,payout_state,provider_transfer_reference FROM customer_referral_rewards WHERE id=$1 LIMIT 1 FOR UPDATE",
+        [id]
+      ))[0];
+      if(!existing)throw problem(404,"REFERRAL_REWARD_NOT_FOUND");
+      if(existing.status==="paid"){
+        if(existing.provider_transfer_reference&&existing.provider_transfer_reference!==transferReference)throw problem(409,"REFERRAL_TRANSFER_REFERENCE_CONFLICT");
+        return {...existing,amount_minor:Number(existing.amount_minor||0),already_paid:true};
+      }
+      if(existing.status!=="earned")throw problem(409,"REFERRAL_REWARD_NOT_PAYABLE");
+      const row=(await tx.unsafe(
+        "UPDATE customer_referral_rewards SET status='paid',paid_at=$2::timestamptz,paid_reference=$3,payout_state='paid',payout_provider=$4,"+
+        " provider_destination_reference=COALESCE(NULLIF($5,''),provider_destination_reference),provider_transfer_reference=$3,"+
+        " payout_processing_started_at=NULL,payout_next_attempt_at=NULL,payout_last_error=NULL,"+
+        " metadata=COALESCE(metadata,'{}'::jsonb)||$6::jsonb WHERE id=$1 AND status='earned'"+
+        " RETURNING id,public_id::text AS public_id,tenant_id,amount_minor::bigint AS amount_minor,currency,status,earned_at,paid_at,paid_reference,payout_state,payout_provider,provider_destination_reference,provider_transfer_reference,payout_attempts",
+        [id,paidAt,transferReference,provider,destination,JSON.stringify({automatic_payout:true,payout_provider:provider,provider_transfer_reference:transferReference})]
+      ))[0];
+      if(!row)throw problem(409,"REFERRAL_REWARD_STATE_CHANGED");
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'referral.reward.paid.auto','customer_referral_reward',$2,$3::jsonb)",
+        [row.tenant_id,String(row.id),JSON.stringify({amount_minor:Number(row.amount_minor),currency:row.currency,payout_provider:provider,provider_transfer_reference:transferReference,provider_destination_reference:destination||null})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'referral.reward.paid','customer_referral_reward',$2,$3::jsonb)",
+        [row.tenant_id,String(row.id),JSON.stringify({reward_id:Number(row.id),amount_minor:Number(row.amount_minor),currency:row.currency,payout_provider:provider,provider_transfer_reference:transferReference})]
+      );
+      return {...row,amount_minor:Number(row.amount_minor||0),payout_attempts:Number(row.payout_attempts||0),already_paid:false};
+    });
+  }
+
+  async failReferralRewardPayout(rewardId,code,options={}){
+    await this.ensureAutomaticReferralPayoutSchema();
+    const id=Number(rewardId),errorCode=String(code||"REFERRAL_PAYOUT_FAILED").trim().toUpperCase().replace(/[^A-Z0-9_]+/g,"_").slice(0,120);
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_REFERRAL_REWARD");
+    const blocked=options.blocked===true;
+    return this.sql.begin(async tx=>{
+      const current=(await tx.unsafe(
+        "SELECT id,tenant_id,status,payout_attempts FROM customer_referral_rewards WHERE id=$1 LIMIT 1 FOR UPDATE",
+        [id]
+      ))[0];
+      if(!current)return null;
+      if(current.status!=="earned")return {ignored:true,status:current.status};
+      const attempts=Math.max(1,Number(current.payout_attempts||1));
+      const delayMinutes=blocked?360:Math.min(360,5*Math.pow(2,Math.max(0,attempts-1)));
+      const row=(await tx.unsafe(
+        "UPDATE customer_referral_rewards SET payout_state=$2,payout_processing_started_at=NULL,payout_next_attempt_at=now()+($3::int*interval '1 minute'),payout_last_error=$4"+
+        " WHERE id=$1 AND status='earned' RETURNING id,tenant_id,payout_state,payout_attempts,payout_next_attempt_at,payout_last_error",
+        [id,blocked?"blocked":"pending",Math.trunc(delayMinutes),errorCode]
+      ))[0]||null;
+      if(row)await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'referral.reward.payout_failed','customer_referral_reward',$2,$3::jsonb)",
+        [row.tenant_id,String(row.id),JSON.stringify({error_code:errorCode,payout_state:row.payout_state,payout_attempts:Number(row.payout_attempts||0),next_attempt_at:row.payout_next_attempt_at})]
+      );
+      return row;
+    });
+  }
+
   async settleCustomerReferralReward(rewardId,paidReference,actor={}){
+    await this.ensureAutomaticReferralPayoutSchema();
     const id=Number(rewardId),reference=String(paidReference||"").trim().slice(0,180),actorId=numericActor(actor);
     if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_REFERRAL_REWARD");
     if(reference.length<3)throw problem(400,"REFERRAL_PAYMENT_REFERENCE_REQUIRED");
-    const existing=(await this.sql.unsafe(
-      "SELECT id,public_id::text AS public_id,tenant_id,amount_minor::bigint AS amount_minor,currency,status,earned_at,paid_at,paid_reference FROM customer_referral_rewards WHERE id=$1 LIMIT 1",
-      [id]
-    ))[0];
-    if(!existing)throw problem(404,"REFERRAL_REWARD_NOT_FOUND");
-    if(existing.status==="paid")return {...existing,amount_minor:Number(existing.amount_minor),already_paid:true};
-    if(existing.status!=="earned")throw problem(409,"REFERRAL_REWARD_NOT_PAYABLE");
-    const row=(await this.sql.unsafe(
-      "UPDATE customer_referral_rewards SET status='paid',paid_at=now(),paid_reference=$2 WHERE id=$1 AND status='earned' RETURNING id,public_id::text AS public_id,tenant_id,amount_minor::bigint AS amount_minor,currency,status,earned_at,paid_at,paid_reference",
-      [id,reference]
-    ))[0];
-    if(!row)throw problem(409,"REFERRAL_REWARD_STATE_CHANGED");
-    await this.sql.unsafe(
-      "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'referral.reward.paid','customer_referral_reward',$3,$4::jsonb)",
-      [row.tenant_id,actorId,String(row.id),JSON.stringify({amount_minor:Number(row.amount_minor),currency:row.currency,paid_reference:row.paid_reference})]
-    );
-    return {...row,amount_minor:Number(row.amount_minor),already_paid:false};
+    return this.sql.begin(async tx=>{
+      const existing=(await tx.unsafe(
+        "SELECT id,public_id::text AS public_id,tenant_id,amount_minor::bigint AS amount_minor,currency,status,earned_at,paid_at,paid_reference,payout_state FROM customer_referral_rewards WHERE id=$1 LIMIT 1 FOR UPDATE",
+        [id]
+      ))[0];
+      if(!existing)throw problem(404,"REFERRAL_REWARD_NOT_FOUND");
+      if(existing.status==="paid")return {...existing,amount_minor:Number(existing.amount_minor),already_paid:true};
+      if(existing.status!=="earned")throw problem(409,"REFERRAL_REWARD_NOT_PAYABLE");
+      const row=(await tx.unsafe(
+        "UPDATE customer_referral_rewards SET status='paid',paid_at=now(),paid_reference=$2,payout_state='paid',payout_provider=COALESCE(payout_provider,'manual'),"+
+        " payout_processing_started_at=NULL,payout_next_attempt_at=NULL,payout_last_error=NULL WHERE id=$1 AND status='earned'"+
+        " RETURNING id,public_id::text AS public_id,tenant_id,amount_minor::bigint AS amount_minor,currency,status,earned_at,paid_at,paid_reference,payout_state,payout_provider",
+        [id,reference]
+      ))[0];
+      if(!row)throw problem(409,"REFERRAL_REWARD_STATE_CHANGED");
+      await tx.unsafe(
+        "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,$2,'referral.reward.paid.manual','customer_referral_reward',$3,$4::jsonb)",
+        [row.tenant_id,actorId,String(row.id),JSON.stringify({amount_minor:Number(row.amount_minor),currency:row.currency,paid_reference:row.paid_reference})]
+      );
+      await tx.unsafe(
+        "INSERT INTO outbox_events(tenant_id,event_type,aggregate_type,aggregate_id,payload) VALUES($1,'referral.reward.paid','customer_referral_reward',$2,$3::jsonb)",
+        [row.tenant_id,String(row.id),JSON.stringify({reward_id:Number(row.id),amount_minor:Number(row.amount_minor),currency:row.currency,payout_provider:"manual",provider_transfer_reference:reference})]
+      );
+      return {...row,amount_minor:Number(row.amount_minor),already_paid:false};
+    });
   }
 
   async customerPortabilityRequests(tenantId){
@@ -7004,6 +7150,7 @@ export class PostgresStore{
   }
 
   async platformAccounting(params={}){
+    await this.ensureAutomaticReferralPayoutSchema();
     const rawMonth=String(params.month||"").trim(),now=new Date();
     const fallbackMonth=now.getUTCFullYear()+"-"+String(now.getUTCMonth()+1).padStart(2,"0");
     const month=/^\d{4}-(0[1-9]|1[0-2])$/.test(rawMonth)?rawMonth:fallbackMonth;
@@ -7077,8 +7224,11 @@ export class PostgresStore{
         " FROM customer_referral_rewards WHERE currency=$3 AND status='paid' AND paid_at>=$1::timestamptz AND paid_at<$2::timestamptz GROUP BY 1 ORDER BY 1",
         [fromIso,toIso,currency]
       ),
-      this.readSql.unsafe(
-        "SELECT count(*)::int AS count,COALESCE(sum(amount_minor),0)::bigint AS amount_minor FROM customer_referral_rewards WHERE currency=$1 AND status='earned'",
+      this.sql.unsafe(
+        "SELECT count(*)::int AS count,COALESCE(sum(amount_minor),0)::bigint AS amount_minor,"+
+        " count(*) FILTER(WHERE payout_state='processing')::int AS processing_count,COALESCE(sum(amount_minor) FILTER(WHERE payout_state='processing'),0)::bigint AS processing_minor,"+
+        " count(*) FILTER(WHERE payout_state='blocked')::int AS blocked_count,COALESCE(sum(amount_minor) FILTER(WHERE payout_state='blocked'),0)::bigint AS blocked_minor"+
+        " FROM customer_referral_rewards WHERE currency=$1 AND status='earned'",
         [currency]
       ),
       this.readSql.unsafe(
@@ -7142,6 +7292,10 @@ export class PostgresStore{
       current_balances:{
         referral_rewards_payable_minor:Number(currentReferralRow.amount_minor||0),
         referral_rewards_payable_count:Number(currentReferralRow.count||0),
+        referral_rewards_processing_minor:Number(currentReferralRow.processing_minor||0),
+        referral_rewards_processing_count:Number(currentReferralRow.processing_count||0),
+        referral_rewards_blocked_minor:Number(currentReferralRow.blocked_minor||0),
+        referral_rewards_blocked_count:Number(currentReferralRow.blocked_count||0),
         client_payout_payable_ht:Number(currentClientRow.payable_ht||0),
         client_payout_payable_count:Number(currentClientRow.payable_count||0),
         client_payout_blocked_ht:Number(currentClientRow.blocked_ht||0),
