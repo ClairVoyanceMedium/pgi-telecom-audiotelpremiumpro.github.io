@@ -4635,9 +4635,11 @@ export class PostgresStore{
       ),
       this.sql.unsafe(
         "SELECT rw.id,rw.public_id::text AS public_id,rw.amount_minor::bigint AS amount_minor,rw.currency,rw.status,rw.earned_at,rw.paid_at,rw.paid_reference,"+
+        " rw.payout_state,rw.payout_attempt_count,rw.payout_last_attempt_at,rw.payout_next_attempt_at,rw.payout_last_error,rw.payout_destination_reference,rw.provider_transfer_reference,rw.payout_completed_at,"+
+        " pa.status AS payout_account_status,pa.transfers_enabled AS payout_account_transfers_enabled,pa.details_submitted AS payout_account_details_submitted,pa.requirements_state AS payout_account_requirements_state,"+
         " rt.display_name AS referrer_name,dt.display_name AS referred_name,rf.public_id::text AS referral_public_id,rf.metadata AS referral_metadata"+
         " FROM customer_referral_rewards rw JOIN customer_referrals rf ON rf.id=rw.referral_id"+
-        " JOIN tenants rt ON rt.id=rf.referrer_tenant_id JOIN tenants dt ON dt.id=rf.referred_tenant_id"+
+        " JOIN tenants rt ON rt.id=rf.referrer_tenant_id JOIN tenants dt ON dt.id=rf.referred_tenant_id LEFT JOIN customer_referral_payout_accounts pa ON pa.tenant_id=rw.tenant_id"+
         " ORDER BY CASE rw.status WHEN 'earned' THEN 0 WHEN 'paid' THEN 1 ELSE 2 END,rw.earned_at DESC,rw.id DESC LIMIT 50"
       ),
       this.sql.unsafe(
@@ -4663,7 +4665,7 @@ export class PostgresStore{
         "SELECT rt.public_id::text AS referrer_public_id,r.public_id::text AS public_id,r.status,r.reward_minor::bigint AS reward_minor,r.reward_currency,r.claimed_at,r.qualified_at,r.rewarded_at,r.rejected_at,r.metadata,"+
         " dt.id AS _referred_id,dt.public_id::text AS referred_public_id,dt.display_name AS referred_name,dt.billing_email AS referred_billing_email,dt.status AS referred_status,dt.country_code AS referred_country_code,dt.created_at AS referred_created_at,"+
         " (SELECT count(DISTINCT be.normalized_details->>'provider_invoice_reference')::int FROM subscription_billing_events be WHERE be.tenant_id=r.referred_tenant_id AND be.event_type='invoice.paid' AND COALESCE(be.normalized_details->>'provider_invoice_reference','')<>'' AND COALESCE(be.normalized_details->>'last_payment_status','paid')='paid' AND be.event_time>=r.claimed_at) AS paid_invoice_count,"+
-        " rw.id AS reward_id,rw.public_id::text AS reward_public_id,rw.amount_minor::bigint AS reward_amount_minor,rw.currency AS reward_currency_paid,rw.status AS reward_status,rw.earned_at,rw.paid_at,rw.paid_reference"+
+        " rw.id AS reward_id,rw.public_id::text AS reward_public_id,rw.amount_minor::bigint AS reward_amount_minor,rw.currency AS reward_currency_paid,rw.status AS reward_status,rw.earned_at,rw.paid_at,rw.paid_reference,rw.payout_state AS reward_payout_state,rw.payout_attempt_count AS reward_payout_attempt_count,rw.payout_next_attempt_at AS reward_payout_next_attempt_at,rw.payout_last_error AS reward_payout_last_error,rw.provider_transfer_reference AS reward_provider_transfer_reference"+
         " FROM customer_referrals r JOIN tenants rt ON rt.id=r.referrer_tenant_id JOIN tenants dt ON dt.id=r.referred_tenant_id LEFT JOIN customer_referral_rewards rw ON rw.referral_id=r.id"+
         " ORDER BY r.claimed_at DESC,r.id DESC LIMIT 500"
       ),
@@ -4686,7 +4688,7 @@ export class PostgresStore{
         public_id:row.public_id,status:row.status,reward_minor:Number(row.reward_minor||0),reward_currency:row.reward_currency,claimed_at:row.claimed_at,qualified_at:row.qualified_at,rewarded_at:row.rewarded_at,rejected_at:row.rejected_at,metadata:row.metadata||{},
         paid_invoice_count:paidInvoiceCount,qualification_paid_invoices:required,progress_percent:Math.min(100,Math.round((paidInvoiceCount/required)*100)),
         referred:{public_id:row.referred_public_id,name:row.referred_name,email:row.referred_billing_email,status:row.referred_status,country_code:row.referred_country_code,dossier_ref:dossierReference(Number(row._referred_id),row.referred_created_at)},
-        reward:row.reward_id?{id:row.reward_id,public_id:row.reward_public_id,amount_minor:Number(row.reward_amount_minor||0),currency:row.reward_currency_paid,status:row.reward_status,earned_at:row.earned_at,paid_at:row.paid_at,paid_reference:row.paid_reference}:null
+        reward:row.reward_id?{id:row.reward_id,public_id:row.reward_public_id,amount_minor:Number(row.reward_amount_minor||0),currency:row.reward_currency_paid,status:row.reward_status,earned_at:row.earned_at,paid_at:row.paid_at,paid_reference:row.paid_reference,payout_state:row.reward_payout_state,payout_attempt_count:Number(row.reward_payout_attempt_count||0),payout_next_attempt_at:row.reward_payout_next_attempt_at,payout_last_error:row.reward_payout_last_error,provider_transfer_reference:row.reward_provider_transfer_reference}:null
       };
       if(!referralsByReferrer.has(key))referralsByReferrer.set(key,[]);
       referralsByReferrer.get(key).push(item);
@@ -4724,7 +4726,7 @@ export class PostgresStore{
   async customerReferralOverview(tenantId){
     const id=Number(tenantId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     const program=await this.referralProgramPublicState();
-    const [tenantRows,codeRows,summaryRows,recent]=await Promise.all([
+    const [tenantRows,codeRows,summaryRows,payoutAccountRows,recent]=await Promise.all([
       this.sql.unsafe(
         "SELECT t.status,EXISTS(SELECT 1 FROM tenant_subscriptions s WHERE s.tenant_id=t.id AND s.status='active' AND s.current_period_end>now() AND (s.last_payment_status IS NULL OR s.last_payment_status IN ('paid','succeeded','success'))) AS paid_active FROM tenants t WHERE t.id=$1 AND t.tenant_type<>'internal' LIMIT 1",
         [id]
@@ -4739,6 +4741,10 @@ export class PostgresStore{
         [id]
       ),
       this.sql.unsafe(
+        "SELECT provider_account_reference,status,transfers_enabled,payouts_enabled,details_submitted,requirements_state,last_synced_at,created_at,updated_at FROM customer_referral_payout_accounts WHERE tenant_id=$1 LIMIT 1",
+        [id]
+      ),
+      this.sql.unsafe(
         "SELECT r.public_id::text AS public_id,r.status,r.reward_minor::bigint AS reward_minor,r.reward_currency,r.claimed_at,r.qualified_at,r.rewarded_at,r.rejected_at,r.metadata,r.referred_tenant_id,"+
         " (SELECT count(DISTINCT be.normalized_details->>'provider_invoice_reference')::int FROM subscription_billing_events be"+
         " WHERE be.tenant_id=r.referred_tenant_id AND be.event_type='invoice.paid'"+
@@ -4750,7 +4756,7 @@ export class PostgresStore{
       )
     ]);
     const tenant=tenantRows[0]||null;if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
-    const code=codeRows[0]||null,summary=summaryRows[0]||{},rewarded=Number(summary.rewarded||0),next=referralRewardForOrdinal(rewarded+1);
+    const code=codeRows[0]||null,summary=summaryRows[0]||{},payoutAccount=payoutAccountRows[0]||null,rewarded=Number(summary.rewarded||0),next=referralRewardForOrdinal(rewarded+1);
     const eligible=program.enabled===true&&tenant.status==="active"&&tenant.paid_active===true;
     return {
       ...program,
@@ -4759,6 +4765,7 @@ export class PostgresStore{
       can_manage:program.enabled===true,
       eligibility_reason:eligible?null:(program.enabled!==true?"program_disabled":tenant.status!=="active"?"tenant_not_active":"subscription_not_paid"),
       next_reward:{...next},
+      payout_account:payoutAccount?{provider:"stripe",status:payoutAccount.status,transfers_enabled:payoutAccount.transfers_enabled===true,payouts_enabled:payoutAccount.payouts_enabled===true,details_submitted:payoutAccount.details_submitted===true,requirements_state:payoutAccount.requirements_state,last_synced_at:payoutAccount.last_synced_at}:null,
       summary:{visits:Number(summary.visits||0),prospects:Number(summary.prospects||0),claimed:Number(summary.claimed||0),rewarded,reward_minor:Number(summary.reward_minor||0)},
       recent:recent.map(x=>({...x,reward_minor:Number(x.reward_minor||0),paid_invoice_count:Number(x.paid_invoice_count||0)}))
     };
