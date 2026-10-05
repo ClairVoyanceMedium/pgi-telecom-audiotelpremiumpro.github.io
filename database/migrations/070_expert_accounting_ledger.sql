@@ -76,6 +76,19 @@ CREATE TABLE IF NOT EXISTS platform_accounting_periods (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS platform_accounting_period_events (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  period_key char(7) NOT NULL,
+  previous_state text,
+  new_state text NOT NULL CHECK (new_state IN ('open','review','closed')),
+  reason text,
+  actor_user_id bigint REFERENCES app_users(id),
+  occurred_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS platform_accounting_period_events_period_idx
+  ON platform_accounting_period_events(period_key,occurred_at DESC,id DESC);
+
 CREATE TABLE IF NOT EXISTS platform_accounting_sequences (
   fiscal_year integer NOT NULL CHECK (fiscal_year BETWEEN 2000 AND 2200),
   next_number bigint NOT NULL DEFAULT 1 CHECK (next_number>=1),
@@ -233,6 +246,29 @@ DROP TRIGGER IF EXISTS platform_accounting_lines_immutable_trg ON platform_accou
 CREATE TRIGGER platform_accounting_lines_immutable_trg
 BEFORE UPDATE OR DELETE ON platform_accounting_lines
 FOR EACH ROW EXECUTE FUNCTION pgi_accounting_protect_validated();
+
+CREATE OR REPLACE FUNCTION pgi_accounting_guard_closed_period()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $
+DECLARE
+  v_state text;
+  v_period char(7);
+BEGIN
+  v_period=to_char(NEW.entry_date,'YYYY-MM');
+  SELECT state INTO v_state FROM platform_accounting_periods WHERE period_key=v_period;
+  IF v_state='closed' THEN
+    RAISE EXCEPTION 'ACCOUNTING_PERIOD_CLOSED:%',v_period
+      USING ERRCODE='55000';
+  END IF;
+  RETURN NEW;
+END
+$;
+
+DROP TRIGGER IF EXISTS platform_accounting_entries_closed_period_trg ON platform_accounting_entries;
+CREATE TRIGGER platform_accounting_entries_closed_period_trg
+BEFORE INSERT OR UPDATE OF entry_date,status ON platform_accounting_entries
+FOR EACH ROW EXECUTE FUNCTION pgi_accounting_guard_closed_period();
 
 COMMENT ON TABLE platform_accounting_entries IS
 'Expert-accounting ledger. Source-generated rows start as draft. Only reviewed, balanced and classified entries may be validated and exported as FEC.';
