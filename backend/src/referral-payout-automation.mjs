@@ -3,6 +3,7 @@ import {
   retrieveStripeConnectedAccount,
   requestStripeReferralPayoutCapability,
   normalizeStripeReferralPayoutCapability,
+  findStripeReferralTransfer,
   createStripeReferralTransfer
 } from "./stripe-connect.mjs";
 
@@ -50,14 +51,16 @@ export async function processReferralPayoutWork(item,{store,config}={}){
     return {deferred:true,reason:"onboarding_required",capability};
   }
 
-  const transfer=await createStripeReferralTransfer(config,{
+  const transferInput={
     destination_account:accountId,
     amount_minor:Number(reward.amount_minor),
     currency:String(reward.currency||"EUR"),
     reward_public_id:String(reward.public_id||rewardId),
     tenant_public_id:String(reward.tenant_public_id||""),
     idempotency_key:"referral-reward-v1-"+String(reward.public_id||rewardId)
-  });
+  };
+  const transfer=await findStripeReferralTransfer(config,transferInput)
+    ||await createStripeReferralTransfer(config,transferInput);
 
   const settled=await store.settleAutomatedCustomerReferralReward(rewardId,{
     provider:transfer.provider,
