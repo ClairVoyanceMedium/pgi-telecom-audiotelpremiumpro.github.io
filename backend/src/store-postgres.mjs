@@ -4701,7 +4701,6 @@ export class PostgresStore{
   async customerReferralOverview(tenantId){
     const id=Number(tenantId);if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
     const program=await this.referralProgramPublicState();
-    if(!program.enabled)return {...program,code:null,eligible:false,eligibility_reason:"program_disabled",summary:{claimed:0,pending:0,rewarded:0,reward_minor:0},next_reward:referralRewardForRank(1),recent:[]};
     const [tenantRows,codeRows,summaryRows,recent]=await Promise.all([
       this.sql.unsafe(
         "SELECT t.status,EXISTS(SELECT 1 FROM tenant_subscriptions s WHERE s.tenant_id=t.id AND s.status='active' AND s.current_period_end>now() AND (s.last_payment_status IS NULL OR s.last_payment_status IN ('paid','succeeded','success'))) AS paid_active FROM tenants t WHERE t.id=$1 AND t.tenant_type<>'internal' LIMIT 1",
@@ -4722,7 +4721,8 @@ export class PostgresStore{
     ]);
     const tenant=tenantRows[0]||null;if(!tenant)throw problem(404,"TENANT_NOT_FOUND");
     const code=codeRows[0]||null,summary=summaryRows[0]||{};
-    const eligible=tenant.status==="active"&&tenant.paid_active===true;
+    const eligible=program.enabled===true&&tenant.status==="active"&&tenant.paid_active===true;
+    const eligibilityReason=program.enabled!==true?"program_disabled":(tenant.status!=="active"?"tenant_not_active":(tenant.paid_active!==true?"subscription_not_paid":null));
     const normalizedSummary={
       claimed:Number(summary.claimed||0),
       pending:Number(summary.pending||0),
@@ -4731,9 +4731,9 @@ export class PostgresStore{
     };
     return {
       ...program,
-      code:code?.status==="active"?code.code:null,
+      code:program.enabled===true&&code?.status==="active"?code.code:null,
       eligible,
-      eligibility_reason:eligible?null:(tenant.status!=="active"?"tenant_not_active":"subscription_not_paid"),
+      eligibility_reason:eligibilityReason,
       summary:normalizedSummary,
       next_reward:referralRewardForRank(normalizedSummary.rewarded+1),
       recent:recent.map(x=>({...x,reward_minor:Number(x.reward_minor||0),qualified_payments:Number(x.qualified_payments||0)}))
