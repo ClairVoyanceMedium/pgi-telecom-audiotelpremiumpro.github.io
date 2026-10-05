@@ -139,10 +139,10 @@ async function ensureReferralPayoutAutomationSchema(sql){
       );
       await tx.unsafe("CREATE INDEX IF NOT EXISTS customer_referral_payout_accounts_status_idx ON customer_referral_payout_accounts(status,transfers_enabled,updated_at DESC)");
       await tx.unsafe(
-        "DO $ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='customer_referral_payout_accounts_touch_updated'"+
+        "DO $pgi$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='customer_referral_payout_accounts_touch_updated'"+
         " AND tgrelid='customer_referral_payout_accounts'::regclass AND NOT tgisinternal) THEN "+
         "CREATE TRIGGER customer_referral_payout_accounts_touch_updated BEFORE UPDATE ON customer_referral_payout_accounts "+
-        "FOR EACH ROW EXECUTE FUNCTION touch_updated_at(); END IF; END $"
+        "FOR EACH ROW EXECUTE FUNCTION touch_updated_at(); END IF; END $pgi$"
       );
       await tx.unsafe(
         "ALTER TABLE customer_referral_rewards"+
