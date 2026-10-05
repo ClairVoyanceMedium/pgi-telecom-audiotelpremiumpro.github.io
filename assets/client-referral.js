@@ -27,7 +27,7 @@ function renderRecent(rows,currency,required){
     var detail=qualified
       ?(p&&p.label==="VERSÉ"?"Prime automatiquement transférée via Stripe.":"Les "+required+" factures mensuelles payées ont été validées. Le versement suit automatiquement son état.")
       :"Progression : "+paid+" facture(s) mensuelle(s) payée(s) sur "+required+".";
-    return '<div class="cp-row"><div><strong>Filleul '+esc(String(x.public_id||"").slice(0,8).toUpperCase())+'</strong><span>'+esc(detail+reward)+'</span></div><span class="cp-chip '+esc(p&&p.cls||qualified?"ok":"")+'">'+esc(label)+'</span></div>';
+    return '<div class="cp-row"><div><strong>Filleul '+esc(String(x.public_id||"").slice(0,8).toUpperCase())+'</strong><span>'+esc(detail+reward)+'</span></div><span class="cp-chip '+esc((p&&p.cls)||(qualified&&!p?"ok":""))+'">'+esc(label)+'</span></div>';
   }).join("")+'</div>';
 }
 function payoutBlock(payout,currency,canManage){
