@@ -472,6 +472,7 @@ function simplifyPublicShell(html){
     .replaceAll("Découvrir la plateforme","Découvrir les avantages")
     .replaceAll("Comparer un écart économique","Calculer votre revenu supplémentaire")
     .replaceAll("Comparer les économies potentielles","Calculer votre revenu supplémentaire")
+    .replaceAll("Préparer ma demande de numéro","Demander mon numéro")
     .replaceAll("Préparer ma demande","Demander mon numéro")
     .replaceAll("<span>Plateforme Audiotel &amp; SVA</span>","<span>Numéro surtaxé &amp; espace client</span>")
     .replaceAll("<span>4,90€ TTC / mois pour la plateforme</span>","<span>Mois en cours offert · puis 4,90€ / mois</span>")
