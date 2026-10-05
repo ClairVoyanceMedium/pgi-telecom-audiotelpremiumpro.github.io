@@ -80,14 +80,16 @@ async function applyReferralProgram(){
   const wrap=document.getElementById("order-referral-wrap"),input=document.getElementById("order-referral-code"),help=document.getElementById("order-referral-help");
   if(!wrap||!input)return;
   try{
-    const r=await fetch("/api/v1/public/referral-program",{headers:{"Accept":"application/json"},credentials:"same-origin",cache:"no-store"}),data=await r.json().catch(()=>({}));
-    if(!r.ok||data.enabled!==true){wrap.hidden=true;input.disabled=true;input.value="";return;}
+    const [refR,ambR]=await Promise.all([
+      fetch("/api/v1/public/referral-program",{headers:{"Accept":"application/json"},credentials:"same-origin",cache:"no-store"}).then(r=>r.json().then(data=>({ok:r.ok,data}))).catch(()=>({ok:false,data:{}})),
+      fetch("/api/v1/public/ambassador-program",{headers:{"Accept":"application/json"},credentials:"same-origin",cache:"no-store"}).then(r=>r.json().then(data=>({ok:r.ok,data}))).catch(()=>({ok:false,data:{}}))
+    ]);
+    const referralOn=refR.ok&&refR.data?.enabled===true,ambassadorOn=ambR.ok&&ambR.data?.enabled===true;
+    if(!referralOn&&!ambassadorOn){wrap.hidden=true;input.disabled=true;input.value="";return;}
     wrap.hidden=false;input.disabled=false;
-    const q=new URLSearchParams(location.search),requested=String(q.get("parrain")||q.get("ref")||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,24);
+    const q=new URLSearchParams(location.search),requested=String(q.get("parrain")||q.get("ambassadeur")||q.get("ref")||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,24);
     if(requested.length>=8)input.value=requested;
-    if(help&&Number(data.reward_minor)>0){
-      try{help.textContent="Code vérifié côté serveur. Le parrain reçoit "+new Intl.NumberFormat("fr-FR",{style:"currency",currency:data.currency||"EUR"}).format(Number(data.reward_minor)/100)+" uniquement après activation réelle et abonnement payé du filleul.";}catch(_e){}
-    }
+    if(help)help.textContent="Code vérifié côté serveur. Un code client ou Ambassadeur rattache votre dossier à la personne qui vous a recommandé Audiotel Premium Pro. La récompense n’est acquise qu’après les conditions de qualification prévues par le programme concerné.";
   }catch(_e){wrap.hidden=true;input.disabled=true;input.value="";}
 }
 hydrateDraft();applyRequestedProfile();applyRequestedIntent();applyReferralProgram();
