@@ -138,6 +138,7 @@ main,header,footer,section,.site-header,.header-inner,.hero-grid,.calculator-gri
 @media(max-width:680px){
   .hero-marketing-badge{margin-bottom:28px;padding:7px 14px;font-size:11px;letter-spacing:.075em}
 }
+body:not(.home-page) .hero-marketing-badge{border-radius:0}
 
 .hero-brand-signature{
   font-size:18px;
