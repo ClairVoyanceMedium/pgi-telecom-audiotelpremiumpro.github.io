@@ -59,6 +59,7 @@ test("registration requires current legal documents and keeps privacy acknowledg
 test("checkout requires terms and explicit immediate performance request",()=>{
   const billing=read("assets/client-billing.js"),server=read("backend/server.mjs");
   assert.match(billing,/client-billing-immediate/);
+  assert.match(billing,/legal_version:"2026-10-06-b2b-b2c-v5"/);
   assert.match(billing,/immediate_performance_requested:true/);
   assert.match(billing,/Souscrire avec obligation de paiement/);
   assert.match(server,/SUBSCRIPTION_LEGAL_TERMS_REQUIRED/);
@@ -222,12 +223,17 @@ test("priority portability checkout requires legal acceptance and immediate perf
   assert.match(ui,/portability-priority-legal-dialog/);
   assert.match(ui,/service_terms_accepted:true/);
   assert.match(ui,/immediate_performance_requested:true/);
+  assert.match(ui,/withdrawal_loss_acknowledged:true/);
+  assert.match(ui,/portability-priority-withdrawal/);
   assert.match(ui,/2026-10-06-b2b-b2c-v5/);
   assert.match(api,/createPortabilityPriorityCheckout:function\(id,payload,idempotencyKey\)/);
   assert.match(server,/PORTABILITY_PRIORITY_LEGAL_TERMS_REQUIRED/);
   assert.match(server,/PORTABILITY_PRIORITY_IMMEDIATE_PERFORMANCE_REQUIRED/);
+  assert.match(server,/PORTABILITY_PRIORITY_WITHDRAWAL_ACK_REQUIRED/);
   assert.match(server,/acceptance_type:"portability_priority_checkout"/);
+  assert.match(server,/withdrawal_loss_acknowledged:true/);
   assert.match(stripe,/legal_version:String\(input\.legal_version/);
+  assert.match(stripe,/withdrawal_loss_acknowledged/);
   assert.match(migration,/portability_priority_checkout/);
 });
 
