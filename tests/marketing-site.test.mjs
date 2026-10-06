@@ -824,3 +824,10 @@ test("marketing badge spacing stays balanced below public search",()=>{
   assert.match(css,/home-page \.site-header\+main>\.hero:first-child\{padding-top:22px\}/);
   assert.match(applicationCss,/application-hero\{[^\}]*padding:40px 0 82px/);
 });
+
+
+test("marketing badge keeps homepage oval but is rectangular elsewhere",()=>{
+  const css=fs.readFileSync("site/site.css","utf8");
+  assert.match(css,/\.hero-marketing-badge\{[\s\S]*border-radius:999px/);
+  assert.match(css,/body:not\(\.home-page\) \.hero-marketing-badge\{border-radius:0\}/);
+});
