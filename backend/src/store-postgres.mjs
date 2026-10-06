@@ -4378,7 +4378,7 @@ export class PostgresStore{
 
   async recordCustomerLegalAcceptance(tenantId,principalId,input={}){
     const type=String(input.acceptance_type||"").trim(),version=String(input.document_version||"").trim();
-    if(!["account_terms","subscription_checkout","portability_priority_checkout"].includes(type))throw problem(400,"INVALID_LEGAL_ACCEPTANCE_TYPE");
+    if(!["account_terms","subscription_checkout"].includes(type))throw problem(400,"INVALID_LEGAL_ACCEPTANCE_TYPE");
     if(version!=="2026-10-06-b2b-b2c-v5")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
     const documents=input.documents&&typeof input.documents==="object"?input.documents:{};
     const immediate=input.immediate_performance_requested===true;
