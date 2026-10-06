@@ -814,3 +814,13 @@ test("current reversement badge is injected consistently on commercial public pa
     assert.match(page,/class="(?:hero|application-hero)/);
   }
 });
+
+
+test("marketing badge spacing stays balanced below public search",()=>{
+  const css=fs.readFileSync("site/site.css","utf8");
+  const applicationCss=fs.readFileSync("site/application.css","utf8");
+  assert.match(css,/hero-marketing-badge\{[\s\S]*margin:0 auto 34px/);
+  assert.match(css,/site-header\+main>\.hero:first-child[^\{]*\{padding-top:40px\}/);
+  assert.match(css,/home-page \.site-header\+main>\.hero:first-child\{padding-top:22px\}/);
+  assert.match(applicationCss,/application-hero\{[^\}]*padding:40px 0 82px/);
+});
