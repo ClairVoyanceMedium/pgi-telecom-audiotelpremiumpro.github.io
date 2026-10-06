@@ -42,7 +42,7 @@ test("prelaunch admin diagnostics preserve staff/customer isolation and readonly
         first_name:"Client",last_name:"Isolation",account_type:"business",company_name:"Isolation SAS",country_code:"FR",
         phone:"+33600000001",email:"isolation@example.test",password:"long-password-12345",
         authority_confirmed:true,legal_terms_accepted:true,privacy_notice_acknowledged:true,
-        legal_version:"2026-09-26-b2b-b2c-v4",website:"",preferred_locale:"fr-FR",timezone:"Europe/Paris"
+        legal_version:"2026-10-06-b2b-b2c-v5",website:"",preferred_locale:"fr-FR",timezone:"Europe/Paris"
       })
     });
     assert.equal(response.status,201);
