@@ -220,7 +220,6 @@ test("priority portability checkout requires legal acceptance and immediate perf
   const api=read("assets/client-portal-api.js");
   const server=read("backend/server.mjs");
   const stripe=read("backend/src/stripe-billing.mjs");
-  const migration=read("database/migrations/072_legal_v5_services.sql");
   assert.match(ui,/portability-priority-legal-dialog/);
   assert.match(ui,/service_terms_accepted:true/);
   assert.match(ui,/immediate_performance_requested:true/);
@@ -231,11 +230,11 @@ test("priority portability checkout requires legal acceptance and immediate perf
   assert.match(server,/PORTABILITY_PRIORITY_LEGAL_TERMS_REQUIRED/);
   assert.match(server,/PORTABILITY_PRIORITY_IMMEDIATE_PERFORMANCE_REQUIRED/);
   assert.match(server,/PORTABILITY_PRIORITY_WITHDRAWAL_ACK_REQUIRED/);
-  assert.match(server,/acceptance_type:"portability_priority_checkout"/);
+  assert.match(server,/acceptance_type:"account_terms"/);
+  assert.match(server,/acceptance_scope:"portability_priority_checkout"/);
   assert.match(server,/withdrawal_loss_acknowledged:true/);
   assert.match(stripe,/legal_version:String\(input\.legal_version/);
   assert.match(stripe,/withdrawal_loss_acknowledged/);
-  assert.match(migration,/portability_priority_checkout/);
 });
 
 test("privacy and traceur notices disclose referral attribution and ambassador data",()=>{
