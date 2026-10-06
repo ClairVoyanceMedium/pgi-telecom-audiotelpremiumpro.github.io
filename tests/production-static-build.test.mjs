@@ -77,6 +77,7 @@ test("production static build publishes marketing root and private cockpit",()=>
       assert.match(page,new RegExp('rel="canonical" href="https:\\/\\/audiotel-premium-pro\\.com\\/'+slug+'\\/"'));
       if(!legal){assert.match(page,/"@type":"WebPage"/);if(["monetiser-ses-appels","combien-rapporte-numero-surtaxe"].includes(slug))assert.match(page,/"@type":"Article"/);else assert.match(page,/"@type":"Service"/);}
       assert.doesNotMatch(page,/__CANONICAL__|__BASE__|__LOGO__/);
+      assert.doesNotMatch(page,/audiotel-brand-icon-v33\.png"[^>]*alt=""/,"footer brand icon needs descriptive alt on "+slug);
       const scripts=[...page.matchAll(/<script[^>]+src="([^"]+)"/gi)].map(x=>x[1].split("?")[0]);
       const allowedScripts={
         "demande-ouverture":["/site/form-ux.js","/site/site.js","/site/hubspot-tracking.js","/site/contact-widget.js","/site/site-search.js"],
@@ -101,8 +102,15 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.match(guide,/"@type":"FAQPage"/);
     assert.match(guide,/"@type":"BreadcrumbList"/);
     assert.match(guide,/"@type":"Article"/);
+    assert.match(guide,/"datePublished":"2026-09-22"/);
+    assert.match(guide,/"image":"https:\/\/audiotel-premium-pro\.com\/assets\/audiotel-brand-logo-v33\.png"/);
     assert.match(guide,/Arcep : numéros SVA/);
     assert.ok(guide.includes("economie.gouv.fr"));
+    for(const slug of ["monetiser-ses-appels","combien-rapporte-numero-surtaxe"]){
+      const article=seoPages[seoSlugs.indexOf(slug)];
+      assert.match(article,/"datePublished":"2026-10-02"/);
+      assert.match(article,/"image":"https:\/\/audiotel-premium-pro\.com\/assets\/audiotel-brand-logo-v33\.png"/);
+    }
     const application=seoPages[seoSlugs.indexOf("demande-ouverture")];
     assert.match(application,/id="order-form"/);
     assert.match(application,/src="\/site\/site\.js\?v=[a-z0-9._-]+"/i);
