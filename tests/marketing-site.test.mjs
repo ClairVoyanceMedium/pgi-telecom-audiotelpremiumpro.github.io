@@ -604,6 +604,11 @@ test("new complementary products are public, indexable and commercially explicit
   assert.match(referralLanding,/25e/i);
   assert.match(referralLanding,/Je veux devenir ambassadeur/i);
   assert.match(referralLanding,/Aucun abonnement requis pour le parrain/i);
+  assert.match(referralLanding,/Devenez ambassadeur Audiotel Premium Pro/i);
+  assert.match(referralLanding,/Gagnez jusqu’à 20 € par nouveau client qualifié/i);
+  assert.match(referralLanding,/0 € d’abonnement pour parrainer/i);
+  assert.match(referralLanding,/data-referral-example="25">420 €/i);
+  assert.match(referralLanding,/Créer ma demande ambassadeur/i);
   assert.doesNotMatch(referralLanding,/site\/referral-landing\.js/);
   assert.match(tracking,/\/api\/v1\/public\/referral-program/);
   assert.match(tracking,/data-referral-example/);
