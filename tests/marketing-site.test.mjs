@@ -790,3 +790,27 @@ test("analytics classifies the new conversion intents",()=>{
   assert.match(contactWidget,/business-live-audiotel/);
   assert.match(contactWidget,/audiotel-sans-siret/);
 });
+
+
+test("current reversement badge is injected consistently on commercial public pages",()=>{
+  const tracking=read("site/hubspot-tracking.js");
+  assert.match(tracking,/currentPeriodMarketingLabel/);
+  assert.match(tracking,/\.hero \.hero-copy,\.application-hero \.application-copy/);
+  assert.match(tracking,/data-current-period-badge/);
+  assert.match(tracking,/En "\+month\+" "\+year\+" \.\.\. Des reversements plus généreux/);
+  assert.match(tracking,/timeZone:"Europe\/Paris"/);
+  for(const path of [
+    "site/seo/parrainage-audiotel.html",
+    "site/seo/portabilite-prioritaire.html",
+    "site/seo/paiement-cb-audiotel.html",
+    "site/seo/numero-sva.html",
+    "site/seo/reversement-audiotel.html",
+    "site/seo/tarif-numero-sva.html",
+    "site/seo/comparateur-audiotel.html",
+    "site/seo/demande-ouverture.html"
+  ]){
+    const page=read(path);
+    assert.match(page,/\/site\/hubspot-tracking\.js/);
+    assert.match(page,/class="(?:hero|application-hero)/);
+  }
+});
