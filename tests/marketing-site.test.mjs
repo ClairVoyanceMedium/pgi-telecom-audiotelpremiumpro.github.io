@@ -793,7 +793,7 @@ test("analytics classifies the new conversion intents",()=>{
 
 
 test("current reversement badge is injected consistently on commercial public pages",()=>{
-  const tracking=read("site/hubspot-tracking.js");
+  const tracking=fs.readFileSync("site/hubspot-tracking.js","utf8");
   assert.match(tracking,/currentPeriodMarketingLabel/);
   assert.match(tracking,/\.hero \.hero-copy,\.application-hero \.application-copy/);
   assert.match(tracking,/data-current-period-badge/);
@@ -809,7 +809,7 @@ test("current reversement badge is injected consistently on commercial public pa
     "site/seo/comparateur-audiotel.html",
     "site/seo/demande-ouverture.html"
   ]){
-    const page=read(path);
+    const page=fs.readFileSync(path,"utf8");
     assert.match(page,/\/site\/hubspot-tracking\.js/);
     assert.match(page,/class="(?:hero|application-hero)/);
   }
