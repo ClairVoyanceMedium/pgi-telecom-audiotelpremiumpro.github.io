@@ -18,10 +18,27 @@ function decorate(data){
   });
 }
 function message(c){return ({PORTABILITY_PRIORITY_ALREADY_PAID:"Le traitement prioritaire est déjà activé.",PORTABILITY_PRIORITY_PAYMENT_PROCESSING:"Le paiement est déjà en cours de traitement.",PORTABILITY_PRIORITY_NOT_AVAILABLE:"Le traitement prioritaire n’est plus disponible pour ce dossier.",PAYMENT_PROVIDER_UNAVAILABLE:"Le paiement prioritaire est momentanément indisponible.",PAYMENT_ACCOUNT_NOT_READY:"Le paiement prioritaire est momentanément indisponible.",STRIPE_CHECKOUT_URL_INVALID:"Le paiement prioritaire n’a pas pu être ouvert."})[c]||"Le paiement prioritaire n’a pas pu être ouvert."}
+function legalConsent(){
+  let d=$("portability-priority-legal-dialog");
+  if(!d){
+    d=document.createElement("dialog");d.id="portability-priority-legal-dialog";d.className="cp-export-dialog";
+    d.innerHTML='<form method="dialog" class="cp-export-card cp-form" id="portability-priority-legal-form"><div class="cp-export-head"><div><p class="cp-kicker">PORTABILITÉ PRIORITAIRE</p><h2>Confirmer l’option à 9,90 € TTC</h2></div><button class="cp-close" value="cancel" aria-label="Fermer">×</button></div><p class="cp-export-note">La portabilité standard reste gratuite au titre de la plateforme. L’option payante priorise uniquement le traitement administratif chez PGI Telecom et ne garantit aucun délai opérateur.</p><label class="cp-check"><input id="portability-priority-terms" type="checkbox" required><span>J’accepte les <a href="/conditions-abonnement/" target="_blank" rel="noopener">conditions générales</a> applicables à cette option et j’ai pris connaissance de la <a href="/confidentialite/" target="_blank" rel="noopener">politique de confidentialité</a>.</span></label><label class="cp-check"><input id="portability-priority-immediate" type="checkbox" required><span>Je demande expressément que le traitement prioritaire commence immédiatement, avant la fin éventuelle de mon délai de rétractation. J’ai compris que les conséquences d’une rétractation dépendent du service effectivement exécuté et des règles légales applicables.</span></label><p class="cp-export-note"><a href="/retractation/" target="_blank" rel="noopener">Consulter les informations sur la rétractation</a></p><div class="cp-actions"><button class="cp-secondary" value="cancel">Annuler</button><button class="cp-primary" value="confirm" id="portability-priority-legal-confirm">Continuer vers le paiement</button></div></form>';
+    document.body.appendChild(d);
+  }
+  const terms=d.querySelector("#portability-priority-terms"),immediate=d.querySelector("#portability-priority-immediate"),confirm=d.querySelector("#portability-priority-legal-confirm");
+  terms.checked=false;immediate.checked=false;
+  const sync=()=>{confirm.disabled=!(terms.checked&&immediate.checked)};sync();terms.onchange=sync;immediate.onchange=sync;
+  return new Promise(resolve=>{
+    const done=()=>{d.removeEventListener("close",done);resolve(d.returnValue==="confirm"&&terms.checked&&immediate.checked)};
+    d.addEventListener("close",done);d.showModal();
+  });
+}
 async function checkout(id,button){
-  if(busy)return false;if(o.getDemo()){o.toast("Le paiement prioritaire à 9,90 € TTC est disponible uniquement en production.");return false}busy=true;
+  if(busy)return false;if(o.getDemo()){o.toast("Le paiement prioritaire à 9,90 € TTC est disponible uniquement en production.");return false}
+  if(!await legalConsent())return false;
+  busy=true;
   const old=button?.textContent;if(button)button.disabled=true;
-  try{const r=await window.PGICustomerApi.createPortabilityPriorityCheckout(id,window.PGICustomerApi.newIdempotencyKey()),url=r?.checkout?.url;if(!url||!/^https:\/\/checkout\.stripe\.com\//i.test(url))throw Object.assign(new Error("STRIPE_CHECKOUT_URL_INVALID"),{code:"STRIPE_CHECKOUT_URL_INVALID"});location.assign(url);return true}
+  try{const legal={service_terms_accepted:true,privacy_notice_acknowledged:true,immediate_performance_requested:true,legal_version:"2026-10-06-b2b-b2c-v5"},r=await window.PGICustomerApi.createPortabilityPriorityCheckout(id,legal,window.PGICustomerApi.newIdempotencyKey()),url=r?.checkout?.url;if(!url||!/^https:\/\/checkout\.stripe\.com\//i.test(url))throw Object.assign(new Error("STRIPE_CHECKOUT_URL_INVALID"),{code:"STRIPE_CHECKOUT_URL_INVALID"});location.assign(url);return true}
   catch(e){o.toast(message(e?.code));return false}finally{busy=false;if(button){button.disabled=false;if(old!=null)button.textContent=old}}
 }
 function payload(){
