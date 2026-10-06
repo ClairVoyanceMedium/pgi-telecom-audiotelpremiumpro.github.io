@@ -172,7 +172,7 @@ test("full customer journey stays fail-closed until legal readiness and keeps SV
       method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
         token:state.invitationToken,display_name:"Camille Martin",password:"long-password-12345",
-        legal_terms_accepted:true,privacy_notice_acknowledged:true,legal_version:"2026-09-26-b2b-b2c-v4"
+        legal_terms_accepted:true,privacy_notice_acknowledged:true,legal_version:"2026-10-06-b2b-b2c-v5"
       })
     });
     assert.equal(response.status,201);
@@ -207,7 +207,7 @@ test("full customer journey stays fail-closed until legal readiness and keeps SV
       },
       body:JSON.stringify({
         subscription_terms_accepted:true,privacy_notice_acknowledged:true,immediate_performance_requested:true,
-        legal_version:"2026-09-26-b2b-b2c-v4"
+        legal_version:"2026-10-06-b2b-b2c-v5"
       })
     });
     assert.equal(response.status,409);
@@ -228,7 +228,7 @@ test("full customer journey stays fail-closed until legal readiness and keeps SV
       },
       body:JSON.stringify({
         subscription_terms_accepted:true,privacy_notice_acknowledged:true,immediate_performance_requested:true,
-        legal_version:"2026-09-26-b2b-b2c-v4"
+        legal_version:"2026-10-06-b2b-b2c-v5"
       })
     });
     assert.equal(response.status,201);
@@ -251,7 +251,7 @@ test("full customer journey stays fail-closed until legal readiness and keeps SV
         id:"sub_test_customer_journey",customer:"cus_test_customer_journey",status:"active",
         metadata:{
           tenant_public_id:tenantPublicId,price_version_id:String(priceVersionId),
-          plan_key:"external-sva-access",legal_version:"2026-09-26-b2b-b2c-v4"
+          plan_key:"external-sva-access",legal_version:"2026-10-06-b2b-b2c-v5"
         },
         items:{data:[{
           current_period_start:now,current_period_end:now+31*86400,
