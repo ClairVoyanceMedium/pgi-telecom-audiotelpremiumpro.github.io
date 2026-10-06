@@ -54,7 +54,7 @@ test("critical staff and B2B customer journey remains fail-closed at external de
         first_name:"Camille",last_name:"Martin",account_type:"business",company_name:"Cabinet Martin",country_code:"FR",
         phone:"+33600000000",email:"camille.journey@example.test",password:"long-password-12345",
         authority_confirmed:true,legal_terms_accepted:true,privacy_notice_acknowledged:true,
-        legal_version:"2026-09-26-b2b-b2c-v4",website:"",preferred_locale:"fr-FR",timezone:"Europe/Paris"
+        legal_version:"2026-10-06-b2b-b2c-v5",website:"",preferred_locale:"fr-FR",timezone:"Europe/Paris"
       })
     });
     assert.equal(response.status,201);
@@ -77,7 +77,7 @@ test("critical staff and B2B customer journey remains fail-closed at external de
       },
       body:JSON.stringify({
         subscription_terms_accepted:true,privacy_notice_acknowledged:true,
-        immediate_performance_requested:true,legal_version:"2026-09-26-b2b-b2c-v4"
+        immediate_performance_requested:true,legal_version:"2026-10-06-b2b-b2c-v5"
       })
     });
     assert.equal(response.status,503);
@@ -97,7 +97,7 @@ test("consumer withdrawal journey is direct, idempotent and durably queued in th
       confirmed:true,website:"",first_name:"Alice",last_name:"Durand",
       contract_email:"alice@example.test",acknowledgement_email:"alice@example.test",
       contract_reference:"CMD-123",contract_details:"Abonnement plateforme",
-      contract_date:"2026-09-26",legal_version:"2026-09-26-b2b-b2c-v4"
+      contract_date:"2026-09-26",legal_version:"2026-10-06-b2b-b2c-v5"
     };
     const send=()=>fetch(base+"/api/v1/public/withdrawal",{
       method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":key},
