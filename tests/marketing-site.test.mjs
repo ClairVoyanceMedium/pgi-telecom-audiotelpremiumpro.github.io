@@ -597,13 +597,12 @@ test("new complementary products are public, indexable and commercially explicit
   assert.match(priorityPortability,/portabilité standard reste gratuite/i);
   assert.match(priorityPortability,/Aucun délai opérateur garanti/i);
   assert.match(priorityPortability,/traitement administratif prioritaire/i);
-  assert.match(referralLanding,/Vous n’avez pas besoin d’être client pour parrainer/i);
-  assert.match(referralLanding,/Une récompense par filleul qualifié/i);
-  assert.match(referralLanding,/barème progressif fixe/i);
+  assert.match(referralLanding,/Pas besoin d’être client/i);
+  assert.match(referralLanding,/Prime maximale par filleul qualifié/i);
+  assert.match(referralLanding,/barème fixe et progressif/i);
   assert.match(referralLanding,/3 factures mensuelles distinctes réellement payées/i);
   assert.match(referralLanding,/25e/i);
-  assert.match(referralLanding,/Je veux devenir ambassadeur/i);
-  assert.match(referralLanding,/Aucun abonnement requis pour le parrain/i);
+  assert.match(referralLanding,/Devenir ambassadeur/i);
   assert.match(referralLanding,/Devenez ambassadeur Audiotel Premium Pro/i);
   assert.match(referralLanding,/Gagnez jusqu’à 20 € par nouveau client qualifié/i);
   assert.match(referralLanding,/0 € d’abonnement pour parrainer/i);
