@@ -212,7 +212,7 @@ test("Stripe Checkout verifies the remote price before creating a hosted subscri
     assert.match(checkoutForm.get("custom_text[submit][message]")||"",/résiliable à tout moment/i);
     assert.equal(checkoutForm.get("payment_method_collection"),"always");
     assert.equal(checkoutForm.get("metadata[contract_model]"),"indefinite_monthly_advance");
-    assert.equal(checkoutForm.get("subscription_data[metadata][legal_version]"),"2026-09-26-b2b-b2c-v4");
+    assert.equal(checkoutForm.get("subscription_data[metadata][legal_version]"),"2026-10-06-b2b-b2c-v5");
     assert.equal(checkoutForm.get("metadata[ga_client_id]"),"123456789.987654321");
     assert.equal(checkoutForm.get("subscription_data[metadata][ga_client_id]"),"123456789.987654321");
     assert.equal(checkoutForm.get("subscription_data[metadata][ga_session_id]"),"1790630000");
