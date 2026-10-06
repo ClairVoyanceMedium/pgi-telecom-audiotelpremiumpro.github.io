@@ -1,3 +1,13 @@
+## 1.31.1 : Pré-lancement durci : 2026-10-06
+
+- base de production alignée sur les migrations 064 à 071 et tarif métier courant à 4,90 € TTC ;
+- comptabilité experte, parrainage et espace ambassadeur alignés avec le schéma de production ;
+- métadonnées SEO, données structurées et alternatives d’images renforcées ;
+- contrôle Production Watch rendu stable sur le parcours de rétractation au lieu d’une date éditoriale figée ;
+- documentation RGPD alignée sur Vercel, Neon, Stripe, Resend et HubSpot réellement utilisés ;
+- garde-fou explicite maintenant le tarif courant à 4,90 € TTC tout en conservant l’historique 2,00 € puis 3,00 € ;
+- version applicative alignée sur 1.31.1.
+
 ## 1.31.0 : Tarif plateforme 4,90 € TTC : 2026-10-04
 
 - abonnement plateforme courant porté à 4,90 € TTC par mois après le mois en cours offert ;
