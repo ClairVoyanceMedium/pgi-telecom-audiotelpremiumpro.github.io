@@ -1195,10 +1195,10 @@ export function createBackend(options={}){
           try{
             const checkout=await createStripePortabilityPriorityCheckout(config,{...checkoutContext,legal_version:"2026-10-06-b2b-b2c-v5",immediate_performance_requested:true,withdrawal_loss_acknowledged:true},key);
             await store.recordCustomerLegalAcceptance(context.tenant_id,context.id,{
-              acceptance_type:"portability_priority_checkout",document_version:"2026-10-06-b2b-b2c-v5",
+              acceptance_type:"account_terms",document_version:"2026-10-06-b2b-b2c-v5",
               documents:{conditions:"/conditions-abonnement/",privacy:"/confidentialite/",retractation:"/retractation/",priority_portability:"/portabilite-prioritaire/"},
               immediate_performance_requested:true,
-              evidence:{source:"portability_priority_checkout",provider_checkout_created:true,portability_request_id:Number(match.id),withdrawal_loss_acknowledged:true}
+              evidence:{source:"portability_priority_checkout",acceptance_scope:"portability_priority_checkout",provider_checkout_created:true,portability_request_id:Number(match.id),withdrawal_loss_acknowledged:true}
             });
             const priority=await store.attachPortabilityPriorityCheckout(context.tenant_id,match.id,checkout);
             return {request_id:Number(match.id),priority,checkout};
