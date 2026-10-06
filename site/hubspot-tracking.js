@@ -485,7 +485,28 @@ function bindAmbassadorRequest(){
     }
   });
 }
+function currentPeriodMarketingLabel(){
+  const now=new Date();
+  const month=new Intl.DateTimeFormat("fr-FR",{month:"long",timeZone:"Europe/Paris"}).format(now);
+  const year=new Intl.DateTimeFormat("fr-FR",{year:"numeric",timeZone:"Europe/Paris"}).format(now);
+  return "En "+month+" "+year+" ... Des reversements plus généreux";
+}
+function bindCurrentPeriodMarketingBadge(){
+  const label=currentPeriodMarketingLabel();
+  document.querySelectorAll("[data-current-period-badge]").forEach(el=>{el.textContent=label});
+  document.querySelectorAll(".hero .hero-copy,.application-hero .application-copy").forEach(host=>{
+    let badge=host.querySelector("[data-current-period-badge]");
+    if(!badge){
+      badge=document.createElement("p");
+      badge.className="hero-marketing-badge";
+      badge.setAttribute("data-current-period-badge","");
+      host.insertBefore(badge,host.firstElementChild||null);
+    }
+    badge.textContent=label;
+  });
+}
 function boot(){
+  bindCurrentPeriodMarketingBadge();
   bindReferralAvailability();
   bindReferralLanding();
   bindAmbassadorRequest();
