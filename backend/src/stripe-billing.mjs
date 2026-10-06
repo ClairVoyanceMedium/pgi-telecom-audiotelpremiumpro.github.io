@@ -188,7 +188,7 @@ export async function createStripePortabilityPriorityCheckout(config,input={},id
   const billingEmail=String(input.billing_email||"").trim().toLowerCase();
   if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantPublicId))throw failure(400,"INVALID_BILLING_TENANT");
   if(!Number.isInteger(requestId)||requestId<=0)throw failure(400,"INVALID_PORTABILITY_REQUEST");
-  const expectedMeta={service_type:"portability_priority",tenant_public_id:tenantPublicId,portability_request_id:String(requestId),amount_minor:"990",currency:"EUR",legal_version:String(input.legal_version||""),immediate_performance_requested:input.immediate_performance_requested===true?"true":"false"};
+  const expectedMeta={service_type:"portability_priority",tenant_public_id:tenantPublicId,portability_request_id:String(requestId),amount_minor:"990",currency:"EUR",legal_version:String(input.legal_version||""),immediate_performance_requested:input.immediate_performance_requested===true?"true":"false",withdrawal_loss_acknowledged:input.withdrawal_loss_acknowledged===true?"true":"false"};
   const existingSession=String(input.existing_checkout_session_reference||"").trim();
   if(/^cs_(?:test_|live_)?[A-Za-z0-9]+$/.test(existingSession)){
     const existing=await stripeApi(config,"/v1/checkout/sessions/"+encodeURIComponent(existingSession));
