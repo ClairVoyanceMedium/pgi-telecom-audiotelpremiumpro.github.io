@@ -199,7 +199,9 @@ export async function syncHubSpotCardPaymentState(store,tenantId,input={},option
   const ownerEmail=clean(owner?.email,254);
   if(!ownerEmail)return {enabled:true,synced:false,skipped:true,reason:"tenant_owner_email_unavailable"};
   const fetchImpl=options.fetchImpl||globalThis.fetch;
-  const schema=await ensureHubSpotCardPaymentSchema({token,fetchImpl});
+  const schema=options.verifySchema===true
+    ?await ensureHubSpotCardPaymentSchema({token,fetchImpl})
+    :{enabled:true,ready:true,scopeBlocked:false,created:0,existing:HUBSPOT_CARD_PAYMENT_PROPERTIES.length*2,errors:[],verified:false};
   const {contact}=await ensureSupportContact(email(ownerEmail),{token,fetchImpl});
   const overview=await store.customerCardPaymentOverview(numericTenantId);
   const account=input.account||overview.account||null;
@@ -217,22 +219,31 @@ export async function syncHubSpotCardPaymentState(store,tenantId,input={},option
     pgi_volume_cb_eur:(Number(summary.volume_paid_minor||0)/100).toFixed(2),
     pgi_commission_cb_cumulee_eur:(Number(summary.pgi_fee_paid_minor||0)/100).toFixed(2)
   };
-  let contactPropertiesSynced=false,dealPropertiesSynced=false,noteRecorded=false;
-  if(schema.ready){
-    await hubSpotPrivateRequest("/crm/v3/objects/contacts/"+encodeURIComponent(contact.id),{token,fetchImpl,method:"PATCH",body:{properties:props}});
-    contactPropertiesSynced=true;
-    const dealId=await preferredContactDealId(contact.id,{token,fetchImpl});
-    if(dealId){
-      await hubSpotPrivateRequest("/crm/v3/objects/deals/"+encodeURIComponent(dealId),{token,fetchImpl,method:"PATCH",body:{properties:props}});
-      dealPropertiesSynced=true;
+  let contactPropertiesSynced=false,dealPropertiesSynced=false,noteRecorded=false,schemaReady=schema.ready===true;
+  if(schemaReady){
+    try{
+      await hubSpotPrivateRequest("/crm/v3/objects/contacts/"+encodeURIComponent(contact.id),{token,fetchImpl,method:"PATCH",body:{properties:props}});
+      contactPropertiesSynced=true;
+      const dealId=await preferredContactDealId(contact.id,{token,fetchImpl});
+      if(dealId){
+        await hubSpotPrivateRequest("/crm/v3/objects/deals/"+encodeURIComponent(dealId),{token,fetchImpl,method:"PATCH",body:{properties:props}});
+        dealPropertiesSynced=true;
+      }
+    }catch(error){
+      if([400,404].includes(Number(error?.status))){
+        schemaReady=false;
+        schema.ready=false;
+        schema.verified=false;
+        schema.errors=[...(Array.isArray(schema.errors)?schema.errors:[]),"card_payment_property_write_failed:"+clean(error?.detail||error?.code||"unknown",240)];
+      }else throw error;
     }
   }
-  if(options.recordNote===true||!schema.ready){
+  if(options.recordNote===true||!schemaReady){
     try{
-      noteRecorded=await createCardPaymentCrmNote(contact,tenantPublicId,props,{token,fetchImpl,eventType:options.eventType||input.event_type||input.status||"sync",schemaReady:schema.ready});
+      noteRecorded=await createCardPaymentCrmNote(contact,tenantPublicId,props,{token,fetchImpl,eventType:options.eventType||input.event_type||input.status||"sync",schemaReady});
     }catch(_error){}
   }
-  return {enabled:true,synced:contactPropertiesSynced||noteRecorded,tenantPublicId,contactId:String(contact.id),contactPropertiesSynced,dealPropertiesSynced,noteRecorded,schema};
+  return {enabled:true,synced:contactPropertiesSynced||noteRecorded,tenantPublicId,contactId:String(contact.id),contactPropertiesSynced,dealPropertiesSynced,noteRecorded,schema:{...schema,ready:schemaReady}};
 }
 
 async function createCardPaymentCrmNote(contact,tenantPublicId,props,{token,fetchImpl,eventType,schemaReady}){
