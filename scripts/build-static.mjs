@@ -20,6 +20,7 @@ const files=[
   "site/application.css",
   "site/payment-card.css",
   "site/site.js",
+  "site/footer-year.js",
   "site/site-search.js",
   "site/payment-result.js",
   "site/form-ux.js",
@@ -541,10 +542,18 @@ function injectContactWidget(html){
 
 function injectLegalNavigation(html){
   const marker='aria-label="Informations juridiques"';
-  if(html.includes(marker))return html.replaceAll('class="footer-links" '+marker,'class="footer-legal" '+marker);
-  if(html.includes('class="site-footer"'))return html;
-  const nav='<div class="wrap footer-legal-wrap"><nav class="footer-legal" aria-label="Informations juridiques"><a href="/mentions-legales/">Mentions légales</a><a href="/conditions-utilisation/">CGU</a><a href="/conditions-abonnement/">Conditions</a><a href="/confidentialite/">Confidentialité</a><a href="/accord-traitement-donnees/">DPA</a><a href="/cookies-traceurs/">Cookies</a><a href="/resilier-contrat/">Résilier votre contrat</a><a href="/retractation/">Rétractation</a></nav></div>';
-  return html.replace("</footer>",nav+"</footer>");
+  let out=String(html||"");
+  if(out.includes(marker))out=out.replaceAll('class="footer-links" '+marker,'class="footer-legal" '+marker);
+  else if(!out.includes('class="site-footer"')){
+    const nav='<div class="wrap footer-legal-wrap"><nav class="footer-legal" aria-label="Informations juridiques"><a href="/mentions-legales/">Mentions légales</a><a href="/conditions-utilisation/">CGU</a><a href="/conditions-abonnement/">Conditions</a><a href="/confidentialite/">Confidentialité</a><a href="/accord-traitement-donnees/">DPA</a><a href="/cookies-traceurs/">Cookies</a><a href="/resilier-contrat/">Résilier votre contrat</a><a href="/retractation/">Rétractation</a></nav></div>';
+    out=out.replace("</footer>",nav+"</footer>");
+  }
+  if(!out.includes('data-current-year')){
+    const rights='<div class="wrap footer-rights"><p>© <span data-current-year>2026</span> PGI Telecom - Audiotel Premium Pro. Tous droits réservés.</p></div>';
+    out=out.replace("</footer>",rights+"</footer>");
+  }
+  if(!out.includes('/site/footer-year.js'))out=out.replace("</head>",'<script src="/site/footer-year.js" defer></script>\n</head>');
+  return out;
 }
 
 function escapeXml(value){

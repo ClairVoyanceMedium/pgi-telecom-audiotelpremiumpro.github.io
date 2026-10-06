@@ -837,3 +837,12 @@ test("marketing badge keeps homepage oval but is rectangular elsewhere",()=>{
   assert.match(css,/\.hero-marketing-badge\{[\s\S]*border-radius:999px/);
   assert.match(css,/body:not\(\.home-page\) \.hero-marketing-badge\{border-radius:0\}/);
 });
+
+
+test("all public pages receive a professional copyright footer with an automatic year",()=>{
+  assert.match(buildStatic,/site\/footer-year\.js/);
+  assert.match(buildStatic,/data-current-year/);
+  assert.match(buildStatic,/PGI Telecom - Audiotel Premium Pro\. Tous droits réservés\./);
+  assert.match(css,/global-public-footer-rights-v177/);
+  assert.match(css,/\.footer-rights/);
+});
