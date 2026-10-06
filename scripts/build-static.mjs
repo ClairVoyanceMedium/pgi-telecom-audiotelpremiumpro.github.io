@@ -549,7 +549,7 @@ function injectLegalNavigation(html){
     out=out.replace("</footer>",nav+"</footer>");
   }
   if(!out.includes('data-current-year')){
-    const rights='<div class="wrap footer-rights"><p>© <span data-current-year>2026</span> PGI Telecom - Audiotel Premium Pro. Tous droits réservés.</p></div>';
+    const rights='<div class="wrap footer-rights"><p>© <span data-current-year>2026</span> PGI Telecom | Audiotel Premium Pro. Tous droits réservés.</p></div>';
     out=out.replace("</footer>",rights+"</footer>");
   }
   if(!out.includes('/site/footer-year.js'))out=out.replace("</head>",'<script src="/site/footer-year.js" defer></script>\n</head>');
