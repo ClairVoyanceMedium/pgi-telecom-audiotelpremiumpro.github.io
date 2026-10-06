@@ -144,7 +144,7 @@ export async function createStripeCheckout(config,billing,idempotencyKey,analyti
     tenant_public_id:String(tenant.id||""),
     price_version_id:String(billing?.offer?.price_version_id||""),
     plan_key:String(billing?.offer?.plan_key||"external-sva-access"),
-    legal_version:"2026-09-26-b2b-b2c-v4",
+    legal_version:"2026-10-06-b2b-b2c-v5",
     contract_model:"indefinite_monthly_advance",
     introductory_offer:"current_month_free"
   };
@@ -188,7 +188,7 @@ export async function createStripePortabilityPriorityCheckout(config,input={},id
   const billingEmail=String(input.billing_email||"").trim().toLowerCase();
   if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantPublicId))throw failure(400,"INVALID_BILLING_TENANT");
   if(!Number.isInteger(requestId)||requestId<=0)throw failure(400,"INVALID_PORTABILITY_REQUEST");
-  const expectedMeta={service_type:"portability_priority",tenant_public_id:tenantPublicId,portability_request_id:String(requestId),amount_minor:"990",currency:"EUR"};
+  const expectedMeta={service_type:"portability_priority",tenant_public_id:tenantPublicId,portability_request_id:String(requestId),amount_minor:"990",currency:"EUR",legal_version:String(input.legal_version||""),immediate_performance_requested:input.immediate_performance_requested===true?"true":"false"};
   const existingSession=String(input.existing_checkout_session_reference||"").trim();
   if(/^cs_(?:test_|live_)?[A-Za-z0-9]+$/.test(existingSession)){
     const existing=await stripeApi(config,"/v1/checkout/sessions/"+encodeURIComponent(existingSession));
