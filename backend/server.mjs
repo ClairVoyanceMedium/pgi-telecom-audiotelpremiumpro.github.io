@@ -1183,21 +1183,22 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes);
         if(body.service_terms_accepted!==true||body.privacy_notice_acknowledged!==true){const e=new Error("Portability priority legal terms acceptance required");e.status=400;e.code="PORTABILITY_PRIORITY_LEGAL_TERMS_REQUIRED";throw e;}
         if(body.immediate_performance_requested!==true){const e=new Error("Immediate performance request required");e.status=400;e.code="PORTABILITY_PRIORITY_IMMEDIATE_PERFORMANCE_REQUIRED";throw e;}
+        if(body.withdrawal_loss_acknowledged!==true){const e=new Error("Withdrawal consequence acknowledgement required");e.status=400;e.code="PORTABILITY_PRIORITY_WITHDRAWAL_ACK_REQUIRED";throw e;}
         if(String(body.legal_version||"")!=="2026-10-06-b2b-b2c-v5"){const e=new Error("Legal document version outdated");e.status=409;e.code="LEGAL_DOCUMENT_VERSION_OUTDATED";throw e;}
         const billing=await store.customerBillingPreparation(context.tenant_id);
         const commercialBlock=await customerCommercialReadinessBlock(config,store,billing);
         if(commercialBlock)return done(res,metrics,started,"customer.portability.priority_checkout",409,{error:{code:commercialBlock.code,message:commercialBlock.message},commercial_readiness:commercialBlock.readiness,b2c_readiness:commercialBlock.individual?commercialBlock.readiness:undefined});
         const key=String(req.headers["idempotency-key"]||"");
-        const payload={tenant_id:context.tenant_id,request_id:match.id,service:"portability_priority",amount_minor:990,currency:"EUR",legal_version:"2026-10-06-b2b-b2c-v5",immediate_performance_requested:true};
+        const payload={tenant_id:context.tenant_id,request_id:match.id,service:"portability_priority",amount_minor:990,currency:"EUR",legal_version:"2026-10-06-b2b-b2c-v5",immediate_performance_requested:true,withdrawal_loss_acknowledged:true};
         const result=await store.idempotent(key,"customer.portability.priority_checkout",payload,async()=>{
           const checkoutContext=await store.preparePortabilityPriorityCheckout(context.tenant_id,match.id);
           try{
-            const checkout=await createStripePortabilityPriorityCheckout(config,{...checkoutContext,legal_version:"2026-10-06-b2b-b2c-v5",immediate_performance_requested:true},key);
+            const checkout=await createStripePortabilityPriorityCheckout(config,{...checkoutContext,legal_version:"2026-10-06-b2b-b2c-v5",immediate_performance_requested:true,withdrawal_loss_acknowledged:true},key);
             await store.recordCustomerLegalAcceptance(context.tenant_id,context.id,{
               acceptance_type:"portability_priority_checkout",document_version:"2026-10-06-b2b-b2c-v5",
               documents:{conditions:"/conditions-abonnement/",privacy:"/confidentialite/",retractation:"/retractation/",priority_portability:"/portabilite-prioritaire/"},
               immediate_performance_requested:true,
-              evidence:{source:"portability_priority_checkout",provider_checkout_created:true,portability_request_id:Number(match.id)}
+              evidence:{source:"portability_priority_checkout",provider_checkout_created:true,portability_request_id:Number(match.id),withdrawal_loss_acknowledged:true}
             });
             const priority=await store.attachPortabilityPriorityCheckout(context.tenant_id,match.id,checkout);
             return {request_id:Number(match.id),priority,checkout};
