@@ -9,7 +9,7 @@ const legalSlugs=["mentions-legales","conditions-utilisation","conditions-abonne
 test("complete legal corpus is published and cross-linked",()=>{
   for(const slug of legalSlugs){
     const html=read("site/seo/"+slug+".html");
-    assert.match(html,/26 septembre 2026/);
+    assert.match(html,/6 octobre 2026/);
     assert.match(html,/\/conditions-utilisation\//);
     assert.match(html,/\/confidentialite\//);
     assert.match(html,/\/resilier-contrat\//);
@@ -31,15 +31,16 @@ test("registration requires current legal documents and keeps privacy acknowledg
   assert.match(audience,/conditions-utilisation/);
   assert.match(portal,/legal_terms_accepted/);
   assert.match(portal,/privacy_notice_acknowledged/);
-  assert.match(portal,/legal_version:"2026-09-26-b2b-b2c-v4"/);
-  assert.match(postgres,/2026-09-26-b2b-b2c-v4/);
+  assert.match(portal,/legal_version:"2026-10-06-b2b-b2c-v5"/);
+  assert.match(postgres,/2026-10-06-b2b-b2c-v5/);
   assert.doesNotMatch(postgres,/2026-09-26-b2b-b2c-v3/);
+  assert.doesNotMatch(postgres,/2026-09-26-b2b-b2c-v4/);
   const terms=read("site/seo/conditions-abonnement.html"),cgu=read("site/seo/conditions-utilisation.html");
   assert.match(terms,/Partie B2C : informations avant engagement/);
   assert.match(terms,/Partie B2B : socle commercial/);
   assert.match(terms,/garantie légale de conformité/i);
   assert.match(terms,/commande et obligation de paiement/i);
-  assert.match(terms,/2026-09-26-b2b-b2c-v4/);
+  assert.match(terms,/2026-10-06-b2b-b2c-v5/);
   assert.match(terms,/durée indéterminée/i);
   assert.match(terms,/facturé par périodes mensuelles successives/i);
   assert.match(terms,/résiliation à tout moment/i);
@@ -177,4 +178,75 @@ test("subscription terms state that the current month is free and billing starts
   assert.match(terms,/mois civil .* souscription .* offert/i);
   assert.match(terms,/À compter du mois suivant/i);
   assert.match(terms,/4,90€ TTC par mois/i);
+});
+
+
+test("v5 terms contractually cover priority portability and ambassador rewards",()=>{
+  const terms=read("site/seo/conditions-abonnement.html");
+  assert.match(terms,/portabilité prioritaire facturée 9,90 € TTC en paiement unique/i);
+  assert.match(terms,/portabilité entrante standard demeure facturée <strong>0 €/i);
+  assert.match(terms,/ne garantit aucune date de portage/i);
+  assert.match(terms,/clients et non-clients/i);
+  assert.match(terms,/trois factures mensuelles distinctes ont été réellement payées/i);
+  for(const amount of ["10 € par filleul","12 € par filleul","15 € par filleul","20 € par filleul"])assert.match(terms,new RegExp(amount));
+  assert.match(terms,/\+5 € au 1er filleul qualifié/);
+  assert.match(terms,/\+20 € au 5e/);
+  assert.match(terms,/\+50 € au 10e/);
+  assert.match(terms,/ne revalorise pas rétroactivement/i);
+  assert.match(terms,/ne crée ni contrat de travail, ni société, ni mandat général/i);
+  assert.match(terms,/messages électroniques non sollicités/i);
+});
+
+test("ambassador application captures current terms and privacy evidence",()=>{
+  const page=read("site/seo/parrainage-audiotel.html");
+  const tracking=read("site/hubspot-tracking.js");
+  const server=read("backend/server.mjs");
+  const postgres=read("backend/src/store-postgres.mjs");
+  assert.match(page,/id="ambassador-legal"/);
+  assert.match(page,/conditions-abonnement/);
+  assert.match(page,/politique de confidentialité/i);
+  assert.match(tracking,/ambassador_terms_accepted:true/);
+  assert.match(tracking,/privacy_notice_acknowledged:true/);
+  assert.match(tracking,/legal_version:"2026-10-06-b2b-b2c-v5"/);
+  assert.match(server,/AMBASSADOR_LEGAL_TERMS_REQUIRED/);
+  assert.match(postgres,/terms_accepted_at/);
+  assert.match(postgres,/ambassador_terms_accepted:true/);
+});
+
+test("priority portability checkout requires legal acceptance and immediate performance request",()=>{
+  const ui=read("assets/client-portability-priority.js");
+  const api=read("assets/client-portal-api.js");
+  const server=read("backend/server.mjs");
+  const stripe=read("backend/src/stripe-billing.mjs");
+  const migration=read("database/migrations/072_legal_v5_services.sql");
+  assert.match(ui,/portability-priority-legal-dialog/);
+  assert.match(ui,/service_terms_accepted:true/);
+  assert.match(ui,/immediate_performance_requested:true/);
+  assert.match(ui,/2026-10-06-b2b-b2c-v5/);
+  assert.match(api,/createPortabilityPriorityCheckout:function\(id,payload,idempotencyKey\)/);
+  assert.match(server,/PORTABILITY_PRIORITY_LEGAL_TERMS_REQUIRED/);
+  assert.match(server,/PORTABILITY_PRIORITY_IMMEDIATE_PERFORMANCE_REQUIRED/);
+  assert.match(server,/acceptance_type:"portability_priority_checkout"/);
+  assert.match(stripe,/legal_version:String\(input\.legal_version/);
+  assert.match(migration,/portability_priority_checkout/);
+});
+
+test("privacy and traceur notices disclose referral attribution and ambassador data",()=>{
+  const privacy=read("site/seo/confidentialite.html");
+  const cookies=read("site/seo/cookies-traceurs.html");
+  assert.match(privacy,/Données du programme ambassadeur/);
+  assert.match(privacy,/Attribution d’un parrainage/);
+  assert.match(privacy,/identifiant technique de visite ou de session/);
+  assert.match(cookies,/Attribution de parrainage/);
+  assert.match(cookies,/stockage de session/);
+  assert.match(cookies,/n’est pas utilisé pour la publicité comportementale/);
+});
+
+test("legal v5 keeps commercial launch blockers explicit",()=>{
+  const legal=read("site/seo/mentions-legales.html");
+  const terms=read("site/seo/conditions-abonnement.html");
+  assert.match(legal,/À compléter avant ouverture commerciale/);
+  assert.match(legal,/Médiation de la consommation/);
+  assert.match(terms,/Avant toute conclusion de contrats B2C/);
+  assert.match(terms,/médiateur de la consommation effectivement choisi/i);
 });
