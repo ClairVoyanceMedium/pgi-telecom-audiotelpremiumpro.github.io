@@ -121,7 +121,7 @@ main,header,footer,section,.site-header,.header-inner,.hero-grid,.calculator-gri
   justify-content:center;
   width:max-content;
   max-width:100%;
-  margin:0 auto 24px;
+  margin:0 auto 34px;
   padding:8px 16px;
   border:1px solid rgba(232,179,110,.34);
   border-radius:999px;
@@ -136,7 +136,7 @@ main,header,footer,section,.site-header,.header-inner,.hero-grid,.calculator-gri
   text-align:center;
 }
 @media(max-width:680px){
-  .hero-marketing-badge{margin-bottom:20px;padding:7px 14px;font-size:11px;letter-spacing:.075em}
+  .hero-marketing-badge{margin-bottom:28px;padding:7px 14px;font-size:11px;letter-spacing:.075em}
 }
 
 .hero-brand-signature{
@@ -392,16 +392,16 @@ body{padding-bottom:112px}
 
 
 /* public-search-content-spacing-v175 */
-.site-header+main>.hero:first-child,.home-page .site-header+main>.hero:first-child{padding-top:72px}
+.site-header+main>.hero:first-child,.home-page .site-header+main>.hero:first-child{padding-top:40px}
 .site-header+main>.section:first-child{padding-top:80px}
 @media(max-width:680px){
-  .site-header+main>.hero:first-child,.home-page .site-header+main>.hero:first-child{padding-top:52px}
+  .site-header+main>.hero:first-child,.home-page .site-header+main>.hero:first-child{padding-top:32px}
   .site-header+main>.section:first-child{padding-top:58px}
 }
 
 /* home-hero-spacing-v176 */
-.home-page .site-header+main>.hero:first-child{padding-top:18px}
-@media(max-width:680px){.home-page .site-header+main>.hero:first-child{padding-top:14px}}
+.home-page .site-header+main>.hero:first-child{padding-top:22px}
+@media(max-width:680px){.home-page .site-header+main>.hero:first-child{padding-top:18px}}
 
 /* homepage-header-logo-v176 */
 .home-page .brand-full img{width:365px;max-height:88px}
