@@ -3681,7 +3681,7 @@ export class PostgresStore{
     if(!["individual","business"].includes(accountType))throw problem(400,"INVALID_CUSTOMER_ACCOUNT_TYPE");
     if(!authorityConfirmed)throw problem(400,"REGISTRATION_AUTHORITY_REQUIRED");
     if(!legalAccepted||!privacyAcknowledged)throw problem(400,"REGISTRATION_LEGAL_TERMS_REQUIRED");
-    if(legalVersion!=="2026-09-26-b2b-b2c-v4")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
+    if(legalVersion!=="2026-10-06-b2b-b2c-v5")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
     if(localeInput&&!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(localeInput))throw problem(400,"INVALID_TENANT_LOCALE");
     if(timezoneInput&&!/^[A-Za-z0-9_+\-/]+(?:\/[A-Za-z0-9_+\-]+)*$/.test(timezoneInput))throw problem(400,"INVALID_TENANT_TIMEZONE");
     const effectiveCompanyName=accountType==="business"?companyName:"";
@@ -3814,7 +3814,7 @@ export class PostgresStore{
     if(!identity||identity.provider!=="google"||!identity.subject||!identity.email||identity.email_verified!==true)throw problem(400,"INVALID_GOOGLE_IDENTITY");
     if(invitationHash){
       if(legal.accepted!==true||legal.privacy_acknowledged!==true)throw problem(400,"REGISTRATION_LEGAL_TERMS_REQUIRED");
-      if(String(legal.document_version||"")!=="2026-09-26-b2b-b2c-v4")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
+      if(String(legal.document_version||"")!=="2026-10-06-b2b-b2c-v5")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
     }
     return this.sql.begin(async tx=>{
       let invitation=null;
@@ -3874,11 +3874,11 @@ export class PostgresStore{
         await tx.unsafe("INSERT INTO customer_tenant_memberships(tenant_id,customer_principal_id,role,status) VALUES($1,$2::uuid,$3,'active') ON CONFLICT(tenant_id,customer_principal_id) DO UPDATE SET role=EXCLUDED.role,status='active',updated_at=now()",[invitation.tenant_id,principal.id,invitation.role]);
         await tx.unsafe(
           "INSERT INTO customer_legal_acceptances(tenant_id,customer_principal_id,acceptance_type,document_version,documents,account_type,evidence) VALUES($1,$2::uuid,'account_terms',$3,$4::jsonb,$5,$6::jsonb)",
-          [invitation.tenant_id,principal.id,"2026-09-26-b2b-b2c-v4",JSON.stringify({cgu:"/conditions-utilisation/",conditions:"/conditions-abonnement/",privacy:"/confidentialite/",cookies:"/cookies-traceurs/"}),accountType,JSON.stringify({source:"customer_google_invitation_activation",authority_confirmed:true,privacy_notice_acknowledged:true})]
+          [invitation.tenant_id,principal.id,"2026-10-06-b2b-b2c-v5",JSON.stringify({cgu:"/conditions-utilisation/",conditions:"/conditions-abonnement/",privacy:"/confidentialite/",cookies:"/cookies-traceurs/"}),accountType,JSON.stringify({source:"customer_google_invitation_activation",authority_confirmed:true,privacy_notice_acknowledged:true})]
         );
         await tx.unsafe(
           "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'customer.legal_acceptance','customer_principal',$2,$3::jsonb)",
-          [invitation.tenant_id,String(principal.id),JSON.stringify({acceptance_type:"account_terms",document_version:"2026-09-26-b2b-b2c-v4",source:"customer_google_invitation_activation"})]
+          [invitation.tenant_id,String(principal.id),JSON.stringify({acceptance_type:"account_terms",document_version:"2026-10-06-b2b-b2c-v5",source:"customer_google_invitation_activation"})]
         );
         await tx.unsafe("UPDATE customer_tenant_invitations SET status='accepted',accepted_by_customer_principal_id=$1::uuid,accepted_at=now() WHERE id=$2::uuid",[principal.id,invitation.id]);
       }
@@ -4109,7 +4109,7 @@ export class PostgresStore{
     if(!displayName||displayName.length>160)throw problem(400,"INVALID_CUSTOMER_NAME");
     if(String(passwordHash||"").length<20)throw problem(400,"INVALID_PASSWORD_HASH");
     if(legal.accepted!==true||legal.privacy_acknowledged!==true)throw problem(400,"REGISTRATION_LEGAL_TERMS_REQUIRED");
-    if(String(legal.document_version||"")!=="2026-09-26-b2b-b2c-v4")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
+    if(String(legal.document_version||"")!=="2026-10-06-b2b-b2c-v5")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
     return this.sql.begin(async tx=>{
       const invitations=await tx.unsafe(
         "SELECT i.id,i.tenant_id,i.email,i.role,i.status,i.expires_at,t.public_id,t.display_name AS tenant_name,t.status AS tenant_status,t.authorization_version,t.preferred_locale,t.timezone,k.metadata AS lead_metadata"+
@@ -4162,11 +4162,11 @@ export class PostgresStore{
       await tx.unsafe(
         "INSERT INTO customer_legal_acceptances(tenant_id,customer_principal_id,acceptance_type,document_version,documents,account_type,evidence)"+
         " VALUES($1,$2::uuid,'account_terms',$3,$4::jsonb,$5,$6::jsonb)",
-        [inv.tenant_id,principal.id,"2026-09-26-b2b-b2c-v4",JSON.stringify({cgu:"/conditions-utilisation/",conditions:"/conditions-abonnement/",privacy:"/confidentialite/",cookies:"/cookies-traceurs/"}),accountType,JSON.stringify({source:"customer_invitation_activation",authority_confirmed:true,privacy_notice_acknowledged:true})]
+        [inv.tenant_id,principal.id,"2026-10-06-b2b-b2c-v5",JSON.stringify({cgu:"/conditions-utilisation/",conditions:"/conditions-abonnement/",privacy:"/confidentialite/",cookies:"/cookies-traceurs/"}),accountType,JSON.stringify({source:"customer_invitation_activation",authority_confirmed:true,privacy_notice_acknowledged:true})]
       );
       await tx.unsafe(
         "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'customer.legal_acceptance','customer_principal',$2,$3::jsonb)",
-        [inv.tenant_id,String(principal.id),JSON.stringify({acceptance_type:"account_terms",document_version:"2026-09-26-b2b-b2c-v4",source:"customer_invitation_activation"})]
+        [inv.tenant_id,String(principal.id),JSON.stringify({acceptance_type:"account_terms",document_version:"2026-10-06-b2b-b2c-v5",source:"customer_invitation_activation"})]
       );
       await tx.unsafe(
         "UPDATE customer_tenant_invitations SET status='accepted',accepted_by_customer_principal_id=$1::uuid,accepted_at=now() WHERE id=$2::uuid",
@@ -4378,8 +4378,8 @@ export class PostgresStore{
 
   async recordCustomerLegalAcceptance(tenantId,principalId,input={}){
     const type=String(input.acceptance_type||"").trim(),version=String(input.document_version||"").trim();
-    if(!["account_terms","subscription_checkout"].includes(type))throw problem(400,"INVALID_LEGAL_ACCEPTANCE_TYPE");
-    if(version!=="2026-09-26-b2b-b2c-v4")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
+    if(!["account_terms","subscription_checkout","portability_priority_checkout"].includes(type))throw problem(400,"INVALID_LEGAL_ACCEPTANCE_TYPE");
+    if(version!=="2026-10-06-b2b-b2c-v5")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
     const documents=input.documents&&typeof input.documents==="object"?input.documents:{};
     const immediate=input.immediate_performance_requested===true;
     const evidence=input.evidence&&typeof input.evidence==="object"?input.evidence:{};
@@ -4789,6 +4789,10 @@ export class PostgresStore{
     const phone=String(input.phone||"").trim().slice(0,40);
     const note=String(input.note||"").trim().slice(0,1200);
     const country=String(input.country_code||"FR").trim().toUpperCase();
+    const legalVersion=String(input.legal_version||"").trim();
+    if(input.ambassador_terms_accepted!==true||input.privacy_notice_acknowledged!==true)throw problem(400,"AMBASSADOR_LEGAL_TERMS_REQUIRED");
+    if(legalVersion!=="2026-10-06-b2b-b2c-v5")throw problem(409,"LEGAL_DOCUMENT_VERSION_OUTDATED");
+    const legalAcceptedAt=new Date().toISOString();
     if(name.length<2)throw problem(400,"AMBASSADOR_NAME_REQUIRED");
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw problem(400,"INVALID_CUSTOMER_EMAIL");
     if(phone&&!/^[+0-9 ().\-]{6,40}$/.test(phone))throw problem(400,"INVALID_PHONE");
@@ -4824,7 +4828,7 @@ export class PostgresStore{
         " status_reason=CASE WHEN customer_ambassador_profiles.status='active' THEN customer_ambassador_profiles.status_reason ELSE NULL END,"+
         " metadata=(CASE WHEN jsonb_typeof(customer_ambassador_profiles.metadata)='object' THEN customer_ambassador_profiles.metadata ELSE '{}'::jsonb END)||EXCLUDED.metadata"+
         " RETURNING id,public_id::text AS public_id,tenant_id,status,requested_at,created_at",
-        [tenant.id,phone||null,note||null,JSON.stringify({latest_source:"public_ambassador_form"})]
+        [tenant.id,phone||null,note||null,JSON.stringify({latest_source:"public_ambassador_form",legal_version:legalVersion,ambassador_terms_accepted:true,privacy_notice_acknowledged:true,terms_accepted_at:legalAcceptedAt})]
       ))[0];
       await tx.unsafe(
         "UPDATE tenants SET display_name=CASE WHEN metadata->>'account_scope'='ambassador_only' THEN $2 ELSE display_name END,"+
@@ -4833,7 +4837,7 @@ export class PostgresStore{
       );
       await tx.unsafe(
         "INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'ambassador.application.submit','customer_ambassador_profile',$2,$3::jsonb)",
-        [tenant.id,String(row.id),JSON.stringify({source:"public_ambassador_form",profile_status:row.status})]
+        [tenant.id,String(row.id),JSON.stringify({source:"public_ambassador_form",profile_status:row.status,legal_version:legalVersion,ambassador_terms_accepted:true,privacy_notice_acknowledged:true,terms_accepted_at:legalAcceptedAt})]
       );
       return {...row,tenant_public_id:String(tenant.public_id),display_name:name,email,country_code:country,already_active:row.status==="active"};
     });
