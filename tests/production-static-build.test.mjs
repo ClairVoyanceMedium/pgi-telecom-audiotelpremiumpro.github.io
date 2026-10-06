@@ -80,9 +80,9 @@ test("production static build publishes marketing root and private cockpit",()=>
       assert.doesNotMatch(page,/audiotel-brand-icon-v33\.png"[^>]*alt=""/,"footer brand icon needs descriptive alt on "+slug);
       const scripts=[...page.matchAll(/<script[^>]+src="([^"]+)"/gi)].map(x=>x[1].split("?")[0]);
       const allowedScripts={
-        "demande-ouverture":["/site/form-ux.js","/site/site.js","/site/hubspot-tracking.js","/site/contact-widget.js","/site/site-search.js"],
-        "retractation":["/site/hubspot-tracking.js","/assets/config.js","/assets/withdrawal.js","/site/contact-widget.js","/site/site-search.js"]
-      }[slug]||["/site/hubspot-tracking.js","/site/contact-widget.js","/site/site-search.js"];
+        "demande-ouverture":["/site/form-ux.js","/site/site.js","/site/hubspot-tracking.js","/site/contact-widget.js","/site/site-search.js","/site/footer-year.js"],
+        "retractation":["/site/hubspot-tracking.js","/assets/config.js","/assets/withdrawal.js","/site/contact-widget.js","/site/site-search.js","/site/footer-year.js"]
+      }[slug]||["/site/hubspot-tracking.js","/site/contact-widget.js","/site/site-search.js","/site/footer-year.js"];
       for(const src of scripts)assert.ok(allowedScripts.includes(src),"unexpected public script on "+slug+": "+src);
       assert.ok(scripts.includes("/site/contact-widget.js"),"contact widget missing on "+slug);
       assert.match(page,/href="\/site\/contact-widget\.css\?v=[a-z0-9._-]+"/i);
