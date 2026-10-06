@@ -22,7 +22,7 @@ import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStrip
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
-import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail,syncHubSpotCustomerIncident,ensureHubSpotCardPaymentSchema,syncHubSpotCardPaymentState} from "./src/hubspot-crm.mjs";
+import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail,syncHubSpotCustomerIncident,syncHubSpotCardPaymentState} from "./src/hubspot-crm.mjs";
 import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
 
 export async function createDefaultBackend(){
@@ -37,8 +37,6 @@ export async function createDefaultBackend(){
       await store.close();
       throw error;
     }
-    try{await ensureHubSpotCardPaymentSchema();}
-    catch(error){logHubSpotSyncFailure("card_payment_schema",error);}
     return createBackend({config,eventBus,store,closeStore:true});
   }
   return createBackend({config,eventBus});
