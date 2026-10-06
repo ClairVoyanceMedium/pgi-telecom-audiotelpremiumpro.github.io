@@ -826,6 +826,12 @@ test("marketing badge spacing stays balanced below public search",()=>{
 });
 
 
+test("opening page marketing badge keeps the same compact proportions as other pages",()=>{
+  const applicationCss=fs.readFileSync("site/application.css","utf8");
+  assert.match(applicationCss,/application-copy>p\.hero-marketing-badge\{[^\}]*margin:0 auto 34px[^\}]*font-size:12px/);
+  assert.match(applicationCss,/@media\(max-width:680px\)\{[\s\S]*application-copy>p\.hero-marketing-badge\{[^\}]*margin:0 auto 28px[^\}]*font-size:11px/);
+});
+
 test("marketing badge keeps homepage oval but is rectangular elsewhere",()=>{
   const css=fs.readFileSync("site/site.css","utf8");
   assert.match(css,/\.hero-marketing-badge\{[\s\S]*border-radius:999px/);
