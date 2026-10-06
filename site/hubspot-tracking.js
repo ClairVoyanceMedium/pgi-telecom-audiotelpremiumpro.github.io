@@ -466,11 +466,13 @@ function bindAmbassadorRequest(){
     const phone=String(document.getElementById("ambassador-phone")?.value||"").trim();
     const note=String(document.getElementById("ambassador-note")?.value||"").trim();
     const website=String(document.getElementById("ambassador-website")?.value||"").trim();
+    const legalAccepted=document.getElementById("ambassador-legal")?.checked===true;
     if(name.length<2||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){status.textContent="Renseignez votre nom et une adresse e-mail valide.";return}
+    if(!legalAccepted){status.textContent="Acceptez les conditions du programme et prenez connaissance de la politique de confidentialité.";return}
     form.dataset.busy="1";status.textContent="Envoi de votre demande ambassadeur...";
     const button=form.querySelector('button[type="submit"]');if(button)button.disabled=true;
     try{
-      const response=await fetch("/api/v1/public/ambassador/apply",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify({name,email,phone,note,website,country_code:"FR"})});
+      const response=await fetch("/api/v1/public/ambassador/apply",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify({name,email,phone,note,website,country_code:"FR",ambassador_terms_accepted:true,privacy_notice_acknowledged:true,legal_version:"2026-10-06-b2b-b2c-v5"})});
       const data=await response.json().catch(()=>({}));
       if(!response.ok||data.accepted!==true)throw new Error("AMBASSADOR_REQUEST_FAILED");
       status.textContent=data.already_active===true?"Votre profil ambassadeur est déjà actif. Vous pouvez utiliser votre espace ambassadeur.":"Votre demande ambassadeur est enregistrée. Vous recevrez un accès sécurisé après validation. Aucun abonnement Audiotel Premium Pro n’a été créé.";
