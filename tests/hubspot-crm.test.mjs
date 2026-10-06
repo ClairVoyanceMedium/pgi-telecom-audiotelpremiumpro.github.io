@@ -282,3 +282,13 @@ test("explicit marketing opt-in subscribes Marketing Information and records con
   assert.match(note.body.properties.hs_note_body,/Consentement marketing e-mail explicite/);
   assert.match(note.body.properties.hs_note_body,/2026-10-01-v1/);
 });
+
+
+test("Vercel cold start does not enumerate HubSpot card-payment properties",()=>{
+  const server=fs.readFileSync("backend/server.mjs","utf8");
+  const crm=fs.readFileSync("backend/src/hubspot-crm.mjs","utf8");
+  assert.doesNotMatch(server,/ensureHubSpotCardPaymentSchema/);
+  assert.match(crm,/options\.verifySchema===true/);
+  assert.match(crm,/verified:false/);
+  assert.match(crm,/\[400,404\]\.includes\(Number\(error\?\.status\)\)/);
+});
