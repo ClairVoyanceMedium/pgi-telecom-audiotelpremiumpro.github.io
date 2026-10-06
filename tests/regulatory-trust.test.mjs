@@ -2,9 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-const [migration,priceMigration,exportMigration,store,memory,server,adminUi,productionCheck]=await Promise.all([
+const [migration,priceMigration,currentPriceMigration,exportMigration,store,memory,server,adminUi,productionCheck]=await Promise.all([
   readFile(new URL("../database/migrations/037_regulatory_trust_center.sql",import.meta.url),"utf8"),
   readFile(new URL("../database/migrations/038_subscription_price_300.sql",import.meta.url),"utf8"),
+  readFile(new URL("../database/migrations/064_subscription_price_490.sql",import.meta.url),"utf8"),
   readFile(new URL("../database/migrations/039_regulatory_evidence_pack_exports.sql",import.meta.url),"utf8"),
   readFile(new URL("../backend/src/store-postgres.mjs",import.meta.url),"utf8"),
   readFile(new URL("../backend/src/store-memory.mjs",import.meta.url),"utf8"),
@@ -71,12 +72,19 @@ test("evidence pack is private, hashed, privacy-minimised and exportable",()=>{
   assert.ok(adminUi.includes("evidence-pack-"));
 });
 
-test("current external subscription reference price is 3 EUR without rewriting the historical 2 EUR migration",()=>{
+test("historical 3 EUR subscription step remains immutable",()=>{
   assert.ok(priceMigration.includes("300"));
   assert.ok(priceMigration.includes("2026-09-20T19:33:00Z"));
   assert.ok(priceMigration.includes("pgi_publish_service_plan_price"));
   assert.ok(memory.includes("amount_minor:300"));
   assert.ok(memory.includes("amount_minor:490"));
+});
+
+test("current external subscription reference price is 4.90 EUR TTC",()=>{
+  assert.ok(currentPriceMigration.includes("490"));
+  assert.ok(currentPriceMigration.includes("2026-10-04T00:00:00Z"));
+  assert.ok(currentPriceMigration.includes("4.90 EUR TTC/month"));
+  assert.ok(currentPriceMigration.includes("pgi_publish_service_plan_price"));
 });
 
 test("production verification protects regulatory trust center",()=>{

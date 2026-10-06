@@ -23,7 +23,7 @@ await fetchCheck("site.legal","/mentions-legales/",200,["Mentions légales"]);
 await fetchCheck("site.terms-of-use","/conditions-utilisation/",200,["Conditions générales d’utilisation"]);
 await fetchCheck("site.cookies","/cookies-traceurs/",200,["Cookies et traceurs"]);
 await fetchCheck("site.cancellation","/resilier-contrat/",200,["Résilier votre contrat","client.html?action=cancel-subscription","cesse de se renouveler"]);
-await fetchCheck("site.withdrawal","/retractation/",200,["14 jours","Fonctionnalité en ligne obligatoire","26 septembre 2026"]);
+await fetchCheck("site.withdrawal","/retractation/",200,["14 jours","Fonctionnalité en ligne obligatoire","id=\"withdrawal-form\""]);
 await fetchCheck("withdrawal.status","/api/v1/public/withdrawal/status",200,[],b=>b&&b.available===true);
 await fetchCheck("referral.status","/api/v1/public/referral-program",200,[],b=>b&&typeof b.enabled==="boolean"&&Number.isFinite(Number(b.reward_minor))&&typeof b.currency==="string");
 await fetchCheck("site.sitemap","/sitemap.xml",200,["<loc>https://audiotel-premium-pro.com/</loc>","/parrainage-audiotel/","/portabilite-prioritaire/"]);
