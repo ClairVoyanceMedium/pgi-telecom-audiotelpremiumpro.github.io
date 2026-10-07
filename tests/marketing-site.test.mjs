@@ -910,17 +910,9 @@ test("internal linking graph is balanced, crawlable and conversion aware",()=>{
 });
 
 
-test("official Audiotel Premium Pro logo is reinforced at strategic public brand points",()=>{
-  assert.match(buildStatic,/footer-brand-full/);
-  assert.match(buildStatic,/feature-brand-signature/);
-  assert.match(buildStatic,/audiotel-brand-logo-v33\.png/);
-  assert.match(buildStatic,/Audiotel Premium Pro \| Une solution PGI Telecom/);
-  assert.match(css,/\.feature-brand-signature/);
-  assert.match(css,/\.footer-brand-full img/);
-  const preferred=buildStatic.slice(buildStatic.indexOf("function injectPreferredSource"),buildStatic.indexOf("const shareableSlugs"));
-  assert.match(preferred,/feature-brand-signature/);
-  const sharing=buildStatic.slice(buildStatic.indexOf("function injectPublicShare"),buildStatic.indexOf("const publicBaseUrl"));
-  assert.match(sharing,/feature-brand-signature/);
-  const internal=buildStatic.slice(buildStatic.indexOf("function injectInternalLinkGraph"),buildStatic.indexOf("const preferredSourceSlugs"));
-  assert.doesNotMatch(internal,/feature-brand-signature/);
+test("homepage logo stays slightly larger without adding duplicate brand blocks",()=>{
+  assert.match(css,/\.home-page \.brand-full img\{width:390px;max-height:94px\}/);
+  assert.match(css,/@media\(max-width:980px\)\{\.home-page \.brand-full img\{width:315px;max-height:84px\}\}/);
+  assert.match(css,/@media\(max-width:680px\)\{\.home-page \.brand-full img\{width:265px;max-height:76px\}\}/);
+  assert.doesNotMatch(buildStatic,/feature-brand-signature|footer-brand-full/);
 });
