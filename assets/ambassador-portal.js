@@ -8,7 +8,7 @@ function authMessage(msg,bad){var e=$("amb-auth-message");if(e){e.textContent=ms
 function secMessage(msg,bad){var e=$("amb-security-message");if(e){e.textContent=msg||"";e.classList.toggle("bad",bad===true)}}
 function authPanel(id){["amb-login-panel","amb-activation-panel","amb-forgot-panel","amb-reset-panel"].forEach(x=>$(x).classList.toggle("amb-hidden",x!==id));authMessage("")}
 function statusChip(v){var s=String(v||"").toLowerCase(),cls=/paid|active|transferred|rewarded/.test(s)?"ok":/earned|pending|processing|waiting|retry|claimed/.test(s)?"warn":"bad";return '<span class="amb-chip '+cls+'">'+esc(s?s.toUpperCase():"N/D")+'</span>'}
-function referralLink(code){return location.origin+"/demande-ouverture/?parrain="+encodeURIComponent(code)}
+function referralLink(code){var u=new URL("/demande-ouverture/",location.origin);u.searchParams.set("parrain",code);u.searchParams.set("utm_source","ambassador");u.searchParams.set("utm_medium","referral_link");u.searchParams.set("utm_campaign","referral_program");return u.href}
 function renderLink(data){
   var zone=$("amb-link-zone"),program=data.program||{},ref=data.referral||{};
   if(program.enabled!==true){zone.innerHTML='<div class="amb-note"><strong>Programme actuellement fermé.</strong><br>Votre historique reste disponible. Aucun nouveau filleul ne peut être rattaché tant que le programme n’est pas réactivé.</div>';return}

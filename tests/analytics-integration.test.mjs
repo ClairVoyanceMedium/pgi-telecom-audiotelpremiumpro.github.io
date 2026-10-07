@@ -138,3 +138,17 @@ test("sharing analytics are consented, low cardinality and contain no recipient 
   assert.match(tracking,/return "Espace ambassadeur"/);
   assert.doesNotMatch(tracking,/share:\[[^\]]*email/);
 });
+
+
+test("shared acquisition links keep channel attribution without personal data",()=>{
+  const publicShare=fs.readFileSync("site/share.js","utf8");
+  const ambassadorShare=fs.readFileSync("assets/ambassador-portal.js","utf8");
+  const customerReferral=fs.readFileSync("assets/client-referral.js","utf8");
+  assert.match(publicShare,/utm_source","site_share/);
+  assert.match(publicShare,/utm_medium","share/);
+  assert.match(publicShare,/utm_campaign","organic_referral/);
+  assert.match(ambassadorShare,/utm_source","ambassador/);
+  assert.match(ambassadorShare,/utm_medium","referral_link/);
+  assert.match(customerReferral,/utm_campaign","referral_program/);
+  for(const source of [publicShare,ambassadorShare,customerReferral])assert.doesNotMatch(source,/utm_(?:source|medium|campaign)".*(?:email@|recipient_email)/);
+});
