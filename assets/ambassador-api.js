@@ -13,6 +13,7 @@ root.PGIAmbassadorApi=Object.freeze({
  logout:function(){return post("/customer/auth/logout",{})},
  dashboard:function(){return request("/ambassador/dashboard",{timeout:12000})},
  createCode:function(key){return post("/ambassador/referral/code",{},key)},
+ inviteReferral:function(email,key){return post("/ambassador/referral/invite",{email:email,consent_confirmed:true},key)},
  connectPayout:function(key){return post("/ambassador/payout-account",{},key)},
  changePassword:function(currentPassword,newPassword){return post("/customer/auth/change-password",{current_password:currentPassword,new_password:newPassword})},
  key:function(){return typeof crypto!=="undefined"&&crypto.randomUUID?crypto.randomUUID():"amb-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2)}

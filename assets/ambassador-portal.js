@@ -14,9 +14,10 @@ function renderLink(data){
   if(program.enabled!==true){zone.innerHTML='<div class="amb-note"><strong>Programme actuellement fermé.</strong><br>Votre historique reste disponible. Aucun nouveau filleul ne peut être rattaché tant que le programme n’est pas réactivé.</div>';return}
   if(ref.code){
     var link=referralLink(ref.code);
-    zone.innerHTML='<label class="amb-muted">Votre lien personnel</label><input id="amb-referral-link" readonly value="'+esc(link)+'"><div class="amb-actions"><button id="amb-copy-link" class="amb-btn" type="button">Copier mon lien</button><button id="amb-share-link" class="amb-ghost" type="button">Partager</button></div><small class="amb-muted">Code ambassadeur : '+esc(ref.code)+'</small>';
-    $("amb-copy-link").onclick=async()=>{try{await navigator.clipboard.writeText(link);secMessage("Lien copié.")}catch(_e){secMessage("Copie impossible sur cet appareil.",true)}};
-    $("amb-share-link").onclick=async()=>{var text="Je vous recommande Audiotel Premium Pro. Voici mon lien : "+link;try{if(navigator.share)await navigator.share({title:"Audiotel Premium Pro",text,url:link});else await navigator.clipboard.writeText(text)}catch(_e){}};
+    zone.innerHTML='<label class="amb-muted">Votre lien personnel</label><input id="amb-referral-link" readonly value="'+esc(link)+'"><div class="amb-actions"><button id="amb-copy-link" class="amb-btn" type="button">Copier mon lien</button><button id="amb-share-link" class="amb-ghost" type="button">Partager</button></div><small class="amb-muted">Code ambassadeur : '+esc(ref.code)+'</small><form id="amb-invite-form" class="amb-invite-form"><label>Inviter une personne par e mail<input id="amb-invite-email" type="email" autocomplete="email" maxlength="320" required placeholder="adresse@exemple.fr"></label><label class="amb-check"><input id="amb-invite-consent" type="checkbox" required><span>Je confirme que cette personne m’a donné son accord pour recevoir cette invitation unique de PGI Telecom.</span></label><button id="amb-invite-send" class="amb-btn" type="submit">Envoyer l’invitation</button><small class="amb-muted">L’adresse sert uniquement à cet envoi. Elle n’est pas ajoutée à une liste marketing et aucune relance automatique n’est envoyée.</small></form>';
+    $("amb-copy-link").onclick=async()=>{try{await navigator.clipboard.writeText(link);secMessage("Lien copié.");window.PGIAnalytics?.track?.("share",{method:"copy_link",content_type:"referral_link",item_id:"ambassador_referral"})}catch(_e){secMessage("Copie impossible sur cet appareil.",true)}};
+    $("amb-share-link").onclick=async()=>{var text="Je vous recommande Audiotel Premium Pro. Voici mon lien : "+link;try{if(navigator.share){await navigator.share({title:"Audiotel Premium Pro",text,url:link});window.PGIAnalytics?.track?.("share",{method:"native",content_type:"referral_link",item_id:"ambassador_referral"})}else{await navigator.clipboard.writeText(text);window.PGIAnalytics?.track?.("share",{method:"copy_link",content_type:"referral_link",item_id:"ambassador_referral"})}}catch(_e){}};
+    $("amb-invite-form").addEventListener("submit",inviteReferral);
   }else{
     zone.innerHTML='<p class="amb-muted">Votre profil est actif. Créez votre lien personnel pour commencer à parrainer.</p><button id="amb-create-code" class="amb-btn" type="button">Créer mon lien ambassadeur</button>';
     $("amb-create-code").onclick=createCode;
@@ -48,13 +49,28 @@ function render(data){
   $("amb-next-reward").textContent=money(next.total_minor||next.reward_minor||0,currency);
   $("amb-next-reward-detail").textContent=state.program&&state.program.enabled===true?"Montant estimé pour votre prochain filleul qualifié.":"Le programme est actuellement fermé aux nouveaux parrainages.";
   $("amb-program-note").textContent=state.program&&state.program.enabled===true?"Programme actif. Un filleul est qualifié après "+String(state.program.qualification_paid_invoices||3)+" factures mensuelles distinctes réellement payées.":"Programme actuellement fermé pour les nouveaux parrainages. Votre historique et vos primes déjà acquises restent conservés.";
-  $("amb-kpi-visits").textContent=String(s.visits||0);$("amb-kpi-prospects").textContent=String(s.prospects||0);$("amb-kpi-claimed").textContent=String(s.claimed||0);$("amb-kpi-rewarded").textContent=String(s.rewarded||0);
+  $("amb-kpi-visits").textContent=String(s.visits||0);$("amb-kpi-prospects").textContent=String(s.prospects||0);$("amb-kpi-invitations").textContent=String(s.invitations_sent||0);$("amb-kpi-claimed").textContent=String(s.claimed||0);$("amb-kpi-rewarded").textContent=String(s.rewarded||0);
   $("amb-kpi-earned").textContent=money(s.reward_minor||0,currency);$("amb-kpi-paid").textContent=money(s.paid_minor||0,currency);$("amb-kpi-payable").textContent=money(s.earned_unpaid_minor||0,currency);$("amb-kpi-rate").textContent=(Number(conv.claim_to_reward_percent)||0).toLocaleString("fr-FR")+" %";
   $("amb-rate-visit").textContent=(Number(conv.visit_to_prospect_percent)||0).toLocaleString("fr-FR")+" %";$("amb-rate-prospect").textContent=(Number(conv.prospect_to_claim_percent)||0).toLocaleString("fr-FR")+" %";$("amb-rate-claim").textContent=(Number(conv.claim_to_reward_percent)||0).toLocaleString("fr-FR")+" %";
   renderLink(state);renderPayout(state);renderReferrals(state);renderRewards(state);
 }
 async function load(){
   var data=await api.dashboard();render(data);$("amb-auth").classList.add("amb-hidden");$("amb-app").classList.remove("amb-hidden");return data
+}
+async function inviteReferral(e){
+  e.preventDefault();if(busy)return;
+  var email=$("amb-invite-email").value.trim(),consent=$("amb-invite-consent").checked,button=$("amb-invite-send");
+  if(!consent){secMessage("Confirmez l’accord du destinataire avant l’envoi.",true);return}
+  busy=true;if(button)button.disabled=true;secMessage("Envoi de l’invitation...");
+  try{
+    var result=await api.inviteReferral(email,api.key());
+    secMessage(result&&result.replayed?"Cette adresse a déjà reçu son invitation. Aucun nouvel envoi n’a été effectué.":"Invitation envoyée.");
+    if(!(result&&result.replayed)){window.PGIAnalytics?.track?.("share",{method:"referral_email",content_type:"referral_link",item_id:"ambassador_referral"});var k=$("amb-kpi-invitations");if(k)k.textContent=String((Number(k.textContent)||0)+1)}
+    e.currentTarget.reset();
+  }catch(err){
+    var map={REFERRAL_INVITATION_CONSENT_REQUIRED:"L’accord du destinataire doit être confirmé.",REFERRAL_INVITATION_SELF:"Vous ne pouvez pas vous inviter vous même.",REFERRAL_INVITATION_RECIPIENT_EXISTS:"Cette adresse correspond déjà à un profil Audiotel Premium Pro.",REFERRAL_INVITATION_DAILY_LIMIT:"La limite de 10 invitations sur 24 heures est atteinte.",REFERRAL_INVITATION_ALREADY_ATTEMPTED:"Cette adresse a déjà fait l’objet d’une invitation.",RESEND_REFERRAL_INVITATION_FAILED:"L’invitation n’a pas pu être envoyée pour le moment."};
+    secMessage(map[err&&err.code]||"Envoi de l’invitation impossible.",true);
+  }finally{busy=false;if(button)button.disabled=false}
 }
 async function createCode(){if(busy)return;busy=true;try{await api.createCode(api.key());await load()}catch(e){secMessage(e.code==="REFERRAL_PROGRAM_DISABLED"?"Le programme est actuellement fermé.":"Création du lien impossible.",true)}finally{busy=false}}
 async function connectPayout(){if(busy)return;busy=true;try{var r=await api.connectPayout(api.key()),url=r&&r.onboarding&&r.onboarding.url;if(url){location.href=url;return}await load()}catch(e){secMessage("Configuration des versements indisponible : "+String(e.code||"erreur"),true)}finally{busy=false}}

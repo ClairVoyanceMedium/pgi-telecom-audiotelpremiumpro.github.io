@@ -19,7 +19,7 @@ import {STRIPE_CONNECT_APPLICATION_FEE_BPS,stripeConnectState,createStripeConnec
 import {runReferralAutomaticPayouts} from "./src/referral-payout-automation.mjs";
 import {expertAccountingSnapshot,refreshExpertAccountingLedger,updateExpertAccountingSettings,createExpertAccountingEntry,validateExpertAccountingEntry,reverseExpertAccountingEntry,setAccountingPeriodState,importAccountingBankTransactions,matchAccountingBankTransaction,expertAccountingFec} from "./src/accounting-expert.mjs";
 import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStripe,buildGa4RefundFromStripe,sendGa4Measurement} from "./src/ga4-measurement.mjs";
-import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail} from "./src/resend-email.mjs";
+import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail,emailHash,sendReferralInvitation} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
 import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail,syncHubSpotCustomerIncident,syncHubSpotCardPaymentState} from "./src/hubspot-crm.mjs";
@@ -1078,6 +1078,31 @@ export function createBackend(options={}){
         const payload={tenant_id:context.tenant_id,action:"ensure_referral_code"};
         const result=await store.idempotent(req.headers["idempotency-key"],"ambassador.referral.code",payload,()=>store.ensureCustomerReferralCode(context.tenant_id));
         return done(res,metrics,started,"ambassador.referral_code",201,{...result.value,replayed:result.replayed});
+      }
+      if(method==="POST"&&pathname==="/api/v1/ambassador/referral/invite"){
+        requireCustomerCsrf(req,customerActor,config);
+        const context=await store.customerSessionContext(customerActor);
+        if(!["owner","admin"].includes(context.customer_role)){const e=new Error("Owner or admin required");e.status=403;e.code="CUSTOMER_ADMIN_REQUIRED";throw e;}
+        const profile=await store.ambassadorProfileForTenant(context.tenant_id);
+        if(!profile||profile.status!=="active"){const e=new Error("Ambassador profile required");e.status=403;e.code="AMBASSADOR_PROFILE_NOT_ACTIVE";throw e;}
+        const body=await readJson(req,config.bodyLimitBytes);
+        if(body.consent_confirmed!==true){const e=new Error("Recipient consent required");e.status=400;e.code="REFERRAL_INVITATION_CONSENT_REQUIRED";throw e;}
+        const recipient=normalizeEmail(body.email),hash=emailHash(recipient);
+        const prepared=await store.prepareReferralInvitation(context.tenant_id,hash,recipient,{source:"ambassador_portal",privacy_notice_version:"2026-10-07-referral-invite-v1"});
+        if(prepared.replayed&&prepared.status==="sent")return done(res,metrics,started,"ambassador.referral_invite",200,{sent:true,replayed:true});
+        const inviteUrl=new URL("/demande-ouverture/",config.publicBaseUrl);
+        inviteUrl.searchParams.set("parrain",prepared.referral_code);
+        inviteUrl.searchParams.set("utm_source","ambassador");
+        inviteUrl.searchParams.set("utm_medium","referral_email");
+        inviteUrl.searchParams.set("utm_campaign","referral_program");
+        try{
+          const sent=await sendReferralInvitation(config,{email:recipient,referralUrl:inviteUrl.href,idempotencyKey:"referral-invite/"+prepared.public_id,eventId:"referral-invite/"+prepared.public_id});
+          await store.completeReferralInvitation(prepared.public_id,sent.message_id||null);
+          return done(res,metrics,started,"ambassador.referral_invite",202,{sent:true,replayed:false});
+        }catch(error){
+          await store.failReferralInvitation(prepared.public_id,error?.code||"REFERRAL_INVITATION_SEND_FAILED").catch(()=>{});
+          throw error;
+        }
       }
       if(method==="POST"&&pathname==="/api/v1/ambassador/payout-account"){
         requireCustomerCsrf(req,customerActor,config);
