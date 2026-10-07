@@ -107,7 +107,7 @@ function apply(rootNode){
   var walker=document.createTreeWalker(rootNode||document.body,NodeFilter.SHOW_TEXT);
   var node;while((node=walker.nextNode())){var raw=node.nodeValue,trim=raw.trim(),translated=trim?t(trim):trim;if(trim&&translated!==trim)node.nodeValue=raw.replace(trim,translated);}
   document.querySelectorAll("[placeholder]").forEach(function(el){var v=el.getAttribute("placeholder"),translated=t(v);if(translated!==v)el.setAttribute("placeholder",translated);});
-  document.title=t("Audiotel Premium Pro — Espace client");
+  document.title=t("Audiotel Premium Pro | Espace client");
 }
 function setLocale(v){if(!packs[v])return false;try{localStorage.setItem("pgi_client_locale",v);}catch(_e){}location.reload();return true;}root.PGIClientI18n=Object.freeze({locale:locale,t:t,apply:apply,setLocale:setLocale,supported:Object.freeze(["fr","en","es","it","pt-PT","pt-BR","de","sv"]),fallback:"en"});
 })(window);
