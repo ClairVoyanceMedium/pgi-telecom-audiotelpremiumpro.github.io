@@ -387,3 +387,4 @@ body{padding-bottom:112px}
 .internal-link-card{display:grid;gap:5px;padding:15px 17px;border:1px solid rgba(232,179,110,.14);border-radius:13px;text-decoration:none}
 .internal-link-card strong{color:#f2d4ae;font-size:13px}.internal-link-card span{color:#a99588;font-size:11px}.internal-link-card:hover{border-color:rgba(232,179,110,.34)}
 @media(max-width:720px){.preferred-source-card,.public-share-card,.internal-link-grid{grid-template-columns:1fr}.preferred-source-btn,.public-share-btn{width:100%}.preferred-source-note,.public-share-status{grid-column:auto}}
+.feature-brand-signature{align-self:center}.feature-brand-signature img{display:block;width:150px;max-width:100%;height:auto}.footer-brand-full img{display:block;width:176px;max-width:100%;height:auto;object-fit:contain}@media(max-width:720px){.feature-brand-signature img{width:132px}.footer-brand-full img{width:154px}}

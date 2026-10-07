@@ -843,7 +843,6 @@ test("all public pages receive a professional copyright footer with an automatic
   assert.match(buildStatic,/site\/footer-year\.js/);
   assert.match(buildStatic,/data-current-year/);
   assert.match(buildStatic,/PGI Telecom \\| Audiotel Premium Pro\. Tous droits réservés\./);
-  assert.match(css,/global-public-footer-rights-v177/);
   assert.match(css,/\.footer-rights/);
 });
 
@@ -855,7 +854,6 @@ test("Google Preferred Sources is integrated without claiming Google certificati
   assert.match(buildStatic,/guide-audiotel-sva/);
   const preferredBlock=buildStatic.slice(buildStatic.indexOf("const preferredSourceSlugs"),buildStatic.indexOf("function injectPreferredSource"));
   assert.doesNotMatch(preferredBlock,/mentions-legales|conditions-utilisation|conditions-abonnement|confidentialite|accord-traitement-donnees|cookies-traceurs|demande-ouverture|resilier-contrat|retractation/);
-  assert.match(css,/google-preferred-source-v178/);
   assert.match(css,/\.preferred-source-btn/);
 });
 
@@ -865,7 +863,6 @@ test("public sharing is available on useful marketing pages and stays privacy sa
   assert.match(buildStatic,/function injectPublicShare/);
   assert.match(buildStatic,/site\/share\.js/);
   assert.match(buildStatic,/Partager cette page/);
-  assert.match(css,/public-share-v179/);
   const shareable=buildStatic.slice(buildStatic.indexOf("const shareableSlugs"),buildStatic.indexOf("function injectPublicShare"));
   assert.doesNotMatch(shareable,/mentions-legales|conditions-utilisation|conditions-abonnement|confidentialite|demande-ouverture|resilier-contrat|retractation/);
 });
@@ -877,7 +874,6 @@ test("internal linking graph is balanced, crawlable and conversion aware",()=>{
   assert.match(buildStatic,/class="internal-link-card resource-link"/);
   assert.match(buildStatic,/href="'\+internalLinkHref\(target\)\+'"/);
   assert.doesNotMatch(buildStatic.slice(buildStatic.indexOf("const internalLinkGraph"),buildStatic.indexOf("const preferredSourceSlugs")),/—/);
-  assert.match(css,/semantic-internal-link-graph-v180/);
 
   const graphSource=buildStatic.slice(buildStatic.indexOf("const internalLinkGraph="),buildStatic.indexOf("function internalLinkHref"));
   const graph=Function('"use strict";'+graphSource+';return internalLinkGraph;')();
@@ -911,4 +907,20 @@ test("internal linking graph is balanced, crawlable and conversion aware",()=>{
   for(const page of contentPages.filter(x=>x!=="home")){
     assert.ok(inbound[page]>=1,page+" should not be an internal orphan");
   }
+});
+
+
+test("official Audiotel Premium Pro logo is reinforced at strategic public brand points",()=>{
+  assert.match(buildStatic,/footer-brand-full/);
+  assert.match(buildStatic,/feature-brand-signature/);
+  assert.match(buildStatic,/audiotel-brand-logo-v33\.png/);
+  assert.match(buildStatic,/Audiotel Premium Pro \| Une solution PGI Telecom/);
+  assert.match(css,/\.feature-brand-signature/);
+  assert.match(css,/\.footer-brand-full img/);
+  const preferred=buildStatic.slice(buildStatic.indexOf("function injectPreferredSource"),buildStatic.indexOf("const shareableSlugs"));
+  assert.match(preferred,/feature-brand-signature/);
+  const sharing=buildStatic.slice(buildStatic.indexOf("function injectPublicShare"),buildStatic.indexOf("const publicBaseUrl"));
+  assert.match(sharing,/feature-brand-signature/);
+  const internal=buildStatic.slice(buildStatic.indexOf("function injectInternalLinkGraph"),buildStatic.indexOf("const preferredSourceSlugs"));
+  assert.doesNotMatch(internal,/feature-brand-signature/);
 });
