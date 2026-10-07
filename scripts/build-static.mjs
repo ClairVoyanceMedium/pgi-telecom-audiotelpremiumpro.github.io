@@ -165,7 +165,7 @@ const internalLinkGraph=Object.freeze({
     ["numero-sva","Créer ou obtenir un numéro SVA","Préparez votre projet de nouveau numéro surtaxé."],
     ["portabilite-numero-sva","Étudier la portabilité de votre numéro","Conservez votre numéro actuel lorsqu’il est éligible."],
     ["reversement-audiotel","Comparer les reversements Audiotel","Comprenez les montants, les minutes et le suivi des reversements."],
-    ["audiotel-professionnels","Solutions Audiotel pour professionnels","Découvrez les usages adaptés aux entreprises et aux activités professionnelles."]
+    ["parrainage-audiotel","Découvrir le parrainage Audiotel","Comprenez comment recommander Audiotel Premium Pro et suivre les filleuls."]
   ],
   "business-live-audiotel":[
     ["reversement-audiotel","Suivre les reversements Audiotel","Reliez le suivi d’activité aux montants estimés, confirmés et validés."],
@@ -203,7 +203,7 @@ const internalLinkGraph=Object.freeze({
     ["numero-sva","Comprendre le numéro SVA","Consultez les bases pour ouvrir ou exploiter un numéro surtaxé."],
     ["reversement-audiotel","Comprendre les reversements","Suivez la logique des revenus liés aux appels."],
     ["portabilite-numero-sva","Conserver un numéro existant","Étudiez la portabilité si vous utilisez déjà un numéro SVA."],
-    ["demande-ouverture","Préparer votre demande","Accédez à la demande lorsque votre projet est prêt."]
+    ["audiotel-coaching","Audiotel pour les activités de coaching","Découvrez un autre usage professionnel du service Audiotel."]
   ],
   "audiotel-independants":[
     ["audiotel-sans-siret","Commencer sans SIRET au dépôt initial","Comprenez dans quels cas une première demande peut être déposée."],
@@ -221,7 +221,7 @@ const internalLinkGraph=Object.freeze({
     ["solutions-audiotel","Voir les solutions Audiotel Premium Pro","Retrouvez les principales fonctionnalités disponibles."],
     ["numero-sva","Obtenir un numéro SVA professionnel","Préparez votre projet de numéro surtaxé."],
     ["business-live-audiotel","Suivre votre activité en direct","Découvrez Business Live et le suivi de l’activité téléphonique."],
-    ["paiement-cb-audiotel","Découvrir le paiement CB complémentaire","Ajoutez un parcours de paiement par carte lorsque pertinent."],
+    ["audiotel-voyance","Audiotel pour les activités de voyance","Découvrez un exemple métier utilisant un numéro SVA et le suivi des appels."],
     ["reversement-audiotel","Comprendre les reversements Audiotel","Analysez le suivi des revenus liés aux appels."]
   ],
   "reversement-audiotel":[
