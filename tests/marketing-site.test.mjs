@@ -858,3 +858,14 @@ test("Google Preferred Sources is integrated without claiming Google certificati
   assert.match(css,/google-preferred-source-v178/);
   assert.match(css,/\.preferred-source-btn/);
 });
+
+
+test("public sharing is available on useful marketing pages and stays privacy safe",()=>{
+  assert.match(buildStatic,/shareableSlugs/);
+  assert.match(buildStatic,/function injectPublicShare/);
+  assert.match(buildStatic,/site\/share\.js/);
+  assert.match(buildStatic,/Partager cette page/);
+  assert.match(css,/public-share-v179/);
+  const shareable=buildStatic.slice(buildStatic.indexOf("const shareableSlugs"),buildStatic.indexOf("function injectPublicShare"));
+  assert.doesNotMatch(shareable,/mentions-legales|conditions-utilisation|conditions-abonnement|confidentialite|demande-ouverture|resilier-contrat|retractation/);
+});

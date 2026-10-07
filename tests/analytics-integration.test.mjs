@@ -128,3 +128,13 @@ test("home anchor navigation is measured without recording arbitrary URLs",()=>{
   assert.match(tracking,/faq:"home_faq"/);
   assert.match(tracking,/metiers:"home_industries"/);
 });
+
+
+test("sharing analytics are consented, low cardinality and contain no recipient data",()=>{
+  assert.match(tracking,/share:\["method","content_type","item_id"\]/);
+  assert.match(tracking,/referral_email/);
+  assert.match(tracking,/copy_link/);
+  assert.match(tracking,/AMBASSADOR_RE/);
+  assert.match(tracking,/return "Espace ambassadeur"/);
+  assert.doesNotMatch(tracking,/share:\[[^\]]*email/);
+});

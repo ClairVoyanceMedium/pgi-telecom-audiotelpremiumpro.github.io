@@ -22,6 +22,7 @@ const files=[
   "site/site.js",
   "site/footer-year.js",
   "site/site-search.js",
+  "site/share.js",
   "site/payment-result.js",
   "site/form-ux.js",
   "site/contact-widget.js",
@@ -150,20 +151,6 @@ fs.copyFileSync(path.join(dist,"llms.txt"),path.join(dist,"ai.txt"));
 // The customer-facing site owns the production root. Keep the staff cockpit on a
 // dedicated, non-indexed URL instead of exposing it as the homepage.
 fs.copyFileSync(path.join(root,"index.html"),path.join(dist,"cockpit.html"));
-const publicBaseUrl=resolvePublicBaseUrl();
-const marketingSource=fs.readFileSync(path.join(root,"site","index.html"),"utf8");
-const marketingSite=versionPublicAssets(injectPublicSearch(injectContactWidget(injectLegalNavigation(injectPreferredSource(simplifyPublicShell(applyPublicMetadata(marketingSource,publicBaseUrl)),"home")))));
-const marketingRoot=versionPublicAssets(injectPublicSearch(injectContactWidget(injectLegalNavigation(injectPreferredSource(simplifyPublicShell(applyPublicMetadata(
-  marketingSource
-    .replaceAll("../assets/","assets/")
-    .replaceAll("../client.html","client.html")
-    .replace('href="site.css"','href="site/site.css"')
-    .replace('src="site.js"','src="site/site.js"'),
-  publicBaseUrl
-)),"home")))));
-fs.writeFileSync(path.join(dist,"site","index.html"),marketingSite,"utf8");
-fs.writeFileSync(path.join(dist,"index.html"),marketingRoot,"utf8");
-
 const preferredSourceSlugs=new Set([
   "home",
   "solutions-audiotel",
@@ -193,6 +180,32 @@ function injectPreferredSource(html,slug){
   const section='<section class="preferred-source-section" aria-labelledby="preferred-source-title"><div class="wrap preferred-source-card"><div class="preferred-source-copy"><p class="eyebrow">SOURCES PRÉFÉRÉES GOOGLE</p><h2 id="preferred-source-title">Retrouvez plus facilement PGI Telecom dans Google.</h2><p>Ajoutez audiotel-premium-pro.com à vos sources préférées. Google pourra davantage mettre en avant nos contenus pour vous dans À la une, le Mode IA et les Aperçus IA lorsque ces fonctionnalités sont disponibles.</p></div><a class="preferred-source-btn" href="https://www.google.com/preferences/source?q=audiotel-premium-pro.com" target="_blank" rel="noopener noreferrer">Ajouter PGI Telecom à mes sources Google</a><p class="preferred-source-note">Ce réglage personnalise votre expérience Google. Il ne constitue pas une certification du site par Google.</p></div></section>';
   return source.replace("</main>",section+"</main>");
 }
+
+const shareableSlugs=new Set([...preferredSourceSlugs,"parrainage-audiotel"]);
+
+function injectPublicShare(html,slug){
+  let source=String(html||"");
+  if(!shareableSlugs.has(slug)||source.includes("public-share-section"))return source;
+  const section='<section class="public-share-section" aria-labelledby="public-share-title"><div class="wrap public-share-card"><div><p class="eyebrow">PARTAGER</p><h2 id="public-share-title">Faites découvrir Audiotel Premium Pro.</h2><p>Si cette page peut être utile à une personne de votre entourage, vous pouvez la partager directement depuis votre téléphone ou copier son lien.</p></div><button class="public-share-btn" type="button" data-public-share>Partager cette page</button><p class="public-share-status" data-public-share-status role="status" aria-live="polite"></p></div></section>';
+  source=source.replace("</main>",section+"</main>");
+  if(!source.includes("/site/share.js"))source=source.replace("</head>",'<script src="/site/share.js" defer></script>\n</head>');
+  return source;
+}
+
+
+const publicBaseUrl=resolvePublicBaseUrl();
+const marketingSource=fs.readFileSync(path.join(root,"site","index.html"),"utf8");
+const marketingSite=versionPublicAssets(injectPublicSearch(injectContactWidget(injectLegalNavigation(injectPublicShare(injectPreferredSource(simplifyPublicShell(applyPublicMetadata(marketingSource,publicBaseUrl)),"home"),"home")))));
+const marketingRoot=versionPublicAssets(injectPublicSearch(injectContactWidget(injectLegalNavigation(injectPublicShare(injectPreferredSource(simplifyPublicShell(applyPublicMetadata(
+  marketingSource
+    .replaceAll("../assets/","assets/")
+    .replaceAll("../client.html","client.html")
+    .replace('href="site.css"','href="site/site.css"')
+    .replace('src="site.js"','src="site/site.js"'),
+  publicBaseUrl
+)),"home"),"home")))));
+fs.writeFileSync(path.join(dist,"site","index.html"),marketingSite,"utf8");
+fs.writeFileSync(path.join(dist,"index.html"),marketingRoot,"utf8");
 
 const seoPages=[
   "solutions-audiotel",
@@ -229,7 +242,7 @@ for(const slug of seoPages){
   const source=fs.readFileSync(path.join(root,"site","seo",slug+".html"),"utf8");
   const targetDir=path.join(dist,slug);
   fs.mkdirSync(targetDir,{recursive:true});
-  fs.writeFileSync(path.join(targetDir,"index.html"),versionPublicAssets(injectPublicSearch(injectContactWidget(injectLegalNavigation(injectPreferredSource(simplifyPublicShell(applyLandingMetadata(source,publicBaseUrl,slug)),slug))))),"utf8");
+  fs.writeFileSync(path.join(targetDir,"index.html"),versionPublicAssets(injectPublicSearch(injectContactWidget(injectLegalNavigation(injectPublicShare(injectPreferredSource(simplifyPublicShell(applyLandingMetadata(source,publicBaseUrl,slug)),slug),slug))))),"utf8");
 }
 
 
