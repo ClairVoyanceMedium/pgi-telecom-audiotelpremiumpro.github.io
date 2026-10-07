@@ -744,6 +744,7 @@ function injectLegalNavigation(html){
     const nav='<div class="wrap footer-legal-wrap"><nav class="footer-legal" aria-label="Informations juridiques"><a href="/mentions-legales/">Mentions légales</a><a href="/conditions-utilisation/">CGU</a><a href="/conditions-abonnement/">Conditions</a><a href="/confidentialite/">Confidentialité</a><a href="/accord-traitement-donnees/">DPA</a><a href="/cookies-traceurs/">Cookies</a><a href="/resilier-contrat/">Résilier votre contrat</a><a href="/retractation/">Rétractation</a></nav></div>';
     out=out.replace("</footer>",nav+"</footer>");
   }
+  out=out.replace(/<div class="footer-brand">\s*<img[^>]+audiotel-brand-icon-v33\.png[^>]*>\s*<div><strong>Audiotel Premium Pro<\/strong><span>[^<]*PGI Telecom<\/span><\/div>\s*<\/div>/gi,'<div class="footer-brand footer-brand-premium"><img src="/assets/audiotel-brand-logo-v33.png" width="188" height="62" alt="Audiotel Premium Pro | Une solution PGI Telecom"></div>');
   if(!out.includes('data-current-year')){
     const rights='<div class="wrap footer-rights"><p>© <span data-current-year>2026</span> PGI Telecom | Audiotel Premium Pro. Tous droits réservés.</p></div>';
     out=out.replace("</footer>",rights+"</footer>");

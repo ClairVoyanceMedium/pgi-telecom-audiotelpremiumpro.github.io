@@ -916,3 +916,16 @@ test("homepage logo stays slightly larger without adding duplicate brand blocks"
   assert.match(css,/@media\(max-width:680px\)\{\.home-page \.brand-full img\{width:265px;max-height:76px\}\}/);
   assert.doesNotMatch(buildStatic,/feature-brand-signature|footer-brand-full/);
 });
+
+
+test("public footer uses the full brand logo without duplicating logos in content modules",()=>{
+  assert.match(buildStatic,/footer-brand-premium/);
+  assert.match(buildStatic,/audiotel-brand-logo-v33\.png/);
+  assert.match(css,/\.footer-brand-premium img\{display:block;width:188px/);
+  const preferred=buildStatic.slice(buildStatic.indexOf("function injectPreferredSource"),buildStatic.indexOf("const shareableSlugs"));
+  const sharing=buildStatic.slice(buildStatic.indexOf("function injectPublicShare"),buildStatic.indexOf("const publicBaseUrl"));
+  const internal=buildStatic.slice(buildStatic.indexOf("function injectInternalLinkGraph"),buildStatic.indexOf("const preferredSourceSlugs"));
+  assert.doesNotMatch(preferred,/audiotel-brand-logo-v33\.png/);
+  assert.doesNotMatch(sharing,/audiotel-brand-logo-v33\.png/);
+  assert.doesNotMatch(internal,/audiotel-brand-logo-v33\.png/);
+});
