@@ -95,7 +95,7 @@ test("same-origin static handler serves marketing at root and keeps private UI n
     const serviceWorker=await fetch(base+"/service-worker.js");
     assert.equal(serviceWorker.status,200);
     assert.equal(serviceWorker.headers.get("cache-control"),"no-store, must-revalidate");
-    assert.equal(serviceWorker.headers.get("service-worker-allowed"),"/cockpit");
+    assert.equal(serviceWorker.headers.get("service-worker-allowed"),null);
     assert.equal(serviceWorker.headers.get("etag"),null);
     const immutableAsset=await fetch(base+"/site/app.css?v=release123");
     assert.equal(immutableAsset.status,200);
