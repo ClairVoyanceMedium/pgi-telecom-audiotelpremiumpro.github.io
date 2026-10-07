@@ -151,6 +151,158 @@ fs.copyFileSync(path.join(dist,"llms.txt"),path.join(dist,"ai.txt"));
 // The customer-facing site owns the production root. Keep the staff cockpit on a
 // dedicated, non-indexed URL instead of exposing it as the homepage.
 fs.copyFileSync(path.join(root,"index.html"),path.join(dist,"cockpit.html"));
+
+const internalLinkGraph=Object.freeze({
+  home:[
+    ["guide-audiotel-sva","Comprendre Audiotel et les numéros SVA","Le guide central pour comprendre le fonctionnement, les tarifs, la portabilité et les reversements."],
+    ["numero-sva","Obtenir un numéro SVA","Les étapes utiles pour préparer une demande de numéro surtaxé."],
+    ["portabilite-numero-sva","Conserver un numéro existant","Comprendre la portabilité d’un numéro SVA et les vérifications nécessaires."],
+    ["reversement-audiotel","Comprendre les reversements Audiotel","Voir comment les minutes et les montants peuvent être suivis et comparés."],
+    ["comparateur-audiotel","Comparer votre offre Audiotel","Mesurer l’écart potentiel de reversement selon votre activité."]
+  ],
+  "solutions-audiotel":[
+    ["guide-audiotel-sva","Guide complet Audiotel et SVA","Retrouvez les notions essentielles avant de choisir votre solution."],
+    ["numero-sva","Créer ou obtenir un numéro SVA","Préparez votre projet de nouveau numéro surtaxé."],
+    ["portabilite-numero-sva","Étudier la portabilité de votre numéro","Conservez votre numéro actuel lorsqu’il est éligible."],
+    ["reversement-audiotel","Comparer les reversements Audiotel","Comprenez les montants, les minutes et le suivi des reversements."],
+    ["audiotel-professionnels","Solutions Audiotel pour professionnels","Découvrez les usages adaptés aux entreprises et aux activités professionnelles."]
+  ],
+  "business-live-audiotel":[
+    ["reversement-audiotel","Suivre les reversements Audiotel","Reliez le suivi d’activité aux montants estimés, confirmés et validés."],
+    ["comparateur-audiotel","Comparer votre performance Audiotel","Mesurez l’écart potentiel avec votre offre actuelle."],
+    ["paiement-cb-audiotel","Compléter Audiotel avec le paiement CB","Découvrez le paiement par carte comme service complémentaire."],
+    ["numero-sva","Comprendre le numéro SVA","Revenez aux fondamentaux du service et du numéro surtaxé."]
+  ],
+  "audiotel-sans-siret":[
+    ["numero-sva","Demander un numéro SVA","Découvrez les étapes de préparation d’une demande de numéro."],
+    ["guide-audiotel-sva","Comprendre Audiotel avant de commencer","Consultez le guide central Audiotel et SVA."],
+    ["audiotel-independants","Audiotel pour indépendants","Voir les usages adaptés aux indépendants et porteurs de projet."],
+    ["demande-ouverture","Préparer votre demande Audiotel","Accédez au formulaire lorsque votre projet est prêt."]
+  ],
+  "changer-operateur-audiotel":[
+    ["portabilite-numero-sva","Comprendre la portabilité SVA","Vérifiez les étapes nécessaires pour conserver un numéro existant."],
+    ["portabilite-prioritaire","Découvrir la portabilité prioritaire","Voir l’option de traitement prioritaire lorsqu’elle est adaptée."],
+    ["comparateur-audiotel","Comparer votre offre actuelle","Mesurez l’écart potentiel avant de changer d’opérateur."],
+    ["demande-ouverture","Demander votre portabilité","Préparez votre demande lorsque vous souhaitez avancer."]
+  ],
+  "monetiser-ses-appels":[
+    ["reversement-audiotel","Comprendre le reversement Audiotel","Découvrez comment les revenus téléphoniques peuvent être suivis."],
+    ["combien-rapporte-numero-surtaxe","Estimer ce que rapporte un numéro surtaxé","Reliez votre volume d’appels à un potentiel de revenus."],
+    ["comparateur-audiotel","Comparer vos revenus potentiels","Mesurez l’impact d’un écart de reversement."],
+    ["paiement-cb-audiotel","Ajouter le paiement CB","Découvrez un service complémentaire pour certains usages."],
+    ["numero-sva","Comprendre les numéros SVA","Revenez aux bases du fonctionnement d’un numéro surtaxé."]
+  ],
+  "combien-rapporte-numero-surtaxe":[
+    ["reversement-audiotel","Comprendre les taux de reversement","Analysez la logique des montants reversés et leur suivi."],
+    ["comparateur-audiotel","Calculer un écart de revenus","Comparez deux niveaux de reversement selon votre activité."],
+    ["tarif-numero-sva","Comprendre les tarifs SVA","Distinguez le tarif de l’appel, le service et la plateforme."],
+    ["monetiser-ses-appels","Monétiser des appels clients","Découvrez les usages permettant de valoriser le temps téléphonique."]
+  ],
+  "audiotel-voyance":[
+    ["solutions-audiotel","Découvrir les solutions Audiotel","Voir les fonctionnalités utiles pour une activité téléphonique."],
+    ["numero-sva","Comprendre le numéro SVA","Consultez les bases pour ouvrir ou exploiter un numéro surtaxé."],
+    ["reversement-audiotel","Comprendre les reversements","Suivez la logique des revenus liés aux appels."],
+    ["portabilite-numero-sva","Conserver un numéro existant","Étudiez la portabilité si vous utilisez déjà un numéro SVA."],
+    ["demande-ouverture","Préparer votre demande","Accédez à la demande lorsque votre projet est prêt."]
+  ],
+  "audiotel-independants":[
+    ["audiotel-sans-siret","Commencer sans SIRET au dépôt initial","Comprenez dans quels cas une première demande peut être déposée."],
+    ["numero-sva","Demander un numéro SVA","Préparez les informations nécessaires pour un nouveau numéro."],
+    ["reversement-audiotel","Comparer les reversements","Découvrez comment suivre la rémunération liée aux appels."],
+    ["demande-ouverture","Préparer votre demande Audiotel","Passez à l’étape suivante lorsque votre projet est défini."]
+  ],
+  "audiotel-coaching":[
+    ["solutions-audiotel","Découvrir les solutions Audiotel","Explorez les fonctionnalités utiles aux activités de conseil téléphonique."],
+    ["numero-sva","Comprendre le numéro SVA","Consultez les bases d’un numéro surtaxé pour votre activité."],
+    ["paiement-cb-audiotel","Ajouter le paiement par carte","Découvrez le paiement CB comme service complémentaire."],
+    ["reversement-audiotel","Suivre vos reversements","Comprenez la logique de suivi des montants liés aux appels."]
+  ],
+  "audiotel-professionnels":[
+    ["solutions-audiotel","Voir les solutions Audiotel Premium Pro","Retrouvez les principales fonctionnalités disponibles."],
+    ["numero-sva","Obtenir un numéro SVA professionnel","Préparez votre projet de numéro surtaxé."],
+    ["business-live-audiotel","Suivre votre activité en direct","Découvrez Business Live et le suivi de l’activité téléphonique."],
+    ["paiement-cb-audiotel","Découvrir le paiement CB complémentaire","Ajoutez un parcours de paiement par carte lorsque pertinent."],
+    ["reversement-audiotel","Comprendre les reversements Audiotel","Analysez le suivi des revenus liés aux appels."]
+  ],
+  "reversement-audiotel":[
+    ["combien-rapporte-numero-surtaxe","Estimer le revenu d’un numéro surtaxé","Reliez votre volume d’appels à une estimation de revenus."],
+    ["comparateur-audiotel","Comparer deux niveaux de reversement","Mesurez l’impact potentiel d’un meilleur reversement."],
+    ["business-live-audiotel","Suivre vos montants avec Business Live","Voyez comment l’activité peut être suivie en ligne."],
+    ["tarif-numero-sva","Comprendre les tarifs des numéros SVA","Distinguez le coût de l’appel et la composante service."],
+    ["numero-sva","Revenir au fonctionnement d’un numéro SVA","Consultez les fondamentaux du service Audiotel."]
+  ],
+  "numero-sva":[
+    ["guide-audiotel-sva","Lire le guide Audiotel et SVA","Approfondissez le fonctionnement global d’Audiotel."],
+    ["numero-surtaxe-08","Comprendre les numéros surtaxés 08","Différenciez les familles de numéros 081, 082 et 089."],
+    ["tarif-numero-sva","Voir les tarifs des numéros SVA","Comprenez la tarification et les principales composantes de prix."],
+    ["portabilite-numero-sva","Conserver un numéro déjà existant","Consultez la procédure de portabilité d’un numéro SVA."],
+    ["demande-ouverture","Demander votre numéro","Préparez votre demande de nouveau numéro ou de portabilité."]
+  ],
+  "portabilite-numero-sva":[
+    ["changer-operateur-audiotel","Changer d’opérateur Audiotel","Comprenez comment préparer un changement de solution."],
+    ["portabilite-prioritaire","Voir la portabilité prioritaire","Découvrez l’option de traitement prioritaire."],
+    ["numero-sva","Comprendre le numéro SVA","Consultez les fondamentaux d’un numéro surtaxé."],
+    ["comparateur-audiotel","Comparer avant de changer","Mesurez l’écart potentiel avec votre offre actuelle."],
+    ["demande-ouverture","Demander votre portabilité","Passez à la demande lorsque votre numéro est éligible."]
+  ],
+  "portabilite-prioritaire":[
+    ["portabilite-numero-sva","Comprendre la portabilité standard","Comparez le parcours standard et le traitement prioritaire."],
+    ["changer-operateur-audiotel","Préparer un changement d’opérateur","Retrouvez les étapes utiles avant le transfert."],
+    ["comparateur-audiotel","Comparer votre offre actuelle","Évaluez l’intérêt économique d’un changement."],
+    ["demande-ouverture","Lancer votre demande","Préparez les informations nécessaires à votre dossier."]
+  ],
+  "parrainage-audiotel":[
+    ["solutions-audiotel","Comprendre Audiotel Premium Pro","Découvrez ce que les personnes recommandées peuvent obtenir."],
+    ["guide-audiotel-sva","Lire le guide Audiotel et SVA","Donnez à vos contacts une vue claire du fonctionnement du service."],
+    ["reversement-audiotel","Comprendre les reversements Audiotel","Consultez les informations économiques liées aux appels."],
+    ["demande-ouverture","Préparer une demande Audiotel","Accédez au parcours de demande lorsque le projet est prêt."]
+  ],
+  "numero-surtaxe-08":[
+    ["numero-sva","Comprendre les numéros SVA","Retrouvez le fonctionnement général des numéros surtaxés."],
+    ["tarif-numero-sva","Voir les tarifs SVA","Comprenez les différents éléments de tarification."],
+    ["guide-audiotel-sva","Lire le guide Audiotel","Approfondissez les notions de numéro, reversement et portabilité."],
+    ["reversement-audiotel","Comprendre les reversements","Découvrez comment la rémunération liée aux appels est suivie."]
+  ],
+  "tarif-numero-sva":[
+    ["numero-surtaxe-08","Comprendre les numéros 08","Identifiez les grandes familles de numéros surtaxés."],
+    ["comparateur-audiotel","Comparer votre offre Audiotel","Mesurez l’impact économique selon votre activité."],
+    ["reversement-audiotel","Comprendre le reversement Audiotel","Reliez les tarifs aux montants reversés."],
+    ["numero-sva","Comprendre le fonctionnement SVA","Retrouvez les bases d’un numéro SVA."]
+  ],
+  "comparateur-audiotel":[
+    ["reversement-audiotel","Comprendre les reversements","Analysez les éléments derrière votre comparaison."],
+    ["tarif-numero-sva","Comprendre les tarifs SVA","Distinguez tarification, service et revenus."],
+    ["combien-rapporte-numero-surtaxe","Estimer les revenus d’un numéro surtaxé","Reliez votre activité à une estimation de revenus."],
+    ["changer-operateur-audiotel","Changer d’opérateur Audiotel","Préparez un changement si la comparaison est favorable."],
+    ["demande-ouverture","Préparer votre demande","Passez à l’étape suivante lorsque votre décision est prise."]
+  ],
+  "paiement-cb-audiotel":[
+    ["solutions-audiotel","Voir les solutions Audiotel Premium Pro","Replacez le paiement CB dans l’ensemble des services disponibles."],
+    ["audiotel-professionnels","Audiotel pour professionnels","Découvrez les usages adaptés aux activités professionnelles."],
+    ["guide-audiotel-sva","Comprendre Audiotel et les SVA","Consultez les bases du service avant de choisir vos options."],
+    ["numero-sva","Comprendre le numéro SVA","Découvrez le socle principal de l’offre Audiotel."]
+  ],
+  "guide-audiotel-sva":[
+    ["numero-sva","Comprendre et demander un numéro SVA","Passez des notions générales au fonctionnement concret d’un numéro."],
+    ["portabilite-numero-sva","Comprendre la portabilité SVA","Découvrez comment conserver un numéro existant."],
+    ["reversement-audiotel","Comprendre les reversements Audiotel","Analysez les revenus et leur suivi."],
+    ["tarif-numero-sva","Comprendre les tarifs SVA","Distinguez les composantes tarifaires d’un numéro surtaxé."],
+    ["comparateur-audiotel","Comparer une offre Audiotel","Mesurez les écarts potentiels selon votre activité."]
+  ]
+});
+
+function internalLinkHref(slug){
+  return slug==="home"?"/":"/"+slug+"/";
+}
+
+function injectInternalLinkGraph(html,slug){
+  const source=String(html||""),links=internalLinkGraph[slug];
+  if(!Array.isArray(links)||!links.length||source.includes("internal-link-graph"))return source;
+  const cards=links.map(([target,anchor,description])=>'<a class="internal-link-card resource-link" href="'+internalLinkHref(target)+'"><strong>'+anchor+'</strong><span>'+description+'</span></a>').join("");
+  const section='<section class="internal-link-graph" aria-labelledby="internal-link-title-'+slug+'"><div class="wrap"><div class="section-head internal-link-head"><p class="eyebrow">POURSUIVRE VOTRE RECHERCHE</p><h2 id="internal-link-title-'+slug+'">Les ressources utiles pour aller plus loin.</h2><p>Accédez directement aux informations qui complètent cette page.</p></div><nav class="internal-link-grid" aria-label="Ressources Audiotel complémentaires">'+cards+'</nav></div></section>';
+  return source.replace("</main>",section+"</main>");
+}
+
 const preferredSourceSlugs=new Set([
   "home",
   "solutions-audiotel",
@@ -195,15 +347,15 @@ function injectPublicShare(html,slug){
 
 const publicBaseUrl=resolvePublicBaseUrl();
 const marketingSource=fs.readFileSync(path.join(root,"site","index.html"),"utf8");
-const marketingSite=versionPublicAssets(injectPublicSearch(injectContactWidget(injectLegalNavigation(injectPublicShare(injectPreferredSource(simplifyPublicShell(applyPublicMetadata(marketingSource,publicBaseUrl)),"home"),"home")))));
-const marketingRoot=versionPublicAssets(injectPublicSearch(injectContactWidget(injectLegalNavigation(injectPublicShare(injectPreferredSource(simplifyPublicShell(applyPublicMetadata(
+const marketingSite=versionPublicAssets(injectPublicSearch(injectContactWidget(injectLegalNavigation(injectPublicShare(injectPreferredSource(injectInternalLinkGraph(simplifyPublicShell(applyPublicMetadata(marketingSource,publicBaseUrl)),"home"),"home"),"home")))));
+const marketingRoot=versionPublicAssets(injectPublicSearch(injectContactWidget(injectLegalNavigation(injectPublicShare(injectPreferredSource(injectInternalLinkGraph(simplifyPublicShell(applyPublicMetadata(
   marketingSource
     .replaceAll("../assets/","assets/")
     .replaceAll("../client.html","client.html")
     .replace('href="site.css"','href="site/site.css"')
     .replace('src="site.js"','src="site/site.js"'),
   publicBaseUrl
-)),"home"),"home")))));
+)),"home"),"home"),"home")))));
 fs.writeFileSync(path.join(dist,"site","index.html"),marketingSite,"utf8");
 fs.writeFileSync(path.join(dist,"index.html"),marketingRoot,"utf8");
 
@@ -242,7 +394,7 @@ for(const slug of seoPages){
   const source=fs.readFileSync(path.join(root,"site","seo",slug+".html"),"utf8");
   const targetDir=path.join(dist,slug);
   fs.mkdirSync(targetDir,{recursive:true});
-  fs.writeFileSync(path.join(targetDir,"index.html"),versionPublicAssets(injectPublicSearch(injectContactWidget(injectLegalNavigation(injectPublicShare(injectPreferredSource(simplifyPublicShell(applyLandingMetadata(source,publicBaseUrl,slug)),slug),slug))))),"utf8");
+  fs.writeFileSync(path.join(targetDir,"index.html"),versionPublicAssets(injectPublicSearch(injectContactWidget(injectLegalNavigation(injectPublicShare(injectPreferredSource(injectInternalLinkGraph(simplifyPublicShell(applyLandingMetadata(source,publicBaseUrl,slug)),slug),slug),slug))))),"utf8");
 }
 
 

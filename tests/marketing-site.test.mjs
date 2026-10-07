@@ -869,3 +869,46 @@ test("public sharing is available on useful marketing pages and stays privacy sa
   const shareable=buildStatic.slice(buildStatic.indexOf("const shareableSlugs"),buildStatic.indexOf("function injectPublicShare"));
   assert.doesNotMatch(shareable,/mentions-legales|conditions-utilisation|conditions-abonnement|confidentialite|demande-ouverture|resilier-contrat|retractation/);
 });
+
+
+test("internal linking graph is balanced, crawlable and conversion aware",()=>{
+  assert.match(buildStatic,/const internalLinkGraph=Object\.freeze\(/);
+  assert.match(buildStatic,/function injectInternalLinkGraph/);
+  assert.match(buildStatic,/class="internal-link-card resource-link"/);
+  assert.match(buildStatic,/href="'\+internalLinkHref\(target\)\+'"/);
+  assert.doesNotMatch(buildStatic.slice(buildStatic.indexOf("const internalLinkGraph"),buildStatic.indexOf("const preferredSourceSlugs")),/—/);
+  assert.match(css,/semantic-internal-link-graph-v180/);
+
+  const graphSource=buildStatic.slice(buildStatic.indexOf("const internalLinkGraph="),buildStatic.indexOf("function internalLinkHref"));
+  const graph=Function('"use strict";'+graphSource+';return internalLinkGraph;')();
+  const contentPages=[
+    "home","solutions-audiotel","business-live-audiotel","audiotel-sans-siret","changer-operateur-audiotel",
+    "monetiser-ses-appels","combien-rapporte-numero-surtaxe","audiotel-voyance","audiotel-independants",
+    "audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","portabilite-numero-sva",
+    "portabilite-prioritaire","parrainage-audiotel","numero-surtaxe-08","tarif-numero-sva","comparateur-audiotel",
+    "paiement-cb-audiotel","guide-audiotel-sva"
+  ];
+  const validTargets=new Set([...contentPages,"demande-ouverture"]);
+  const forbidden=/^(?:mentions-legales|conditions-utilisation|conditions-abonnement|confidentialite|accord-traitement-donnees|cookies-traceurs|resilier-contrat|retractation|client|cockpit|ambassadeur)$/;
+  const inbound=Object.fromEntries([...validTargets].map(x=>[x,0]));
+  for(const page of contentPages){
+    assert.ok(Array.isArray(graph[page]),"missing internal graph for "+page);
+    assert.ok(graph[page].length>=4&&graph[page].length<=5,page+" must expose 4 or 5 related resources");
+    const targets=graph[page].map(x=>x[0]);
+    assert.equal(new Set(targets).size,targets.length,page+" has duplicate targets");
+    assert.ok(!targets.includes(page),page+" links to itself");
+    for(const [target,anchor,description] of graph[page]){
+      assert.ok(validTargets.has(target),"unknown internal target "+target+" from "+page);
+      assert.ok(!forbidden.test(target),"forbidden target "+target);
+      assert.ok(String(anchor).length>=14&&String(anchor).length<=70,page+" anchor quality");
+      assert.ok(String(description).length>=35&&String(description).length<=140,page+" description quality");
+      inbound[target]=(inbound[target]||0)+1;
+    }
+  }
+  for(const hub of ["guide-audiotel-sva","numero-sva","portabilite-numero-sva","reversement-audiotel","solutions-audiotel","comparateur-audiotel"]){
+    assert.ok(inbound[hub]>=4,hub+" should receive at least four contextual internal links");
+  }
+  for(const page of contentPages.filter(x=>x!=="home")){
+    assert.ok(inbound[page]>=1,page+" should not be an internal orphan");
+  }
+});

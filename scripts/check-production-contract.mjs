@@ -496,3 +496,5 @@ if(failures.length){
 console.log("Production contract: OK");
 
 if(!/recipient_email_hash char\(64\)/.test(referralInviteMigration)||!/UNIQUE \(recipient_email_hash\)/.test(referralInviteMigration)||!/\/api\/v1\/ambassador\/referral\/invite/.test(backendServer)||!/sendReferralInvitation/.test(resendEmailSource)||!/async prepareReferralInvitation/.test(postgresStore))failures.push("referral invitation must remain consent gated, one time and privacy minimized");
+
+if(!/const internalLinkGraph=Object\.freeze/.test(buildStatic)||!/function injectInternalLinkGraph/.test(buildStatic)||!/internal-link-card resource-link/.test(buildStatic))failures.push("semantic internal linking graph must remain crawlable and build generated");
