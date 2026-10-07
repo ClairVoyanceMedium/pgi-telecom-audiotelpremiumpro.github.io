@@ -87,8 +87,10 @@ export function createStaticSiteHandler(rootDir){
     const privateUi=clientUi||cockpitUi;
     const versionedAsset=!runtimeConfig&&!html&&/\.(?:css|js|png|webp|svg|ico)$/i.test(requestPath)&&/[?&]v=[A-Za-z0-9._-]{1,32}(?:&|$)/.test(String(req?.url||""));
     res.setHeader("Content-Type",MIME[ext]||"application/octet-stream");
+    const serviceWorker=requestPath==="/service-worker.js";
     if(runtimeConfig||privateUi)res.setHeader("Cache-Control","no-store");
-    else if(html)res.setHeader("Cache-Control","public, max-age=0, s-maxage=300, stale-while-revalidate=60");
+    else if(serviceWorker){res.setHeader("Cache-Control","no-store, must-revalidate");res.setHeader("Service-Worker-Allowed","/cockpit");}
+    else if(html)res.setHeader("Cache-Control","no-store, must-revalidate");
     else if(versionedAsset)res.setHeader("Cache-Control","public, max-age=31536000, immutable");
     else res.setHeader("Cache-Control","public, max-age=300, stale-while-revalidate=60");
     if(clientUi)res.setHeader("Content-Security-Policy",PRIVATE_CSP);
@@ -96,7 +98,7 @@ export function createStaticSiteHandler(rootDir){
     else if(html)res.setHeader("Content-Security-Policy",PUBLIC_CSP);
     if(privateUi)res.setHeader("X-Robots-Tag","noindex, nofollow, noarchive");
 
-    if(!runtimeConfig&&!privateUi){
+    if(!runtimeConfig&&!privateUi&&!html&&!serviceWorker){
       const {etag,lastModified}=await publicValidators(file,stat);
       res.setHeader("ETag",etag);
       res.setHeader("Last-Modified",lastModified);
