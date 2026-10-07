@@ -846,3 +846,14 @@ test("all public pages receive a professional copyright footer with an automatic
   assert.match(css,/global-public-footer-rights-v177/);
   assert.match(css,/\.footer-rights/);
 });
+
+
+test("Google Preferred Sources is integrated without claiming Google certification",()=>{
+  assert.match(buildStatic,/preferredSourceSlugs/);
+  assert.match(buildStatic,/https:\/\/www\.google\.com\/preferences\/source\?q=audiotel-premium-pro\.com/);
+  assert.match(buildStatic,/Il ne constitue pas une certification du site par Google/);
+  assert.match(buildStatic,/guide-audiotel-sva/);
+  assert.doesNotMatch(buildStatic,/preferredSourceSlugs[\s\S]*mentions-legales/);
+  assert.match(css,/google-preferred-source-v178/);
+  assert.match(css,/\.preferred-source-btn/);
+});
