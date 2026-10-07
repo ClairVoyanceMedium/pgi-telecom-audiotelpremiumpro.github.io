@@ -8,7 +8,7 @@
           if(new URL(reg.scope).pathname==="/"){legacy=true;await reg.unregister()}
         }catch(_e){}
       }
-      if(legacy&&("caches" in window)){try{const keys=await caches.keys();await Promise.all(keys.filter(k=>/^pgi-/i.test(k)).map(k=>caches.delete(k)))}catch(_e){}}
+      if(legacy&&window.caches)try{for(const k of await caches.keys())if(/^pgi-/i.test(k))await caches.delete(k)}catch(_e){}
       if(legacy&&navigator.serviceWorker.controller&&sessionStorage.getItem("pgi-public-sw-migrated")!=="1"){
         sessionStorage.setItem("pgi-public-sw-migrated","1");
         location.reload();
