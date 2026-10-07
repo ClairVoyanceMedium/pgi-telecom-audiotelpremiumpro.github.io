@@ -89,7 +89,7 @@ export function createStaticSiteHandler(rootDir){
     res.setHeader("Content-Type",MIME[ext]||"application/octet-stream");
     const serviceWorker=requestPath==="/service-worker.js";
     if(runtimeConfig||privateUi)res.setHeader("Cache-Control","no-store");
-    else if(serviceWorker){res.setHeader("Cache-Control","no-store, must-revalidate");res.setHeader("Service-Worker-Allowed","/cockpit");}
+    else if(serviceWorker)res.setHeader("Cache-Control","no-store, must-revalidate");
     else if(html)res.setHeader("Cache-Control","no-store, must-revalidate");
     else if(versionedAsset)res.setHeader("Cache-Control","public, max-age=31536000, immutable");
     else res.setHeader("Cache-Control","public, max-age=300, stale-while-revalidate=60");
