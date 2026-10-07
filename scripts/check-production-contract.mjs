@@ -56,6 +56,7 @@ const referralMigration=fs.readFileSync("database/migrations/065_customer_referr
 const referralRepairMigration=fs.readFileSync("database/migrations/066_repair_customer_referral_program.sql","utf8");
 const fixedReferralMigration=fs.readFileSync("database/migrations/067_fixed_progressive_referral_policy.sql","utf8");
 const ambassadorPortalMigration=fs.readFileSync("database/migrations/071_ambassador_portal.sql","utf8");
+const referralInviteMigration=fs.readFileSync("database/migrations/072_referral_email_invitations.sql","utf8");
 const ambassadorPortalHtml=fs.readFileSync("ambassadeur.html","utf8");
 const ambassadorApi=fs.readFileSync("assets/ambassador-api.js","utf8");
 const ambassadorPortal=fs.readFileSync("assets/ambassador-portal.js","utf8");
@@ -493,3 +494,5 @@ if(failures.length){
   process.exit(1);
 }
 console.log("Production contract: OK");
+
+if(!/recipient_email_hash char\(64\)/.test(referralInviteMigration)||!/UNIQUE \(recipient_email_hash\)/.test(referralInviteMigration)||!/\/api\/v1\/ambassador\/referral\/invite/.test(backendServer)||!/sendReferralInvitation/.test(resendEmailSource)||!/async prepareReferralInvitation/.test(postgresStore))failures.push("referral invitation must remain consent gated, one time and privacy minimized");
