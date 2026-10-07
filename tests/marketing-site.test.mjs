@@ -853,7 +853,8 @@ test("Google Preferred Sources is integrated without claiming Google certificati
   assert.match(buildStatic,/https:\/\/www\.google\.com\/preferences\/source\?q=audiotel-premium-pro\.com/);
   assert.match(buildStatic,/Il ne constitue pas une certification du site par Google/);
   assert.match(buildStatic,/guide-audiotel-sva/);
-  const preferredBlock=buildStatic.slice(buildStatic.indexOf("const preferredSourceSlugs"),buildStatic.indexOf("function injectPreferredSource"));\n  assert.doesNotMatch(preferredBlock,/mentions-legales|conditions-utilisation|conditions-abonnement|confidentialite|demande-ouverture|resilier-contrat|retractation/);
+  const preferredBlock=buildStatic.slice(buildStatic.indexOf("const preferredSourceSlugs"),buildStatic.indexOf("function injectPreferredSource"));
+  assert.doesNotMatch(preferredBlock,/mentions-legales|conditions-utilisation|conditions-abonnement|confidentialite|accord-traitement-donnees|cookies-traceurs|demande-ouverture|resilier-contrat|retractation/);
   assert.match(css,/google-preferred-source-v178/);
   assert.match(css,/\.preferred-source-btn/);
 });
