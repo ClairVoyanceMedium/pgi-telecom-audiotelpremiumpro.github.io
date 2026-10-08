@@ -110,6 +110,40 @@ function consumptionDiff(stored,current){
   return out;
 }
 
+async function ensureReferralInvitationSchema(sql){
+  const ready=async()=>{
+    const rows=await sql.unsafe("SELECT to_regclass('public.customer_referral_invitations') IS NOT NULL AS invitations");
+    return rows[0]?.invitations===true;
+  };
+  if(await ready())return {repaired:false};
+  const lockKey="pgi_referral_invitation_schema_v1";
+  await sql.unsafe("SELECT pg_advisory_lock(hashtext($1))",[lockKey]);
+  try{
+    if(await ready())return {repaired:false};
+    await sql.begin(async tx=>{
+      await tx.unsafe(
+        "CREATE TABLE IF NOT EXISTS customer_referral_invitations ("+
+        "id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,"+
+        "public_id uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE,"+
+        "referral_code_id bigint NOT NULL REFERENCES customer_referral_codes(id) ON DELETE CASCADE,"+
+        "referrer_tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,"+
+        "recipient_email_hash char(64) NOT NULL,"+
+        "status text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','sent','failed')),"+
+        "consent_attested_at timestamptz NOT NULL,sent_at timestamptz,provider_message_reference text,last_error text,"+
+        "metadata jsonb NOT NULL DEFAULT '{}'::jsonb,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),"+
+        "CONSTRAINT customer_referral_invitations_hash_format_chk CHECK (recipient_email_hash ~ '^[0-9a-f]{64}$'),"+
+        "CONSTRAINT customer_referral_invitations_recipient_uidx UNIQUE (recipient_email_hash))"
+      );
+      await tx.unsafe("CREATE INDEX IF NOT EXISTS customer_referral_invitations_referrer_time_idx ON customer_referral_invitations(referrer_tenant_id,created_at DESC)");
+      await tx.unsafe("CREATE INDEX IF NOT EXISTS customer_referral_invitations_status_time_idx ON customer_referral_invitations(status,created_at DESC)");
+      await tx.unsafe("COMMENT ON TABLE customer_referral_invitations IS 'One time referral invitations. No clear text recipient email is stored. Hash uniqueness prevents repeated invitations to the same address.'");
+    });
+    return {repaired:true};
+  }finally{
+    try{await sql.unsafe("SELECT pg_advisory_unlock(hashtext($1))",[lockKey]);}catch{}
+  }
+}
+
 async function ensureReferralPayoutAutomationSchema(sql){
   const ready=async()=>{
     const rows=await sql.unsafe(
@@ -191,6 +225,7 @@ export class PostgresStore{
     const sql=makeClient(config.databaseUrl,config.databasePoolMax);
     await sql.unsafe("select 1 as ok");
     await ensureReferralPayoutAutomationSchema(sql);
+    await ensureReferralInvitationSchema(sql);
     let readSql=sql;
     if(config.databaseReadUrl){
       readSql=makeClient(config.databaseReadUrl,config.databaseReadPoolMax);
@@ -4647,6 +4682,54 @@ export class PostgresStore{
     };
   }
 
+  async prepareReferralInvitation(tenantId,recipientEmailHash,recipientEmail,metadata={}){
+    const id=Number(tenantId),hash=String(recipientEmailHash||"").trim().toLowerCase(),email=String(recipientEmail||"").trim().toLowerCase();
+    if(!Number.isInteger(id)||id<=0)throw problem(400,"INVALID_TENANT_ID");
+    if(!/^[0-9a-f]{64}$/.test(hash))throw problem(400,"INVALID_REFERRAL_INVITATION_HASH");
+    if(!email||email.length>320||!email.includes("@"))throw problem(400,"INVALID_REFERRAL_INVITATION_EMAIL");
+    return this.sql.begin(async tx=>{
+      await tx.unsafe("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[hash]);
+      const ref=(await tx.unsafe(
+        "SELECT p.status AS profile_status,t.billing_email,t.status AS tenant_status,c.id AS referral_code_id,c.code,c.status AS code_status,f.enabled AS program_enabled"+
+        " FROM customer_ambassador_profiles p JOIN tenants t ON t.id=p.tenant_id"+
+        " LEFT JOIN customer_referral_codes c ON c.tenant_id=t.id"+
+        " LEFT JOIN platform_feature_flags f ON f.feature_key='customer_referral'"+
+        " WHERE p.tenant_id=$1 LIMIT 1 FOR UPDATE OF p",[id]
+      ))[0];
+      if(!ref||ref.profile_status!=="active"||ref.tenant_status!=="active")throw problem(403,"AMBASSADOR_PROFILE_NOT_ACTIVE");
+      if(ref.program_enabled!==true)throw problem(409,"REFERRAL_PROGRAM_DISABLED");
+      if(!ref.referral_code_id||ref.code_status!=="active"||!/^[A-Z0-9]{8,24}$/.test(String(ref.code||"")))throw problem(409,"REFERRAL_CODE_UNAVAILABLE");
+      if(String(ref.billing_email||"").trim().toLowerCase()===email)throw problem(409,"REFERRAL_INVITATION_SELF");
+      const registered=(await tx.unsafe("SELECT 1 FROM tenants WHERE lower(billing_email)=lower($1) AND tenant_type<>'internal' LIMIT 1",[email])).length>0;
+      if(registered)throw problem(409,"REFERRAL_INVITATION_RECIPIENT_EXISTS");
+      const count=Number((await tx.unsafe("SELECT count(*)::int AS count FROM customer_referral_invitations WHERE referrer_tenant_id=$1 AND created_at>now()-interval '24 hours' AND status IN ('queued','sent')",[id]))[0]?.count||0);
+      if(count>=10)throw problem(429,"REFERRAL_INVITATION_DAILY_LIMIT");
+      const prior=(await tx.unsafe("SELECT id,public_id::text AS public_id,referrer_tenant_id,status,provider_message_reference,sent_at FROM customer_referral_invitations WHERE recipient_email_hash=$1 LIMIT 1 FOR UPDATE",[hash]))[0];
+      if(prior?.status==="sent")return {replayed:true,status:"sent",public_id:prior.public_id,referral_code:ref.code,provider_message_reference:prior.provider_message_reference,sent_at:prior.sent_at};
+      if(prior&&Number(prior.referrer_tenant_id)!==id)throw problem(409,"REFERRAL_INVITATION_ALREADY_ATTEMPTED");
+      const md={source:String(metadata?.source||"ambassador_portal").slice(0,80),privacy_notice_version:String(metadata?.privacy_notice_version||"2026-10-07-referral-invite-v1").slice(0,80),one_time:true,no_marketing_enrollment:true};
+      const row=prior
+        ?(await tx.unsafe("UPDATE customer_referral_invitations SET status='queued',consent_attested_at=now(),last_error=NULL,metadata=metadata||$2::jsonb,updated_at=now() WHERE id=$1 RETURNING public_id::text AS public_id,status",[prior.id,JSON.stringify(md)]))[0]
+        :(await tx.unsafe("INSERT INTO customer_referral_invitations(referral_code_id,referrer_tenant_id,recipient_email_hash,status,consent_attested_at,metadata) VALUES($1,$2,$3,'queued',now(),$4::jsonb) RETURNING public_id::text AS public_id,status",[ref.referral_code_id,id,hash,JSON.stringify(md)]))[0];
+      await tx.unsafe("INSERT INTO audit_log(tenant_id,user_id,action,entity_type,entity_id,details) VALUES($1,NULL,'referral.invitation.prepare','customer_referral_invitation',$2,$3::jsonb)",[id,row.public_id,JSON.stringify({recipient_email_hash:hash,consent_attested:true,one_time:true})]);
+      return {replayed:false,status:row.status,public_id:row.public_id,referral_code:ref.code};
+    });
+  }
+
+  async completeReferralInvitation(publicId,providerMessageReference){
+    const id=String(publicId||"").trim(),ref=String(providerMessageReference||"").trim().slice(0,240);
+    if(!/^[0-9a-f-]{36}$/i.test(id))throw problem(400,"INVALID_REFERRAL_INVITATION_ID");
+    const row=(await this.sql.unsafe("UPDATE customer_referral_invitations SET status='sent',sent_at=COALESCE(sent_at,now()),provider_message_reference=COALESCE(NULLIF($2,''),provider_message_reference),last_error=NULL,updated_at=now() WHERE public_id=$1::uuid RETURNING public_id::text AS public_id,status,sent_at,provider_message_reference",[id,ref]))[0];
+    if(!row)throw problem(404,"REFERRAL_INVITATION_NOT_FOUND");
+    return row;
+  }
+
+  async failReferralInvitation(publicId,errorCode){
+    const id=String(publicId||"").trim(),code=String(errorCode||"send_failed").replace(/[^A-Za-z0-9_.:-]/g,"_").slice(0,160);
+    if(!/^[0-9a-f-]{36}$/i.test(id))return null;
+    return (await this.sql.unsafe("UPDATE customer_referral_invitations SET status='failed',last_error=$2,updated_at=now() WHERE public_id=$1::uuid AND status<>'sent' RETURNING public_id::text AS public_id,status",[id,code]))[0]||null;
+  }
+
   async recordCustomerReferralEvent(codeInput,eventTypeInput,visitorTokenInput,metadata={}){
     const code=String(codeInput||"").trim().toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,24);
     const eventType=String(eventTypeInput||"").trim().toLowerCase();
@@ -4936,6 +5019,7 @@ export class PostgresStore{
       this.sql.unsafe(
         "SELECT count(*)::int AS claimed,count(*) FILTER(WHERE status='rewarded')::int AS rewarded,"+
         " COALESCE(sum(reward_minor) FILTER(WHERE status='rewarded'),0)::bigint AS reward_minor,"+
+        " (SELECT count(*)::int FROM customer_referral_invitations i WHERE i.referrer_tenant_id=$1 AND i.status='sent') AS invitations_sent,"+
         " (SELECT count(*)::int FROM customer_referral_events e JOIN customer_referral_codes c ON c.id=e.referral_code_id WHERE c.tenant_id=$1 AND e.event_type='visit') AS visits,"+
         " (SELECT count(*)::int FROM customer_referral_events e JOIN customer_referral_codes c ON c.id=e.referral_code_id WHERE c.tenant_id=$1 AND e.event_type='prospect') AS prospects"+
         " FROM customer_referrals WHERE referrer_tenant_id=$1",
@@ -4967,7 +5051,7 @@ export class PostgresStore{
       eligibility_reason:eligible?null:(program.enabled!==true?"program_disabled":"ambassador_profile_not_active"),
       next_reward:{...next},
       payout_account:payoutAccount?{provider:"stripe",status:payoutAccount.status,transfers_enabled:payoutAccount.transfers_enabled===true,details_submitted:payoutAccount.details_submitted===true,requirements_state:payoutAccount.requirements_state,last_synced_at:payoutAccount.last_synced_at}:null,
-      summary:{visits:Number(summary.visits||0),prospects:Number(summary.prospects||0),claimed:Number(summary.claimed||0),rewarded,reward_minor:Number(summary.reward_minor||0)},
+      summary:{visits:Number(summary.visits||0),prospects:Number(summary.prospects||0),invitations_sent:Number(summary.invitations_sent||0),claimed:Number(summary.claimed||0),rewarded,reward_minor:Number(summary.reward_minor||0)},
       recent:recent.map(x=>({...x,reward_minor:Number(x.reward_minor||0),paid_invoice_count:Number(x.paid_invoice_count||0)}))
     };
   }
@@ -6724,6 +6808,46 @@ export class PostgresStore{
     });
     for(const change of changes)this.eventBus.publish(change.event,change);
     return changes;
+  }
+
+  async dailyReportSnapshot({date}={}){
+    const day=String(date||"").trim();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(day))throw problem(400,"INVALID_DAILY_REPORT_DATE");
+    const bounds="(($1::date)::timestamp AT TIME ZONE 'Europe/Paris')";
+    const end="((($1::date+1))::timestamp AT TIME ZONE 'Europe/Paris')";
+    const [summary,categories]=await Promise.all([
+      this.readSql.unsafe(
+        "SELECT"+
+        " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND i.created_at>="+bounds+" AND i.created_at<"+end+") AS created_today,"+
+        " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND COALESCE(i.resolved_at,i.updated_at)>="+bounds+" AND COALESCE(i.resolved_at,i.updated_at)<"+end+" AND i.status IN ('resolved','closed')) AS resolved_today,"+
+        " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND i.status NOT IN ('resolved','closed')) AS open_now,"+
+        " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND i.status='waiting_customer') AS waiting_customer,"+
+        " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND i.status NOT IN ('resolved','closed') AND i.severity='critical') AS critical_open,"+
+        " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND i.status NOT IN ('resolved','closed') AND i.first_responded_at IS NULL AND i.first_response_due_at<now()) AS first_response_overdue,"+
+        " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND i.status NOT IN ('resolved','closed') AND i.target_resolution_at<now()) AS resolution_overdue,"+
+        " (SELECT count(*)::int FROM audit_log WHERE action='customer.email.inbound_resolved' AND created_at>="+bounds+" AND created_at<"+end+") AS inbound_resolved,"+
+        " (SELECT count(*)::int FROM transactional_email_deliveries WHERE created_at>="+bounds+" AND created_at<"+end+") AS email_created,"+
+        " (SELECT count(*)::int FROM transactional_email_deliveries WHERE created_at>="+bounds+" AND created_at<"+end+" AND state IN ('accepted','sent','delivered','clicked')) AS email_accepted_or_sent,"+
+        " (SELECT count(*)::int FROM transactional_email_deliveries WHERE created_at>="+bounds+" AND created_at<"+end+" AND state IN ('delivered','clicked')) AS email_delivered,"+
+        " (SELECT count(*)::int FROM transactional_email_deliveries WHERE created_at>="+bounds+" AND created_at<"+end+" AND state IN ('failed','bounced','complained','suppressed')) AS email_failed_or_bounced,"+
+        " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal' AND created_at>="+bounds+" AND created_at<"+end+") AS tenants_created,"+
+        " (SELECT count(*)::int FROM calls WHERE started_at>="+bounds+" AND started_at<"+end+") AS calls_total,"+
+        " (SELECT count(*)::int FROM calls WHERE started_at>="+bounds+" AND started_at<"+end+" AND call_status='connected') AS calls_connected,"+
+        " (SELECT count(*)::int FROM outbox_events WHERE published_at IS NULL) AS outbox_pending",
+        [day]
+      ),
+      this.readSql.unsafe(
+        "SELECT i.category,count(*)::int AS count FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id"+
+        " WHERE t.tenant_type<>'internal' AND i.status NOT IN ('resolved','closed') GROUP BY i.category ORDER BY count(*) DESC,i.category LIMIT 8"
+      )
+    ]);
+    const row=summary[0]||{};
+    return {
+      service:{created_today:row.created_today,resolved_today:row.resolved_today,open_now:row.open_now,waiting_customer:row.waiting_customer,critical_open:row.critical_open,first_response_overdue:row.first_response_overdue,resolution_overdue:row.resolution_overdue},
+      mail:{inbound_resolved:row.inbound_resolved,created:row.email_created,accepted_or_sent:row.email_accepted_or_sent,delivered:row.email_delivered,failed_or_bounced:row.email_failed_or_bounced},
+      system:{tenants_created:row.tenants_created,calls_total:row.calls_total,calls_connected:row.calls_connected,outbox_pending:row.outbox_pending},
+      categories
+    };
   }
 
   async listServiceIncidents(params={}){

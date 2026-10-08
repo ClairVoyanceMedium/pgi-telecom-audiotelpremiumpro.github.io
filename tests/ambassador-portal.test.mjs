@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 const migration=fs.readFileSync("database/migrations/071_ambassador_portal.sql","utf8");
+const inviteMigration=fs.readFileSync("database/migrations/072_referral_email_invitations.sql","utf8");
 const server=fs.readFileSync("backend/server.mjs","utf8");
 const store=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
 const html=fs.readFileSync("ambassadeur.html","utf8");
@@ -95,4 +96,48 @@ test("container images include the ambassador portal source required by static b
 
 test("new ambassador surfaces contain no em dash",()=>{
   for(const [name,content] of [["html",html],["api",api],["app",app],["css",css],["migration",migration]])assert.equal(content.includes("—"),false,name);
+});
+
+
+test("ambassador email invitation is one time, consent gated and privacy minimized",()=>{
+  assert.match(inviteMigration,/recipient_email_hash char\(64\)/);
+  assert.match(inviteMigration,/UNIQUE \(recipient_email_hash\)/);
+  assert.doesNotMatch(inviteMigration,/recipient_email\s+text/i);
+  assert.match(store,/async prepareReferralInvitation/);
+  assert.match(store,/REFERRAL_INVITATION_DAILY_LIMIT/);
+  assert.match(server,/\/api\/v1\/ambassador\/referral\/invite/);
+  assert.match(server,/consent_confirmed!==true/);
+  assert.match(resend,/sendReferralInvitation/);
+  assert.match(resend,/aucune relance automatique/i);
+  assert.match(html,/amb-kpi-invitations/);
+  assert.match(app,/amb-invite-form/);
+  assert.match(api,/inviteReferral:function/);
+  assert.match(app,/method:"referral_email"/);
+});
+
+test("referral invitation recipient is not pushed into HubSpot before real engagement",()=>{
+  const route=server.slice(server.indexOf('/api/v1/ambassador/referral/invite'),server.indexOf('/api/v1/ambassador/payout-account'));
+  assert.doesNotMatch(route,/HubSpot|submitHubSpotLead|syncHubSpot/i);
+});
+
+test("referral invitation copy keeps the customer email style constraints",()=>{
+  const start=resend.indexOf("export async function sendReferralInvitation");
+  const end=resend.indexOf("export async function sendSupportTicketNotification");
+  const invite=resend.slice(start,end);
+  assert.doesNotMatch(invite,/—|😀|🙂|😊|<strong>|\*\*/);
+  assert.match(invite,/notifications@/);
+  assert.match(invite,/support@/);
+});
+
+
+test("referral invitation schema self heals additively before production use",()=>{
+  assert.match(store,/async function ensureReferralInvitationSchema/);
+  assert.match(store,/pgi_referral_invitation_schema_v1/);
+  assert.match(store,/CREATE TABLE IF NOT EXISTS customer_referral_invitations/);
+  assert.match(store,/CREATE INDEX IF NOT EXISTS customer_referral_invitations_referrer_time_idx/);
+  assert.match(store,/await ensureReferralInvitationSchema\(sql\)/);
+  const start=store.indexOf("async function ensureReferralInvitationSchema");
+  const end=store.indexOf("async function ensureReferralPayoutAutomationSchema",start);
+  const repair=store.slice(start,end);
+  assert.doesNotMatch(repair,/DROP\s+TABLE|TRUNCATE|DELETE\s+FROM/i);
 });

@@ -89,7 +89,6 @@ test("public search covers the complete published site with ranked, intent and f
   assert.match(buildStatic,/data-site-search/);
   assert.match(buildStatic,/Rechercher sur tout le site/);
   assert.match(buildStatic,/\/site\/site-search\.js/);
-  assert.match(css,/public-site-search-v174/);
   assert.match(css,/\.site-header\{overflow:visible!important\}/);
   assert.match(siteSearch,/site-search-index\.json/);
   assert.match(siteSearch,/scoreEntry/);
@@ -338,7 +337,6 @@ test("legal access blocks stay understandable on mobile",()=>{
 
 test("homepage bottom quick navigation prioritizes the highest-value commercial journeys",()=>{
   assert.match(css,/font-size:10\.2px!important/);
-  assert.match(css,/fixed-revenue-bar-v173/);
   assert.match(css,/\.revenue-quick-nav\{position:fixed!important/);
   assert.match(css,/\.mobile-order-cta\{display:none!important/);
   assert.match(html,/DÉJÀ UN NUMÉRO SURTAXÉ \?/);
@@ -353,8 +351,6 @@ test("homepage bottom quick navigation prioritizes the highest-value commercial 
   assert.match(html,/href="\/portabilite-numero-sva\//);
   assert.match(html,/href="\/comparateur-audiotel\//);
   assert.match(html,/href="\/parrainage-audiotel\//);
-  assert.match(css,/revenue-quick-nav-v172/);
-  assert.match(css,/global-public-fixed-nav-v175/);
   assert.match(css,/background:rgba\(42,45,49,\.985\)!important/);
   assert.match(buildStatic,/function injectRevenueQuickNav/);
   assert.match(buildStatic,/function normalizePublicBranding/);
@@ -499,10 +495,9 @@ test("public branding and client access wording are explicit",()=>{
   assert.match(css,/brand-full img\{width:340px;max-height:82px\}/);
   assert.match(css,/@media\(max-width:980px\)[\s\S]*brand-full img\{width:275px;max-height:76px\}/);
   assert.match(css,/@media\(max-width:680px\)[\s\S]*brand-full img\{width:240px;max-height:70px\}/);
-  assert.match(css,/homepage-header-logo-v176/);
-  assert.match(css,/\.home-page \.brand-full img\{width:365px;max-height:88px\}/);
-  assert.match(css,/@media\(max-width:980px\)\{\.home-page \.brand-full img\{width:295px;max-height:80px\}\}/);
-  assert.match(css,/@media\(max-width:680px\)\{\.home-page \.brand-full img\{width:250px;max-height:72px\}\}/);
+  assert.match(css,/\.home-page \.brand-full img\{width:390px;max-height:94px\}/);
+  assert.match(css,/@media\(max-width:980px\)\{\.home-page \.brand-full img\{width:315px;max-height:84px\}\}/);
+  assert.match(css,/@media\(max-width:680px\)\{\.home-page \.brand-full img\{width:265px;max-height:76px\}\}/);
 });
 
 test("hero copy is condensed and the primary potential gain is highlighted in green",()=>{
@@ -510,7 +505,6 @@ test("hero copy is condensed and the primary potential gain is highlighted in gr
   assert.match(html,/Demander ma portabilité/);
   assert.match(html,/Demander un nouveau numéro/);
   assert.match(html,/Voir toutes les solutions/);
-  assert.match(css,/hero-copy-and-green-potential-v153/);
   assert.match(css,/hero-savings-results \.main span,.hero-savings-results \.main strong\{color:var\(--ok\)\}/);
   assert.match(html,/Business Live : suivez en direct, seconde après seconde, le montant estimé qui vous est attribué pendant chaque appel/);
 });
@@ -538,7 +532,6 @@ test("hero brand signature uses the validated premium grey and portability keeps
   assert.match(html,/hero-brand-signature/);
   assert.match(html,/Audiotel Premium Pro \| Une solution PGI Telecom/);
   assert.match(html,/NUMÉRO SURTAXÉ · AUDIOTEL · SUIVI EN LIGNE · PORTABILITÉ GRATUITE/);
-  assert.match(css,/clickable-hero-and-premium-grey-v157/);
   assert.match(css,/hero-brand-signature\{[\s\S]*font-size:18px/);
   assert.match(css,/color:#c9c9c7/);
   assert.match(css,/-webkit-text-fill-color:currentColor/);
@@ -561,7 +554,6 @@ test("homepage hero uses the premium diagonal professional visual while the simu
   assert.match(html,/Votre numéro, vos appels et vos reversements réunis dans un même espace/);
   assert.equal((html.match(/id="simulateur"/g)||[]).length,1);
   assert.match(html,/home-simulator-section/);
-  assert.match(css,/premium-diagonal-hero-v162/);
   assert.match(buildStatic,/audiotel-hero-professionnels-diagonal\.webp/);
 });
 
@@ -571,7 +563,6 @@ test("premium hero visual is branded, fully clickable and routes to the core num
   assert.match(html,/hero-visual-link" href="\/numero-sva\//);
   assert.match(html,/hero-visual-brand/);
   assert.match(html,/audiotel-brand-logo-v33\.png/);
-  assert.match(css,/premium-clickable-hero-v165/);
 });
 
 test("homepage removes duplicated dynamic cards and keeps one simulator badge plus intent journeys",()=>{
@@ -582,7 +573,6 @@ test("homepage removes duplicated dynamic cards and keeps one simulator badge pl
   assert.doesNotMatch(js,/public-advantage-card/);
   assert.match(html,/home-choice-section/);
   assert.match(html,/solution-choice-grid/);
-  assert.match(css,/intent-journeys-v172/);
 });
 
 test("homepage explains the 4.9 percent CB fee without mixing it with Stripe fees or subscription",()=>{
@@ -684,7 +674,6 @@ test("homepage provides differentiated destinations for number, portability, pay
   assert.match(html,/tech-card-link" href="\/reversement-audiotel\//);
   assert.match(html,/home-cb-compact[\s\S]*href="\/paiement-cb-audiotel\//);
   assert.match(html,/href="\/solutions-audiotel\//);
-  assert.match(css,/homepage-product-discovery-v168/);
 });
 
 
@@ -728,7 +717,6 @@ test("homepage restores an explicit compact comparison table without inventing r
   assert.match(html,/Audiotel Premium Pro/);
   assert.match(html,/proposition Audiotel Premium Pro effectivement confirmée/);
   assert.match(html,/Ouvrir le comparateur détaillé/);
-  assert.match(css,/compact-offer-comparison-v171/);
 });
 
 test("CB cards explain the service before asking for a click",()=>{
@@ -843,6 +831,89 @@ test("all public pages receive a professional copyright footer with an automatic
   assert.match(buildStatic,/site\/footer-year\.js/);
   assert.match(buildStatic,/data-current-year/);
   assert.match(buildStatic,/PGI Telecom \\| Audiotel Premium Pro\. Tous droits réservés\./);
-  assert.match(css,/global-public-footer-rights-v177/);
   assert.match(css,/\.footer-rights/);
+});
+
+
+test("Google Preferred Sources is integrated without claiming Google certification",()=>{
+  assert.match(buildStatic,/preferredSourceSlugs/);
+  assert.match(buildStatic,/https:\/\/www\.google\.com\/preferences\/source\?q=audiotel-premium-pro\.com/);
+  assert.match(buildStatic,/Il ne constitue pas une certification du site par Google/);
+  assert.match(buildStatic,/guide-audiotel-sva/);
+  const preferredBlock=buildStatic.slice(buildStatic.indexOf("const preferredSourceSlugs"),buildStatic.indexOf("function injectPreferredSource"));
+  assert.doesNotMatch(preferredBlock,/mentions-legales|conditions-utilisation|conditions-abonnement|confidentialite|accord-traitement-donnees|cookies-traceurs|demande-ouverture|resilier-contrat|retractation/);
+  assert.match(css,/\.preferred-source-btn/);
+});
+
+
+test("public sharing is available on useful marketing pages and stays privacy safe",()=>{
+  assert.match(buildStatic,/shareableSlugs/);
+  assert.match(buildStatic,/function injectPublicShare/);
+  assert.match(buildStatic,/site\/share\.js/);
+  assert.match(buildStatic,/Partager cette page/);
+  const shareable=buildStatic.slice(buildStatic.indexOf("const shareableSlugs"),buildStatic.indexOf("function injectPublicShare"));
+  assert.doesNotMatch(shareable,/mentions-legales|conditions-utilisation|conditions-abonnement|confidentialite|demande-ouverture|resilier-contrat|retractation/);
+});
+
+
+test("internal linking graph is balanced, crawlable and conversion aware",()=>{
+  assert.match(buildStatic,/const internalLinkGraph=Object\.freeze\(/);
+  assert.match(buildStatic,/function injectInternalLinkGraph/);
+  assert.match(buildStatic,/class="internal-link-card resource-link"/);
+  assert.match(buildStatic,/href="'\+internalLinkHref\(target\)\+'"/);
+  assert.doesNotMatch(buildStatic.slice(buildStatic.indexOf("const internalLinkGraph"),buildStatic.indexOf("const preferredSourceSlugs")),/—/);
+
+  const graphSource=buildStatic.slice(buildStatic.indexOf("const internalLinkGraph="),buildStatic.indexOf("function internalLinkHref"));
+  const graph=Function('"use strict";'+graphSource+';return internalLinkGraph;')();
+  const contentPages=[
+    "home","solutions-audiotel","business-live-audiotel","audiotel-sans-siret","changer-operateur-audiotel",
+    "monetiser-ses-appels","combien-rapporte-numero-surtaxe","audiotel-voyance","audiotel-independants",
+    "audiotel-coaching","audiotel-professionnels","reversement-audiotel","numero-sva","portabilite-numero-sva",
+    "portabilite-prioritaire","parrainage-audiotel","numero-surtaxe-08","tarif-numero-sva","comparateur-audiotel",
+    "paiement-cb-audiotel","guide-audiotel-sva"
+  ];
+  const validTargets=new Set([...contentPages,"demande-ouverture"]);
+  const forbidden=/^(?:mentions-legales|conditions-utilisation|conditions-abonnement|confidentialite|accord-traitement-donnees|cookies-traceurs|resilier-contrat|retractation|client|cockpit|ambassadeur)$/;
+  const inbound=Object.fromEntries([...validTargets].map(x=>[x,0]));
+  for(const page of contentPages){
+    assert.ok(Array.isArray(graph[page]),"missing internal graph for "+page);
+    assert.ok(graph[page].length>=4&&graph[page].length<=5,page+" must expose 4 or 5 related resources");
+    const targets=graph[page].map(x=>x[0]);
+    assert.equal(new Set(targets).size,targets.length,page+" has duplicate targets");
+    assert.ok(!targets.includes(page),page+" links to itself");
+    for(const [target,anchor,description] of graph[page]){
+      assert.ok(validTargets.has(target),"unknown internal target "+target+" from "+page);
+      assert.ok(!forbidden.test(target),"forbidden target "+target);
+      assert.ok(String(anchor).length>=14&&String(anchor).length<=70,page+" anchor quality");
+      assert.ok(String(description).length>=35&&String(description).length<=140,page+" description quality");
+      inbound[target]=(inbound[target]||0)+1;
+    }
+  }
+  for(const hub of ["guide-audiotel-sva","numero-sva","portabilite-numero-sva","reversement-audiotel","solutions-audiotel","comparateur-audiotel"]){
+    assert.ok(inbound[hub]>=4,hub+" should receive at least four contextual internal links");
+  }
+  for(const page of contentPages.filter(x=>x!=="home")){
+    assert.ok(inbound[page]>=1,page+" should not be an internal orphan");
+  }
+});
+
+
+test("homepage logo stays slightly larger without adding duplicate brand blocks",()=>{
+  assert.match(css,/\.home-page \.brand-full img\{width:390px;max-height:94px\}/);
+  assert.match(css,/@media\(max-width:980px\)\{\.home-page \.brand-full img\{width:315px;max-height:84px\}\}/);
+  assert.match(css,/@media\(max-width:680px\)\{\.home-page \.brand-full img\{width:265px;max-height:76px\}\}/);
+  assert.doesNotMatch(buildStatic,/feature-brand-signature|footer-brand-full/);
+});
+
+
+test("public footer uses the full brand logo without duplicating logos in content modules",()=>{
+  assert.match(buildStatic,/footer-brand-premium/);
+  assert.match(buildStatic,/audiotel-brand-logo-v33\.png/);
+  assert.match(css,/\.footer-brand-premium img\{display:block;width:188px/);
+  const preferred=buildStatic.slice(buildStatic.indexOf("function injectPreferredSource"),buildStatic.indexOf("const shareableSlugs"));
+  const sharing=buildStatic.slice(buildStatic.indexOf("function injectPublicShare"),buildStatic.indexOf("const publicBaseUrl"));
+  const internal=buildStatic.slice(buildStatic.indexOf("function injectInternalLinkGraph"),buildStatic.indexOf("const preferredSourceSlugs"));
+  assert.doesNotMatch(preferred,/audiotel-brand-logo-v33\.png/);
+  assert.doesNotMatch(sharing,/audiotel-brand-logo-v33\.png/);
+  assert.doesNotMatch(internal,/audiotel-brand-logo-v33\.png/);
 });

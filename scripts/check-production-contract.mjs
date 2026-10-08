@@ -56,6 +56,7 @@ const referralMigration=fs.readFileSync("database/migrations/065_customer_referr
 const referralRepairMigration=fs.readFileSync("database/migrations/066_repair_customer_referral_program.sql","utf8");
 const fixedReferralMigration=fs.readFileSync("database/migrations/067_fixed_progressive_referral_policy.sql","utf8");
 const ambassadorPortalMigration=fs.readFileSync("database/migrations/071_ambassador_portal.sql","utf8");
+const referralInviteMigration=fs.readFileSync("database/migrations/072_referral_email_invitations.sql","utf8");
 const ambassadorPortalHtml=fs.readFileSync("ambassadeur.html","utf8");
 const ambassadorApi=fs.readFileSync("assets/ambassador-api.js","utf8");
 const ambassadorPortal=fs.readFileSync("assets/ambassador-portal.js","utf8");
@@ -134,6 +135,7 @@ const postgresStore=fs.readFileSync("backend/src/store-postgres.mjs","utf8");
 const backendServer=fs.readFileSync("backend/server.mjs","utf8");
 const hubspotCrm=fs.readFileSync("backend/src/hubspot-crm.mjs","utf8");
 const resendEmailSource=fs.readFileSync("backend/src/resend-email.mjs","utf8");
+const dailyReportSource=fs.readFileSync("backend/src/daily-report.mjs","utf8");
 const publicContactWidget=fs.readFileSync("site/contact-widget.js","utf8");
 const publicOrderPage=fs.readFileSync("site/seo/demande-ouverture.html","utf8");
 const publicSiteScript=fs.readFileSync("site/site.js","utf8");
@@ -493,3 +495,14 @@ if(failures.length){
   process.exit(1);
 }
 console.log("Production contract: OK");
+
+if(!/recipient_email_hash char\(64\)/.test(referralInviteMigration)||!/UNIQUE \(recipient_email_hash\)/.test(referralInviteMigration)||!/\/api\/v1\/ambassador\/referral\/invite/.test(backendServer)||!/sendReferralInvitation/.test(resendEmailSource)||!/async prepareReferralInvitation/.test(postgresStore))failures.push("referral invitation must remain consent gated, one time and privacy minimized");
+
+if(!/const internalLinkGraph=Object\.freeze/.test(buildStatic)||!/function injectInternalLinkGraph/.test(buildStatic)||!/internal-link-card resource-link/.test(buildStatic))failures.push("semantic internal linking graph must remain crawlable and build generated");
+
+const dailyReportCron=Array.isArray(vercelConfigData.crons)&&vercelConfigData.crons.some(item=>item&&item.path==="/api/v1/internal/daily-report/run"&&item.schedule==="0 18,19,20 * * *");
+if(!dailyReportCron||!/Europe\/Paris/.test(dailyReportSource)||!/bilan-pgi-/.test(dailyReportSource))failures.push("daily report fallback must keep Paris time and Resend idempotency");
+if(!/sendDailyReportEmail/.test(resendEmailSource)||!/\/api\/v1\/internal\/daily-report\/run/.test(backendServer))failures.push("daily report fallback must send directly through the protected backend");
+for(const name of ["PGI_DAILY_REPORT_ENABLED","PGI_DAILY_REPORT_RECIPIENT"]){if(!envExample.includes(name+"=")||!compose.includes(name+":"))failures.push("daily report fallback missing environment contract "+name);}
+
+if(!/ensureReferralInvitationSchema/.test(postgresStore)||!/pgi_referral_invitation_schema_v1/.test(postgresStore)||!/CREATE TABLE IF NOT EXISTS customer_referral_invitations/.test(postgresStore))failures.push("referral invitation runtime repair must stay additive and idempotent");

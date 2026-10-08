@@ -4,7 +4,7 @@ const PORTAL_ID="149417663",REGION="eu1",GTM_ID="GTM-5L6NW5JZ",MEASUREMENT_ID="G
 const GTM_MODE="standby";
 const KEY="pgi_tracking_consent_v1",VERSION="2026-09-27-analytics-v1",MAX_AGE=180*24*60*60*1000;
 const HS_SCRIPT_ID="hs-script-loader",GTM_SCRIPT_ID="pgi-gtm-loader",GA_SCRIPT_ID="pgi-ga4-loader",LEAD_KEY="pgi_public_order_intent_v1";
-const PRIVATE_RE=/^\/(?:cockpit(?:\.html)?|admin(?:\.html)?)(?:\/|$)/i,CLIENT_RE=/^\/client(?:\.html)?(?:\/|$)/i;
+const PRIVATE_RE=/^\/(?:cockpit(?:\.html)?|admin(?:\.html)?)(?:\/|$)/i,CLIENT_RE=/^\/client(?:\.html)?(?:\/|$)/i,AMBASSADOR_RE=/^\/ambassadeur(?:\.html)?(?:\/|$)/i;
 const HS_COOKIES=["hubspotutk","__hstc","__hssc","__hssrc","messagesUtk"];
 const PARAMS=Object.freeze({
   generate_lead:["account_type","service_intent","lead_source"],
@@ -32,19 +32,20 @@ const PARAMS=Object.freeze({
   section_view:["section_id"],
   scroll_depth:["scroll_percent"],
   site_error:["error_type"],
-  search:["search_term"]
+  search:["search_term"],
+  share:["method","content_type","item_id"]
 });
 const VALUES=Object.freeze({
   account_type:new Set(["business","individual"]),
   service_intent:new Set(["new_number","portability","commercial_information","technical_support","other"]),
   lead_source:new Set(["public_marketing_site","client_portal"]),
-  method:new Set(["email","google"]),
+  method:new Set(["email","google","native","copy_link","referral_email"]),
   currency:new Set(["EUR"]),
   contact_context:new Set(["home","pricing","portability","payouts","education","industry","opening","legal","other"]),
   contact_source:new Set(["floating_email_widget"]),
   crm_sync:new Set(["synced","not_synced"]),
   error_type:new Set(["network_or_server","validation","js_error","promise_rejection"]),
-  content_type:new Set(["cta","navigation","resource","internal_link","faq","tool"]),
+  content_type:new Set(["cta","navigation","resource","internal_link","faq","tool","page","referral_link"]),
   form_context:new Set(["home","opening"]),
   error_field:new Set(["account_type","identity","email","service_intent","consent","other"]),
   registration_source:new Set(["public_order"]),
@@ -54,7 +55,7 @@ const VALUES=Object.freeze({
   scroll_percent:new Set(["25","50","75","90"])
 });
 const ALIASES=Object.freeze({service_intent:Object.freeze({advice:"commercial_information"})});
-const path=location.pathname||"/",privatePage=PRIVATE_RE.test(path),publicPage=!privatePage&&!CLIENT_RE.test(path);
+const path=location.pathname||"/",privatePage=PRIVATE_RE.test(path),publicPage=!privatePage&&!CLIENT_RE.test(path)&&!AMBASSADOR_RE.test(path);
 function contentGroup(pathname=location.pathname){
   const p=String(pathname||"/").toLowerCase();
   if(p==="/")return "Accueil";
@@ -67,6 +68,7 @@ function contentGroup(pathname=location.pathname){
   if(/audiotel-(voyance|coaching|professionnels|independants)/.test(p))return "Pages métiers";
   if(/demande-ouverture/.test(p))return "Demande d’ouverture";
   if(CLIENT_RE.test(p))return "Espace client";
+  if(AMBASSADOR_RE.test(p))return "Espace ambassadeur";
   if(/conditions|confidentialite|mentions-legales|retractation|resilier|cookies/.test(p))return "Juridique et confidentialité";
   return "Autres pages publiques";
 }

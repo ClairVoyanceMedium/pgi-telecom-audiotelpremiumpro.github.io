@@ -128,3 +128,27 @@ test("home anchor navigation is measured without recording arbitrary URLs",()=>{
   assert.match(tracking,/faq:"home_faq"/);
   assert.match(tracking,/metiers:"home_industries"/);
 });
+
+
+test("sharing analytics are consented, low cardinality and contain no recipient data",()=>{
+  assert.match(tracking,/share:\["method","content_type","item_id"\]/);
+  assert.match(tracking,/referral_email/);
+  assert.match(tracking,/copy_link/);
+  assert.match(tracking,/AMBASSADOR_RE/);
+  assert.match(tracking,/return "Espace ambassadeur"/);
+  assert.doesNotMatch(tracking,/share:\[[^\]]*email/);
+});
+
+
+test("shared acquisition links keep channel attribution without personal data",()=>{
+  const publicShare=fs.readFileSync("site/share.js","utf8");
+  const ambassadorShare=fs.readFileSync("assets/ambassador-portal.js","utf8");
+  const customerReferral=fs.readFileSync("assets/client-referral.js","utf8");
+  assert.match(publicShare,/utm_source","site_share/);
+  assert.match(publicShare,/utm_medium","share/);
+  assert.match(publicShare,/utm_campaign","organic_referral/);
+  assert.match(ambassadorShare,/utm_source","ambassador/);
+  assert.match(ambassadorShare,/utm_medium","referral_link/);
+  assert.match(customerReferral,/utm_campaign","referral_program/);
+  for(const source of [publicShare,ambassadorShare,customerReferral])assert.doesNotMatch(source,/utm_(?:source|medium|campaign)".*(?:email@|recipient_email)/);
+});

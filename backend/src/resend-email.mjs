@@ -111,6 +111,25 @@ export async function sendTransactionalEmail(config,options={}){
 }
 
 
+export async function sendDailyReportEmail(config,options={}){
+  if(!config?.resendApiKey)throw providerError("RESEND_NOT_CONFIGURED");
+  const recipient=normalizeEmail(options.to);
+  const subject=cleanText(options.subject||"",240);
+  const text=String(options.text||"").replace(/\r\n?/g,"\n").trim().slice(0,30000);
+  if(!subject||!text)throw providerError("INVALID_DAILY_REPORT",400);
+  if(subject.includes("\u2014")||text.includes("\u2014"))throw providerError("DAILY_REPORT_EM_DASH_FORBIDDEN",400);
+  const domain=String(config.transactionalDomain||"").trim().toLowerCase();
+  const from=(config.transactionalFromName||"PGI Telecom")+" <notifications@"+domain+">";
+  const replyTo="support@"+domain;
+  const eventId=String(options.idempotencyKey||"").trim().slice(0,180);
+  if(!/^bilan-pgi-\d{4}-\d{2}-\d{2}$/.test(eventId))throw providerError("INVALID_DAILY_REPORT_KEY",400);
+  return sendDirectResend(config,{
+    from,to:[recipient],reply_to:replyTo,subject,text,
+    headers:{"X-PGI-Event-ID":eventId,"X-PGI-Report":"daily"},
+    tags:[{name:"category",value:"daily_report"},{name:"sender",value:"notifications"}]
+  },eventId,"RESEND_DAILY_REPORT_FAILED");
+}
+
 export async function sendPublicContactMessage(config,options={}){
   if(!config?.resendApiKey)throw providerError("RESEND_NOT_CONFIGURED");
   const visitor=normalizeEmail(options.email);
@@ -184,6 +203,20 @@ export async function sendPublicContactMessage(config,options={}){
   }
 }
 
+
+export async function sendReferralInvitation(config,options={}){
+  if(!config?.resendApiKey)throw providerError("RESEND_NOT_CONFIGURED");
+  const recipient=normalizeEmail(options.email);
+  const domain=String(config.transactionalDomain||"").trim().toLowerCase();
+  if(!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain))throw providerError("RESEND_SENDER_NOT_CONFIGURED");
+  const referralUrl=safeActionUrl(config,options.referralUrl);
+  if(!referralUrl)throw providerError("INVALID_REFERRAL_INVITATION_URL",400);
+  const privacyUrl=sameOriginUrl(config,"/confidentialite/");
+  const eventId=String(options.eventId||options.idempotencyKey||("referral-invite/"+Date.now())).trim().slice(0,180);
+  const subject="Invitation à découvrir Audiotel Premium Pro";
+  const text=["Bonjour,","","Une personne qui vous connaît vous recommande Audiotel Premium Pro et vous a transmis son lien personnel.","","Vous pouvez découvrir le service et, si vous le souhaitez, déposer votre demande depuis ce lien :",referralUrl,"","Cette invitation est envoyée une seule fois. La personne qui vous recommande Audiotel Premium Pro a confirmé avoir votre accord pour recevoir ce message.","Votre adresse n’est pas ajoutée à une liste marketing et aucune relance automatique ne sera envoyée à partir de cette invitation.","","Si vous ne souhaitez pas recevoir d’autre message de PGI Telecom, vous pouvez répondre à cet e mail pour nous l’indiquer.","","Politique de confidentialité :",privacyUrl,"","PGI Telecom","Audiotel Premium Pro"].join("\n");
+  return sendDirectResend(config,{from:(config.transactionalFromName||"Audiotel Premium Pro")+" <notifications@"+domain+">",to:[recipient],reply_to:"support@"+domain,subject,text,headers:{"X-PGI-Referral-Invitation":"one-time"},tags:[{name:"category",value:"referral_invitation"},{name:"sender",value:"notifications"}]},eventId,"RESEND_REFERRAL_INVITATION_FAILED");
+}
 
 export async function sendSupportTicketNotification(config,options={}){
   if(!config?.resendApiKey)throw providerError("RESEND_NOT_CONFIGURED");

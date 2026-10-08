@@ -3,7 +3,7 @@ var busy=false,state=null;
 function $(id){return document.getElementById(id);}
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];});}
 function money(minor,currency){try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:currency||"EUR"}).format((Number(minor)||0)/100);}catch(_e){return ((Number(minor)||0)/100).toFixed(2)+" "+(currency||"EUR");}}
-function referralUrl(code){return location.origin+"/demande-ouverture/?parrain="+encodeURIComponent(code);}
+function referralUrl(code){var u=new URL("/demande-ouverture/",location.origin);u.searchParams.set("parrain",code);u.searchParams.set("utm_source","ambassador");u.searchParams.set("utm_medium","referral_link");u.searchParams.set("utm_campaign","referral_program");return u.href;}
 function tierLabel(t,currency){
   if(!t)return"";
   return (t.to==null?"À partir du "+t.from+"e":t.from+" à "+t.to)+" : "+money(t.reward_minor,currency)+" par filleul";

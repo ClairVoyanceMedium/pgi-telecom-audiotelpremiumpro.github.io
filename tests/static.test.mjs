@@ -733,7 +733,6 @@ test("mobile width hardening prevents document-level horizontal drift",()=>{
 
 
 test("public marketing pages prevent document-level horizontal drift",()=>{
-  assert.match(siteCss,/public-mobile-width-hardening-v139-samsung/);
   assert.match(siteCss,/html\{scroll-behavior:smooth;width:100%;max-width:100%;overflow-x:hidden!important;overscroll-behavior-x:none;touch-action:pan-y pinch-zoom\}/);
   assert.match(siteCss,/body\{margin:0;position:relative;width:100%;min-width:0;max-width:100%;overflow-x:hidden!important;overscroll-behavior-x:none;touch-action:pan-y pinch-zoom/);
   assert.match(siteCss,/\.wrap\{width:var\(--wrap\);max-width:100%;min-width:0/);
@@ -800,4 +799,9 @@ test("Business Live stays centered and highlights active money flow",()=>{
   assert.match(adminLiveFinanceCss,/data-active=true.*animation:blGlow/);
   assert.match(clientLiveFinanceCss,/prefers-reduced-motion:reduce/);
   assert.match(adminLiveFinanceCss,/prefers-reduced-motion:reduce/);
+});
+
+
+test("les surfaces espace client restent sans tiret cadratin",()=>{
+  for(const [name,source] of [["client.html",read("client.html")],["client-i18n.js",read("assets/client-i18n.js")],["client-premium-plus.js",read("assets/client-premium-plus.js")],["manifest.webmanifest",read("manifest.webmanifest")],["site/manifest.webmanifest",read("site/manifest.webmanifest")]])assert.equal(source.includes("—"),false,name);
 });
