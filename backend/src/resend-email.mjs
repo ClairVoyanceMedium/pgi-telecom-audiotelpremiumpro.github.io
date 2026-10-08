@@ -111,6 +111,25 @@ export async function sendTransactionalEmail(config,options={}){
 }
 
 
+export async function sendDailyReportEmail(config,options={}){
+  if(!config?.resendApiKey)throw providerError("RESEND_NOT_CONFIGURED");
+  const recipient=normalizeEmail(options.to);
+  const subject=cleanText(options.subject||"",240);
+  const text=String(options.text||"").replace(/\r\n?/g,"\n").trim().slice(0,30000);
+  if(!subject||!text)throw providerError("INVALID_DAILY_REPORT",400);
+  if(subject.includes("\u2014")||text.includes("\u2014"))throw providerError("DAILY_REPORT_EM_DASH_FORBIDDEN",400);
+  const domain=String(config.transactionalDomain||"").trim().toLowerCase();
+  const from=(config.transactionalFromName||"PGI Telecom")+" <notifications@"+domain+">";
+  const replyTo="support@"+domain;
+  const eventId=String(options.idempotencyKey||"").trim().slice(0,180);
+  if(!/^bilan-pgi-\d{4}-\d{2}-\d{2}$/.test(eventId))throw providerError("INVALID_DAILY_REPORT_KEY",400);
+  return sendDirectResend(config,{
+    from,to:[recipient],reply_to:replyTo,subject,text,
+    headers:{"X-PGI-Event-ID":eventId,"X-PGI-Report":"daily"},
+    tags:[{name:"category",value:"daily_report"},{name:"sender",value:"notifications"}]
+  },eventId,"RESEND_DAILY_REPORT_FAILED");
+}
+
 export async function sendPublicContactMessage(config,options={}){
   if(!config?.resendApiKey)throw providerError("RESEND_NOT_CONFIGURED");
   const visitor=normalizeEmail(options.email);

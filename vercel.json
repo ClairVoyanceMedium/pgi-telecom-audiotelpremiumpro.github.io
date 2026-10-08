@@ -23,6 +23,10 @@
     {
       "path": "/api/v1/internal/accounting/refresh",
       "schedule": "17 * * * *"
+    },
+    {
+      "path": "/api/v1/internal/daily-report/run",
+      "schedule": "0 18,19,20 * * *"
     }
   ]
 }

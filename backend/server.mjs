@@ -24,6 +24,7 @@ import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
 import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail,syncHubSpotCustomerIncident,syncHubSpotCardPaymentState} from "./src/hubspot-crm.mjs";
 import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
+import {runDailyReportCron} from "./src/daily-report.mjs";
 
 export async function createDefaultBackend(){
   const config=loadConfig();
@@ -251,6 +252,12 @@ export function createBackend(options={}){
         const delivery=await drainTransactionalEmails({store,config,limit:100});
         const dunning=await drainDunningTransactionalEmails({store,config,limit:100});
         return done(res,metrics,started,"email.dispatch",200,{ok:true,delivery,dunning});
+      }
+
+      if(method==="GET"&&pathname==="/api/v1/internal/daily-report/run"){
+        authorizeCron(req,config);
+        const result=await runDailyReportCron({store,config,now:new Date()});
+        return done(res,metrics,started,"daily_report.run",result.ok===false?503:200,result);
       }
 
       if(method==="GET"&&pathname==="/api/v1/internal/business-live/reset-schedules/run"){

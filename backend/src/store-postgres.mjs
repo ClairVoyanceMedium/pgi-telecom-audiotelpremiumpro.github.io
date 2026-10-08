@@ -6775,6 +6775,46 @@ export class PostgresStore{
     return changes;
   }
 
+  async dailyReportSnapshot({date}={}){
+    const day=String(date||"").trim();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(day))throw problem(400,"INVALID_DAILY_REPORT_DATE");
+    const bounds="(($1::date)::timestamp AT TIME ZONE 'Europe/Paris')";
+    const end="((($1::date+1))::timestamp AT TIME ZONE 'Europe/Paris')";
+    const [summary,categories]=await Promise.all([
+      this.readSql.unsafe(
+        "SELECT"+
+        " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND i.created_at>="+bounds+" AND i.created_at<"+end+") AS created_today,"+
+        " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND COALESCE(i.resolved_at,i.updated_at)>="+bounds+" AND COALESCE(i.resolved_at,i.updated_at)<"+end+" AND i.status IN ('resolved','closed')) AS resolved_today,"+
+        " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND i.status NOT IN ('resolved','closed')) AS open_now,"+
+        " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND i.status='waiting_customer') AS waiting_customer,"+
+        " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND i.status NOT IN ('resolved','closed') AND i.severity='critical') AS critical_open,"+
+        " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND i.status NOT IN ('resolved','closed') AND i.first_responded_at IS NULL AND i.first_response_due_at<now()) AS first_response_overdue,"+
+        " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND i.status NOT IN ('resolved','closed') AND i.target_resolution_at<now()) AS resolution_overdue,"+
+        " (SELECT count(*)::int FROM audit_log WHERE action='customer.email.inbound_resolved' AND created_at>="+bounds+" AND created_at<"+end+") AS inbound_resolved,"+
+        " (SELECT count(*)::int FROM transactional_email_deliveries WHERE created_at>="+bounds+" AND created_at<"+end+") AS email_created,"+
+        " (SELECT count(*)::int FROM transactional_email_deliveries WHERE created_at>="+bounds+" AND created_at<"+end+" AND state IN ('accepted','sent','delivered','clicked')) AS email_accepted_or_sent,"+
+        " (SELECT count(*)::int FROM transactional_email_deliveries WHERE created_at>="+bounds+" AND created_at<"+end+" AND state IN ('delivered','clicked')) AS email_delivered,"+
+        " (SELECT count(*)::int FROM transactional_email_deliveries WHERE created_at>="+bounds+" AND created_at<"+end+" AND state IN ('failed','bounced','complained','suppressed')) AS email_failed_or_bounced,"+
+        " (SELECT count(*)::int FROM tenants WHERE tenant_type<>'internal' AND created_at>="+bounds+" AND created_at<"+end+") AS tenants_created,"+
+        " (SELECT count(*)::int FROM calls WHERE started_at>="+bounds+" AND started_at<"+end+") AS calls_total,"+
+        " (SELECT count(*)::int FROM calls WHERE started_at>="+bounds+" AND started_at<"+end+" AND call_status='connected') AS calls_connected,"+
+        " (SELECT count(*)::int FROM outbox_events WHERE published_at IS NULL) AS outbox_pending",
+        [day]
+      ),
+      this.readSql.unsafe(
+        "SELECT i.category,count(*)::int AS count FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id"+
+        " WHERE t.tenant_type<>'internal' AND i.status NOT IN ('resolved','closed') GROUP BY i.category ORDER BY count(*) DESC,i.category LIMIT 8"
+      )
+    ]);
+    const row=summary[0]||{};
+    return {
+      service:{created_today:row.created_today,resolved_today:row.resolved_today,open_now:row.open_now,waiting_customer:row.waiting_customer,critical_open:row.critical_open,first_response_overdue:row.first_response_overdue,resolution_overdue:row.resolution_overdue},
+      mail:{inbound_resolved:row.inbound_resolved,created:row.email_created,accepted_or_sent:row.email_accepted_or_sent,delivered:row.email_delivered,failed_or_bounced:row.email_failed_or_bounced},
+      system:{tenants_created:row.tenants_created,calls_total:row.calls_total,calls_connected:row.calls_connected,outbox_pending:row.outbox_pending},
+      categories
+    };
+  }
+
   async listServiceIncidents(params={}){
     const limit=clampInt(params.limit,50,1,250),cursor=decodeNumericCursor(params.cursor);
     const status=params.status?String(params.status).trim().toLowerCase():null;

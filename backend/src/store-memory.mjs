@@ -1265,6 +1265,8 @@ export class MemoryStore{
   async customerPortalComparison(_tenantId,from,to){return {financial_by_currency:[],range:{from,to}};}
   async customerPortalCalls(){return {data:[],next_cursor:null};}
 
+  async dailyReportSnapshot(){return {service:{created_today:0,resolved_today:0,open_now:0,waiting_customer:0,critical_open:0,first_response_overdue:0,resolution_overdue:0},mail:{inbound_resolved:0,created:0,accepted_or_sent:0,delivered:0,failed_or_bounced:0},system:{tenants_created:0,calls_total:0,calls_connected:0,outbox_pending:0},categories:[]};}
+
   async listServiceIncidents(){return {data:[],next_cursor:null};}
 
   async customerRelationsOverview(){return {schema_version:"audiotel-customer-relations/1",tenant:null,cases:[],exits:[],events:[],actions:[],evidence:[],holds:[],agent_policy_version:"customer-relations/1"};}
