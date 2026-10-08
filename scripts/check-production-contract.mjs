@@ -504,3 +504,5 @@ const dailyReportCron=Array.isArray(vercelConfigData.crons)&&vercelConfigData.cr
 if(!dailyReportCron||!/Europe\/Paris/.test(dailyReportSource)||!/bilan-pgi-/.test(dailyReportSource))failures.push("daily report fallback must keep Paris time and Resend idempotency");
 if(!/sendDailyReportEmail/.test(resendEmailSource)||!/\/api\/v1\/internal\/daily-report\/run/.test(backendServer))failures.push("daily report fallback must send directly through the protected backend");
 for(const name of ["PGI_DAILY_REPORT_ENABLED","PGI_DAILY_REPORT_RECIPIENT"]){if(!envExample.includes(name+"=")||!compose.includes(name+":"))failures.push("daily report fallback missing environment contract "+name);}
+
+if(!/ensureReferralInvitationSchema/.test(postgresStore)||!/pgi_referral_invitation_schema_v1/.test(postgresStore)||!/CREATE TABLE IF NOT EXISTS customer_referral_invitations/.test(postgresStore))failures.push("referral invitation runtime repair must stay additive and idempotent");

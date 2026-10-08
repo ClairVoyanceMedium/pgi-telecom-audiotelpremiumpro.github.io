@@ -128,3 +128,16 @@ test("referral invitation copy keeps the customer email style constraints",()=>{
   assert.match(invite,/notifications@/);
   assert.match(invite,/support@/);
 });
+
+
+test("referral invitation schema self heals additively before production use",()=>{
+  assert.match(store,/async function ensureReferralInvitationSchema/);
+  assert.match(store,/pgi_referral_invitation_schema_v1/);
+  assert.match(store,/CREATE TABLE IF NOT EXISTS customer_referral_invitations/);
+  assert.match(store,/CREATE INDEX IF NOT EXISTS customer_referral_invitations_referrer_time_idx/);
+  assert.match(store,/await ensureReferralInvitationSchema\(sql\)/);
+  const start=store.indexOf("async function ensureReferralInvitationSchema");
+  const end=store.indexOf("async function ensureReferralPayoutAutomationSchema",start);
+  const repair=store.slice(start,end);
+  assert.doesNotMatch(repair,/DROP\s+TABLE|TRUNCATE|DELETE\s+FROM/i);
+});

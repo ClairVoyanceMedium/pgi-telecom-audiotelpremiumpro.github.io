@@ -110,6 +110,40 @@ function consumptionDiff(stored,current){
   return out;
 }
 
+async function ensureReferralInvitationSchema(sql){
+  const ready=async()=>{
+    const rows=await sql.unsafe("SELECT to_regclass('public.customer_referral_invitations') IS NOT NULL AS invitations");
+    return rows[0]?.invitations===true;
+  };
+  if(await ready())return {repaired:false};
+  const lockKey="pgi_referral_invitation_schema_v1";
+  await sql.unsafe("SELECT pg_advisory_lock(hashtext($1))",[lockKey]);
+  try{
+    if(await ready())return {repaired:false};
+    await sql.begin(async tx=>{
+      await tx.unsafe(
+        "CREATE TABLE IF NOT EXISTS customer_referral_invitations ("+
+        "id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,"+
+        "public_id uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE,"+
+        "referral_code_id bigint NOT NULL REFERENCES customer_referral_codes(id) ON DELETE CASCADE,"+
+        "referrer_tenant_id bigint NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,"+
+        "recipient_email_hash char(64) NOT NULL,"+
+        "status text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','sent','failed')),"+
+        "consent_attested_at timestamptz NOT NULL,sent_at timestamptz,provider_message_reference text,last_error text,"+
+        "metadata jsonb NOT NULL DEFAULT '{}'::jsonb,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),"+
+        "CONSTRAINT customer_referral_invitations_hash_format_chk CHECK (recipient_email_hash ~ '^[0-9a-f]{64}$'),"+
+        "CONSTRAINT customer_referral_invitations_recipient_uidx UNIQUE (recipient_email_hash))"
+      );
+      await tx.unsafe("CREATE INDEX IF NOT EXISTS customer_referral_invitations_referrer_time_idx ON customer_referral_invitations(referrer_tenant_id,created_at DESC)");
+      await tx.unsafe("CREATE INDEX IF NOT EXISTS customer_referral_invitations_status_time_idx ON customer_referral_invitations(status,created_at DESC)");
+      await tx.unsafe("COMMENT ON TABLE customer_referral_invitations IS 'One time referral invitations. No clear text recipient email is stored. Hash uniqueness prevents repeated invitations to the same address.'");
+    });
+    return {repaired:true};
+  }finally{
+    try{await sql.unsafe("SELECT pg_advisory_unlock(hashtext($1))",[lockKey]);}catch{}
+  }
+}
+
 async function ensureReferralPayoutAutomationSchema(sql){
   const ready=async()=>{
     const rows=await sql.unsafe(
@@ -191,6 +225,7 @@ export class PostgresStore{
     const sql=makeClient(config.databaseUrl,config.databasePoolMax);
     await sql.unsafe("select 1 as ok");
     await ensureReferralPayoutAutomationSchema(sql);
+    await ensureReferralInvitationSchema(sql);
     let readSql=sql;
     if(config.databaseReadUrl){
       readSql=makeClient(config.databaseReadUrl,config.databaseReadPoolMax);
