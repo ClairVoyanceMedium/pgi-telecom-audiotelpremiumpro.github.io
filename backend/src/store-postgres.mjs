@@ -6825,7 +6825,7 @@ export class PostgresStore{
         " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND i.status NOT IN ('resolved','closed') AND i.severity='critical') AS critical_open,"+
         " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND i.status NOT IN ('resolved','closed') AND i.first_responded_at IS NULL AND i.first_response_due_at<now()) AS first_response_overdue,"+
         " (SELECT count(*)::int FROM tenant_service_incidents i JOIN tenants t ON t.id=i.tenant_id WHERE t.tenant_type<>'internal' AND i.status NOT IN ('resolved','closed') AND i.target_resolution_at<now()) AS resolution_overdue,"+
-        " (SELECT count(*)::int FROM audit_log WHERE action='customer.email.inbound_resolved' AND created_at>="+bounds+" AND created_at<"+end+") AS inbound_resolved,"+
+        " (SELECT count(*)::int FROM audit_log WHERE action='customer.email.inbound_resolved' AND occurred_at>="+bounds+" AND created_at<"+end+") AS inbound_resolved,"+
         " (SELECT count(*)::int FROM transactional_email_deliveries WHERE created_at>="+bounds+" AND created_at<"+end+") AS email_created,"+
         " (SELECT count(*)::int FROM transactional_email_deliveries WHERE created_at>="+bounds+" AND created_at<"+end+" AND state IN ('accepted','sent','delivered','clicked')) AS email_accepted_or_sent,"+
         " (SELECT count(*)::int FROM transactional_email_deliveries WHERE created_at>="+bounds+" AND created_at<"+end+" AND state IN ('delivered','clicked')) AS email_delivered,"+
