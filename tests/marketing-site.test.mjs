@@ -919,3 +919,5 @@ test("public footer uses the full brand logo without duplicating logos in conten
   assert.doesNotMatch(sharing,/audiotel-brand-logo-v33\.png/);
   assert.doesNotMatch(internal,/audiotel-brand-logo-v33\.png/);
 });
+
+// Production validation refresh.
