@@ -495,10 +495,8 @@ test("public branding and client access wording are explicit",()=>{
   assert.match(html,/Audiotel Premium Pro \| Une solution PGI Telecom/);
   assert.match(css,/brand-full img,.footer-brand-premium img/);
   assert.match(css,/width:238px!important/);
-  assert.match(css,/site-header \.brand-full img\{width:180px!important/);
-  assert.match(css,/\.home-page \.brand-full img\{width:390px;max-height:94px\}/);
-  assert.match(css,/@media\(max-width:980px\)\{\.home-page \.brand-full img\{width:315px;max-height:84px\}\}/);
-  assert.match(css,/@media\(max-width:680px\)\{\.home-page \.brand-full img\{width:265px;max-height:76px\}\}/);
+  assert.match(css,/\.home-page \.brand-full img\{width:238px!important;max-height:78px!important\}/);
+  assert.match(css,/@media\(max-width:680px\)\{\.site-header \.brand-full img,\.footer-brand-premium img,[^}]*\.hero-visual \.hero-visual-brand\{width:238px!important;max-height:78px!important\}\}/);
 });
 
 test("hero copy is condensed and the primary potential gain is highlighted in green",()=>{
@@ -839,10 +837,14 @@ test("all public pages receive a professional copyright footer with an automatic
 test("Google Preferred Sources is integrated without claiming Google certification",()=>{
   assert.match(buildStatic,/preferredSourceSlugs/);
   assert.match(buildStatic,/https:\/\/www\.google\.com\/preferences\/source\?q=audiotel-premium-pro\.com/);
-  assert.match(buildStatic,/Le réglage s’effectue directement sur Google/);
+  assert.match(buildStatic,/Ajoutez PGI Telecom à vos sources préférées sur Google/);
+  assert.match(buildStatic,/sources que vous souhaitez privilégier/);
+  assert.match(buildStatic,/Ajouter PGI Telecom sur Google/);
+  assert.match(buildStatic,/Site officiel/);
   assert.match(buildStatic,/Tarifs clairs/);
   assert.match(buildStatic,/Portabilité accompagnée/);
-  assert.match(buildStatic,/Support PGI Telecom/);
+  assert.match(buildStatic,/Support client/);
+  assert.match(buildStatic,/Le réglage s’effectue directement sur Google/);
   assert.doesNotMatch(buildStatic,/Mode IA|Aperçus IA/);
   assert.match(buildStatic,/guide-audiotel-sva/);
   const preferredBlock=buildStatic.slice(buildStatic.indexOf("const preferredSourceSlugs"),buildStatic.indexOf("function injectPreferredSource"));

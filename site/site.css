@@ -369,9 +369,6 @@ body{padding-bottom:112px}
 }
 .home-page .site-header+main>.hero:first-child{padding-top:22px}
 @media(max-width:680px){.home-page .site-header+main>.hero:first-child{padding-top:18px}}
-.home-page .brand-full img{width:390px;max-height:94px}
-@media(max-width:980px){.home-page .brand-full img{width:315px;max-height:84px}}
-@media(max-width:680px){.home-page .brand-full img{width:265px;max-height:76px}}
 .ambassador-form textarea{width:100%;min-height:112px;resize:vertical;border:1px solid rgba(255,255,255,.10);border-radius:14px;outline:0;background:rgba(255,255,255,.035);color:#fff;font:600 15px/1.5 inherit;padding:14px}.ambassador-form textarea:focus,.ambassador-form .input-unit:focus-within{border-color:rgba(232,179,110,.48);box-shadow:0 0 0 3px rgba(232,179,110,.08)}.ambassador-form h3{margin:0;font-size:24px;line-height:1.15}.ambassador-honeypot{position:absolute!important;left:-9999px!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important}.ambassador-form-status{min-height:24px;margin:0;color:#f0c890;font-size:13px;font-weight:700}.ambassador-legal-consent{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;padding:14px;border:1px solid rgba(232,179,110,.20);border-radius:14px;background:rgba(232,179,110,.055);color:#d9c8bc;font-size:12px;line-height:1.5}.ambassador-legal-consent input{width:18px;height:18px;margin:1px 0 0;accent-color:#d99b52}.ambassador-legal-consent a{color:var(--gold2);text-decoration:underline;text-underline-offset:2px}.ambassador-legal-consent span{min-width:0}.referral-procedure-grid{grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:980px){.referral-procedure-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:620px){.referral-procedure-grid{grid-template-columns:1fr}}
 .footer-rights{margin-top:18px;padding-top:17px;border-top:1px solid rgba(255,255,255,.06);text-align:center}
 .footer-rights p{margin:0;color:#7f6b60;font-size:11px;line-height:1.5;letter-spacing:.025em}
@@ -391,4 +388,4 @@ body{padding-bottom:112px}
 .brand-full img,.footer-brand-premium img,.site-footer .footer-inner>div>img[src*="audiotel-brand-logo-v33.png"]{width:238px!important;max-width:100%;height:auto!important;max-height:78px!important;object-fit:contain}
 .home-page .brand-full img{width:238px!important;max-height:78px!important}
 .hero-visual .hero-visual-brand{width:238px}
-@media(max-width:680px){.site-header .brand-full img{width:180px!important;max-height:59px!important}.footer-brand-premium img,.site-footer .footer-inner>div>img[src*="audiotel-brand-logo-v33.png"]{width:238px!important}.hero-visual .hero-visual-brand{width:180px}}
+@media(max-width:680px){.site-header .brand-full img,.footer-brand-premium img,.site-footer .footer-inner>div>img[src*="audiotel-brand-logo-v33.png"],.hero-visual .hero-visual-brand{width:238px!important;max-height:78px!important}}
