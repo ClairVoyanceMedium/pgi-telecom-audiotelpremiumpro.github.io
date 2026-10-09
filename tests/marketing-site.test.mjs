@@ -915,7 +915,7 @@ test("public brand logos use the payment page reference size without breaking mo
 test("public footer uses the full brand logo without duplicating logos in content modules",()=>{
   assert.match(buildStatic,/footer-brand-premium/);
   assert.match(buildStatic,/audiotel-brand-logo-v33\.png/);
-  assert.match(css,/footer-brand-premium img[\\s\\S]*width:238px/);
+  assert.match(css,/footer-brand-premium img[\s\S]*width:238px/);
   const preferred=buildStatic.slice(buildStatic.indexOf("function injectPreferredSource"),buildStatic.indexOf("const shareableSlugs"));
   const sharing=buildStatic.slice(buildStatic.indexOf("function injectPublicShare"),buildStatic.indexOf("const publicBaseUrl"));
   const internal=buildStatic.slice(buildStatic.indexOf("function injectInternalLinkGraph"),buildStatic.indexOf("const preferredSourceSlugs"));
