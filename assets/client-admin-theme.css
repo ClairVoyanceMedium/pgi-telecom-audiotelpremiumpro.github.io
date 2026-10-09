@@ -382,3 +382,8 @@ html.cp-initial-top-lock body{position:fixed!important;inset:0!important;width:1
 @media(max-width:430px){
   .cp-company-title{margin-top:20px!important}
 }
+
+/* brand-logo-uniform-238 */
+.cp-logo-auth,.cp-logo-header,.cp-footer-brand img{width:238px!important;height:auto!important;max-width:100%!important;max-height:78px!important;object-fit:contain!important}
+.cp-print-brand img{width:238px!important;height:auto!important}
+@media(max-width:760px){.cp-brand img.cp-logo-header{width:min(180px,49vw)!important;height:auto!important;max-width:none!important;max-height:59px!important;flex:0 0 auto!important}.cp-logo-auth{width:min(238px,72vw)!important}.cp-footer-brand img{width:min(238px,72vw)!important}}
