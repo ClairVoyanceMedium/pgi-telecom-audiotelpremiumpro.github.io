@@ -4,6 +4,7 @@ import fs from "node:fs";
 
 const html=fs.readFileSync("site/index.html","utf8");
 const css=fs.readFileSync("site/site.css","utf8");
+const paymentCardCss=fs.readFileSync("site/payment-card.css","utf8");
 const js=fs.readFileSync("site/site.js","utf8");
 const siteSearch=fs.readFileSync("site/site-search.js","utf8");
 const tracking=fs.readFileSync("site/hubspot-tracking.js","utf8");
@@ -492,9 +493,9 @@ test("public branding and client access wording are explicit",()=>{
   assert.match(html,/Se connecter à mon espace client/);
   assert.match(html,/AUDIOTEL PREMIUM PRO \| UNE SOLUTION PGI TELECOM/);
   assert.match(html,/Audiotel Premium Pro \| Une solution PGI Telecom/);
-  assert.match(css,/brand-full img\{width:340px;max-height:82px\}/);
-  assert.match(css,/@media\(max-width:980px\)[\s\S]*brand-full img\{width:275px;max-height:76px\}/);
-  assert.match(css,/@media\(max-width:680px\)[\s\S]*brand-full img\{width:240px;max-height:70px\}/);
+  assert.match(css,/brand-full img,.footer-brand-premium img/);
+  assert.match(css,/width:238px!important/);
+  assert.match(css,/site-header \\.brand-full img\\{width:180px!important/);
   assert.match(css,/\.home-page \.brand-full img\{width:390px;max-height:94px\}/);
   assert.match(css,/@media\(max-width:980px\)\{\.home-page \.brand-full img\{width:315px;max-height:84px\}\}/);
   assert.match(css,/@media\(max-width:680px\)\{\.home-page \.brand-full img\{width:265px;max-height:76px\}\}/);
@@ -838,7 +839,7 @@ test("all public pages receive a professional copyright footer with an automatic
 test("Google Preferred Sources is integrated without claiming Google certification",()=>{
   assert.match(buildStatic,/preferredSourceSlugs/);
   assert.match(buildStatic,/https:\/\/www\.google\.com\/preferences\/source\?q=audiotel-premium-pro\.com/);
-  assert.match(buildStatic,/Il ne constitue pas une certification du site par Google/);
+  assert.match(buildStatic,/Le réglage s’effectue directement sur Google/);\n  assert.match(buildStatic,/Tarifs clairs/);\n  assert.match(buildStatic,/Portabilité accompagnée/);\n  assert.match(buildStatic,/Support PGI Telecom/);\n  assert.doesNotMatch(buildStatic,/Mode IA|Aperçus IA/);
   assert.match(buildStatic,/guide-audiotel-sva/);
   const preferredBlock=buildStatic.slice(buildStatic.indexOf("const preferredSourceSlugs"),buildStatic.indexOf("function injectPreferredSource"));
   assert.doesNotMatch(preferredBlock,/mentions-legales|conditions-utilisation|conditions-abonnement|confidentialite|accord-traitement-donnees|cookies-traceurs|demande-ouverture|resilier-contrat|retractation/);
@@ -898,10 +899,11 @@ test("internal linking graph is balanced, crawlable and conversion aware",()=>{
 });
 
 
-test("homepage logo stays slightly larger without adding duplicate brand blocks",()=>{
-  assert.match(css,/\.home-page \.brand-full img\{width:390px;max-height:94px\}/);
-  assert.match(css,/@media\(max-width:980px\)\{\.home-page \.brand-full img\{width:315px;max-height:84px\}\}/);
-  assert.match(css,/@media\(max-width:680px\)\{\.home-page \.brand-full img\{width:265px;max-height:76px\}\}/);
+test("public brand logos use the payment page reference size without breaking mobile headers",()=>{
+  assert.match(css,/width:238px!important/);
+  assert.match(css,/max-height:78px!important/);
+  assert.match(css,/site-header \\.brand-full img\\{width:180px!important/);
+  assert.match(paymentCardCss,/conversion-offer-brand img\\{width:238px/);
   assert.doesNotMatch(buildStatic,/feature-brand-signature|footer-brand-full/);
 });
 
@@ -909,7 +911,7 @@ test("homepage logo stays slightly larger without adding duplicate brand blocks"
 test("public footer uses the full brand logo without duplicating logos in content modules",()=>{
   assert.match(buildStatic,/footer-brand-premium/);
   assert.match(buildStatic,/audiotel-brand-logo-v33\.png/);
-  assert.match(css,/\.footer-brand-premium img\{display:block;width:188px/);
+  assert.match(css,/footer-brand-premium img[\\s\\S]*width:238px/);
   const preferred=buildStatic.slice(buildStatic.indexOf("function injectPreferredSource"),buildStatic.indexOf("const shareableSlugs"));
   const sharing=buildStatic.slice(buildStatic.indexOf("function injectPublicShare"),buildStatic.indexOf("const publicBaseUrl"));
   const internal=buildStatic.slice(buildStatic.indexOf("function injectInternalLinkGraph"),buildStatic.indexOf("const preferredSourceSlugs"));
