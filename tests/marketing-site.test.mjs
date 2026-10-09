@@ -908,7 +908,7 @@ test("internal linking graph is balanced, crawlable and conversion aware",()=>{
 test("public brand logos use the payment page reference size without breaking mobile headers",()=>{
   assert.match(css,/width:238px!important/);
   assert.match(css,/max-height:78px!important/);
-  assert.match(css,/site-header \.brand-full img\{width:180px!important/);
+  assert.match(css,/@media\(max-width:680px\)\{\.site-header \.brand-full img,[^}]*width:238px!important;max-height:78px!important\}/);
   assert.match(paymentCardCss,/conversion-offer-brand img\{width:238px/);
   assert.doesNotMatch(buildStatic,/feature-brand-signature|footer-brand-full/);
 });
