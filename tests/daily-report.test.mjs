@@ -33,3 +33,9 @@ test("daily report backend uses protected cron and one native idempotency key",(
   assert.match(resend,/sendDailyReportEmail/);
   assert.match(store,/async dailyReportSnapshot/);
 });
+
+
+test("daily report snapshot uses the real audit timestamp column",()=>{
+  assert.match(store,/audit_log WHERE action='customer\.email\.inbound_resolved' AND occurred_at>=/);
+  assert.doesNotMatch(store,/audit_log WHERE action='customer\.email\.inbound_resolved' AND created_at>=/);
+});
