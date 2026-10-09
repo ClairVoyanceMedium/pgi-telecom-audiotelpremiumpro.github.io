@@ -495,7 +495,7 @@ test("public branding and client access wording are explicit",()=>{
   assert.match(html,/Audiotel Premium Pro \| Une solution PGI Telecom/);
   assert.match(css,/brand-full img,.footer-brand-premium img/);
   assert.match(css,/width:238px!important/);
-  assert.match(css,/site-header \\.brand-full img\\{width:180px!important/);
+  assert.match(css,/site-header \.brand-full img\{width:180px!important/);
   assert.match(css,/\.home-page \.brand-full img\{width:390px;max-height:94px\}/);
   assert.match(css,/@media\(max-width:980px\)\{\.home-page \.brand-full img\{width:315px;max-height:84px\}\}/);
   assert.match(css,/@media\(max-width:680px\)\{\.home-page \.brand-full img\{width:265px;max-height:76px\}\}/);
@@ -839,7 +839,11 @@ test("all public pages receive a professional copyright footer with an automatic
 test("Google Preferred Sources is integrated without claiming Google certification",()=>{
   assert.match(buildStatic,/preferredSourceSlugs/);
   assert.match(buildStatic,/https:\/\/www\.google\.com\/preferences\/source\?q=audiotel-premium-pro\.com/);
-  assert.match(buildStatic,/Le réglage s’effectue directement sur Google/);\n  assert.match(buildStatic,/Tarifs clairs/);\n  assert.match(buildStatic,/Portabilité accompagnée/);\n  assert.match(buildStatic,/Support PGI Telecom/);\n  assert.doesNotMatch(buildStatic,/Mode IA|Aperçus IA/);
+  assert.match(buildStatic,/Le réglage s’effectue directement sur Google/);
+  assert.match(buildStatic,/Tarifs clairs/);
+  assert.match(buildStatic,/Portabilité accompagnée/);
+  assert.match(buildStatic,/Support PGI Telecom/);
+  assert.doesNotMatch(buildStatic,/Mode IA|Aperçus IA/);
   assert.match(buildStatic,/guide-audiotel-sva/);
   const preferredBlock=buildStatic.slice(buildStatic.indexOf("const preferredSourceSlugs"),buildStatic.indexOf("function injectPreferredSource"));
   assert.doesNotMatch(preferredBlock,/mentions-legales|conditions-utilisation|conditions-abonnement|confidentialite|accord-traitement-donnees|cookies-traceurs|demande-ouverture|resilier-contrat|retractation/);
@@ -902,8 +906,8 @@ test("internal linking graph is balanced, crawlable and conversion aware",()=>{
 test("public brand logos use the payment page reference size without breaking mobile headers",()=>{
   assert.match(css,/width:238px!important/);
   assert.match(css,/max-height:78px!important/);
-  assert.match(css,/site-header \\.brand-full img\\{width:180px!important/);
-  assert.match(paymentCardCss,/conversion-offer-brand img\\{width:238px/);
+  assert.match(css,/site-header \.brand-full img\{width:180px!important/);
+  assert.match(paymentCardCss,/conversion-offer-brand img\{width:238px/);
   assert.doesNotMatch(buildStatic,/feature-brand-signature|footer-brand-full/);
 });
 
