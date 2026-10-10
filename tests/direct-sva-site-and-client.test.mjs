@@ -193,3 +193,26 @@ test("future direct SVA APIs and admin UI are default-deny even during first Aud
  assert.match(builder,/"assets\/direct-sva-cockpit\.js"/);
  assert.ok(!builder.includes('"site/distribution-sva/index.html"'));
 });
+
+test("every future SVA page exposes the same transparent legal routes while staying unpublished",()=>{
+ const pages=[
+  "index.html","solutions/index.html","conformite/index.html","espace-client/index.html",
+  "business-live/index.html","transition/index.html",
+  "mentions-legales/index.html","conditions/index.html",
+  "confidentialite/index.html","reclamations/index.html"
+ ];
+ const links=["mentions-legales","conditions","confidentialite","reclamations"];
+ const builder=fs.readFileSync(path.join(root,"scripts/build-static.mjs"),"utf8");
+ for(const page of pages){
+  const file="site/distribution-sva/"+page;
+  const html=fs.readFileSync(path.join(root,file),"utf8");
+  assert.match(html,/name="robots" content="noindex,nofollow,noarchive"/,page);
+  assert.ok(!builder.includes('"'+file+'"'),page+": published in static bundle");
+  for(const slug of links)
+   assert.ok(html.includes('href="/distribution-sva/'+slug+'/"'),page+": missing legal "+slug);
+  assert.match(html,/Tous droits réservés/,page);
+ }
+ const server=fs.readFileSync(path.join(root,"backend/src/static-site.mjs"),"utf8");
+ assert.match(server,/X-Robots-Tag/);
+ assert.match(server,/distribution-sva/);
+});
