@@ -44,12 +44,12 @@ test("an arithmetic inconsistency invalidates the report",()=>{
 test("a preview of carrier settlement cannot claim a bank payout occurred",()=>{
  const plan={business_unit:"direct_sva",analysis_mode:"untrusted_source_preview",
   approved_by_operator:false,accounting_write_authorized:false,bank_payout_authorized:false,
-  number_activation_authorized:false,issues:[]};
+  number_activation_authorized:false,issues:[],input_rows:1,accepted_rows:1,rejected_rows:0,total_upstream_net_minor:1000,total_pgi_margin_minor:200,total_publisher_due_minor:800};
  assert.equal(assertDirectSvaCockpitPayload(plan,"settlement"),plan);
  assert.throws(()=>assertDirectSvaCockpitPayload({...plan,bank_payout_authorized:true},"settlement"),error);
 });
 test("a direct CRM or payment integration cannot be displayed as disabled when transmitting",()=>{
- const record={all_direct_integrations_disabled:true,
+ const record={all_direct_integrations_disabled:true,ga4_emission_enabled:false,hubspot_synchronization_enabled:false,search_index_submission_enabled:false,direct_operator_activation_enabled:false,
   units:[{code:"audiotel_platform",label:"Audiotel Premium Pro"},
    {code:"direct_sva",label:"PGI Telecom Distribution"}],
   checks:Array.from({length:6},()=>({data_sending_enabled:false}))};
@@ -66,7 +66,7 @@ test("13 automation workflows must all remain non-executing",()=>{
   jobs:[{execution_authorized:true},...plan.jobs.slice(1)]},"automation"),error);
 });
 test("the complaints tab cannot show unapproved Gmail/HubSpot sending",()=>{
- const record={business_unit:"direct_sva",public_form_enabled:false,payments_enabled:false,
+ const record={business_unit:"direct_sva",public_form_enabled:false,payments_enabled:false,operator_actions_active:false,
   gmail_delivery_active:false,hubspot_delivery_active:false};
  assert.equal(assertDirectSvaCockpitPayload(record,"complaints"),record);
  assert.throws(()=>assertDirectSvaCockpitPayload({...record,gmail_delivery_active:true},"complaints"),error);
