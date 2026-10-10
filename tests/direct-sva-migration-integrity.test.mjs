@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const migrationDir=new URL("../database/migrations/",import.meta.url);
-const names=["073_direct_sva_operator_business_unit.sql","074_single_company_two_business_units.sql","075_direct_sva_customer_and_automation_foundation.sql","076_direct_sva_admin_switches.sql"];
+const names=["073_direct_sva_operator_business_unit.sql","074_single_company_two_business_units.sql","075_direct_sva_customer_and_automation_foundation.sql","076_direct_sva_admin_switches.sql","077_existing_customer_provider_transition_preparation.sql"];
 
 function stripSqlComments(sql){
  return sql.replace(/\/\*[\s\S]*?\*\//g," ").replace(/--[^\n]*/g," ");
@@ -13,7 +13,7 @@ function stripSqlComments(sql){
 // Balance basic structural tokens while ignoring quoted SQL strings, dollar-quoted bodies and comments.
 // This is a defensive lint pass, not a substitute for a PostgreSQL migration on an isolated test branch.
 function scanSql(sql){
- let state="code",depth=0;
+ let state="code",depth=0,dollarTag="";
  for(let i=0;i<sql.length;i++){
   const ch=sql[i],next=sql[i+1];
   if(state==="code"){
@@ -21,7 +21,7 @@ function scanSql(sql){
    if(ch==="/"&&next==="*"){state="comment";i++;continue;}
    if(ch==="'"){state="single";continue;}
    if(ch==='"'){state="double";continue;}
-   if(ch==="$"&&next==="$"){state="dollar";i++;continue;}
+   if(ch==="$"){const m=/^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/.exec(sql.slice(i));if(m){dollarTag=m[0];state="dollar";i+=dollarTag.length-1;continue;}}
    if(ch==="(")depth++;
    else if(ch===")"){depth--;if(depth<0)throw Error("Orphan SQL closing parenthesis at "+i);}
   }else if(state==="line"){
@@ -35,13 +35,13 @@ function scanSql(sql){
    if(ch==='"'&&next==='"'){i++;continue;}
    if(ch==='"')state="code";
   }else if(state==="dollar"){
-   if(ch==="$"&&next==="$"){state="code";i++;}
+   if(sql.startsWith(dollarTag,i)){state="code";i+=dollarTag.length-1;}
   }
  }
  if(depth!==0||!["code","line"].includes(state))throw Error("SQL has unclosed parentheses or quoted body: "+JSON.stringify({depth,state}));
 }
 
-test("the three direct SVA migrations have intact statement boundaries and exactly one table definition",()=>{
+test("the direct SVA migrations have intact statement boundaries and no duplicate table definitions",()=>{
  for(const name of names){
   const sql=fs.readFileSync(new URL(name,migrationDir),"utf8");
   assert.doesNotThrow(()=>scanSql(sql),name);
@@ -90,4 +90,19 @@ test("new switches only allow private preview while commercial operation is lock
  assert.match(sql,/commercial_operation_enabled boolean NOT NULL DEFAULT false/);
  assert.match(sql,/CHECK \(commercial_operation_enabled=false\)/);
  assert.match(sql,/CREATE TRIGGER direct_sva_guard_admin_switch_audit_immutable/);
+});
+
+
+test("migration 077 preserves customer identity, forbids routing and verifies source carrier",()=>{
+ const sql=fs.readFileSync(new URL(names[4],migrationDir),"utf8");
+ assert.match(sql,/CREATE TABLE IF NOT EXISTS direct_sva_existing_customer_transition_plans/);
+ assert.match(sql,/UNIQUE\(assignment_id,revision_no\)/);
+ assert.match(sql,/current_tenant<>NEW\.tenant_id/);
+ assert.match(sql,/current_e164<>NEW\.e164_snapshot/);
+ assert.match(sql,/actual_host<>NEW\.source_host_carrier_id/);
+ assert.match(sql,/CHECK\(routing_authorized=false\)/);
+ assert.match(sql,/CHECK\(portability_authorized=false\)/);
+ assert.match(sql,/CHECK\(money_transfer_authorized=false\)/);
+ assert.match(sql,/\$pgi_transition\$/);
+ assert.doesNotMatch(stripSqlComments(sql),/\bUPDATE\s+tenant_number_assignments\b|\bDROP\b|\bTRUNCATE\b/i);
 });
