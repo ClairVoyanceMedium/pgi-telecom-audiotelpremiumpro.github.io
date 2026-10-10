@@ -27,6 +27,14 @@ export function validDirectSvaMonth(raw,now=new Date()){
   return month;
 }
 
+function strictMinorInput(value){
+ if(value===null||value===undefined)return 0;
+ if(typeof value==="number")return Number.isSafeInteger(value)?value:NaN;
+ // Integers from decimal-only form fields may be strings. Never silently
+ // reinterpret booleans, whitespace, floats, hex or scientific notation.
+ if(typeof value==="string"&&/^(?:0|[1-9][0-9]{0,12})$/.test(value))return Number(value);
+ return NaN;
+}
 export function normalizeDirectSvaJournalDraft(payload={}){
   const sourceReference=String(payload.source_reference||"").trim();
   const description=String(payload.description||"").trim();
@@ -46,7 +54,7 @@ export function normalizeDirectSvaJournalDraft(payload={}){
   const lines=payload.lines.map((line,index)=>{
     const accountCode=String(line?.account_code||"").trim();
     const label=String(line?.label||"").trim();
-    const debit=Number(line?.debit_minor??0),credit=Number(line?.credit_minor??0);
+    const debit=strictMinorInput(line?.debit_minor),credit=strictMinorInput(line?.credit_minor);
     if(!/^[0-9]{6}$/.test(accountCode)||label.length<2||label.length>300)throw failure(400,"DIRECT_SVA_LINE_INVALID");
     if(!Number.isSafeInteger(debit)||!Number.isSafeInteger(credit)||debit<0||credit<0||debit>1000000000000||credit>1000000000000||((debit>0)===(credit>0))){
       throw failure(400,"DIRECT_SVA_AMOUNT_INVALID");
