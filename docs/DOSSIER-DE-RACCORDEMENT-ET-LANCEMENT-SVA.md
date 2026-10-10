@@ -1,4 +1,4 @@
-# PGI Telecom | Dossier de raccordement et de mise en production SVA
+# PGI Telecom Distribution | Dossier de raccordement et de préparation à la mise en production SVA
 
 Version : 10 octobre 2026. Source : branche de préparation `prep/pgi-direct-sva-operator-2026-10-10`. **Aucune autorisation d'exploitation réelle ni de déploiement n'est implicite.**
 
@@ -6,7 +6,7 @@ Version : 10 octobre 2026. Source : branche de préparation `prep/pgi-direct-sva
 
 La plateforme historique Audiotel Premium Pro demeure la référence canonique des clients existants : `tenants.id`, `tenant_number_assignments.id`, `sva_numbers.id`, E.164, identifiants d'authentification, historiques d'appels, factures, règlements et règles de remise à zéro Business Live.
 
-La future distribution SVA directe est une nouvelle unité analytique de la même entité juridique, avec des données contractuelles, opérateurs et financières cloisonnées. Les sommes encaissées pour compte de tiers ne doivent pas être automatiquement reconnues comme chiffre d'affaires PGI.
+PGI Telecom Distribution est la future activité commerciale et la nouvelle unité analytique de la même entité juridique, avec des données contractuelles, opérateurs et financières cloisonnées. Les sommes encaissées pour compte de tiers ne doivent pas être automatiquement reconnues comme chiffre d'affaires PGI.
 
 Ne jamais créer de nouveaux comptes clients pour accompagner un simple changement technique de prestataire. Une portabilité confirmée conserve le numéro dans la mesure où les conditions légales et techniques sont satisfaites, sans promesse de coupure nulle.
 
