@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {createStaticSiteHandler} from "../backend/src/static-site.mjs";
+import {loadConfig} from "../backend/src/config.mjs";
 import {
  directSvaCustomerOverview,DIRECT_SVA_CUSTOMER_FEATURES,
  inspectDirectSvaWorkflows,directSvaWorkflowOverview
@@ -168,4 +169,25 @@ test("GA4 distributor tracking is not bootstrapped without independent property 
  assert.match(module,/dsva_section_view/);
  assert.match(module,/dsva_faq_open/);
  assert.doesNotMatch(module,/email.*window\.gtag|phone.*window\.gtag|fetch\(.*hubspot/);
+});
+
+test("future direct SVA APIs and admin UI are default-deny even during first Audiotel launch",()=>{
+ const config=loadConfig({PGI_BACKEND_MODE:"simulator"});
+ assert.equal(config.directSvaOperatorApiEnabled,false);
+ const explicit=loadConfig({PGI_BACKEND_MODE:"simulator",PGI_DIRECT_SVA_API_PREVIEW_ENABLED:"true"});
+ assert.equal(explicit.directSvaOperatorApiEnabled,true);
+ const server=fs.readFileSync(path.join(root,"backend/server.mjs"),"utf8");
+ assert.match(server,/!config\.directSvaOperatorApiEnabled/);
+ assert.match(server,/pathname\.startsWith\("\/api\/v1\/platform\/direct-sva\/"\)/);
+ assert.match(server,/pathname\.startsWith\("\/api\/v1\/customer\/direct-sva\/"\)/);
+ assert.match(server,/DIRECT_SVA_PREPARATION_DISABLED/);
+ const admin=fs.readFileSync(path.join(root,"assets/accounting-cockpit.js"),"utf8");
+ assert.match(admin,/PGI_CONFIG\?\.directSvaOperatorUiEnabled===true/);
+ assert.match(admin,/if\(!directSvaTabReleased\(\)\)return "";/);
+ assert.match(admin,/if\(next==="direct"&&!directSvaTabReleased\(\)\)return;/);
+ assert.doesNotMatch(admin,/unitTabs\(\)\+unitTabs\(\)/);
+ assert.match(admin,/root\.innerHTML='<div class="acc">'\+unitTabs\(\)\+/);
+ const builder=fs.readFileSync(path.join(root,"scripts/build-static.mjs"),"utf8");
+ assert.match(builder,/"assets\/direct-sva-cockpit\.js"/);
+ assert.ok(!builder.includes('"site/distribution-sva/index.html"'));
 });
