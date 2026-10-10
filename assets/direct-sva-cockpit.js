@@ -153,10 +153,11 @@ function show(){
  '<div class="ds-tabs" role="tablist" aria-label="Rubriques distributeur direct">'+
  [["overview","Vue générale"],["numbers","Numérotation"],["accounting","Comptabilité directe"],["reconciliation","Rapprochement"],["integrations","Intégrations"],["automation","Automatisations"],["complaints","Réclamations"],["transitions","Changer de distributeur"],["compliance","Conformité"]].map(([key,label])=>'<button type="button" role="tab" class="ds-tab" data-ds-tab="'+key+'" aria-selected="'+(key===tab)+'">'+label+'</button>').join("")+'</div>'+
  '<div class="ds-status '+esc(severity)+'" aria-live="polite">'+esc(message)+'</div>'+
- (tab==="overview"?overview():tab==="numbers"?numbers():tab==="accounting"?journals():tab==="reconciliation"?reconciliation():tab==="integrations"?integrationView():tab==="automation"?automationView():tab==="complaints"?complaintView():tab==="transitions"?'<section class="ds-panel"><div data-ds-transitions-root></div></section>':compliance())+
+ (tab==="overview"?overview():tab==="numbers"?numbers():tab==="accounting"?journals():tab==="reconciliation"?reconciliation():tab==="integrations"?integrationView():tab==="automation"?automationView()+'<div data-ds-automation-lab-root></div>':tab==="complaints"?complaintView():tab==="transitions"?'<section class="ds-panel"><div data-ds-transitions-root></div></section>':compliance())+
  '</div>';
  attach();
  if(tab==="transitions")import("./direct-sva-transitions.js").then(m=>m.mountDirectSvaTransitions(host.querySelector("[data-ds-transitions-root]"))).catch(()=>{});
+ if(tab==="automation"){const root=host.querySelector("[data-ds-automation-lab-root]");if(root)import("./direct-sva-automation-lab.js").then(m=>{if(root.isConnected)m.mountDirectSvaRehearsals(root)}).catch(()=>{if(root.isConnected)root.textContent="Laboratoire de test indisponible.";});}
 }
 function amountMinor(v){
  const raw=String(v??"").trim();
