@@ -11,6 +11,7 @@ export function loadConfig(env=process.env){
   const adminPasswordHash=env.PGI_ADMIN_PASSWORD_HASH||"";
   const ingestToken=env.PGI_INGEST_TOKEN||"";
   const externalBillingEnabled=booleanValue(env.PGI_EXTERNAL_BILLING_ENABLED,false,"PGI_EXTERNAL_BILLING_ENABLED");
+  const directSvaOperatorApiEnabled=booleanValue(env.PGI_DIRECT_SVA_API_PREVIEW_ENABLED,false,"PGI_DIRECT_SVA_API_PREVIEW_ENABLED");
   const billingIngestToken=env.PGI_BILLING_INGEST_TOKEN||"";
   const stripeSecretKey=String(env.PGI_STRIPE_SECRET_KEY||env.STRIPE_SECRET_KEY||"").trim();
   const stripeWebhookSecret=String(env.PGI_STRIPE_WEBHOOK_SECRET||"").trim();
@@ -133,7 +134,7 @@ export function loadConfig(env=process.env){
 
   return Object.freeze({
     mode,authMode,host,port,releaseId,staticDir,trustProxy,protectMachineEndpoints,googleClientId,customerSelfRegistrationEnabled,webauthnRpId,webauthnOrigin,
-    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,stripeSecretKey,stripeWebhookSecret,stripeConnectWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,ga4MeasurementEnabled,ga4MeasurementId,ga4ApiSecret,b2cCommercialRequested,b2cCommercialReady,legalOperatorConfigured,legalOperatorName,legalOperatorStatus,legalOperatorAddress,legalOperatorRegistration,publicationDirector,consumerMediatorConfigured,consumerMediatorName,consumerMediatorContact,consumerMediatorUrl,onlineWithdrawalReady,emailVerificationEnabled,transactionalEmailEnabled,dailyReportEnabled,dailyReportRecipient,resendApiKey,resendReceivingApiKey,resendWebhookSecret,transactionalDomain,transactionalReplyTo,internalNotificationEmail,cronSecret,emailVerificationPepper,transactionalFromEmail,transactionalFromName,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
+    sessionSecret,adminPasswordHash,ingestToken,billingIngestToken,externalBillingEnabled,directSvaOperatorApiEnabled,stripeSecretKey,stripeWebhookSecret,stripeConnectWebhookSecret,stripeApiVersion,stripePortalConfigurationId,stripePriceLookupKey,stripeLiveMode,ga4MeasurementEnabled,ga4MeasurementId,ga4ApiSecret,b2cCommercialRequested,b2cCommercialReady,legalOperatorConfigured,legalOperatorName,legalOperatorStatus,legalOperatorAddress,legalOperatorRegistration,publicationDirector,consumerMediatorConfigured,consumerMediatorName,consumerMediatorContact,consumerMediatorUrl,onlineWithdrawalReady,emailVerificationEnabled,transactionalEmailEnabled,dailyReportEnabled,dailyReportRecipient,resendApiKey,resendReceivingApiKey,resendWebhookSecret,transactionalDomain,transactionalReplyTo,internalNotificationEmail,cronSecret,emailVerificationPepper,transactionalFromEmail,transactionalFromName,publicBaseUrl,telephonyUser,telephonyPassword,callerHashKey,portabilitySecretKey,databaseUrl,databaseReadUrl,databaseSsl,
     adminUsername:env.PGI_ADMIN_USERNAME||"admin",
     sessionTtlSeconds:integer(env.PGI_SESSION_TTL_SECONDS,3600,300,86400,"PGI_SESSION_TTL_SECONDS"),
     adminRememberTtlSeconds:integer(env.PGI_ADMIN_REMEMBER_TTL_SECONDS,2592000,86400,7776000,"PGI_ADMIN_REMEMBER_TTL_SECONDS"),
