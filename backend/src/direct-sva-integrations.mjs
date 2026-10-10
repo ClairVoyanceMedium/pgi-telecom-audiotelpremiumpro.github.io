@@ -12,7 +12,7 @@ export const PGI_BUSINESS_UNITS=Object.freeze({
   direct_sva_authorized:false
  }),
  direct_sva:Object.freeze({
-  key:"direct_sva",label:"Distribution SVA directe",
+  key:"direct_sva",label:"PGI Telecom Distribution",
   legal_entity_key:PGI_LEGAL_ENTITY_KEY,
   current_role:"future_direct_sva_operator",
   crm_namespace:"distribution_directe",
@@ -239,7 +239,7 @@ export function prepareDirectSvaHubspotDeal(input={},configuration={}){
   business_unit:"direct_sva",
   // Only a business-level reference, not an individual's name, email, phone or a numbered call.
   payload:Object.freeze({properties:Object.freeze({
-   dealname:"Distribution SVA directe "+planned.source_reference,
+   dealname:"PGI Telecom Distribution "+planned.source_reference,
    pipeline:pipe,dealstage:stageId,
    [DIRECT_SVA_HUBSPOT_FIELDS.business_unit]:"direct_sva",
    [DIRECT_SVA_HUBSPOT_FIELDS.origin_reference]:planned.source_reference,
