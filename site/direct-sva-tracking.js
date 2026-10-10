@@ -21,12 +21,12 @@ const SERVICES=new Set(["numero_sva","portabilite","interconnexion","distributio
 export function createDirectSvaTracker({ga4,documentRef,locationRef,navigatorRef,scriptLoader}={}){
  const measurement=String(ga4?.measurementId||"").trim();
  const path=String(locationRef?.pathname||"").split(/[?#]/,1)[0];
- const privatePath=/^\\/distribution-sva\\/(?:espace-client|conditions|confidentialite|mentions-legales)(?:\\/|$)/i.test(path);
+ const privatePath=/^\/distribution-sva\/(?:espace-client|conditions|confidentialite|mentions-legales)(?:\/|$)/i.test(path);
  const trustedHost=locationRef?.hostname==null||locationRef.hostname==="audiotel-premium-pro.com";
  const permitted=ga4?.enabled===true&&ga4?.consentGranted===true&&ga4?.legalApproved===true&&
   ga4?.customDimensionRegistered===true&&ga4?.dedicatedPropertyConfirmed===true&&
   /^G-[A-Z0-9]{8,}$/.test(measurement)&&measurement!==RESERVED_PLATFORM_MEASUREMENT_ID&&
-  /^\\/distribution-sva(?:\\/|$)/.test(path)&&!privatePath&&trustedHost&&
+  /^\/distribution-sva(?:\/|$)/.test(path)&&!privatePath&&trustedHost&&
   navigatorRef?.globalPrivacyControl!==true;
  const reason=!permitted?"DIRECT_SVA_GA4_INACTIVE_OR_UNVERIFIED":"EXPLICITLY_APPROVED";
  let started=false,pageviewSent=false;
