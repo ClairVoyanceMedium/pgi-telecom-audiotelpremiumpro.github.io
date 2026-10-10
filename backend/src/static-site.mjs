@@ -38,7 +38,13 @@ export function createStaticSiteHandler(rootDir){
 
     // Direct SVA is a staged business, not a public offer. Deny even if someone
     // accidentally copies its HTML into dist. Releasing requires a reviewed change.
-    if(/^\/(?:distribution-sva(?:\/|$)|site\/distribution-sva(?:\/|$))/i.test(String(pathname||""))){
+    let directSvaPath=String(pathname||"");
+    try{directSvaPath=decodeURIComponent(directSvaPath).replace(/\/+/g,"/");}catch{
+      res.writeHead(400,{"Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow, noarchive"});
+      res.end();
+      return true;
+    }
+    if(/^\/(?:distribution-sva(?:\/|$)|site\/distribution-sva(?:\/|$))/i.test(directSvaPath)){
       res.writeHead(404,{"Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow, noarchive"});
       res.end();
       return true;
