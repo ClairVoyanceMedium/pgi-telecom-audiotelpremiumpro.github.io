@@ -63,3 +63,50 @@ test("the preview excludes caller and other extraneous PII fields",()=>{
  assert.equal(result.approved_by_operator,false);
  assert.equal(result.funds_collected_verified,false);
 });
+
+test("reconciliation rejects absent currency rather than silently assuming EUR",()=>{
+ const payload=validBatch();delete payload.currency;
+ assert.throws(()=>analyzeDirectSvaSettlement(payload),{code:"DIRECT_SVA_CURRENCY_REQUIRES_REVIEW"});
+});
+
+test("reconciliation refuses ambiguous or coerced call durations",()=>{
+ for(const invalid of [null,"60",false,1.5,-1,86401]){
+  const payload=validBatch();payload.rows[0].billable_seconds=invalid;
+  const out=analyzeDirectSvaSettlement(payload);
+  assert.equal(out.balanced,false);
+  assert.equal(out.rejected_rows,1);
+  assert.ok(out.issues.some(issue=>issue.code==="INVALID_BILLABLE_DURATION"));
+ }
+});
+
+test("malformed rows and payloads produce controlled financial rejection",()=>{
+ assert.throws(()=>analyzeDirectSvaSettlement(null),{code:"DIRECT_SVA_INVALID_PAYLOAD"});
+ for(const invalid of [null,[],42]){
+  const payload=validBatch();payload.rows[0]=invalid;
+  const out=analyzeDirectSvaSettlement(payload);
+  assert.equal(out.balanced,false);
+  assert.ok(out.issues.some(issue=>issue.code==="INVALID_CDR_ROW"));
+ }
+});
+
+test("financial evidence identity is stable across row order and unrelated personal metadata",()=>{
+ const original=validBatch();
+ const expected=analyzeDirectSvaSettlement(original);
+ const alternate=validBatch();
+ alternate.rows.reverse();
+ alternate.rows[0].caller_number="+33601020304";
+ alternate.rows[1].private_customer_name="NEVER HASH ME";
+ const actual=analyzeDirectSvaSettlement(alternate);
+ assert.equal(actual.source_fingerprint,expected.source_fingerprint);
+ assert.equal(actual.balanced,true);
+});
+
+test("changing a financial amount changes the settlement identity",()=>{
+ const source=analyzeDirectSvaSettlement(validBatch());
+ const changed=validBatch();
+ changed.rows[0].upstream_net_minor=101;
+ changed.rows[0].pgi_margin_minor=21;
+ const revised=analyzeDirectSvaSettlement(changed);
+ assert.equal(revised.balanced,true);
+ assert.notEqual(revised.source_fingerprint,source.source_fingerprint);
+});
