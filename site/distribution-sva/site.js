@@ -2,7 +2,7 @@
 (() => {
  "use strict";
  const badge=document.querySelector("[data-ds-service-state]");
- if(badge)badge.textContent="Projet de distribution directe en préparation";
+ if(badge)badge.textContent="PGI Telecom Distribution en préparation";
  const currentYear=new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Paris",year:"numeric"}).format(new Date());
  document.querySelectorAll("[data-ds-year]").forEach(n=>n.textContent=currentYear);
  const activePath=location.pathname;
