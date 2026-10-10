@@ -89,6 +89,9 @@ function integrationView(){
  return title+'<section class="ds-panel"><h3>Entreprise et centres analytiques</h3><div class="ds-list">'+
  (integrations.units||[]).map(u=>'<div><strong>'+esc(u.label)+'</strong> | centre '+esc(u.analytic_cost_center)+' | profil légal commun '+esc(u.shared_accounting_profile_id)+' | '+esc(u.lifecycle)+'</div>').join("")+
  '</div><p class="ds-note">Un seul FEC légal pour la société, avec ventilation analytique et aucune double comptabilisation.</p></section>'+
+ '<section class="ds-panel"><h3>Préparation de la comptabilité légale commune</h3><div class="ds-list">'+
+ (integrations.shared_legal_accounting?.legal_profile_criteria||[]).map(x=>'<div><strong>'+esc(x.label)+'</strong> : <span class="'+(x.ok?'ds-ok':'ds-alert')+'">'+(x.ok?'Renseigné':'À compléter ou valider')+'</span></div>').join("")+
+ '</div><p class="ds-note">FEC légal en production : '+(integrations.shared_legal_accounting?.fec_active?'Option activée, non certifiée':'Désactivé')+'. Les écritures du distributeur direct ne sont pas encore raccordées au FEC.</p></section>'+
  '<section class="ds-panel"><h3>États des intégrations</h3><div class="ds-table"><table><thead><tr><th>Système</th><th>Rôle de l’intégration</th><th>État préparatoire</th><th>Envoi de données</th></tr></thead><tbody>'+
  (integrations.checks||[]).map(x=>'<tr><td>'+esc(x.label)+'</td><td>'+esc(x.target)+'</td><td>'+esc(x.recorded_state)+'</td><td class="ds-alert">Désactivé</td></tr>').join("")+
  '</tbody></table></div><p class="ds-note">Les états ci-dessus proviennent du registre PostgreSQL distinct. Ils ne garantissent pas l’existence de contrats, de dimensions GA4 ni de propriétés HubSpot.</p>'+
