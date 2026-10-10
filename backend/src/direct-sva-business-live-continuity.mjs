@@ -31,7 +31,13 @@ export function consolidateProviderNeutralBusinessLive(cdrRows=[],context={}){
   if(id(row.tenant_id,"ROW_TENANT")!==tenant||id(row.sva_number_id,"ROW_NUMBER")!==number)
    throw failure("CONTINUITY_CROSS_TENANT_OR_NUMBER");
   const started=date(row.started_at,"START");
-  if(started<resetAt)continue; // Baseline unchanged, never reset because of migration.
+  if(started<resetAt){
+   // A call crossing a reset requires an authoritative prorated call segment,
+   // never a zero or a made-up correction to the customer counter.
+   if(row.active===true||(row.ended_at&&date(row.ended_at,"END")>resetAt))
+    throw failure("CONTINUITY_CALL_SPANS_RESET_NEEDS_SEGMENT");
+   continue;
+  }
   const carrier=id(row.host_carrier_id,"ROW_HOST");
   if(carrier!==(started<cutover?source:target))
    throw failure("CONTINUITY_CDR_WRONG_PROVIDER_EPOCH");
