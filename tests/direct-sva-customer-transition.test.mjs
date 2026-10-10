@@ -181,3 +181,31 @@ test("transition migration cannot change historical customers or routing",()=>{
  assert.match(server,/pathname==="\/api\/v1\/platform\/direct-sva\/transitions\/prepare"/);
  assert.match(server,/requireCsrf\(req,actor,config\)/);
 });
+
+
+test("same technical carrier can serve two verified PGI commercial epochs",()=>{
+ const shared={...context,target_host_carrier_id:33,
+  source_contract_epoch:"PARTNER-2026-V1",target_contract_epoch:"PGI-DIRECT-2026-V2"};
+ const old={...row("canonical-call-0010",33,"2026-10-20T12:00:00Z",100),
+  contract_epoch_reference:"PARTNER-2026-V1"};
+ const next={...row("canonical-call-0011",33,"2026-11-02T12:00:00Z",160),
+  contract_epoch_reference:"PGI-DIRECT-2026-V2"};
+ const result=consolidateProviderNeutralBusinessLive([old,next],shared);
+ assert.equal(result.client_view.expected_client_net_minor,260);
+ assert.equal(result.administrator_view.by_carrier.length,2);
+ assert.equal(result.administrator_view.by_carrier[0].epoch,"source");
+ assert.equal(result.administrator_view.by_carrier[1].epoch,"target");
+ assert.throws(()=>consolidateProviderNeutralBusinessLive([{...next,contract_epoch_reference:"PARTNER-2026-V1"}],shared),
+  {code:"CONTINUITY_CDR_CONTRACT_EPOCH_UNVERIFIED"});
+ assert.throws(()=>consolidateProviderNeutralBusinessLive([next],{...shared,
+  target_contract_epoch:"PARTNER-2026-V1"}),{code:"CONTINUITY_DISTINCT_CONTRACT_EPOCHS_REQUIRED"});
+});
+
+test("stale Business Live feeds visibly warn rather than claim fresh calls",()=>{
+ const client=fs.readFileSync(new URL("../assets/client-live-finance.js",import.meta.url),"utf8");
+ const admin=fs.readFileSync(new URL("../assets/live-finance.js",import.meta.url),"utf8");
+ for(const code of [client,admin]){
+  assert.match(code,/age>90000/);
+  assert.match(code,/Données en cours de synchronisation/);
+ }
+});
