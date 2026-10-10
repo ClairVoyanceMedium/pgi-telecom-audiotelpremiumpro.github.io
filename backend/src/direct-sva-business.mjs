@@ -14,8 +14,15 @@ function actorId(actor){
   return id;
 }
 
+export function monthInParis(now=new Date()){
+ const parts=new Intl.DateTimeFormat("en-US",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit"}).formatToParts(now);
+ const year=parts.find(p=>p.type==="year")?.value,month=parts.find(p=>p.type==="month")?.value;
+ if(!year||!month)throw failure(503,"DIRECT_SVA_ACCOUNTING_TIMEZONE_FAILURE");
+ return year+"-"+month;
+}
+
 export function validDirectSvaMonth(raw,now=new Date()){
-  const month=raw==null||raw===""?now.toISOString().slice(0,7):String(raw);
+  const month=raw==null||raw===""?monthInParis(now):String(raw);
   if(!/^(20[2-9][0-9]|21[0-9]{2})-(0[1-9]|1[0-2])$/.test(month))throw failure(400,"INVALID_DIRECT_SVA_MONTH");
   return month;
 }
