@@ -59,6 +59,12 @@ Chaque éditeur final doit pouvoir être identifié et contrôlé avant activati
 Les règles déontologiques SVA applicables depuis le 1er septembre 2026 sont publiées par l'AF2M :
 - https://af2m.org/rd-sva/
 
+## Cible strategique confirme le 10 octobre 2026
+
+PGI Telecom vise le role d'operateur exploitant et distributeur direct de numeros SVA en France, avec ressources attribuees par l'Arcep et prestation technique d'interconnexion si besoin. Les phases utilisant un operateur attributaire amont restent des solutions transitoires, sans pretendre que PGI possede les ressources.
+
+Voir `docs/OPERATEUR-SVA-DIRECT.md` pour le parcours de preparation, les preuves requises, les limites sur les fonds de tiers et l'absence d'activation en production.
+
 ## Phases
 
 ### Phase A : PGI éditeur unique
