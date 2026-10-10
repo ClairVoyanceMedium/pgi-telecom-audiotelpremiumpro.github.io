@@ -18,7 +18,7 @@ Le cockpit possède donc trois contrôles réellement différents :
 |---|---|---|---|---|---|
 | Avant publication approuvée | Caché | 404, même si « afficher » coché | noindex | Non disponible | Bloqué |
 | Publié, lien visible | Visible | 200 | index,follow | 200, 35 URL | Bloqué séparément |
-| Publié, lien caché | Caché | 200, message discret de suspension | index,follow | 200, mêmes 35 URL | Bloqué séparément |
+| Publié, lien caché | Caché | 200, contenu et adresse canonique strictement conservés | index,follow | 200, mêmes 35 URL | Bloqué séparément |
 | Échec de lecture de la configuration | Caché | 503 temporaire, Retry-After 300 s | Pas de noindex forcé | 503 | Bloqué |
 
 En permanence, la page `/distribution-sva/espace-client/` et les autres chemins non expressément autorisés renvoient 404. Les chemins directs vers `/site/distribution-sva/.../index.html` restent inaccessibles et ne créent aucun doublon canonique.
@@ -31,7 +31,7 @@ En permanence, la page `/distribution-sva/espace-client/` et les autres chemins 
 - `backend/src/direct-sva-website-visibility.mjs` : lecture déterministe et mise à jour transactionnelle du réglage, validation stricte de l'état attendu, rôle administrateur.
 - `backend/server.mjs` : lecture admin `GET /api/v1/platform/direct-sva-website` et enregistrement CSRF `POST /api/v1/platform/direct-sva-website/navigation`.
 - `assets/direct-sva-switches.js` : troisième interrupteur dans le cockpit, confirmation de l'activation et messages pédagogiques SEO.
-- `backend/src/direct-sva-public-site.mjs` et `backend/src/static-site.mjs` : liste blanche des 35 pages, route sitemap, transformation du `noindex` uniquement après publication séparée, injection du lien dans l'accueil, lecture accessible lorsque la navigation est cachée.
+- `backend/src/direct-sva-public-site.mjs` et `backend/src/static-site.mjs` : liste blanche des 35 pages, route sitemap, transformation du `noindex` uniquement après publication séparée, injection du lien dans l'accueil, et maintien du contenu strictement identique lorsque la navigation est cachée. L'URL du sitemap Distribution est ajoutée à `robots.txt` uniquement après publication autorisée. Avant autorisation commerciale, les liens vers l'espace client Distribution privé deviennent des indications non cliquables, et non des erreurs 404 accessibles aux visiteurs.
 - `scripts/build-static.mjs` : emballage des pages internationales et des ressources sous un serveur bloquant en prépublication. Le simple fait d'embarquer les fichiers ne les rend pas accessibles.
 - `Dockerfile.vercel`, `Dockerfile`, `infra/Dockerfile.platform` : inclusion de la liste SEO nécessaire au serveur, empêchant l'échec de démarrage lors d'une prochaine compilation.
 - `tests/direct-sva-website-visibility.test.mjs` : tests unitaires, contrôles du sitemap et scénario HTTP futur.
