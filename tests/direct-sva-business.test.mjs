@@ -206,3 +206,18 @@ test("accounting calendar uses French local month at midnight instead of UTC",()
  assert.equal(validDirectSvaMonth(null,boundary),"2026-11");
  assert.equal(validDirectSvaMonth("2026-10",boundary),"2026-10");
 });
+
+test("direct SVA operator state drift fails closed instead of showing fictitious disabled switches",async()=>{
+ for(const control of [
+  {operator_mode:"active",number_activation_enabled:false,payouts_enabled:false},
+  {operator_mode:"preparation",number_activation_enabled:true,payouts_enabled:false},
+  {operator_mode:"preparation",number_activation_enabled:false,payouts_enabled:true}
+ ]){
+  let idx=0;
+  const results=[[control],...Array.from({length:9},()=>[])];
+  const store={sql:{begin:async()=>{}},readSql:{unsafe:async()=>results[idx++]}};
+  await assert.rejects(()=>directSvaBusinessSnapshot(store,{month:"2026-10"}),{
+   code:"DIRECT_SVA_OPERATOR_CONTROL_DRIFT",status:503
+  });
+ }
+});
