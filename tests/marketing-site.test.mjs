@@ -347,6 +347,7 @@ test("homepage bottom quick navigation prioritizes the highest-value commercial 
   assert.match(html,/Estimer mes revenus potentiels/);
   assert.match(html,/Encaisser par carte bancaire/);
   assert.match(html,/Créer et envoyer un lien de paiement sécurisé/);
+  assert.match(html,/<small>RÉCOMPENSES<\\/small><strong>Parrainer Audiotel Premium Pro<\\/strong>/);
   assert.match(html,/Parrainer Audiotel Premium Pro/);
   assert.match(html,/Partager mon lien et suivre mes récompenses/);
   assert.match(html,/href="\/portabilite-numero-sva\//);
@@ -496,7 +497,9 @@ test("public branding and client access wording are explicit",()=>{
   assert.match(css,/brand-full img,.footer-brand-premium img/);
   assert.match(css,/width:238px!important/);
   assert.match(css,/\.home-page \.brand-full img\{width:238px!important;max-height:78px!important\}/);
-  assert.match(css,/@media\(max-width:680px\)\{\.site-header \.brand-full img,\.footer-brand-premium img,[^}]*\.hero-visual \.hero-visual-brand\{width:238px!important;max-height:78px!important\}\}/);
+  assert.match(css,/\.hero-visual \.hero-visual-brand\{position:absolute;[^}]*width:176px/);
+  assert.match(css,/@media\(max-width:680px\)\{\.hero-visual \.hero-visual-brand\{top:10px;right:10px;width:135px/);
+  assert.doesNotMatch(css,/\.hero-visual \.hero-visual-brand\{width:238px\}/);
 });
 
 test("hero copy is condensed and the primary potential gain is highlighted in green",()=>{
@@ -543,7 +546,7 @@ test("reversement page targets the best-reversement query through technical meta
   assert.match(payouts,/Meilleur reversement Audiotel : comparer taux et gains \| PGI Telecom/);
   assert.match(payouts,/"@type":"BreadcrumbList"/);
   assert.match(payouts,/"@type":"FAQPage"/);
-  assert.match(payouts,/"dateModified":"2026-09-29"/);
+  assert.doesNotMatch(payouts,/"dateModified"|"datePublished"/);
   assert.match(sitemap,/reversement-audiotel\/<\/loc><lastmod>2026-09-29<\/lastmod>/);
 });
 
@@ -868,7 +871,7 @@ test("internal linking graph is balanced, crawlable and conversion aware",()=>{
   assert.match(buildStatic,/function injectInternalLinkGraph/);
   assert.match(buildStatic,/class="internal-link-card resource-link"/);
   assert.match(buildStatic,/href="'\+internalLinkHref\(target\)\+'"/);
-  assert.doesNotMatch(buildStatic.slice(buildStatic.indexOf("const internalLinkGraph"),buildStatic.indexOf("const preferredSourceSlugs")),/—/);
+  assert.doesNotMatch(buildStatic.slice(buildStatic.indexOf("const internalLinkGraph"),buildStatic.indexOf("const preferredSourceSlugs")),new RegExp(String.fromCodePoint(0x2014)));
 
   const graphSource=buildStatic.slice(buildStatic.indexOf("const internalLinkGraph="),buildStatic.indexOf("function internalLinkHref"));
   const graph=Function('"use strict";'+graphSource+';return internalLinkGraph;')();

@@ -30,7 +30,7 @@ const ROLE_HELP={
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function roleOptions(current,allowOwner=true){return Object.keys(ROLE_LABELS).filter(r=>allowOwner||r!=="owner").map(r=>'<option value="'+r+'"'+(r===current?" selected":"")+'>'+ROLE_LABELS[r]+'</option>').join("")}
 function canManage(user){return Array.isArray(user?.permissions)&&(user.permissions.includes("*")||user.permissions.includes("team.manage"))}
-function statusLabel(s){return ({active:"Actif",suspended:"Suspendu",revoked:"Révoqué",pending:"Invitation en attente",expired:"Expirée"})[s]||s||"—"}
+function statusLabel(s){return ({active:"Actif",suspended:"Suspendu",revoked:"Révoqué",pending:"Invitation en attente",expired:"Expirée"})[s]||s||"-"}
 export async function mountTeamAccess(pane,user,flash){
   pane.innerHTML='<p class="pp-note">Chargement de votre équipe…</p>';
   let state;
