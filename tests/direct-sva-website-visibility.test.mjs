@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import http from "node:http";
 import {normalizeDirectSvaWebsiteState,readDirectSvaWebsiteVisibility,setDirectSvaWebsiteNavigation} from "../backend/src/direct-sva-website-visibility.mjs";
-import {isDirectSvaPath,isDirectSvaPublicAsset,directSvaPublicPagePath,visibleDistributionMarketingHome,publishedDistributionHtml,publishedDistributionSitemap} from "../backend/src/direct-sva-public-site.mjs";
+import {isDirectSvaPath,isDirectSvaPublicAsset,directSvaPublicPagePath,visibleDistributionMarketingHome,publishedDistributionHtml,publishedDistributionSitemap,publishedDistributionRobots} from "../backend/src/direct-sva-public-site.mjs";
 import {createStaticSiteHandler} from "../backend/src/static-site.mjs";
 
 const waiting={public_content_authorized:false,navigation_enabled:false,commercial_calls_to_action_enabled:false,changed_at:null};
@@ -59,6 +59,17 @@ test("informational publication cannot link to the unavailable private customer 
  const translated=input.replace('lang="fr"','lang="en"');
  assert.match(publishedDistributionHtml(translated,released),/Distribution client area coming later/);
 });
+test("robots.txt announces Distribution sitemap only after publication, regardless of navigation",()=>{
+ const robots="User-agent: *\nAllow: /\nSitemap: https://audiotel-premium-pro.com/sitemap.xml\n";
+ assert.equal(publishedDistributionRobots(robots,waiting),null);
+ const off=publishedDistributionRobots(robots,released);
+ const on=publishedDistributionRobots(robots,{...released,navigation_enabled:true});
+ assert.equal(off,on);
+ assert.match(off,/Sitemap: https:\/\/audiotel-premium-pro\.com\/sitemap\.xml/);
+ assert.match(off,/Sitemap: https:\/\/audiotel-premium-pro\.com\/distribution-sva\/sitemap\.xml/);
+ assert.equal((off.match(/Sitemap: https:\/\/audiotel-premium-pro\.com\/distribution-sva\/sitemap\.xml/g)||[]).length,1);
+ assert.equal(publishedDistributionRobots(off,released),off,"must be idempotent");
+});
 test("admin toggle saves intent transactionally with audit; it cannot publish business content",async()=>{
  const state={...waiting};const writes=[];
  const store={sql:{unsafe:async()=>[state],begin:async fn=>fn({unsafe:async (q,args=[])=>{
@@ -89,6 +100,7 @@ test("HTTP publication never breaks indexing when nav is turned off; private pag
  const html='<html><head><meta name="robots" content="noindex,nofollow,noarchive"><link rel="canonical" href="https://audiotel-premium-pro.com/distribution-sva/"></head><body><main><h1>PGI Telecom Distribution</h1></main></body></html>';
  fs.mkdirSync(path.join(root,"site","distribution-sva"),{recursive:true});
  fs.writeFileSync(path.join(root,"index.html"),home);
+ fs.writeFileSync(path.join(root,"robots.txt"),"User-agent: *\nAllow: /\nSitemap: https://audiotel-premium-pro.com/sitemap.xml\n");
  fs.writeFileSync(path.join(root,"site","distribution-sva","index.html"),html);
  fs.writeFileSync(path.join(root,"site","distribution-sva","style.css"),"body{}");
  let status=waiting;const handler=createStaticSiteHandler(root,{getDirectSvaWebsiteState:async()=>normalizeDirectSvaWebsiteState(status)});
@@ -103,6 +115,8 @@ test("HTTP publication never breaks indexing when nav is turned off; private pag
  try{
   let r=await fetch(base+"/distribution-sva/");
   assert.equal(r.status,404);
+  const robotsBefore=await (await fetch(base+"/robots.txt")).text();
+  assert.doesNotMatch(robotsBefore,/distribution-sva\/sitemap\.xml/);
   status=released;
   r=await fetch(base+"/distribution-sva/");
   assert.equal(r.status,200);
@@ -114,9 +128,13 @@ test("HTTP publication never breaks indexing when nav is turned off; private pag
   assert.equal(sitemap.status,200);
   const xml=await sitemap.text();
   assert.equal((xml.match(/<url>/g)||[]).length,35);
+  const robotsAfter=await (await fetch(base+"/robots.txt")).text();
+  assert.match(robotsAfter,/distribution-sva\/sitemap\.xml/);
+  assert.match(robotsAfter,/Sitemap: https:\/\/audiotel-premium-pro\.com\/sitemap\.xml/);
   const homeOff=await (await fetch(base+"/")).text();
   assert.match(homeOff,/href="\/distribution-sva\/" hidden>/);
   status={...released,navigation_enabled:true};
+  assert.equal(await (await fetch(base+"/robots.txt")).text(),robotsAfter,"turning on the link must not alter sitemap discovery");
   const homeOn=await (await fetch(base+"/")).text();
   assert.match(homeOn,/href="\/distribution-sva\/">/);
   status=released;
