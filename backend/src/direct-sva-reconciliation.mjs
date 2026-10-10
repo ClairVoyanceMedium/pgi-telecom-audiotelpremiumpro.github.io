@@ -13,9 +13,10 @@ function stringRef(value,label){
  return ref;
 }
 export function analyzeDirectSvaSettlement(payload={}){
+ if(!payload||typeof payload!=="object"||Array.isArray(payload))throw fail("DIRECT_SVA_INVALID_PAYLOAD");
  const operatorReference=stringRef(payload.operator_reference,"OPERATOR_REFERENCE");
  const statementReference=stringRef(payload.statement_reference,"STATEMENT_REFERENCE");
- const currency=String(payload.currency||"EUR").trim().toUpperCase();
+ const currency=String(payload.currency??"").trim().toUpperCase();
  if(currency!=="EUR")throw fail("DIRECT_SVA_CURRENCY_REQUIRES_REVIEW");
  const period=String(payload.period||"");
  if(!/^20[2-9]\d-(?:0[1-9]|1[0-2])$/.test(period))throw fail("DIRECT_SVA_SETTLEMENT_PERIOD_INVALID");
@@ -23,7 +24,10 @@ export function analyzeDirectSvaSettlement(payload={}){
  const seen=new Set(),issues=[],byNumber=new Map();
  let accepted=0,net=0,margin=0,publisher=0,balanced=true;
  for(let i=0;i<payload.rows.length;i++){
-  const row=payload.rows[i]||{},n=i+1;
+  const row=payload.rows[i],n=i+1;
+  if(!row||typeof row!=="object"||Array.isArray(row)){
+   issues.push({row:n,code:"INVALID_CDR_ROW"});balanced=false;continue;
+  }
   let cdr;
   try{cdr=stringRef(row.cdr_reference,"CDR_REFERENCE")}
   catch(error){issues.push({row:n,code:error.code});balanced=false;continue;}
@@ -36,7 +40,7 @@ export function analyzeDirectSvaSettlement(payload={}){
    issues.push({row:n,cdr_reference:cdr,code:"INVALID_DIRECT_SVA_NUMBER"});
    balanced=false;continue;
   }
-  const duration=Number(row.billable_seconds);
+  const duration=row.billable_seconds;
   if(!Number.isSafeInteger(duration)||duration<0||duration>86400){
    issues.push({row:n,cdr_reference:cdr,code:"INVALID_BILLABLE_DURATION"});
    balanced=false;continue;
@@ -59,7 +63,20 @@ export function analyzeDirectSvaSettlement(payload={}){
  }
  const fingerprint=createHash("sha256").update(JSON.stringify({
   operator_reference:operatorReference,statement_reference:statementReference,period,currency,
-  rows:payload.rows
+  // Only financial evidence fields affect identity. Raw untrusted visitor/caller
+  // metadata must neither alter deduplication nor be incorporated in a hash.
+  // Sorting makes the fingerprint stable across file row-order changes.
+  rows:payload.rows.map(row=>{
+   if(!row||typeof row!=="object"||Array.isArray(row))return null;
+   return {
+    cdr_reference:row.cdr_reference??null,
+    called_number:row.called_number??null,
+    billable_seconds:row.billable_seconds??null,
+    upstream_net_minor:row.upstream_net_minor??null,
+    pgi_margin_minor:row.pgi_margin_minor??null,
+    publisher_due_minor:row.publisher_due_minor??null
+   };
+  }).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)))
  })).digest("hex");
  return Object.freeze({
   schema_version:"pgi-direct-sva-settlement-preview/1",
