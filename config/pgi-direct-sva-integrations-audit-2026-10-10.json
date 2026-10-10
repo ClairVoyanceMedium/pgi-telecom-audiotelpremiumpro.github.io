@@ -1,0 +1,41 @@
+{
+  "checked_at": "2026-10-10",
+  "scope": "read_only_connector_snapshot",
+  "business_unit": "direct_sva",
+  "existing_audiotel_ga4": {
+    "property_id": "properties/556033345",
+    "name": "Audiotel Premium Pro - Production"
+  },
+  "distribution_ga4": {
+    "property_id": null,
+    "measurement_id": null,
+    "custom_dimensions_registered": [],
+    "consent_live_verification": false
+  },
+  "gsc": {
+    "property_url": "https://audiotel-premium-pro.com/distribution-sva/",
+    "property_known": true,
+    "sitemap_submitted": false,
+    "pages_live": false
+  },
+  "hubspot": {
+    "portal_id": "149417663",
+    "existing_deal_pipeline": "default",
+    "distribution_deal_pipeline": null,
+    "distribution_ticket_pipeline": null,
+    "distribution_properties_provisioned": false
+  },
+  "payment_psp": {
+    "authorized": false,
+    "financial_live_test": false
+  },
+  "network": {
+    "operator_contract_verified": false,
+    "cdr_source_live": false
+  },
+  "separation": {
+    "audiotel_platform_unchanged": true,
+    "live_external_transfers_enabled": false
+  },
+  "truth_status": "NOT_READY_FOR_PUBLIC_DISTRIBUTION"
+}
