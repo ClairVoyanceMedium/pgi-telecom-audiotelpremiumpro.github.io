@@ -2,7 +2,32 @@
 // No access to historical Audiotel calls, billing, referrals or third-party payouts.
 
 function fail(status,code){const e=new Error(code);e.status=status;e.code=code;return e;}
-function tenantId(context){const id=Number(context?.tenant_id);if(!Number.isSafeInteger(id)||id<1)throw fail(403,"DIRECT_SVA_CUSTOMER_CONTEXT_REQUIRED");return id;}
+function strictPositiveTenant(value){
+ if(typeof value!=="number"&&typeof value!=="string")throw fail(403,"DIRECT_SVA_CUSTOMER_CONTEXT_REQUIRED");
+ if(typeof value==="string"&&!/^[1-9][0-9]*$/.test(value))throw fail(403,"DIRECT_SVA_CUSTOMER_CONTEXT_REQUIRED");
+ const id=Number(value);
+ if(!Number.isSafeInteger(id)||id<1)throw fail(403,"DIRECT_SVA_CUSTOMER_CONTEXT_REQUIRED");
+ return id;
+}
+function tenantId(context){return strictPositiveTenant(context?.tenant_id);}
+export function assertDirectSvaCustomerEnrollment(enrollment,expectedTenant,commercialEnabled){
+ if(!enrollment)throw fail(404,"DIRECT_SVA_CUSTOMER_ACCESS_NOT_ASSIGNED");
+ if(strictPositiveTenant(enrollment.tenant_id)!==expectedTenant||
+    enrollment.business_unit!=="direct_sva")
+  throw fail(403,"DIRECT_SVA_CUSTOMER_TENANT_MISMATCH");
+ // Preparation records cannot be published merely by lifting a route guard.
+ if(commercialEnabled!==true||enrollment.access_state!=="active"||
+    enrollment.dashboard_enabled!==true||enrollment.client_contract_accepted!==true)
+  throw fail(403,"DIRECT_SVA_CUSTOMER_NOT_RELEASED");
+ return true;
+}
+function assertRowsBelongToTenant(rows,id,field){
+ if(!Array.isArray(rows))throw fail(503,"DIRECT_SVA_CUSTOMER_RESULT_INVALID");
+ for(const row of rows){
+  if(!row||strictPositiveTenant(row[field])!==id)
+   throw fail(503,"DIRECT_SVA_CROSS_TENANT_RESULT_BLOCKED");
+ }
+}
 function pgDate(value){return value instanceof Date?value.toISOString():String(value||"");}
 
 export const DIRECT_SVA_CUSTOMER_FEATURES=Object.freeze([
@@ -19,22 +44,26 @@ export async function directSvaCustomerOverview(store,context={}){
  if(!store?.readSql?.unsafe)throw fail(503,"DIRECT_SVA_POSTGRES_REQUIRED");
  const id=tenantId(context);
  const [enrollment]=await store.readSql.unsafe(
-  "SELECT tenant_id,access_state,dashboard_enabled,client_contract_accepted,created_at"+
-  " FROM direct_sva_customer_accounts WHERE tenant_id=$1",[id]);
- // Do not expose presence of different customer accounts.
+  "SELECT tenant_id,business_unit,access_state,dashboard_enabled,client_contract_accepted,created_at"+
+  " FROM direct_sva_customer_accounts WHERE tenant_id=$1 AND business_unit='direct_sva'",[id]);
  if(!enrollment)throw fail(404,"DIRECT_SVA_CUSTOMER_ACCESS_NOT_ASSIGNED");
- if(enrollment.dashboard_enabled!==true||enrollment.access_state!=="preparation"){
-  throw fail(403,"DIRECT_SVA_CUSTOMER_NOT_RELEASED");
- }
+ // Validate the customer contract before attempting any records read.
+ if(enrollment.access_state!=="active"||enrollment.dashboard_enabled!==true||
+    enrollment.client_contract_accepted!==true)assertDirectSvaCustomerEnrollment(enrollment,id,false);
+ const [release]=await store.readSql.unsafe(
+  "SELECT commercial_operation_enabled FROM direct_sva_admin_switches WHERE id=1");
+ assertDirectSvaCustomerEnrollment(enrollment,id,release?.commercial_operation_enabled===true);
  const [cases,numbers]=await Promise.all([
   store.readSql.unsafe(
-   "SELECT public_reference,request_kind,status,initiated_at,last_review_at"+
+   "SELECT tenant_id,public_reference,request_kind,status,initiated_at,last_review_at"+
    " FROM direct_sva_customer_cases WHERE tenant_id=$1 ORDER BY initiated_at DESC,id DESC LIMIT 100",[id]),
   store.readSql.unsafe(
-   "SELECT e164,number_status,regulatory_status"+
+   "SELECT editor_tenant_id,e164,number_status,regulatory_status"+
    " FROM direct_sva_number_inventory WHERE editor_tenant_id=$1 AND number_status NOT IN ('released')"+
    " ORDER BY e164 LIMIT 100",[id])
  ]);
+ assertRowsBelongToTenant(cases,id,"tenant_id");
+ assertRowsBelongToTenant(numbers,id,"editor_tenant_id");
  return Object.freeze({
   schema_version:"pgi-direct-sva-client/1",
   business_unit:"direct_sva",legal_entity_key:"pgi_primary",
@@ -44,8 +73,8 @@ export async function directSvaCustomerOverview(store,context={}){
   client_payouts_enabled:false,
   accounting_status:"not_live",
   notification_status:"planned",
-  customer_contract_accepted:false,
-  account_access:"prepared_only",
+  customer_contract_accepted:enrollment.client_contract_accepted===true,
+  account_access:"contract_verified_read_only",
   features:DIRECT_SVA_CUSTOMER_FEATURES,
   cases:cases.map(row=>({reference:row.public_reference,kind:row.request_kind,
    status:row.status,created_at:pgDate(row.initiated_at),last_review_at:pgDate(row.last_review_at)})),
