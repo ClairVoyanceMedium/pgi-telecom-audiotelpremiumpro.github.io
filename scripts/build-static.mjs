@@ -108,6 +108,7 @@ const files=[
   "assets/customer-profitability.js",
   "assets/accounting-cockpit.js",
   "assets/direct-sva-cockpit.js",
+  "assets/direct-sva-automation-lab.js",
   "assets/direct-sva-transitions.js",
   "assets/direct-sva-switches.js",
   "assets/accounting-expert.js",
