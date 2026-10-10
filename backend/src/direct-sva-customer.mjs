@@ -73,20 +73,23 @@ export const DIRECT_SVA_WORKFLOW_RULES=Object.freeze({
 
 export function inspectDirectSvaWorkflows(rows=[]){
  if(!Array.isArray(rows))throw fail(400,"DIRECT_SVA_WORKFLOW_ROWS_INVALID");
+ const countByWorkflow=new Map();
+ for(const row of rows){
+  const key=String(row.workflow_key||"");
+  if(!Object.hasOwn(DIRECT_SVA_WORKFLOW_RULES,key))throw fail(503,"DIRECT_SVA_UNKNOWN_WORKFLOW");
+  const count=Number(row.count);
+  if(!Number.isSafeInteger(count)||count<0||countByWorkflow.has(key))throw fail(503,"DIRECT_SVA_WORKFLOW_COUNT_INVALID");
+  countByWorkflow.set(key,count);
+ }
  return Object.freeze({
   schema_version:"pgi-direct-sva-automation-monitor/1",
   business_unit:"direct_sva",mode:"preparation",
   external_execution_enabled:false,transfers_enabled:false,automatic_number_activation:false,
-  jobs:rows.map(row=>{
-   const key=String(row.workflow_key||"");
-   if(!Object.hasOwn(DIRECT_SVA_WORKFLOW_RULES,key))throw fail(503,"DIRECT_SVA_UNKNOWN_WORKFLOW");
-   return {
-    workflow:key,state:"pending_authorization",
-    count:Number(row.count||0),required_evidence:DIRECT_SVA_WORKFLOW_RULES[key].requires,
-    execution_authorized:false
-   };
-  }),
-  // Never fabricate an automatic success from a scheduled queue.
+  jobs:Object.entries(DIRECT_SVA_WORKFLOW_RULES).map(([key,rule])=>({
+    workflow:key,state:"pending_authorization",count:countByWorkflow.get(key)||0,
+    required_evidence:rule.requires,execution_authorized:false
+  })),
+  // Zero means no queued source records, not that the workflow has already executed.
   automation_ready:false
  });
 }
