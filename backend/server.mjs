@@ -31,6 +31,7 @@ import {planDirectSvaFinancialCycle} from "./src/direct-sva-financial-cycle.mjs"
 import {directSvaFinancialReadiness} from "./src/direct-sva-financial-readiness.mjs";
 import {directSvaIntegrationOverview} from "./src/direct-sva-integrations.mjs";
 import {directSvaCustomerOverview,directSvaWorkflowOverview} from "./src/direct-sva-customer.mjs";
+import {directSvaAccessReadiness} from "./src/direct-sva-access-readiness.mjs";
 import {recordDirectSvaWorkflowSimulation,directSvaSimulationDashboard} from "./src/direct-sva-automation-rehearsal.mjs";
 import {getDirectSvaSwitches,setDirectSvaPreview,setDirectSvaCommercial} from "./src/direct-sva-admin-switches.mjs";
 import {readDirectSvaWebsiteVisibility,setDirectSvaWebsiteNavigation} from "./src/direct-sva-website-visibility.mjs";
@@ -788,6 +789,11 @@ export function createBackend(options={}){
           return done(res,metrics,started,"direct_sva.staged_off",404,
             {error:{code:"DIRECT_SVA_PREPARATION_DISABLED"}});
         }
+      }
+      if(method==="GET"&&pathname==="/api/v1/platform/direct-sva/access-readiness"){
+        requireRole(actor,["admin"]);
+        return done(res,metrics,started,"direct_sva.access_readiness",200,
+          await directSvaAccessReadiness(store));
       }
       if(method==="GET"&&pathname==="/api/v1/customer/security/passkeys"){
         requireActor(customerActor);
