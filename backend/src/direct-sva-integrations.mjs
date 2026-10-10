@@ -102,9 +102,10 @@ export function directSvaHubspotPlan(input={},options={}){
   target_fields:DIRECT_SVA_HUBSPOT_FIELDS,
   existing_contact_preserved:true,
   existing_deal_pipeline_untouched:true,
-  can_create_record:options?.schemaVerified===true&&options?.pipelineVerified===true&&
+  eligible_for_later_schema_review:options?.schemaVerified===true&&options?.pipelineVerified===true&&
    options?.directSvaReleased===true&&options?.processingAuthorized===true,
-  create_request:null // Never perform a CRM write from a planning function.
+  can_create_record:false,
+  create_request:null // No write request is generated, even if all planning gates are set.
  });
 }
 
