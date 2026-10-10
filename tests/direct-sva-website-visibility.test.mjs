@@ -32,6 +32,7 @@ test("hiding navigation NEVER changes a published page's SEO, canonical or sitem
  assert.ok(!visibleDistributionMarketingHome(home,hide).includes(' href="/distribution-sva/">'));
  assert.match(visibleDistributionMarketingHome(home,show),/href="\/distribution-sva\/">/);
  assert.match(publishedDistributionHtml(page,show),/content="index,follow,max-snippet:-1"/);
+ assert.equal(publishedDistributionHtml(page,show),publishedDistributionHtml(page,hide),"menu visibility must not modify indexed content");
  assert.equal(publishedDistributionSitemap(hide),publishedDistributionSitemap(show));
  assert.equal((publishedDistributionSitemap(hide).match(/<url>/g)||[]).length,35);
 });
@@ -45,6 +46,18 @@ test("only explicitly known pages and public assets can be published",()=>{
  assert.equal(isDirectSvaPublicAsset("/site/distribution-sva/index.html"),false);
  assert.equal(isDirectSvaPath("/distribution-sva/en/faq/"),true);
  assert.equal(isDirectSvaPath("/site/distribution-sva/en/faq/"),true);
+});
+test("informational publication cannot link to the unavailable private customer portal",()=>{
+ const input='<html lang="fr"><head><meta name="robots" content="noindex,nofollow,noarchive"></head><body><main><a class="service" href="/distribution-sva/espace-client/">Espace client direct</a></main></body></html>';
+ const prelaunch=publishedDistributionHtml(input,released);
+ assert.ok(!prelaunch.includes('href="/distribution-sva/espace-client/"'));
+ assert.ok(!prelaunch.includes('href="/client.html"'));
+ assert.match(prelaunch,/Espace client Distribution en préparation/);
+ const permitted=publishedDistributionHtml(input,{...released,commercial_requests_enabled:true});
+ assert.match(permitted,/href="\/client\.html"/);
+ assert.ok(!permitted.includes('href="/distribution-sva/espace-client/"'));
+ const translated=input.replace('lang="fr"','lang="en"');
+ assert.match(publishedDistributionHtml(translated,released),/Distribution client area coming later/);
 });
 test("admin toggle saves intent transactionally with audit; it cannot publish business content",async()=>{
  const state={...waiting};const writes=[];
@@ -96,7 +109,7 @@ test("HTTP publication never breaks indexing when nav is turned off; private pag
   let body=await r.text();
   assert.match(body,/content="index,follow,max-snippet:-1"/);
   assert.match(body,/rel="canonical"/);
-  assert.match(body,/temporairement indisponible/);
+  assert.doesNotMatch(body,/temporairement indisponible/);
   const sitemap=await fetch(base+"/distribution-sva/sitemap.xml");
   assert.equal(sitemap.status,200);
   const xml=await sitemap.text();
