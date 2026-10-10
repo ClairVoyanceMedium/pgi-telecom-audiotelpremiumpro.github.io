@@ -347,6 +347,7 @@ test("homepage bottom quick navigation prioritizes the highest-value commercial 
   assert.match(html,/Estimer mes revenus potentiels/);
   assert.match(html,/Encaisser par carte bancaire/);
   assert.match(html,/Créer et envoyer un lien de paiement sécurisé/);
+  assert.match(html,/RÉCOMPENSES/);
   assert.match(html,/Parrainer Audiotel Premium Pro/);
   assert.match(html,/Partager mon lien et suivre mes récompenses/);
   assert.match(html,/href="\/portabilite-numero-sva\//);
