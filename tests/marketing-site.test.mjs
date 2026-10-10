@@ -925,3 +925,11 @@ test("public footer uses the full brand logo without duplicating logos in conten
 });
 
 // Production validation refresh.
+
+test("homepage photo logo stays discreet while other public logos keep the validated size",()=>{
+  assert.match(css,/\.hero-visual \.hero-visual-brand\{position:absolute;[^}]*width:176px/);
+  assert.match(css,/@media\(max-width:680px\)\{\.hero-visual \.hero-visual-brand\{[^}]*width:135px/);
+  assert.doesNotMatch(css,/\.hero-visual \.hero-visual-brand\{width:238px\}/);
+  assert.doesNotMatch(css,/\.hero-visual \.hero-visual-brand\{width:180px\}/);
+  assert.match(css,/width:238px!important/);
+});
