@@ -31,6 +31,7 @@ import {directSvaCustomerOverview,directSvaWorkflowOverview} from "./src/direct-
 import {getDirectSvaSwitches,setDirectSvaPreview,setDirectSvaCommercial} from "./src/direct-sva-admin-switches.mjs";
 import {eligibleExistingCustomerNumbers,preparedExistingCustomerTransitions,prepareExistingCustomerTransition} from "./src/direct-sva-customer-transition.mjs";
 import {directSvaProductionReadiness} from "./src/direct-sva-production-readiness.mjs";
+import {directSvaComplaintPreparatoryOverview} from "./src/direct-sva-complaint-automation.mjs";
 import {runDailyReportCron} from "./src/daily-report.mjs";
 
 export async function createDefaultBackend(){
@@ -1883,7 +1884,14 @@ export function createBackend(options={}){
          return done(res,metrics,started,"platform.direct_sva_transition_prepare",201,
            {...result.value,replayed:result.replayed});
        }
-       if(method==="GET"&&pathname==="/api/v1/platform/direct-sva/automation"){
+       // Complaints intake and external delivery remain blocked. An admin may
+      // inspect only anonymized readiness/counters during private preparation.
+      if(method==="GET"&&pathname==="/api/v1/platform/direct-sva/complaints/readiness"){
+        requireRole(actor,["admin"]);
+        return done(res,metrics,started,"platform.direct_sva_complaints_readiness",200,
+          await directSvaComplaintPreparatoryOverview(store));
+      }
+      if(method==="GET"&&pathname==="/api/v1/platform/direct-sva/automation"){
         requireRole(actor,["admin","finance","readonly"]);
         return done(res,metrics,started,"platform.direct_sva_automation",200,
           await directSvaWorkflowOverview(store));
