@@ -18,7 +18,12 @@ export function consolidateProviderNeutralBusinessLive(cdrRows=[],context={}){
  if(!Array.isArray(cdrRows)||cdrRows.length>20000)throw failure("CONTINUITY_ROWS_INVALID");
  const tenant=id(context.tenant_id,"TENANT"),number=id(context.sva_number_id,"NUMBER");
  const source=id(context.source_host_carrier_id,"SOURCE"),target=id(context.target_host_carrier_id,"TARGET");
- if(source===target)throw failure("CONTINUITY_SOURCE_EQUALS_TARGET");
+ const sourceEpoch=String(context.source_contract_epoch||"").trim();
+ const targetEpoch=String(context.target_contract_epoch||"").trim();
+ const epochSpecific=source===target||context.require_contract_epoch===true;
+ if(epochSpecific&&(!/^[A-Za-z0-9_.:-]{8,120}$/.test(sourceEpoch)||
+   !/^[A-Za-z0-9_.:-]{8,120}$/.test(targetEpoch)||sourceEpoch===targetEpoch))
+  throw failure("CONTINUITY_DISTINCT_CONTRACT_EPOCHS_REQUIRED");
  if(context.operator_cutover_verified!==true||context.cdr_source_verified!==true)
   throw failure("CONTINUITY_UNVERIFIED_PROVIDER_HANDOVER");
  const cutover=date(context.actual_cutover_at,"CUTOVER");
@@ -26,7 +31,7 @@ export function consolidateProviderNeutralBusinessLive(cdrRows=[],context={}){
  const seen=new Map();
  const totals={calls:0,billable_seconds:0,expected_client_net_minor:0,
    confirmed_client_net_minor:0,paid_client_net_minor:0,active_calls:0};
- const internal=new Map([[source,{...totals}],[target,{...totals}]]);
+ const internal=new Map([["source",{...totals}],["target",{...totals}]]);
  for(const row of cdrRows){
   if(id(row.tenant_id,"ROW_TENANT")!==tenant||id(row.sva_number_id,"ROW_NUMBER")!==number)
    throw failure("CONTINUITY_CROSS_TENANT_OR_NUMBER");
@@ -39,11 +44,14 @@ export function consolidateProviderNeutralBusinessLive(cdrRows=[],context={}){
    continue;
   }
   const carrier=id(row.host_carrier_id,"ROW_HOST");
-  if(carrier!==(started<cutover?source:target))
+  const epoch=started<cutover?"source":"target";
+  if(epochSpecific&&String(row.contract_epoch_reference||"")!==(epoch==="source"?sourceEpoch:targetEpoch))
+   throw failure("CONTINUITY_CDR_CONTRACT_EPOCH_UNVERIFIED");
+  if(carrier!==(epoch==="source"?source:target))
    throw failure("CONTINUITY_CDR_WRONG_PROVIDER_EPOCH");
   const key=String(row.canonical_call_key||"").trim();
   if(!/^[a-zA-Z0-9_.:-]{12,120}$/.test(key))throw failure("CONTINUITY_CANONICAL_CDR_KEY_REQUIRED");
-  const fingerprint=JSON.stringify([tenant,number,carrier,started,row.billable_seconds,
+  const fingerprint=JSON.stringify([tenant,number,carrier,epoch,started,row.billable_seconds,
    row.expected_client_net_minor,row.confirmed_client_net_minor,row.paid_client_net_minor,row.active===true]);
   if(seen.has(key)){
    if(seen.get(key)!==fingerprint)throw failure("CONTINUITY_CONFLICTING_DUPLICATE_CDR");
@@ -56,7 +64,7 @@ export function consolidateProviderNeutralBusinessLive(cdrRows=[],context={}){
   const confirmed=minor(row.confirmed_client_net_minor,"CONFIRMED",true);
   const paid=minor(row.paid_client_net_minor,"PAID",true);
   if(paid!==null&&(confirmed===null||paid>confirmed))throw failure("CONTINUITY_PAID_UNCONFIRMED");
-  for(const sum of [totals,internal.get(carrier)]){
+  for(const sum of [totals,internal.get(epoch)]){
    sum.calls++;sum.billable_seconds+=billable;sum.expected_client_net_minor+=expected;
    if(confirmed!==null)sum.confirmed_client_net_minor+=confirmed;
    if(paid!==null)sum.paid_client_net_minor+=paid;
@@ -72,11 +80,12 @@ export function consolidateProviderNeutralBusinessLive(cdrRows=[],context={}){
   // Safe for a future customer adapter: no carrier IDs, routing secrets or
   // internal migration strategy.
   client_view:Object.freeze({tenant_id:tenant,sva_number_id:number,currency:"EUR",...totals,
-   expected_is_estimate:true,confirmed_is_reconciled:true,paid_is_settled:true}),
+   expected_is_estimate:true,confirmed_requires_authoritative_reconciliation:true,paid_requires_payment_proof:true}),
   // Only for private audit and operator reconciliation.
   administrator_view:Object.freeze({
    source_host_carrier_id:source,target_host_carrier_id:target,
-   by_carrier:[source,target].map(k=>({carrier_id:k,...internal.get(k)})),
+   by_carrier:[{carrier_id:source,epoch:"source",contract_epoch_reference:sourceEpoch||null,...internal.get("source")},
+    {carrier_id:target,epoch:"target",contract_epoch_reference:targetEpoch||null,...internal.get("target")}],
    deduplicated_cdr:seen.size,cutover_approved_from_this_output:false
   }),
   existing_customer_account_changed:false,
