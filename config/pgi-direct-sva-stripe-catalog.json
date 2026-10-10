@@ -1,0 +1,34 @@
+{
+  "snapshot_date": "2026-10-10",
+  "stripe_account_label": "PGI Telecom - Audiotel Premium Pro",
+  "livemode": true,
+  "business_unit": "direct_sva",
+  "pgi_company": "pgi_primary",
+  "cost_center": "DSVA",
+  "catalog_product": {
+    "id": "prod_VPxqF47RlQ0uoi",
+    "name": "PGI Telecom Distribution | Pôle Télécom & Réseau",
+    "active": false,
+    "default_price": null,
+    "metadata": {
+      "pgi_business_unit": "direct_sva",
+      "pgi_catalog_status": "preparation",
+      "pgi_checkout_enabled": "false",
+      "pgi_cost_center": "DSVA",
+      "pgi_crm_namespace": "distribution_directe",
+      "pgi_legal_entity": "pgi_primary",
+      "pgi_network_enabled": "false",
+      "pgi_payments_enabled": "false",
+      "pgi_public_brand": "Pole Telecom et Reseau",
+      "pgi_service_family": "telecom_distribution"
+    }
+  },
+  "audiotel_product_id_existing_untouched": "prod_VJeVHmZAUiMfc7",
+  "stripe_prices_for_distribution": [],
+  "distribution_specific_webhook_endpoint": null,
+  "checkout_live": false,
+  "subscription_live": false,
+  "payout_live": false,
+  "financial_connection_verified": false,
+  "notes": "Existing live Stripe account; Distribution product created INACTIVE without prices or payment links. Billing and telecom operator flows have separate release processes."
+}
