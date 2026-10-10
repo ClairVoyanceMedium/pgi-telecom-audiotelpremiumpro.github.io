@@ -21,11 +21,11 @@ function row(r){
 }
 function todayText(x){
  const m=x?.metrics||{},c=m.currency||"EUR";
- return ["Consommation aujourd’hui côté serveur","Période : "+date(x.range?.from)+" → "+date(x.range?.to),"Fuseau : "+(x.tenant_timezone||"—"),"Appels : "+nf(m.calls_total),"Décrochés : "+nf(m.calls_connected),"Minutes facturables : "+nf1(Number(m.billable_seconds||0)/60),"Montant service TTC : "+money(m.generated_revenue_ttc,c),"Reversement net validé : "+money(m.net_payout_ht,c),"Empreinte actuelle : "+(x.snapshot_sha256||"—"),"Calculé le : "+date(x.generated_at)].join("\n");
+ return ["Consommation aujourd’hui côté serveur","Période : "+date(x.range?.from)+" → "+date(x.range?.to),"Fuseau : "+(x.tenant_timezone||"-"),"Appels : "+nf(m.calls_total),"Décrochés : "+nf(m.calls_connected),"Minutes facturables : "+nf1(Number(m.billable_seconds||0)/60),"Montant service TTC : "+money(m.generated_revenue_ttc,c),"Reversement net validé : "+money(m.net_payout_ht,c),"Empreinte actuelle : "+(x.snapshot_sha256||"-"),"Calculé le : "+date(x.generated_at)].join("\n");
 }
 function renderToday(x,root){
  todayCurrent=x;const m=x?.metrics||{},c=m.currency||"EUR";
- root.querySelector("[data-consumption-today]").innerHTML='<div class="tcc-result match"><div class="tcc-status">AUJOURD’HUI CÔTÉ SERVEUR</div><p class="td-empty">'+nf(m.calls_total)+' appels · '+nf(m.calls_connected)+' décrochés · '+nf1(Number(m.billable_seconds||0)/60)+' min · '+money(m.generated_revenue_ttc,c)+' TTC · reversement '+money(m.net_payout_ht,c)+'</p><div class="tcc-hash">'+esc(date(x.range?.from))+' → '+esc(date(x.range?.to))+' · '+esc(x.tenant_timezone||"—")+'<br>SHA '+esc(x.snapshot_sha256||"")+'</div><button class="td-btn mini tcc-copy" data-consumption-today-copy>Copier le récapitulatif du jour</button></div>';
+ root.querySelector("[data-consumption-today]").innerHTML='<div class="tcc-result match"><div class="tcc-status">AUJOURD’HUI CÔTÉ SERVEUR</div><p class="td-empty">'+nf(m.calls_total)+' appels · '+nf(m.calls_connected)+' décrochés · '+nf1(Number(m.billable_seconds||0)/60)+' min · '+money(m.generated_revenue_ttc,c)+' TTC · reversement '+money(m.net_payout_ht,c)+'</p><div class="tcc-hash">'+esc(date(x.range?.from))+' → '+esc(date(x.range?.to))+' · '+esc(x.tenant_timezone||"-")+'<br>SHA '+esc(x.snapshot_sha256||"")+'</div><button class="td-btn mini tcc-copy" data-consumption-today-copy>Copier le récapitulatif du jour</button></div>';
 }
 function summaryText(x){
  const r=x.receipt,m=r.metrics||{},c=m.currency||"EUR",q=x.reconciliation||{},status=q.status==="match"?"CONFORME":"ÉCART";
