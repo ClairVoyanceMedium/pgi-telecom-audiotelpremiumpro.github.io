@@ -10,6 +10,7 @@ import {createStaticSiteHandler} from "../backend/src/static-site.mjs";
 
 const waiting={public_content_authorized:false,navigation_enabled:false,commercial_calls_to_action_enabled:false,changed_at:null};
 const released={...waiting,public_content_authorized:true};
+const normalizedReleased={business_unit:"direct_sva",publication_authorized:true,navigation_visible:false,commercial_requests_enabled:false};
 
 test("unreleased content is never publicly accessible even if admin has toggled navigation",()=>{
  assert.equal(normalizeDirectSvaWebsiteState({...waiting,navigation_enabled:true}).navigation_visible,false);
@@ -49,26 +50,26 @@ test("only explicitly known pages and public assets can be published",()=>{
 });
 test("informational publication cannot link to the unavailable private customer portal",()=>{
  const input='<html lang="fr"><head><meta name="robots" content="noindex,nofollow,noarchive"></head><body><main><a class="service" href="/distribution-sva/espace-client/">Espace client direct</a></main></body></html>';
- const prelaunch=publishedDistributionHtml(input,released);
+ const prelaunch=publishedDistributionHtml(input,normalizedReleased);
  assert.ok(!prelaunch.includes('href="/distribution-sva/espace-client/"'));
  assert.ok(!prelaunch.includes('href="/client.html"'));
  assert.match(prelaunch,/Espace client Distribution en préparation/);
- const permitted=publishedDistributionHtml(input,{...released,commercial_requests_enabled:true});
+ const permitted=publishedDistributionHtml(input,{...normalizedReleased,commercial_requests_enabled:true});
  assert.match(permitted,/href="\/client\.html"/);
  assert.ok(!permitted.includes('href="/distribution-sva/espace-client/"'));
  const translated=input.replace('lang="fr"','lang="en"');
- assert.match(publishedDistributionHtml(translated,released),/Distribution client area coming later/);
+ assert.match(publishedDistributionHtml(translated,normalizedReleased),/Distribution client area coming later/);
 });
 test("robots.txt announces Distribution sitemap only after publication, regardless of navigation",()=>{
  const robots="User-agent: *\nAllow: /\nSitemap: https://audiotel-premium-pro.com/sitemap.xml\n";
  assert.equal(publishedDistributionRobots(robots,waiting),null);
- const off=publishedDistributionRobots(robots,released);
- const on=publishedDistributionRobots(robots,{...released,navigation_enabled:true});
+ const off=publishedDistributionRobots(robots,normalizedReleased);
+ const on=publishedDistributionRobots(robots,{...normalizedReleased,navigation_visible:true});
  assert.equal(off,on);
  assert.match(off,/Sitemap: https:\/\/audiotel-premium-pro\.com\/sitemap\.xml/);
  assert.match(off,/Sitemap: https:\/\/audiotel-premium-pro\.com\/distribution-sva\/sitemap\.xml/);
  assert.equal((off.match(/Sitemap: https:\/\/audiotel-premium-pro\.com\/distribution-sva\/sitemap\.xml/g)||[]).length,1);
- assert.equal(publishedDistributionRobots(off,released),off,"must be idempotent");
+ assert.equal(publishedDistributionRobots(off,normalizedReleased),off,"must be idempotent");
 });
 test("admin toggle first publishes editorial pages and later hides only link without losing SEO",async()=>{
  const state={...waiting};const writes=[];
