@@ -81,6 +81,12 @@ Contrôles effectivement exécutés sur les fonctions pures lues dans GitHub, vi
 5. **Qualité juridique et internationale** : chaque pays visé réclame une revue des ressources télécom, du cadre tarifaire et des textes adaptés. Des traductions ne sont pas des autorisations d'exploitation.
 6. **SEO mesuré** : sans publication, le classement et la présence dans les assistants vocaux ou moteurs IA ne peuvent pas être confirmés ; le bouton de visibilité n'est pas une garantie de maintien de positions.
 
+## Risque de livraison constaté à la dernière vérification GitHub
+
+Au contrôle de comparaison avec `main`, la branche de préparation affichait **427 commits d'avance, aucun commit de retard et 199 fichiers modifiés**. Ce volume rend une fusion aveugle risquée, même si chaque modification individuelle semble limitée. Il faut vérifier la totalité des modifications accumulées, les migrations, les fichiers de déploiement, les parcours de la première activité et les secrets avant le feu vert. **La branche ne dispose d'aucun statut CI rattaché à son dernier commit et d'aucun déploiement de prévisualisation Vercel identifié**. Les tests de fonctions pures réussis ne valident donc pas cette livraison monolithique.
+
+Mesure recommandée : garder le code inchangé en production, tester l'intégralité dans une préproduction isolée, figer un candidat de livraison, vérifier les invariants Audiotel et conserver un plan de restauration avant déploiement.
+
 ## Conclusion et politique de modifications
 
 **Résultat :** corrections ciblées sur la fiabilité du parcours et la stabilité SEO, sans changer l'offre Audiotel Premium Pro ni déployer Distribution.
