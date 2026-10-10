@@ -36,6 +36,13 @@ export function consolidateProviderNeutralBusinessLive(cdrRows=[],context={}){
   if(id(row.tenant_id,"ROW_TENANT")!==tenant||id(row.sva_number_id,"ROW_NUMBER")!==number)
    throw failure("CONTINUITY_CROSS_TENANT_OR_NUMBER");
   const started=date(row.started_at,"START");
+  const ended=row.ended_at==null?null:date(row.ended_at,"END");
+  if(ended!==null&&ended<started)throw failure("CONTINUITY_CDR_END_BEFORE_START");
+  if(row.active===true&&ended!==null)throw failure("CONTINUITY_ACTIVE_CALL_HAS_END_TIME");
+  // Calls crossing the operator handover cannot be assigned unambiguously to
+  // one contract. Require authoritative per-provider segments from the carrier.
+  if(started<cutover&&((ended!==null&&ended>cutover)||row.active===true))
+   throw failure("CONTINUITY_CALL_SPANS_CUTOVER_NEEDS_SEGMENT");
   if(started<resetAt){
    // A call crossing a reset requires an authoritative prorated call segment,
    // never a zero or a made-up correction to the customer counter.
