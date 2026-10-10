@@ -33,6 +33,7 @@ import {directSvaIntegrationOverview} from "./src/direct-sva-integrations.mjs";
 import {directSvaCustomerOverview,directSvaWorkflowOverview} from "./src/direct-sva-customer.mjs";
 import {recordDirectSvaWorkflowSimulation,directSvaSimulationDashboard} from "./src/direct-sva-automation-rehearsal.mjs";
 import {getDirectSvaSwitches,setDirectSvaPreview,setDirectSvaCommercial} from "./src/direct-sva-admin-switches.mjs";
+import {readDirectSvaWebsiteVisibility,setDirectSvaWebsiteNavigation} from "./src/direct-sva-website-visibility.mjs";
 import {eligibleExistingCustomerNumbers,preparedExistingCustomerTransitions,prepareExistingCustomerTransition} from "./src/direct-sva-customer-transition.mjs";
 import {directSvaProductionReadiness} from "./src/direct-sva-production-readiness.mjs";
 import {directSvaComplaintPreparatoryOverview} from "./src/direct-sva-complaint-automation.mjs";
@@ -65,7 +66,7 @@ export function createBackend(options={}){
 
   const store=options.store||new MemoryStore(config,eventBus);
   if(config.mode==="simulator"&&typeof store.seedSimulator==="function")store.seedSimulator();
-  const staticSite=createStaticSiteHandler(config.staticDir);
+  const staticSite=createStaticSiteHandler(config.staticDir,{getDirectSvaWebsiteState:()=>readDirectSvaWebsiteVisibility(store)});
 
   const metrics={
     requests:0,errors:0,rateLimited:0,authFailures:0,authRateLimited:0,
@@ -755,6 +756,19 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes);
         return done(res,metrics,started,"platform.direct_sva_commercial_toggle",200,
           await setDirectSvaCommercial(store,actor,body));
+      }
+
+      // Website presentation toggle: hide the marketing link, never deindex published content.
+      if(method==="GET"&&pathname==="/api/v1/platform/direct-sva-website"){
+        requireRole(actor,["admin"]);
+        return done(res,metrics,started,"platform.direct_sva_website_visibility",200,
+          await readDirectSvaWebsiteVisibility(store));
+      }
+      if(method==="POST"&&pathname==="/api/v1/platform/direct-sva-website/navigation"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        return done(res,metrics,started,"platform.direct_sva_website_navigation",200,
+          await setDirectSvaWebsiteNavigation(store,actor,body));
       }
 
       // The first switch gives administrators a PRIVATE technical preview only.
