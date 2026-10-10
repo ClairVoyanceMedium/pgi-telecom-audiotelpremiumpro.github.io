@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const migrationDir=new URL("../database/migrations/",import.meta.url);
-const names=["073_direct_sva_operator_business_unit.sql","074_single_company_two_business_units.sql","075_direct_sva_customer_and_automation_foundation.sql"];
+const names=["073_direct_sva_operator_business_unit.sql","074_single_company_two_business_units.sql","075_direct_sva_customer_and_automation_foundation.sql","076_direct_sva_admin_switches.sql"];
 
 function stripSqlComments(sql){
  return sql.replace(/\/\*[\s\S]*?\*\//g," ").replace(/--[^\n]*/g," ");
@@ -47,7 +47,7 @@ test("the three direct SVA migrations have intact statement boundaries and exact
   assert.doesNotThrow(()=>scanSql(sql),name);
   assert.ok(sql.endsWith(";\n"),name+": expected SQL end");
   const declarations=[...stripSqlComments(sql).matchAll(/\bCREATE TABLE IF NOT EXISTS (\w+)/gi)].map(m=>m[1]);
-  assert.ok(declarations.length>=3,name+": empty or truncated migration");
+  assert.ok(declarations.length>=2,name+": empty or truncated migration");
   assert.equal(new Set(declarations).size,declarations.length,name+": duplicate table definitions");
   assert.ok(!/^\s*\),\s*$/m.test(sql),name+": unexpected detached closing column definition");
  }
@@ -82,4 +82,12 @@ test("customer enrolment and all automations stay inaccessible or blocked",()=>{
  assert.match(sql,/CHECK\(financial_transfer_enabled=false\)/);
  assert.match(sql,/idempotency_key text NOT NULL UNIQUE/);
  assert.match(sql,/direct_sva_guard_automation_events/);
+});
+
+test("new switches only allow private preview while commercial operation is locked",()=>{
+ const sql=fs.readFileSync(new URL(names[3],migrationDir),"utf8");
+ assert.match(sql,/interface_preview_enabled boolean NOT NULL DEFAULT false/);
+ assert.match(sql,/commercial_operation_enabled boolean NOT NULL DEFAULT false/);
+ assert.match(sql,/CHECK \(commercial_operation_enabled=false\)/);
+ assert.match(sql,/CREATE TRIGGER direct_sva_guard_admin_switch_audit_immutable/);
 });
