@@ -111,13 +111,14 @@ test("workflow planning protects all thirteen stages and never authorizes extern
  assert.match(m,/number_assignment/);
  assert.match(m,/analytics_delivery/);
  const plan=inspectDirectSvaWorkflows([{workflow_key:"publisher_payout",count:8}]);
- assert.equal(plan.jobs.length,1);
- assert.equal(plan.jobs[0].execution_authorized,false);
+ assert.equal(plan.jobs.length,13);
+ assert.equal(plan.jobs.every(x=>x.execution_authorized===false),true);
  assert.equal(plan.transfers_enabled,false);
  assert.equal(plan.automation_ready,false);
- assert.ok(plan.jobs[0].required_evidence.includes("psp_mandate"));
+ assert.ok(plan.jobs.find(x=>x.workflow==="publisher_payout").required_evidence.includes("psp_mandate"));
  const response=await directSvaWorkflowOverview({readSql:{unsafe:async()=>[]}});
- assert.deepEqual(response.jobs,[]);
+ assert.equal(response.jobs.length,13);
+ assert.equal(response.jobs.every(x=>x.count===0),true);
  assert.equal(response.external_execution_enabled,false);
 });
 
