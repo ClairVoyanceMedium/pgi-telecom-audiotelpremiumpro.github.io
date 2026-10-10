@@ -90,7 +90,7 @@ export function createStaticSiteHandler(rootDir){
     const runtimeConfig=/\/assets\/(?:config|client-config)\.js$/.test(file);
     const html=ext===".html";
     const requestPath=String(pathname||"");
-    const clientUi=requestPath==="/client.html";
+    const clientUi=requestPath==="/client.html"||/^\/distribution-sva\/espace-client(?:\/|$)/i.test(requestPath);
     const cockpitUi=["/cockpit","/cockpit/","/cockpit.html"].includes(requestPath);
     const privateUi=clientUi||cockpitUi;
     const versionedAsset=!runtimeConfig&&!html&&/\.(?:css|js|png|webp|svg|ico)$/i.test(requestPath)&&/[?&]v=[A-Za-z0-9._-]{1,32}(?:&|$)/.test(String(req?.url||""));
