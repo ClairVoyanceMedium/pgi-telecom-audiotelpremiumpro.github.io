@@ -20,6 +20,7 @@ function mocked(){
    e164:"+33891234567",number_status:"active"
   }];
   if(q.includes("FROM number_carrier_assignments"))return [{carrier_id:33}];
+  if(q.includes("max(revision_no)"))return [{next_revision:1}];
   if(q.includes("INSERT INTO direct_sva_existing_customer_transition_plans")){
    writes.push(q);return [{id:57,state:"prepared",created_at:"2026-10-10T11:00:00Z"}];
   }
