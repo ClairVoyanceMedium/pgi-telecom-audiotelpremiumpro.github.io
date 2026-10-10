@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import {createHmac} from "node:crypto";
 import {verifyResendWebhook} from "../backend/src/resend-webhook.mjs";
-import {applyResendWebhookEvent} from "../backend/src/email-dispatcher.mjs";
+import {applyResendWebhookEvent,acknowledgeResendInboundForward} from "../backend/src/email-dispatcher.mjs";
 
 function reqFor(event,secret,timestamp=Math.floor(Date.now()/1000),id="msg_test_webhook_123"){
   const raw=Buffer.from(JSON.stringify(event));
@@ -56,5 +56,46 @@ test("email.received is recorded without inventing an outbound delivery state",a
   const result=await applyResendWebhookEvent(store,verified);
   assert.equal(result.state,null);
   assert.equal(queries.some(x=>x.query.includes("UPDATE transactional_email_deliveries SET state=")),false);
-  assert.equal(queries.some(x=>x.query.includes("UPDATE transactional_email_webhook_events SET processed_at=now()")),true);
+  assert.equal(queries.some(x=>x.query.includes("UPDATE transactional_email_webhook_events SET processed_at=now()")),false);
+});
+
+test("inbound webhook remains retryable until Gmail forward was explicitly acknowledged",async()=>{
+ const seen=[];
+ let inserted=true;
+ const store={sql:{
+  begin:async cb=>cb({unsafe:async(query,values)=>{
+    seen.push(query);
+    if(query.startsWith("INSERT INTO transactional_email_webhook_events")){
+      if(inserted){inserted=false;return [{svix_id:"msg_retry_123"}];}
+      return [];
+    }
+    if(query.includes("SELECT event_type,provider_email_id,payload_sha256,processed_at"))
+      return [{event_type:"email.received",provider_email_id:"email_inbound_123",payload_sha256:"a".repeat(64),processed_at:null}];
+    return [];
+  }}),
+  unsafe:async(query,args)=>{
+    seen.push(query);
+    return query.startsWith("UPDATE transactional_email_webhook_events SET processed_at=COALESCE")
+      ?[{svix_id:args[0],processed_at:new Date()}]:[];
+  }
+ }};
+ const verified={svixId:"msg_retry_123",payloadSha256:"a".repeat(64),
+  event:{type:"email.received",data:{email_id:"email_inbound_123"}}};
+ const first=await applyResendWebhookEvent(store,verified);
+ assert.equal(first.duplicate,false);
+ const replay=await applyResendWebhookEvent(store,verified);
+ assert.equal(replay.resumed,true);
+ assert.equal(replay.duplicate,false);
+ const ack=await acknowledgeResendInboundForward(store,verified);
+ assert.equal(ack.acknowledged,true);
+ assert.ok(seen.some(x=>x.includes("processed_at=COALESCE(processed_at,now())")));
+});
+test("inbound replay refuses altered signed payloads instead of trusting an old receipt",async()=>{
+ const store={sql:{begin:async fn=>fn({unsafe:async query=>
+  query.startsWith("INSERT INTO transactional_email_webhook_events")?[]:
+  [{event_type:"email.received",provider_email_id:"email_inbound_123",payload_sha256:"b".repeat(64),processed_at:null}]
+ })}};
+ await assert.rejects(
+  ()=>applyResendWebhookEvent(store,{svixId:"msg_retry_123",payloadSha256:"a".repeat(64),event:{type:"email.received",data:{email_id:"email_inbound_123"}}}),
+  {code:"RESEND_WEBHOOK_RECEIPT_CONFLICT"});
 });
