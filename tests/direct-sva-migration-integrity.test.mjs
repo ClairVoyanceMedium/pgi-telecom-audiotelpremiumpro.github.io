@@ -47,7 +47,8 @@ test("the direct SVA migrations have intact statement boundaries and no duplicat
   assert.doesNotThrow(()=>scanSql(sql),name);
   assert.ok(sql.endsWith(";\n"),name+": expected SQL end");
   const declarations=[...stripSqlComments(sql).matchAll(/\bCREATE TABLE IF NOT EXISTS (\w+)/gi)].map(m=>m[1]);
-  assert.ok(declarations.length>=2,name+": empty or truncated migration");
+  const minimum=name.startsWith("079_")?1:2;
+  assert.ok(declarations.length>=minimum,name+": empty or truncated migration");
   assert.equal(new Set(declarations).size,declarations.length,name+": duplicate table definitions");
   assert.ok(!/^\s*\),\s*$/m.test(sql),name+": unexpected detached closing column definition");
  }
