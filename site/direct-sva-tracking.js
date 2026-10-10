@@ -17,6 +17,19 @@ const EVENT_SPEC=Object.freeze({
  dsva_number_activated:"number_activated"
 });
 const SERVICES=new Set(["numero_sva","portabilite","interconnexion","distribution"]);
+const PUBLIC_FR_PATHS=new Set([
+ "/distribution-sva/","/distribution-sva/solutions/","/distribution-sva/business-live/",
+ "/distribution-sva/transition/","/distribution-sva/conformite/",
+ "/distribution-sva/reclamations/","/distribution-sva/architecture-reseau/",
+ "/distribution-sva/numerotation/","/distribution-sva/interconnexion-routage/",
+ "/distribution-sva/releves-reversements/","/distribution-sva/partenaires/",
+ "/distribution-sva/questions-frequentes/"
+]);
+function publicDirectPath(path){
+ if(PUBLIC_FR_PATHS.has(path))return true;
+ return /^\/distribution-sva\/(?:en|es|pt|de|it)\/(?:solutions\/|faq\/|partners\/)?$/.test(path);
+}
+
 
 export function createDirectSvaTracker({ga4,documentRef,locationRef,navigatorRef,scriptLoader}={}){
  const measurement=String(ga4?.measurementId||"").trim();
@@ -26,7 +39,7 @@ export function createDirectSvaTracker({ga4,documentRef,locationRef,navigatorRef
  const permitted=ga4?.enabled===true&&ga4?.consentGranted===true&&ga4?.legalApproved===true&&
   ga4?.customDimensionRegistered===true&&ga4?.dedicatedPropertyConfirmed===true&&
   /^G-[A-Z0-9]{8,}$/.test(measurement)&&measurement!==RESERVED_PLATFORM_MEASUREMENT_ID&&
-  /^\/distribution-sva(?:\/|$)/.test(path)&&!privatePath&&trustedHost&&
+  publicDirectPath(path)&&!privatePath&&trustedHost&&
   navigatorRef?.globalPrivacyControl!==true;
  const reason=!permitted?"DIRECT_SVA_GA4_INACTIVE_OR_UNVERIFIED":"EXPLICITLY_APPROVED";
  let started=false,pageviewSent=false;
