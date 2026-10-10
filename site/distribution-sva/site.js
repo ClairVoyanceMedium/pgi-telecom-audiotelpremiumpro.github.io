@@ -5,7 +5,7 @@
  if(badge)badge.textContent="Projet de distribution directe en préparation";
  const currentYear=new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Paris",year:"numeric"}).format(new Date());
  document.querySelectorAll("[data-ds-year]").forEach(n=>n.textContent=currentYear);
- const activePath=location.pathname.replace(/\\/+/g,"/");
+ const activePath=location.pathname;
  document.querySelectorAll('.menu a[href]').forEach(a=>{
   const href=a.getAttribute("href");if(href===activePath)a.setAttribute("aria-current","page");
  });
