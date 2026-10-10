@@ -2,7 +2,13 @@
 // No signup or demo data. Never requests data outside the authenticated tenant.
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
-const state={authenticated:false,active:false,data:null};
+const state={authenticated:false,active:false,data:null,requestVersion:0};
+const PRIVATE_FIELDS=["ds-client-cases","ds-client-numbers","ds-client-features","ds-client-finance"];
+function clearPrivateCustomerView(){
+ state.active=false;state.data=null;
+ const pane=$("ds-client-content");if(pane)pane.hidden=true;
+ for(const id of PRIVATE_FIELDS){const node=$(id);if(node)node.replaceChildren();}
+}
 function notice(message){const el=$("ds-client-notice");if(el)el.textContent=String(message);}
 async function json(path){
  const response=await fetch(path,{method:"GET",credentials:"same-origin",cache:"no-store",headers:{Accept:"application/json"}});
@@ -18,8 +24,10 @@ function table(headers,rows){
 }
 function render(data){
  if(!data||data.business_unit!=="direct_sva"||data.source!=="direct_sva_only"||
-    data.tenant_scope!=="authenticated_customer_only"||!Array.isArray(data.cases)||
-    !Array.isArray(data.numbers)||!Array.isArray(data.features)){
+    data.tenant_scope!=="authenticated_customer_only"||
+    data.service_active!==false||data.number_provisioning_enabled!==false||
+    data.client_payouts_enabled!==false||
+    !Array.isArray(data.cases)||!Array.isArray(data.numbers)||!Array.isArray(data.features)){
   throw Error("DIRECT_SVA_RESPONSE_INTEGRITY_INVALID");
  }
  state.data=data;
@@ -33,15 +41,22 @@ function render(data){
  notice("Accès documentaire seulement. Aucun numéro, routage ou reversement direct ne peut être activé.");
 }
 async function load(){
+ const version=++state.requestVersion;
+ clearPrivateCustomerView();
  try{
   const who=await json("/api/v1/customer/auth/me");
+  if(version!==state.requestVersion)return;
   state.authenticated=Boolean(who?.user);
   if(!state.authenticated)throw Error("AUTH_REQUIRED");
   const payload=await json("/api/v1/customer/direct-sva/overview");
-  render(payload);state.active=true;$("ds-client-auth").hidden=true;
+  if(version!==state.requestVersion)return; // Ignore stale results after a newer refresh.
+  render(payload);
+  state.active=true;
+  $("ds-client-auth").hidden=true;
  }catch(error){
-  state.active=false;state.data=null;
-  $("ds-client-content").hidden=true;
+  if(version!==state.requestVersion)return;
+  clearPrivateCustomerView();
+  state.authenticated=false;
   $("ds-client-auth").hidden=false;
   if(error.httpStatus===401||error.message==="AUTH_REQUIRED")notice("Veuillez vous connecter à votre compte client PGI.");
   else if(error.httpStatus===403||error.httpStatus===404)notice("L'accès à PGI Telecom Distribution n'est pas encore ouvert pour ce compte. L'activité Audiotel reste indépendante.");
@@ -49,7 +64,8 @@ async function load(){
   else notice("Ce service est indisponible en préparation. Aucun changement à votre compte.");
  }
 }
+
 document.querySelectorAll("[data-ds-year]").forEach(n=>{n.textContent=String(new Date().getFullYear());});
 $("ds-client-refresh")?.addEventListener("click",load);
-$("ds-client-print")?.addEventListener("click",()=>window.print());
+$("ds-client-print")?.addEventListener("click",()=>{if(state.active)window.print();});
 load();
