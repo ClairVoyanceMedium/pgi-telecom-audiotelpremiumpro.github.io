@@ -53,6 +53,7 @@ export function buildGa4PurchaseFromStripe(normalized={}){
         transaction_id,
         currency,
         value,
+        pgi_business_unit:"audiotel_platform",
         ...(session_id?{session_id:Number(session_id)}:{}),
         engagement_time_msec:1,
         items:[{
@@ -80,6 +81,7 @@ export function buildGa4RefundFromStripe(input={}){
         transaction_id,
         currency,
         value,
+        pgi_business_unit:"audiotel_platform",
         engagement_time_msec:1,
         items:[{
           item_id:"audiotel_premium_pro_platform",
