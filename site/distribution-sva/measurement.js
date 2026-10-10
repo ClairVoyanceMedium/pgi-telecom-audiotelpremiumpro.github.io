@@ -74,6 +74,7 @@ function decline(){
 function accept(){
  denied=false;save("accepted");closePanel();
  window["ga-disable-"+MEASUREMENT_ID]=false;
+ if(tracker){window.gtag?.("consent","update",{analytics_storage:"granted",ad_storage:"denied",ad_user_data:"denied",ad_personalization:"denied"});}
  initTracking();
 }
 function promptPreference(){
@@ -92,8 +93,9 @@ function promptPreference(){
 function createPreferenceControl(){
  const footer=document.querySelector("footer");if(!footer||footer.querySelector("[data-ds-analytics-preferences]"))return;
  const button=makeButton(words.settings,"ds-analytics-preferences",()=>{
-  denied=true;
-  if(tracker)window["ga-disable-"+MEASUREMENT_ID]=true;
+  denied=true;save("refused");
+  if(tracker){window["ga-disable-"+MEASUREMENT_ID]=true;
+   window.gtag?.("consent","update",{analytics_storage:"denied",ad_storage:"denied",ad_user_data:"denied",ad_personalization:"denied"});}
   promptPreference();
  });
  button.dataset.dsAnalyticsPreferences="";
