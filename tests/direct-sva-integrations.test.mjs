@@ -188,3 +188,27 @@ test("legal accounting readiness does not expose company identity or enable FEC 
  assert.ok(!JSON.stringify(completed).includes("123456789"));
  assert.ok(!JSON.stringify(completed).includes("Societe exemple"));
 });
+
+test("database connector drift is an incident, never masked as 'disabled'",async()=>{
+ const units=[
+  {unit_code:"audiotel_platform",legal_accounting_profile_id:1,separate_legal_fec:false},
+  {unit_code:"direct_sva",legal_accounting_profile_id:1,separate_legal_fec:false}
+ ];
+ const base=["ga4","gsc","hubspot","statutory_accounting","network","payment_psp"].map(integration_key=>({
+  integration_key,readiness_status:"planned",activation_status:"disabled",can_send_data:false
+ }));
+ for(const mutations of [
+  x=>{x[0].can_send_data=true;},
+  x=>{x[1].activation_status="enabled";},
+  x=>{x.pop();},
+  x=>{x.push({...x[0]});}
+ ]){
+  const checks=base.map(x=>({...x}));mutations(checks);
+  let index=0;
+  const rows=[units,checks,[{}]];
+  const store={readSql:{unsafe:async()=>rows[index++]}};
+  await assert.rejects(()=>directSvaIntegrationOverview(store),{
+   status:503,code:"DIRECT_SVA_INTEGRATION_CONTROL_DRIFT"
+  });
+ }
+});
