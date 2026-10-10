@@ -16,3 +16,20 @@
 .ds-checkbox{display:flex;align-items:flex-start;gap:12px}.ds-checkbox input{width:auto;flex:0 0 auto;margin-top:6px}
 .ds-complaint-form-panel [role=status]{min-height:1.6em}
 @media(max-width:760px){.ds-form-grid{grid-template-columns:1fr}}
+
+/* seo-geo-direct-division: accessible navigation and content layout in all six languages */
+.ds-language-section{border-top:1px solid var(--line)}
+.ds-language-links,.ds-topic-links{display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;margin-top:20px}
+.ds-language-links a,.ds-topic-links a{color:var(--accent);padding:7px 0;text-decoration:underline;text-underline-offset:4px;font-weight:650}
+.ds-language-links a[aria-current="page"]{color:var(--ink);text-decoration-thickness:2px}
+.ds-language-links a:focus-visible,.ds-topic-links a:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+.ds-resource-section .card a{display:inline-block;margin-top:9px;font-weight:700}
+.card h2{font-size:20px;line-height:1.35}
+.ds-resource-section h2{margin-bottom:10px}
+.hero>.wrap>.notice{max-width:780px;margin-top:24px}
+main .cards .card{min-width:0}
+@media(max-width:760px){
+ .ds-language-links,.ds-topic-links{gap:5px 17px}
+ .ds-language-links a,.ds-topic-links a{min-height:40px;display:inline-flex;align-items:center}
+ .ds-resource-section .cards{grid-template-columns:1fr}
+}
