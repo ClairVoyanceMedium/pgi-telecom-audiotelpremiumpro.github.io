@@ -30,12 +30,12 @@ export async function directSvaProductionReadiness(store){
  // must be surfaced clearly, not accidentally treated as zero activity.
  const [schema]=await sql.unsafe(
   "SELECT to_regclass('public.direct_sva_admin_switches') IS NOT NULL AS switches,"+
-  " to_regclass('public.direct_sva_operator_controls') IS NOT NULL AS operator,"+
+  " to_regclass('public.direct_sva_operator_controls') IS NOT NULL AS operator_ready,"+
   " to_regclass('public.direct_sva_integration_readiness') IS NOT NULL AS integrations,"+
   " to_regclass('public.direct_sva_existing_customer_transition_plans') IS NOT NULL AS transitions,"+
   " to_regclass('public.direct_sva_automation_jobs') IS NOT NULL AS automation");
  const migrations=Object.freeze({
-  controls:schema?.switches===true,operator:schema?.operator===true,
+  controls:schema?.switches===true,operator:schema?.operator_ready===true,
   integrations:schema?.integrations===true,transitions:schema?.transitions===true,
   automations:schema?.automation===true
  });
