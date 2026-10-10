@@ -51,7 +51,7 @@ function journals(){
    kpi("Variation dettes éditeurs",money(a.publisher_liabilities_change_minor),"Aucun virement automatique")+
    kpi("Variation compte d’attente",money(a.suspense_change_minor),"Ventilation à contrôler")+
    kpi("Écritures validées",integer(a.posted_entries),"Piste d’audit propre")+'</div></section>'+
-   '<section class="ds-panel"><h3>Historique des écritures du mois</h3><div class="ds-actions"><button class="ds-button" data-ds-export type="button">Exporter CSV du distributeur</button><button class="ds-button" data-ds-print type="button">Imprimer</button></div>'+
+   '<section class="ds-panel"><h3>Historique des écritures du mois</h3><div class="ds-actions"><button class="ds-button" data-ds-export type="button">Exporter le sous-journal mensuel complet (CSV)</button><button class="ds-button" data-ds-print type="button">Imprimer</button></div>'+
    (entries.length?'<div class="ds-table"><table><thead><tr><th>Date</th><th>Référence</th><th>Libellé</th><th>Statut</th><th>Débit</th><th>Crédit</th><th>Action</th></tr></thead><tbody>'+
      entries.map(x=>'<tr><td>'+esc(x.date)+'</td><td>'+esc(x.source_reference)+'</td><td>'+esc(x.description)+'</td><td>'+esc(x.status)+'</td><td>'+esc(money(x.debit_minor))+'</td><td>'+esc(money(x.credit_minor))+'</td><td>'+(x.status==="draft"?'<button type="button" class="ds-button" data-ds-approve="'+esc(x.id)+'">Approuver</button>':'Validée')+'</td></tr>').join("")+
      '</tbody></table></div>':'<p class="ds-note">Aucune écriture pour cette période.</p>')+'</section>'+
@@ -154,13 +154,39 @@ async function createDraft(form){
   description:fd.get("description"),evidence_reference:fd.get("evidence_reference"),currency:"EUR",lines
  });
 }
-function exportCsv(){
- if(!data)return;
- const rows=[["Unité","Date","Référence","Libellé","Statut","Débit EUR","Crédit EUR","Justificatif"]];
- for(const e of data.accounting.entries||[])rows.push(["Distribution SVA directe",e.date,e.source_reference,e.description,e.status,e.debit_minor/100,e.credit_minor/100,e.evidence_reference]);
- const quote=v=>'"'+String(v??"").replace(/"/g,'""')+'"';
- const csv="\ufeff"+rows.map(row=>row.map(quote).join(";")).join("\r\n")+"\r\n";
- const u=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"})),a=document.createElement("a");a.href=u;a.download="pgi-distributeur-sva-direct-"+month+".csv";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1000);
+let exportInProgress=false;
+async function exportCsv(){
+ if(exportInProgress)return;
+ exportInProgress=true;
+ try{
+  const report=await request("/platform/direct-sva/accounting/export?month="+encodeURIComponent(month));
+  if(report.business_unit!=="direct_sva"||report.complete_for_period!==true||report.document_type!=="management_subledger_not_legal_fec"){
+   throw Error("DIRECT_SVA_EXPORT_INTEGRITY_CHECK_FAILED");
+  }
+  const rows=[["Unité analytique","Date","ID écriture","Système source","Référence source",
+   "Empreinte SHA256","Description","Statut","N° ligne","Compte","Libellé ligne",
+   "Débit EUR","Crédit EUR","Justificatif"]];
+  for(const x of report.rows||[]){
+   rows.push(["DSVA",x.entry_date,String(x.journal_entry_id),x.source_system,x.source_reference,
+    x.source_digest,x.description,x.status,String(x.line_no),x.account_code,x.line_label,
+    (x.debit_minor/100).toFixed(2),(x.credit_minor/100).toFixed(2),x.evidence_reference]);
+  }
+  // Neutralize spreadsheet formulas in free-text fields while retaining numeric decimal cells.
+  function csvCell(value){
+   let raw=String(value??"");
+   if(/^[=+@\- \t\r\n]/.test(raw)&&!/^-?[0-9]+(?:\.[0-9]+)?$/.test(raw))raw="'"+raw;
+   return '"'+raw.replace(/"/g,'""')+'"';
+  }
+  const csv="\ufeff"+rows.map(row=>row.map(csvCell).join(";")).join("\r\n")+"\r\n";
+  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
+  const u=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=u;a.download="pgi-sous-journal-distribution-directe-"+month+"-NON-FEC.csv";
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1000);
+  message=integer(report.exported_entries)+" écriture(s), "+integer(report.exported_lines)+" ligne(s) exportées. Export de gestion, non FEC.";
+  severity="ds-ok";show();
+ }catch(error){
+  message="Export non effectué : "+String(error.message||"erreur");severity="ds-alert";show();
+ }finally{exportInProgress=false;}
 }
 function attach(){
  host.querySelector("[data-ds-reconcile]")?.addEventListener("click",async()=>{
