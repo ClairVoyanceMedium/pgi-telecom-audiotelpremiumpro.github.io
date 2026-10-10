@@ -39,7 +39,7 @@ async function load(){
   $("ds-client-content").hidden=true;
   $("ds-client-auth").hidden=false;
   if(error.httpStatus===401||error.message==="AUTH_REQUIRED")notice("Veuillez vous connecter à votre compte client PGI.");
-  else if(error.httpStatus===403||error.httpStatus===404)notice("Aucun accès à la distribution directe n'est actuellement ouvert pour ce compte. L'activité Audiotel reste indépendante.");
+  else if(error.httpStatus===403||error.httpStatus===404)notice("L'accès à PGI Telecom Distribution n'est pas encore ouvert pour ce compte. L'activité Audiotel reste indépendante.");
   else notice("Ce service est indisponible en préparation. Aucun changement à votre compte.");
  }
 }
