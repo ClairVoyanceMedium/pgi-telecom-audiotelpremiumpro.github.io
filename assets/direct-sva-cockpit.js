@@ -81,6 +81,28 @@ export function assertDirectSvaCockpitPayload(value,kind="overview"){
       return !Number.isSafeInteger(debit)||!Number.isSafeInteger(credit)||
        debit!==credit||debit!==j.total_minor;
      }))invalid();
+ }else if(kind==="financial_cycle"){
+  if(value.business_unit!=="direct_sva"||value.mode!=="isolated_preparation_preview"||
+     value.real_funds_collected_verified!==false||value.payout_authorized!==false||
+     value.payment_instruction_authorized!==false||value.stripe_transfer_authorized!==false||
+     value.bank_transfer_authorized!==false||value.external_actions_executed!==false||
+     value.accounting_posting_authorized!==false||value.automated_execution_enabled!==false||
+     value.business_live?.customer_publish_authorized!==false||
+     !Array.isArray(value.publisher_balances)||!Array.isArray(value.steps)||
+     !Array.isArray(value.blockers)||value.steps.length!==12||
+     value.steps.some(step=>step.can_execute!==false)||
+     value.publisher_balances.length!==value.publisher_count||
+     value.publisher_balances.some(p=>p.eligible_for_payment!==false||p.paid_verified_minor!==0))invalid();
+  for(const field of ["operator_reported_minor","pgi_margin_estimate_minor",
+    "publisher_liability_estimate_minor","receipts_reported_unverified_minor",
+    "statement_gap_unverified_minor"]){
+   if(!Number.isSafeInteger(value[field])||value[field]<0)invalid();
+  }
+  if(value.pgi_margin_estimate_minor+value.publisher_liability_estimate_minor!==
+     value.operator_reported_minor||value.receipts_reported_unverified_minor+
+     value.statement_gap_unverified_minor!==value.operator_reported_minor||
+     value.publisher_balances.reduce((n,p)=>n+p.contractual_due_preview_minor,0)!==
+     value.publisher_liability_estimate_minor)invalid();
  }else if(kind==="integrations"){
   if(value.all_direct_integrations_disabled!==true||value.ga4_emission_enabled!==false||
      value.hubspot_synchronization_enabled!==false||value.search_index_submission_enabled!==false||
@@ -186,6 +208,29 @@ function showCollectionPreview(result){
   ' | proposition seulement : '+j.lines.map(l=>esc(l.account_code)+' '+esc(l.label)+' (D '+esc(money(l.debit_minor))+
   ', C '+esc(money(l.credit_minor))+')').join(' ; ')+'</div>').join("")+'</div>';
 }
+function financialCycleView(){
+ return '<section class="ds-panel"><h3>Cycle financier complet, préparé pour l’automatisation</h3>'+
+  '<p class="ds-note">Relevé opérateur → rapprochement bancaire → répartition par éditeur → litiges → comptabilité → Business Live → reversements. En préparation, les données saisies sont non authentifiées et aucun virement n’est possible. Les interfaces opérateur et banque automatisées ne sont pas encore raccordées.</p>'+
+  '<p class="ds-note">Prévisualisation réservée à l’administration. Format JSON : statement, receipts, recognition_date, contract_model=intermediary_net_preview et holds[]. Chaque appel du relevé doit identifier publisher_reference. Aucun IBAN ni numéro d’appelant.</p>'+
+  '<label class="ds-desc" for="dsva-financial-cycle">Relevé fictif ou anonymisé structuré</label>'+
+  '<textarea class="ds-input" id="dsva-financial-cycle" data-ds-financial-payload rows="8" style="width:100%;font-family:monospace" placeholder="Coller le JSON de préparation, sans données personnelles"></textarea>'+
+  '<div class="ds-actions"><button class="ds-button" type="button" data-ds-financial-preview>Calculer le cycle sans mouvement d’argent</button></div>'+
+  '<div data-ds-financial-result class="ds-status" aria-live="polite"></div></section>';
+}
+function showFinancialCycle(result){
+ const target=host?.querySelector("[data-ds-financial-result]");if(!target)return;
+ const rows=result.publisher_balances.map(p=>'<tr><td>'+esc(p.publisher_reference)+'</td><td>'+integer(p.calls)+'</td><td>'+esc(money(p.contractual_due_preview_minor))+'</td><td>'+esc(money(p.hold_preview_minor))+'</td><td>'+esc(money(p.due_after_reported_holds_minor))+'</td><td>Bloqué</td></tr>').join("");
+ const steps=result.steps.map(x=>'<div>'+esc(x.label)+' : <strong class="ds-alert">En attente de preuve externe</strong></div>').join("");
+ target.innerHTML='<div class="ds-warning">Montants indicatifs : aucune preuve opérateur ou bancaire confirmée. Aucun paiement, aucune écriture légale, aucune publication client.</div>'+
+ '<div class="ds-cards">'+
+ kpi("Opérateur annoncé",money(result.operator_reported_minor),"Non encaissé")+
+ kpi("Encaissements signalés",money(result.receipts_reported_unverified_minor),"À rapprocher avec la banque")+
+ kpi("Commission PGI estimée",money(result.pgi_margin_estimate_minor),"À vérifier selon contrat et TVA")+
+ kpi("Part éditeurs estimée",money(result.publisher_liability_estimate_minor),"Non payable")+'</div>'+
+ '<p class="ds-note">Cycle : '+esc(result.cycle_reference)+'. Solde non rapproché : '+esc(money(result.statement_gap_unverified_minor))+'. Répartition sur '+integer(result.publisher_count)+' éditeur(s).</p>'+
+ '<div class="ds-table"><table><thead><tr><th>Éditeur</th><th>Appels</th><th>Dû estimé</th><th>Retenues déclarées</th><th>Après retenues</th><th>Reversement</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+ '<section class="ds-panel"><h3>Automatisations et preuves attendues</h3><div class="ds-list">'+steps+'</div></section>';
+}
 function integrationView(){
  const title='<section class="ds-panel"><h3>Connexions futures, sans partage des chiffres</h3><p class="ds-note">Une société, deux centres de profit et des flux commerciaux distincts. La propriété GA4 dédiée à la distribution directe, l’espace Search Console de sous-répertoire et le pipeline HubSpot dédié restent à créer ou à valider avant tout lancement. Aucune synchronisation n’est activée ici.</p></section>';
  if(!integrations)return title+'<section class="ds-panel"><p class="ds-note">Registre technique non consulté. Aucun branchement direct présumé prêt.</p><button class="ds-button" type="button" data-ds-integrations-refresh>Contrôler les connexions préparées</button></section>';
@@ -253,9 +298,9 @@ function show(){
  if(!host||!data)return;
  host.innerHTML='<div class="ds"><div class="ds-header"><div><p class="panel-kicker">ACTIVITÉ DISTINCTE | PGI TELECOM</p><h2>PGI Telecom Distribution</h2><p class="ds-desc">Pilotage opérateur et comptabilité isolés de la plateforme Audiotel actuelle.</p></div><label class="ds-desc">Mois comptable <input type="month" class="ds-input" data-ds-month value="'+esc(month)+'"></label></div>'+banner()+
  '<div class="ds-tabs" role="tablist" aria-label="Rubriques PGI Telecom Distribution">'+
- [["overview","Vue générale"],["numbers","Numérotation"],["accounting","Comptabilité directe"],["reconciliation","Rapprochement"],["integrations","Intégrations"],["automation","Automatisations"],["complaints","Réclamations"],["transitions","Changer de distributeur"],["compliance","Conformité"]].map(([key,label])=>'<button type="button" role="tab" class="ds-tab" data-ds-tab="'+key+'" aria-selected="'+(key===tab)+'">'+label+'</button>').join("")+'</div>'+
+ [["overview","Vue générale"],["numbers","Numérotation"],["accounting","Comptabilité directe"],["reconciliation","Rapprochement"],["financial_cycle","Cycle financier"],["integrations","Intégrations"],["automation","Automatisations"],["complaints","Réclamations"],["transitions","Changer de distributeur"],["compliance","Conformité"]].map(([key,label])=>'<button type="button" role="tab" class="ds-tab" data-ds-tab="'+key+'" aria-selected="'+(key===tab)+'">'+label+'</button>').join("")+'</div>'+
  '<div class="ds-status '+esc(severity)+'" aria-live="polite">'+esc(message)+'</div>'+
- (tab==="overview"?overview():tab==="numbers"?numbers():tab==="accounting"?journals():tab==="reconciliation"?reconciliation():tab==="integrations"?integrationView():tab==="automation"?automationView()+'<div data-ds-automation-lab-root></div>':tab==="complaints"?complaintView():tab==="transitions"?'<section class="ds-panel"><div data-ds-transitions-root></div></section>':compliance())+
+ (tab==="overview"?overview():tab==="numbers"?numbers():tab==="accounting"?journals():tab==="reconciliation"?reconciliation():tab==="financial_cycle"?financialCycleView():tab==="integrations"?integrationView():tab==="automation"?automationView()+'<div data-ds-automation-lab-root></div>':tab==="complaints"?complaintView():tab==="transitions"?'<section class="ds-panel"><div data-ds-transitions-root></div></section>':compliance())+
  '</div>';
  attach();
  if(tab==="transitions")import("./direct-sva-transitions.js").then(m=>m.mountDirectSvaTransitions(host.querySelector("[data-ds-transitions-root]"))).catch(()=>{});
@@ -335,6 +380,15 @@ function attach(){
    const result=await request("/platform/direct-sva/collections/preview","POST",payload);
    showCollectionPreview(assertDirectSvaCockpitPayload(result,"collection"));
   }catch(error){target.textContent="Prévisualisation refusée : "+String(error.message||"format incorrect");}
+ });
+ host.querySelector("[data-ds-financial-preview]")?.addEventListener("click",async()=>{
+  const target=host.querySelector("[data-ds-financial-result]");
+  try{
+   const payload=JSON.parse(host.querySelector("[data-ds-financial-payload]").value);
+   target.textContent="Calcul du cycle financier préparatoire...";
+   const result=await request("/platform/direct-sva/financial-cycle/preview","POST",payload);
+   showFinancialCycle(assertDirectSvaCockpitPayload(result,"financial_cycle"));
+  }catch(error){target.textContent="Cycle refusé : "+String(error.message||"format incorrect");}
  });
  host.querySelector("[data-ds-month]")?.addEventListener("change",event=>{month=event.target.value||month;load();});
  host.querySelectorAll("[data-ds-tab]").forEach(btn=>btn.addEventListener("click",()=>{tab=btn.dataset.dsTab;show();if(tab==="integrations"&&!integrations)refreshIntegrations();if(tab==="automation"&&!automations)refreshAutomations();if(tab==="complaints"&&!complaints)refreshComplaints();}));
