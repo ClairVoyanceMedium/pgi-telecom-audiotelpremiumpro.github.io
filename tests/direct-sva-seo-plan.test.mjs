@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {DIRECT_SVA_SEO_INVENTORY,planDirectSvaIndexation,renderDirectSvaSitemap} from "../scripts/direct-sva-seo-plan.mjs";
+import {DIRECT_SVA_SEO_INVENTORY,planDirectSvaIndexation,renderDirectSvaSitemap,renderDirectSvaEditorialSitemap} from "../scripts/direct-sva-seo-plan.mjs";
 
 const requirements=["explicit_business_release","legal_publication_approved","telecom_contracts_verified","numbering_rights_verified","content_language_reviewed","technical_production_checks_passed","seo_indexation_authorized"];
 test("thirty-six future telecom pages, one permanently private",()=>{
@@ -36,4 +36,14 @@ test("fully authorized hypothetical sitemap has thirty-five public URLs and mult
  assert.match(xml,/hreflang="pt"/);
  assert.match(xml,/hreflang="it"/);
  assert.match(xml,/<urlset xmlns="http:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9"/);
+});
+
+test("editorial-only sitemap is published by admin decision without impersonating telecom release",()=>{
+ assert.throws(()=>renderDirectSvaEditorialSitemap(),/DIRECT_SVA_EDITORIAL_PUBLICATION_NOT_AUTHORIZED/);
+ const xml=renderDirectSvaEditorialSitemap(true);
+ assert.equal((xml.match(/<url>/g)||[]).length,35);
+ assert.match(xml,/hreflang="en"/);
+ assert.doesNotMatch(xml,/\/distribution-sva\/espace-client\//);
+ // Operator launch continues to have its own checks, unaffected by editorial publication.
+ assert.equal(planDirectSvaIndexation().public_release_allowed,false);
 });
