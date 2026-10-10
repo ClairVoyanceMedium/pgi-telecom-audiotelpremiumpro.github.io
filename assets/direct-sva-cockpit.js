@@ -136,6 +136,7 @@ function show(){
  (tab==="overview"?overview():tab==="numbers"?numbers():tab==="accounting"?journals():tab==="reconciliation"?reconciliation():tab==="integrations"?integrationView():tab==="automation"?automationView():tab==="transitions"?'<section class="ds-panel"><div data-ds-transitions-root></div></section>':compliance())+
  '</div>';
  attach();
+ if(tab==="transitions")import("./direct-sva-transitions.js").then(m=>m.mountDirectSvaTransitions(host.querySelector("[data-ds-transitions-root]"))).catch(()=>{});
 }
 function amountMinor(v){
  const raw=String(v??"").trim();
