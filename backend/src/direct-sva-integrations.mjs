@@ -33,6 +33,11 @@ export const DIRECT_SVA_INTEGRATIONS=Object.freeze([
 // Stable, generic metadata. Never contains email, phone, IP, dossier IDs, CDR IDs or user-provided text.
 export const DIRECT_SVA_GA4_EVENTS=Object.freeze({
  dsva_operator_interest:Object.freeze(["pgi_business_unit","pgi_funnel_stage","pgi_service_type"]),
+ dsva_navigation_click:Object.freeze(["pgi_business_unit","pgi_funnel_stage","pgi_service_type"]),
+ dsva_section_view:Object.freeze(["pgi_business_unit","pgi_funnel_stage","pgi_service_type"]),
+ dsva_faq_open:Object.freeze(["pgi_business_unit","pgi_funnel_stage","pgi_service_type"]),
+ dsva_portal_access_attempt:Object.freeze(["pgi_business_unit","pgi_funnel_stage","pgi_service_type"]),
+ dsva_form_error:Object.freeze(["pgi_business_unit","pgi_funnel_stage","pgi_service_type"]),
  dsva_number_request_started:Object.freeze(["pgi_business_unit","pgi_funnel_stage","pgi_service_type"]),
  dsva_number_request_submitted:Object.freeze(["pgi_business_unit","pgi_funnel_stage","pgi_service_type"]),
  dsva_portability_request_submitted:Object.freeze(["pgi_business_unit","pgi_funnel_stage","pgi_service_type"]),
@@ -73,6 +78,11 @@ export function planDirectSvaGa4Event(name,data={},options={}){
  if(!SAFE_TYPES.has(service)||!SAFE_STAGES.has(stage))throw new TypeError("Invalid direct SVA event context");
  const expectedStage={
   dsva_operator_interest:"interest",
+  dsva_navigation_click:"interest",
+  dsva_section_view:"interest",
+  dsva_faq_open:"interest",
+  dsva_portal_access_attempt:"interest",
+  dsva_form_error:"request_started",
   dsva_number_request_started:"request_started",
   dsva_number_request_submitted:"request_submitted",
   dsva_portability_request_submitted:"request_submitted",
