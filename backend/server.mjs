@@ -345,6 +345,20 @@ export function createBackend(options={}){
         return done(res,metrics,started,"public.ambassador_apply",202,{accepted:true,status:application.status,application_id:application.public_id,already_active:application.already_active===true});
       }
 
+      // Direct SVA complaints are intentionally unavailable to the public
+      // until operator, payment, legal and mailbox evidence has been approved.
+      // This read-only capability never reveals configuration or customer data.
+      if(method==="GET"&&pathname==="/api/v1/public/direct-sva/complaints/capabilities"){
+        return done(res,metrics,started,"public.direct_sva_complaints_capabilities",200,{
+          business_unit:"direct_sva",intake_enabled:false,
+          legal_review_approved:false,notification_channel_verified:false,
+          customer_receipt_enabled:false,commercial_operation_active:false
+        });
+      }
+      if(method==="POST"&&pathname==="/api/v1/public/direct-sva/complaints"){
+        return done(res,metrics,started,"public.direct_sva_complaints_not_released",404,
+          {error:{code:"DIRECT_SVA_COMPLAINT_INTAKE_NOT_RELEASED"}});
+      }
       if(method==="POST"&&pathname==="/api/v1/public/contact"){
         requireSameOriginBrowser(req);
         if(!config.transactionalEmailEnabled||!config.resendApiKey)return done(res,metrics,started,"public.contact",503,{error:{code:"CONTACT_UNAVAILABLE"}});
