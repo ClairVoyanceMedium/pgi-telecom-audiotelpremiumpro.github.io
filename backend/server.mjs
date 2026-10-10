@@ -26,6 +26,7 @@ import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,
 import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
 import {directSvaBusinessSnapshot,directSvaAccountingExport,createDirectSvaDraft,approveDirectSvaDraft} from "./src/direct-sva-business.mjs";
 import {analyzeDirectSvaSettlement} from "./src/direct-sva-reconciliation.mjs";
+import {prepareDirectSvaCollectionAccounting} from "./src/direct-sva-collection-planner.mjs";
 import {directSvaIntegrationOverview} from "./src/direct-sva-integrations.mjs";
 import {directSvaCustomerOverview,directSvaWorkflowOverview} from "./src/direct-sva-customer.mjs";
 import {recordDirectSvaWorkflowSimulation,directSvaSimulationDashboard} from "./src/direct-sva-automation-rehearsal.mjs";
@@ -1941,6 +1942,14 @@ export function createBackend(options={}){
         requireRole(actor,["admin","finance"]);requireCsrf(req,actor,config);
         const body=await readJson(req,config.bodyLimitBytes);
         return done(res,metrics,started,"platform.direct_sva_reconciliation_preview",200,analyzeDirectSvaSettlement(body));
+      }
+      // Distributor cash-collection and accounting simulation only. No ledger write,
+      // no bank/Stripe request and no third-party payment.
+      if(method==="POST"&&pathname==="/api/v1/platform/direct-sva/collections/preview"){
+        requireRole(actor,["admin","finance"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        return done(res,metrics,started,"platform.direct_sva_collections_preview",200,
+          prepareDirectSvaCollectionAccounting(body));
       }
 
       if(method==="POST"&&pathname==="/api/v1/platform/direct-sva/accounting/drafts"){
