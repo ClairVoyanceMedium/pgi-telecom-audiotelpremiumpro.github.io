@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS direct_sva_number_inventory (
     CHECK (regulatory_status IN ('unverified','under_review','verified','rejected','expired')),
   number_status text NOT NULL DEFAULT 'planned'
     CHECK (number_status IN ('planned','reserved','assigned','testing','active','suspended','released')),
+  CHECK (number_status NOT IN ('assigned','testing','active')),
   portability_reference text,
   editor_contract_reference text,
   arcep_assignment_evidence text,
