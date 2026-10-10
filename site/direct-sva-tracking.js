@@ -37,8 +37,10 @@ export function createDirectSvaTracker({ga4,documentRef,locationRef,navigatorRef
    return {enabled:false,reason:"DIRECT_SVA_GA4_RUNTIME_MISSING"};
   }
   // A dedicated property only. Existing Audiotel tracking is excluded from this path.
+  ga4.gtag("consent","default",{analytics_storage:"denied",ad_storage:"denied",ad_user_data:"denied",ad_personalization:"denied"});
   scriptLoader("https://www.googletagmanager.com/gtag/js?id="+encodeURIComponent(measurement),documentRef);
   ga4.gtag("js",new Date());
+  ga4.gtag("consent","update",{analytics_storage:"granted",ad_storage:"denied",ad_user_data:"denied",ad_personalization:"denied"});
   ga4.gtag("config",measurement,{send_page_view:false,allow_google_signals:false,allow_ad_personalization_signals:false});
   started=true;
   return {enabled:true,property:"dedicated_direct_sva",pageview_suppressed:true};
