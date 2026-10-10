@@ -2,7 +2,7 @@ const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 const moneyMinor=(v,c="EUR")=>{try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:c,maximumFractionDigits:2}).format((Number(v)||0)/100)}catch{return ((Number(v)||0)/100).toFixed(2)+" "+c}};
 const money=(v,c="EUR")=>{try{return new Intl.NumberFormat("fr-FR",{style:"currency",currency:c,maximumFractionDigits:2}).format(Number(v)||0)}catch{return (Number(v)||0).toFixed(2)+" "+c}};
 const integer=v=>new Intl.NumberFormat("fr-FR").format(Number(v)||0);
-let root=null,current=null,month=new Date().toISOString().slice(0,7),currency="EUR",busy=false,expertPromise=null;
+let root=null,current=null,month=new Date().toISOString().slice(0,7),currency="EUR",busy=false,expertPromise=null,businessUnit="audiotel",directSvaPromise=null;
 
 function apiBase(){const b=String(window.PGI_CONFIG?.apiBaseUrl||"").replace(/\/$/,"");if(!b)throw new Error("API_NOT_CONFIGURED");return b;}
 async function fetchAccounting(){
@@ -59,8 +59,35 @@ function renderExpert(){
   const host=root?.querySelector("[data-accounting-expert-root]");if(!host)return;
   (expertPromise||(expertPromise=import("./accounting-expert.js"))).then(m=>m.mountExpertAccounting(host,{year:Number(month.slice(0,4))})).catch(e=>{host.innerHTML='<div class="acc-empty">Dossier expert-comptable indisponible : '+esc(e?.code||e?.message||"erreur")+'.</div>';});
 }
+function unitTabs(){
+  return '<div class="acc-controls" role="tablist" aria-label="Activites comptables separees" style="padding:6px 0 13px">'+
+   '<button type="button" class="acc-btn" role="tab" aria-selected="'+(businessUnit==="audiotel")+'" data-acc-unit="audiotel">Comptabilité Audiotel</button>'+
+   '<button type="button" class="acc-btn" role="tab" aria-selected="'+(businessUnit==="direct")+'" data-acc-unit="direct">Comptabilité distribution directe</button>'+
+   '</div>';
+}
+function bindUnitTabs(){
+  root.querySelectorAll("[data-acc-unit]").forEach(button=>button.addEventListener("click",()=>{
+    const next=button.dataset.accUnit;
+    if(next===businessUnit)return;
+    businessUnit=next;
+    if(businessUnit==="direct")renderDirectUnit();
+    else if(current)render(current);
+    else load();
+  }));
+}
+function renderDirectUnit(){
+  if(!root)return;
+  root.innerHTML='<div class="acc">'+unitTabs()+unitTabs()+
+    '<div data-direct-sva-unit-root><div class="acc-empty">Chargement du secteur distribution directe...</div></div></div>';
+  bindUnitTabs();
+  const place=root.querySelector("[data-direct-sva-unit-root]");
+  (directSvaPromise||(directSvaPromise=import("./direct-sva-cockpit.js")))
+    .then(module=>{if(root?.contains(place)&&businessUnit==="direct")module.mountDirectSvaCockpit(place);})
+    .catch(error=>{if(root?.contains(place))place.innerHTML='<div class="acc-empty">Distribution directe indisponible : '+esc(error?.message||"erreur")+'</div>';});
+}
 function render(d){
   current=d;currency=d.currency||currency;month=d.month||month;
+  if(businessUnit==="direct"){renderDirectUnit();return;}
   const currencies=Array.isArray(d.currencies)&&d.currencies.length?d.currencies:[currency];
   root.innerHTML='<div class="acc">'+
     '<div class="acc-head"><div><p class="panel-kicker">COMPTABILITÉ</p><h2>Pilotage comptable Audiotel Premium Pro</h2><p class="acc-note">Vue consolidée des encaissements, marges, reversements et primes, sans mélange artificiel des bases fiscales.</p></div>'+
@@ -68,7 +95,7 @@ function render(d){
     selectedCards(d)+balances(d)+history(d)+policy(d)+
     '<section class="acc-section"><div class="acc-section-head"><div><p class="panel-kicker">EXPERT-COMPTABLE</p><h3>Comptabilité générale et dossier de révision</h3></div></div><p class="acc-note">Cette couche est distincte du pilotage financier ci-dessus. Les flux sont préparés automatiquement en partie double, puis les comptes et traitements fiscaux sont validés avant qu’une écriture devienne immuable.</p><div data-accounting-expert-root></div></section>'+
   '</div>';
-  bind();renderExpert();
+  bind();bindUnitTabs();renderExpert();
 }
 function csvCell(v){return '"'+String(v??"").replace(/"/g,'""')+'"';}
 function exportCsv(){
