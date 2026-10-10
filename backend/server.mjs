@@ -21,7 +21,7 @@ import {expertAccountingSnapshot,refreshExpertAccountingLedger,updateExpertAccou
 import {ga4MeasurementState,sanitizeGa4CheckoutContext,buildGa4PurchaseFromStripe,buildGa4RefundFromStripe,sendGa4Measurement} from "./src/ga4-measurement.mjs";
 import {createEmailVerificationChallenge,verificationTokenHash,emailVerificationCodeHash,sendResendVerificationCode,sendTransactionalEmail,sendPublicContactMessage,sendSupportTicketNotification,sendSupportTicketReply,forwardInboundEmailToInternal,normalizeEmail,emailHash,sendReferralInvitation} from "./src/resend-email.mjs";
 import {verifyResendWebhook} from "./src/resend-webhook.mjs";
-import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
+import {applyResendWebhookEvent,acknowledgeResendInboundForward,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
 import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail,syncHubSpotCustomerIncident,syncHubSpotCardPaymentState} from "./src/hubspot-crm.mjs";
 import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
 import {directSvaBusinessSnapshot,directSvaAccountingExport,createDirectSvaDraft,approveDirectSvaDraft} from "./src/direct-sva-business.mjs";
@@ -251,6 +251,10 @@ export function createBackend(options={}){
             try{crmSync=await syncHubSpotInboundEmail(store,routing.tenant_public_id,context,{routing});}
             catch(error){logHubSpotSyncFailure("inbound_email",error);}
           }
+          // Commit the webhook receipt only AFTER forwarding was accepted by
+          // Resend. If forwarding fails the webhook can safely retry, using the
+          // same Resend idempotency key and its source provider email ID.
+          await acknowledgeResendInboundForward(store,verified);
         }
         return done(res,metrics,started,"email.resend_webhook",200,{received:true,duplicate:Boolean(result.duplicate),event_type:result.event_type||verified.event.type,inbound,crm_sync:Boolean(crmSync?.synced),support_ticket_journaled:Boolean(incidentJournal&&!incidentJournal.duplicate)});
       }
