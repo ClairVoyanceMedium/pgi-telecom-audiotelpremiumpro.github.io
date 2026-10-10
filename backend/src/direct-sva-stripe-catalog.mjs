@@ -44,6 +44,28 @@ export function inspectDirectSvaStripeCatalog(products=[],prices=[],webhookEndpo
  });
 }
 
+// Routes verified events away from the existing Audiotel event processor.
+// Detection is intentionally read-only and does not authorize fulfillment.
+export function isDirectSvaStripeEvent(event){
+ const obj=event?.data?.object;
+ if(!obj||typeof obj!=="object")return false;
+ const catalogId=DIRECT_SVA_STRIPE_PRODUCT_ID;
+ const isOwnMetadata=metadata=>metadata?.pgi_business_unit==="direct_sva"||
+  metadata?.pgi_stripe_product_id===catalogId;
+ if(isOwnMetadata(obj.metadata)||
+    isOwnMetadata(obj.subscription_details?.metadata)||
+    isOwnMetadata(obj.parent?.subscription_details?.metadata))return true;
+ const productId=value=>typeof value==="string"?value:value?.id;
+ if(obj.id===catalogId||productId(obj.product)===catalogId||
+    productId(obj.price?.product)===catalogId)return true;
+ const lines=[...(Array.isArray(obj.lines?.data)?obj.lines.data:[]),
+  ...(Array.isArray(obj.items?.data)?obj.items.data:[])];
+ return lines.some(line=>isOwnMetadata(line?.metadata)||
+  isOwnMetadata(line?.parent?.subscription_item_details?.metadata)||
+  productId(line?.price?.product)===catalogId||
+  productId(line?.pricing?.price_details?.product)===catalogId);
+}
+
 export function inspectVerifiedDirectSvaStripeEvent(event,{signature_verified=false}={}){
  // Caller must verify using a separately configured Stripe webhook secret
  // before invoking this diagnostic. It NEVER records or fulfils a payment.
