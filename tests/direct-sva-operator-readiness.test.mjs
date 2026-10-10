@@ -26,6 +26,8 @@ test("direct SVA operator preparation defaults to all gates missing and never en
   assert.equal(result.production_configuration_changed,false);
   assert.ok(result.blockers.includes("number_attribution"));
   assert.ok(result.blockers.includes("payment_compliance"));
+  for(const gate of ["publisher_territory","publisher_service_information","tariff_disclosure_mgit","af2m_2026_rules"])
+   assert.ok(result.blockers.includes(gate));
 });
 
 test("an unverified or fictional Arcep attribution is never treated as verified",()=>{
