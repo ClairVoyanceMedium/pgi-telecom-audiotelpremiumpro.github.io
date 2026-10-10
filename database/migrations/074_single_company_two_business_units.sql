@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS pgi_company_business_units (
   cost_center text NOT NULL UNIQUE,
   display_name text NOT NULL,
   lifecycle_status text NOT NULL CHECK(lifecycle_status IN ('existing','preparation')),
-  external_sync_enabled boolean NOT NULL DEFAULT false CHECK(external_sync_enabled=false),
+  direct_distribution_sync_enabled boolean NOT NULL DEFAULT false CHECK(direct_distribution_sync_enabled=false),
   separate_legal_fec boolean NOT NULL DEFAULT false CHECK(separate_legal_fec=false),
   created_at timestamptz NOT NULL DEFAULT now(),
   CHECK ((unit_code='audiotel_platform' AND lifecycle_status='existing')
