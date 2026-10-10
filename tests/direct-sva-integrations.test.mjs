@@ -101,7 +101,7 @@ test("future GA4 tracker permits only enumerated events on approved direct pages
  assert.equal(tracker.event("dsva_operator_interest","numero_sva").accepted,true);
  assert.equal(calls.filter(x=>x[0]==="event").length,1);
  assert.deepEqual(calls.find(x=>x[0]==="event")[2],{
-  pgi_business_unit:"direct_sva",pgi_funnel_stage:"interest",pgi_service_type:"numero_sva"
+  send_to:"G-ABC1234567",pgi_business_unit:"direct_sva",pgi_funnel_stage:"interest",pgi_service_type:"numero_sva"
  });
 });
 
