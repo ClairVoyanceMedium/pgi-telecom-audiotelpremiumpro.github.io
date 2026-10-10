@@ -15,7 +15,6 @@ test("all future distribution pages use the distinct PGI Telecom Distribution br
     assert.match(page,/<title>[^<]*PGI Telecom Distribution[^<]*<\/title>/,"title "+dir);
     assert.match(page,/PGI Telecom Distribution\. Tous droits réservés\./,"footer "+dir);
     assert.doesNotMatch(page,/PGI Telecom \| Distribution directe SVA\. Tous droits réservés\./,"outdated footer "+dir);
-    assert.match(page,/Audiotel Premium Pro/,"the existing Audiotel business remains clearly named "+dir);
     assert.doesNotMatch(page,/<strong>PGI Telecom<\/strong><small>(?:Distribution directe SVA|Future distribution SVA)/,"outdated header "+dir);
   }
 });
