@@ -1,3 +1,4 @@
+import {DIRECT_SVA_STRIPE_PRODUCT_ID} from "./direct-sva-stripe-catalog.mjs";
 // Shared company, two independently controlled business activities.
 // Preparation metadata only. No GA4 calls, CRM writes, Search Console submissions or activation.
 export const PGI_LEGAL_ENTITY_KEY="pgi_primary";
@@ -219,6 +220,18 @@ export async function directSvaIntegrationOverview(store){
    };
   }),
   all_direct_integrations_disabled:checks.every(x=>x.activation_status==="disabled"&&x.can_send_data===false),
+  stripe_catalog:Object.freeze({
+   stripe_product_id:DIRECT_SVA_STRIPE_PRODUCT_ID,
+   label:"PGI Telecom Distribution | Pôle Télécom & Réseau",
+   last_stripe_read:"2026-10-10",
+   last_observed_active:false,last_observed_prices:0,
+   live_stripe_product_created:true,
+   current_status_requires_new_stripe_check:true,
+   distribution_checkout_authorized:false,
+   distribution_webhook_activated:false,
+   payouts_authorized:false,
+   existing_audiotel_catalog_unchanged:true
+  }),
   shared_legal_accounting:assessPgiLegalAccountingProfile(legalProfiles[0]),
   legal_fec_separated:false
  });
