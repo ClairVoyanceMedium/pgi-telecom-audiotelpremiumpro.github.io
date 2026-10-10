@@ -24,7 +24,7 @@ import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
 import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail,syncHubSpotCustomerIncident,syncHubSpotCardPaymentState} from "./src/hubspot-crm.mjs";
 import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
-import {directSvaBusinessSnapshot,createDirectSvaDraft,approveDirectSvaDraft} from "./src/direct-sva-business.mjs";
+import {directSvaBusinessSnapshot,directSvaAccountingExport,createDirectSvaDraft,approveDirectSvaDraft} from "./src/direct-sva-business.mjs";
 import {analyzeDirectSvaSettlement} from "./src/direct-sva-reconciliation.mjs";
 import {directSvaIntegrationOverview} from "./src/direct-sva-integrations.mjs";
 import {directSvaCustomerOverview,directSvaWorkflowOverview} from "./src/direct-sva-customer.mjs";
@@ -1818,6 +1818,11 @@ export function createBackend(options={}){
         requireRole(actor,["admin","finance","readonly"]);
         return done(res,metrics,started,"platform.direct_sva_automation",200,
           await directSvaWorkflowOverview(store));
+      }
+      if(method==="GET"&&pathname==="/api/v1/platform/direct-sva/accounting/export"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.direct_sva_accounting_export",200,
+          await directSvaAccountingExport(store,{month:url.searchParams.get("month")}));
       }
       if(method==="GET"&&pathname==="/api/v1/platform/direct-sva/overview"){
         requireRole(actor,["admin","finance","readonly"]);
