@@ -105,6 +105,24 @@ test("migration 077 preserves customer identity, forbids routing and verifies so
  assert.match(sql,/CHECK\(portability_authorized=false\)/);
  assert.match(sql,/CHECK\(money_transfer_authorized=false\)/);
  assert.match(sql,/\$pgi_transition\$/);
+ assert.match(sql,/substring\(e164_snapshot,6\) ~ '\^\[0-9\]\{7\}\ assert.doesNotMatch(stripSqlComments(sql),/\bUPDATE\s+tenant_number_assignments\b|\bDROP\b|\bTRUNCATE\b/i);
+});
+
+test("migration 078 is an immutable, release-locked customer complaint inbox",()=>{
+ const sql=fs.readFileSync(new URL(names[5],migrationDir),"utf8");
+ assert.match(sql,/direct_sva_complaint_cases/);
+ assert.match(sql,/direct_sva_complaint_delivery_queue/);
+ assert.match(sql,/delivery_state text NOT NULL DEFAULT 'blocked_release' CHECK\(delivery_state='blocked_release'\)/);
+ assert.match(sql,/external_execution_allowed boolean NOT NULL DEFAULT false CHECK\(external_execution_allowed=false\)/);
+ assert.match(sql,/crm_ticket_authorized boolean NOT NULL DEFAULT false CHECK\(crm_ticket_authorized=false\)/);
+ assert.match(sql,/compensation_authorized boolean NOT NULL DEFAULT false CHECK\(compensation_authorized=false\)/);
+ assert.match(sql,/direct_sva_complaint_audit_append_only/);
+ assert.doesNotMatch(stripSqlComments(sql),/\bDROP\b|\bTRUNCATE\b|\bDELETE FROM\b/i);
+});
+\)/);
+ assert.equal((sql.match(/CREATE FUNCTION direct_sva_validate_transition_snapshot\(\)/g)||[]).length,1);
+ assert.equal((sql.match(/CREATE TRIGGER direct_sva_transition_audit_immutable/g)||[]).length,1);
+ assert.match(sql,/FOR EACH ROW EXECUTE FUNCTION direct_sva_guard_customer_transition_immutable\(\);\s*$/);
  assert.doesNotMatch(stripSqlComments(sql),/\bUPDATE\s+tenant_number_assignments\b|\bDROP\b|\bTRUNCATE\b/i);
 });
 
