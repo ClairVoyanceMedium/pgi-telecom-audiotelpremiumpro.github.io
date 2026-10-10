@@ -70,11 +70,11 @@ test("robots.txt announces Distribution sitemap only after publication, regardle
  assert.equal((off.match(/Sitemap: https:\/\/audiotel-premium-pro\.com\/distribution-sva\/sitemap\.xml/g)||[]).length,1);
  assert.equal(publishedDistributionRobots(off,released),off,"must be idempotent");
 });
-test("admin toggle saves intent transactionally with audit; it cannot publish business content",async()=>{
+test("admin toggle first publishes editorial pages and later hides only link without losing SEO",async()=>{
  const state={...waiting};const writes=[];
  const store={sql:{unsafe:async()=>[state],begin:async fn=>fn({unsafe:async (q,args=[])=>{
   writes.push({q,args});
-  if(q.startsWith("UPDATE direct_sva_website_visibility"))state.navigation_enabled=args[0];
+  if(q.startsWith("UPDATE direct_sva_website_visibility")){state.navigation_enabled=args[0];state.public_content_authorized=args[1];}
   return q.startsWith("SELECT")?[{...state}]:[];
  }})}};
  const admin={role:"admin",sub:"operator-123"};
@@ -83,15 +83,20 @@ test("admin toggle saves intent transactionally with audit; it cannot publish bu
  await assert.rejects(()=>setDirectSvaWebsiteNavigation(store,admin,{...input,enabled:"true"}),{status:400});
  const enabled=await setDirectSvaWebsiteNavigation(store,admin,input);
  assert.equal(enabled.navigation_preference,true);
- assert.equal(enabled.publication_authorized,false);
- assert.equal(enabled.navigation_visible,false);
+ assert.equal(enabled.publication_authorized,true);
+ assert.equal(enabled.navigation_visible,true);
+ assert.equal(enabled.first_publication,true);
  assert.equal(enabled.commercial_requests_enabled,false);
- assert.equal(enabled.seo_indexation_changed,false);
- assert.equal(enabled.next_step,"prelaunch_setting_saved_only");
+ assert.equal(enabled.seo_indexation_changed,true);
+ assert.equal(enabled.next_step,"editorial_content_published");
  await assert.rejects(()=>setDirectSvaWebsiteNavigation(store,admin,input),{status:409});
  const disabled=await setDirectSvaWebsiteNavigation(store,admin,{enabled:false,expected_enabled:true,evidence_reference:"ADMIN-WEBSITE-654321"});
  assert.equal(disabled.navigation_preference,false);
- assert.equal(writes.filter(x=>x.q.startsWith("INSERT INTO direct_sva_website_visibility_audit")).length,2);
+ assert.equal(disabled.publication_authorized,true);
+ assert.equal(disabled.seo_pages_accessible,true);
+ assert.equal(disabled.first_publication,false);
+ assert.equal(disabled.seo_indexation_changed,false);
+ assert.equal(writes.filter(x=>x.q.startsWith("INSERT INTO direct_sva_website_visibility_audit")).length,3);
  assert.equal(writes.filter(x=>x.q.startsWith("UPDATE direct_sva_website_visibility")).length,2);
 });
 test("HTTP publication never breaks indexing when nav is turned off; private pages stay blocked",async()=>{
@@ -148,9 +153,12 @@ test("HTTP publication never breaks indexing when nav is turned off; private pag
   fs.rmSync(root,{recursive:true,force:true});
  }
 });
-test("migration never permits public release or real commercial activity",()=>{
+test("editorial release belongs to the admin and commercial operation stays separate",()=>{
  const sql=fs.readFileSync("database/migrations/084_direct_sva_website_visibility.sql","utf8");
  assert.match(sql,/public_content_authorized boolean NOT NULL DEFAULT false CHECK\(public_content_authorized=false\)/);
+ const unlock=fs.readFileSync("database/migrations/085_direct_sva_admin_editorial_release.sql","utf8");
+ assert.match(unlock,/DROP CONSTRAINT IF EXISTS direct_sva_website_visibility_public_content_authorized_check/);
+ assert.match(unlock,/public_content_authorized/);
  assert.match(sql,/commercial_calls_to_action_enabled boolean NOT NULL DEFAULT false CHECK\(commercial_calls_to_action_enabled=false\)/);
  assert.match(sql,/direct_sva_website_visibility_audit_immutable/);
  const ui=fs.readFileSync("assets/direct-sva-switches.js","utf8");
@@ -159,6 +167,7 @@ test("migration never permits public release or real commercial activity",()=>{
  assert.match(ui,/seo_continuity_when_hidden/);
  assert.match(server,/\/api\/v1\/platform\/direct-sva-website\/navigation/);
  assert.match(server,/requireRole\(actor,\["admin"\]\);requireCsrf/);
+ assert.match(ui,/window\.confirm/);
  const build=fs.readFileSync("scripts/build-static.mjs","utf8");
  assert.match(build,/fs\.cpSync\(path\.join\(root,"site","distribution-sva"\)/);
 });
