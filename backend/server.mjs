@@ -25,6 +25,7 @@ import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransaction
 import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail,syncHubSpotCustomerIncident,syncHubSpotCardPaymentState} from "./src/hubspot-crm.mjs";
 import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
 import {directSvaBusinessSnapshot,createDirectSvaDraft,approveDirectSvaDraft} from "./src/direct-sva-business.mjs";
+import {analyzeDirectSvaSettlement} from "./src/direct-sva-reconciliation.mjs";
 import {runDailyReportCron} from "./src/daily-report.mjs";
 
 export async function createDefaultBackend(){
@@ -1804,6 +1805,12 @@ export function createBackend(options={}){
         const params=Object.fromEntries(url.searchParams.entries());
         return done(res,metrics,started,"platform.direct_sva_overview",200,await directSvaBusinessSnapshot(store,params));
       }
+      if(method==="POST"&&pathname==="/api/v1/platform/direct-sva/reconciliation/preview"){
+        requireRole(actor,["admin","finance"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        return done(res,metrics,started,"platform.direct_sva_reconciliation_preview",200,analyzeDirectSvaSettlement(body));
+      }
+
       if(method==="POST"&&pathname==="/api/v1/platform/direct-sva/accounting/drafts"){
         requireRole(actor,["admin","finance"]);requireCsrf(req,actor,config);
         const body=await readJson(req,config.bodyLimitBytes);
