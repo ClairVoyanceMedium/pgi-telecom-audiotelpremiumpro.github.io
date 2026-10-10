@@ -51,6 +51,8 @@ export function normalizeDirectSvaJournalDraft(payload={}){
     total_minor:debit,lines});
 }
 
+function pgDate(value){return value instanceof Date?value.toISOString().slice(0,10):String(value||"").slice(0,10);}
+
 function toNumber(value){
   const n=Number(value||0);
   if(!Number.isSafeInteger(n))throw failure(503,"DIRECT_SVA_AMOUNT_OUT_OF_RANGE");
@@ -63,7 +65,7 @@ export async function directSvaBusinessSnapshot(store,params={}){
   const [year,mm]=month.split("-").map(Number);
   const from=new Date(Date.UTC(year,mm-1,1)).toISOString().slice(0,10);
   const to=new Date(Date.UTC(year,mm,1)).toISOString().slice(0,10);
-  const historyFrom=new Date(Date.UTC(year,mm-13,1)).toISOString().slice(0,10);
+  const historyFrom=new Date(Date.UTC(year,mm-12,1)).toISOString().slice(0,10);
   const query=store.readSql;
   const [controls,blocks,inventory,interconnections,accounting,accounts,entries,trends,periods,historyCount]=await Promise.all([
     query.unsafe("SELECT operator_mode,number_activation_enabled,payouts_enabled FROM direct_sva_operator_controls WHERE id=1"),
@@ -123,7 +125,7 @@ export async function directSvaBusinessSnapshot(store,params={}){
       legal_fec_status:"not_integrated",
       period_status:periods[0]?.state||"open",
       accounts:accounts.map(a=>({code:a.account_code,label:a.account_label,kind:a.account_kind,expert_review_required:a.requires_expert_review})),
-      entries:entries.map(e=>({id:Number(e.id),date:String(e.entry_date).slice(0,10),currency:e.currency,
+      entries:entries.map(e=>({id:Number(e.id),date:pgDate(e.entry_date),currency:e.currency,
         source_reference:e.source_reference,description:e.description,status:e.status,evidence_reference:e.evidence_reference,
         line_count:Number(e.line_count),debit_minor:toNumber(e.total_debit_minor),credit_minor:toNumber(e.total_credit_minor),posted_at:e.posted_at})),
       trend:trends.map(t=>({month:t.month,revenue_minor:toNumber(t.revenue_minor),expenses_minor:toNumber(t.expenses_minor)}))
