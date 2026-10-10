@@ -32,7 +32,7 @@ function privacyChoice(){
  choice.className="notice";choice.setAttribute("role","region");
  choice.setAttribute("aria-label","Préférences de mesure du service de distribution");
  choice.style.cssText="position:fixed;z-index:40;bottom:16px;left:16px;right:16px;max-width:540px;box-shadow:0 8px 30px #0008";
- choice.innerHTML='<p><strong>Mesure de la distribution directe</strong></p>'+
+ choice.innerHTML='<p><strong>Mesure de PGI Telecom Distribution</strong></p>'+
  '<p class="mini">Autoriser des statistiques anonymisées de navigation pour améliorer ce service ? Aucun contenu de formulaire ou numéro de téléphone ne sera envoyé.</p>'+
  '<div class="actions"><button type="button" class="button" data-ds-consent-accept>Autoriser</button>'+
  '<button type="button" class="button secondary" data-ds-consent-refuse>Refuser</button></div>';
