@@ -33,7 +33,7 @@ function journal(reference,date,evidence,description,lines,origin){
  if(!Number.isSafeInteger(debit)||debit<=0||debit!==credit)
   fail("DSVA_COLLECTION_UNBALANCED_JOURNAL");
  return Object.freeze({
-  business_unit:"direct_sva",source_reference:"DSVA-"+reference,
+  business_unit:"direct_sva",source_reference:"DSVA-PREV-"+reference,
   source_system:"manual_evidence",entry_date:date,currency:"EUR",
   description,evidence_reference:evidence,lines,
   total_minor:debit,origin,entry_type:"draft_proposal_only",
@@ -91,9 +91,16 @@ export function prepareDirectSvaCollectionAccounting(input={}){
   }));
  }
  receipts.sort((a,b)=>a.reference.localeCompare(b.reference,"en"));
+ // Canonical CDR evidence fingerprint ignores untrusted caller PII and input order.
+ // An unchanged accounting statement must not get a new ID because ignored fields moved.
+ const safeRows=input.statement.rows.map(r=>({
+  cdr_reference:r.cdr_reference,called_number:r.called_number,
+  billable_seconds:r.billable_seconds,upstream_net_minor:r.upstream_net_minor,
+  pgi_margin_minor:r.pgi_margin_minor,publisher_due_minor:r.publisher_due_minor
+ })).sort((a,b)=>a.cdr_reference.localeCompare(b.cdr_reference,"en"));
  const sourceHash=sha({business_unit:"direct_sva",operator_reference:settlement.operator_reference,
   statement_reference:settlement.statement_reference,period:settlement.period,
-  settlement_digest:settlement.source_fingerprint});
+  rows:safeRows});
  // An accounting DRAFT proposal is not evidence of bank funds.
  const journals=[
   journal("VENTE-"+sourceHash.slice(0,24),recognitionDate,settlement.statement_reference,
