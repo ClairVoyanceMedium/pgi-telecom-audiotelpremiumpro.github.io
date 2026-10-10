@@ -1,7 +1,7 @@
 # PGI Telecom : preparation des integrations du futur distributeur SVA direct
 
-Etat : preparation sur branche GitHub uniquement, 10 octobre 2026.
-Aucune migration Neon, modification d'un compte GA4, creation de propriete GSC, changement HubSpot, ni publication du site a ce stade.
+Etat : code sur branche GitHub uniquement ; Neon isolee et preparation GSC sans deploiement, 10 octobre 2026.
+Les integrations directes restent non activees. Une base Neon isolee et une propriete GSC de prefixe ont depuis ete preparees, sans modifier la base de production, HubSpot, GA4 ni publier le site.
 
 ## 1. Une entite legale, deux centres de profit
 
@@ -21,7 +21,8 @@ Tables : pgi_company_business_units, direct_sva_integration_readiness, direct_sv
 
 Google Search Console :
 - Propriete domaine existante : sc-domain:audiotel-premium-pro.com.
-- Aucune propriete de sous-dossier du distributeur n'a ete creee.
+- Propriete de prefixe distributeur creee et enregistree le 10 octobre 2026 : https://audiotel-premium-pro.com/distribution-sva/ (non exposee dans le sitemap, aucune URL indexee par cette seule operation).
+- Groupe de contenu GSC Wizard dedie cree sur la propriete domaine, regle de prefixe /distribution-sva/.
 
 Google Analytics :
 - Compte PGI : 409520461, propriete actuelle Audiotel : 556033345.
@@ -79,7 +80,7 @@ Architecture de contenu projetee :
 - /distribution-sva/conformite/ : informations reglementaires exactes ;
 - /distribution-sva/contact/ : dossier d'accompagnement.
 
-Avant activation : aucune de ces URLs ne doit etre annoncee dans le sitemap, dans un lien public, dans un canonique actif ou une demande d'indexation. La propriete GSC URL-prefix devra etre creee et verifiee seulement lorsque le chemin existe.
+Avant activation : aucune de ces URLs ne doit etre annoncee dans le sitemap, dans un lien public, dans un canonique actif ou une demande d'indexation. La propriete GSC URL-prefix est creee et enregistree en preparation. Ses rapports resteront sans trafic tant que le chemin commercial n'aura pas ete ouvert ; ne transmettre aucun sitemap ou demande d'indexation avant l'autorisation de publication.
 
 Apres validation : sitemap distinct pour la rubrique, robots, canonicals, contenus non dupliques, donnees structurees fondees sur le service reel, performances web, journal des conversions par groupe de pages, suivi des requetes et des positions par ensemble. Ne jamais promettre ou inventer un classement.
 
@@ -131,7 +132,7 @@ Ne jamais apparenter l'abonnement Audiotel a une remuneration distributeur : les
 3. Flux PSP, KYC, taxes et reversements approuves.
 4. Mapping de comptabilite directe vers le grand livre legal unique et revue expert-comptable.
 5. Propriete GA4 DSVA distincte, dimensions et parametrage de consentement en environnement de recette.
-6. Nouvelle propriete Search Console de chemin apres mise en ligne des pages, sitemap et controle d'indexation.
+6. Propriete Search Console de chemin creee en preparation ; apres publication autorisee, sitemap et controle d'indexation.
 7. Pipeline HubSpot dedie, proprietes confirmees, tests anti-doublons des contacts et affaires.
 8. Tests de non-regression Audiotel, securite, habilitations, recette PostgreSQL, e2e et test d'appels.
 9. Validation formelle "GO" et top depart specifique de l'utilisateur.
