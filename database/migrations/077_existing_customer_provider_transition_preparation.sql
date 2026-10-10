@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS direct_sva_existing_customer_transition_audit (
 -- Database guard: never accept a snapshot fabricated for another client/number.
 -- An existing legal allocation and the real current hosting record are required.
 CREATE FUNCTION direct_sva_validate_transition_snapshot()
-RETURNS trigger LANGUAGE plpgsql AS $
+RETURNS trigger LANGUAGE plpgsql AS $pgi_transition$
 DECLARE
  current_tenant bigint;
  current_number bigint;
@@ -78,7 +78,7 @@ BEGIN
  END IF;
  RETURN NEW;
 END;
-$;
+$pgi_transition$;
 CREATE TRIGGER direct_sva_transition_existing_customer_gate
  BEFORE INSERT ON direct_sva_existing_customer_transition_plans
  FOR EACH ROW EXECUTE FUNCTION direct_sva_validate_transition_snapshot();
