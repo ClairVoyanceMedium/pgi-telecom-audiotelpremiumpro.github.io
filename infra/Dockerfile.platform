@@ -11,7 +11,7 @@ COPY site ./site
 COPY assets ./assets
 COPY backend ./backend
 COPY database ./database
-COPY scripts/build-static.mjs scripts/bootstrap-database.mjs scripts/start-platform.sh ./scripts/
+COPY scripts/build-static.mjs scripts/direct-sva-seo-plan.mjs scripts/bootstrap-database.mjs scripts/start-platform.sh ./scripts/
 
 RUN chmod 700 /app/scripts/start-platform.sh && chown -R node:node /app
 USER node
