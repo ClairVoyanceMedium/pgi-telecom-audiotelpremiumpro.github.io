@@ -23,7 +23,7 @@
  }catch{released=false;}
  if(!released){
   fieldset.disabled=true;
-  status.textContent="Le dépôt de réclamations pour la future distribution directe n'est pas encore ouvert. Aucun message n'est envoyé depuis ce formulaire de préparation.";
+  status.textContent="Le dépôt de réclamations pour PGI Telecom Distribution n'est pas encore ouvert. Aucun message n'est envoyé depuis ce formulaire de préparation.";
   return;
  }
  fieldset.disabled=false;
