@@ -125,13 +125,13 @@ Cette section de suivi est un inventaire ponctuel. Les situations peuvent change
 | Systeme | Observation verifiee | Consequence |
 | --- | --- | --- |
 | Neon production | Aucune table `direct_sva_%` en production ; migrations existantes jusqu'a 071 | Ne pas declarer le distributeur deploye |
-| Neon preparation | Branche `prep-direct-sva-integration-2026-10-10` ; migrations 073 a 079 executees sans erreur ; 25 tables `direct_sva_%`, 10 triggers et 132 contraintes CHECK | Base isolee prete pour revues supplementaires, pas une preuve de fonctionnement des partenaires |
+| Neon preparation | Branche `prep-direct-sva-integration-2026-10-10` ; migrations 072 a 079 executees et enregistrees dans le registre isole ; 25 tables `direct_sva_%`, 10 triggers et 132 contraintes CHECK | Base isolee prete pour revues supplementaires, pas une preuve de fonctionnement des partenaires |
 | Verrous de lancement | `commercial_operation_enabled=false`, `number_activation_enabled=false`, `payouts_enabled=false`, six connecteurs directs sur `disabled` | Aucun acte commercial, routage ou versement autorise |
 | GitHub | Migration 077 corrigee : regex E164 entiere et retrait du bloc SQL duplique ; assertion specifique ajoutee au test d'integrite | Le code correctif reste dans la branche de preparation |
 | Stripe | Compte principal en mode reel present ; prix recurrent Audiotel 4,90 EUR actif ; webhooks Audiotel actifs ; zero compte beneficiaire Connect liste | Ne pas confondre abonnements avec collecte SVA ou reversements editeurs |
 | HubSpot | Portail actuel accessible ; pipeline de deals `default` seul observe ; `pgi_business_unit` et `pgi_source_reference` absents des proprietes verifiees | Creation d'un pipeline DSVA et de ses proprietes avant toute transmission |
 | Resend | Domaine existant verifie, envoi et reception actifs ; webhook `email.received` actif | Le futur canal de reclamations direct reste a valider avec un flux reel bout en bout |
-| Search Console | Domaine existant ; groupe de contenu analytique `PGI Telecom | Distribution SVA directe` cree pour le prefixe `/distribution-sva/` | Aucun ajout d'URL au sitemap ni publication n'a ete fait |
+| Search Console | Domaine existant ; groupe de contenu analytique cree et propriete URL-prefix `https://audiotel-premium-pro.com/distribution-sva/` creee et enregistree mais non activee dans GSC Wizard | Aucun ajout au sitemap, aucune publication ni demande d'indexation |
 | Comptabilite | Identite legale et SIREN non renseignes dans `platform_accounting_settings` ; `vat_regime=unconfigured`, `fec_enabled=false` | Unification comptable legale et mapping TVA a completer |
 
 **Pas de changement Vercel, pas de migration Neon sur la branche de production, pas de creation d'abonnement, d'encaissement ni de virement Stripe.** La creation du groupe de contenu GSC n'indexe pas les futures pages.
