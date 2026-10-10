@@ -18,6 +18,8 @@ test("future direct SVA public pages and customer area are entirely staged and n
   "site/distribution-sva/index.html",
   "site/distribution-sva/solutions/index.html",
   "site/distribution-sva/conformite/index.html",
+  "site/distribution-sva/business-live/index.html",
+  "site/distribution-sva/transition/index.html",
   "site/distribution-sva/espace-client/index.html",
   "site/distribution-sva/style.css",
   "site/distribution-sva/site.js",
@@ -32,7 +34,7 @@ test("future direct SVA public pages and customer area are entirely staged and n
 });
 
 test("future marketing pages have a separated menu, prelaunch status, noindex and correct canonical",()=>{
- for(const p of ["index.html","solutions/index.html","conformite/index.html"]){
+ for(const p of ["index.html","solutions/index.html","conformite/index.html","business-live/index.html","transition/index.html"]){
   const source=fs.readFileSync(path.join(root,"site/distribution-sva",p),"utf8");
   assert.match(source,/name="robots" content="noindex,nofollow,noarchive"/);
   assert.match(source,/href="https:\/\/audiotel-premium-pro\.com\/distribution-sva\//);
