@@ -400,8 +400,8 @@ test("existing customers get an explicit login entry in every public shell",()=>
   assert.match(contactCss,/header-actions \.header-login\{display:inline-flex!important/);
 });
 
-test("future Pôle Télécom & Distribution link sits below customer login without a box and remains hidden before launch",()=>{
-  assert.match(html,/<div class="header-account-entry">\s*<a class="header-login" href="\/client\.html">[\s\S]*?<\/a>\s*<a class="header-distribution-link" href="\/distribution-sva\/" hidden>Pôle Télécom &amp; Distribution<\/a><\/div>/);
+test("future Pôle Télécom & Réseau link sits below customer login without a box and remains hidden before launch",()=>{
+  assert.match(html,/<div class="header-account-entry">\s*<a class="header-login" href="\/client\.html">[\s\S]*?<\/a>\s*<a class="header-distribution-link" href="\/distribution-sva\/" hidden>Pôle Télécom &amp; Réseau<\/a><\/div>/);
   assert.equal((html.match(/class="header-distribution-link"/g)||[]).length,1);
   assert.match(css,/\.header-account-entry\{display:flex;flex-direction:column;align-items:flex-end/);
   assert.match(css,/\.header-distribution-link\{[^}]*text-decoration:underline/);
