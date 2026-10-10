@@ -150,7 +150,7 @@ test("admin UI has two accessible toggle controls and lazy module loading",()=>{
  assert.match(ui,/data-dss-commercial/);
  assert.match(ui,/role="switch"/);
  assert.match(ui,/disabled aria-disabled="true"/);
- assert.match(ui,/commercial_activation_locked/);
+ assert.match(ui,/Exploitation commerciale SVA directe/);
  assert.match(ui,/credentials:"include"/);
  assert.match(ui,/X-CSRF-Token/);
  assert.match(acct,/import\("\.\/direct-sva-switches\.js"\)/);
