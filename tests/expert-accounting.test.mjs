@@ -177,5 +177,5 @@ test("les nouveaux modules sont livrés et contrôlés par les vérifications",(
 });
 
 test("les nouveaux fichiers respectent la convention sans tiret cadratin",()=>{
-  for(const source of [migration,service,server,cockpit,expert])assert.equal(source.includes("\u2014"),false);
+  for(const source of [migration,service,server,cockpit,expert])assert.equal(source.includes(String.fromCodePoint(0x2014)),false);
 });

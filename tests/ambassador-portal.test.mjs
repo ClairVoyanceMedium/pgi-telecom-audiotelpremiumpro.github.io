@@ -95,7 +95,7 @@ test("container images include the ambassador portal source required by static b
 });
 
 test("new ambassador surfaces contain no em dash",()=>{
-  for(const [name,content] of [["html",html],["api",api],["app",app],["css",css],["migration",migration]])assert.equal(content.includes("\u2014"),false,name);
+  for(const [name,content] of [["html",html],["api",api],["app",app],["css",css],["migration",migration]])assert.equal(content.includes(String.fromCodePoint(0x2014)),false,name);
 });
 
 
@@ -124,7 +124,8 @@ test("referral invitation copy keeps the customer email style constraints",()=>{
   const start=resend.indexOf("export async function sendReferralInvitation");
   const end=resend.indexOf("export async function sendSupportTicketNotification");
   const invite=resend.slice(start,end);
-  assert.doesNotMatch(invite,/\u2014|😀|🙂|😊|<strong>|\*\*/);
+  assert.equal(invite.includes(String.fromCodePoint(0x2014)),false);
+  assert.doesNotMatch(invite,/😀|🙂|😊|<strong>|\*\*/);
   assert.match(invite,/notifications@/);
   assert.match(invite,/support@/);
 });

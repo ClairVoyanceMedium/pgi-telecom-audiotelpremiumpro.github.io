@@ -117,7 +117,7 @@ export async function sendDailyReportEmail(config,options={}){
   const subject=cleanText(options.subject||"",240);
   const text=String(options.text||"").replace(/\r\n?/g,"\n").trim().slice(0,30000);
   if(!subject||!text)throw providerError("INVALID_DAILY_REPORT",400);
-  if(subject.includes("\u2014")||text.includes("\u2014"))throw providerError("DAILY_REPORT_EM_DASH_FORBIDDEN",400);
+  if(subject.includes(String.fromCodePoint(0x2014))||text.includes(String.fromCodePoint(0x2014)))throw providerError("DAILY_REPORT_EM_DASH_FORBIDDEN",400);
   const domain=String(config.transactionalDomain||"").trim().toLowerCase();
   const from=(config.transactionalFromName||"PGI Telecom")+" <notifications@"+domain+">";
   const replyTo="support@"+domain;

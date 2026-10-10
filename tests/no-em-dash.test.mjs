@@ -24,6 +24,9 @@ function scan(directory,violations) {
       const line = source.slice(0,matchIndex).split("\n").length;
       violations.push(relativePath + ":" + line + " contains the forbidden character");
     }
+    if (source.includes("\\" + "u2014") || source.includes("\\" + "u{2014}")) {
+      violations.push(relativePath + " contains a JavaScript escape for the forbidden character");
+    }
     if (forbiddenHtmlEntity.test(source)) {
       violations.push(relativePath + " contains an encoded HTML em dash");
     }
