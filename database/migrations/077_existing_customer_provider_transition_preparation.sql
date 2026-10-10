@@ -43,6 +43,42 @@ CREATE TABLE IF NOT EXISTS direct_sva_existing_customer_transition_audit (
  evidence_reference text NOT NULL CHECK (length(btrim(evidence_reference)) BETWEEN 8 AND 240),
  occurred_at timestamptz NOT NULL DEFAULT now()
 );
+-- Database guard: never accept a snapshot fabricated for another client/number.
+-- An existing legal allocation and the real current hosting record are required.
+CREATE FUNCTION direct_sva_validate_transition_snapshot()
+RETURNS trigger LANGUAGE plpgsql AS $
+DECLARE
+ current_tenant bigint;
+ current_number bigint;
+ current_e164 text;
+ host_count bigint;
+ actual_host bigint;
+BEGIN
+ SELECT a.tenant_id,a.sva_number_id,n.e164
+   INTO current_tenant,current_number,current_e164
+   FROM tenant_number_assignments a
+   JOIN sva_numbers n ON n.id=a.sva_number_id
+   WHERE a.id=NEW.assignment_id AND a.status='active' AND n.status='active'
+   FOR SHARE OF a,n;
+ IF current_tenant IS NULL OR current_tenant<>NEW.tenant_id
+   OR current_number<>NEW.sva_number_id OR current_e164<>NEW.e164_snapshot THEN
+   RAISE EXCEPTION 'direct SVA transition must preserve the existing customer and E164';
+ END IF;
+ SELECT count(*),max(carrier_id) INTO host_count,actual_host
+   FROM number_carrier_assignments
+   WHERE sva_number_id=NEW.sva_number_id
+     AND assignment_status='active'
+     AND valid_from<=now() AND (valid_to IS NULL OR valid_to>now());
+ IF host_count<>1 OR actual_host<>NEW.source_host_carrier_id THEN
+   RAISE EXCEPTION 'direct SVA transition source provider not uniquely verified';
+ END IF;
+ RETURN NEW;
+END;
+$;
+CREATE TRIGGER direct_sva_transition_existing_customer_gate
+ BEFORE INSERT ON direct_sva_existing_customer_transition_plans
+ FOR EACH ROW EXECUTE FUNCTION direct_sva_validate_transition_snapshot();
+
 CREATE FUNCTION direct_sva_guard_customer_transition_immutable()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
