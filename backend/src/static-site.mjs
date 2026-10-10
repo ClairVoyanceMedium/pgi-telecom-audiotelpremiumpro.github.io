@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import {createHash} from "node:crypto";
-import {isDirectSvaPath,isDirectSvaPublicAsset,directSvaPublicPagePath,visibleDistributionMarketingHome,publishedDistributionHtml,publishedDistributionSitemap} from "./direct-sva-public-site.mjs";
+import {isDirectSvaPath,isDirectSvaPublicAsset,directSvaPublicPagePath,visibleDistributionMarketingHome,publishedDistributionHtml,publishedDistributionSitemap,publishedDistributionRobots} from "./direct-sva-public-site.mjs";
 
 const PRIVATE_CSP="default-src 'self'; script-src 'self' https://accounts.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://lh3.googleusercontent.com; connect-src 'self' https://accounts.google.com https://www.googleapis.com; frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests";
 const COCKPIT_CSP="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests";
@@ -91,6 +91,26 @@ export function createStaticSiteHandler(rootDir,{getDirectSvaWebsiteState}={}){
       if(!isDirectSvaPublicAsset(directSvaPath)){
         res.writeHead(404,{"Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow, noarchive"});
         res.end();return true;
+      }
+    }
+
+    // A separate sitemap is announced to crawlers only when editorial
+    // publication is independently approved. The Audiotel rules remain as-is.
+    if(String(pathname||"")==="/robots.txt"){
+      const state=await visibility();
+      if(state?.publication_authorized===true){
+        const robotsFile=await resolveStaticFile(root,"/robots.txt");
+        if(!robotsFile){
+          res.writeHead(503,{"Cache-Control":"no-store","Retry-After":"300"});
+          res.end();return true;
+        }
+        const original=await fs.promises.readFile(robotsFile,"utf8");
+        const text=publishedDistributionRobots(original,state);
+        const body=Buffer.from(text,"utf8");
+        res.writeHead(200,{"Content-Type":"text/plain; charset=utf-8",
+         "Cache-Control":"no-store, must-revalidate","Content-Length":String(body.length)});
+        res.end(method==="HEAD"?undefined:body);
+        return true;
       }
     }
 
