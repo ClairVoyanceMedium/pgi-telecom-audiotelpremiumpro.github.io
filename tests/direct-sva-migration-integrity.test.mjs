@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const migrationDir=new URL("../database/migrations/",import.meta.url);
-const names=["073_direct_sva_operator_business_unit.sql","074_single_company_two_business_units.sql","075_direct_sva_customer_and_automation_foundation.sql","076_direct_sva_admin_switches.sql","077_existing_customer_provider_transition_preparation.sql"];
+const names=["073_direct_sva_operator_business_unit.sql","074_single_company_two_business_units.sql","075_direct_sva_customer_and_automation_foundation.sql","076_direct_sva_admin_switches.sql","077_existing_customer_provider_transition_preparation.sql","078_direct_sva_complaint_inbox_preparation.sql"];
 
 function stripSqlComments(sql){
  return sql.replace(/\/\*[\s\S]*?\*\//g," ").replace(/--[^\n]*/g," ");
@@ -105,4 +105,16 @@ test("migration 077 preserves customer identity, forbids routing and verifies so
  assert.match(sql,/CHECK\(money_transfer_authorized=false\)/);
  assert.match(sql,/\$pgi_transition\$/);
  assert.doesNotMatch(stripSqlComments(sql),/\bUPDATE\s+tenant_number_assignments\b|\bDROP\b|\bTRUNCATE\b/i);
+});
+
+test("migration 078 is an immutable, release-locked customer complaint inbox",()=>{
+ const sql=fs.readFileSync(new URL(names[5],migrationDir),"utf8");
+ assert.match(sql,/direct_sva_complaint_cases/);
+ assert.match(sql,/direct_sva_complaint_delivery_queue/);
+ assert.match(sql,/delivery_state text NOT NULL DEFAULT 'blocked_release' CHECK\(delivery_state='blocked_release'\)/);
+ assert.match(sql,/external_execution_allowed boolean NOT NULL DEFAULT false CHECK\(external_execution_allowed=false\)/);
+ assert.match(sql,/crm_ticket_authorized boolean NOT NULL DEFAULT false CHECK\(crm_ticket_authorized=false\)/);
+ assert.match(sql,/compensation_authorized boolean NOT NULL DEFAULT false CHECK\(compensation_authorized=false\)/);
+ assert.match(sql,/direct_sva_complaint_audit_append_only/);
+ assert.doesNotMatch(stripSqlComments(sql),/\bDROP\b|\bTRUNCATE\b|\bDELETE FROM\b/i);
 });
