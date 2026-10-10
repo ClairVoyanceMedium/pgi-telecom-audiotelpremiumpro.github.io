@@ -56,7 +56,7 @@ test("static server returns 404 even if direct SVA files are copied accidentally
   fs.mkdirSync(path.join(dir,"distribution-sva"),{recursive:true});
   fs.writeFileSync(path.join(dir,"distribution-sva","index.html"),"<p>Must not appear</p>");
   const handle=createStaticSiteHandler(dir);
-  for(const url of ["/distribution-sva/","/distribution-sva/index.html","/site/distribution-sva/index.html"]){
+  for(const url of ["/distribution-sva/","/distribution-sva/index.html","/site/distribution-sva/index.html","/%64istribution-sva/","/site/distribution%2Dsva/index.html","/distribution-sva%2Findex.html"]){
    const state={status:0,headers:{},ended:false};
    const res={writeHead(status,headers){state.status=status;state.headers=headers||{};},end(){state.ended=true;}};
    const handled=await handle({method:"GET",url},res,url);
