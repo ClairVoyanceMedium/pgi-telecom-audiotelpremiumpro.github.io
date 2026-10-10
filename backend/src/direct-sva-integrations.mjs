@@ -169,3 +169,33 @@ export async function directSvaIntegrationOverview(store){
   legal_fec_separated:false
  });
 }
+
+const DIRECT_DEAL_STAGE_SET=new Set(["new","qualification","proposal","contract_signed","closedwon","closedlost"]);
+
+export function prepareDirectSvaHubspotDeal(input={},configuration={}){
+ const planned=directSvaHubspotPlan(input,{schemaVerified:false,pipelineVerified:false});
+ const stage=String(input.stage||"").trim();
+ if(!DIRECT_DEAL_STAGE_SET.has(stage))throw new TypeError("Invalid direct SVA deal stage");
+ const pipe=String(configuration.pipelineId||"").trim(),stageId=configuration.stageIds?.[stage];
+ if(!pipe||pipe==="default"||!stageId||typeof stageId!=="string")return Object.freeze({
+  eligible:false,reason:"DIRECT_SVA_DEDICATED_PIPELINE_UNVERIFIED",business_unit:"direct_sva",payload:null
+ });
+ if(configuration.verifiedForDirectSva!==true||configuration.customFieldsVerified!==true||
+    configuration.consentVerified!==true||configuration.directOperationReleased!==true){
+  return Object.freeze({eligible:false,reason:"DIRECT_SVA_CRM_CONFIGURATION_NOT_APPROVED",
+   business_unit:"direct_sva",payload:null});
+ }
+ return Object.freeze({
+  eligible:true,reason:"PAYLOAD_READY_FOR_SEPARATE_EXTERNAL_APPROVAL",
+  business_unit:"direct_sva",
+  // Only a business-level reference, not an individual's name, email, phone or a numbered call.
+  payload:Object.freeze({properties:Object.freeze({
+   dealname:"Distribution SVA directe "+planned.source_reference,
+   pipeline:pipe,dealstage:stageId,
+   [DIRECT_SVA_HUBSPOT_FIELDS.business_unit]:"direct_sva",
+   [DIRECT_SVA_HUBSPOT_FIELDS.origin_reference]:planned.source_reference,
+   [DIRECT_SVA_HUBSPOT_FIELDS.number_type]:planned.product_type
+  })}),
+  transmission_authorized:false
+ });
+}
