@@ -23,6 +23,7 @@ test("GA4 purchase uses verified invoice facts and no customer identity",()=>{
   assert.equal(payload.events[0].params.transaction_id,"in_123ABC");
   assert.equal(payload.events[0].params.value,3);
   assert.equal(payload.events[0].params.currency,"EUR");
+  assert.equal(payload.events[0].params.pgi_business_unit,"audiotel_platform");
   assert.equal(payload.events[0].params.session_id,1790629000);
   assert.equal(payload.events[0].params.items[0].item_id,"audiotel_premium_pro_platform");
   assert.doesNotMatch(JSON.stringify(payload),/@|email|phone|name.*client/i);
@@ -38,6 +39,7 @@ test("GA4 refund reports the individual refund against the original invoice",()=
   assert.equal(payload.events[0].name,"refund");
   assert.equal(payload.events[0].params.transaction_id,"in_123ABC");
   assert.equal(payload.events[0].params.value,1.5);
+  assert.equal(payload.events[0].params.pgi_business_unit,"audiotel_platform");
 });
 
 test("GA4 Measurement Protocol remains disabled without the server secret",async()=>{
