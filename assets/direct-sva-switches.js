@@ -48,7 +48,7 @@ export async function mountDirectSvaSwitches(host,{onPreviewChange}={}){
  catch(error){
   if(error.status===401||error.status===403){host.replaceChildren();return;}
   host.hidden=false;
-  host.innerHTML='<section class="dss"><h3>Commandes de distribution SVA directe</h3>'+
+  host.innerHTML='<section class="dss"><h3>Commandes PGI Telecom Distribution</h3>'+
    '<p class="dss-error">Commandes indisponibles : '+esc(error.message)+'. Le distributeur reste désactivé. La migration dédiée doit être validée avant cette commande.</p></section>';
   return;
  }
@@ -57,17 +57,17 @@ export async function mountDirectSvaSwitches(host,{onPreviewChange}={}){
  if(typeof onPreviewChange==="function")onPreviewChange(current.interface_preview_enabled===true);
  // A parent rerender may detach this instance on the first GET.
  if(!host.isConnected)return;
- host.innerHTML='<section class="dss" aria-label="Interrupteurs de la distribution SVA directe">'+
-  '<div class="dss-head"><div><h3>Commandes de distribution SVA directe</h3>'+
+ host.innerHTML='<section class="dss" aria-label="Interrupteurs PGI Telecom Distribution">'+
+  '<div class="dss-head"><div><h3>Commandes PGI Telecom Distribution</h3>'+
   '<p>Une société, deux activités. Aucune commande ci-dessous ne modifie Audiotel Premium Pro.</p></div>'+
   '<span class="dss-badge">Réservé à l’administrateur</span></div>'+
-  '<label class="dss-item"><span><strong>Interface distributeur</strong>'+
+  '<label class="dss-item"><span><strong>Interface PGI Telecom Distribution</strong>'+
   '<small>Afficher ou masquer le cockpit de préparation. Sans numéros actifs, sans espace client public et sans versements.</small></span>'+
-  '<input class="dss-toggle" role="switch" aria-label="Interface distributeur" data-dss-preview type="checkbox" '+
+  '<input class="dss-toggle" role="switch" aria-label="Interface PGI Telecom Distribution" data-dss-preview type="checkbox" '+
   (current.interface_preview_enabled?'checked':'')+'></label>'+
-  '<label class="dss-item"><span><strong>Exploitation commerciale SVA directe</strong>'+
+  '<label class="dss-item"><span><strong>Exploitation commerciale PGI Telecom Distribution</strong>'+
   '<small>Autoriser l’activité réelle seulement après validation des droits, contrats, tests et flux financiers. Impossible à activer en préparation.</small></span>'+
-  '<input class="dss-toggle" role="switch" aria-label="Exploitation commerciale SVA directe" data-dss-commercial type="checkbox" disabled aria-disabled="true"></label>'+
+  '<input class="dss-toggle" role="switch" aria-label="Exploitation commerciale PGI Telecom Distribution" data-dss-commercial type="checkbox" disabled aria-disabled="true"></label>'+
   '<div class="dss-alert">Exploitation commerciale : désactivée et verrouillée. Le premier interrupteur ne l’active pas.</div>'+
   '<button class="ds-button" data-dss-readiness type="button">Consulter le diagnostic de mise en production</button>'+
   '<div class="dss-details" data-dss-readiness-result role="status" aria-live="polite"></div>'+
