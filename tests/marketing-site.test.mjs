@@ -871,7 +871,7 @@ test("internal linking graph is balanced, crawlable and conversion aware",()=>{
   assert.match(buildStatic,/function injectInternalLinkGraph/);
   assert.match(buildStatic,/class="internal-link-card resource-link"/);
   assert.match(buildStatic,/href="'\+internalLinkHref\(target\)\+'"/);
-  assert.doesNotMatch(buildStatic.slice(buildStatic.indexOf("const internalLinkGraph"),buildStatic.indexOf("const preferredSourceSlugs")),/—/);
+  assert.doesNotMatch(buildStatic.slice(buildStatic.indexOf("const internalLinkGraph"),buildStatic.indexOf("const preferredSourceSlugs")),/\u2014/);
 
   const graphSource=buildStatic.slice(buildStatic.indexOf("const internalLinkGraph="),buildStatic.indexOf("function internalLinkHref"));
   const graph=Function('"use strict";'+graphSource+';return internalLinkGraph;')();
