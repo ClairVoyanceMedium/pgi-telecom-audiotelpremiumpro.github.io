@@ -400,6 +400,16 @@ test("existing customers get an explicit login entry in every public shell",()=>
   assert.match(contactCss,/header-actions \.header-login\{display:inline-flex!important/);
 });
 
+test("future PGI Telecom Distribution link sits below customer login without a box and remains hidden before launch",()=>{
+  assert.match(html,/<div class="header-account-entry">\\s*<a class="header-login" href="\\/client\\.html">[\\s\\S]*?<\\/a>\\s*<a class="header-distribution-link" href="\\/distribution-sva\\/" hidden>PGI Telecom Distribution<\\/a><\\/div>/);
+  assert.equal((html.match(/class="header-distribution-link"/g)||[]).length,1);
+  assert.match(css,/\\.header-account-entry\\{display:flex;flex-direction:column;align-items:flex-end/);
+  assert.match(css,/\\.header-distribution-link\\{[^}]*text-decoration:underline/);
+  assert.match(css,/\\.header-distribution-link\\[hidden\\]\\{display:none!important\\}/);
+  assert.doesNotMatch(html,/<a class="header-distribution-link"[^>]*style="[^"]*(?:background|border|padding)/);
+  assert.doesNotMatch(buildStatic,/["']site\\/distribution-sva\\/index\\.html["']/);
+});
+
 test("public commercial copy is concise while legal and machine-readable price stays precise",()=>{
   assert.match(html,/NUMÉRO SURTAXÉ · AUDIOTEL · SUIVI EN LIGNE/);
   assert.match(html,/Le mois en cours est offert/);
