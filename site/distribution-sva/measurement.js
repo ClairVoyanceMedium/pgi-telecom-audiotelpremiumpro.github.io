@@ -9,11 +9,11 @@ const MAX_AGE=180*24*60*60*1000;
 const lang=["en","es","pt","de","it"].find(l=>location.pathname.startsWith("/distribution-sva/"+l+"/"))||"fr";
 const TRANSLATIONS={
  fr:{heading:"Mesure du Pôle Télécom & Réseau",body:"Autorisez-vous des statistiques de navigation pour améliorer ce service ? Aucun numéro de téléphone, identifiant de dossier ou contenu de formulaire n'est transmis.",accept:"Autoriser",refuse:"Refuser",settings:"Préférences de statistiques"},
- en:{heading:"Telecom & Network Division analytics",body:"Allow anonymous navigation statistics to improve this service? No telephone numbers, account references or form content will be transmitted.",accept:"Allow",refuse:"Decline",settings:"Analytics preferences"},
+ en:{heading:"Telecom & Network Division analytics",body:"Allow navigation statistics to improve this service? No telephone numbers, account references or form content will be transmitted.",accept:"Allow",refuse:"Decline",settings:"Analytics preferences"},
  es:{heading:"Estadísticas del área de telecomunicaciones",body:"¿Autoriza estadísticas de navegación para mejorar el servicio? No se transmitirán números de teléfono, referencias de expedientes ni datos de formularios.",accept:"Autorizar",refuse:"Rechazar",settings:"Preferencias de estadísticas"},
  pt:{heading:"Estatísticas da área de telecomunicações",body:"Autoriza estatísticas de navegação para melhorar o serviço? Não serão enviados números de telefone, referências de processos nem conteúdos de formulários.",accept:"Autorizar",refuse:"Recusar",settings:"Preferências de estatísticas"},
- de:{heading:"Statistik für Telekommunikation & Netze",body:"Dürfen wir anonyme Nutzungsstatistiken erheben? Telefonnummern, Kundenakten und Formularinhalte werden nicht übertragen.",accept:"Erlauben",refuse:"Ablehnen",settings:"Statistik-Einstellungen"},
- it:{heading:"Statistiche della divisione telecomunicazioni",body:"Consente statistiche anonime di navigazione? Numeri di telefono, riferimenti dei fascicoli e contenuti dei moduli non vengono trasmessi.",accept:"Consenti",refuse:"Rifiuta",settings:"Preferenze statistiche"}
+ de:{heading:"Statistik für Telekommunikation & Netze",body:"Dürfen wir Nutzungsstatistiken erheben? Telefonnummern, Kundenakten und Formularinhalte werden nicht übertragen.",accept:"Erlauben",refuse:"Ablehnen",settings:"Statistik-Einstellungen"},
+ it:{heading:"Statistiche della divisione telecomunicazioni",body:"Consente statistiche di navigazione? Numeri di telefono, riferimenti dei fascicoli e contenuti dei moduli non vengono trasmessi.",accept:"Consenti",refuse:"Rifiuta",settings:"Preferenze statistiche"}
 };
 const words=TRANSLATIONS[lang];
 const privatePage=/^\/distribution-sva\/(?:espace-client|conditions|confidentialite|mentions-legales)(?:\/|$)/.test(location.pathname);
@@ -61,8 +61,19 @@ function makeButton(text,className,action){
  btn.addEventListener("click",action);return btn;
 }
 function closePanel(){consentUI?.remove();consentUI=null;}
+function removeDistributionCookies(){
+ // Never clear GA4 cookies belonging to the existing Audiotel service.
+ try{
+  for(const part of document.cookie.split(";")){
+   const name=part.trim().split("=")[0];
+   if(!/^pgi_dsva(?:_|$)/.test(name))continue;
+   document.cookie=name+"=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;SameSite=Lax";
+   document.cookie=name+"=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=audiotel-premium-pro.com;SameSite=Lax";
+  }
+ }catch{}
+}
 function decline(){
- denied=true;save("refused");closePanel();
+ denied=true;save("refused");closePanel();removeDistributionCookies();
  // A user withdrawing consent must stop subsequent GA4 collection without
  // altering the independent Audiotel consent or clearing its GA4 cookies.
  if(tracker){
@@ -93,7 +104,7 @@ function promptPreference(){
 function createPreferenceControl(){
  const footer=document.querySelector("footer");if(!footer||footer.querySelector("[data-ds-analytics-preferences]"))return;
  const button=makeButton(words.settings,"ds-analytics-preferences",()=>{
-  denied=true;save("refused");
+  denied=true;save("refused");removeDistributionCookies();
   if(tracker){window["ga-disable-"+MEASUREMENT_ID]=true;
    window.gtag?.("consent","update",{analytics_storage:"denied",ad_storage:"denied",ad_user_data:"denied",ad_personalization:"denied"});}
   promptPreference();
