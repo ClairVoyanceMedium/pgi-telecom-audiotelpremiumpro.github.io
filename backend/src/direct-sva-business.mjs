@@ -99,7 +99,7 @@ export async function directSvaBusinessSnapshot(store,params={}){
     query.unsafe("SELECT to_char(date_trunc('month',e.entry_date),'YYYY-MM') AS month,"+
       " coalesce(sum(CASE WHEN l.account_code='706100' THEN l.credit_minor-l.debit_minor ELSE 0 END),0)::bigint AS revenue_minor,"+
       " coalesce(sum(CASE WHEN a.account_kind='expense' THEN l.debit_minor-l.credit_minor ELSE 0 END),0)::bigint AS expenses_minor"+
-      " FROM direct_sva_journal_entries e JOIN direct_sva_journal_lines l ON l.entry_id=e.id"+
+      " FROM direct_sva_journal_entries e LEFT JOIN direct_sva_journal_lines l ON l.entry_id=e.id"+
       " JOIN direct_sva_account_catalog a ON a.account_code=l.account_code"+
       " WHERE e.status='posted' AND e.entry_date>=$1::date AND e.entry_date<$2::date"+
       " GROUP BY date_trunc('month',e.entry_date) ORDER BY month",[historyFrom,to]),
@@ -169,6 +169,9 @@ export async function directSvaAccountingExport(store,params={}){
   " ORDER BY e.entry_date,e.id,l.line_no LIMIT $3",[from,to,maxRows+1]
  );
  if(rows.length>maxRows)throw failure(413,"DIRECT_SVA_EXPORT_TOO_LARGE_SPLIT_PERIOD");
+ // LEFT JOIN exposes orphaned journal headers so an export cannot claim completeness.
+ if(rows.some(row=>row?.line_no==null||row?.account_code==null))
+  throw failure(409,"DIRECT_SVA_EXPORT_ENTRY_WITHOUT_LINES");
  const normal=rows.map(row=>({
   journal_entry_id:toNumber(row.journal_entry_id),
   entry_date:pgDate(row.entry_date),
@@ -186,13 +189,19 @@ export async function directSvaAccountingExport(store,params={}){
  }));
  const grouped=new Map();
  for(const row of normal){
-  const current=grouped.get(row.journal_entry_id)||{debit:0,credit:0};
+  const current=grouped.get(row.journal_entry_id)||{debit:0,credit:0,lineNumbers:[]};
+  if(!Number.isSafeInteger(row.line_no)||row.line_no<1||row.line_no>50)
+   throw failure(409,"DIRECT_SVA_EXPORT_LINE_SEQUENCE_INVALID");
   current.debit+=row.debit_minor;current.credit+=row.credit_minor;
+  current.lineNumbers.push(row.line_no);
   if(!Number.isSafeInteger(current.debit)||!Number.isSafeInteger(current.credit))throw failure(503,"DIRECT_SVA_EXPORT_AMOUNT_OVERFLOW");
   grouped.set(row.journal_entry_id,current);
  }
  for(const total of grouped.values()){
   if(total.debit<=0||total.debit!==total.credit)throw failure(409,"DIRECT_SVA_EXPORT_CONTAINS_UNBALANCED_ENTRIES");
+  const ordered=[...total.lineNumbers].sort((a,b)=>a-b);
+  if(ordered.length<2||ordered.some((line,i)=>line!==i+1))
+   throw failure(409,"DIRECT_SVA_EXPORT_LINE_SEQUENCE_INVALID");
  }
  return Object.freeze({
   schema_version:"pgi-direct-sva-accounting-export/1",
