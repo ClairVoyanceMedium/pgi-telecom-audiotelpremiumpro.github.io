@@ -29,6 +29,7 @@ import {analyzeDirectSvaSettlement} from "./src/direct-sva-reconciliation.mjs";
 import {directSvaIntegrationOverview} from "./src/direct-sva-integrations.mjs";
 import {directSvaCustomerOverview,directSvaWorkflowOverview} from "./src/direct-sva-customer.mjs";
 import {getDirectSvaSwitches,setDirectSvaPreview,setDirectSvaCommercial} from "./src/direct-sva-admin-switches.mjs";
+import {eligibleExistingCustomerNumbers,preparedExistingCustomerTransitions,prepareExistingCustomerTransition} from "./src/direct-sva-customer-transition.mjs";
 import {runDailyReportCron} from "./src/daily-report.mjs";
 
 export async function createDefaultBackend(){
@@ -1854,7 +1855,27 @@ export function createBackend(options={}){
         requireRole(actor,["admin","finance","readonly"]);
         return done(res,metrics,started,"platform.direct_sva_integrations",200,await directSvaIntegrationOverview(store));
       }
-      if(method==="GET"&&pathname==="/api/v1/platform/direct-sva/automation"){
+      // Customer-stable upstream transition. Planning is independent from telecom porting.
+       if(method==="GET"&&pathname==="/api/v1/platform/direct-sva/transitions/eligible"){
+         requireRole(actor,["admin"]);
+         return done(res,metrics,started,"platform.direct_sva_transition_eligible",200,
+           await eligibleExistingCustomerNumbers(store,{tenant_id:url.searchParams.get("tenant_id")}));
+       }
+       if(method==="GET"&&pathname==="/api/v1/platform/direct-sva/transitions"){
+         requireRole(actor,["admin"]);
+         return done(res,metrics,started,"platform.direct_sva_transition_plans",200,
+           await preparedExistingCustomerTransitions(store,{tenant_id:url.searchParams.get("tenant_id")}));
+       }
+       if(method==="POST"&&pathname==="/api/v1/platform/direct-sva/transitions/prepare"){
+         requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+         const body=await readJson(req,config.bodyLimitBytes);
+         const result=await store.idempotent(req.headers["idempotency-key"],
+           "platform.direct_sva.customer_transition.prepare",body,
+           ()=>prepareExistingCustomerTransition(store,actor,body));
+         return done(res,metrics,started,"platform.direct_sva_transition_prepare",201,
+           {...result.value,replayed:result.replayed});
+       }
+       if(method==="GET"&&pathname==="/api/v1/platform/direct-sva/automation"){
         requireRole(actor,["admin","finance","readonly"]);
         return done(res,metrics,started,"platform.direct_sva_automation",200,
           await directSvaWorkflowOverview(store));
