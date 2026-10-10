@@ -28,6 +28,7 @@ import {directSvaBusinessSnapshot,directSvaAccountingExport,createDirectSvaDraft
 import {analyzeDirectSvaSettlement} from "./src/direct-sva-reconciliation.mjs";
 import {directSvaIntegrationOverview} from "./src/direct-sva-integrations.mjs";
 import {directSvaCustomerOverview,directSvaWorkflowOverview} from "./src/direct-sva-customer.mjs";
+import {getDirectSvaSwitches,setDirectSvaPreview,setDirectSvaCommercial} from "./src/direct-sva-admin-switches.mjs";
 import {runDailyReportCron} from "./src/daily-report.mjs";
 
 export async function createDefaultBackend(){
@@ -701,19 +702,47 @@ export function createBackend(options={}){
         });
       }
 
-      // Separate second launch. The existing Audiotel release cannot activate
-      // the future distributor API through shared authentication or URL guesses.
-      if(!config.directSvaOperatorApiEnabled&&(
-        pathname.startsWith("/api/v1/platform/direct-sva/")||
-        pathname.startsWith("/api/v1/customer/direct-sva/")
-      )){
-        return done(res,metrics,started,"direct_sva.staged_off",404,{
-          error:{code:"DIRECT_SVA_PREPARATION_DISABLED"}
-        });
-      }
-
       const actor=authenticate(req,config);
       const customerActor=authenticateCustomer(req,config);
+
+      // The two admin switches are independent of the future business API.
+      // They never change network, payments, analytics, CRM or client access.
+      if(method==="GET"&&pathname==="/api/v1/platform/direct-sva-switches"){
+        requireRole(actor,["admin"]);
+        return done(res,metrics,started,"platform.direct_sva_switches",200,
+          await getDirectSvaSwitches(store));
+      }
+      if(method==="POST"&&pathname==="/api/v1/platform/direct-sva-switches/interface"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        return done(res,metrics,started,"platform.direct_sva_preview_toggle",200,
+          await setDirectSvaPreview(store,actor,body));
+      }
+      if(method==="POST"&&pathname==="/api/v1/platform/direct-sva-switches/commercial"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        return done(res,metrics,started,"platform.direct_sva_commercial_toggle",200,
+          await setDirectSvaCommercial(store,actor,body));
+      }
+
+      // The first switch gives administrators a PRIVATE technical preview only.
+      // Direct customer routes and commercial features remain inaccessible.
+      if(pathname.startsWith("/api/v1/platform/direct-sva/")||
+         pathname.startsWith("/api/v1/customer/direct-sva/")){
+        if(pathname.startsWith("/api/v1/customer/direct-sva/")||actor?.role!=="admin"){
+          return done(res,metrics,started,"direct_sva.staged_off",404,
+            {error:{code:"DIRECT_SVA_PREPARATION_DISABLED"}});
+        }
+        if(!store?.sql?.unsafe){
+          return done(res,metrics,started,"direct_sva.staged_off",404,
+            {error:{code:"DIRECT_SVA_PREPARATION_DISABLED"}});
+        }
+        const directSwitchState=await getDirectSvaSwitches(store);
+        if(!directSwitchState.interface_preview_enabled){
+          return done(res,metrics,started,"direct_sva.staged_off",404,
+            {error:{code:"DIRECT_SVA_PREPARATION_DISABLED"}});
+        }
+      }
       if(method==="GET"&&pathname==="/api/v1/customer/security/passkeys"){
         requireActor(customerActor);
         return done(res,metrics,started,"customer.security.passkeys",200,{configured:webauthnConfigured(config),data:await store.listWebauthnCredentials("customer",customerActor.sub)});
