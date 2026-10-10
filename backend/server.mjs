@@ -29,6 +29,7 @@ import {analyzeDirectSvaSettlement} from "./src/direct-sva-reconciliation.mjs";
 import {prepareDirectSvaCollectionAccounting} from "./src/direct-sva-collection-planner.mjs";
 import {planDirectSvaFinancialCycle} from "./src/direct-sva-financial-cycle.mjs";
 import {directSvaFinancialReadiness} from "./src/direct-sva-financial-readiness.mjs";
+import {isDirectSvaStripeEvent} from "./src/direct-sva-stripe-catalog.mjs";
 import {directSvaIntegrationOverview} from "./src/direct-sva-integrations.mjs";
 import {directSvaCustomerOverview,directSvaWorkflowOverview} from "./src/direct-sva-customer.mjs";
 import {directSvaAccessReadiness} from "./src/direct-sva-access-readiness.mjs";
@@ -182,6 +183,14 @@ export function createBackend(options={}){
       if(method==="POST"&&pathname==="/api/v1/billing/stripe/webhook"){
         if(!config.externalBillingEnabled||!config.stripeWebhookSecret)return done(res,metrics,started,"billing.stripe_webhook",404,{error:{code:"STRIPE_WEBHOOK_DISABLED"}});
         const event=await verifyStripeWebhook(req,config);
+        // Stripe account is shared; existing Audiotel billing must never
+        // process Distribution activity. Separate Distribution endpoint is
+        // intentionally not active until the bank/PSP release is authorized.
+        if(isDirectSvaStripeEvent(event)){
+          return done(res,metrics,started,"billing.stripe_webhook",200,
+           {received:true,ignored:true,business_unit:"direct_sva",
+            reason:"distribution_uses_separate_financial_pipeline"});
+        }
         if(String(event.type||"")==="account.updated"){
           invalidateStripeProviderReadiness();
           return done(res,metrics,started,"billing.stripe_webhook",200,{received:true,account_readiness_invalidated:true});
