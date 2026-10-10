@@ -20,7 +20,8 @@ test("sixteen French distribution pages have their own canonical, embargo and he
     const html=source(suffix);
     assert.match(html,/<html lang="fr">/);
     assert.match(html,/<meta name="robots" content="noindex,nofollow,noarchive">/);
-    assert.equal(canonical(html),base+suffix,"canonical mismatch "+suffix);
+    if(suffix==="espace-client/")assert.equal(canonical(html),"","private customer portal must not advertise an indexable canonical");
+    else assert.equal(canonical(html),base+suffix,"canonical mismatch "+suffix);
     assert.equal((html.match(/<h1(?:\s|>)/g)||[]).length,1,"h1 mismatch "+suffix);
     const title=html.match(/<title>(.*?)<\/title>/)?.[1];
     assert.ok(title&&!titles.has(title),"duplicate/missing title "+suffix);
