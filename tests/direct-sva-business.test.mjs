@@ -140,12 +140,14 @@ test("the migration is additive with immutable posted entries and no activation"
 test("navigation and API remain distinct from legacy Audiotel flows",()=>{
  const html=fs.readFileSync(new URL("../index.html",import.meta.url),"utf8");
  const app=fs.readFileSync(new URL("../assets/app.js",import.meta.url),"utf8");
+ const accountingUi=fs.readFileSync(new URL("../assets/accounting-cockpit.js",import.meta.url),"utf8");
  const server=fs.readFileSync(new URL("../backend/server.mjs",import.meta.url),"utf8");
  const ui=fs.readFileSync(new URL("../assets/direct-sva-cockpit.js",import.meta.url),"utf8");
- assert.match(html,/data-view="direct-sva"/);
- assert.match(html,/id="view-direct-sva"/);
+ assert.match(accountingUi,/data-acc-unit="direct"/);
+ assert.match(accountingUi,/direct-sva-cockpit\.js/);
+ assert.doesNotMatch(html,/id="view-direct-sva"/);
  assert.match(html,/id="accounting-cockpit-root"/);
- assert.match(app,/case "direct-sva":/);
+ assert.doesNotMatch(app,/case "direct-sva":/);
  assert.match(server,/pathname==="\/api\/v1\/platform\/direct-sva\/overview"/);
  assert.match(server,/requireRole\(actor,\["admin","finance","readonly"\]\)/);
  assert.match(server,/platform\.direct_sva\.accounting_draft/);
