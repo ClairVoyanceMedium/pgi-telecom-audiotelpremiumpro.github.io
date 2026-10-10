@@ -75,7 +75,8 @@ test("distribution financial UI is isolated and has no button that executes a pa
  const cockpit=fs.readFileSync(new URL("../assets/direct-sva-cockpit.js",import.meta.url),"utf8");
  assert.match(cockpit,/\["financial_cycle","Cycle financier"\]/);
  assert.match(cockpit,/showFinancialCycle\(assertDirectSvaCockpitPayload\(result,"financial_cycle"\)\)/);
- assert.match(cockpit,/data-ds-financial-readiness-refresh/);
+ assert.match(cockpit,/if\(tab==="financial_cycle"\)refreshFinancialReadiness\(\)/);
+ assert.doesNotMatch(cockpit,/data-ds-financial-readiness-refresh/);
  assert.doesNotMatch(cockpit,/data-ds-execute-financial-payout/);
 });
 test("immutable schema fences payment intent, bank movement confirmation and external execution",()=>{
