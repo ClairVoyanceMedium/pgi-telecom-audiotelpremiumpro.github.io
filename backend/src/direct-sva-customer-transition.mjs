@@ -83,7 +83,7 @@ export async function eligibleExistingCustomerNumbers(store,{tenant_id=null}={})
    sva_number_id:Number(r.sva_number_id),e164:r.e164,
    number_status:r.number_status,source_host_carrier_id:r.source_host_carrier_id==null?null:Number(r.source_host_carrier_id),
    source_host_name:r.source_host_name||null,already_prepared:r.has_preparation_plan===true,
-   eligible_to_prepare:!r.has_preparation_plan&&r.source_host_carrier_id!=null&&r.number_status==="active"}))});
+   eligible_to_prepare:r.source_host_carrier_id!=null&&r.number_status==="active"}))});
 }
 
 export async function preparedExistingCustomerTransitions(store,{tenant_id=null}={}){
@@ -91,7 +91,7 @@ export async function preparedExistingCustomerTransitions(store,{tenant_id=null}
  const tenant=tenant_id==null||tenant_id===""?null:positiveId(tenant_id,"DIRECT_SVA_TENANT_ID_INVALID");
  const rows=await store.readSql.unsafe(
   "SELECT p.id,p.tenant_id,p.assignment_id,p.sva_number_id,p.e164_snapshot,p.source_host_carrier_id,"+
-  " p.target_mode,p.target_host_carrier_id,p.planned_cutover_at,p.state,p.created_at,"+
+  " p.target_mode,p.target_host_carrier_id,p.planned_cutover_at,p.revision_no,p.state,p.created_at,"+
   " p.routing_authorized,p.money_transfer_authorized,p.client_terms_review_status,p.notice_review_status"+
   " FROM direct_sva_existing_customer_transition_plans p"+
   " WHERE ($1::bigint IS NULL OR p.tenant_id=$1::bigint) ORDER BY p.id DESC LIMIT 100",[tenant]);
@@ -103,7 +103,7 @@ export async function preparedExistingCustomerTransitions(store,{tenant_id=null}
    plans:rows.map(r=>({id:Number(r.id),tenant_id:Number(r.tenant_id),
     assignment_id:Number(r.assignment_id),sva_number_id:Number(r.sva_number_id),
     number:r.e164_snapshot,source_carrier_id:Number(r.source_host_carrier_id),
-    target_mode:r.target_mode,target_carrier_id:r.target_host_carrier_id==null?null:Number(r.target_host_carrier_id),
+    target_mode:r.target_mode,revision:Number(r.revision_no),target_carrier_id:r.target_host_carrier_id==null?null:Number(r.target_host_carrier_id),
     planned_cutover_at:r.planned_cutover_at||null,state:r.state,prepared_at:r.created_at,
     commercial_cutover_authorized:false,customer_notice_review_pending:true}))});
 }
@@ -149,18 +149,23 @@ export async function prepareExistingCustomerTransition(store,actor,input={}){
     "SELECT id FROM carriers WHERE id=$1 AND enabled=true AND kind='sva_host'",[targetCarrierId]);
    if(!destination)throw fail(409,"DIRECT_SVA_PARTNER_NOT_READY");
   }
+  const [revisionRow]=await tx.unsafe(
+   "SELECT coalesce(max(revision_no),0)::int+1 AS next_revision FROM direct_sva_existing_customer_transition_plans WHERE assignment_id=$1",
+   [assignmentId]);
+  const revision=Number(revisionRow?.next_revision);
+  if(!Number.isSafeInteger(revision)||revision<1)throw fail(503,"DIRECT_SVA_TRANSITION_REVISION_INVALID");
   const [plan]=await tx.unsafe(
    "INSERT INTO direct_sva_existing_customer_transition_plans"+
-   "(tenant_id,assignment_id,sva_number_id,e164_snapshot,source_host_carrier_id,"+
+   "(tenant_id,assignment_id,revision_no,sva_number_id,e164_snapshot,source_host_carrier_id,"+
    " target_mode,target_host_carrier_id,planned_cutover_at,actor_hash,evidence_reference)"+
-   " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,state,created_at",
-   [row.tenant_id,row.id,row.sva_number_id,row.e164,sourceCarrier,
+   " VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id,state,created_at",
+   [row.tenant_id,row.id,revision,row.sva_number_id,row.e164,sourceCarrier,
     targetMode,targetCarrierId,schedule,actor_hash,ref]);
   await tx.unsafe(
    "INSERT INTO direct_sva_existing_customer_transition_audit"+
    "(plan_id,event_type,actor_hash,evidence_reference) VALUES($1,'prepared',$2,$3)",
    [plan.id,actor_hash,ref]);
-  return Object.freeze({id:Number(plan.id),state:"prepared",tenant_id:Number(row.tenant_id),
+  return Object.freeze({id:Number(plan.id),revision,state:"prepared",tenant_id:Number(row.tenant_id),
    assignment_id:Number(row.id),number:row.e164,source_host_carrier_id:sourceCarrier,
    target_mode:targetMode,planned_cutover_at:schedule,
    customer_identity_preserved:true,existing_audiotel_unchanged:true,
