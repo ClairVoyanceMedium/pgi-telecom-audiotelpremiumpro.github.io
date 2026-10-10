@@ -107,7 +107,12 @@ export async function directSvaBusinessSnapshot(store,params={}){
     query.unsafe("SELECT count(*)::int AS count FROM direct_sva_journal_entries WHERE status='draft' AND entry_date>=$1::date AND entry_date<$2::date",[from,to])
   ]);
   const stats=accounting[0]||{},revenue=toNumber(stats.revenue_minor),expenses=toNumber(stats.expenses_minor);
-  const control=controls[0]||{};
+  const control=controls[0];
+  // Never mask database drift by displaying hard-coded disabled flags. A future
+  // migration or a corrupted control row must halt the preview explicitly.
+  if(!control||control.operator_mode!=="preparation"||
+     control.number_activation_enabled!==false||control.payouts_enabled!==false)
+    throw failure(503,"DIRECT_SVA_OPERATOR_CONTROL_DRIFT");
   return {
     schema_version:"pgi-direct-sva-business/1",
     business_unit:"direct_sva",
