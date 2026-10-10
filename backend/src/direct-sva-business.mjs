@@ -34,6 +34,8 @@ export function normalizeDirectSvaJournalDraft(payload={}){
   const entryDate=String(payload.entry_date||"").trim();
   const currency=String(payload.currency||"EUR").trim().toUpperCase();
   if(!/^DSVA-[0-9A-Za-z_.-]{3,190}$/.test(sourceReference))throw failure(400,"DIRECT_SVA_SOURCE_REFERENCE_INVALID");
+  // Financial simulations intentionally use reserved identifiers, never real drafts.
+  if(sourceReference.startsWith("DSVA-PREV-"))throw failure(409,"DIRECT_SVA_PREVIEW_NOT_POSTABLE");
   if(description.length<6||description.length>400)throw failure(400,"DIRECT_SVA_DESCRIPTION_INVALID");
   if(evidenceReference.length<6||evidenceReference.length>240)throw failure(400,"DIRECT_SVA_EVIDENCE_REQUIRED");
   if(currency!=="EUR")throw failure(400,"DIRECT_SVA_CURRENCY_UNSUPPORTED");
