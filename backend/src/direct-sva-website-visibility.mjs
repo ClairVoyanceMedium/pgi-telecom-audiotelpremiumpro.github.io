@@ -1,8 +1,8 @@
 import {createHash} from "node:crypto";
 
-// Visibility of the navigation is NOT visibility to Google.
-// Pages must stay HTTP 200, indexable and listed in the sitemap after a
-// separately approved content publication, even when this switch is OFF.
+// The admin switch performs the owner's first editorial publication on ON.
+// Later OFF hides the homepage link but preserves already indexed URLs
+// (HTTP 200, canonicals and sitemap); telecom and payments remain separate.
 function fail(status,code){
  const e=new Error(code);e.status=status;e.code=code;return e;
 }
@@ -54,20 +54,40 @@ export async function setDirectSvaWebsiteNavigation(store,actor,input={}){
  const actorHash=createHash("sha256").update("pgi-direct-sva-website-navigation:v1:"+actor.sub).digest("hex");
  return store.sql.begin(async tx=>{
   const rows=await tx.unsafe(
-   "SELECT public_content_authorized,navigation_enabled,commercial_calls_to_action_enabled,changed_at FROM direct_sva_website_visibility WHERE id=1 FOR UPDATE");
+   "SELECT public_content_authorized,navigation_enabled,commercial_calls_to_action_enabled,changed_at"+
+   " FROM direct_sva_website_visibility WHERE id=1 FOR UPDATE");
   const before=parse(rows[0]);
   if(before.navigation_preference!==input.expected_enabled)
    throw fail(409,"DIRECT_SVA_NAVIGATION_STATE_CHANGED_REFRESH");
-  if(input.enabled!==input.expected_enabled){
-   await tx.unsafe("UPDATE direct_sva_website_visibility SET navigation_enabled=$1,changed_at=now(),actor_hash=$2 WHERE id=1",
-    [input.enabled,actorHash]);
+  // The owner is allowed to OPEN the informational site using the same switch.
+  // Once published, OFF never removes public pages, canonicals or the sitemap.
+  const firstPublication=input.enabled===true&&!before.publication_authorized;
+  const desiredPublished=before.publication_authorized||firstPublication;
+  if(before.navigation_preference!==input.enabled||firstPublication){
+   await tx.unsafe(
+    "UPDATE direct_sva_website_visibility SET navigation_enabled=$1,"+
+    " public_content_authorized=$2,changed_at=now(),actor_hash=$3 WHERE id=1",
+    [input.enabled,desiredPublished,actorHash]);
   }
-  await tx.unsafe(
-   "INSERT INTO direct_sva_website_visibility_audit (previous_value,requested_value,result,actor_hash,evidence_reference) VALUES($1,$2,$3,$4,$5)",
-   [before.navigation_preference,input.enabled,input.enabled===before.navigation_preference?"unchanged":"applied",actorHash,evidence]);
-  const next=parse({...rows[0],navigation_enabled:input.enabled});
-  return Object.freeze({...next,changed:input.enabled!==before.navigation_preference,
-   seo_indexation_changed:false,commercial_activation_authorized:false,
-   next_step:next.publication_authorized?"navigation_updated":"prelaunch_setting_saved_only"});
+  const audit=[
+   ["navigation_enabled",before.navigation_preference,input.enabled,
+    before.navigation_preference===input.enabled?"unchanged":"applied"]
+  ];
+  if(firstPublication)audit.push(["public_content_authorized",false,true,"applied"]);
+  for(const [name,was,now,result] of audit){
+   await tx.unsafe(
+    "INSERT INTO direct_sva_website_visibility_audit"+
+    "(switch_name,previous_value,requested_value,result,actor_hash,evidence_reference)"+
+    " VALUES($1,$2,$3,$4,$5,$6)",[name,was,now,result,actorHash,evidence]);
+  }
+  const next=parse({...rows[0],navigation_enabled:input.enabled,
+   public_content_authorized:desiredPublished});
+  return Object.freeze({...next,
+   changed:before.navigation_preference!==input.enabled||firstPublication,
+   first_publication: firstPublication,
+   seo_indexation_changed:firstPublication,
+   commercial_activation_authorized:false,
+   next_step:firstPublication?"editorial_content_published":input.enabled?"navigation_visible":"navigation_hidden_seo_preserved"
+  });
  });
 }
