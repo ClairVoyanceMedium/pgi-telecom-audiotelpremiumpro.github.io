@@ -925,7 +925,8 @@ export async function forwardInboundEmailToInternal(config,eventData={},options=
     return "• "+filename+(type?" ("+type+")":"");
   });
   const text=[
-    "Nouveau message reçu pour Audiotel Premium Pro",
+    recipient==="reclamations@"+domain?"Réclamation reçue pour la future distribution SVA de PGI Telecom":
+      "Nouveau message reçu pour Audiotel Premium Pro",
     "",
     "Adresse destinataire : "+recipient,
     "Expéditeur : "+sender,
@@ -949,7 +950,11 @@ export async function forwardInboundEmailToInternal(config,eventData={},options=
     "Audiotel Premium Pro | Une solution PGI Telecom"
   ].filter(v=>v!=="").join("\n");
 
-  const journalOnly=recipient==="support-journal@"+domain;
+  // Route direct SVA complaints into the SAME configured Gmail inbox, but
+  // mark them as a separate business unit. Sender-controlled subject/body is
+  // still untrusted text and cannot authorize a refund, a port or a contract.
+  const directSvaComplaintRecipient=recipient==="reclamations@"+domain;
+    const journalOnly=recipient==="support-journal@"+domain;
   if(journalOnly){
     const result={forwarded:false,journal_only:true,source_email_id:emailId,recipient,dossier_resolved:Boolean(customerRouting?.resolved)};
     Object.defineProperty(result,"routing_context",{value:routingContext,enumerable:false});
@@ -965,12 +970,12 @@ export async function forwardInboundEmailToInternal(config,eventData={},options=
     from:(config.transactionalFromName||"Audiotel Premium Pro")+" <support@"+domain+">",
     to:[internal],
     ...(senderEmail?{reply_to:senderEmail}:{}),
-    subject:"Message reçu sur "+recipient+" | "+subject,
+    subject:(directSvaComplaintRecipient?"Réclamation PGI Telecom Distribution SVA | ":"Message reçu sur "+recipient+" | ")+subject,
     text:text.slice(0,28000),
     ...(Object.keys(headers).length?{headers}:{}),
     ...(forwardAttachments.length?{attachments:forwardAttachments}:{}),
     tags:[
-      {name:"category",value:"inbound_forward"},
+      {name:"category",value:directSvaComplaintRecipient?"dsva_complaint":"inbound_forward"},
       {name:"recipient",value:safeTag(recipient.split("@")[0]||"inbound")}
     ]
   };
@@ -991,7 +996,10 @@ export async function forwardInboundEmailToInternal(config,eventData={},options=
     });
     const sent=await sendResponse.json().catch(()=>({}));
     if(!sendResponse.ok)throw providerError("RESEND_INBOUND_FORWARD_FAILED",sendResponse.status,safeProviderCode(sent));
-    const result={forwarded:true,message_id:String(sent.id||"")||null,source_email_id:emailId,recipient,dossier_resolved:Boolean(customerRouting?.resolved)};
+    const result={forwarded:true,message_id:String(sent.id||"")||null,source_email_id:emailId,recipient,
+      business_unit:directSvaComplaintRecipient?"direct_sva":"audiotel_platform",
+      complaint_routing:directSvaComplaintRecipient,
+      dossier_resolved:Boolean(customerRouting?.resolved)};
     Object.defineProperty(result,"routing_context",{value:routingContext,enumerable:false});
     Object.defineProperty(result,"customer_routing",{value:customerRouting,enumerable:false});
     Object.defineProperty(result,"routing_error",{value:routingError,enumerable:false});
