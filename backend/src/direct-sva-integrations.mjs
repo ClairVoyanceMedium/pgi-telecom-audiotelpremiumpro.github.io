@@ -23,7 +23,7 @@ export const PGI_BUSINESS_UNITS=Object.freeze({
 
 export const DIRECT_SVA_INTEGRATIONS=Object.freeze([
  Object.freeze({key:"google_analytics",label:"Google Analytics 4",target:"dedicated_direct_sva_property_not_created",requires:["separate_business_unit_parameter","custom_dimension_registration","consent_audit","conversion_deduplication"]}),
- Object.freeze({key:"google_search_console",label:"Google Search Console",target:"existing_domain_property_with_distinct_paths",requires:["dedicated_public_pages","sitemap_segment","indexability_review","verified_ownership"]}),
+ Object.freeze({key:"google_search_console",label:"Google Search Console",target:"dedicated_directory_property_registered_but_site_not_published",requires:["dedicated_public_pages","sitemap_segment","indexability_review","verified_ownership"]}),
  Object.freeze({key:"hubspot",label:"HubSpot",target:"same_portal_distinct_pipeline_and_properties",requires:["business_unit_property","dedicated_deal_pipeline","dedicated_forms","contact_deduplication","consent_compliance"]}),
  Object.freeze({key:"accounting",label:"Comptabilite legale",target:"single_company_ledger_with_separate_cost_centers",requires:["expert_accountant_account_mapping","single_fec_export","source_reconciliation","tax_review"]}),
  Object.freeze({key:"sva_network",label:"Interconnexion et numerotation",target:"direct_operator_only_when_authorized",requires:["arcep_attribution","apnf_rsva","carrier_contract","cdr_reconciliation"]}),
@@ -64,7 +64,8 @@ export const DIRECT_SVA_SEARCH_STRUCTURE=Object.freeze({
  sitemap_submitted:false,
  indexation_requested:false,
  current_audiotel_paths_unchanged:true,
- site_property:"sc-domain:audiotel-premium-pro.com"
+ site_property:"https://audiotel-premium-pro.com/distribution-sva/",
+ parent_domain_property:"sc-domain:audiotel-premium-pro.com"
 });
 
 const SAFE_TYPES=new Set(["numero_sva","portabilite","interconnexion","distribution"]);
