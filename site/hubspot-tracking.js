@@ -55,7 +55,7 @@ const VALUES=Object.freeze({
   scroll_percent:new Set(["25","50","75","90"])
 });
 const ALIASES=Object.freeze({service_intent:Object.freeze({advice:"commercial_information"})});
-const path=location.pathname||"/",privatePage=PRIVATE_RE.test(path),publicPage=!privatePage&&!CLIENT_RE.test(path)&&!AMBASSADOR_RE.test(path);
+const path=location.pathname||"/",directDistributionPage=/^\/distribution-sva(?:\/|$)/i.test(path),privatePage=PRIVATE_RE.test(path),publicPage=!privatePage&&!directDistributionPage&&!CLIENT_RE.test(path)&&!AMBASSADOR_RE.test(path);
 function contentGroup(pathname=location.pathname){
   const p=String(pathname||"/").toLowerCase();
   if(p==="/")return "Accueil";
@@ -132,7 +132,7 @@ function analyticsPageLocation(){
   return location.origin+location.pathname+(query?"?"+query:"");
 }
 function loadGa4(){
-  if(privatePage||window.__pgiGa4Configured)return;
+  if(privatePage||directDistributionPage||window.__pgiGa4Configured)return;
   window.__pgiGa4Configured=true;
   const s=document.createElement("script");s.id=GA_SCRIPT_ID;s.async=true;s.src="https://www.googletagmanager.com/gtag/js?id="+encodeURIComponent(MEASUREMENT_ID);
   (document.head||document.documentElement).appendChild(s);
@@ -217,9 +217,9 @@ function clean(name,params){
   }
   return out;
 }
-function send(name,params){window.gtag("event",name,params)}
+function send(name,params){window.gtag("event",name,{...params,pgi_business_unit:"audiotel_platform"})}
 function track(name,params={}){
-  if(privatePage)return false;
+  if(privatePage||directDistributionPage)return false;
   const withContext=["generate_lead","sign_up","qualify_lead","working_lead","close_convert_lead","email_verification_required"].includes(name)?{...leadContext(),...params}:params;
   const safe=clean(name,withContext);if(!safe)return false;
   const choice=read();
@@ -508,6 +508,7 @@ function bindCurrentPeriodMarketingBadge(){
   });
 }
 function boot(){
+  if(directDistributionPage)return;
   bindCurrentPeriodMarketingBadge();
   bindReferralAvailability();
   bindReferralLanding();
