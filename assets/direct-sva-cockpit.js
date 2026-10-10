@@ -118,11 +118,11 @@ function attach(){
  host.querySelectorAll("[data-ds-tab]").forEach(btn=>btn.addEventListener("click",()=>{tab=btn.dataset.dsTab;show();}));
  host.querySelector("[data-ds-export]")?.addEventListener("click",exportCsv);
  host.querySelector("[data-ds-print]")?.addEventListener("click",()=>window.print());
- host.querySelector("[data-ds-add-line]")?.addEventListener("click",()=>{if(numberOfLines>=50){message="Limite de 50 lignes atteinte.";severity="ds-alert";show();return;}numberOfLines++;show();});
+ host.querySelector("[data-ds-add-line]")?.addEventListener("click",()=>{if(numberOfLines>=50){message="Limite de 50 lignes atteinte.";severity="ds-alert";return;}numberOfLines++;host.querySelector(".ds-lines")?.insertAdjacentHTML("beforeend",entryLine(numberOfLines));});
  host.querySelector("[data-ds-form]")?.addEventListener("submit",async event=>{
   event.preventDefault();if(busy)return;
-  busy=true;message="Enregistrement du brouillon...";severity="";show();
-  try{await createDraft(event.target);numberOfLines=2;message="Brouillon enregistré dans le seul journal distributeur direct.";severity="ds-ok";await load();}
+  busy=true;const submission=createDraft(event.currentTarget);message="Enregistrement du brouillon...";severity="";
+  try{await submission;numberOfLines=2;message="Brouillon enregistré dans le seul journal distributeur direct.";severity="ds-ok";busy=false;await load();}
   catch(error){message="Écriture non enregistrée : "+String(error.message||"erreur");severity="ds-alert";show();}
   finally{busy=false;}
  });
