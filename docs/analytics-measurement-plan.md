@@ -237,3 +237,13 @@ Dimensions personnalisées de portée événement à enregistrer dans GA4 pour e
 - `error_type`
 
 Ces définitions complètent les dimensions déjà prévues et ne remplacent aucune dimension native GA4.
+
+## Future activite : distribution directe SVA
+
+La distribution directe restera une activite distincte dans la meme societe. Elle disposera d'une propriete GA4 dediee et d'un espace Search Console par chemin /distribution-sva/, sans dupliquer les evenements de l'activite Audiotel. Les couts et revenus resteront relies au meme profil juridique et a une comptabilite legale unique.
+
+La propriete GA4 actuelle G-SZY50J75N7 reste reservee a Audiotel Premium Pro. La couche navigateur site/hubspot-tracking.js marque ses evenements `pgi_business_unit=audiotel_platform` et exclut les futures pages /distribution-sva/. Le module de distribution site/direct-sva-tracking.js n'est importe par aucune page actuelle, conserve le mode desactive par defaut et refusera toute reutilisation de la propriete GA4 Audiotel.
+
+Avant lancement, creer et valider la nouvelle propriete GA4, enregistrer `pgi_business_unit`, `pgi_funnel_stage` et `pgi_service_type` dans cette propriete, creer des rapports propres, puis valider le consentement et l'absence de doublons. Ne pas activer l'envoi avant les tests et l'accord explicite.
+
+Consulter docs/OPERATEUR-SVA-DIRECT-INTEGRATIONS.md pour le plan de separation HubSpot, Search Console, GA4 et les controles d'activation.
