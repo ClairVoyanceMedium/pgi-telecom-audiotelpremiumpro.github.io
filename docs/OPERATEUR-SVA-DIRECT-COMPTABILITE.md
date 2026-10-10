@@ -93,3 +93,16 @@ Les donnees personnelles de l'appelant ne sont pas necessaires a cette analyse. 
 7. Brancher les adaptateurs de collecte de facon isolee en recette.
 8. Tester des scenarios reels d'appel, correction, fraude, divergence, coupure et retour arriere.
 9. Ne mettre en production qu'apres preuves, validation juridique et ton top depart.
+
+
+## Renforcement des controles du 10 octobre 2026
+
+La migration 073 a ete reparee avant tout essai sur une base de donnees : une definition SQL dupliquee et une expression reguliere E164 incomplete ont ete supprimees. Le nouveau test de migration tests/direct-sva-migration-integrity.test.mjs interdit notamment la duplication de definitions et la perte des verrous de preparation.
+
+Le sous-journal dispose d'un endpoint admin GET /api/v1/platform/direct-sva/accounting/export?month=AAAA-MM qui retourne toutes les lignes du mois, et pas seulement les 100 derniers enregistrements affiches. L'export borne a 20 000 lignes echoue si le plafond est depasse, au lieu de tronquer les donnees. L'interface fournit un CSV avec neutralisation des formules de tableur et la mention NON-FEC. Les lignes sont verifiees pour assurer debit = credit.
+
+Les mois et dates proposes dans le cockpit sont determines dans le fuseau Europe/Paris, afin d'eviter les erreurs aux limites de mois en heure UTC.
+
+Verification documentaire en lecture seule sur la base Neon existante : la fiche legale du profil comptable commun n'a pas de denomination renseignee, pas de SIREN confirme, un regime TVA unconfigured, aucun mapping des comptes et fec_enabled=false. Aucun parametre n'a ete invente ni modifie. Un diagnostic binaire et non sensible est ajoute a l'onglet Integrations, sous shared_legal_accounting.
+
+L'API et l'interface de distribution directe restent bloquees par defaut. Ce renforcement n'autorise ni decaissement de fonds, ni activation de numero, ni FEC. Les migrations 073 a 075 restent non appliquees en production.
