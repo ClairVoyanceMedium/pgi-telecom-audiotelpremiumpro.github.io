@@ -154,11 +154,40 @@ const INTEGRATION_TO_DB=Object.freeze({
  accounting:"statutory_accounting",sva_network:"network",payments:"payment_psp"
 });
 
+export function assessPgiLegalAccountingProfile(profile){
+ const record=profile&&typeof profile==="object"?profile:{};
+ const legalName=typeof record.legal_name==="string"&&record.legal_name.trim().length>=2;
+ const siren=typeof record.siren==="string"&&/^[0-9]{9}$/.test(record.siren.trim());
+ const regime=String(record.vat_regime||"unconfigured");
+ const vatRegime=["normal","simplified","franchise","exempt"].includes(regime);
+ const vatRate=["normal","simplified"].includes(regime)
+  ? Number.isInteger(record.vat_rate_bps)&&record.vat_rate_bps>=0&&record.vat_rate_bps<=10000:true;
+ const mapping=record.account_map&&typeof record.account_map==="object"&&!Array.isArray(record.account_map)&&
+  Object.keys(record.account_map).length>0;
+ const checklist=[
+  {key:"legal_name",ok:legalName,label:"Dénomination juridique"},
+  {key:"siren",ok:siren,label:"SIREN de la société"},
+  {key:"vat_regime",ok:vatRegime,label:"Régime fiscal et TVA"},
+  {key:"vat_rate",ok:vatRate,label:"Taux TVA adapté au régime"},
+  {key:"account_mapping",ok:Boolean(mapping),label:"Affectation des comptes comptables"}
+ ];
+ return Object.freeze({
+  single_legal_accounting_profile:true,
+  legal_profile_criteria:checklist,
+  legal_profile_ready_for_expert_review:checklist.every(c=>c.ok),
+  fec_active:record.fec_enabled===true,
+  direct_sva_included_in_fec:false,
+  legal_fec_operational:false,
+  note:"Le FEC unique n'est possible qu'après le rapprochement du journal distributeur et une validation comptable et fiscale."
+ });
+}
+
 export async function directSvaIntegrationOverview(store){
  if(!store?.readSql?.unsafe)throw Object.assign(new Error("DIRECT_SVA_POSTGRES_REQUIRED"),{status:503,code:"DIRECT_SVA_POSTGRES_REQUIRED"});
- const [units,checks]=await Promise.all([
+ const [units,checks,legalProfiles]=await Promise.all([
   store.readSql.unsafe("SELECT unit_code,legal_accounting_profile_id,analytics_namespace,cost_center,display_name,lifecycle_status,separate_legal_fec FROM pgi_company_business_units ORDER BY unit_code"),
-  store.readSql.unsafe("SELECT integration_key,readiness_status,activation_status,can_send_data,evidence_reference,last_review_at FROM direct_sva_integration_readiness ORDER BY integration_key")
+  store.readSql.unsafe("SELECT integration_key,readiness_status,activation_status,can_send_data,evidence_reference,last_review_at FROM direct_sva_integration_readiness ORDER BY integration_key"),
+  store.readSql.unsafe("SELECT legal_name,siren,vat_regime,vat_rate_bps,account_map,fec_enabled FROM platform_accounting_settings WHERE id=1")
  ]);
  if(units.length!==2||!units.every(x=>Number(x.legal_accounting_profile_id)===1&&x.separate_legal_fec===false))throw Object.assign(new Error("DIRECT_SVA_ENTITY_STRUCTURE_INVALID"),{status:503,code:"DIRECT_SVA_ENTITY_STRUCTURE_INVALID"});
  const ledger=Object.fromEntries(checks.map(x=>[x.integration_key,x]));
@@ -176,6 +205,7 @@ export async function directSvaIntegrationOverview(store){
    };
   }),
   all_direct_integrations_disabled:checks.every(x=>x.activation_status==="disabled"&&x.can_send_data===false),
+  shared_legal_accounting:assessPgiLegalAccountingProfile(legalProfiles[0]),
   legal_fec_separated:false
  });
 }
