@@ -90,3 +90,15 @@ test("existing Audiotel billing webhook screens Distribution only AFTER verifyin
  assert.ok(normalizer>screened);
  assert.match(handler,/distribution_uses_separate_financial_pipeline/);
 });
+
+test("Distribution Stripe product appears in its own cockpit without authorizing activity",()=>{
+ const overview=fs.readFileSync("backend/src/direct-sva-integrations.mjs","utf8");
+ const cockpit=fs.readFileSync("assets/direct-sva-cockpit.js","utf8");
+ assert.match(overview,/stripe_catalog:Object\.freeze/);
+ assert.match(overview,/distribution_checkout_authorized:false/);
+ assert.match(overview,/distribution_webhook_activated:false/);
+ assert.match(overview,/payouts_authorized:false/);
+ assert.match(cockpit,/Stripe \| PGI Telecom Distribution/);
+ assert.match(cockpit,/Dernière vérification externe/);
+ assert.match(cockpit,/État observé lors du contrôle/);
+});
