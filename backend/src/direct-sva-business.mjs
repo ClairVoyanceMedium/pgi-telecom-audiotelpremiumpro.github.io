@@ -107,6 +107,8 @@ export async function directSvaBusinessSnapshot(store,params={}){
     query.unsafe("SELECT count(*)::int AS count FROM direct_sva_journal_entries WHERE status='draft' AND entry_date>=$1::date AND entry_date<$2::date",[from,to])
   ]);
   const stats=accounting[0]||{},revenue=toNumber(stats.revenue_minor),expenses=toNumber(stats.expenses_minor);
+  const operatingResult=revenue-expenses;
+  if(!Number.isSafeInteger(operatingResult))throw failure(503,"DIRECT_SVA_AMOUNT_OUT_OF_RANGE");
   const control=controls[0];
   // Never mask database drift by displaying hard-coded disabled flags. A future
   // migration or a corrupted control row must halt the preview explicitly.
@@ -129,7 +131,7 @@ export async function directSvaBusinessSnapshot(store,params={}){
     interconnections:interconnections.map(row=>({status:row.contract_status,count:Number(row.count)})),
     accounting:{
       posted_entries:Number(stats.posted_entries||0),draft_entries:Number(historyCount[0]?.count||0),
-      revenue_minor:revenue,expenses_minor:expenses,operating_result_minor:revenue-expenses,
+      revenue_minor:revenue,expenses_minor:expenses,operating_result_minor:operatingResult,
       receivables_change_minor:toNumber(stats.receivables_change_minor),
       publisher_liabilities_change_minor:toNumber(stats.publisher_liabilities_change_minor),
       suspense_change_minor:toNumber(stats.suspense_change_minor),
