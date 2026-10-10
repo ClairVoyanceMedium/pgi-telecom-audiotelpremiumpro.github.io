@@ -111,7 +111,11 @@ export function assertDirectSvaCockpitPayload(value,kind="overview"){
      !Array.isArray(value.units)||value.units.length!==2||
      !value.units.some(u=>u.code==="direct_sva"&&u.label==="PGI Telecom Distribution")||
      !value.units.some(u=>u.code==="audiotel_platform"&&u.label==="Audiotel Premium Pro")||
-     value.checks.some(c=>c.data_sending_enabled!==false))invalid();
+     value.checks.some(c=>c.data_sending_enabled!==false)||
+     (value.stripe_catalog&&(
+      value.stripe_catalog.distribution_checkout_authorized!==false||
+      value.stripe_catalog.payouts_authorized!==false||
+      value.stripe_catalog.distribution_webhook_activated!==false)))invalid();
  }else if(kind==="automation"){
   if(value.business_unit!=="direct_sva"||value.mode!=="preparation"||
      value.external_execution_enabled!==false||value.transfers_enabled!==false||
@@ -256,7 +260,16 @@ function showFinancialCycle(result){
 function integrationView(){
  const title='<section class="ds-panel"><h3>Connexions futures, sans partage des chiffres</h3><p class="ds-note">Une société, deux centres de profit et des flux commerciaux distincts. La propriété GA4 dédiée à la distribution directe, l’espace Search Console de sous-répertoire et le pipeline HubSpot dédié restent à créer ou à valider avant tout lancement. Aucune synchronisation n’est activée ici.</p></section>';
  if(!integrations)return title+'<section class="ds-panel"><p class="ds-note">Registre technique non consulté. Aucun branchement direct présumé prêt.</p><button class="ds-button" type="button" data-ds-integrations-refresh>Contrôler les connexions préparées</button></section>';
- return title+'<section class="ds-panel"><h3>Entreprise et centres analytiques</h3><div class="ds-list">'+
+ const stripe=integrations.stripe_catalog;
+ return title+'<section class="ds-panel"><h3>Stripe | PGI Telecom Distribution</h3>'+
+ (stripe?.live_stripe_product_created===true?
+  '<p><strong>Produit créé :</strong> '+esc(stripe.label)+'</p>'+
+  '<p><strong>Référence Stripe :</strong> <code>'+esc(stripe.stripe_product_id)+'</code></p>'+
+  '<p class="ds-note">Dernière vérification externe : '+esc(stripe.last_stripe_read)+
+  '. Produit inactif, aucun tarif propre à Distribution, aucun encaissement ni webhook dédié en service. État observé lors du contrôle, et non synchronisé en temps réel.</p>':
+  '<p class="ds-note">Aucun produit Stripe Distribution vérifié.</p>')+
+ '<div class="ds-warning">Les produits et abonnements Audiotel Premium Pro restent distincts. La création du catalogue Distribution ne déclenche aucun paiement.</div></section>'+
+ '<section class="ds-panel"><h3>Entreprise et centres analytiques</h3><div class="ds-list">'+
  (integrations.units||[]).map(u=>'<div><strong>'+esc(u.label)+'</strong> | centre '+esc(u.analytic_cost_center)+' | profil légal commun '+esc(u.shared_accounting_profile_id)+' | '+esc(u.lifecycle)+'</div>').join("")+
  '</div><p class="ds-note">Un seul FEC légal pour la société, avec ventilation analytique et aucune double comptabilisation.</p></section>'+
  '<section class="ds-panel"><h3>Préparation de la comptabilité légale commune</h3><div class="ds-list">'+
