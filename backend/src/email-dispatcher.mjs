@@ -104,7 +104,20 @@ export async function applyResendWebhookEvent(store,verified){
       " ON CONFLICT(svix_id) DO NOTHING RETURNING svix_id",
       [svixId,type,emailId,payloadSha256,occurredAt]
     );
-    if(!inserted.length)return {duplicate:true};
+    if(!inserted.length){
+      // A verified inbound message must be retried if forwarding failed after
+      // the receipt was committed. Only an explicitly completed forward can
+      // make email.received a terminal duplicate.
+      const [existing]=await tx.unsafe(
+        "SELECT event_type,provider_email_id,payload_sha256,processed_at"+
+        " FROM transactional_email_webhook_events WHERE svix_id=$1::text FOR UPDATE",[svixId]);
+      if(!existing||existing.event_type!==type||existing.provider_email_id!==emailId||
+         String(existing.payload_sha256||"").trim()!==payloadSha256)
+        throw failure(409,"RESEND_WEBHOOK_RECEIPT_CONFLICT");
+      if(type==="email.received"&&!existing.processed_at)
+        return {duplicate:false,resumed:true,email_id:emailId,event_type:type};
+      return {duplicate:true};
+    }
     const state=webhookState(type);
     const timestampColumn=webhookTimestampColumn(type);
     if(timestampColumn){
@@ -130,7 +143,10 @@ export async function applyResendWebhookEvent(store,verified){
         [emailHash(recipient),reason,emailId,occurredAt]
       );
     }
-    await tx.unsafe("UPDATE transactional_email_webhook_events SET processed_at=now() WHERE svix_id=$1::text",[svixId]);
+    // Inbound is acknowledged only after a successful Gmail forward by the
+    // webhook HTTP handler. This enables safe retry on forwarding failures.
+    if(type!=="email.received")
+      await tx.unsafe("UPDATE transactional_email_webhook_events SET processed_at=now() WHERE svix_id=$1::text",[svixId]);
     return {duplicate:false,email_id:emailId,event_type:type,state,suppressed:Boolean(recipient&&(permanentBounce||type==="email.complained"||type==="email.suppressed"))};
   });
 }
@@ -291,3 +307,18 @@ function jsonObject(value){
 }
 function validEmail(value){return EMAIL_RE.test(String(value||"").trim())&&String(value||"").trim().length<=320;}
 function failure(status,code){const e=new Error(code);e.status=status;e.code=code;e.expose=true;return e;}
+
+export async function acknowledgeResendInboundForward(store,verified){
+ if(!store?.sql?.unsafe)throw failure(503,"EMAIL_DELIVERY_STORE_UNAVAILABLE");
+ const svixId=String(verified?.svixId||"");
+ const emailId=String(verified?.event?.data?.email_id||verified?.event?.data?.id||"");
+ const payloadSha256=String(verified?.payloadSha256||"").trim();
+ if(!svixId||!emailId||!payloadSha256)throw failure(400,"RESEND_INBOUND_RECEIPT_INVALID");
+ const rows=await store.sql.unsafe(
+  "UPDATE transactional_email_webhook_events SET processed_at=COALESCE(processed_at,now())"+
+  " WHERE svix_id=$1::text AND event_type='email.received' AND provider_email_id=$2::text"+
+  " AND payload_sha256=$3::char(64) RETURNING svix_id,processed_at",
+  [svixId,emailId,payloadSha256]);
+ if(rows.length!==1)throw failure(409,"RESEND_INBOUND_RECEIPT_NOT_FOUND");
+ return {acknowledged:true};
+}
