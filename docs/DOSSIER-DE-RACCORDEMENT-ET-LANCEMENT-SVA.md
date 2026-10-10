@@ -60,7 +60,7 @@ Une migration réseau effectuée ne s'annule pas par une simple contre-migration
 
 **Google Analytics 4** : propriété spécifique, dimensions autorisées et approuvées, consentement valide, événements contractuellement nommés, déduplication des conversions. Ne pas envoyer e-mail, téléphone, numéro SVA, identifiant client, référence de dossier, RIO ou CDR. Le trafic Audiotel existant doit rester attribué à sa propriété historique.
 
-**Search Console** : le domaine parent reste valide ; préparer une propriété URL-prefix pour `/distribution-sva/` si utile aux rapports, des canonicals et un sitemap isolés, puis ne demander l'indexation qu'après levée des barrières commerciales et publication effective. Ne jamais exposer le portail client aux robots.
+**Search Console** : la propriété domaine reste la référence ; une propriété URL-prefix `/distribution-sva/` a été créée et enregistrée en préparation, sans activation dans GSC Wizard. Aucun sitemap ni aucune demande d'indexation ne doit être envoyé avant la publication autorisée. Ne jamais exposer le portail client aux robots.
 
 ## 6. Paiements, comptabilité et protection de la trésorerie
 
