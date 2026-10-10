@@ -131,7 +131,7 @@ function show(){
  if(!host||!data)return;
  host.innerHTML='<div class="ds"><div class="ds-header"><div><p class="panel-kicker">ACTIVITÉ DISTINCTE | PGI TELECOM</p><h2>Distribution SVA directe</h2><p class="ds-desc">Pilotage opérateur et comptabilité isolés de la plateforme Audiotel actuelle.</p></div><label class="ds-desc">Mois comptable <input type="month" class="ds-input" data-ds-month value="'+esc(month)+'"></label></div>'+banner()+
  '<div class="ds-tabs" role="tablist" aria-label="Rubriques distributeur direct">'+
- [["overview","Vue générale"],["numbers","Numérotation"],["accounting","Comptabilité directe"],["reconciliation","Rapprochement"],["integrations","Intégrations"],["automation","Automatisations"],["compliance","Conformité"]].map(([key,label])=>'<button type="button" role="tab" class="ds-tab" data-ds-tab="'+key+'" aria-selected="'+(key===tab)+'">'+label+'</button>').join("")+'</div>'+
+ [["overview","Vue générale"],["numbers","Numérotation"],["accounting","Comptabilité directe"],["reconciliation","Rapprochement"],["integrations","Intégrations"],["automation","Automatisations"],["transitions","Changer de distributeur"],["compliance","Conformité"]].map(([key,label])=>'<button type="button" role="tab" class="ds-tab" data-ds-tab="'+key+'" aria-selected="'+(key===tab)+'">'+label+'</button>').join("")+'</div>'+
  '<div class="ds-status '+esc(severity)+'" aria-live="polite">'+esc(message)+'</div>'+
  (tab==="overview"?overview():tab==="numbers"?numbers():tab==="accounting"?journals():tab==="reconciliation"?reconciliation():tab==="integrations"?integrationView():tab==="automation"?automationView():compliance())+
  '</div>';
