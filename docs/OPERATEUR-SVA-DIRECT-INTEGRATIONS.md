@@ -1,4 +1,4 @@
-# PGI Telecom : preparation des integrations du futur distributeur SVA direct
+# PGI Telecom Distribution : préparation des intégrations de la future activité
 
 Etat : code sur branche GitHub uniquement ; Neon isolee et preparation GSC sans deploiement, 10 octobre 2026.
 Les integrations directes restent non activees. Une base Neon isolee et une propriete GSC de prefixe ont depuis ete preparees, sans modifier la base de production, HubSpot, GA4 ni publier le site.
@@ -7,7 +7,7 @@ Les integrations directes restent non activees. Une base Neon isolee et une prop
 
 La personne morale de PGI Telecom exploite successivement ou parallelement :
 - Audiotel Premium Pro : activite actuelle avec son systeme de services et ses partenaires.
-- Distribution SVA directe : activite future, possiblement avec ses propres ressources de numerotation Arcep.
+- PGI Telecom Distribution : activité future distincte, possiblement avec ses propres ressources de numérotation Arcep.
 
 Les deux centres analytiques sont APP et DSVA. Le profil de comptabilite legale est UNIQUE et renvoie au parametrage platform_accounting_settings(id=1).
 
@@ -117,7 +117,7 @@ Le module backend/src/direct-sva-integrations.mjs sait preparer un modele de dea
 
 Le cockpit Comptabilite offre deux onglets :
 - Activite Audiotel : logique existante, inchangée.
-- Activite Distribution directe : module charge au clic, utilise seulement les tables direct_sva_*. Il comporte une vue integrateur read-only des statuts futurs.
+- Activité PGI Telecom Distribution : module chargé au clic, utilise seulement les tables direct_sva_*. Il comporte une vue intégrateur en lecture seule des statuts futurs.
 
 Le rapport de distributeur affiche produits, charges, resultat provisoire, creances operateurs, dettes editeurs, brouillons et historique. Le pre-rapprochement des releves CDR reste sans ecriture ni paiement.
 
