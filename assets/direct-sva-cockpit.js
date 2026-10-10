@@ -126,7 +126,7 @@ function complaintView(){
  return intro+'<div class="ds-cards">'+
  kpi("Dossiers préparatoires",complaints.prepared_cases==null?"Non installé":integer(complaints.prepared_cases),"Aucune réclamation commerciale reçue")+
  kpi("Actions en attente",complaints.pending_external_automations==null?"Non installé":integer(complaints.pending_external_automations),"Exécutions externes non autorisées")+
- kpi("Gmail direct",complaints.gmail_delivery_active?"Actif":"Bloqué","Raccordement et recette nécessaires")+
+ kpi("Formulaire vers Gmail",complaints.gmail_delivery_active?"Actif":"En préparation","Raccordement et recette nécessaires")+
  kpi("HubSpot direct",complaints.hubspot_delivery_active?"Actif":"Bloqué","Pipeline indépendant obligatoire")+'</div>'+
  '<section class="ds-panel"><h3>Répartition des dossiers</h3><div class="ds-list">'+
  (rows.length?rows.map(r=>'<div>'+esc(r.category)+' | '+esc(r.priority)+' : '+integer(r.count)+'</div>').join(""):'<div>Aucun dossier enregistré ou migration non appliquée.</div>')+
