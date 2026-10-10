@@ -30,7 +30,7 @@ function cards(){const a=data.accounting;return '<div class="ds-cards">'+
  kpi("Résultat comptable provisoire",money(a.operating_result_minor),"Hors éléments non comptabilisés et impôts")+
  kpi("Écritures en attente",integer(a.draft_entries),"Validation à deux personnes obligatoire")+
  '</div>';}
-function banner(){return '<div class="ds-warning"><strong>Distribution directe en préparation.</strong> Aucun bloc Arcep attribué à PGI n’est présumé actif, aucun acheminement direct n’est activé et aucun reversement ne peut être déclenché depuis ce cockpit. La comptabilité ci-dessous est un sous-journal distinct et non un FEC certifié.</div>';}
+function banner(){return '<div class="ds-warning"><strong>PGI Telecom Distribution en préparation.</strong> Aucun bloc Arcep attribué à PGI n’est présumé actif, aucun acheminement direct n’est activé et aucun reversement ne peut être déclenché depuis ce cockpit. La comptabilité ci-dessous est un sous-journal distinct et non un FEC certifié.</div>';}
 function overview(){
   const blocks=(data.number_blocks||[]).reduce((n,x)=>n+x.count,0),nums=(data.number_inventory||[]).reduce((n,x)=>n+x.count,0),links=(data.interconnections||[]).reduce((n,x)=>n+x.count,0);
   return '<div class="ds-cards">'+
@@ -120,7 +120,7 @@ async function refreshAutomations(){
 function complaintView(){
  const intro='<section class="ds-panel"><h3>Réclamations et boîte Gmail</h3>'+
  '<p class="ds-note">La future adresse de réclamation sera acheminée via Resend vers la boîte Gmail interne configurée. Les messages seront classés séparément des tickets Audiotel. Aucune décision financière, juridique ou de portabilité ne sera exécutée depuis un e-mail.</p>'+
- '<div class="ds-warning">Distribution directe non commercialisée : le formulaire public et les transmissions CRM restent bloqués jusqu’au lancement réglementaire et à la recette e-mail.</div></section>';
+ '<div class="ds-warning">PGI Telecom Distribution non commercialisée : le formulaire public et les transmissions CRM restent bloqués jusqu’au lancement réglementaire et à la recette e-mail.</div></section>';
  if(!complaints)return intro+'<section class="ds-panel"><p class="ds-note">Diagnostic du registre de réclamations non chargé.</p><button class="ds-button" data-ds-complaints-refresh type="button">Contrôler les réclamations</button></section>';
  const rows=complaints.categories||[];
  return intro+'<div class="ds-cards">'+
@@ -146,11 +146,11 @@ function compliance(){return '<div class="ds-grid"><section class="ds-panel"><h3
  "Contrats et mandat financier approprié pour les fonds de tiers",
  "Comptabilité, contrôle interne et audit de lancement"
  ].map(s=>'<div><span class="ds-alert">À documenter : </span>'+esc(s)+'</div>').join("")+'</div></section>'+
- '<section class="ds-panel"><h3>Contrôle du cloisonnement</h3><div class="ds-list"><div>Activité courante : <strong>Audiotel Premium Pro</strong></div><div>Nouvelle activité : <strong>Distributeur SVA direct</strong></div><div>Tables financières : <strong>direct_sva_*</strong></div><div>Écritures historiques Audiotel : <strong>inchangées</strong></div><div>Publication et activation : <strong class="ds-alert">Aucune</strong></div></div></section></div>';}
+ '<section class="ds-panel"><h3>Contrôle du cloisonnement</h3><div class="ds-list"><div>Activité courante : <strong>Audiotel Premium Pro</strong></div><div>Nouvelle activité : <strong>PGI Telecom Distribution</strong></div><div>Tables financières : <strong>direct_sva_*</strong></div><div>Écritures historiques Audiotel : <strong>inchangées</strong></div><div>Publication et activation : <strong class="ds-alert">Aucune</strong></div></div></section></div>';}
 function show(){
  if(!host||!data)return;
- host.innerHTML='<div class="ds"><div class="ds-header"><div><p class="panel-kicker">ACTIVITÉ DISTINCTE | PGI TELECOM</p><h2>Distribution SVA directe</h2><p class="ds-desc">Pilotage opérateur et comptabilité isolés de la plateforme Audiotel actuelle.</p></div><label class="ds-desc">Mois comptable <input type="month" class="ds-input" data-ds-month value="'+esc(month)+'"></label></div>'+banner()+
- '<div class="ds-tabs" role="tablist" aria-label="Rubriques distributeur direct">'+
+ host.innerHTML='<div class="ds"><div class="ds-header"><div><p class="panel-kicker">ACTIVITÉ DISTINCTE | PGI TELECOM</p><h2>PGI Telecom Distribution</h2><p class="ds-desc">Pilotage opérateur et comptabilité isolés de la plateforme Audiotel actuelle.</p></div><label class="ds-desc">Mois comptable <input type="month" class="ds-input" data-ds-month value="'+esc(month)+'"></label></div>'+banner()+
+ '<div class="ds-tabs" role="tablist" aria-label="Rubriques PGI Telecom Distribution">'+
  [["overview","Vue générale"],["numbers","Numérotation"],["accounting","Comptabilité directe"],["reconciliation","Rapprochement"],["integrations","Intégrations"],["automation","Automatisations"],["complaints","Réclamations"],["transitions","Changer de distributeur"],["compliance","Conformité"]].map(([key,label])=>'<button type="button" role="tab" class="ds-tab" data-ds-tab="'+key+'" aria-selected="'+(key===tab)+'">'+label+'</button>').join("")+'</div>'+
  '<div class="ds-status '+esc(severity)+'" aria-live="polite">'+esc(message)+'</div>'+
  (tab==="overview"?overview():tab==="numbers"?numbers():tab==="accounting"?journals():tab==="reconciliation"?reconciliation():tab==="integrations"?integrationView():tab==="automation"?automationView()+'<div data-ds-automation-lab-root></div>':tab==="complaints"?complaintView():tab==="transitions"?'<section class="ds-panel"><div data-ds-transitions-root></div></section>':compliance())+
@@ -206,7 +206,7 @@ async function exportCsv(){
   const csv="\ufeff"+rows.map(row=>row.map(csvCell).join(";")).join("\r\n")+"\r\n";
   const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
   const u=URL.createObjectURL(blob),a=document.createElement("a");
-  a.href=u;a.download="pgi-sous-journal-distribution-directe-"+month+"-NON-FEC.csv";
+  a.href=u;a.download="pgi-telecom-distribution-sous-journal-"+month+"-NON-FEC.csv";
   document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1000);
   message=integer(report.exported_entries)+" écriture(s), "+integer(report.exported_lines)+" ligne(s) exportées. Export de gestion, non FEC.";
   severity="ds-ok";show();
@@ -252,7 +252,7 @@ async function load(){
  if(!host||busy)return;
  busy=true;host.innerHTML='<div class="ds-panel">Chargement des données propres au distributeur direct...</div>';
  try{data=await request("/platform/direct-sva/overview?month="+encodeURIComponent(month));show();}
- catch(error){data=null;host.innerHTML='<div class="ds-warning"><strong>Distribution directe non disponible.</strong> Les données restent isolées. Vérifier la connexion PostgreSQL, la migration dédiée et les droits administrateur. Détail : '+esc(error.message)+'</div>';}
+ catch(error){data=null;host.innerHTML='<div class="ds-warning"><strong>PGI Telecom Distribution indisponible.</strong> Les données restent isolées. Vérifier la connexion PostgreSQL, la migration dédiée et les droits administrateur. Détail : '+esc(error.message)+'</div>';}
  finally{busy=false;}
 }
 export function mountDirectSvaCockpit(element,options={}){
