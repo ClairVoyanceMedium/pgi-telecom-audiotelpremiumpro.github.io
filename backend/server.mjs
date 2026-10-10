@@ -30,6 +30,7 @@ import {directSvaIntegrationOverview} from "./src/direct-sva-integrations.mjs";
 import {directSvaCustomerOverview,directSvaWorkflowOverview} from "./src/direct-sva-customer.mjs";
 import {getDirectSvaSwitches,setDirectSvaPreview,setDirectSvaCommercial} from "./src/direct-sva-admin-switches.mjs";
 import {eligibleExistingCustomerNumbers,preparedExistingCustomerTransitions,prepareExistingCustomerTransition} from "./src/direct-sva-customer-transition.mjs";
+import {directSvaProductionReadiness} from "./src/direct-sva-production-readiness.mjs";
 import {runDailyReportCron} from "./src/daily-report.mjs";
 
 export async function createDefaultBackend(){
@@ -705,6 +706,13 @@ export function createBackend(options={}){
 
       const actor=authenticate(req,config);
       const customerActor=authenticateCustomer(req,config);
+
+      // A read-only release dossier is available even before the preparatory migrations.
+      if(method==="GET"&&pathname==="/api/v1/platform/direct-sva-release-readiness"){
+        requireRole(actor,["admin"]);
+        return done(res,metrics,started,"platform.direct_sva_release_readiness",200,
+          await directSvaProductionReadiness(store));
+      }
 
       // The two admin switches are independent of the future business API.
       // They never change network, payments, analytics, CRM or client access.
