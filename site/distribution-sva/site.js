@@ -3,7 +3,12 @@
  "use strict";
  const badge=document.querySelector("[data-ds-service-state]");
  if(badge)badge.textContent="Projet de distribution directe en préparation";
- document.querySelectorAll("[data-ds-year]").forEach(n=>n.textContent=String(new Date().getFullYear()));
+ const currentYear=new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Paris",year:"numeric"}).format(new Date());
+ document.querySelectorAll("[data-ds-year]").forEach(n=>n.textContent=currentYear);
+ const activePath=location.pathname.replace(/\\/+/g,"/");
+ document.querySelectorAll('.menu a[href]').forEach(a=>{
+  const href=a.getAttribute("href");if(href===activePath)a.setAttribute("aria-current","page");
+ });
  // Marketing forms are not activated until API, consent, CRM and legal gates are verified.
  document.querySelectorAll("form[data-ds-prelaunch-form]").forEach(form=>{
   form.addEventListener("submit",event=>{
