@@ -42,7 +42,7 @@ export function mountDirectSvaRehearsals(root){
   if(!root.isConnected)return;
   const selection=known();if(selection)selected=selection.workflow;
   const missing=history?.status_counts||{};
-  root.innerHTML='<div class="dsr" aria-label="Simulations des automatismes de distribution directe">'+
+  root.innerHTML='<div class="dsr" aria-label="Simulations PGI Telecom Distribution">'+
    '<h3>Laboratoire des 13 automatisations</h3>'+
    '<div class="dsr-warning">Mode test uniquement : données fictives, aucune synchronisation HubSpot/GA4, aucun appel opérateur et aucun paiement. Les cases cochées ne sont pas des preuves réglementaires.</div>'+
    '<div class="dsr-grid">'+
@@ -68,7 +68,7 @@ export function mountDirectSvaRehearsals(root){
     '<td>'+escape(STATUS[x.result_status]||x.result_status)+'</td><td>'+short(x.attempt_number)+'</td>'+
     '<td>'+escape((x.missing_checks||[]).join(", ")||"Aucun")+'</td></tr>').join("")+
    '</tbody></table></div>'+
-   '<small>Seuls les 50 derniers essais sont affichés. Les historiques restent propres à la distribution directe.</small></div>';
+   '<small>Seuls les 50 derniers essais sont affichés. Les historiques restent propres à PGI Telecom Distribution.</small></div>';
   root.querySelector("[data-dsr-workflow]")?.addEventListener("change",e=>{selected=e.target.value;render();});
   root.querySelector("[data-dsr-refresh]")?.addEventListener("click",refresh);
   root.querySelector("[data-dsr-run]")?.addEventListener("click",runOne);
