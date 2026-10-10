@@ -1,6 +1,6 @@
-// Two admin switches of the future PGI direct SVA activity.
-// The first is a persistent private preview; the second is locked until an
-// independent regulatory, payment and technical release. No commercial side effect.
+// Admin controls for a future second business unit. The website ON switch
+// publishes informational pages on the owner's decision, independently from
+// carrier operations, client rights, payment setup and payouts.
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
 const css=".dss{padding:15px;border:1px solid rgba(148,171,193,.23);border-radius:12px;background:#0a1925;display:grid;gap:13px}.dss-head{display:flex;gap:12px;align-items:start;justify-content:space-between;flex-wrap:wrap}.dss h3{font-size:15px;margin:0}.dss p{margin:5px 0;color:#9cb0c2;font-size:11px;line-height:1.55}.dss-item{border:1px solid rgba(148,171,193,.19);padding:13px;border-radius:9px;display:flex;gap:14px;justify-content:space-between;align-items:center}.dss-item strong{display:block;font-size:12px}.dss-item small{display:block;color:#aec0ce;margin-top:4px;font-size:10px;max-width:620px;line-height:1.5}.dss-toggle{width:44px;min-width:44px;height:24px;accent-color:#8ad9c4;cursor:pointer}.dss-toggle:disabled{opacity:.42;cursor:not-allowed}.dss-alert{font-size:11px;color:#f3c49e;padding:8px 10px;border-radius:8px;background:rgba(161,106,45,.12)}.dss-badge{font-size:10px;color:#b4c6d6}.dss-error{color:#f6b4b4;font-size:11px}.dss-details{font-size:10px;color:#8ca1b3;line-height:1.6}.dss-details summary{cursor:pointer}.dss-details ul{padding-left:18px;margin:7px 0}@media(max-width:700px){.dss-item{align-items:start;gap:10px}.dss-head{gap:5px}}";
 function style(){
@@ -67,8 +67,8 @@ export async function mountDirectSvaSwitches(host,{onPreviewChange}={}){
   '<small>Afficher ou masquer le cockpit de préparation. Sans numéros actifs, sans espace client public et sans versements.</small></span>'+
   '<input class="dss-toggle" role="switch" aria-label="Interface PGI Telecom Distribution" data-dss-preview type="checkbox" '+
   (current.interface_preview_enabled?'checked':'')+'></label>'+
-  '<label class="dss-item"><span><strong>Afficher le Pôle Télécom &amp; Réseau sur le site</strong>'+
-  '<small>Afficher ou masquer le lien sous la connexion client. Une fois publiées, les pages restent consultables et indexables même si ce lien est masqué. Ne démarre aucun service commercial.</small></span>'+
+  '<label class="dss-item"><span><strong>Ouvrir / afficher le Pôle Télécom &amp; Réseau</strong>'+
+  '<small>ON : première publication des pages puis affichage du lien. OFF : masque uniquement le lien, les pages déjà référencées restent accessibles. Cette commande n’active ni opérateurs, ni encaissements, ni reversements.</small></span>+'
   '<input class="dss-toggle" role="switch" aria-label="Visibilité du Pôle Télécom et Réseau" data-dss-website type="checkbox" '+
   (website?.navigation_preference?'checked ':'')+
   (website?.business_unit==="direct_sva"&&website?.status==null?'':'disabled ')+
@@ -76,7 +76,7 @@ export async function mountDirectSvaSwitches(host,{onPreviewChange}={}){
   '<div class="dss-details" data-dss-website-status role="status" aria-live="polite">'+
   (website?.publication_authorized===true?
    'Contenu publié : la désactivation masque le lien sans retirer les pages de Google.' :
-   'Préparation : cette commande mémorise seulement la préférence. Aucune page ne peut être publiée avant les validations de lancement.')+
+   'Pages non publiées : activer cet interrupteur ouvrira les pages d’information et affichera le lien. Les services commerciaux restent séparés.')+
   '</div>'+
   '<label class="dss-item"><span><strong>Exploitation commerciale PGI Telecom Distribution</strong>'+
   '<small>Autoriser l’activité réelle seulement après validation des droits, contrats, tests et flux financiers. Impossible à activer en préparation.</small></span>'+
@@ -106,6 +106,10 @@ export async function mountDirectSvaSwitches(host,{onPreviewChange}={}){
  const websiteSwitch=host.querySelector("[data-dss-website]");
  websiteSwitch?.addEventListener("change",async()=>{
   const target=websiteSwitch.checked,previous=website?.navigation_preference===true;
+  if(target===true&&website?.publication_authorized!==true){
+   const confirmed=window.confirm("Publier les pages d’information du Pôle Télécom & Réseau et les rendre indexables par les moteurs de recherche ? Cela ne démarre ni les paiements ni l’exploitation opérateur.");
+   if(!confirmed){websiteSwitch.checked=previous;return;}
+  }
   websiteSwitch.disabled=true;
   const feedback=host.querySelector("[data-dss-website-status]");
   if(feedback)feedback.textContent="Enregistrement du réglage...";
@@ -115,13 +119,14 @@ export async function mountDirectSvaSwitches(host,{onPreviewChange}={}){
     evidence_reference:"ADMIN-WEBSITE-"+crypto.randomUUID()
    });
    if(reply.business_unit!=="direct_sva"||reply.seo_continuity_when_hidden!==true||
-      reply.commercial_requests_enabled!==false||reply.seo_indexation_changed!==false)
+      reply.commercial_requests_enabled!==false||
+      reply.seo_indexation_changed!==(reply.first_publication===true))
     throw Error("DIRECT_SVA_WEBSITE_RESPONSE_INVALID");
    website={...website,navigation_preference:reply.navigation_preference,
     publication_authorized:reply.publication_authorized};
    if(feedback)feedback.textContent=reply.publication_authorized?
-    (reply.navigation_visible?"Lien public visible. Pages référencées conservées.":"Lien masqué. Pages et référencement conservés."):
-    "Réglage mémorisé. Publication toujours bloquée avant le lancement.";
+    (reply.navigation_visible?"Pôle ouvert, lien visible et pages accessibles.":"Lien masqué. Pages accessibles, référencement préservé."):
+    "Le pôle reste non publié.";
   }catch(error){
    websiteSwitch.checked=previous;
    if(feedback)feedback.textContent="Enregistrement refusé : "+String(error.message||"erreur");
