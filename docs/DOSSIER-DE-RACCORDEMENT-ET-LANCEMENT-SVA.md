@@ -116,3 +116,33 @@ La formule « il ne restera que les branchements » ne serait donc pas exacte à
 - Arcep, affectation des ressources, version du 23 septembre 2026 : https://www.arcep.fr/mes-demarches-et-services/acteurs-regules/operateurs-telecoms/fiches-pratiques/operateurs-telecoms-affectation-des-numeros-de-telephone.html
 - Arcep, options de qualité renforcée et conservation des numéros spéciaux : https://www.arcep.fr/actualites/actualites-et-communiques/detail/n/portabilite-des-numeros-210323.html
 - AF2M, recommandations déontologiques SVA applicables au 1er septembre 2026 : https://af2m.org/rd-sva/
+
+
+## 11. Etat verifie des integrations le 10 octobre 2026 (lecture reelle)
+
+Cette section de suivi est un inventaire ponctuel. Les situations peuvent changer ; aucun des controles ci-dessous n'autorise une mise en production.
+
+| Systeme | Observation verifiee | Consequence |
+| --- | --- | --- |
+| Neon production | Aucune table `direct_sva_%` en production ; migrations existantes jusqu'a 071 | Ne pas declarer le distributeur deploye |
+| Neon preparation | Branche `prep-direct-sva-integration-2026-10-10` ; migrations 073 a 079 executees sans erreur ; 25 tables `direct_sva_%`, 10 triggers et 132 contraintes CHECK | Base isolee prete pour revues supplementaires, pas une preuve de fonctionnement des partenaires |
+| Verrous de lancement | `commercial_operation_enabled=false`, `number_activation_enabled=false`, `payouts_enabled=false`, six connecteurs directs sur `disabled` | Aucun acte commercial, routage ou versement autorise |
+| GitHub | Migration 077 corrigee : regex E164 entiere et retrait du bloc SQL duplique ; assertion specifique ajoutee au test d'integrite | Le code correctif reste dans la branche de preparation |
+| Stripe | Compte principal en mode reel present ; prix recurrent Audiotel 4,90 EUR actif ; webhooks Audiotel actifs ; zero compte beneficiaire Connect liste | Ne pas confondre abonnements avec collecte SVA ou reversements editeurs |
+| HubSpot | Portail actuel accessible ; pipeline de deals `default` seul observe ; `pgi_business_unit` et `pgi_source_reference` absents des proprietes verifiees | Creation d'un pipeline DSVA et de ses proprietes avant toute transmission |
+| Resend | Domaine existant verifie, envoi et reception actifs ; webhook `email.received` actif | Le futur canal de reclamations direct reste a valider avec un flux reel bout en bout |
+| Search Console | Domaine existant ; groupe de contenu analytique `PGI Telecom | Distribution SVA directe` cree pour le prefixe `/distribution-sva/` | Aucun ajout d'URL au sitemap ni publication n'a ete fait |
+| Comptabilite | Identite legale et SIREN non renseignes dans `platform_accounting_settings` ; `vat_regime=unconfigured`, `fec_enabled=false` | Unification comptable legale et mapping TVA a completer |
+
+**Pas de changement Vercel, pas de migration Neon sur la branche de production, pas de creation d'abonnement, d'encaissement ni de virement Stripe.** La creation du groupe de contenu GSC n'indexe pas les futures pages.
+
+## 12. Actions externes restant necessaires
+
+1. **Operateur / collecteur** : choix d'un partenaire technique, contrat, grilles tarifaires versionnees, CDR de reference, preuves de collecte, portabilite et routage. Aucun fournisseur ni numeros ne sont declares actifs en leur absence.
+2. **PSP / reversements editeurs** : determination contractuelle de l'encaisseur, du beneficiaire, des obligations KYC/KYB, du circuit des fonds, des avis de paiement amont et des regles de rapprochement bancaire. Les webhooks de l'abonnement Stripe existant ne sont pas la preuve des recettes SVA.
+3. **HubSpot** : configurer pipeline et proprietes independants apres verification du portail, puis conserver l'identite du contact transversal avec une affaire par activite.
+4. **GA4** : creer et confirmer une propriete distincte, son identifiant de mesure et les dimensions event-scoped, sans parametres personnels. La future activation reste conditionnee au consentement et au lancement autorise.
+5. **Comptabilite** : completer denomination, SIREN, fiscalite et comptes sur justificatifs, definir un FEC legal unique avec axes APP et DSVA et interdire la double reconnaissance des recettes.
+6. **Validation finale** : recueillir les preuves de conformite, verifier le reseau, les evenements et les restitutions, puis attendre le top depart explicite pour autoriser les actes commerciaux.
+
+Les connexions externes ne doivent pas se declarer automatiquement « actives » sur la seule base des fichiers de preparation. La base et le backend rejettent toujours les activations SVA directes tant que les approbations sont absentes.
