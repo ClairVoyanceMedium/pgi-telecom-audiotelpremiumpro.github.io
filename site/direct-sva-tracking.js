@@ -3,6 +3,11 @@
 const RESERVED_PLATFORM_MEASUREMENT_ID="G-SZY50J75N7";
 const EVENT_SPEC=Object.freeze({
  dsva_operator_interest:"interest",
+ dsva_navigation_click:"interest",
+ dsva_section_view:"interest",
+ dsva_faq_open:"interest",
+ dsva_portal_access_attempt:"interest",
+ dsva_form_error:"request_started",
  dsva_number_request_started:"request_started",
  dsva_number_request_submitted:"request_submitted",
  dsva_portability_request_submitted:"request_submitted",
