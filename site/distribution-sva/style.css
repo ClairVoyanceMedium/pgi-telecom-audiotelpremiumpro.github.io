@@ -5,3 +5,14 @@
 .ds-legal-links a{color:var(--ink);text-underline-offset:4px}
 .ds-legal-links a:focus-visible{outline:3px solid var(--accent)}
 @media(max-width:760px){.ds-legal-links{justify-content:flex-start;text-align:left}}
+
+/* Complaint intake is visibly disabled until the server validates launch gates. */
+.ds-complaint-form-panel{margin-top:22px}.ds-complaint-form-panel form{display:grid;gap:14px}
+.ds-complaint-form-panel fieldset{border:0;padding:0;margin:0;display:grid;gap:16px}
+.ds-complaint-form-panel fieldset[disabled]{opacity:.65}
+.ds-complaint-form-panel legend{font-weight:750;margin-bottom:12px}
+.ds-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.ds-complaint-form-panel textarea{min-height:120px;resize:vertical}
+.ds-checkbox{display:flex;align-items:flex-start;gap:12px}.ds-checkbox input{width:auto;flex:0 0 auto;margin-top:6px}
+.ds-complaint-form-panel [role=status]{min-height:1.6em}
+@media(max-width:760px){.ds-form-grid{grid-template-columns:1fr}}
