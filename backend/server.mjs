@@ -24,6 +24,7 @@ import {verifyResendWebhook} from "./src/resend-webhook.mjs";
 import {applyResendWebhookEvent,drainTransactionalEmails,drainDunningTransactionalEmails} from "./src/email-dispatcher.mjs";
 import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,syncHubSpotSupportMessage,syncHubSpotInboundEmail,syncHubSpotCustomerIncident,syncHubSpotCardPaymentState} from "./src/hubspot-crm.mjs";
 import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
+import {directSvaBusinessSnapshot,createDirectSvaDraft,approveDirectSvaDraft} from "./src/direct-sva-business.mjs";
 import {runDailyReportCron} from "./src/daily-report.mjs";
 
 export async function createDefaultBackend(){
@@ -1795,6 +1796,29 @@ export function createBackend(options={}){
         requireRole(actor,["admin","finance","readonly"]);
         const params=Object.fromEntries(url.searchParams.entries());
         return done(res,metrics,started,"platform.customer_profitability",200,await store.customerProfitability(params));
+      }
+
+      // Independent direct SVA operator business unit. No active numbering or payout route.
+      if(method==="GET"&&pathname==="/api/v1/platform/direct-sva/overview"){
+        requireRole(actor,["admin","finance","readonly"]);
+        const params=Object.fromEntries(url.searchParams.entries());
+        return done(res,metrics,started,"platform.direct_sva_overview",200,await directSvaBusinessSnapshot(store,params));
+      }
+      if(method==="POST"&&pathname==="/api/v1/platform/direct-sva/accounting/drafts"){
+        requireRole(actor,["admin","finance"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.direct_sva.accounting_draft",body,
+          ()=>createDirectSvaDraft(store,body,actor));
+        return done(res,metrics,started,"platform.direct_sva_accounting_draft",201,{...result.value,replayed:result.replayed});
+      }
+      match=routeMatch(pathname,"/api/v1/platform/direct-sva/accounting/drafts/:id/approve");
+      if(method==="POST"&&match){
+        requireRole(actor,["admin","finance"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        const payload={id:match.id,approval_evidence:body.approval_evidence};
+        const result=await store.idempotent(req.headers["idempotency-key"],"platform.direct_sva.accounting_approve",payload,
+          ()=>approveDirectSvaDraft(store,match.id,actor,body));
+        return done(res,metrics,started,"platform.direct_sva_accounting_approve",200,{...result.value,replayed:result.replayed});
       }
 
       if(method==="GET"&&pathname==="/api/v1/platform/accounting"){
