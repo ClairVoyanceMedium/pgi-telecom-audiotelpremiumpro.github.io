@@ -94,7 +94,7 @@ test("future GA4 tracker permits only enumerated events on approved direct pages
  });
  assert.equal(make("/").start().enabled,false);
  assert.equal(make("/distribution-sva/",true).start().enabled,false);
- const tracker=make("/distribution-sva/numero-sva/");
+ const tracker=make("/distribution-sva/numerotation/");
  assert.equal(tracker.event("dsva_operator_interest","numero_sva").accepted,false);
  assert.equal(tracker.start().enabled,true);
  assert.equal(tracker.event("purchase","numero_sva").accepted,false);
