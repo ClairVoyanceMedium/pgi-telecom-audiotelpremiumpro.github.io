@@ -34,6 +34,12 @@ export function planDirectSvaIndexation(approvals={}){
 export function renderDirectSvaSitemap(approvals={}){
  const readiness=planDirectSvaIndexation(approvals);
  if(!readiness.indexation_allowed)throw Error("DIRECT_SVA_SEO_RELEASE_NOT_AUTHORIZED");
+ return renderDirectSvaEditorialSitemap(true);
+}
+// Editorial publication is explicitly approved by the owner from the cockpit.
+// This is distinct from legal authorizations to operate telecom and payments.
+export function renderDirectSvaEditorialSitemap(editorialAuthorized=false){
+ if(editorialAuthorized!==true)throw Error("DIRECT_SVA_EDITORIAL_PUBLICATION_NOT_AUTHORIZED");
  const xml= ['<?xml version="1.0" encoding="UTF-8"?>','<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">'];
  for(const page of DIRECT_SVA_SEO_INVENTORY.filter(p=>!p.private)){
   const alternates=page.type?LOCALES.map(lang=>'    <xhtml:link rel="alternate" hreflang="'+lang+'" href="'+escapeXml(BASE+route(lang,page.type))+'"/>').join("\n")+
