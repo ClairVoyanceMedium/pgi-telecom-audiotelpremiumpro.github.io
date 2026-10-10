@@ -5,7 +5,7 @@ import {
  PGI_BUSINESS_UNITS,PGI_LEGAL_ENTITY_KEY,DIRECT_SVA_GA4_EVENTS,
  DIRECT_SVA_HUBSPOT_FIELDS,DIRECT_SVA_SEARCH_STRUCTURE,
  planDirectSvaGa4Event,directSvaHubspotPlan,directSvaIntegrationReadiness,
- directSvaIntegrationOverview
+ directSvaIntegrationOverview,prepareDirectSvaHubspotDeal
 } from "../backend/src/direct-sva-integrations.mjs";
 import {createDirectSvaTracker} from "../site/direct-sva-tracking.js";
 
@@ -145,4 +145,24 @@ test("future direct URLs cannot emit existing Audiotel tag and GA4 Stripe remain
  assert.match(future,/pgi_business_unit:"direct_sva"/);
  const html=fs.readFileSync(new URL("../site/index.html",import.meta.url),"utf8");
  assert.ok(!html.includes('src="direct-sva-tracking.js"'));
+});
+
+test("HubSpot direct pipeline adapter refuses to reuse Audiotel default pipeline",()=>{
+ const data={source_reference:"DSVA-00000123",service_type:"numero_sva",stage:"qualification"};
+ const unsafe=prepareDirectSvaHubspotDeal(data,{pipelineId:"default",
+  stageIds:{qualification:"stage_a"},verifiedForDirectSva:true,customFieldsVerified:true,
+  consentVerified:true,directOperationReleased:true});
+ assert.equal(unsafe.eligible,false);
+ assert.equal(unsafe.payload,null);
+ const notReady=prepareDirectSvaHubspotDeal(data,{pipelineId:"direct-pipeline",stageIds:{qualification:"stage_a"}});
+ assert.equal(notReady.eligible,false);
+ const candidate=prepareDirectSvaHubspotDeal(data,{pipelineId:"direct-pipeline",
+  stageIds:{qualification:"direct-qualification"},verifiedForDirectSva:true,customFieldsVerified:true,
+  consentVerified:true,directOperationReleased:true});
+ assert.equal(candidate.eligible,true);
+ assert.equal(candidate.payload.properties.pipeline,"direct-pipeline");
+ assert.equal(candidate.payload.properties.pgi_business_unit,"direct_sva");
+ assert.equal(candidate.payload.properties.pgi_source_reference,"DSVA-00000123");
+ assert.equal(candidate.transmission_authorized,false);
+ assert.ok(!JSON.stringify(candidate).includes("email"));
 });
