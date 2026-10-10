@@ -22,6 +22,50 @@ async function request(path,method="GET",payload=null){
   return body;
 }
 function addStyle(){if(document.getElementById("pgi-direct-sva-styles"))return;const s=document.createElement("style");s.id="pgi-direct-sva-styles";s.textContent=cssText;document.head.appendChild(s);}
+
+export function assertDirectSvaCockpitPayload(value,kind="overview"){
+ const invalid=()=>{throw Error("DIRECT_SVA_COCKPIT_RESPONSE_INVALID");};
+ if(!value||typeof value!=="object")invalid();
+ if(kind==="overview"){
+  if(value.business_unit!=="direct_sva"||value.source!=="independent_direct_sva_tables"||
+     value.separated_from!=="audiotel_platform"||value.currency!=="EUR"||
+     value.operator_mode!=="preparation"||value.activation_authorized!==false||
+     value.payout_authorized!==false||value.number_activation_enabled!==false||
+     value.automatic_payout_enabled!==false||!value.accounting||
+     !Array.isArray(value.number_blocks)||!Array.isArray(value.number_inventory)||
+     !Array.isArray(value.interconnections)||!Array.isArray(value.accounting.entries))invalid();
+  const a=value.accounting;
+  for(const key of ["revenue_minor","expenses_minor","operating_result_minor",
+    "receivables_change_minor","publisher_liabilities_change_minor","suspense_change_minor"]){
+   if(typeof a[key]!=="number"||!Number.isSafeInteger(a[key]))invalid();
+  }
+  if(!Number.isSafeInteger(a.revenue_minor-a.expenses_minor)||
+     a.operating_result_minor!==a.revenue_minor-a.expenses_minor)invalid();
+ }else if(kind==="settlement"){
+  if(value.business_unit!=="direct_sva"||value.analysis_mode!=="untrusted_source_preview"||
+     value.approved_by_operator!==false||value.accounting_write_authorized!==false||
+     value.bank_payout_authorized!==false||value.number_activation_authorized!==false||
+     !Array.isArray(value.issues))invalid();
+ }else if(kind==="integrations"){
+  if(value.all_direct_integrations_disabled!==true||
+     !Array.isArray(value.checks)||value.checks.length!==6||
+     !Array.isArray(value.units)||value.units.length!==2||
+     !value.units.some(u=>u.code==="direct_sva"&&u.label==="PGI Telecom Distribution")||
+     !value.units.some(u=>u.code==="audiotel_platform"&&u.label==="Audiotel Premium Pro")||
+     value.checks.some(c=>c.data_sending_enabled!==false))invalid();
+ }else if(kind==="automation"){
+  if(value.business_unit!=="direct_sva"||value.mode!=="preparation"||
+     value.external_execution_enabled!==false||value.transfers_enabled!==false||
+     value.automatic_number_activation!==false||!Array.isArray(value.jobs)||
+     value.jobs.length!==13||value.jobs.some(j=>j.execution_authorized!==false))invalid();
+ }else if(kind==="complaints"){
+  if(value.business_unit!=="direct_sva"||value.public_form_enabled!==false||
+     value.payments_enabled!==false||value.gmail_delivery_active!==false||
+     value.hubspot_delivery_active!==false)invalid();
+ }else invalid();
+ return value;
+}
+
 function statRows(rows){if(!rows?.length)return '<p class="ds-note">Aucune donnée enregistrée. Cela ne signifie pas que PGI possède des numéros actifs.</p>';return '<div class="ds-table"><table><thead><tr><th>Statut</th><th>Nombre</th></tr></thead><tbody>'+rows.map(x=>'<tr><td>'+esc(x.status)+'</td><td>'+integer(x.count)+'</td></tr>').join("")+'</tbody></table></div>';}
 function kpi(label,value,note){return '<article class="ds-card"><span>'+esc(label)+'</span><strong>'+esc(value)+'</strong><small>'+esc(note)+'</small></article>';}
 function cards(){const a=data.accounting;return '<div class="ds-cards">'+
@@ -100,7 +144,7 @@ function integrationView(){
 }
 async function refreshIntegrations(){
  if(!host)return;
- try{integrations=await request("/platform/direct-sva/integrations");message="Registre des intégrations consulté. Toutes les nouvelles transmissions restent désactivées.";severity="ds-ok";show();}
+ try{integrations=assertDirectSvaCockpitPayload(await request("/platform/direct-sva/integrations"),"integrations");message="Registre des intégrations consulté. Toutes les nouvelles transmissions restent désactivées.";severity="ds-ok";show();}
  catch(error){integrations=null;message="Intégrations non disponibles : "+String(error.message);severity="ds-alert";show();}
 }
 function automationView(){
@@ -114,7 +158,7 @@ function automationView(){
  '<button type="button" class="ds-button" data-ds-automation-refresh>Actualiser la file</button></section>';
 }
 async function refreshAutomations(){
- try{automations=await request("/platform/direct-sva/automation");message="Files directes consultées, aucune exécution en production.";severity="ds-ok";show();}
+ try{automations=assertDirectSvaCockpitPayload(await request("/platform/direct-sva/automation"),"automation");message="Files directes consultées, aucune exécution en production.";severity="ds-ok";show();}
  catch(error){automations=null;message="Automatisations indisponibles : "+String(error.message);severity="ds-alert";show();}
 }
 function complaintView(){
@@ -133,7 +177,7 @@ function complaintView(){
  '</div><div class="ds-actions"><button type="button" class="ds-button" data-ds-complaints-refresh>Actualiser</button></div></section>';
 }
 async function refreshComplaints(){
- try{complaints=await request("/platform/direct-sva/complaints/readiness");
+ try{complaints=assertDirectSvaCockpitPayload(await request("/platform/direct-sva/complaints/readiness"),"complaints");
  message="Contrôle du circuit de réclamations consulté. Réception publique et notifications directes non actives.";severity="ds-ok";show();}
  catch(error){complaints=null;message="Réclamations non disponibles : "+String(error.message);severity="ds-alert";show();}
 }
@@ -221,7 +265,7 @@ function attach(){
    const payload=JSON.parse(host.querySelector("[data-ds-reconcile-payload]").value);
    target.textContent="Analyse du relevé...";
    const result=await request("/platform/direct-sva/reconciliation/preview","POST",payload);
-   showReconciliationResult(result);
+   showReconciliationResult(assertDirectSvaCockpitPayload(result,"settlement"));
   }catch(error){target.textContent="Analyse refusée : "+String(error.message||"format incorrect");}
  });
 
@@ -251,7 +295,7 @@ function attach(){
 async function load(){
  if(!host||busy)return;
  busy=true;host.innerHTML='<div class="ds-panel">Chargement des données propres au distributeur direct...</div>';
- try{data=await request("/platform/direct-sva/overview?month="+encodeURIComponent(month));show();}
+ try{data=assertDirectSvaCockpitPayload(await request("/platform/direct-sva/overview?month="+encodeURIComponent(month)));show();}
  catch(error){data=null;host.innerHTML='<div class="ds-warning"><strong>PGI Telecom Distribution indisponible.</strong> Les données restent isolées. Vérifier la connexion PostgreSQL, la migration dédiée et les droits administrateur. Détail : '+esc(error.message)+'</div>';}
  finally{busy=false;}
 }
