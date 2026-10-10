@@ -46,8 +46,16 @@ export function assertDirectSvaCockpitPayload(value,kind="overview"){
      value.approved_by_operator!==false||value.accounting_write_authorized!==false||
      value.bank_payout_authorized!==false||value.number_activation_authorized!==false||
      !Array.isArray(value.issues))invalid();
+  for(const field of ["input_rows","accepted_rows","rejected_rows",
+   "total_upstream_net_minor","total_pgi_margin_minor","total_publisher_due_minor"]){
+   if(typeof value[field]!=="number"||!Number.isSafeInteger(value[field])||value[field]<0)invalid();
+  }
+  if(value.accepted_rows+value.rejected_rows!==value.input_rows||
+     value.total_pgi_margin_minor+value.total_publisher_due_minor!==value.total_upstream_net_minor)invalid();
  }else if(kind==="integrations"){
-  if(value.all_direct_integrations_disabled!==true||
+  if(value.all_direct_integrations_disabled!==true||value.ga4_emission_enabled!==false||
+     value.hubspot_synchronization_enabled!==false||value.search_index_submission_enabled!==false||
+     value.direct_operator_activation_enabled!==false||
      !Array.isArray(value.checks)||value.checks.length!==6||
      !Array.isArray(value.units)||value.units.length!==2||
      !value.units.some(u=>u.code==="direct_sva"&&u.label==="PGI Telecom Distribution")||
@@ -60,7 +68,7 @@ export function assertDirectSvaCockpitPayload(value,kind="overview"){
      value.jobs.length!==13||value.jobs.some(j=>j.execution_authorized!==false))invalid();
  }else if(kind==="complaints"){
   if(value.business_unit!=="direct_sva"||value.public_form_enabled!==false||
-     value.payments_enabled!==false||value.gmail_delivery_active!==false||
+     value.operator_actions_active!==false||value.payments_enabled!==false||value.gmail_delivery_active!==false||
      value.hubspot_delivery_active!==false)invalid();
  }else invalid();
  return value;
