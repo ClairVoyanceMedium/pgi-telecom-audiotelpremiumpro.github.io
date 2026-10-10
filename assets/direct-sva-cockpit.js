@@ -1,0 +1,149 @@
+// Direct SVA distribution cockpit. All data comes from isolated direct_sva tables.
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
+const money=v=>new Intl.NumberFormat("fr-FR",{style:"currency",currency:"EUR"}).format((Number(v)||0)/100);
+const integer=v=>new Intl.NumberFormat("fr-FR").format(Number(v)||0);
+const nowMonth=()=>new Date().toISOString().slice(0,7);
+const cssText=".ds{display:grid;gap:14px}.ds-header{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}.ds-header h2{margin:2px 0 5px;font-size:23px}.ds-desc{color:#8fa2b5;font-size:12px;line-height:1.6;margin:4px 0}.ds-warning{padding:13px;border:1px solid rgba(245,158,11,.35);background:rgba(245,158,11,.08);border-radius:11px;color:#f4d7a5;font-size:12px;line-height:1.6}.ds-tabs{display:flex;gap:7px;flex-wrap:wrap}.ds-tab,.ds-button{border:1px solid rgba(140,166,190,.23);border-radius:9px;padding:9px 12px;background:#101d2c;color:#edf7ff;font-weight:700;cursor:pointer;font-size:12px}.ds-tab[aria-selected=true]{border-color:#8cc5ca;background:#183744;color:#fff}.ds-input{background:#07101b;color:#edf7ff;padding:9px;border:1px solid rgba(140,166,190,.3);border-radius:8px;min-width:0}.ds-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.ds-card,.ds-panel{padding:15px;background:#091522;border:1px solid rgba(140,166,190,.16);border-radius:12px}.ds-card span{display:block;color:#8fa2b5;font-size:11px}.ds-card strong{display:block;font-size:21px;margin:9px 0}.ds-card small{color:#8497a6;font-size:10px}.ds-panel h3{margin:0 0 10px;font-size:16px}.ds-status{font-size:11px;color:#8fa2b5;min-height:18px}.ds-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ds-table{max-width:100%;overflow-x:auto}.ds-table table{width:100%;min-width:700px;border-collapse:collapse}.ds-table th,.ds-table td{border-bottom:1px solid rgba(140,166,190,.12);padding:10px 8px;text-align:left;white-space:nowrap;font-size:11px}.ds-table th{color:#97aabe}.ds-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.ds-form label{display:grid;gap:5px;color:#91a6b9;font-size:11px}.ds-form label.ds-wide{grid-column:1/-1}.ds-form input,.ds-form select{width:100%}.ds-lines{grid-column:1/-1;display:grid;gap:8px}.ds-line{display:grid;grid-template-columns:minmax(0,1fr) 100px 100px;gap:7px}.ds-actions{display:flex;gap:8px;flex-wrap:wrap}.ds-note{font-size:11px;color:#8fa2b5;line-height:1.6}.ds-ok{color:#a2e9cc}.ds-alert{color:#ffbd9e}.ds-list{display:grid;gap:7px}.ds-list>div{padding:8px 10px;background:#102132;border-radius:8px;font-size:11px}@media(max-width:900px){.ds-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:640px){.ds-cards,.ds-grid,.ds-form{grid-template-columns:1fr}.ds-line{grid-template-columns:minmax(0,1fr) 80px 80px}.ds-header h2{font-size:19px}}@media print{body *{visibility:hidden!important}#view-direct-sva,#view-direct-sva *{visibility:visible!important}#view-direct-sva{position:absolute!important;left:0;top:0;width:100%}.ds-tabs,.ds-button,.ds-input,.ds-form{display:none!important}.ds,.ds-card,.ds-panel{background:#fff!important;color:#000!important;border-color:#aaa!important}}";
+let host=null,month=nowMonth(),tab="overview",data=null,busy=false,numberOfLines=2,message="",severity="";
+function apiBase(){const b=String(window.PGI_CONFIG?.apiBaseUrl||"").replace(/\/$/,"");if(!b)throw Error("API_NOT_CONFIGURED");return b;}
+function cookie(name){const prefix=encodeURIComponent(name)+"=";for(const part of String(document.cookie||"").split(";")){const v=part.trim();if(v.startsWith(prefix)){try{return decodeURIComponent(v.slice(prefix.length))}catch{return v.slice(prefix.length)}}}return"";}
+async function request(path,method="GET",payload=null){
+  const headers={Accept:"application/json"};
+  if(payload!==null)headers["Content-Type"]="application/json";
+  if(method!=="GET"){
+    const csrf=cookie("__Host-pgi_csrf");
+    if(csrf)headers["X-CSRF-Token"]=csrf;
+    headers["Idempotency-Key"]=window.PGIApi?.newIdempotencyKey?.()||crypto.randomUUID();
+  }
+  const response=await fetch(apiBase()+path,{method,credentials:"include",cache:"no-store",headers,body:payload===null?undefined:JSON.stringify(payload)});
+  const body=await response.json().catch(()=>null);
+  if(!response.ok)throw Error(body?.error?.code||"DIRECT_SVA_HTTP_"+response.status);
+  return body;
+}
+function addStyle(){if(document.getElementById("pgi-direct-sva-styles"))return;const s=document.createElement("style");s.id="pgi-direct-sva-styles";s.textContent=cssText;document.head.appendChild(s);}
+function statRows(rows){if(!rows?.length)return '<p class="ds-note">Aucune donnée enregistrée. Cela ne signifie pas que PGI possède des numéros actifs.</p>';return '<div class="ds-table"><table><thead><tr><th>Statut</th><th>Nombre</th></tr></thead><tbody>'+rows.map(x=>'<tr><td>'+esc(x.status)+'</td><td>'+integer(x.count)+'</td></tr>').join("")+'</tbody></table></div>';}
+function kpi(label,value,note){return '<article class="ds-card"><span>'+esc(label)+'</span><strong>'+esc(value)+'</strong><small>'+esc(note)+'</small></article>';}
+function cards(){const a=data.accounting;return '<div class="ds-cards">'+
+ kpi("Produits directs enregistrés",money(a.revenue_minor),"Écritures validées, traitement fiscal à confirmer")+
+ kpi("Charges d'exploitation directes",money(a.expenses_minor),"Sans les charges de la plateforme Audiotel")+
+ kpi("Résultat comptable provisoire",money(a.operating_result_minor),"Hors éléments non comptabilisés et impôts")+
+ kpi("Écritures en attente",integer(a.draft_entries),"Validation à deux personnes obligatoire")+
+ '</div>';}
+function banner(){return '<div class="ds-warning"><strong>Distribution directe en préparation.</strong> Aucun bloc Arcep attribué à PGI n’est présumé actif, aucun acheminement direct n’est activé et aucun reversement ne peut être déclenché depuis ce cockpit. La comptabilité ci-dessous est un sous-journal distinct et non un FEC certifié.</div>';}
+function overview(){
+  const blocks=(data.number_blocks||[]).reduce((n,x)=>n+x.count,0),nums=(data.number_inventory||[]).reduce((n,x)=>n+x.count,0),links=(data.interconnections||[]).reduce((n,x)=>n+x.count,0);
+  return '<div class="ds-cards">'+
+    kpi("Blocs répertoriés",integer(blocks),"Préparés ou attribués : vérifier les décisions Arcep")+
+    kpi("Numéros au registre direct",integer(nums),"Inventaire totalement indépendant des numéros partenaires")+
+    kpi("Contrats techniques",integer(links),"Collecte, transport et interconnexion")+
+    kpi("Mode d’exploitation","Préparation","Numérotation et versements désactivés")+'</div>'+
+    '<div class="ds-grid"><section class="ds-panel"><h3>Inventaire de numérotation</h3>'+statRows(data.number_inventory)+'</section><section class="ds-panel"><h3>Contrats et interconnexions</h3>'+statRows(data.interconnections)+'</section></div>'+
+    '<section class="ds-panel"><h3>Seuils de sécurité</h3><div class="ds-list"><div>Attribution de numéros : <strong class="ds-alert">Désactivée</strong></div><div>Déclenchement de reversements : <strong class="ds-alert">Désactivé</strong></div><div>Écritures comptables : <strong>journal propre à la distribution directe</strong></div><div>Validation comptable : <strong>séparation préparateur / approbateur</strong></div></div></section>';
+}
+function numbers(){return '<div class="ds-grid"><section class="ds-panel"><h3>Blocs de numéros PGI</h3>'+statRows(data.number_blocks)+'</section><section class="ds-panel"><h3>Statuts des numéros</h3>'+statRows(data.number_inventory)+'</section></div>'+
+  '<section class="ds-panel"><h3>Logique d’attribution</h3><p class="ds-note">Aucun numéro ne peut être commercialisé sous le statut de numéro attribué par PGI sans décision d’attribution Arcep, contrôle du titulaire, contrat éditeur et preuves réglementaires. L’inventaire du distributeur direct n’est pas confondu avec celui des partenaires SVA.</p></section>';}
+function listAccounts(){return (data?.accounting?.accounts||[]).map(x=>'<option value="'+esc(x.code)+'">'+esc(x.code+" : "+x.label)+'</option>').join("");}
+function entryLine(i){return '<div class="ds-line" data-ds-line><select class="ds-input" data-ds-account aria-label="Compte ligne '+i+'">'+listAccounts()+'</select><input class="ds-input" type="number" min="0" step="0.01" data-ds-debit placeholder="Débit €" aria-label="Débit ligne '+i+'"><input class="ds-input" type="number" min="0" step="0.01" data-ds-credit placeholder="Crédit €" aria-label="Crédit ligne '+i+'"></div>';}
+function journals(){
+  const a=data.accounting,entries=a.entries||[];
+  return cards()+'<section class="ds-panel"><h3>Registre comptable indépendant</h3><p class="ds-note">Période : '+esc(month)+' | Écritures validées : '+integer(a.posted_entries)+' | Période : '+esc(a.period_status)+'. Les créances et dettes affichées sont des variations mensuelles, pas des soldes bancaires réels.</p>'+
+   '<div class="ds-cards">'+kpi("Variation créances opérateurs",money(a.receivables_change_minor),"Compte propre distributeur")+
+   kpi("Variation dettes éditeurs",money(a.publisher_liabilities_change_minor),"Aucun virement automatique")+
+   kpi("Variation compte d’attente",money(a.suspense_change_minor),"Ventilation à contrôler")+
+   kpi("Écritures validées",integer(a.posted_entries),"Piste d’audit propre")+'</div></section>'+
+   '<section class="ds-panel"><h3>Historique des écritures du mois</h3><div class="ds-actions"><button class="ds-button" data-ds-export type="button">Exporter CSV du distributeur</button><button class="ds-button" data-ds-print type="button">Imprimer</button></div>'+
+   (entries.length?'<div class="ds-table"><table><thead><tr><th>Date</th><th>Référence</th><th>Libellé</th><th>Statut</th><th>Débit</th><th>Crédit</th><th>Action</th></tr></thead><tbody>'+
+     entries.map(x=>'<tr><td>'+esc(x.date)+'</td><td>'+esc(x.source_reference)+'</td><td>'+esc(x.description)+'</td><td>'+esc(x.status)+'</td><td>'+esc(money(x.debit_minor))+'</td><td>'+esc(money(x.credit_minor))+'</td><td>'+(x.status==="draft"?'<button type="button" class="ds-button" data-ds-approve="'+esc(x.id)+'">Approuver</button>':'Validée')+'</td></tr>').join("")+
+     '</tbody></table></div>':'<p class="ds-note">Aucune écriture pour cette période.</p>')+'</section>'+
+   '<section class="ds-panel"><h3>Nouveau brouillon comptable</h3><p class="ds-note">Saisie manuelle uniquement sur justificatif. Somme des débits égale à la somme des crédits, références traçables et seconde personne obligatoire pour l’approbation. Aucun versement bancaire n’en découle.</p>'+
+   '<form class="ds-form" data-ds-form><label>Date<input class="ds-input" name="entry_date" type="date" required value="'+esc(new Date().toISOString().slice(0,10))+'"></label>'+
+   '<label>Référence unique (DSVA-...)<input class="ds-input" name="source_reference" required minlength="8" placeholder="DSVA-PIECE-0001"></label>'+
+   '<label class="ds-wide">Description<input class="ds-input" name="description" required minlength="6" placeholder="Pièce comptable justifiée, aucune simulation"></label>'+
+   '<label class="ds-wide">Référence du justificatif<input class="ds-input" name="evidence_reference" required minlength="6" placeholder="Document et référence vérifiable"></label>'+
+   '<div class="ds-lines"><strong>Lignes comptables</strong>'+Array.from({length:numberOfLines},(_,i)=>entryLine(i+1)).join("")+'</div>'+
+   '<div class="ds-actions"><button class="ds-button" type="button" data-ds-add-line>Ajouter une ligne</button><button class="ds-button" type="submit">Enregistrer le brouillon</button></div></form></section>'+
+   '<section class="ds-panel"><h3>Lecture financière prudente</h3><p class="ds-note">Le sous-journal est séparé de la comptabilité générale existante. Une intégration à la comptabilité statutaire et au FEC devra être contrôlée par l’expert-comptable, avec règles de TVA, comptes de tiers, cut-off, rapprochements et justificatifs. Ne pas confondre produits comptabilisés et trésorerie encaissée.</p></section>';
+}
+function compliance(){return '<div class="ds-grid"><section class="ds-panel"><h3>Prérequis opérateur</h3><div class="ds-list">'+[
+ "Identifiant CE et décision d’attribution Arcep",
+ "Cadre AF2M, APNF et RSVA",
+ "Contrats d’interconnexion et de collecte",
+ "Gestion de la portabilité, SIP et CDR",
+ "KYC éditeurs, protection des consommateurs et antifraude",
+ "Contrats et mandat financier approprié pour les fonds de tiers",
+ "Comptabilité, contrôle interne et audit de lancement"
+ ].map(s=>'<div><span class="ds-alert">À documenter : </span>'+esc(s)+'</div>').join("")+'</div></section>'+
+ '<section class="ds-panel"><h3>Contrôle du cloisonnement</h3><div class="ds-list"><div>Activité courante : <strong>Audiotel Premium Pro</strong></div><div>Nouvelle activité : <strong>Distributeur SVA direct</strong></div><div>Tables financières : <strong>direct_sva_*</strong></div><div>Écritures historiques Audiotel : <strong>inchangées</strong></div><div>Publication et activation : <strong class="ds-alert">Aucune</strong></div></div></section></div>';}
+function show(){
+ if(!host||!data)return;
+ host.innerHTML='<div class="ds"><div class="ds-header"><div><p class="panel-kicker">ACTIVITÉ DISTINCTE | PGI TELECOM</p><h2>Distribution SVA directe</h2><p class="ds-desc">Pilotage opérateur et comptabilité isolés de la plateforme Audiotel actuelle.</p></div><label class="ds-desc">Mois comptable <input type="month" class="ds-input" data-ds-month value="'+esc(month)+'"></label></div>'+banner()+
+ '<div class="ds-tabs" role="tablist" aria-label="Rubriques distributeur direct">'+
+ [["overview","Vue générale"],["numbers","Numérotation"],["accounting","Comptabilité directe"],["compliance","Conformité"]].map(([key,label])=>'<button type="button" role="tab" class="ds-tab" data-ds-tab="'+key+'" aria-selected="'+(key===tab)+'">'+label+'</button>').join("")+'</div>'+
+ '<div class="ds-status '+esc(severity)+'" aria-live="polite">'+esc(message)+'</div>'+
+ (tab==="overview"?overview():tab==="numbers"?numbers():tab==="accounting"?journals():compliance())+
+ '</div>';
+ attach();
+}
+function amountMinor(v){
+ const raw=String(v??"").trim();
+ if(!/^\d{1,12}(\.\d{1,2})?$/.test(raw))throw Error("MONTANT_INVALIDE");
+ const [whole,decimals=""]=raw.split(".");
+ const minor=Number(whole)*100+Number(decimals.padEnd(2,"0"));
+ if(!Number.isSafeInteger(minor))throw Error("MONTANT_TROP_ELEVE");
+ return minor;
+}
+async function createDraft(form){
+ const fd=new FormData(form);
+ const lines=Array.from(form.querySelectorAll("[data-ds-line]")).map(row=>({
+  account_code:row.querySelector("[data-ds-account]").value,
+  label:row.querySelector("[data-ds-account]").selectedOptions[0]?.textContent||"Écriture SVA directe",
+  debit_minor:row.querySelector("[data-ds-debit]").value?amountMinor(row.querySelector("[data-ds-debit]").value):0,
+  credit_minor:row.querySelector("[data-ds-credit]").value?amountMinor(row.querySelector("[data-ds-credit]").value):0
+ }));
+ return request("/platform/direct-sva/accounting/drafts","POST",{
+  entry_date:fd.get("entry_date"),source_reference:fd.get("source_reference"),
+  description:fd.get("description"),evidence_reference:fd.get("evidence_reference"),currency:"EUR",lines
+ });
+}
+function exportCsv(){
+ if(!data)return;
+ const rows=[["Unité","Date","Référence","Libellé","Statut","Débit EUR","Crédit EUR","Justificatif"]];
+ for(const e of data.accounting.entries||[])rows.push(["Distribution SVA directe",e.date,e.source_reference,e.description,e.status,e.debit_minor/100,e.credit_minor/100,e.evidence_reference]);
+ const quote=v=>'"'+String(v??"").replace(/"/g,'""')+'"';
+ const csv="\ufeff"+rows.map(row=>row.map(quote).join(";")).join("\r\n")+"\r\n";
+ const u=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"})),a=document.createElement("a");a.href=u;a.download="pgi-distributeur-sva-direct-"+month+".csv";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1000);
+}
+function attach(){
+ host.querySelector("[data-ds-month]")?.addEventListener("change",event=>{month=event.target.value||month;load();});
+ host.querySelectorAll("[data-ds-tab]").forEach(btn=>btn.addEventListener("click",()=>{tab=btn.dataset.dsTab;show();}));
+ host.querySelector("[data-ds-export]")?.addEventListener("click",exportCsv);
+ host.querySelector("[data-ds-print]")?.addEventListener("click",()=>window.print());
+ host.querySelector("[data-ds-add-line]")?.addEventListener("click",()=>{if(numberOfLines>=50){message="Limite de 50 lignes atteinte.";severity="ds-alert";show();return;}numberOfLines++;show();});
+ host.querySelector("[data-ds-form]")?.addEventListener("submit",async event=>{
+  event.preventDefault();if(busy)return;
+  busy=true;message="Enregistrement du brouillon...";severity="";show();
+  try{await createDraft(event.target);numberOfLines=2;message="Brouillon enregistré dans le seul journal distributeur direct.";severity="ds-ok";await load();}
+  catch(error){message="Écriture non enregistrée : "+String(error.message||"erreur");severity="ds-alert";show();}
+  finally{busy=false;}
+ });
+ host.querySelectorAll("[data-ds-approve]").forEach(btn=>btn.addEventListener("click",async()=>{
+  const proof=window.prompt("Référence documentaire de l’approbation indépendante (6 caractères minimum) :");
+  if(proof===null)return;
+  if(proof.trim().length<6){message="Justificatif d’approbation insuffisant.";severity="ds-alert";show();return;}
+  try{await request("/platform/direct-sva/accounting/drafts/"+encodeURIComponent(btn.dataset.dsApprove)+"/approve","POST",{approval_evidence:proof.trim()});message="Écriture approuvée et verrouillée.";severity="ds-ok";await load();}
+  catch(error){message="Validation refusée : "+String(error.message||"erreur");severity="ds-alert";show();}
+ }));
+}
+async function load(){
+ if(!host||busy)return;
+ busy=true;host.innerHTML='<div class="ds-panel">Chargement des données propres au distributeur direct...</div>';
+ try{data=await request("/platform/direct-sva/overview?month="+encodeURIComponent(month));show();}
+ catch(error){data=null;host.innerHTML='<div class="ds-warning"><strong>Distribution directe non disponible.</strong> Les données restent isolées. Vérifier la connexion PostgreSQL, la migration dédiée et les droits administrateur. Détail : '+esc(error.message)+'</div>';}
+ finally{busy=false;}
+}
+export function mountDirectSvaCockpit(element,options={}){
+ if(!element)return;
+ addStyle();
+ if(host===element&&data&&!options.force){show();return;}
+ host=element;load();
+}
