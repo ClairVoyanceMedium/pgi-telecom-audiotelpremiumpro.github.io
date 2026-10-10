@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const migrationDir=new URL("../database/migrations/",import.meta.url);
-const names=["073_direct_sva_operator_business_unit.sql","074_single_company_two_business_units.sql","075_direct_sva_customer_and_automation_foundation.sql","076_direct_sva_admin_switches.sql","077_existing_customer_provider_transition_preparation.sql","078_direct_sva_complaint_inbox_preparation.sql"];
+const names=["073_direct_sva_operator_business_unit.sql","074_single_company_two_business_units.sql","075_direct_sva_customer_and_automation_foundation.sql","076_direct_sva_admin_switches.sql","077_existing_customer_provider_transition_preparation.sql","078_direct_sva_complaint_inbox_preparation.sql","079_direct_sva_automation_rehearsals.sql"];
 
 function stripSqlComments(sql){
  return sql.replace(/\/\*[\s\S]*?\*\//g," ").replace(/--[^\n]*/g," ");
