@@ -3,7 +3,12 @@
 // missing CDRs, activates provider routes, or combines unconfirmed cash with payouts.
 function failure(code){const e=new Error(code);e.code=code;e.status=409;return e;}
 function id(value,label){
- const n=Number(value);if(!Number.isSafeInteger(n)||n<1)throw failure("CONTINUITY_INVALID_"+label);return n;
+ // Reject type-coercion aliases such as true=>1, 1e2, or padded account IDs.
+ if(typeof value!=="number"&&typeof value!=="string")throw failure("CONTINUITY_INVALID_"+label);
+ if(typeof value==="string"&&!/^[1-9][0-9]*$/.test(value))throw failure("CONTINUITY_INVALID_"+label);
+ const n=Number(value);
+ if(!Number.isSafeInteger(n)||n<1)throw failure("CONTINUITY_INVALID_"+label);
+ return n;
 }
 function date(value,label){
  const d=new Date(value);if(!value||!Number.isFinite(d.getTime()))throw failure("CONTINUITY_INVALID_"+label);
