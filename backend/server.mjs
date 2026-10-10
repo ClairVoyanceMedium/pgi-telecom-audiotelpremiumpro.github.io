@@ -28,6 +28,7 @@ import {directSvaBusinessSnapshot,directSvaAccountingExport,createDirectSvaDraft
 import {analyzeDirectSvaSettlement} from "./src/direct-sva-reconciliation.mjs";
 import {directSvaIntegrationOverview} from "./src/direct-sva-integrations.mjs";
 import {directSvaCustomerOverview,directSvaWorkflowOverview} from "./src/direct-sva-customer.mjs";
+import {recordDirectSvaWorkflowSimulation,directSvaSimulationDashboard} from "./src/direct-sva-automation-rehearsal.mjs";
 import {getDirectSvaSwitches,setDirectSvaPreview,setDirectSvaCommercial} from "./src/direct-sva-admin-switches.mjs";
 import {eligibleExistingCustomerNumbers,preparedExistingCustomerTransitions,prepareExistingCustomerTransition} from "./src/direct-sva-customer-transition.mjs";
 import {directSvaProductionReadiness} from "./src/direct-sva-production-readiness.mjs";
@@ -1908,6 +1909,18 @@ export function createBackend(options={}){
         requireRole(actor,["admin"]);
         return done(res,metrics,started,"platform.direct_sva_complaints_readiness",200,
           await directSvaComplaintPreparatoryOverview(store));
+      }
+      // Internal rehearsal of an automation, without running CRM/GA4/PSP/carrier jobs.
+      if(method==="GET"&&pathname==="/api/v1/platform/direct-sva/automation/rehearsals"){
+        requireRole(actor,["admin"]);
+        return done(res,metrics,started,"platform.direct_sva_rehearsals",200,
+          await directSvaSimulationDashboard(store));
+      }
+      if(method==="POST"&&pathname==="/api/v1/platform/direct-sva/automation/rehearsals"){
+        requireRole(actor,["admin"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        return done(res,metrics,started,"platform.direct_sva_rehearsal_create",201,
+          await recordDirectSvaWorkflowSimulation(store,actor,body));
       }
       if(method==="GET"&&pathname==="/api/v1/platform/direct-sva/automation"){
         requireRole(actor,["admin","finance","readonly"]);
