@@ -135,3 +135,17 @@ Les controles ne doivent pas autoriser un deploiement du distributeur sous le si
 - simulation et recette bout en bout, puis deuxieme top depart.
 
 Aucun prestataire, document externe ni paiement n'a ete modifie durant cette preparation.
+
+
+## Verrou technique du premier lancement Audiotel
+
+Le circuit de distribution directe dispose maintenant de deux controles complementaires :
+
+1. L'onglet du cockpit comptable n'est visible que si window.PGI_CONFIG.directSvaOperatorUiEnabled === true. Cette valeur n'est pas ajoutee au site courant et demeure absente par defaut.
+2. Les routes du serveur /api/v1/platform/direct-sva/* et /api/v1/customer/direct-sva/* retournent un refus 404 tant que PGI_DIRECT_SVA_API_PREVIEW_ENABLED n'est pas validee explicitement. Le parametre est false par defaut dans backend/src/config.mjs.
+
+Le module administratif assets/direct-sva-cockpit.js est copie lors de la construction statique, mais n'est telecharge par le navigateur que lorsque l'onglet est effectivement ouvert. Les pages publiques /distribution-sva/ et l'espace client direct ne sont toujours pas copies ; le serveur maintient leur refus, y compris pour les chemins encodes.
+
+Activer ces interrupteurs seuls ne constitue pas un lancement. Les verrous SQL continuent d'interdire l'affectation et l'activation de numeros et les paiements. L'ouverture commerciale ne peut intervenir qu'apres obtention des preuves, recette PostgreSQL et autorisation PGI.
+
+Les nouveaux controles automatises sont dans tests/direct-sva-site-and-client.test.mjs, tests/direct-sva-business.test.mjs et tests/direct-sva-migration-integrity.test.mjs. Aucun resultat de CI ou de test PostgreSQL de bout en bout n'est revendique tant qu'il n'a pas ete effectivement execute.
