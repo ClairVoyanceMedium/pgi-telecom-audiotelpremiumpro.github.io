@@ -58,8 +58,13 @@ export function consolidateProviderNeutralBusinessLive(cdrRows=[],context={}){
    throw failure("CONTINUITY_CDR_WRONG_PROVIDER_EPOCH");
   const key=String(row.canonical_call_key||"").trim();
   if(!/^[a-zA-Z0-9_.:-]{12,120}$/.test(key))throw failure("CONTINUITY_CANONICAL_CDR_KEY_REQUIRED");
-  const fingerprint=JSON.stringify([tenant,number,carrier,epoch,started,row.billable_seconds,
-   row.expected_client_net_minor,row.confirmed_client_net_minor,row.paid_client_net_minor,row.active===true]);
+  // A repeated canonical key is idempotent only if the entire material CDR
+  // identity is identical. Earlier we ignored ended_at and contract_epoch_reference,
+  // silently accepting contradictory replays and obscuring settlement audits.
+  const fingerprint=JSON.stringify([tenant,number,carrier,epoch,started,ended,
+   String(row.contract_epoch_reference??""),row.billable_seconds,
+   row.expected_client_net_minor,row.confirmed_client_net_minor,
+   row.paid_client_net_minor,row.active===true]);
   if(seen.has(key)){
    if(seen.get(key)!==fingerprint)throw failure("CONTINUITY_CONFLICTING_DUPLICATE_CDR");
    continue; // Idempotent replay, never double count.
