@@ -36,6 +36,14 @@ export function createStaticSiteHandler(rootDir){
       return true;
     }
 
+    // Direct SVA is a staged business, not a public offer. Deny even if someone
+    // accidentally copies its HTML into dist. Releasing requires a reviewed change.
+    if(/^\/(?:distribution-sva(?:\/|$)|site\/distribution-sva(?:\/|$))/i.test(String(pathname||""))){
+      res.writeHead(404,{"Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow, noarchive"});
+      res.end();
+      return true;
+    }
+
     if(["/favicon.ico","/favicon.png"].includes(String(pathname||""))){
       res.writeHead(308,{"Location":"/assets/audiotel-brand-icon-v33.png","Cache-Control":"public, max-age=86400"});
       res.end();
