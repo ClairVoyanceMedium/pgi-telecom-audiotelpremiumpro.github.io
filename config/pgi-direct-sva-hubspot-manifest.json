@@ -1,0 +1,385 @@
+{
+  "schema_version": "pgi-direct-sva-crm-manifest/1",
+  "business_unit": "direct_sva",
+  "portal_id": "149417663",
+  "purpose": "prelaunch safe provisioning manifest, not live HubSpot changes",
+  "production_status": "not_provisioned",
+  "current_verified": {
+    "existing_contact_property": [
+      "pgi_dossier_ref",
+      "hs_language"
+    ],
+    "existing_deal_property": [
+      "pgi_dossier_ref"
+    ],
+    "deals_pipeline": [
+      "default"
+    ],
+    "tickets_pipeline": [
+      "0"
+    ],
+    "distribution_pipeline": null,
+    "distribution_fields_confirmed": false
+  },
+  "proposed_properties": [
+    {
+      "object_type": "contacts",
+      "name": "pgi_business_unit",
+      "label": "Activité PGI Telecom",
+      "type": "enumeration",
+      "field_type": "select",
+      "options": [
+        {
+          "label": "Audiotel Premium Pro",
+          "value": "audiotel_platform"
+        },
+        {
+          "label": "PGI Telecom Distribution",
+          "value": "direct_sva"
+        }
+      ],
+      "required_for_distribution": true,
+      "shared_scope": "PGI Telecom",
+      "default_value": null,
+      "write_during_prelaunch": false
+    },
+    {
+      "object_type": "contacts",
+      "name": "pgi_source_reference",
+      "label": "Référence d’origine Distribution",
+      "type": "string",
+      "field_type": "text",
+      "options": null,
+      "required_for_distribution": true,
+      "shared_scope": "PGI Telecom",
+      "default_value": null,
+      "write_during_prelaunch": false
+    },
+    {
+      "object_type": "contacts",
+      "name": "pgi_content_language",
+      "label": "Langue de consultation du pôle",
+      "type": "enumeration",
+      "field_type": "select",
+      "options": [
+        {
+          "label": "FR",
+          "value": "fr"
+        },
+        {
+          "label": "EN",
+          "value": "en"
+        },
+        {
+          "label": "ES",
+          "value": "es"
+        },
+        {
+          "label": "PT",
+          "value": "pt"
+        },
+        {
+          "label": "DE",
+          "value": "de"
+        },
+        {
+          "label": "IT",
+          "value": "it"
+        }
+      ],
+      "required_for_distribution": true,
+      "shared_scope": "PGI Telecom",
+      "default_value": null,
+      "write_during_prelaunch": false
+    },
+    {
+      "object_type": "contacts",
+      "name": "pgi_interest_type",
+      "label": "Type d’intérêt Distribution",
+      "type": "enumeration",
+      "field_type": "select",
+      "options": [
+        {
+          "label": "distribution",
+          "value": "distribution"
+        },
+        {
+          "label": "interconnexion",
+          "value": "interconnexion"
+        },
+        {
+          "label": "numero sva",
+          "value": "numero_sva"
+        },
+        {
+          "label": "portabilite",
+          "value": "portabilite"
+        }
+      ],
+      "required_for_distribution": true,
+      "shared_scope": "PGI Telecom",
+      "default_value": null,
+      "write_during_prelaunch": false
+    },
+    {
+      "object_type": "deals",
+      "name": "pgi_business_unit",
+      "label": "Activité PGI Telecom",
+      "type": "enumeration",
+      "field_type": "select",
+      "options": [
+        {
+          "label": "Audiotel Premium Pro",
+          "value": "audiotel_platform"
+        },
+        {
+          "label": "PGI Telecom Distribution",
+          "value": "direct_sva"
+        }
+      ],
+      "required_for_distribution": true,
+      "shared_scope": "PGI Telecom",
+      "default_value": null,
+      "write_during_prelaunch": false
+    },
+    {
+      "object_type": "deals",
+      "name": "pgi_source_reference",
+      "label": "Référence d’origine Distribution",
+      "type": "string",
+      "field_type": "text",
+      "options": null,
+      "required_for_distribution": true,
+      "shared_scope": "PGI Telecom",
+      "default_value": null,
+      "write_during_prelaunch": false
+    },
+    {
+      "object_type": "deals",
+      "name": "pgi_content_language",
+      "label": "Langue d’origine Distribution",
+      "type": "enumeration",
+      "field_type": "select",
+      "options": [
+        {
+          "label": "FR",
+          "value": "fr"
+        },
+        {
+          "label": "EN",
+          "value": "en"
+        },
+        {
+          "label": "ES",
+          "value": "es"
+        },
+        {
+          "label": "PT",
+          "value": "pt"
+        },
+        {
+          "label": "DE",
+          "value": "de"
+        },
+        {
+          "label": "IT",
+          "value": "it"
+        }
+      ],
+      "required_for_distribution": true,
+      "shared_scope": "PGI Telecom",
+      "default_value": null,
+      "write_during_prelaunch": false
+    },
+    {
+      "object_type": "deals",
+      "name": "pgi_operator_onboarding_status",
+      "label": "Statut préparation opérateur",
+      "type": "enumeration",
+      "field_type": "select",
+      "options": [
+        {
+          "label": "qualification",
+          "value": "qualification"
+        },
+        {
+          "label": "documents",
+          "value": "documents"
+        },
+        {
+          "label": "technical verification",
+          "value": "technical_verification"
+        },
+        {
+          "label": "contract pending",
+          "value": "contract_pending"
+        },
+        {
+          "label": "network pending",
+          "value": "network_pending"
+        },
+        {
+          "label": "activation authorized",
+          "value": "activation_authorized"
+        },
+        {
+          "label": "active",
+          "value": "active"
+        },
+        {
+          "label": "closed",
+          "value": "closed"
+        }
+      ],
+      "required_for_distribution": true,
+      "shared_scope": "PGI Telecom",
+      "default_value": null,
+      "write_during_prelaunch": false
+    },
+    {
+      "object_type": "tickets",
+      "name": "pgi_business_unit",
+      "label": "Activité PGI Telecom",
+      "type": "enumeration",
+      "field_type": "select",
+      "options": [
+        {
+          "label": "Audiotel Premium Pro",
+          "value": "audiotel_platform"
+        },
+        {
+          "label": "PGI Telecom Distribution",
+          "value": "direct_sva"
+        }
+      ],
+      "required_for_distribution": true,
+      "shared_scope": "PGI Telecom",
+      "default_value": null,
+      "write_during_prelaunch": false
+    },
+    {
+      "object_type": "tickets",
+      "name": "pgi_dossier_ref",
+      "label": "Référence dossier PGI Telecom",
+      "type": "string",
+      "field_type": "text",
+      "options": null,
+      "required_for_distribution": true,
+      "shared_scope": "PGI Telecom",
+      "default_value": null,
+      "write_during_prelaunch": false
+    },
+    {
+      "object_type": "tickets",
+      "name": "pgi_complaint_reference",
+      "label": "Référence réclamation Distribution",
+      "type": "string",
+      "field_type": "text",
+      "options": null,
+      "required_for_distribution": true,
+      "shared_scope": "PGI Telecom",
+      "default_value": null,
+      "write_during_prelaunch": false
+    }
+  ],
+  "proposed_pipelines": {
+    "deals": {
+      "label": "PGI Telecom Distribution | Partenaires",
+      "stages": [
+        {
+          "label": "qualification",
+          "key": "qualification",
+          "order": 0
+        },
+        {
+          "label": "documents",
+          "key": "documents",
+          "order": 1
+        },
+        {
+          "label": "technical verification",
+          "key": "technical_verification",
+          "order": 2
+        },
+        {
+          "label": "contract pending",
+          "key": "contract_pending",
+          "order": 3
+        },
+        {
+          "label": "network pending",
+          "key": "network_pending",
+          "order": 4
+        },
+        {
+          "label": "activation authorized",
+          "key": "activation_authorized",
+          "order": 5
+        },
+        {
+          "label": "active",
+          "key": "active",
+          "order": 6
+        },
+        {
+          "label": "closed",
+          "key": "closed",
+          "order": 7
+        }
+      ],
+      "not_default": true,
+      "id": null
+    },
+    "tickets": {
+      "label": "PGI Telecom Distribution | Réclamations",
+      "stages": [
+        {
+          "label": "Reçue",
+          "key": "received"
+        },
+        {
+          "label": "À qualifier",
+          "key": "triage"
+        },
+        {
+          "label": "Traitement en cours",
+          "key": "in_progress"
+        },
+        {
+          "label": "En attente de justificatifs",
+          "key": "waiting_evidence"
+        },
+        {
+          "label": "Réponse préparée",
+          "key": "prepared_reply"
+        },
+        {
+          "label": "Clôturée",
+          "key": "closed"
+        }
+      ],
+      "not_default": true,
+      "id": null
+    }
+  },
+  "rules": {
+    "no_live_records_in_preparation": true,
+    "no_fictitious_contacts": true,
+    "no_reuse_audiotel_default_pipeline": true,
+    "no_default_on_existing_contacts": true,
+    "do_not_send_without_processing_basis": true,
+    "primary_contact_identity_dedup_key": "email",
+    "case_number_association_key": "pgi_dossier_ref",
+    "do_not_overwrite_existing_audiotel_records": true,
+    "no_tracking_personal_data_sent_to_ga4": true,
+    "ga4_and_hubspot_must_not_share_preconsent_leads": true
+  },
+  "external_setup_needed": [
+    "create_11_missing_fields",
+    "create_dedicated_partner_pipeline",
+    "create_dedicated_ticket_pipeline",
+    "verify_official_property_names_and_stages",
+    "connect_authorized_hubspot_private_app",
+    "end_to_end_fictive_data_in_staging_only_then_real_consented_test_after_release"
+  ]
+}
