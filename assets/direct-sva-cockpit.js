@@ -64,6 +64,25 @@ function journals(){
    '<div class="ds-actions"><button class="ds-button" type="button" data-ds-add-line>Ajouter une ligne</button><button class="ds-button" type="submit">Enregistrer le brouillon</button></div></form></section>'+
    '<section class="ds-panel"><h3>Lecture financière prudente</h3><p class="ds-note">Le sous-journal est séparé de la comptabilité générale existante. Une intégration à la comptabilité statutaire et au FEC devra être contrôlée par l’expert-comptable, avec règles de TVA, comptes de tiers, cut-off, rapprochements et justificatifs. Ne pas confondre produits comptabilisés et trésorerie encaissée.</p></section>';
 }
+function reconciliation(){
+ return '<section class="ds-panel"><h3>Rapprochement des relevés du distributeur</h3>'+
+ '<p class="ds-note">Pré-analyse d’un relevé issu d’un futur opérateur de collecte. Détection des références CDR dupliquées, des numéros incorrects et des répartitions financières déséquilibrées. Aucun montant n’est enregistré en comptabilité et aucun virement n’est déclenché.</p>'+
+ '<label class="ds-desc" for="direct-sva-reconciliation-input">Relevé JSON anonymisé, sans numéros d’appelants</label>'+
+ '<textarea class="ds-input" id="direct-sva-reconciliation-input" data-ds-reconcile-payload rows="9" style="width:100%;font-family:monospace" placeholder="{&quot;operator_reference&quot;:&quot;OPERATEUR-001&quot;,&quot;statement_reference&quot;:&quot;RELEVE-001&quot;,&quot;period&quot;:&quot;2026-10&quot;,&quot;currency&quot;:&quot;EUR&quot;,&quot;rows&quot;:[{&quot;cdr_reference&quot;:&quot;CDR-0001&quot;,&quot;called_number&quot;:&quot;+33891234567&quot;,&quot;billable_seconds&quot;:60,&quot;upstream_net_minor&quot;:100,&quot;pgi_margin_minor&quot;:20,&quot;publisher_due_minor&quot;:80}]}"></textarea>'+
+ '<div class="ds-actions"><button class="ds-button" type="button" data-ds-reconcile>Analyser le relevé sans l’enregistrer</button></div><div data-ds-reconcile-result class="ds-status" aria-live="polite"></div></section>';
+}
+function showReconciliationResult(result){
+ const target=host?.querySelector("[data-ds-reconcile-result]");
+ if(!target)return;
+ const issues=Array.isArray(result.issues)?result.issues:[];
+ target.innerHTML='<div class="ds-cards">'+
+ kpi("Lignes analysées",integer(result.input_rows),"Relevé non authentifié")+
+ kpi("Lignes acceptées",integer(result.accepted_rows),"Contrôles structurels uniquement")+
+ kpi("Marge PGI théorique",money(result.total_pgi_margin_minor),"Non comptabilisée")+
+ kpi("Net dû aux éditeurs",money(result.total_publisher_due_minor),"Aucun paiement autorisé")+'</div>'+
+ '<p class="ds-note">Empreinte du fichier : '+esc(result.source_fingerprint)+'. '+(result.balanced?"Répartition arithmétique cohérente.":"Anomalies détectées.")+' Le rapprochement avec des CDR authentifiés reste obligatoire.</p>'+
+ (issues.length?'<div class="ds-list">'+issues.map(x=>'<div class="ds-alert">Ligne '+integer(x.row)+' : '+esc(x.code)+' '+esc(x.cdr_reference||"")+'</div>').join("")+'</div>':'<p class="ds-note">Aucune anomalie arithmétique dans ce relevé, sans présumer de sa validité contractuelle.</p>');
+}
 function compliance(){return '<div class="ds-grid"><section class="ds-panel"><h3>Prérequis opérateur</h3><div class="ds-list">'+[
  "Identifiant CE et décision d’attribution Arcep",
  "Cadre AF2M, APNF et RSVA",
@@ -78,9 +97,9 @@ function show(){
  if(!host||!data)return;
  host.innerHTML='<div class="ds"><div class="ds-header"><div><p class="panel-kicker">ACTIVITÉ DISTINCTE | PGI TELECOM</p><h2>Distribution SVA directe</h2><p class="ds-desc">Pilotage opérateur et comptabilité isolés de la plateforme Audiotel actuelle.</p></div><label class="ds-desc">Mois comptable <input type="month" class="ds-input" data-ds-month value="'+esc(month)+'"></label></div>'+banner()+
  '<div class="ds-tabs" role="tablist" aria-label="Rubriques distributeur direct">'+
- [["overview","Vue générale"],["numbers","Numérotation"],["accounting","Comptabilité directe"],["compliance","Conformité"]].map(([key,label])=>'<button type="button" role="tab" class="ds-tab" data-ds-tab="'+key+'" aria-selected="'+(key===tab)+'">'+label+'</button>').join("")+'</div>'+
+ [["overview","Vue générale"],["numbers","Numérotation"],["accounting","Comptabilité directe"],["reconciliation","Rapprochement"],["compliance","Conformité"]].map(([key,label])=>'<button type="button" role="tab" class="ds-tab" data-ds-tab="'+key+'" aria-selected="'+(key===tab)+'">'+label+'</button>').join("")+'</div>'+
  '<div class="ds-status '+esc(severity)+'" aria-live="polite">'+esc(message)+'</div>'+
- (tab==="overview"?overview():tab==="numbers"?numbers():tab==="accounting"?journals():compliance())+
+ (tab==="overview"?overview():tab==="numbers"?numbers():tab==="accounting"?journals():tab==="reconciliation"?reconciliation():compliance())+
  '</div>';
  attach();
 }
@@ -114,6 +133,16 @@ function exportCsv(){
  const u=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"})),a=document.createElement("a");a.href=u;a.download="pgi-distributeur-sva-direct-"+month+".csv";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1000);
 }
 function attach(){
+ host.querySelector("[data-ds-reconcile]")?.addEventListener("click",async()=>{
+  const target=host.querySelector("[data-ds-reconcile-result]");
+  try{
+   const payload=JSON.parse(host.querySelector("[data-ds-reconcile-payload]").value);
+   target.textContent="Analyse du relevé...";
+   const result=await request("/platform/direct-sva/reconciliation/preview","POST",payload);
+   showReconciliationResult(result);
+  }catch(error){target.textContent="Analyse refusée : "+String(error.message||"format incorrect");}
+ });
+
  host.querySelector("[data-ds-month]")?.addEventListener("change",event=>{month=event.target.value||month;load();});
  host.querySelectorAll("[data-ds-tab]").forEach(btn=>btn.addEventListener("click",()=>{tab=btn.dataset.dsTab;show();}));
  host.querySelector("[data-ds-export]")?.addEventListener("click",exportCsv);
