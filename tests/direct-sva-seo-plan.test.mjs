@@ -35,5 +35,5 @@ test("fully authorized hypothetical sitemap has thirty-five public URLs and mult
  assert.match(xml,/hreflang="x-default"/);
  assert.match(xml,/hreflang="pt"/);
  assert.match(xml,/hreflang="it"/);
- assert.match(xml,/&amp;/);
+ assert.match(xml,/<urlset xmlns="http:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9"/);
 });
