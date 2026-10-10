@@ -19,6 +19,9 @@ test("diagnostic reports actual locks and never claims real production customer 
  assert.equal(result.schema_complete,true);
  assert.equal(result.protective_constraints_verified,true);
  assert.equal(result.preparation_controls_safe,true);
+ assert.equal(result.postgres_rls_defense_verified,false);
+ assert.ok(result.postgres_rls_unprotected_tables.length>=5);
+ assert.ok(result.checks.some(x=>x.key==="rls"&&x.status==="not_configured"));
  assert.equal(result.production_ready,false);
  assert.equal(result.customer_portal_released,false);
  assert.equal(result.live_business_live_verified,false);
@@ -55,6 +58,7 @@ test("read-only diagnostic never queries Audiotel client, billing, CRM or paymen
   statements.push(sql);
   if(sql.includes("information_schema.tables"))return tables.map(table_name=>({table_name}));
   if(sql.includes("pg_constraint"))return constraints;
+  if(sql.includes("FROM pg_class"))return [];
   if(sql.includes("count(*)")&&sql.includes("customer_accounts"))return [{total:0}];
   if(sql.includes("count(*)")&&sql.includes("customer_cases"))return [{total:0}];
   if(sql.includes("count(*)")&&sql.includes("number_inventory"))return [{total:0}];
@@ -65,7 +69,7 @@ test("read-only diagnostic never queries Audiotel client, billing, CRM or paymen
  }}};
  const result=await directSvaAccessReadiness(fake);
  assert.equal(result.preparation_controls_safe,true);
- assert.equal(statements.length,8);
+ assert.equal(statements.length,9);
  assert.ok(statements.every(query=>!/\bFROM\s+(?:calls|tenants|billing|ledger|invoices|customers)\b/i.test(query)));
  assert.ok(statements.every(query=>!/\bUPDATE\b|\bINSERT\b|\bDELETE\b/i.test(query)));
 });
@@ -77,4 +81,18 @@ test("cockpit provides a dedicated admin access diagnostics tab, never public cu
  assert.match(ui,/existing_audiotel_customer_records_queried!==false/);
  assert.match(server,/pathname==="\/api\/v1\/platform\/direct-sva\/access-readiness"/);
  assert.match(server,/requireRole\(actor,\["admin"\]\)/);
+});
+
+test("RLS is only reported secure when every tenant-owned table enforces its policy",()=>{
+ const base=fixture();
+ const guarded=["direct_sva_customer_accounts","direct_sva_customer_cases",
+  "direct_sva_number_inventory","direct_sva_journal_entries","direct_sva_journal_lines"]
+  .map(table_name=>({table_name,rls_enabled:true,rls_forced:true}));
+ const result=evaluateDirectSvaAccessReadiness({...base,rowPolicies:guarded});
+ assert.equal(result.postgres_rls_defense_verified,true);
+ assert.deepEqual(result.postgres_rls_unprotected_tables,[]);
+ assert.ok(result.checks.some(x=>x.key==="rls"&&x.status==="observed"));
+ const missing=evaluateDirectSvaAccessReadiness({...base,rowPolicies:guarded.slice(1)});
+ assert.equal(missing.postgres_rls_defense_verified,false);
+ assert.ok(missing.postgres_rls_unprotected_tables.includes("direct_sva_customer_accounts"));
 });
