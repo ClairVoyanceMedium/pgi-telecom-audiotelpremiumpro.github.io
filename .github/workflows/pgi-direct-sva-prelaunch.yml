@@ -1,0 +1,58 @@
+name: PGI Distribution - Recette sans deploiement
+
+on:
+  push:
+    branches:
+      - prep/pgi-direct-sva-operator-2026-10-10
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pgi-direct-sva-prelaunch-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security-and-integrations:
+    name: Audit statique, securite, finances et integrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      PGI_RUNTIME_MODE: demo
+      PGI_DIRECT_SVA_OPERATOR_API_ENABLED: "false"
+      PGI_EXTERNAL_BILLING_ENABLED: "false"
+      PGI_DATABASE_URL: ""
+      PGI_STRIPE_SECRET_KEY: ""
+      PGI_HUBSPOT_ACCESS_TOKEN: ""
+    steps:
+      - name: Lecture du commit exact
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Configuration Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Installation sans scripts tiers
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Recette de tous les modules et tests
+        run: npm run verify
+      - name: Recette Vercel en lecture seule
+        run: npm run verify:vercel
+      - name: Construction statique locale sans publication
+        run: npm run build:static
+      - name: Controle interdiction des versements
+        run: |
+          test -f database/security/rls-distribution-prototype.sql
+          test -f config/pgi-direct-sva-integrations-audit-2026-10-10.json
+          test -f tests/direct-sva-financial-evidence-audit.test.mjs
+          test -f tests/direct-sva-integration-acceptance.test.mjs
+          test -f tests/direct-sva-tenant-rls-reader.test.mjs
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const data=JSON.parse(fs.readFileSync("config/pgi-direct-sva-integrations-audit-2026-10-10.json","utf8"));
+            if(data.separation?.live_external_transfers_enabled!==false)process.exit(1);
+            console.log("No external payouts / CRM writes authorized");
+          '
