@@ -27,6 +27,7 @@ import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
 import {directSvaBusinessSnapshot,directSvaAccountingExport,createDirectSvaDraft,approveDirectSvaDraft} from "./src/direct-sva-business.mjs";
 import {analyzeDirectSvaSettlement} from "./src/direct-sva-reconciliation.mjs";
 import {prepareDirectSvaCollectionAccounting} from "./src/direct-sva-collection-planner.mjs";
+import {planDirectSvaFinancialCycle} from "./src/direct-sva-financial-cycle.mjs";
 import {directSvaIntegrationOverview} from "./src/direct-sva-integrations.mjs";
 import {directSvaCustomerOverview,directSvaWorkflowOverview} from "./src/direct-sva-customer.mjs";
 import {recordDirectSvaWorkflowSimulation,directSvaSimulationDashboard} from "./src/direct-sva-automation-rehearsal.mjs";
@@ -1950,6 +1951,15 @@ export function createBackend(options={}){
         const body=await readJson(req,config.bodyLimitBytes);
         return done(res,metrics,started,"platform.direct_sva_collections_preview",200,
           prepareDirectSvaCollectionAccounting(body));
+      }
+
+      // Zero-execution multi-publisher financial cycle preview. No data persistence,
+      // payment mandate, KYC assertion or source authentication by the caller.
+      if(method==="POST"&&pathname==="/api/v1/platform/direct-sva/financial-cycle/preview"){
+        requireRole(actor,["admin","finance"]);requireCsrf(req,actor,config);
+        const body=await readJson(req,config.bodyLimitBytes);
+        return done(res,metrics,started,"platform.direct_sva_financial_cycle_preview",200,
+          planDirectSvaFinancialCycle(body));
       }
 
       if(method==="POST"&&pathname==="/api/v1/platform/direct-sva/accounting/drafts"){
