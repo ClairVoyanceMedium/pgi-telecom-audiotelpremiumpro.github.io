@@ -139,6 +139,61 @@ export async function directSvaBusinessSnapshot(store,params={}){
   };
 }
 
+// Complete bounded management export of the direct SVA subledger.
+// Unlike the cockpit preview (100 latest entries), this includes every line for the month.
+// It is NOT a legal FEC, nor evidence of collected money.
+export async function directSvaAccountingExport(store,params={}){
+ requirePostgres(store);
+ const month=validDirectSvaMonth(params.month);
+ const [year,mm]=month.split("-").map(Number);
+ const from=new Date(Date.UTC(year,mm-1,1)).toISOString().slice(0,10);
+ const to=new Date(Date.UTC(year,mm,1)).toISOString().slice(0,10);
+ const maxRows=20000;
+ const rows=await store.readSql.unsafe(
+  "SELECT e.id AS journal_entry_id,e.entry_date,e.source_reference,e.description,e.status,e.evidence_reference,"+
+  " e.source_system,e.source_digest,l.line_no,l.account_code,l.label AS line_label,l.debit_minor,l.credit_minor"+
+  " FROM direct_sva_journal_entries e JOIN direct_sva_journal_lines l ON l.entry_id=e.id"+
+  " WHERE e.business_unit='direct_sva' AND e.entry_date>=$1::date AND e.entry_date<$2::date"+
+  " ORDER BY e.entry_date,e.id,l.line_no LIMIT $3",[from,to,maxRows+1]
+ );
+ if(rows.length>maxRows)throw failure(413,"DIRECT_SVA_EXPORT_TOO_LARGE_SPLIT_PERIOD");
+ const normal=rows.map(row=>({
+  journal_entry_id:toNumber(row.journal_entry_id),
+  entry_date:pgDate(row.entry_date),
+  source_reference:String(row.source_reference),
+  source_system:String(row.source_system),
+  source_digest:String(row.source_digest),
+  description:String(row.description),
+  status:String(row.status),
+  evidence_reference:String(row.evidence_reference),
+  line_no:Number(row.line_no),
+  account_code:String(row.account_code),
+  line_label:String(row.line_label),
+  debit_minor:toNumber(row.debit_minor),
+  credit_minor:toNumber(row.credit_minor)
+ }));
+ const grouped=new Map();
+ for(const row of normal){
+  const current=grouped.get(row.journal_entry_id)||{debit:0,credit:0};
+  current.debit+=row.debit_minor;current.credit+=row.credit_minor;
+  if(!Number.isSafeInteger(current.debit)||!Number.isSafeInteger(current.credit))throw failure(503,"DIRECT_SVA_EXPORT_AMOUNT_OVERFLOW");
+  grouped.set(row.journal_entry_id,current);
+ }
+ for(const total of grouped.values()){
+  if(total.debit<=0||total.debit!==total.credit)throw failure(409,"DIRECT_SVA_EXPORT_CONTAINS_UNBALANCED_ENTRIES");
+ }
+ return Object.freeze({
+  schema_version:"pgi-direct-sva-accounting-export/1",
+  business_unit:"direct_sva",
+  document_type:"management_subledger_not_legal_fec",
+  month,currency:"EUR",
+  exported_lines:normal.length,exported_entries:grouped.size,
+  complete_for_period:true,
+  source:"direct_sva_journal_entries_and_lines_only",
+  rows:normal
+ });
+}
+
 export async function createDirectSvaDraft(store,payload,actor){
   requirePostgres(store);
   const createdBy=actorId(actor),draft=normalizeDirectSvaJournalDraft(payload);
