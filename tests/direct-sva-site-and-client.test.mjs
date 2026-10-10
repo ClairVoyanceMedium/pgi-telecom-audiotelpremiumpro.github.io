@@ -23,6 +23,7 @@ test("future direct SVA public pages and customer area are entirely staged and n
   "site/distribution-sva/espace-client/index.html",
   "site/distribution-sva/style.css",
   "site/distribution-sva/site.js",
+  "site/distribution-sva/complaints-form.js",
   "site/distribution-sva/client-portal.js",
   "site/distribution-sva/measurement.js",
   "site/direct-sva-tracking.js"
