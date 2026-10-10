@@ -73,3 +73,30 @@ export function safeDirectSvaComplaintSummary(plan={}){
 }
 export const DIRECT_SVA_COMPLAINT_CATEGORIES=CATEGORIES;
 export const DIRECT_SVA_COMPLAINT_SAFE_AUTOMATIONS=SAFE_ACTIONS;
+
+export async function directSvaComplaintPreparatoryOverview(store){
+ if(!store?.readSql?.unsafe){const e=new Error("DSVA_COMPLAINT_DATABASE_REQUIRED");e.status=503;e.code=e.message;throw e;}
+ const [schema]=await store.readSql.unsafe(
+  "SELECT to_regclass('public.direct_sva_complaint_cases') IS NOT NULL AS complaints,"+
+  " to_regclass('public.direct_sva_complaint_delivery_queue') IS NOT NULL AS delivery");
+ if(schema?.complaints!==true||schema?.delivery!==true){
+  return Object.freeze({business_unit:"direct_sva",status:"migration_pending",prepared_cases:null,
+   pending_external_automations:null,gmail_delivery_active:false,hubspot_delivery_active:false,
+   public_form_enabled:false,operator_actions_active:false,payments_enabled:false});
+ }
+ const [counts,queue]=await Promise.all([
+  store.readSql.unsafe("SELECT category,priority,count(*)::int AS count FROM direct_sva_complaint_cases GROUP BY category,priority ORDER BY category,priority"),
+  store.readSql.unsafe("SELECT delivery_kind,delivery_state,count(*)::int AS count FROM direct_sva_complaint_delivery_queue GROUP BY delivery_kind,delivery_state ORDER BY delivery_kind")
+ ]);
+ return Object.freeze({
+  business_unit:"direct_sva",status:"preparation",
+  prepared_cases:counts.reduce((n,r)=>n+Number(r.count||0),0),
+  categories:counts.map(r=>({category:r.category,priority:r.priority,count:Number(r.count||0)})),
+  pending_external_automations:queue.reduce((n,r)=>n+Number(r.count||0),0),
+  queued_delivery:queue.map(r=>({kind:r.delivery_kind,state:r.delivery_state,count:Number(r.count||0)})),
+  gmail_target_configuration:"PGI_INTERNAL_NOTIFICATION_EMAIL",
+  gmail_delivery_active:false,hubspot_delivery_active:false,
+  public_form_enabled:false,operator_actions_active:false,payments_enabled:false,
+  explicit_release_required:true
+ });
+}
