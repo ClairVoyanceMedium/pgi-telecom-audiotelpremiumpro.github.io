@@ -27,6 +27,7 @@ import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
 import {directSvaBusinessSnapshot,createDirectSvaDraft,approveDirectSvaDraft} from "./src/direct-sva-business.mjs";
 import {analyzeDirectSvaSettlement} from "./src/direct-sva-reconciliation.mjs";
 import {directSvaIntegrationOverview} from "./src/direct-sva-integrations.mjs";
+import {directSvaCustomerOverview,directSvaWorkflowOverview} from "./src/direct-sva-customer.mjs";
 import {runDailyReportCron} from "./src/daily-report.mjs";
 
 export async function createDefaultBackend(){
@@ -739,6 +740,14 @@ export function createBackend(options={}){
       if(method==="POST"&&pathname==="/api/v1/customer/auth/logout"){
         requireCustomerCsrf(req,customerActor,config);
         return done(res,metrics,started,"customer.auth.logout",200,{ok:true},{"Set-Cookie":clearCustomerSessionCookies()});
+      }
+      // Isolated customer-facing direct SVA data. Auth and tenant scoping required.
+      if(method==="GET"&&pathname==="/api/v1/customer/direct-sva/overview"){
+        requireActor(customerActor);
+        const context=await store.customerSessionContext(customerActor);
+        requireCustomerPermission(context,"overview.read");
+        return done(res,metrics,started,"customer.direct_sva_overview",200,
+          await directSvaCustomerOverview(store,context));
       }
       if(method==="GET"&&pathname==="/api/v1/customer/auth/me"){
         requireActor(customerActor);
@@ -1804,6 +1813,11 @@ export function createBackend(options={}){
       if(method==="GET"&&pathname==="/api/v1/platform/direct-sva/integrations"){
         requireRole(actor,["admin","finance","readonly"]);
         return done(res,metrics,started,"platform.direct_sva_integrations",200,await directSvaIntegrationOverview(store));
+      }
+      if(method==="GET"&&pathname==="/api/v1/platform/direct-sva/automation"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.direct_sva_automation",200,
+          await directSvaWorkflowOverview(store));
       }
       if(method==="GET"&&pathname==="/api/v1/platform/direct-sva/overview"){
         requireRole(actor,["admin","finance","readonly"]);
