@@ -59,7 +59,9 @@ function renderExpert(){
   const host=root?.querySelector("[data-accounting-expert-root]");if(!host)return;
   (expertPromise||(expertPromise=import("./accounting-expert.js"))).then(m=>m.mountExpertAccounting(host,{year:Number(month.slice(0,4))})).catch(e=>{host.innerHTML='<div class="acc-empty">Dossier expert-comptable indisponible : '+esc(e?.code||e?.message||"erreur")+'.</div>';});
 }
+function directSvaTabReleased(){return window.PGI_CONFIG?.directSvaOperatorUiEnabled===true;}
 function unitTabs(){
+  if(!directSvaTabReleased())return "";
   return '<div class="acc-controls" role="tablist" aria-label="Activites comptables separees" style="padding:6px 0 13px">'+
    '<button type="button" class="acc-btn" role="tab" aria-selected="'+(businessUnit==="audiotel")+'" data-acc-unit="audiotel">Comptabilité Audiotel</button>'+
    '<button type="button" class="acc-btn" role="tab" aria-selected="'+(businessUnit==="direct")+'" data-acc-unit="direct">Comptabilité distribution directe</button>'+
@@ -69,6 +71,7 @@ function bindUnitTabs(){
   root.querySelectorAll("[data-acc-unit]").forEach(button=>button.addEventListener("click",()=>{
     const next=button.dataset.accUnit;
     if(next===businessUnit)return;
+    if(next==="direct"&&!directSvaTabReleased())return;
     businessUnit=next;
     if(businessUnit==="direct")renderDirectUnit();
     else if(current)render(current);
@@ -77,8 +80,9 @@ function bindUnitTabs(){
 }
 function renderDirectUnit(){
   if(!root)return;
+  if(!directSvaTabReleased()){businessUnit="audiotel";if(current)render(current);return;}
   if(root.querySelector("[data-direct-sva-unit-root]"))return;
-  root.innerHTML='<div class="acc">'+unitTabs()+unitTabs()+
+  root.innerHTML='<div class="acc">'+unitTabs()+
     '<div data-direct-sva-unit-root><div class="acc-empty">Chargement du secteur distribution directe...</div></div></div>';
   bindUnitTabs();
   const place=root.querySelector("[data-direct-sva-unit-root]");
@@ -90,7 +94,7 @@ function render(d){
   current=d;currency=d.currency||currency;month=d.month||month;
   if(businessUnit==="direct"){renderDirectUnit();return;}
   const currencies=Array.isArray(d.currencies)&&d.currencies.length?d.currencies:[currency];
-  root.innerHTML='<div class="acc">'+
+  root.innerHTML='<div class="acc">'+unitTabs()+
     '<div class="acc-head"><div><p class="panel-kicker">COMPTABILITÉ</p><h2>Pilotage comptable Audiotel Premium Pro</h2><p class="acc-note">Vue consolidée des encaissements, marges, reversements et primes, sans mélange artificiel des bases fiscales.</p></div>'+
     '<div class="acc-controls"><label>Mois<input type="month" data-acc-month value="'+esc(month)+'"></label><label>Devise<select data-acc-currency>'+currencies.map(x=>'<option value="'+esc(x)+'" '+(x===currency?"selected":"")+'>'+esc(x)+'</option>').join("")+'</select></label><button class="acc-btn" type="button" data-acc-refresh>Actualiser</button></div></div>'+
     selectedCards(d)+balances(d)+history(d)+policy(d)+
