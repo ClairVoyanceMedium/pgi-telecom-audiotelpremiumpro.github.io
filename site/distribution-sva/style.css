@@ -38,3 +38,6 @@ main .cards .card{min-width:0}
 .ds-analytics-preferences{display:inline-block;margin:12px 20px 20px;padding:7px 1px;background:transparent;border:0;color:var(--accent);font:inherit;font-size:13px;font-weight:650;text-align:left;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .ds-analytics-preferences:hover,.ds-analytics-preferences:focus-visible{color:#ffe6bd;text-decoration-thickness:2px}
 .ds-analytics-preferences:focus-visible{outline:3px solid var(--accent);outline-offset:4px}
+
+/* Informational pages must never show a clickable login for an unopened unit. */
+.ds-client-unavailable{display:inline-flex;align-items:center;min-height:28px;color:var(--muted);font-size:14px;font-weight:650;cursor:default;opacity:.92}
