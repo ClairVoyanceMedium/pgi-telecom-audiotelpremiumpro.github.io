@@ -51,7 +51,13 @@ export function createStaticSiteHandler(rootDir,{getDirectSvaWebsiteState}={}){
     if(isDirectSvaPath(directSvaPath)){
       const state=await visibility();
       if(state?.publication_authorized!==true){
-        res.writeHead(404,{"Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow, noarchive"});
+        // On database/readiness uncertainty a temporary 503 avoids teaching
+        // search engines that an already published page has been removed.
+        if(!state||state.status){
+          res.writeHead(503,{"Cache-Control":"no-store","Retry-After":"300"});
+        }else{
+          res.writeHead(404,{"Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow, noarchive"});
+        }
         res.end();return true;
       }
       if(directSvaPath==="/distribution-sva/sitemap.xml"){
