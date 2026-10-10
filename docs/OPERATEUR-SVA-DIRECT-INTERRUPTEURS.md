@@ -58,3 +58,12 @@ Le code des deux interrupteurs, la migration et les tests unitaires ont été pr
 Avant mise à disposition de la prévisualisation, exécuter les migrations 073 à 076 dans une base de recette isolée, vérifier les tests SQL et API réels, examiner les permissions et déployer sur autorisation du propriétaire de PGI Telecom.
 
 L'exploitation commerciale demandera ensuite son propre top départ ainsi que les autorisations et contrats requis. L'interrupteur 2 ne pourra jamais être activé par la seule migration 076.
+
+## Protection contre une activation incoherente
+
+Le registre PostgreSQL reste la source de verite. En preparation, la supervision de la nouvelle activite refuse explicitement les controles operateur dont le mode n'est pas `preparation`, ou dont l'activation des numeros ou des versements n'est pas `false`. Le code retourne une erreur `DIRECT_SVA_OPERATOR_CONTROL_DRIFT` (503), au lieu d'afficher des interrupteurs rassurants mais contredits par la base.
+
+La supervision des integrations attend exactement six connexions distinctes (`ga4`, `gsc`, `hubspot`, `statutory_accounting`, `network`, `payment_psp`). Si une connexion manque, est dupliquee, apparait autorisee ou peut transmettre des donnees, l'API retourne `DIRECT_SVA_INTEGRATION_CONTROL_DRIFT` (503). Elle ne declare pas une infrastructure conforme lorsque l'etat reel est anormal.
+
+Ces protections viennent completer les contraintes SQL, sans attribuer de licence, sans reconnecter les systemes et sans toucher a la production. Des tests de non-regression ont ete ajoutes sur la branche ; aucun resultat d'execution CI n'est revendique.
+
