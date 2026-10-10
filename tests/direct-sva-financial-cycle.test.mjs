@@ -140,3 +140,19 @@ test("accounting is strictly proposal-only even for a mathematically complete cy
  assert.ok(result.accounting_proposals.every(p=>p.allowed_to_post===false));
  assert.ok(result.publisher_balances.every(p=>p.eligible_for_payment===false));
 });
+
+test("swapping two equal-valued calls across publishers still changes audit identity",()=>{
+ const input=example();
+ input.statement.rows=[
+  {cdr_reference:"CDR-EQUAL-0001",called_number:"+33891234567",billable_seconds:60,
+   publisher_reference:"EDITEUR-ALPHA-001",upstream_net_minor:1000,pgi_margin_minor:200,publisher_due_minor:800},
+  {cdr_reference:"CDR-EQUAL-0002",called_number:"+33891234568",billable_seconds:60,
+   publisher_reference:"EDITEUR-BETA-002",upstream_net_minor:1000,pgi_margin_minor:200,publisher_due_minor:800}
+ ];
+ input.receipts=[];
+ const before=planDirectSvaFinancialCycle(input);
+ input.statement.rows[0].publisher_reference="EDITEUR-BETA-002";
+ input.statement.rows[1].publisher_reference="EDITEUR-ALPHA-001";
+ const after=planDirectSvaFinancialCycle(input);
+ assert.notEqual(before.cycle_reference,after.cycle_reference);
+});
