@@ -21,6 +21,14 @@ Il faut distinguer l'opérateur attributaire réglementaire du bloc, l'opérateu
 
 Toutes ces ressources restent hors production. Les opérations d'écriture créent uniquement des plans privés. Les routes d'exécution télécom et financière n'existent pas dans ce module.
 
+## Hébergeur technique identique, contrat de distribution différent
+
+PGI peut changer de rôle économique et contractuel sans remplacer le transporteur SIP sous-jacent. La continuité ne doit donc pas être identifiée uniquement par `host_carrier_id`.
+
+Le contrat de consolidation Business Live peut distinguer deux `contract_epoch_reference` validées, chacune avec sa grille financière et sa date d'effet, même si le prestataire d'hébergement technique est identique avant et après la bascule. Un CDR doit être attribué à la bonne période contractuelle. Le moteur refuse une référence d'époque manquante ou contradictoire.
+
+Les préparations peuvent être révisées : une nouvelle version crée une entrée supplémentaire non modifiable, sans écraser la décision antérieure. L'opération commerciale n'est autorisée par aucune version de préparation.
+
 ## Contrat de continuité Business Live
 
 1. Le compteur est lié au `tenant_id` et à sa date persistante de remise à zéro, jamais à la date de changement de prestataire.
