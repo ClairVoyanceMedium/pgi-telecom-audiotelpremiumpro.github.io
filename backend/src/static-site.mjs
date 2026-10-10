@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import {createHash} from "node:crypto";
+import {isDirectSvaPath,isDirectSvaPublicAsset,directSvaPublicPagePath,visibleDistributionMarketingHome,publishedDistributionHtml,publishedDistributionSitemap} from "./direct-sva-public-site.mjs";
 
 const PRIVATE_CSP="default-src 'self'; script-src 'self' https://accounts.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://lh3.googleusercontent.com; connect-src 'self' https://accounts.google.com https://www.googleapis.com; frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests";
 const COCKPIT_CSP="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests";
@@ -22,7 +23,11 @@ const MIME=Object.freeze({
   ".txt":"text/plain; charset=utf-8"
 });
 
-export function createStaticSiteHandler(rootDir){
+export function createStaticSiteHandler(rootDir,{getDirectSvaWebsiteState}={}){
+  async function visibility(){
+    if(typeof getDirectSvaWebsiteState!=="function")return null;
+    try{return await getDirectSvaWebsiteState();}catch{return null;}
+  }
   const root=String(rootDir||"").trim()?path.resolve(String(rootDir)):null;
   return async function serveStaticSite(req,res,pathname){
     if(!root)return false;
@@ -36,18 +41,51 @@ export function createStaticSiteHandler(rootDir){
       return true;
     }
 
-    // Direct SVA is a staged business, not a public offer. Deny even if someone
-    // accidentally copies its HTML into dist. Releasing requires a reviewed change.
+    // Once content is separately approved for publication, it must remain
+    // crawlable even when the operator hides the navigation link.
     let directSvaPath=String(pathname||"");
     try{directSvaPath=decodeURIComponent(directSvaPath).replace(/\/+/g,"/");}catch{
       res.writeHead(400,{"Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow, noarchive"});
-      res.end();
-      return true;
+      res.end();return true;
     }
-    if(/^\/(?:distribution-sva(?:\/|$)|site\/distribution-sva(?:\/|$))/i.test(directSvaPath)){
-      res.writeHead(404,{"Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow, noarchive"});
-      res.end();
-      return true;
+    if(isDirectSvaPath(directSvaPath)){
+      const state=await visibility();
+      if(state?.publication_authorized!==true){
+        res.writeHead(404,{"Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow, noarchive"});
+        res.end();return true;
+      }
+      if(directSvaPath==="/distribution-sva/sitemap.xml"){
+        const xml=publishedDistributionSitemap(state);
+        if(!xml)throw Error("DIRECT_SVA_SITEMAP_NOT_AUTHORIZED");
+        const body=Buffer.from(xml,"utf8");
+        res.writeHead(200,{"Content-Type":"application/xml; charset=utf-8",
+          "Cache-Control":"no-store, must-revalidate","Content-Length":String(body.length)});
+        res.end(method==="HEAD"?undefined:body);return true;
+      }
+      if(directSvaPath==="/distribution-sva"){
+        res.writeHead(308,{"Location":"/distribution-sva/","Cache-Control":"no-store"});
+        res.end();return true;
+      }
+      const target=directSvaPublicPagePath(directSvaPath);
+      if(target){
+        const file=await resolveStaticFile(root,"/"+target.replace(/^\/+/,""));
+        if(!file){
+          res.writeHead(503,{"Cache-Control":"no-store","Retry-After":"300"});
+          res.end();return true;
+        }
+        const source=await fs.promises.readFile(file,"utf8");
+        const published=publishedDistributionHtml(source,state);
+        if(!published)throw Error("DIRECT_SVA_CONTENT_NOT_AUTHORIZED");
+        const body=Buffer.from(published,"utf8");
+        res.writeHead(200,{"Content-Type":"text/html; charset=utf-8",
+          "Content-Security-Policy":PUBLIC_CSP,"Cache-Control":"no-store, must-revalidate",
+          "Content-Length":String(body.length)});
+        res.end(method==="HEAD"?undefined:body);return true;
+      }
+      if(!isDirectSvaPublicAsset(directSvaPath)){
+        res.writeHead(404,{"Cache-Control":"no-store","X-Robots-Tag":"noindex, nofollow, noarchive"});
+        res.end();return true;
+      }
     }
 
     if(["/favicon.ico","/favicon.png"].includes(String(pathname||""))){
@@ -123,6 +161,14 @@ export function createStaticSiteHandler(rootDir){
       }
     }
 
+    if(String(pathname||"")==="/"&&html){
+      const source=await fs.promises.readFile(file,"utf8");
+      const rendered=visibleDistributionMarketingHome(source,await visibility());
+      const body=Buffer.from(rendered,"utf8");
+      res.setHeader("Content-Length",String(body.length));
+      if(method==="HEAD"){res.writeHead(200);res.end();return true;}
+      res.writeHead(200);res.end(body);return true;
+    }
     res.setHeader("Content-Length",String(stat.size));
     if(method==="HEAD"){res.writeHead(200);res.end();return true;}
     res.writeHead(200);
