@@ -5,7 +5,7 @@ const integer=v=>new Intl.NumberFormat("fr-FR").format(Number(v)||0);
 const parisDate=()=>new Intl.DateTimeFormat("sv-SE",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
 const nowMonth=()=>parisDate().slice(0,7);
 const cssText=".ds{display:grid;gap:14px}.ds-header{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}.ds-header h2{margin:2px 0 5px;font-size:23px}.ds-desc{color:#8fa2b5;font-size:12px;line-height:1.6;margin:4px 0}.ds-warning{padding:13px;border:1px solid rgba(245,158,11,.35);background:rgba(245,158,11,.08);border-radius:11px;color:#f4d7a5;font-size:12px;line-height:1.6}.ds-tabs{display:flex;gap:7px;flex-wrap:wrap}.ds-tab,.ds-button{border:1px solid rgba(140,166,190,.23);border-radius:9px;padding:9px 12px;background:#101d2c;color:#edf7ff;font-weight:700;cursor:pointer;font-size:12px}.ds-tab[aria-selected=true]{border-color:#8cc5ca;background:#183744;color:#fff}.ds-input{background:#07101b;color:#edf7ff;padding:9px;border:1px solid rgba(140,166,190,.3);border-radius:8px;min-width:0}.ds-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.ds-card,.ds-panel{padding:15px;background:#091522;border:1px solid rgba(140,166,190,.16);border-radius:12px}.ds-card span{display:block;color:#8fa2b5;font-size:11px}.ds-card strong{display:block;font-size:21px;margin:9px 0}.ds-card small{color:#8497a6;font-size:10px}.ds-panel h3{margin:0 0 10px;font-size:16px}.ds-status{font-size:11px;color:#8fa2b5;min-height:18px}.ds-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ds-table{max-width:100%;overflow-x:auto}.ds-table table{width:100%;min-width:700px;border-collapse:collapse}.ds-table th,.ds-table td{border-bottom:1px solid rgba(140,166,190,.12);padding:10px 8px;text-align:left;white-space:nowrap;font-size:11px}.ds-table th{color:#97aabe}.ds-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.ds-form label{display:grid;gap:5px;color:#91a6b9;font-size:11px}.ds-form label.ds-wide{grid-column:1/-1}.ds-form input,.ds-form select{width:100%}.ds-lines{grid-column:1/-1;display:grid;gap:8px}.ds-line{display:grid;grid-template-columns:minmax(0,1fr) 100px 100px;gap:7px}.ds-actions{display:flex;gap:8px;flex-wrap:wrap}.ds-note{font-size:11px;color:#8fa2b5;line-height:1.6}.ds-ok{color:#a2e9cc}.ds-alert{color:#ffbd9e}.ds-list{display:grid;gap:7px}.ds-list>div{padding:8px 10px;background:#102132;border-radius:8px;font-size:11px}@media(max-width:900px){.ds-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:640px){.ds-cards,.ds-grid,.ds-form{grid-template-columns:1fr}.ds-line{grid-template-columns:minmax(0,1fr) 80px 80px}.ds-header h2{font-size:19px}}@media print{body *{visibility:hidden!important}#accounting-cockpit-root,#accounting-cockpit-root *{visibility:visible!important}#accounting-cockpit-root{position:absolute!important;left:0;top:0;width:100%}.ds-tabs,.ds-button,.ds-input,.ds-form{display:none!important}.ds,.ds-card,.ds-panel{background:#fff!important;color:#000!important;border-color:#aaa!important}}";
-let host=null,month=nowMonth(),tab="overview",data=null,integrations=null,automations=null,busy=false,numberOfLines=2,message="",severity="";
+let host=null,month=nowMonth(),tab="overview",data=null,integrations=null,automations=null,complaints=null,busy=false,numberOfLines=2,message="",severity="";
 function apiBase(){const b=String(window.PGI_CONFIG?.apiBaseUrl||"").replace(/\/$/,"");if(!b)throw Error("API_NOT_CONFIGURED");return b;}
 function cookie(name){const prefix=encodeURIComponent(name)+"=";for(const part of String(document.cookie||"").split(";")){const v=part.trim();if(v.startsWith(prefix)){try{return decodeURIComponent(v.slice(prefix.length))}catch{return v.slice(prefix.length)}}}return"";}
 async function request(path,method="GET",payload=null){
@@ -117,6 +117,26 @@ async function refreshAutomations(){
  try{automations=await request("/platform/direct-sva/automation");message="Files directes consultées, aucune exécution en production.";severity="ds-ok";show();}
  catch(error){automations=null;message="Automatisations indisponibles : "+String(error.message);severity="ds-alert";show();}
 }
+function complaintView(){
+ const intro='<section class="ds-panel"><h3>Réclamations et boîte Gmail</h3>'+
+ '<p class="ds-note">La future adresse de réclamation sera acheminée via Resend vers la boîte Gmail interne configurée. Les messages seront classés séparément des tickets Audiotel. Aucune décision financière, juridique ou de portabilité ne sera exécutée depuis un e-mail.</p>'+
+ '<div class="ds-warning">Distribution directe non commercialisée : le formulaire public et les transmissions CRM restent bloqués jusqu’au lancement réglementaire et à la recette e-mail.</div></section>';
+ if(!complaints)return intro+'<section class="ds-panel"><p class="ds-note">Diagnostic du registre de réclamations non chargé.</p><button class="ds-button" data-ds-complaints-refresh type="button">Contrôler les réclamations</button></section>';
+ const rows=complaints.categories||[];
+ return intro+'<div class="ds-cards">'+
+ kpi("Dossiers préparatoires",complaints.prepared_cases==null?"Non installé":integer(complaints.prepared_cases),"Aucune réclamation commerciale reçue")+
+ kpi("Actions en attente",complaints.pending_external_automations==null?"Non installé":integer(complaints.pending_external_automations),"Exécutions externes non autorisées")+
+ kpi("Gmail direct",complaints.gmail_delivery_active?"Actif":"Bloqué","Raccordement et recette nécessaires")+
+ kpi("HubSpot direct",complaints.hubspot_delivery_active?"Actif":"Bloqué","Pipeline indépendant obligatoire")+'</div>'+
+ '<section class="ds-panel"><h3>Répartition des dossiers</h3><div class="ds-list">'+
+ (rows.length?rows.map(r=>'<div>'+esc(r.category)+' | '+esc(r.priority)+' : '+integer(r.count)+'</div>').join(""):'<div>Aucun dossier enregistré ou migration non appliquée.</div>')+
+ '</div><div class="ds-actions"><button type="button" class="ds-button" data-ds-complaints-refresh>Actualiser</button></div></section>';
+}
+async function refreshComplaints(){
+ try{complaints=await request("/platform/direct-sva/complaints/readiness");
+ message="Contrôle du circuit de réclamations consulté. Réception publique et notifications directes non actives.";severity="ds-ok";show();}
+ catch(error){complaints=null;message="Réclamations non disponibles : "+String(error.message);severity="ds-alert";show();}
+}
 function compliance(){return '<div class="ds-grid"><section class="ds-panel"><h3>Prérequis opérateur</h3><div class="ds-list">'+[
  "Identifiant CE et décision d’attribution Arcep",
  "Cadre AF2M, APNF et RSVA",
@@ -131,9 +151,9 @@ function show(){
  if(!host||!data)return;
  host.innerHTML='<div class="ds"><div class="ds-header"><div><p class="panel-kicker">ACTIVITÉ DISTINCTE | PGI TELECOM</p><h2>Distribution SVA directe</h2><p class="ds-desc">Pilotage opérateur et comptabilité isolés de la plateforme Audiotel actuelle.</p></div><label class="ds-desc">Mois comptable <input type="month" class="ds-input" data-ds-month value="'+esc(month)+'"></label></div>'+banner()+
  '<div class="ds-tabs" role="tablist" aria-label="Rubriques distributeur direct">'+
- [["overview","Vue générale"],["numbers","Numérotation"],["accounting","Comptabilité directe"],["reconciliation","Rapprochement"],["integrations","Intégrations"],["automation","Automatisations"],["transitions","Changer de distributeur"],["compliance","Conformité"]].map(([key,label])=>'<button type="button" role="tab" class="ds-tab" data-ds-tab="'+key+'" aria-selected="'+(key===tab)+'">'+label+'</button>').join("")+'</div>'+
+ [["overview","Vue générale"],["numbers","Numérotation"],["accounting","Comptabilité directe"],["reconciliation","Rapprochement"],["integrations","Intégrations"],["automation","Automatisations"],["complaints","Réclamations"],["transitions","Changer de distributeur"],["compliance","Conformité"]].map(([key,label])=>'<button type="button" role="tab" class="ds-tab" data-ds-tab="'+key+'" aria-selected="'+(key===tab)+'">'+label+'</button>').join("")+'</div>'+
  '<div class="ds-status '+esc(severity)+'" aria-live="polite">'+esc(message)+'</div>'+
- (tab==="overview"?overview():tab==="numbers"?numbers():tab==="accounting"?journals():tab==="reconciliation"?reconciliation():tab==="integrations"?integrationView():tab==="automation"?automationView():tab==="transitions"?'<section class="ds-panel"><div data-ds-transitions-root></div></section>':compliance())+
+ (tab==="overview"?overview():tab==="numbers"?numbers():tab==="accounting"?journals():tab==="reconciliation"?reconciliation():tab==="integrations"?integrationView():tab==="automation"?automationView():tab==="complaints"?complaintView():tab==="transitions"?'<section class="ds-panel"><div data-ds-transitions-root></div></section>':compliance())+
  '</div>';
  attach();
  if(tab==="transitions")import("./direct-sva-transitions.js").then(m=>m.mountDirectSvaTransitions(host.querySelector("[data-ds-transitions-root]"))).catch(()=>{});
@@ -205,9 +225,10 @@ function attach(){
  });
 
  host.querySelector("[data-ds-month]")?.addEventListener("change",event=>{month=event.target.value||month;load();});
- host.querySelectorAll("[data-ds-tab]").forEach(btn=>btn.addEventListener("click",()=>{tab=btn.dataset.dsTab;show();if(tab==="integrations"&&!integrations)refreshIntegrations();if(tab==="automation"&&!automations)refreshAutomations();}));
+ host.querySelectorAll("[data-ds-tab]").forEach(btn=>btn.addEventListener("click",()=>{tab=btn.dataset.dsTab;show();if(tab==="integrations"&&!integrations)refreshIntegrations();if(tab==="automation"&&!automations)refreshAutomations();if(tab==="complaints"&&!complaints)refreshComplaints();}));
  host.querySelector("[data-ds-integrations-refresh]")?.addEventListener("click",refreshIntegrations);
  host.querySelector("[data-ds-automation-refresh]")?.addEventListener("click",refreshAutomations);
+ host.querySelector("[data-ds-complaints-refresh]")?.addEventListener("click",refreshComplaints);
  host.querySelector("[data-ds-export]")?.addEventListener("click",exportCsv);
  host.querySelector("[data-ds-print]")?.addEventListener("click",()=>window.print());
  host.querySelector("[data-ds-add-line]")?.addEventListener("click",()=>{if(numberOfLines>=50){message="Limite de 50 lignes atteinte.";severity="ds-alert";return;}numberOfLines++;host.querySelector(".ds-lines")?.insertAdjacentHTML("beforeend",entryLine(numberOfLines));});
