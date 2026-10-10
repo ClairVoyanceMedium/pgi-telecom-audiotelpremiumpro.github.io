@@ -46,6 +46,17 @@ test("future marketing pages have a separated menu, prelaunch status, noindex an
  }
 });
 
+test("distribution customer portal rejects unrelated API payloads without leaving a blank authorized view",()=>{
+ const js=fs.readFileSync(path.join(root,"site/distribution-sva/client-portal.js"),"utf8");
+ assert.match(js,/data\.business_unit!=="direct_sva"/);
+ assert.match(js,/data\.source!=="direct_sva_only"/);
+ assert.match(js,/data\.tenant_scope!=="authenticated_customer_only"/);
+ assert.match(js,/DIRECT_SVA_RESPONSE_INTEGRITY_INVALID/);
+ assert.match(js,/render\(payload\);state\.active=true;\$\("ds-client-auth"\)\.hidden=true;/);
+ assert.match(js,/state\.active=false;state\.data=null;/);
+ assert.match(js,/Aucun dossier ni chiffre affiché/);
+});
+
 test("existing site remains free of direct SVA public navigation and its current CTA stays Audiotel",()=>{
  const home=fs.readFileSync(path.join(root,"site/index.html"),"utf8");
  const cockpit=fs.readFileSync(path.join(root,"index.html"),"utf8");
