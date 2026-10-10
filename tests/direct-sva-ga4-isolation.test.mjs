@@ -60,7 +60,7 @@ test("consent and wrong property always fail closed",()=>{
  }
 });
 test("all sensitive/private or foreign page paths are untracked",()=>{
- for(const path of ["/client.html","/distribution-sva/espace-client/","/distribution-sva/espace-client/mes-donnees/","/distribution-sva/conditions/","/distribution-sva/mentions-legales/","/distribution-sva/confidentialite/"]){
+ for(const path of ["/client.html","/distribution-sva/reclamations/DSVA-USER-REFERENCE/","/distribution-sva/offre-personnalisee/contact@example.com/","/distribution-sva/espace-client/","/distribution-sva/espace-client/mes-donnees/","/distribution-sva/conditions/","/distribution-sva/mentions-legales/","/distribution-sva/confidentialite/"]){
   assert.equal(setup(path).tracker.start().enabled,false,path);
  }
  assert.equal(setup("/distribution-sva/en/",{hostname:"example.com"}).tracker.start().enabled,false);
