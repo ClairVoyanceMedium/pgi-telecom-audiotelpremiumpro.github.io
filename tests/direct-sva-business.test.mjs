@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
  validDirectSvaMonth,normalizeDirectSvaJournalDraft,directSvaBusinessSnapshot,
- createDirectSvaDraft,approveDirectSvaDraft
+ directSvaAccountingExport,createDirectSvaDraft,approveDirectSvaDraft
 } from "../backend/src/direct-sva-business.mjs";
 
 function validPayload(){
@@ -153,6 +153,49 @@ test("navigation and API remain distinct from legacy Audiotel flows",()=>{
  assert.match(server,/platform\.direct_sva\.accounting_draft/);
  assert.match(server,/platform\.direct_sva\.accounting_approve/);
  assert.match(ui,/Comptabilité directe/);
- assert.match(ui,/Exporter CSV du distributeur/);
+ assert.match(ui,/Exporter le sous-journal mensuel complet \(CSV\)/);
+ assert.match(server,/platform\.direct_sva_accounting_export/);
  assert.doesNotMatch(ui,/\/platform\/accounting(?:\/|\?|")/);
+});
+
+test("direct subledger export includes every account line and never uses Audiotel entries",async()=>{
+ const queries=[];
+ const rows=[
+  {journal_entry_id:"11",entry_date:"2026-10-09",source_reference:"DSVA-REC-000011",
+   description:"Encaissement rapproche",status:"posted",evidence_reference:"STATEMENT-RECEIPT-11",
+   source_system:"manual_evidence",source_digest:"f".repeat(64),line_no:1,account_code:"512100",line_label:"Banque",
+   debit_minor:"10000",credit_minor:"0"},
+  {journal_entry_id:"11",entry_date:"2026-10-09",source_reference:"DSVA-REC-000011",
+   description:"Encaissement rapproche",status:"posted",evidence_reference:"STATEMENT-RECEIPT-11",
+   source_system:"manual_evidence",source_digest:"f".repeat(64),line_no:2,account_code:"411100",line_label:"Client",
+   debit_minor:"0",credit_minor:"10000"}
+ ];
+ const store={sql:{begin(){}},readSql:{unsafe:async(q,params)=>{
+  queries.push({q,params});return rows;
+ }}};
+ const result=await directSvaAccountingExport(store,{month:"2026-10"});
+ assert.equal(result.business_unit,"direct_sva");
+ assert.equal(result.complete_for_period,true);
+ assert.equal(result.document_type,"management_subledger_not_legal_fec");
+ assert.equal(result.exported_entries,1);
+ assert.equal(result.exported_lines,2);
+ assert.deepEqual(result.rows.map(r=>r.account_code),["512100","411100"]);
+ assert.match(queries[0].q,/direct_sva_journal_entries/);
+ assert.match(queries[0].q,/direct_sva_journal_lines/);
+ assert.ok(!/platform_accounting_entries|tenant_revenue/.test(queries[0].q));
+ assert.equal(queries[0].params[2],20001);
+});
+
+test("subledger export fails closed instead of silently truncating and rejects unbalanced entries",async()=>{
+ const oversized={sql:{begin(){}},readSql:{unsafe:async()=>Array(20001).fill({})}};
+ await assert.rejects(()=>directSvaAccountingExport(oversized,{month:"2026-10"}),{code:"DIRECT_SVA_EXPORT_TOO_LARGE_SPLIT_PERIOD"});
+ const wrong={sql:{begin(){}},readSql:{unsafe:async()=>[
+  {journal_entry_id:1,entry_date:"2026-10-10",source_reference:"DSVA-X",source_system:"manual_evidence",
+   source_digest:"f".repeat(64),description:"Balance",status:"posted",evidence_reference:"DOCREF01",
+   line_no:1,account_code:"512100",line_label:"Debit",debit_minor:"125",credit_minor:"0"},
+  {journal_entry_id:1,entry_date:"2026-10-10",source_reference:"DSVA-X",source_system:"manual_evidence",
+   source_digest:"f".repeat(64),description:"Balance",status:"posted",evidence_reference:"DOCREF01",
+   line_no:2,account_code:"467200",line_label:"Credit",debit_minor:"0",credit_minor:"120"}
+ ]}};
+ await assert.rejects(()=>directSvaAccountingExport(wrong,{month:"2026-10"}),{code:"DIRECT_SVA_EXPORT_CONTAINS_UNBALANCED_ENTRIES"});
 });
