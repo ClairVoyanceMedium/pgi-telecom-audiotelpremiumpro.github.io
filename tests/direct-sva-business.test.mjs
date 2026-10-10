@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
- validDirectSvaMonth,normalizeDirectSvaJournalDraft,directSvaBusinessSnapshot,
+ validDirectSvaMonth,monthInParis,normalizeDirectSvaJournalDraft,directSvaBusinessSnapshot,
  directSvaAccountingExport,createDirectSvaDraft,approveDirectSvaDraft
 } from "../backend/src/direct-sva-business.mjs";
 
@@ -198,4 +198,11 @@ test("subledger export fails closed instead of silently truncating and rejects u
    line_no:2,account_code:"467200",line_label:"Credit",debit_minor:"0",credit_minor:"120"}
  ]}};
  await assert.rejects(()=>directSvaAccountingExport(wrong,{month:"2026-10"}),{code:"DIRECT_SVA_EXPORT_CONTAINS_UNBALANCED_ENTRIES"});
+});
+
+test("accounting calendar uses French local month at midnight instead of UTC",()=>{
+ const boundary=new Date("2026-10-31T23:30:00Z");
+ assert.equal(monthInParis(boundary),"2026-11");
+ assert.equal(validDirectSvaMonth(null,boundary),"2026-11");
+ assert.equal(validDirectSvaMonth("2026-10",boundary),"2026-10");
 });
