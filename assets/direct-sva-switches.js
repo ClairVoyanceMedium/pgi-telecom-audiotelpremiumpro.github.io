@@ -52,6 +52,8 @@ export async function mountDirectSvaSwitches(host,{onPreviewChange}={}){
    '<p class="dss-error">Commandes indisponibles : '+esc(error.message)+'. Le distributeur reste désactivé. La migration dédiée doit être validée avant cette commande.</p></section>';
   return;
  }
+ let website=null;
+ try{website=await request("/platform/direct-sva-website");}catch{}
  if(!host.isConnected)return;
  host.hidden=false;
  if(typeof onPreviewChange==="function")onPreviewChange(current.interface_preview_enabled===true);
@@ -65,6 +67,17 @@ export async function mountDirectSvaSwitches(host,{onPreviewChange}={}){
   '<small>Afficher ou masquer le cockpit de préparation. Sans numéros actifs, sans espace client public et sans versements.</small></span>'+
   '<input class="dss-toggle" role="switch" aria-label="Interface PGI Telecom Distribution" data-dss-preview type="checkbox" '+
   (current.interface_preview_enabled?'checked':'')+'></label>'+
+  '<label class="dss-item"><span><strong>Afficher le Pôle Télécom &amp; Réseau sur le site</strong>'+
+  '<small>Afficher ou masquer le lien sous la connexion client. Une fois publiées, les pages restent consultables et indexables même si ce lien est masqué. Ne démarre aucun service commercial.</small></span>'+
+  '<input class="dss-toggle" role="switch" aria-label="Visibilité du Pôle Télécom et Réseau" data-dss-website type="checkbox" '+
+  (website?.navigation_preference?'checked ':'')+
+  (website?.business_unit==="direct_sva"&&website?.status==null?'':'disabled ')+
+  '></label>'+
+  '<div class="dss-details" data-dss-website-status role="status" aria-live="polite">'+
+  (website?.publication_authorized===true?
+   'Contenu publié : la désactivation masque le lien sans retirer les pages de Google.' :
+   'Préparation : cette commande mémorise seulement la préférence. Aucune page ne peut être publiée avant les validations de lancement.')+
+  '</div>'+
   '<label class="dss-item"><span><strong>Exploitation commerciale PGI Telecom Distribution</strong>'+
   '<small>Autoriser l’activité réelle seulement après validation des droits, contrats, tests et flux financiers. Impossible à activer en préparation.</small></span>'+
   '<input class="dss-toggle" role="switch" aria-label="Exploitation commerciale PGI Telecom Distribution" data-dss-commercial type="checkbox" disabled aria-disabled="true"></label>'+
@@ -89,6 +102,30 @@ export async function mountDirectSvaSwitches(host,{onPreviewChange}={}){
    blockers.forEach(label=>{const li=document.createElement("li");li.textContent=label;list.appendChild(li);});
    target.replaceChildren(heading,list);
   }catch(error){target.textContent="Diagnostic indisponible : "+String(error.message||"Erreur");}
+ });
+ const websiteSwitch=host.querySelector("[data-dss-website]");
+ websiteSwitch?.addEventListener("change",async()=>{
+  const target=websiteSwitch.checked,previous=website?.navigation_preference===true;
+  websiteSwitch.disabled=true;
+  const feedback=host.querySelector("[data-dss-website-status]");
+  if(feedback)feedback.textContent="Enregistrement du réglage...";
+  try{
+   const reply=await request("/platform/direct-sva-website/navigation","POST",{
+    enabled:target,expected_enabled:previous,
+    evidence_reference:"ADMIN-WEBSITE-"+crypto.randomUUID()
+   });
+   if(reply.business_unit!=="direct_sva"||reply.seo_continuity_when_hidden!==true||
+      reply.commercial_requests_enabled!==false||reply.seo_indexation_changed!==false)
+    throw Error("DIRECT_SVA_WEBSITE_RESPONSE_INVALID");
+   website={...website,navigation_preference:reply.navigation_preference,
+    publication_authorized:reply.publication_authorized};
+   if(feedback)feedback.textContent=reply.publication_authorized?
+    (reply.navigation_visible?"Lien public visible. Pages référencées conservées.":"Lien masqué. Pages et référencement conservés."):
+    "Réglage mémorisé. Publication toujours bloquée avant le lancement.";
+  }catch(error){
+   websiteSwitch.checked=previous;
+   if(feedback)feedback.textContent="Enregistrement refusé : "+String(error.message||"erreur");
+  }finally{websiteSwitch.disabled=false;}
  });
  const preview=host.querySelector("[data-dss-preview]");
  preview?.addEventListener("change",async()=>{
