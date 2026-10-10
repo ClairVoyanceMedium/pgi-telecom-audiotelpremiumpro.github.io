@@ -73,7 +73,7 @@ export async function eligibleExistingCustomerNumbers(store,{tenant_id=null}={})
   "   AND nca.valid_from<=now() AND (nca.valid_to IS NULL OR nca.valid_to>now())"+
   "  ORDER BY nca.valid_from DESC,nca.id DESC LIMIT 1"+
   " ) host ON true LEFT JOIN carriers c ON c.id=host.carrier_id"+
-  " LEFT JOIN direct_sva_existing_customer_transition_plans p ON p.assignment_id=a.id"+
+  " LEFT JOIN LATERAL (SELECT id FROM direct_sva_existing_customer_transition_plans WHERE assignment_id=a.id ORDER BY revision_no DESC LIMIT 1) p ON true"+
   " WHERE a.status='active' AND ($1::bigint IS NULL OR a.tenant_id=$1::bigint)"+
   " ORDER BY a.id DESC LIMIT 100",[tenant]
  );
