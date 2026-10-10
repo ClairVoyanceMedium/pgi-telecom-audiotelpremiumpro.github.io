@@ -77,6 +77,7 @@ function bindUnitTabs(){
 }
 function renderDirectUnit(){
   if(!root)return;
+  if(root.querySelector("[data-direct-sva-unit-root]"))return;
   root.innerHTML='<div class="acc">'+unitTabs()+unitTabs()+
     '<div data-direct-sva-unit-root><div class="acc-empty">Chargement du secteur distribution directe...</div></div></div>';
   bindUnitTabs();
