@@ -219,7 +219,7 @@ function financialCycleView(){
    kpi("Anomalies",integer(ready.exception_previews),"Traitement réservé")+'</div>'+
   '<p class="ds-note">Opérateurs, banque/PSP et comptabilité : trois connexions encore désactivées. Reversement automatique non activé.</p>';
  return '<section class="ds-panel"><h3>Connexion et automatisation du cycle</h3>'+summary+
-  '<div class="ds-actions"><button type="button" class="ds-button" data-ds-financial-readiness-refresh>Actualiser les prérequis</button></div></section>'+ '<section class="ds-panel"><h3>Cycle financier complet, préparé pour l’automatisation</h3>'+
+  '<p class="ds-note">Les indicateurs de préparation sont vérifiés automatiquement à chaque ouverture de cet onglet.</p></section>'+ '<section class="ds-panel"><h3>Cycle financier complet, préparé pour l’automatisation</h3>'+
   '<p class="ds-note">Relevé opérateur → rapprochement bancaire → répartition par éditeur → litiges → comptabilité → Business Live → reversements. En préparation, les données saisies sont non authentifiées et aucun virement n’est possible. Les interfaces opérateur et banque automatisées ne sont pas encore raccordées.</p>'+
   '<p class="ds-note">Prévisualisation réservée à l’administration. Format JSON : statement, receipts, recognition_date, contract_model=intermediary_net_preview et holds[]. Chaque appel du relevé doit identifier publisher_reference. Aucun IBAN ni numéro d’appelant.</p>'+
   '<label class="ds-desc" for="dsva-financial-cycle">Relevé fictif ou anonymisé structuré</label>'+
@@ -403,7 +403,6 @@ function attach(){
    showCollectionPreview(assertDirectSvaCockpitPayload(result,"collection"));
   }catch(error){target.textContent="Prévisualisation refusée : "+String(error.message||"format incorrect");}
  });
- host.querySelector("[data-ds-financial-readiness-refresh]")?.addEventListener("click",refreshFinancialReadiness);
  host.querySelector("[data-ds-financial-preview]")?.addEventListener("click",async()=>{
   const target=host.querySelector("[data-ds-financial-result]");
   try{
@@ -414,7 +413,7 @@ function attach(){
   }catch(error){target.textContent="Cycle refusé : "+String(error.message||"format incorrect");}
  });
  host.querySelector("[data-ds-month]")?.addEventListener("change",event=>{month=event.target.value||month;load();});
- host.querySelectorAll("[data-ds-tab]").forEach(btn=>btn.addEventListener("click",()=>{tab=btn.dataset.dsTab;show();if(tab==="integrations"&&!integrations)refreshIntegrations();if(tab==="financial_cycle"&&!financialReadiness)refreshFinancialReadiness();if(tab==="automation"&&!automations)refreshAutomations();if(tab==="complaints"&&!complaints)refreshComplaints();}));
+ host.querySelectorAll("[data-ds-tab]").forEach(btn=>btn.addEventListener("click",()=>{tab=btn.dataset.dsTab;show();if(tab==="integrations"&&!integrations)refreshIntegrations();if(tab==="financial_cycle")refreshFinancialReadiness();if(tab==="automation"&&!automations)refreshAutomations();if(tab==="complaints"&&!complaints)refreshComplaints();}));
  host.querySelector("[data-ds-integrations-refresh]")?.addEventListener("click",refreshIntegrations);
  host.querySelector("[data-ds-automation-refresh]")?.addEventListener("click",refreshAutomations);
  host.querySelector("[data-ds-complaints-refresh]")?.addEventListener("click",refreshComplaints);
