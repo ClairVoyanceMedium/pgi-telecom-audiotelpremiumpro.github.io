@@ -190,8 +190,17 @@ export async function directSvaIntegrationOverview(store){
   store.readSql.unsafe("SELECT legal_name,siren,vat_regime,vat_rate_bps,account_map,fec_enabled FROM platform_accounting_settings WHERE id=1")
  ]);
  if(units.length!==2||!units.every(x=>Number(x.legal_accounting_profile_id)===1&&x.separate_legal_fec===false))throw Object.assign(new Error("DIRECT_SVA_ENTITY_STRUCTURE_INVALID"),{status:503,code:"DIRECT_SVA_ENTITY_STRUCTURE_INVALID"});
- const ledger=Object.fromEntries(checks.map(x=>[x.integration_key,x]));
  const plan=directSvaIntegrationReadiness();
+ const expected=new Set(Object.values(INTEGRATION_TO_DB));
+ const observed=checks.map(x=>x.integration_key);
+ // A missing integration, unexpected row or unauthorized data-sending state
+ // is a configuration incident, not a healthy disabled connector.
+ if(checks.length!==expected.size||new Set(observed).size!==expected.size||
+    checks.some(x=>!expected.has(x.integration_key)||x.activation_status!=="disabled"||
+                   x.can_send_data!==false))
+   throw Object.assign(new Error("DIRECT_SVA_INTEGRATION_CONTROL_DRIFT"),
+    {status:503,code:"DIRECT_SVA_INTEGRATION_CONTROL_DRIFT"});
+ const ledger=Object.fromEntries(checks.map(x=>[x.integration_key,x]));
  return Object.freeze({
   ...plan,
   units:units.map(u=>({code:u.unit_code,label:u.display_name,analytic_cost_center:u.cost_center,
