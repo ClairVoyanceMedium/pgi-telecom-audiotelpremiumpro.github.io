@@ -72,6 +72,8 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.match(hubspotTracking,/pgi_tracking_consent_v1/);
     assert.equal(indexNowKey,"fa0a7deb5d60bdf1260c8174ad8c71db");
     seoPages.forEach((page,index)=>{
+      // Evergreen public pages do not advertise artificial publication or modification dates.
+      if(seoSlugs[index]!=="mentions-legales")assert.doesNotMatch(page,/"datePublished"|"dateModified"/);
       const slug=seoSlugs[index],legal=["mentions-legales","conditions-utilisation","conditions-abonnement","confidentialite","accord-traitement-donnees","cookies-traceurs","resilier-contrat","retractation"].includes(slug);
       if(slug==="mentions-legales")assert.match(page,/name="robots" content="noindex,follow,noarchive"/);
       assert.match(page,new RegExp('rel="canonical" href="https:\\/\\/audiotel-premium-pro\\.com\\/'+slug+'\\/"'));
@@ -102,13 +104,13 @@ test("production static build publishes marketing root and private cockpit",()=>
     assert.match(guide,/"@type":"FAQPage"/);
     assert.match(guide,/"@type":"BreadcrumbList"/);
     assert.match(guide,/"@type":"Article"/);
-    assert.match(guide,/"datePublished":"2026-09-22"/);
+    assert.doesNotMatch(guide,/"datePublished"|"dateModified"/);
     assert.match(guide,/"image":"https:\/\/audiotel-premium-pro\.com\/assets\/audiotel-brand-logo-v33\.png"/);
     assert.match(guide,/Arcep : numéros SVA/);
     assert.ok(guide.includes("economie.gouv.fr"));
     for(const slug of ["monetiser-ses-appels","combien-rapporte-numero-surtaxe"]){
       const article=seoPages[seoSlugs.indexOf(slug)];
-      assert.match(article,/"datePublished":"2026-10-02"/);
+      assert.doesNotMatch(article,/"datePublished"|"dateModified"/);
       assert.match(article,/"image":"https:\/\/audiotel-premium-pro\.com\/assets\/audiotel-brand-logo-v33\.png"/);
     }
     const application=seoPages[seoSlugs.indexOf("demande-ouverture")];

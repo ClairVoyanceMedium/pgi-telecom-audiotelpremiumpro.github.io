@@ -546,7 +546,7 @@ test("reversement page targets the best-reversement query through technical meta
   assert.match(payouts,/Meilleur reversement Audiotel : comparer taux et gains \| PGI Telecom/);
   assert.match(payouts,/"@type":"BreadcrumbList"/);
   assert.match(payouts,/"@type":"FAQPage"/);
-  assert.match(payouts,/"dateModified":"2026-09-29"/);
+  assert.doesNotMatch(payouts,/"dateModified"|"datePublished"/);
   assert.match(sitemap,/reversement-audiotel\/<\/loc><lastmod>2026-09-29<\/lastmod>/);
 });
 
