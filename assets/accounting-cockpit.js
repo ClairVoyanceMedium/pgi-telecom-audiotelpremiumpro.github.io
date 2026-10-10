@@ -76,7 +76,7 @@ function unitTabs(){
   if(!directSvaTabReleased())return "";
   return '<div class="acc-controls" role="tablist" aria-label="Activites comptables separees" style="padding:6px 0 13px">'+
    '<button type="button" class="acc-btn" role="tab" aria-selected="'+(businessUnit==="audiotel")+'" data-acc-unit="audiotel">Comptabilité Audiotel</button>'+
-   '<button type="button" class="acc-btn" role="tab" aria-selected="'+(businessUnit==="direct")+'" data-acc-unit="direct">Comptabilité distribution directe</button>'+
+   '<button type="button" class="acc-btn" role="tab" aria-selected="'+(businessUnit==="direct")+'" data-acc-unit="direct">Comptabilité PGI Telecom Distribution</button>'+
    '</div>';
 }
 function bindUnitTabs(){
@@ -95,12 +95,12 @@ function renderDirectUnit(){
   if(!directSvaTabReleased()){businessUnit="audiotel";if(current)render(current);return;}
   if(root.querySelector("[data-direct-sva-unit-root]"))return;
   root.innerHTML='<div class="acc"><div data-direct-sva-admin-switches hidden></div>'+unitTabs()+
-    '<div data-direct-sva-unit-root><div class="acc-empty">Chargement du secteur distribution directe...</div></div></div>';
+    '<div data-direct-sva-unit-root><div class="acc-empty">Chargement de PGI Telecom Distribution...</div></div></div>';
   bindUnitTabs();renderDirectAdminSwitches();
   const place=root.querySelector("[data-direct-sva-unit-root]");
   (directSvaPromise||(directSvaPromise=import("./direct-sva-cockpit.js")))
     .then(module=>{if(root?.contains(place)&&businessUnit==="direct")module.mountDirectSvaCockpit(place);})
-    .catch(error=>{if(root?.contains(place))place.innerHTML='<div class="acc-empty">Distribution directe indisponible : '+esc(error?.message||"erreur")+'</div>';});
+    .catch(error=>{if(root?.contains(place))place.innerHTML='<div class="acc-empty">PGI Telecom Distribution indisponible : '+esc(error?.message||"erreur")+'</div>';});
 }
 function render(d){
   current=d;currency=d.currency||currency;month=d.month||month;
