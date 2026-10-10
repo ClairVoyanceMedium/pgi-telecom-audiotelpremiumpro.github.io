@@ -99,7 +99,7 @@ export async function directSvaBusinessSnapshot(store,params={}){
     query.unsafe("SELECT to_char(date_trunc('month',e.entry_date),'YYYY-MM') AS month,"+
       " coalesce(sum(CASE WHEN l.account_code='706100' THEN l.credit_minor-l.debit_minor ELSE 0 END),0)::bigint AS revenue_minor,"+
       " coalesce(sum(CASE WHEN a.account_kind='expense' THEN l.debit_minor-l.credit_minor ELSE 0 END),0)::bigint AS expenses_minor"+
-      " FROM direct_sva_journal_entries e LEFT JOIN direct_sva_journal_lines l ON l.entry_id=e.id"+
+      " FROM direct_sva_journal_entries e JOIN direct_sva_journal_lines l ON l.entry_id=e.id"+
       " JOIN direct_sva_account_catalog a ON a.account_code=l.account_code"+
       " WHERE e.status='posted' AND e.entry_date>=$1::date AND e.entry_date<$2::date"+
       " GROUP BY date_trunc('month',e.entry_date) ORDER BY month",[historyFrom,to]),
@@ -164,7 +164,7 @@ export async function directSvaAccountingExport(store,params={}){
  const rows=await store.readSql.unsafe(
   "SELECT e.id AS journal_entry_id,e.entry_date,e.source_reference,e.description,e.status,e.evidence_reference,"+
   " e.source_system,e.source_digest,l.line_no,l.account_code,l.label AS line_label,l.debit_minor,l.credit_minor"+
-  " FROM direct_sva_journal_entries e JOIN direct_sva_journal_lines l ON l.entry_id=e.id"+
+  " FROM direct_sva_journal_entries e LEFT JOIN direct_sva_journal_lines l ON l.entry_id=e.id"+
   " WHERE e.business_unit='direct_sva' AND e.entry_date>=$1::date AND e.entry_date<$2::date"+
   " ORDER BY e.entry_date,e.id,l.line_no LIMIT $3",[from,to,maxRows+1]
  );
