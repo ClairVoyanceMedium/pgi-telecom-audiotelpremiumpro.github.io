@@ -37,5 +37,15 @@
     "audiotel_platform_unchanged": true,
     "live_external_transfers_enabled": false
   },
-  "truth_status": "NOT_READY_FOR_PUBLIC_DISTRIBUTION"
+  "truth_status": "NOT_READY_FOR_PUBLIC_DISTRIBUTION",
+  "stripe_catalog": {
+    "product_id": "prod_VPxqF47RlQ0uoi",
+    "product_created_in_stripe": true,
+    "live_account": true,
+    "product_active": false,
+    "prices_created": 0,
+    "checkout_enabled": false,
+    "distribution_webhook_enabled": false,
+    "audiotel_product_unchanged": true
+  }
 }
