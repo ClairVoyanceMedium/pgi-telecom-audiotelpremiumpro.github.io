@@ -52,6 +52,35 @@ export function assertDirectSvaCockpitPayload(value,kind="overview"){
   }
   if(value.accepted_rows+value.rejected_rows!==value.input_rows||
      value.total_pgi_margin_minor+value.total_publisher_due_minor!==value.total_upstream_net_minor)invalid();
+ }else if(kind==="collection"){
+  if(value.business_unit!=="direct_sva"||value.source!=="untrusted_manual_documents"||
+     value.bank_confirmation_verified!==false||value.operator_statement_verified!==false||
+     value.ledger_write_authorized!==false||value.posting_authorized!==false||
+     value.payout_authorized!==false||value.stripe_transfer_authorized!==false||
+     value.bank_transfer_authorized!==false||value.external_actions_executed!==false||
+     !Array.isArray(value.journal_proposals)||value.journal_proposals.length<1)invalid();
+  for(const field of ["total_operator_reported_minor","total_pgi_margin_preview_minor",
+   "total_publisher_liability_preview_minor","receipts_reported_minor","outstanding_reported_minor"]){
+   if(typeof value[field]!=="number"||!Number.isSafeInteger(value[field])||value[field]<0)invalid();
+  }
+  if(value.total_pgi_margin_preview_minor+value.total_publisher_liability_preview_minor!==
+      value.total_operator_reported_minor||
+     value.receipts_reported_minor+value.outstanding_reported_minor!==
+      value.total_operator_reported_minor||
+     value.journal_proposals.some(j=>{
+      if(j.business_unit!=="direct_sva"||j.entry_type!=="draft_proposal_only"||
+         j.allowed_to_post!==false||j.allowed_to_create_accounting_draft!==false||
+         !Array.isArray(j.lines)||j.lines.length<2)return true;
+      let debit=0,credit=0;
+      for(const l of j.lines){
+       if(!Number.isSafeInteger(l.debit_minor)||!Number.isSafeInteger(l.credit_minor)||
+          l.debit_minor<0||l.credit_minor<0||
+          (l.debit_minor>0)===(l.credit_minor>0))return true;
+       debit+=l.debit_minor;credit+=l.credit_minor;
+      }
+      return !Number.isSafeInteger(debit)||!Number.isSafeInteger(credit)||
+       debit!==credit||debit!==j.total_minor;
+     }))invalid();
  }else if(kind==="integrations"){
   if(value.all_direct_integrations_disabled!==true||value.ga4_emission_enabled!==false||
      value.hubspot_synchronization_enabled!==false||value.search_index_submission_enabled!==false||
@@ -122,7 +151,12 @@ function reconciliation(){
  '<p class="ds-note">Pré-analyse d’un relevé issu d’un futur opérateur de collecte. Détection des références CDR dupliquées, des numéros incorrects et des répartitions financières déséquilibrées. Aucun montant n’est enregistré en comptabilité et aucun virement n’est déclenché.</p>'+
  '<label class="ds-desc" for="direct-sva-reconciliation-input">Relevé JSON anonymisé, sans numéros d’appelants</label>'+
  '<textarea class="ds-input" id="direct-sva-reconciliation-input" data-ds-reconcile-payload rows="9" style="width:100%;font-family:monospace" placeholder="{&quot;operator_reference&quot;:&quot;OPERATEUR-001&quot;,&quot;statement_reference&quot;:&quot;RELEVE-001&quot;,&quot;period&quot;:&quot;2026-10&quot;,&quot;currency&quot;:&quot;EUR&quot;,&quot;rows&quot;:[{&quot;cdr_reference&quot;:&quot;CDR-0001&quot;,&quot;called_number&quot;:&quot;+33891234567&quot;,&quot;billable_seconds&quot;:60,&quot;upstream_net_minor&quot;:100,&quot;pgi_margin_minor&quot;:20,&quot;publisher_due_minor&quot;:80}]}"></textarea>'+
- '<div class="ds-actions"><button class="ds-button" type="button" data-ds-reconcile>Analyser le relevé sans l’enregistrer</button></div><div data-ds-reconcile-result class="ds-status" aria-live="polite"></div></section>';
+ '<div class="ds-actions"><button class="ds-button" type="button" data-ds-reconcile>Analyser le relevé sans l’enregistrer</button></div><div data-ds-reconcile-result class="ds-status" aria-live="polite"></div></section>'+
+ '<section class="ds-panel"><h3>Encaissements et propositions d’écritures</h3><p class="ds-note">Simulation uniquement. Relevé et extraits bancaires non authentifiés, aucun encaissement reconnu, aucune écriture enregistrée, aucun paiement. Renseigner des références fictives sans IBAN, nom ni numéro d’appelant.</p>'+
+ '<label class="ds-desc" for="dsva-collection-input">JSON : statement, receipts, recognition_date, contract_model=intermediary_net_preview</label>'+
+ '<textarea class="ds-input" id="dsva-collection-input" data-ds-collection-payload rows="9" style="width:100%;font-family:monospace" placeholder="Coller un relevé anonymisé avec receipts[] et références de banque fictives"></textarea>'+
+ '<div class="ds-actions"><button class="ds-button" type="button" data-ds-collection-preview>Simuler rapprochement et écritures</button></div>'+
+ '<div data-ds-collection-result class="ds-status" aria-live="polite"></div></section>';
 }
 function showReconciliationResult(result){
  const target=host?.querySelector("[data-ds-reconcile-result]");
@@ -135,6 +169,22 @@ function showReconciliationResult(result){
  kpi("Net dû aux éditeurs",money(result.total_publisher_due_minor),"Aucun paiement autorisé")+'</div>'+
  '<p class="ds-note">Empreinte du fichier : '+esc(result.source_fingerprint)+'. '+(result.balanced?"Répartition arithmétique cohérente.":"Anomalies détectées.")+' Le rapprochement avec des CDR authentifiés reste obligatoire.</p>'+
  (issues.length?'<div class="ds-list">'+issues.map(x=>'<div class="ds-alert">Ligne '+integer(x.row)+' : '+esc(x.code)+' '+esc(x.cdr_reference||"")+'</div>').join("")+'</div>':'<p class="ds-note">Aucune anomalie arithmétique dans ce relevé, sans présumer de sa validité contractuelle.</p>');
+}
+function showCollectionPreview(result){
+ const target=host?.querySelector("[data-ds-collection-result]");
+ if(!target)return;
+ target.innerHTML='<div class="ds-warning">Simulation non vérifiée : aucune somme confirmée en banque, aucune écriture comptabilisée ni aucun reversement.</div>'+
+  '<div class="ds-cards">'+
+  kpi("Relevé opérateur",money(result.total_operator_reported_minor),"Montant signalé, non encaissé")+
+  kpi("Encaissements signalés",money(result.receipts_reported_minor),"Références bancaires à authentifier")+
+  kpi("Solde non rapproché",money(result.outstanding_reported_minor),"Aucune créance confirmée")+
+  kpi("Marge PGI théorique",money(result.total_pgi_margin_preview_minor),"Traitement fiscal à valider")+
+  '</div><p class="ds-note">Part éditeurs théorique : '+esc(money(result.total_publisher_liability_preview_minor))+
+  '. Empreinte de simulation : '+esc(result.evidence_fingerprint)+'. Rapprochement indépendant et expertise comptable obligatoires.</p>'+
+  '<div class="ds-list">'+result.journal_proposals.map(j=>'<div><strong>'+esc(j.source_reference)+'</strong> | '+
+  esc(j.entry_date)+' | '+esc(money(j.total_minor))+
+  ' | proposition seulement : '+j.lines.map(l=>esc(l.account_code)+' '+esc(l.label)+' (D '+esc(money(l.debit_minor))+
+  ', C '+esc(money(l.credit_minor))+')').join(' ; ')+'</div>').join("")+'</div>';
 }
 function integrationView(){
  const title='<section class="ds-panel"><h3>Connexions futures, sans partage des chiffres</h3><p class="ds-note">Une société, deux centres de profit et des flux commerciaux distincts. La propriété GA4 dédiée à la distribution directe, l’espace Search Console de sous-répertoire et le pipeline HubSpot dédié restent à créer ou à valider avant tout lancement. Aucune synchronisation n’est activée ici.</p></section>';
@@ -277,6 +327,15 @@ function attach(){
   }catch(error){target.textContent="Analyse refusée : "+String(error.message||"format incorrect");}
  });
 
+ host.querySelector("[data-ds-collection-preview]")?.addEventListener("click",async()=>{
+  const target=host.querySelector("[data-ds-collection-result]");
+  try{
+   const payload=JSON.parse(host.querySelector("[data-ds-collection-payload]").value);
+   target.textContent="Vérification des références et des centimes...";
+   const result=await request("/platform/direct-sva/collections/preview","POST",payload);
+   showCollectionPreview(assertDirectSvaCockpitPayload(result,"collection"));
+  }catch(error){target.textContent="Prévisualisation refusée : "+String(error.message||"format incorrect");}
+ });
  host.querySelector("[data-ds-month]")?.addEventListener("change",event=>{month=event.target.value||month;load();});
  host.querySelectorAll("[data-ds-tab]").forEach(btn=>btn.addEventListener("click",()=>{tab=btn.dataset.dsTab;show();if(tab==="integrations"&&!integrations)refreshIntegrations();if(tab==="automation"&&!automations)refreshAutomations();if(tab==="complaints"&&!complaints)refreshComplaints();}));
  host.querySelector("[data-ds-integrations-refresh]")?.addEventListener("click",refreshIntegrations);
