@@ -56,6 +56,14 @@ export function publishedDistributionHtml(html,state){
    (labels[lang]||labels.fr)+'</span>';
  });
 }
+export function publishedDistributionRobots(robotsTxt,state){
+ if(state?.publication_authorized!==true||typeof robotsTxt!=="string")return null;
+ const sitemap="Sitemap: https://audiotel-premium-pro.com/distribution-sva/sitemap.xml";
+ // Keep the existing Audiotel rules intact; add the Distribution sitemap
+ // only after a distinct editorial release, regardless of link visibility.
+ if(robotsTxt.split(/\r?\n/).some(line=>line.trim()===sitemap))return robotsTxt;
+ return robotsTxt.replace(/\s*$/,"")+"\n"+sitemap+"\n";
+}
 export function publishedDistributionSitemap(state){
  if(state?.publication_authorized!==true)return null;
  const approvals=Object.fromEntries(SITEMAP_REQUIREMENTS.map(k=>[k,true]));
