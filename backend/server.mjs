@@ -701,6 +701,17 @@ export function createBackend(options={}){
         });
       }
 
+      // Separate second launch. The existing Audiotel release cannot activate
+      // the future distributor API through shared authentication or URL guesses.
+      if(!config.directSvaOperatorApiEnabled&&(
+        pathname.startsWith("/api/v1/platform/direct-sva/")||
+        pathname.startsWith("/api/v1/customer/direct-sva/")
+      )){
+        return done(res,metrics,started,"direct_sva.staged_off",404,{
+          error:{code:"DIRECT_SVA_PREPARATION_DISABLED"}
+        });
+      }
+
       const actor=authenticate(req,config);
       const customerActor=authenticateCustomer(req,config);
       if(method==="GET"&&pathname==="/api/v1/customer/security/passkeys"){
