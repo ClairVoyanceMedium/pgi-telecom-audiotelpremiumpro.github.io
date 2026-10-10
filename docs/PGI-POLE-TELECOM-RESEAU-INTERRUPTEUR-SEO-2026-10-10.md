@@ -9,14 +9,14 @@ Il n'existe pas de méthode sûre permettant à la fois de rendre une page durab
 Le cockpit possède donc trois contrôles réellement différents :
 
 1. **Interface PGI Telecom Distribution** : affiche ou masque le cockpit interne de préparation, sans effet public.
-2. **Afficher le Pôle Télécom & Réseau sur le site** : contrôle exclusivement le lien dans l'en-tête Audiotel, sous la connexion client. Si le pôle a été préalablement publié, un arrêt du lien laisse **les 35 pages publiques consultables**, les URLs canoniques et le sitemap intacts.
+2. **Ouvrir / afficher le Pôle Télécom & Réseau** : le propriétaire peut publier les 35 pages informatives dès son premier passage sur ON, avec une confirmation. Les passages suivants sur ON affichent le lien dans l'en-tête Audiotel. OFF masque le lien, mais laisse **les pages déjà publiées consultables et indexables**, leurs URLs canoniques et le sitemap intacts.
 3. **Exploitation commerciale** : toujours bloquée par les contrôles réglementaires, techniques et financiers. Le bouton de visibilité ne doit jamais attribuer un numéro, lancer des paiements ou rendre un espace client actif.
 
-## États HTTP après approbation préalable de la publication
+## États HTTP sous le contrôle éditorial du propriétaire
 
 | État éditorial | Lien accueil | Pages d'information | Balise robots | Sitemap | Commercial |
 |---|---|---|---|---|---|
-| Avant publication approuvée | Caché | 404, même si « afficher » coché | noindex | Non disponible | Bloqué |
+| Avant la première activation par le propriétaire | Caché | 404 | noindex | Non disponible | Bloqué |
 | Publié, lien visible | Visible | 200 | index,follow | 200, 35 URL | Bloqué séparément |
 | Publié, lien caché | Caché | 200, contenu et adresse canonique strictement conservés | index,follow | 200, mêmes 35 URL | Bloqué séparément |
 | Échec de lecture de la configuration | Caché | 503 temporaire, Retry-After 300 s | Pas de noindex forcé | 503 | Bloqué |
@@ -27,10 +27,10 @@ En permanence, la page `/distribution-sva/espace-client/` et les autres chemins 
 
 ## Fichiers préparés sur la branche GitHub
 
-- `database/migrations/084_direct_sva_website_visibility.sql` : préférence de navigation persistante, audit append-only, **interdiction SQL explicite d'autoriser la publication** avant une future migration distincte.
+- `database/migrations/084_direct_sva_website_visibility.sql` : préparation initiale avec verrou de publication. La migration complémentaire `085_direct_sva_admin_editorial_release.sql` retire ce verrou purement technique et étend l'audit pour l'ouverture éditoriale. Le propriétaire commande l'ouverture depuis le cockpit, sans intervention supplémentaire de l'assistant.
 - `backend/src/direct-sva-website-visibility.mjs` : lecture déterministe et mise à jour transactionnelle du réglage, validation stricte de l'état attendu, rôle administrateur.
 - `backend/server.mjs` : lecture admin `GET /api/v1/platform/direct-sva-website` et enregistrement CSRF `POST /api/v1/platform/direct-sva-website/navigation`.
-- `assets/direct-sva-switches.js` : troisième interrupteur dans le cockpit, confirmation de l'activation et messages pédagogiques SEO.
+- `assets/direct-sva-switches.js` : interrupteur d'ouverture éditoriale dans le cockpit. Au premier ON, confirmation de publication ; aux passages suivants, seule la visibilité du lien change, sans modification du SEO.
 - `backend/src/direct-sva-public-site.mjs` et `backend/src/static-site.mjs` : liste blanche des 35 pages, route sitemap, transformation du `noindex` uniquement après publication séparée, injection du lien dans l'accueil, et maintien du contenu strictement identique lorsque la navigation est cachée. L'URL du sitemap Distribution est ajoutée à `robots.txt` uniquement après publication autorisée. Avant autorisation commerciale, les liens vers l'espace client Distribution privé deviennent des indications non cliquables, et non des erreurs 404 accessibles aux visiteurs.
 - `scripts/build-static.mjs` : emballage des pages internationales et des ressources sous un serveur bloquant en prépublication. Le simple fait d'embarquer les fichiers ne les rend pas accessibles.
 - `Dockerfile.vercel`, `Dockerfile`, `infra/Dockerfile.platform` : inclusion de la liste SEO nécessaire au serveur, empêchant l'échec de démarrage lors d'une prochaine compilation.
@@ -44,15 +44,15 @@ En permanence, la page `/distribution-sva/espace-client/` et les autres chemins 
 - `navigation_enabled=false`
 - `commercial_calls_to_action_enabled=false`
 - aucun audit de changement administrateur
-- migration 084 enregistrée avec somme de contrôle.
+- migrations 084 et 085 enregistrées avec sommes de contrôle. La migration 085 a été appliquée sur cette branche de préparation, et la base autorise désormais l'ouverture éditoriale. Le test ON puis OFF a été exécuté dans une transaction et annulé pour laisser la décision au propriétaire.
 
 **Rien de cette migration n'a été appliqué à la branche de base/production Neon.**
 
 ## Étapes dépendant encore du lancement
 
 - Contrôle réglementaire, contractuel et technique, textes légaux définitifs, test de l'image de bannière, parcours mobile et formulaires. **Ne pas déclarer tous les services opérateur actifs à l'ouverture des pages informatives.**
-- Revue indépendante d'une future migration de libération éditoriale levant seulement le `CHECK(public_content_authorized=false)`, avec preuve de publication autorisée. La bascule de navigation ne doit pas lever ce verrou.
-- Déploiement unique seulement après « top départ » explicite.
+- La migration de libération éditoriale `085` est prête et testée sur Neon de préparation. **Aucun verrou d'approbation supplémentaire créé par l'assistant** ne s'oppose à la commande ON du propriétaire une fois l'application déployée. La fonctionnalité de paiement et l'activation des numéros restent des circuits indépendants.
+- Mise à jour de l'application sur Vercel uniquement après le « top départ » explicite. Tant que le nouveau cockpit n'est pas déployé, l'interrupteur réel de production ne bénéficie pas encore de ce changement.
 - Contrôles de toutes les pages et langues en HTTPS avec `200`, réécriture `index,follow`, en-têtes de sécurité, Search Console et absence d'erreur d'exploration.
 - Soumission du sitemap Distribution et suivi de l'indexation. Conserver le sitemap actif pendant une pause du lien.
 
