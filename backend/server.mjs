@@ -28,6 +28,7 @@ import {directSvaBusinessSnapshot,directSvaAccountingExport,createDirectSvaDraft
 import {analyzeDirectSvaSettlement} from "./src/direct-sva-reconciliation.mjs";
 import {prepareDirectSvaCollectionAccounting} from "./src/direct-sva-collection-planner.mjs";
 import {planDirectSvaFinancialCycle} from "./src/direct-sva-financial-cycle.mjs";
+import {directSvaFinancialReadiness} from "./src/direct-sva-financial-readiness.mjs";
 import {directSvaIntegrationOverview} from "./src/direct-sva-integrations.mjs";
 import {directSvaCustomerOverview,directSvaWorkflowOverview} from "./src/direct-sva-customer.mjs";
 import {recordDirectSvaWorkflowSimulation,directSvaSimulationDashboard} from "./src/direct-sva-automation-rehearsal.mjs";
@@ -1953,6 +1954,12 @@ export function createBackend(options={}){
           prepareDirectSvaCollectionAccounting(body));
       }
 
+      // Read-only dashboard for preparatory financial source connections.
+      if(method==="GET"&&pathname==="/api/v1/platform/direct-sva/financial-cycle/readiness"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.direct_sva_financial_cycle_readiness",200,
+          await directSvaFinancialReadiness(store));
+      }
       // Zero-execution multi-publisher financial cycle preview. No data persistence,
       // payment mandate, KYC assertion or source authentication by the caller.
       if(method==="POST"&&pathname==="/api/v1/platform/direct-sva/financial-cycle/preview"){
