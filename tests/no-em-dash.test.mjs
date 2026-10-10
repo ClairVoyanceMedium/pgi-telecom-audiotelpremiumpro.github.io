@@ -24,8 +24,12 @@ function scan(directory,violations) {
       const line = source.slice(0,matchIndex).split("\n").length;
       violations.push(relativePath + ":" + line + " contains the forbidden character");
     }
-    if (/\.(?:html?|xml|svg)$/i.test(entry.name) && forbiddenHtmlEntity.test(source)) {
+    if (forbiddenHtmlEntity.test(source)) {
       violations.push(relativePath + " contains an encoded HTML em dash");
+    }
+    const publicSource = relativePath.startsWith("site" + path.sep) || relativePath.startsWith("assets" + path.sep) || !relativePath.includes(path.sep);
+    if (publicSource && /\\\\u(?:2014|\\{0*2014\\})/i.test(source)) {
+      violations.push(relativePath + " contains a JavaScript escape that would render an em dash");
     }
   }
 }
