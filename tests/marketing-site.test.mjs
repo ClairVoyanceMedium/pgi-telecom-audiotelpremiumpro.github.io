@@ -347,6 +347,7 @@ test("homepage bottom quick navigation prioritizes the highest-value commercial 
   assert.match(html,/Estimer mes revenus potentiels/);
   assert.match(html,/Encaisser par carte bancaire/);
   assert.match(html,/Créer et envoyer un lien de paiement sécurisé/);
+  assert.match(html,/<small>RÉCOMPENSES<\\/small><strong>Parrainer Audiotel Premium Pro<\\/strong>/);
   assert.match(html,/Parrainer Audiotel Premium Pro/);
   assert.match(html,/Partager mon lien et suivre mes récompenses/);
   assert.match(html,/href="\/portabilite-numero-sva\//);
@@ -496,7 +497,9 @@ test("public branding and client access wording are explicit",()=>{
   assert.match(css,/brand-full img,.footer-brand-premium img/);
   assert.match(css,/width:238px!important/);
   assert.match(css,/\.home-page \.brand-full img\{width:238px!important;max-height:78px!important\}/);
-  assert.match(css,/@media\(max-width:680px\)\{\.site-header \.brand-full img,\.footer-brand-premium img,[^}]*\.hero-visual \.hero-visual-brand\{width:238px!important;max-height:78px!important\}\}/);
+  assert.match(css,/\.hero-visual \.hero-visual-brand\{position:absolute;[^}]*width:176px/);
+  assert.match(css,/@media\(max-width:680px\)\{\.hero-visual \.hero-visual-brand\{top:10px;right:10px;width:135px/);
+  assert.doesNotMatch(css,/\.hero-visual \.hero-visual-brand\{width:238px\}/);
 });
 
 test("hero copy is condensed and the primary potential gain is highlighted in green",()=>{

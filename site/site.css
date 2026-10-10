@@ -387,5 +387,4 @@ body{padding-bottom:112px}
 
 .brand-full img,.footer-brand-premium img,.site-footer .footer-inner>div>img[src*="audiotel-brand-logo-v33.png"]{width:238px!important;max-width:100%;height:auto!important;max-height:78px!important;object-fit:contain}
 .home-page .brand-full img{width:238px!important;max-height:78px!important}
-.hero-visual .hero-visual-brand{width:238px}
-@media(max-width:680px){.site-header .brand-full img,.footer-brand-premium img,.site-footer .footer-inner>div>img[src*="audiotel-brand-logo-v33.png"],.hero-visual .hero-visual-brand{width:238px!important;max-height:78px!important}}
+@media(max-width:680px){.site-header .brand-full img,.footer-brand-premium img,.site-footer .footer-inner>div>img[src*="audiotel-brand-logo-v33.png"]{width:238px!important;max-height:78px!important}}
