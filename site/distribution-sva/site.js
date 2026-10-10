@@ -13,8 +13,10 @@
  // The existing Audiotel measurement property must never be reused by this unit.
  const analytics=window.__PGI_DIRECT_SVA_MEASUREMENT__;
  const privatelyScoped=new RegExp("^/distribution-sva/(?:espace-client|conditions|confidentialite|mentions-legales)(?:/|$)","i").test(location.pathname);
- if(!privatelyScoped&&analytics?.directReleaseApproved===true&&
-    analytics?.dedicatedPropertyConfirmed===true&&analytics?.legalApproved===true&&
+ if(!privatelyScoped&&analytics?.enabled===true&&analytics?.directReleaseApproved===true&&
+    analytics?.dedicatedPropertyConfirmed===true&&analytics?.customDimensionRegistered===true&&
+    analytics?.legalApproved===true&&/^G-[A-Z0-9]{8,}$/.test(String(analytics?.measurementId||""))&&
+    analytics.measurementId!=="G-SZY50J75N7"&&navigator.globalPrivacyControl!==true&&
     !document.querySelector('script[src*="/site/distribution-sva/measurement.js"]')){
    const script=document.createElement("script");
    script.type="module";
