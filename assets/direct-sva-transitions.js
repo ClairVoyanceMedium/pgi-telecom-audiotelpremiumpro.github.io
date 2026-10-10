@@ -43,7 +43,7 @@ function render(){
  '<form class="ds-form" data-transition-form>'+
  '<label class="ds-wide">Ligne et client existants<select class="ds-input" name="assignment_id" required><option value="">Sélectionner</option>'+
  available.map(x=>'<option value="'+esc(x.assignment_id)+'">'+esc(x.e164+" | client "+x.tenant_id+" | "+(x.source_host_name||"source inconnue"))+'</option>').join("")+'</select></label>'+
- '<label>Nouvelle distribution<select class="ds-input" name="target_mode"><option value="direct_sva">PGI Telecom, futur distributeur direct</option>'+
+ '<label>Nouvelle distribution<select class="ds-input" name="target_mode"><option value="direct_sva">PGI Telecom Distribution (en préparation)</option>'+
  '<option value="partner">Autre prestataire SVA</option></select></label>'+
  '<label>Identifiant du prestataire cible (si prestataire externe)<input class="ds-input" name="target_carrier_id" type="number" min="1" placeholder="Non requis pour PGI direct"></label>'+
  '<label>Fenêtre de bascule envisagée<input class="ds-input" type="datetime-local" name="planned_cutover_at"></label>'+
@@ -51,7 +51,7 @@ function render(){
  '<div class="ds-actions"><button class="ds-button" type="submit" '+(!available.length||busy?'disabled':'')+'>Préparer, sans modifier le service</button></div></form></section>'+
  '<section class="ds-panel"><h3>Historique des plans</h3>'+
  (plans?(history.length?'<div class="ds-table"><table><thead><tr><th>Client</th><th>Numéro conservé</th><th>Destination envisagée</th><th>État</th></tr></thead><tbody>'+
- history.map(x=>'<tr><td>'+esc(x.tenant_id)+'</td><td>'+esc(x.number)+'</td><td>'+esc(x.target_mode==="direct_sva"?"Distribution directe PGI":"Prestataire "+x.target_carrier_id)+'</td><td>Préparé, aucune bascule</td></tr>').join("")+'</tbody></table></div>':
+ history.map(x=>'<tr><td>'+esc(x.tenant_id)+'</td><td>'+esc(x.number)+'</td><td>'+esc(x.target_mode==="direct_sva"?"PGI Telecom Distribution":"Prestataire "+x.target_carrier_id)+'</td><td>Préparé, aucune bascule</td></tr>').join("")+'</tbody></table></div>':
  '<p class="ds-note">Aucun plan pour la sélection.</p>'):'<p class="ds-note">Plans non consultés.</p>')+
  '</section><p class="ds-status" role="status" aria-live="polite">'+esc(notice)+'</p>';
  root.querySelector("[data-transition-filter]")?.addEventListener("submit",e=>{
