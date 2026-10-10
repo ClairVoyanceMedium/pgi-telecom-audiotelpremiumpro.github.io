@@ -26,6 +26,7 @@ import {submitHubSpotLead,syncHubSpotCommercialLead,syncHubSpotCommercialTenant,
 import {evaluateLaunchReadiness} from "./src/launch-readiness.mjs";
 import {directSvaBusinessSnapshot,createDirectSvaDraft,approveDirectSvaDraft} from "./src/direct-sva-business.mjs";
 import {analyzeDirectSvaSettlement} from "./src/direct-sva-reconciliation.mjs";
+import {directSvaIntegrationOverview} from "./src/direct-sva-integrations.mjs";
 import {runDailyReportCron} from "./src/daily-report.mjs";
 
 export async function createDefaultBackend(){
@@ -1800,6 +1801,10 @@ export function createBackend(options={}){
       }
 
       // Independent direct SVA operator business unit. No active numbering or payout route.
+      if(method==="GET"&&pathname==="/api/v1/platform/direct-sva/integrations"){
+        requireRole(actor,["admin","finance","readonly"]);
+        return done(res,metrics,started,"platform.direct_sva_integrations",200,await directSvaIntegrationOverview(store));
+      }
       if(method==="GET"&&pathname==="/api/v1/platform/direct-sva/overview"){
         requireRole(actor,["admin","finance","readonly"]);
         const params=Object.fromEntries(url.searchParams.entries());
