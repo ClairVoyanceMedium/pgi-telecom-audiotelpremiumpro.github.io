@@ -48,6 +48,7 @@ test("real customer migration creates only a documented, private preparation rec
  const {store,queries,writes}=mocked();
  const r=await prepareExistingCustomerTransition(store,admin,sample);
  assert.equal(r.number,"+33891234567");
+ assert.equal(r.revision,1);
  assert.equal(r.tenant_id,11);
  assert.equal(r.source_host_carrier_id,33);
  assert.equal(r.existing_audiotel_unchanged,true);
