@@ -5,7 +5,7 @@ import {
  PGI_BUSINESS_UNITS,PGI_LEGAL_ENTITY_KEY,DIRECT_SVA_GA4_EVENTS,
  DIRECT_SVA_HUBSPOT_FIELDS,DIRECT_SVA_SEARCH_STRUCTURE,
  planDirectSvaGa4Event,directSvaHubspotPlan,directSvaIntegrationReadiness,
- directSvaIntegrationOverview,prepareDirectSvaHubspotDeal
+ directSvaIntegrationOverview,prepareDirectSvaHubspotDeal,assessPgiLegalAccountingProfile
 } from "../backend/src/direct-sva-integrations.mjs";
 import {createDirectSvaTracker} from "../site/direct-sva-tracking.js";
 
@@ -110,7 +110,8 @@ test("database-backed integration registry remains disabled and stays one legal 
  const rows=[
   [{unit_code:"audiotel_platform",legal_accounting_profile_id:1,analytics_namespace:"audiotel",cost_center:"APP",display_name:"Audiotel Premium Pro",lifecycle_status:"existing",separate_legal_fec:false},
    {unit_code:"direct_sva",legal_accounting_profile_id:1,analytics_namespace:"distribution_directe",cost_center:"DSVA",display_name:"Distribution directe",lifecycle_status:"preparation",separate_legal_fec:false}],
-  ["ga4","gsc","hubspot","statutory_accounting","network","payment_psp"].map(integration_key=>({integration_key,readiness_status:"planned",activation_status:"disabled",can_send_data:false}))
+  ["ga4","gsc","hubspot","statutory_accounting","network","payment_psp"].map(integration_key=>({integration_key,readiness_status:"planned",activation_status:"disabled",can_send_data:false})),
+  [{legal_name:null,siren:null,vat_regime:"unconfigured",vat_rate_bps:null,account_map:{},fec_enabled:false}]
  ];
  let i=0;const store={readSql:{unsafe:async q=>{queryTexts.push(q);return rows[i++];}}};
  const result=await directSvaIntegrationOverview(store);
@@ -119,8 +120,11 @@ test("database-backed integration registry remains disabled and stays one legal 
  assert.equal(result.legal_fec_separated,false);
  assert.equal(result.checks.length,6);
  assert.equal(result.checks.every(x=>x.data_sending_enabled===false),true);
- assert.equal(queryTexts.length,2);
- assert.ok(queryTexts.every(q=>/direct_sva_integration_readiness|pgi_company_business_units/.test(q)));
+ assert.equal(queryTexts.length,3);
+ assert.equal(result.shared_legal_accounting.legal_profile_ready_for_expert_review,false);
+ assert.equal(result.shared_legal_accounting.legal_fec_operational,false);
+ assert.equal(result.shared_legal_accounting.legal_profile_criteria.filter(x=>!x.ok).length,4);
+ assert.ok(queryTexts.every(q=>/direct_sva_integration_readiness|pgi_company_business_units|platform_accounting_settings/.test(q)));
 });
 
 test("migration stores identical legal accounting profile and locks future network and CRM",()=>{
@@ -165,4 +169,22 @@ test("HubSpot direct pipeline adapter refuses to reuse Audiotel default pipeline
  assert.equal(candidate.payload.properties.pgi_source_reference,"DSVA-00000123");
  assert.equal(candidate.transmission_authorized,false);
  assert.ok(!JSON.stringify(candidate).includes("email"));
+});
+
+test("legal accounting readiness does not expose company identity or enable FEC prematurely",()=>{
+ const incomplete=assessPgiLegalAccountingProfile({
+  legal_name:null,siren:null,vat_regime:"unconfigured",vat_rate_bps:null,
+  account_map:{},fec_enabled:false
+ });
+ assert.equal(incomplete.legal_profile_ready_for_expert_review,false);
+ assert.equal(incomplete.fec_active,false);
+ const completed=assessPgiLegalAccountingProfile({
+  legal_name:"Societe exemple",siren:"123456789",vat_regime:"normal",vat_rate_bps:2000,
+  account_map:{DSVA:"706100"},fec_enabled:true
+ });
+ assert.equal(completed.legal_profile_ready_for_expert_review,true);
+ assert.equal(completed.legal_fec_operational,false);
+ assert.equal(completed.direct_sva_included_in_fec,false);
+ assert.ok(!JSON.stringify(completed).includes("123456789"));
+ assert.ok(!JSON.stringify(completed).includes("Societe exemple"));
 });
