@@ -117,8 +117,11 @@ export function planDirectSvaFinancialCycle(input={}){
  const sorted=[...publisherMap.values()].sort((a,b)=>
   a.publisher_reference.localeCompare(b.publisher_reference,"en"));
  canonicalHolds.sort((a,b)=>a.hold_reference.localeCompare(b.hold_reference,"en"));
+ const cdrPublisherLinks=statement.rows.map(r=>({
+  cdr_reference:r.cdr_reference,publisher_reference:r.publisher_reference
+ })).sort((x,y)=>x.cdr_reference.localeCompare(y.cdr_reference,"en"));
  const source=digest({statement_fingerprint:prepared.evidence_fingerprint,
-  publishers:sorted,holds:canonicalHolds});
+  cdrPublisherLinks,publishers:sorted,holds:canonicalHolds});
  const publisher_balances=sorted.map(p=>{
   const retained=holdMap.get(p.publisher_reference)||0;
   return Object.freeze({
