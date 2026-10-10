@@ -74,7 +74,8 @@ export async function eligibleExistingCustomerNumbers(store,{tenant_id=null}={})
   "  ORDER BY nca.valid_from DESC,nca.id DESC LIMIT 1"+
   " ) host ON true LEFT JOIN carriers c ON c.id=host.carrier_id"+
   " LEFT JOIN LATERAL (SELECT id FROM direct_sva_existing_customer_transition_plans WHERE assignment_id=a.id ORDER BY revision_no DESC LIMIT 1) p ON true"+
-  " WHERE a.status='active' AND ($1::bigint IS NULL OR a.tenant_id=$1::bigint)"+
+  " WHERE a.status='active' AND length(n.e164)=12 AND left(n.e164,5) IN ('+3381','+3382','+3389')"+
+  " AND ($1::bigint IS NULL OR a.tenant_id=$1::bigint)"+
   " ORDER BY a.id DESC LIMIT 100",[tenant]
  );
  return Object.freeze({mode:"internal_preparation_only",count:rows.length,
@@ -134,7 +135,8 @@ export async function prepareExistingCustomerTransition(store,actor,input={}){
    "SELECT a.id,a.tenant_id,a.sva_number_id,a.status,n.e164,n.status AS number_status"+
    " FROM tenant_number_assignments a JOIN sva_numbers n ON n.id=a.sva_number_id"+
    " WHERE a.id=$1 FOR UPDATE OF a",[assignmentId]);
-  if(!row||row.status!=="active"||row.number_status!=="active")
+  if(!row||row.status!=="active"||row.number_status!=="active"||
+     !/^\+33(81|82|89)[0-9]{7}$/.test(String(row.e164||"")))
    throw fail(409,"DIRECT_SVA_SOURCE_ASSIGNMENT_NOT_ACTIVE");
   const hosts=await tx.unsafe(
    "SELECT carrier_id FROM number_carrier_assignments"+
