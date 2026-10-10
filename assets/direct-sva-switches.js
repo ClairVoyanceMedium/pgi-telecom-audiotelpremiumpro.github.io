@@ -69,9 +69,27 @@ export async function mountDirectSvaSwitches(host,{onPreviewChange}={}){
   '<small>Autoriser l’activité réelle seulement après validation des droits, contrats, tests et flux financiers. Impossible à activer en préparation.</small></span>'+
   '<input class="dss-toggle" role="switch" aria-label="Exploitation commerciale SVA directe" data-dss-commercial type="checkbox" disabled aria-disabled="true"></label>'+
   '<div class="dss-alert">Exploitation commerciale : désactivée et verrouillée. Le premier interrupteur ne l’active pas.</div>'+
+  '<button class="ds-button" data-dss-readiness type="button">Consulter le diagnostic de mise en production</button>'+
+  '<div class="dss-details" data-dss-readiness-result role="status" aria-live="polite"></div>'+
   '<details class="dss-details"><summary>Conditions encore bloquantes</summary><ul>'+
   BLOCKERS.map(s=>'<li>'+esc(s)+'</li>').join("")+'</ul></details>'+
   '<div role="status" aria-live="polite" class="dss-badge" data-dss-result></div></section>';
+ host.querySelector("[data-dss-readiness]")?.addEventListener("click",async()=>{
+  const target=host.querySelector("[data-dss-readiness-result]");
+  target.textContent="Vérification des prérequis...";
+  try{
+   const report=await request("/platform/direct-sva-release-readiness");
+   if(report.production_launch_authorized!==false||report.business_unit!=="direct_sva")
+    throw Error("READINESS_RESPONSE_INVALID");
+   const blockers=[...(report.technical_controls||[]).filter(x=>x.status!=="observed").map(x=>x.label),
+    ...(report.external_gates||[]).map(x=>x.label)];
+   const heading=document.createElement("p");
+   heading.textContent="Diagnostic : lancement commercial non autorisé. "+blockers.length+" conditions à documenter.";
+   const list=document.createElement("ul");
+   blockers.forEach(label=>{const li=document.createElement("li");li.textContent=label;list.appendChild(li);});
+   target.replaceChildren(heading,list);
+  }catch(error){target.textContent="Diagnostic indisponible : "+String(error.message||"Erreur");}
+ });
  const preview=host.querySelector("[data-dss-preview]");
  preview?.addEventListener("change",async()=>{
   const requested=preview.checked,expected=current.interface_preview_enabled===true;
