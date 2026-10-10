@@ -148,3 +148,21 @@ P4 : revue independante technique, juridique et financiere, tests de reprise, pl
 - aucun merge dans "main" et aucun deploiement Vercel.
 
 Ces absences sont volontaires. La preparation documentaire et les tests logiciels n'autorisent pas une exploitation directe.
+
+## Protection contre une activation incoherente et regles actualisees
+
+Le controle preparatoire de l'operateur direct comporte des preuves documentaires supplementaires relatives :
+
+- a l'etablissement des editeurs de SVA majores dans l'Espace economique europeen ou l'Association europeenne de libre-echange, avant toute affectation ;
+- au nom et a la description du service, a l'identification du fournisseur et a son canal de reclamation ;
+- a la tarification C+S, a la signaletique et au message gratuit d'information tarifaire avant facturation ;
+- a l'application des recommandations deontologiques AF2M 2026, en vigueur depuis le 1er septembre 2026.
+
+Ces preuves viennent s'ajouter aux autorisations d'operateur, ressources et contrats. Elles ne sont pas des preuves d'identite validees par le logiciel lui-meme : elles necessitent une verification humaine et contractuelle. Une fiche interne complete ne peut jamais autoriser une activation commerciale ni un paiement.
+
+Les modules de lecture des controles operateur et d'integrations echouent maintenant explicitement si PostgreSQL signale une activation inattendue, au lieu de fabriquer un statut « desactive » dans la reponse.
+
+Sources officielles consultees le 10 octobre 2026 :
+- https://www.arcep.fr/mes-demarches-et-services/acteurs-regules/operateurs-telecoms/fiches-pratiques/operateurs-telecoms-affectation-des-numeros-de-telephone.html (version 23 septembre 2026).
+- https://af2m.org/rd-sva/ (recommandations applicables au 1er septembre 2026).
+
