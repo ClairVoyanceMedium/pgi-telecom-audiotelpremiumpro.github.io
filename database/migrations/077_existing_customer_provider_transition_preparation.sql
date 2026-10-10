@@ -5,7 +5,8 @@
 CREATE TABLE IF NOT EXISTS direct_sva_existing_customer_transition_plans (
  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
  tenant_id bigint NOT NULL REFERENCES tenants(id),
- assignment_id bigint NOT NULL UNIQUE REFERENCES tenant_number_assignments(id),
+ assignment_id bigint NOT NULL REFERENCES tenant_number_assignments(id),
+ revision_no integer NOT NULL CHECK(revision_no>=1),
  sva_number_id bigint NOT NULL REFERENCES sva_numbers(id),
  e164_snapshot text NOT NULL CHECK (e164_snapshot ~ '^\+[1-9][0-9]{7,14}$'),
  source_host_carrier_id bigint NOT NULL REFERENCES carriers(id),
@@ -26,10 +27,13 @@ CREATE TABLE IF NOT EXISTS direct_sva_existing_customer_transition_plans (
  actor_hash char(64) NOT NULL CHECK (actor_hash ~ '^[0-9a-f]{64}$'),
  evidence_reference text NOT NULL CHECK (length(btrim(evidence_reference)) BETWEEN 8 AND 240),
  created_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(assignment_id,revision_no),
  CHECK ((target_mode='direct_sva' AND target_host_carrier_id IS NULL) OR
         (target_mode='partner' AND target_host_carrier_id IS NOT NULL AND
          target_host_carrier_id<>source_host_carrier_id))
 );
+CREATE INDEX IF NOT EXISTS direct_sva_transition_assignment_history_idx
+ ON direct_sva_existing_customer_transition_plans(assignment_id,revision_no DESC);
 CREATE INDEX IF NOT EXISTS direct_sva_transition_tenant_idx
  ON direct_sva_existing_customer_transition_plans(tenant_id,id DESC);
 CREATE INDEX IF NOT EXISTS direct_sva_transition_source_idx
