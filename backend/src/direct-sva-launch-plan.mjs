@@ -13,7 +13,7 @@ export const DIRECT_SVA_RELEASE_SEQUENCE=Object.freeze([
 ]);
 
 export function evaluateDirectSvaReleasePlan(input={},when=new Date()){
- const legal=evaluateDirectSvaOperatorPreparation(input.operator_evidence||{},when);
+ const legal=evaluateDirectSvaOperatorPreparation({evidence:input.operator_evidence||{}},when);
  const integrations=directSvaIntegrationReadiness(input.integration_evidence||{});
  const tasks=DIRECT_SVA_RELEASE_SEQUENCE.map(step=>{
   const record=input.completed_steps?.[step.step];
