@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {consolidateProviderNeutralBusinessLive} from "../backend/src/direct-sva-business-live-continuity.mjs";
-import {directSvaAccountingExport} from "../backend/src/direct-sva-business.mjs";
+import {directSvaAccountingExport,directSvaBusinessSnapshot} from "../backend/src/direct-sva-business.mjs";
 import {makeDirectSvaWorkflowSimulation} from "../backend/src/direct-sva-automation-rehearsal.mjs";
 
 const tenant=42,number=73;
@@ -90,6 +90,21 @@ test("an entry containing only one line is never marked as a complete export",as
  const {store}=storeWith([row(1,850,0)]);
  await assert.rejects(()=>directSvaAccountingExport(store,{month:"2026-10"}),{
   code:"DIRECT_SVA_EXPORT_CONTAINS_UNBALANCED_ENTRIES"
+ });
+});
+
+test("an unsafe accounting result cannot overflow and be displayed as trustworthy",async()=>{
+ const queryOutputs=[
+  [{operator_mode:"preparation",number_activation_enabled:false,payouts_enabled:false}],
+  [],[],[],
+  [{revenue_minor:String(Number.MAX_SAFE_INTEGER),expenses_minor:String(-Number.MAX_SAFE_INTEGER),
+   posted_entries:0,receivables_change_minor:0,publisher_liabilities_change_minor:0,suspense_change_minor:0}],
+  [],[],[],[],[]
+ ];
+ let next=0;
+ const store={sql:{begin:async()=>{}},readSql:{unsafe:async()=>queryOutputs[next++]}};
+ await assert.rejects(()=>directSvaBusinessSnapshot(store,{month:"2026-10"}),{
+  code:"DIRECT_SVA_AMOUNT_OUT_OF_RANGE"
  });
 });
 
