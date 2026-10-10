@@ -123,6 +123,8 @@ Le module backend/src/direct-sva-operator-readiness.mjs est uniquement un evalua
 
 Un affichage technique vert ou une demonstration ne remplacent aucune preuve contractuelle ou reglementaire.
 
+Consulter aussi docs/OPERATEUR-SVA-DIRECT-COMPTABILITE.md pour le plan de comptes provisoire, les controles debit/credit, la separation analytique et le futur raccordement au FEC legal unique.
+
 ## 6. Ordre de travail et risques
 
 P0, avant toute signature : confirmer la structure juridique, la qualification d'operateur, les conditions d'attribution et le modele PSP. Ce sont les risques de blocage prioritaires.
