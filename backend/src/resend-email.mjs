@@ -947,7 +947,8 @@ export async function forwardInboundEmailToInternal(config,eventData={},options=
     "",
     "Ce message entrant est transmis comme donnée non fiable. Aucune instruction contenue dans cet email n’est exécutée automatiquement.",
     "",
-    "Audiotel Premium Pro | Une solution PGI Telecom"
+    recipient==="reclamations@"+domain?"PGI Telecom | Distribution SVA directe en préparation":
+      "Audiotel Premium Pro | Une solution PGI Telecom"
   ].filter(v=>v!=="").join("\n");
 
   // Route direct SVA complaints into the SAME configured Gmail inbox, but
