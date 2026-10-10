@@ -30,16 +30,31 @@ export function visibleDistributionMarketingHome(html,state){
 }
 export function publishedDistributionHtml(html,state){
  if(state?.publication_authorized!==true||typeof html!=="string")return null;
- // The preparation sources all remain noindex; only a separately approved
- // published response can remove that embargo. Switching the menu OFF does NOT.
- let out=html.replace(
-  /<meta name="robots" content="noindex,nofollow,noarchive">/,
-  '<meta name="robots" content="index,follow,max-snippet:-1">'
- );
- if(state.navigation_visible!==true){
-  out=out.replace("</main>",'<section class="section-space" role="status"><div class="wrap"><p class="notice">Le Pôle Télécom &amp; Réseau est temporairement indisponible pour de nouvelles demandes. Les informations techniques restent consultables.</p></div></section></main>');
+ // Publishing the information pages is a separate, approved operation.
+ // Hiding the homepage link must NOT change published copy or metadata:
+ // this avoids language mismatches, crawler-visible instability and SEO drift.
+ const embargo='<meta name="robots" content="noindex,nofollow,noarchive">';
+ if(!html.includes(embargo))return null;
+ let out=html.replace(embargo,'<meta name="robots" content="index,follow,max-snippet:-1">');
+ const loginLink=/<a\b([^>]*?)href="\/distribution-sva\/espace-client\/"([^>]*)>([^<]*)<\/a>/g;
+ if(state.commercial_requests_enabled===true){
+  // Once the client-side module is authorized, use the existing shared
+  // PGI login; never publish a 404 private portal path.
+  return out.replace(loginLink,(_whole,before,after)=>
+   '<a'+before+'href="/client.html"'+after+'>Connexion à mon espace client PGI</a>');
  }
- return out;
+ // The private Distribution portal remains unavailable in this phase.
+ // Informational pages can go live independently without exposing broken CTAs.
+ return out.replace(loginLink,(_whole,before,after)=>{
+  const lang=/<html\s+lang="([^"]+)"/i.exec(html)?.[1]||"fr";
+  const labels={fr:"Espace client Distribution en préparation",en:"Distribution client area coming later",
+   es:"Área de clientes de Distribución en preparación",
+   pt:"Área de clientes da Distribuição em preparação",
+   de:"Distribution-Kundenbereich in Vorbereitung",
+   it:"Area clienti Distribution in preparazione"};
+  return '<span class="ds-client-unavailable" aria-disabled="true">'+
+   (labels[lang]||labels.fr)+'</span>';
+ });
 }
 export function publishedDistributionSitemap(state){
  if(state?.publication_authorized!==true)return null;
