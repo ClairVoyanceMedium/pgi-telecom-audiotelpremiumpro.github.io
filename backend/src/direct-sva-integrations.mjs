@@ -22,7 +22,7 @@ export const PGI_BUSINESS_UNITS=Object.freeze({
 });
 
 export const DIRECT_SVA_INTEGRATIONS=Object.freeze([
- Object.freeze({key:"google_analytics",label:"Google Analytics 4",target:"same_company_property_prepared",requires:["separate_business_unit_parameter","custom_dimension_registration","consent_audit","conversion_deduplication"]}),
+ Object.freeze({key:"google_analytics",label:"Google Analytics 4",target:"dedicated_direct_sva_property_not_created",requires:["separate_business_unit_parameter","custom_dimension_registration","consent_audit","conversion_deduplication"]}),
  Object.freeze({key:"google_search_console",label:"Google Search Console",target:"existing_domain_property_with_distinct_paths",requires:["dedicated_public_pages","sitemap_segment","indexability_review","verified_ownership"]}),
  Object.freeze({key:"hubspot",label:"HubSpot",target:"same_portal_distinct_pipeline_and_properties",requires:["business_unit_property","dedicated_deal_pipeline","dedicated_forms","contact_deduplication","consent_compliance"]}),
  Object.freeze({key:"accounting",label:"Comptabilite legale",target:"single_company_ledger_with_separate_cost_centers",requires:["expert_accountant_account_mapping","single_fec_export","source_reconciliation","tax_review"]}),
@@ -126,12 +126,45 @@ export function directSvaIntegrationReadiness(evidence={}){
   distribution_directe_status:"preparation",
   one_legal_entity:true,
   single_legal_ledger_required:true,
-  gsc_site_stays_existing:true,
+  gsc_domain_property_kept:true,
+  direct_gsc_prefix_property_required_before_launch:true,
+  dedicated_ga4_property_required_before_launch:true,
   ga4_emission_enabled:false,
   hubspot_synchronization_enabled:false,
   search_index_submission_enabled:false,
   accounting_merge_enabled:false,
   direct_operator_activation_enabled:false,
   checks
+ });
+}
+
+const INTEGRATION_TO_DB=Object.freeze({
+ google_analytics:"ga4",google_search_console:"gsc",hubspot:"hubspot",
+ accounting:"statutory_accounting",sva_network:"network",payments:"payment_psp"
+});
+
+export async function directSvaIntegrationOverview(store){
+ if(!store?.readSql?.unsafe)throw Object.assign(new Error("DIRECT_SVA_POSTGRES_REQUIRED"),{status:503,code:"DIRECT_SVA_POSTGRES_REQUIRED"});
+ const [units,checks]=await Promise.all([
+  store.readSql.unsafe("SELECT unit_code,legal_accounting_profile_id,analytics_namespace,cost_center,display_name,lifecycle_status,separate_legal_fec FROM pgi_company_business_units ORDER BY unit_code"),
+  store.readSql.unsafe("SELECT integration_key,readiness_status,activation_status,can_send_data,evidence_reference,last_review_at FROM direct_sva_integration_readiness ORDER BY integration_key")
+ ]);
+ if(units.length!==2||!units.every(x=>Number(x.legal_accounting_profile_id)===1&&x.separate_legal_fec===false))throw Object.assign(new Error("DIRECT_SVA_ENTITY_STRUCTURE_INVALID"),{status:503,code:"DIRECT_SVA_ENTITY_STRUCTURE_INVALID"});
+ const ledger=Object.fromEntries(checks.map(x=>[x.integration_key,x]));
+ const plan=directSvaIntegrationReadiness();
+ return Object.freeze({
+  ...plan,
+  units:units.map(u=>({code:u.unit_code,label:u.display_name,analytic_cost_center:u.cost_center,
+   shared_accounting_profile_id:Number(u.legal_accounting_profile_id),lifecycle:u.lifecycle_status})),
+  checks:plan.checks.map(c=>{
+   const state=ledger[INTEGRATION_TO_DB[c.key]];
+   return {...c,
+    recorded_state:state?.readiness_status||"unregistered",
+    activation_status:"disabled",data_sending_enabled:false,
+    evidence_reference_present:Boolean(state?.evidence_reference)
+   };
+  }),
+  all_direct_integrations_disabled:checks.every(x=>x.activation_status==="disabled"&&x.can_send_data===false),
+  legal_fec_separated:false
  });
 }
