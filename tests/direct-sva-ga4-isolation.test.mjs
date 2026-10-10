@@ -69,13 +69,13 @@ test("all sensitive/private or foreign page paths are untracked",()=>{
 test("browser consent UI remains independent, multilingual and revocable",()=>{
  const html=fs.readFileSync("site/distribution-sva/measurement.js","utf8");
  const runner=fs.readFileSync("site/distribution-sva/site.js","utf8");
- for(const k of ["en","es","pt","de","it","fr"])assert.match(html,new RegExp("\\\\b"+k+":\\\\{heading:"));
+ for(const k of ["en","es","pt","de","it","fr"])assert.ok(html.includes(k+":{heading:"),"missing language "+k);
  assert.match(html,/const STORAGE_KEY="pgi_dsva_analytics_consent_v1"/);
  assert.match(html,/navigator\.globalPrivacyControl!==true/);
  assert.match(html,/window\["ga-disable-"\+MEASUREMENT_ID\]=true/);
  assert.match(html,/tracker\.pageView\(\)/);
  assert.match(html,/window\.gtag\?\.\("consent","update"/);
  assert.match(runner,/analytics\?\.dedicatedPropertyConfirmed===true/);
- assert.match(runner,/!document\.querySelector\('script\[src\*="/site\/distribution-sva\/measurement.js"\]'\)/);
+ assert.ok(runner.includes("!document.querySelector(\u0027script[src*=\u0022/site/distribution-sva/measurement.js\u0022]\u0027)"));
  assert.doesNotMatch(runner,/G-SZY50J75N7/);
 });
